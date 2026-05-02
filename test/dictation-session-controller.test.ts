@@ -36,8 +36,20 @@ class FakeSession {
   public readonly acceptTranscript = vi.fn((_revision: TranscriptRevision) => ({
     kind: 'accepted' as const,
   }));
-  public readonly readNoteContext = vi.fn(
+  public readonly readNoteGlossary = vi.fn(
     (_maxChars: number): { text: string; truncated: boolean } | null => null,
+  );
+  public readonly readNoteText = vi.fn(
+    (_maxChars: number): { text: string; truncated: boolean } | null => null,
+  );
+  public readonly readPriorUtterances = vi.fn(
+    (
+      _maxCount: number,
+      _maxCharsPerUtterance: number,
+    ): Array<{
+      text: string;
+      truncated: boolean;
+    }> => [],
   );
   public readonly dispose = vi.fn(() => {});
   public readonly modeCalls: string[] = [];
@@ -155,6 +167,56 @@ describe('DictationSessionController', () => {
       }),
     );
     expect(sidecarConnection.startSession.mock.calls[0]?.[0]).not.toHaveProperty('useGpu');
+  });
+
+  it('includes llmPostprocess in the session snapshot when enabled with timestamps off', async () => {
+    const sidecarConnection = new FakeSidecarConnection();
+    const controller = createController({
+      getSettings: () =>
+        createSettings({
+          llmPostprocessEnabled: true,
+          llmPostprocessGlossaryChars: 10,
+          llmPostprocessGlossarySlot: 'glossary text beyond cap',
+          llmPostprocessModel: ' llama3.2:latest ',
+          llmPostprocessShowRawBelow: true,
+          llmPostprocessSkipIfAvgLogprobAbove: -0.5,
+          llmPostprocessSystemSlot: 'Clean it.',
+          selectedModel: createExternalModelSelection(),
+          showTimestamps: false,
+        }),
+      sidecarConnection,
+    });
+
+    await controller.startDictation();
+
+    expect(sidecarConnection.startSession.mock.calls[0]?.[0]).toMatchObject({
+      llmPostprocess: {
+        glossaryChars: 10,
+        glossaryText: 'glossary',
+        model: 'llama3.2:latest',
+        showRawBelow: true,
+        skipIfAvgLogprobAbove: -0.5,
+        systemSlot: 'Clean it.',
+      },
+    });
+  });
+
+  it('omits llmPostprocess from the session snapshot when timestamps are enabled', async () => {
+    const sidecarConnection = new FakeSidecarConnection();
+    const controller = createController({
+      getSettings: () =>
+        createSettings({
+          llmPostprocessEnabled: true,
+          llmPostprocessModel: 'llama3.2:latest',
+          selectedModel: createExternalModelSelection(),
+          showTimestamps: true,
+        }),
+      sidecarConnection,
+    });
+
+    await controller.startDictation();
+
+    expect(sidecarConnection.startSession.mock.calls[0]?.[0]).not.toHaveProperty('llmPostprocess');
   });
 
   it('recovers from capture startup failures without staying busy', async () => {
@@ -455,9 +517,9 @@ describe('DictationSessionController', () => {
     );
   });
 
-  it('replies to context_request with note text wrapped as a context window', async () => {
+  it('replies to context_request with note glossary wrapped as a context window', async () => {
     const session = new FakeSession();
-    session.readNoteContext.mockReturnValueOnce({ text: 'prior text', truncated: false });
+    session.readNoteGlossary.mockReturnValueOnce({ text: 'prior text', truncated: false });
     const sidecarConnection = new FakeSidecarConnection();
     const controller = createController({
       createSession: () => session,
@@ -476,7 +538,7 @@ describe('DictationSessionController', () => {
       utteranceId: 'utt-next',
     });
 
-    expect(session.readNoteContext).toHaveBeenCalledWith(384);
+    expect(session.readNoteGlossary).toHaveBeenCalledWith(384);
     const expected: ContextWindow = {
       budgetChars: 384,
       sources: [{ kind: 'note_glossary', text: 'prior text', truncated: false }],
@@ -511,7 +573,7 @@ describe('DictationSessionController', () => {
 
   it('replies with null when useNoteAsContext is disabled, without consulting the session', async () => {
     const session = new FakeSession();
-    session.readNoteContext.mockReturnValueOnce({ text: 'should be ignored', truncated: false });
+    session.readNoteGlossary.mockReturnValueOnce({ text: 'should be ignored', truncated: false });
     const sidecarConnection = new FakeSidecarConnection();
     const controller = createController({
       createSession: () => session,
@@ -534,13 +596,13 @@ describe('DictationSessionController', () => {
       utteranceId: 'utt-off',
     });
 
-    expect(session.readNoteContext).not.toHaveBeenCalled();
+    expect(session.readNoteGlossary).not.toHaveBeenCalled();
     expect(sidecarConnection.sendContextResponse).toHaveBeenCalledWith('corr-off', null);
   });
 
   it('uses the start snapshot for context policy across context_request events', async () => {
     const session = new FakeSession();
-    session.readNoteContext.mockReturnValue({ text: 'note text', truncated: false });
+    session.readNoteGlossary.mockReturnValue({ text: 'note text', truncated: false });
     const sidecarConnection = new FakeSidecarConnection();
     let useNoteAsContext = true;
     const controller = createController({
@@ -607,7 +669,7 @@ describe('DictationSessionController', () => {
       utteranceId: 'utt-foreign',
     });
 
-    expect(session.readNoteContext).not.toHaveBeenCalled();
+    expect(session.readNoteGlossary).not.toHaveBeenCalled();
     expect(sidecarConnection.sendContextResponse).not.toHaveBeenCalled();
   });
 
@@ -1111,6 +1173,7 @@ function transcriptReadyEvent(args: {
   const processingDurationMs = args.processingDurationMs ?? 75;
   return {
     isFinal: true,
+    llmPostprocessRawText: null,
     pauseMsBeforeUtterance: args.pauseMsBeforeUtterance ?? null,
     processingDurationMs,
     revision: 0,

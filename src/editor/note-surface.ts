@@ -4,6 +4,7 @@ import { EditorView, type ViewUpdate } from '@codemirror/view';
 
 import type { UtteranceId } from '../session/session-journal';
 import type { DictationAnchor } from '../settings/plugin-settings';
+import { truncateTrailingText } from '../shared/text-truncation';
 import type { TranscriptInsertProjection } from '../transcript/renderer';
 import {
   clearAnchorEffect,
@@ -348,6 +349,19 @@ export class NoteSurface {
     }
 
     return buildGlossary(this.view.state.doc.toString(), maxChars);
+  }
+
+  readNoteText(maxChars: number): { text: string; truncated: boolean } | null {
+    if (this.disposed || maxChars <= 0) {
+      return null;
+    }
+
+    const beforeAnchor = this.view.state.doc.sliceString(0, this.writingRegionTail()).trim();
+    if (beforeAnchor.length === 0) {
+      return null;
+    }
+
+    return truncateTrailingText(beforeAnchor, maxChars);
   }
 
   private insertInitialPrefix(): void {

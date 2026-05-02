@@ -94,11 +94,19 @@ export type ContextWindowSource =
       truncated: boolean;
     }
   | {
-      endRevision: number;
-      kind: 'session_utterance';
+      kind: 'note_text';
       text: string;
       truncated: boolean;
-      utteranceId: UtteranceId;
+    }
+  | {
+      kind: 'prior_utterance';
+      text: string;
+      truncated: boolean;
+    }
+  | {
+      kind: 'glossary_text';
+      text: string;
+      truncated: boolean;
     };
 
 export interface ContextWindow {
@@ -127,9 +135,30 @@ interface EnvelopeBase<TType extends string> {
 
 export interface HealthCommand extends EnvelopeBase<'health'> {}
 
+export interface LlmPostprocessConfig {
+  formatSlot: string;
+  glossaryChars: number;
+  glossaryText: string;
+  keepAlive: string;
+  model: string;
+  noteContextChars: number;
+  numPredict: number;
+  priorUtterancesN: number;
+  seed: number;
+  showRawBelow: boolean;
+  skipIfAvgLogprobAbove: number | null;
+  skipMinWords: number;
+  systemSlot: string;
+  temperature: number;
+  totalContextCap: number;
+  userTemplate: string;
+  voiceSlot: string;
+}
+
 export interface StartSessionCommand extends EnvelopeBase<'start_session'> {
   accelerationPreference: AccelerationPreference;
   language: 'en';
+  llmPostprocess?: LlmPostprocessConfig;
   mode: ListeningMode;
   modelSelection: SelectedModel;
   modelStorePathOverride?: string;
@@ -243,6 +272,7 @@ export interface SessionStateChangedEvent extends EnvelopeBase<'session_state_ch
 
 export interface TranscriptReadyEvent extends EnvelopeBase<'transcript_ready'> {
   isFinal: boolean;
+  llmPostprocessRawText: string | null;
   pauseMsBeforeUtterance: number | null;
   processingDurationMs: number;
   revision: number;
@@ -592,6 +622,10 @@ export function parseEventFrame(jsonText: string): SidecarEvent {
     case 'transcript_ready':
       return {
         isFinal: readBoolean(parsedValue.isFinal, 'event.isFinal'),
+        llmPostprocessRawText: readNullableString(
+          parsedValue.llmPostprocessRawText,
+          'event.llmPostprocessRawText',
+        ),
         pauseMsBeforeUtterance: readNullableNumber(
           parsedValue.pauseMsBeforeUtterance,
           'event.pauseMsBeforeUtterance',

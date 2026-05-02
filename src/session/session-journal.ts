@@ -1,6 +1,12 @@
 export type UtteranceId = string;
 
-export const STAGE_IDS = ['engine', 'hallucination_filter', 'punctuation', 'user_rules'] as const;
+export const STAGE_IDS = [
+  'engine',
+  'hallucination_filter',
+  'llm_postprocess',
+  'punctuation',
+  'user_rules',
+] as const;
 export type StageId = (typeof STAGE_IDS)[number];
 
 export interface TranscriptSegment {
@@ -29,6 +35,7 @@ export interface StageOutcome {
 
 export interface TranscriptRevision {
   isFinal: boolean;
+  llmPostprocessRawText?: string | null;
   pauseMsBeforeUtterance: number | null;
   revision: number;
   segments: readonly TranscriptSegment[];

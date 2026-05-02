@@ -7,9 +7,12 @@ import type { StageId } from '../session/session-journal';
 import type { PluginSettings } from '../settings/plugin-settings';
 import { formatErrorMessage } from '../shared/format-utils';
 import type { PluginLogger } from '../shared/plugin-logger';
+import { truncateLeadingText } from '../shared/text-truncation';
 import type {
   ContextRequestEvent,
   ContextWindow,
+  ContextWindowSource,
+  LlmPostprocessConfig,
   QueueBackpressureTier,
   SessionState,
   SidecarEvent,
@@ -30,13 +33,19 @@ export type DictationControllerState =
 
 type ControllerSession = Pick<
   Session,
-  'acceptTranscript' | 'dispose' | 'readNoteContext' | 'setAnchorMode'
+  | 'acceptTranscript'
+  | 'dispose'
+  | 'readNoteGlossary'
+  | 'readNoteText'
+  | 'readPriorUtterances'
+  | 'setAnchorMode'
 >;
 
 interface ActiveSessionSnapshot {
   accelerationPreference: PluginSettings['accelerationPreference'];
   dictationAnchor: PluginSettings['dictationAnchor'];
   listeningMode: PluginSettings['listeningMode'];
+  llmPostprocess: LlmPostprocessConfig | null;
   modelSelection: NonNullable<PluginSettings['selectedModel']>;
   modelStorePathOverride: string;
   sessionStartUnixMs: number;
@@ -118,6 +127,18 @@ export class DictationSessionController {
   }
 
   async dispose(): Promise<void> {
+    const activeSessionId = this.sessionId;
+    if (activeSessionId !== null) {
+      try {
+        await this.dependencies.sidecarConnection.stopSession(activeSessionId, 500);
+      } catch (error) {
+        this.dependencies.logger?.warn(
+          'session',
+          'timed out stopping dictation during unload',
+          error,
+        );
+      }
+    }
     this.releaseSidecarSubscription();
     await this.cleanupLocalSession();
     this.applyUiState('idle');
@@ -151,6 +172,7 @@ export class DictationSessionController {
       accelerationPreference: settings.accelerationPreference,
       dictationAnchor: settings.dictationAnchor,
       listeningMode: settings.listeningMode,
+      llmPostprocess: resolveLlmPostprocessSnapshot(settings),
       modelSelection: selectedModel,
       modelStorePathOverride: settings.modelStorePathOverride,
       sessionStartUnixMs: Date.now(),
@@ -217,6 +239,7 @@ export class DictationSessionController {
         await this.dependencies.sidecarConnection.startSession({
           accelerationPreference: snapshot.accelerationPreference,
           language: 'en',
+          ...(snapshot.llmPostprocess !== null ? { llmPostprocess: snapshot.llmPostprocess } : {}),
           mode: snapshot.listeningMode,
           modelSelection: snapshot.modelSelection,
           sessionStartUnixMs: snapshot.sessionStartUnixMs,
@@ -457,31 +480,93 @@ export class DictationSessionController {
     }
 
     const snapshot = this.sessionSnapshot;
-    const note = snapshot?.useNoteAsContext
-      ? (this.session?.readNoteContext(event.budgetChars) ?? null)
-      : null;
-    const context: ContextWindow | null =
-      note === null
-        ? null
-        : {
-            budgetChars: event.budgetChars,
-            sources: [{ kind: 'note_glossary', text: note.text, truncated: note.truncated }],
-            text: note.text,
-            truncated: note.truncated,
-          };
+    const context = snapshot === null ? null : this.buildContextWindow(snapshot, event.budgetChars);
 
-    if (note !== null) {
-      this.dependencies.logger?.debug(
-        'session',
-        `context_request: ${note.text} (${note.text.length}/${event.budgetChars} chars, truncated=${note.truncated})`,
-      );
-    }
+    this.dependencies.logger?.debug(
+      'session',
+      `context_request: ${context?.sources.length ?? 0} source(s), budget=${event.budgetChars}, truncated=${context?.truncated ?? false}`,
+    );
 
     try {
       this.dependencies.sidecarConnection.sendContextResponse(event.correlationId, context);
     } catch (error) {
       this.dependencies.logger?.warn('session', 'failed to send context response', error);
     }
+  }
+
+  private buildContextWindow(
+    snapshot: ActiveSessionSnapshot,
+    budgetChars: number,
+  ): ContextWindow | null {
+    const sources: ContextWindowSource[] = [];
+    let promptText = '';
+
+    if (snapshot.useNoteAsContext) {
+      const glossary = this.session?.readNoteGlossary(Math.min(384, budgetChars)) ?? null;
+      if (glossary !== null) {
+        sources.push({
+          kind: 'note_glossary',
+          text: glossary.text,
+          truncated: glossary.truncated,
+        });
+        promptText = glossary.text;
+      }
+    }
+
+    if (snapshot.llmPostprocess !== null) {
+      sources.push(...this.buildLlmContextSources(snapshot.llmPostprocess));
+    }
+
+    if (sources.length === 0) {
+      return null;
+    }
+
+    const truncated = sources.some((source) => source.truncated);
+
+    return {
+      budgetChars,
+      sources,
+      text: promptText,
+      truncated,
+    };
+  }
+
+  private buildLlmContextSources(config: LlmPostprocessConfig): ContextWindowSource[] {
+    const sources: ContextWindowSource[] = [];
+    const noteText =
+      config.noteContextChars > 0
+        ? (this.session?.readNoteText(config.noteContextChars) ?? null)
+        : null;
+
+    if (noteText !== null) {
+      sources.push({ kind: 'note_text', text: noteText.text, truncated: noteText.truncated });
+    }
+
+    const priorUtteranceBudget =
+      config.priorUtterancesN > 0
+        ? Math.max(1, Math.ceil(config.totalContextCap / config.priorUtterancesN))
+        : 0;
+    for (const utterance of this.session?.readPriorUtterances(
+      config.priorUtterancesN,
+      priorUtteranceBudget,
+    ) ?? []) {
+      sources.push({
+        kind: 'prior_utterance',
+        text: utterance.text,
+        truncated: utterance.truncated,
+      });
+    }
+
+    const glossary = truncateLeadingText(config.glossaryText, config.glossaryChars);
+    if (glossary.text.trim().length > 0) {
+      sources.push({
+        kind: 'glossary_text',
+        text: glossary.text,
+        truncated: glossary.truncated,
+      });
+    }
+
+    return enforceLlmContextCap(sources, config.totalContextCap);
   }
 
   private async handleTranscriptReady(event: TranscriptReadyEvent): Promise<void> {
@@ -514,6 +599,9 @@ export class DictationSessionController {
 
     const result = session.acceptTranscript({
       isFinal: event.isFinal,
+      llmPostprocessRawText: shouldAppendRawLlmPostprocessCallout(event, this.sessionSnapshot)
+        ? event.llmPostprocessRawText
+        : null,
       pauseMsBeforeUtterance: event.pauseMsBeforeUtterance,
       revision: event.revision,
       segments: event.segments,
@@ -612,6 +700,95 @@ function createSessionId(): string {
   return `session-${randomUUID()}`;
 }
 
+function resolveLlmPostprocessSnapshot(settings: PluginSettings): LlmPostprocessConfig | null {
+  const model = settings.llmPostprocessModel.trim();
+
+  if (!settings.llmPostprocessEnabled || settings.showTimestamps || model.length === 0) {
+    return null;
+  }
+
+  return {
+    formatSlot: settings.llmPostprocessFormatSlot,
+    glossaryChars: settings.llmPostprocessGlossaryChars,
+    glossaryText: truncateLeadingText(
+      settings.llmPostprocessGlossarySlot,
+      settings.llmPostprocessGlossaryChars,
+    ).text,
+    keepAlive: settings.llmPostprocessKeepAlive,
+    model,
+    noteContextChars: settings.llmPostprocessNoteContextChars,
+    numPredict: settings.llmPostprocessNumPredict,
+    priorUtterancesN: settings.llmPostprocessPriorUtterancesN,
+    seed: settings.llmPostprocessSeed,
+    showRawBelow: settings.llmPostprocessShowRawBelow,
+    skipIfAvgLogprobAbove: settings.llmPostprocessSkipIfAvgLogprobAbove,
+    skipMinWords: settings.llmPostprocessSkipMinWords,
+    systemSlot: settings.llmPostprocessSystemSlot,
+    temperature: settings.llmPostprocessTemperature,
+    totalContextCap: settings.llmPostprocessTotalContextCap,
+    userTemplate: settings.llmPostprocessUserTemplate,
+    voiceSlot: settings.llmPostprocessVoiceSlot,
+  };
+}
+
 function isAnchorVisibleSessionState(state: SessionState): boolean {
   return state === 'speech_detected' || state === 'speech_ending' || state === 'transcribing';
+}
+
+function shouldAppendRawLlmPostprocessCallout(
+  event: TranscriptReadyEvent,
+  snapshot: ActiveSessionSnapshot | null,
+): boolean {
+  if (snapshot?.llmPostprocess?.showRawBelow !== true || event.llmPostprocessRawText === null) {
+    return false;
+  }
+
+  return event.stageResults.some(
+    (stage) => stage.stageId === 'llm_postprocess' && stage.status.kind === 'ok',
+  );
+}
+
+function enforceLlmContextCap(
+  sources: ContextWindowSource[],
+  totalContextCap: number,
+): ContextWindowSource[] {
+  if (totalContextCap <= 0) {
+    return [];
+  }
+
+  const result = sources.map((source) => ({ ...source }));
+
+  for (const kind of ['note_text', 'prior_utterance', 'glossary_text'] as const) {
+    while (totalSourceChars(result) > totalContextCap) {
+      const index = result.findIndex((source) => source.kind === kind && source.text.length > 0);
+      if (index < 0) {
+        break;
+      }
+
+      const source = result[index];
+      if (source === undefined) {
+        break;
+      }
+      const overflow = totalSourceChars(result) - totalContextCap;
+      const nextMaxChars = Math.max(0, source.text.length - overflow);
+      const truncated = truncateLeadingText(source.text, nextMaxChars);
+      result[index] = {
+        ...source,
+        text: truncated.text,
+        truncated: true,
+      };
+
+      if (truncated.text.length === source.text.length) {
+        result[index] = { ...source, text: '', truncated: true };
+      }
+    }
+  }
+
+  return result.filter(
+    (source) => source.text.trim().length > 0 || source.kind === 'note_glossary',
+  );
+}
+
+function totalSourceChars(sources: readonly ContextWindowSource[]): number {
+  return sources.reduce((sum, source) => sum + source.text.length, 0);
 }

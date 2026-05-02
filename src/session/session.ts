@@ -10,6 +10,7 @@ import {
   type ReplaceResult,
 } from '../editor/note-surface';
 import type { PluginLogger } from '../shared/plugin-logger';
+import { truncateLeadingText } from '../shared/text-truncation';
 import {
   type TranscriptInsertProjection,
   TranscriptRenderer,
@@ -63,6 +64,7 @@ interface NoteSurfaceLike {
   appendProjection(utteranceId: string, projection: TranscriptInsertProjection): AppendResult;
   dispose(): void;
   readNoteGlossary(maxChars: number): { text: string; truncated: boolean } | null;
+  readNoteText(maxChars: number): { text: string; truncated: boolean } | null;
   readProjectionContext(): NoteProjectionContext;
   replaceAnchor(utteranceId: string, newText: string, expectedOldText: string): ReplaceResult;
   setAnchorMode(mode: DictationAnchorMode): void;
@@ -133,8 +135,27 @@ export class Session {
     return { kind: 'accepted' };
   }
 
-  readNoteContext(maxChars: number): { text: string; truncated: boolean } | null {
+  readNoteGlossary(maxChars: number): { text: string; truncated: boolean } | null {
     return this.surface?.readNoteGlossary(maxChars) ?? null;
+  }
+
+  readNoteText(maxChars: number): { text: string; truncated: boolean } | null {
+    return this.surface?.readNoteText(maxChars) ?? null;
+  }
+
+  readPriorUtterances(
+    maxCount: number,
+    maxCharsPerUtterance: number,
+  ): Array<{ text: string; truncated: boolean }> {
+    if (maxCount <= 0 || maxCharsPerUtterance <= 0) {
+      return [];
+    }
+
+    return this.journal
+      .allUtterancesInOrder()
+      .filter((revision) => revision.isFinal && revision.text.trim().length > 0)
+      .slice(-maxCount)
+      .map((revision) => truncateLeadingText(revision.text, maxCharsPerUtterance));
   }
 
   setAnchorMode(mode: DictationAnchorMode): void {
@@ -206,11 +227,42 @@ export class Session {
         projectedText: projection.insertedText,
       });
       this.renderer.commitAppend(projection);
+      this.applyRawPostprocessCallout(revision);
       return;
     }
 
     this.projectionByUtterance.set(revision.utteranceId, { kind: 'denied' });
     this.dependencies.logger?.debug('session', `projection append denied: ${result.reason.kind}`);
+  }
+
+  private applyRawPostprocessCallout(revision: TranscriptRevision): void {
+    const rawText = revision.llmPostprocessRawText?.trim();
+    if (rawText === undefined || rawText.length === 0) {
+      return;
+    }
+
+    const context = this.surface?.readProjectionContext();
+    if (context === undefined) {
+      return;
+    }
+
+    const callout = formatRawPostprocessCallout(rawText);
+    const boundary = missingNewlines(context.tailContent, 2);
+    const projection: TranscriptInsertProjection = {
+      emittedTimestamp: null,
+      insertedText: callout,
+      projectedText: `${boundary}${callout}`,
+      textEndOffset: boundary.length + callout.length,
+      textStartOffset: boundary.length,
+    };
+    const result = this.surface?.appendProjection(`${revision.utteranceId}:llm_raw`, projection);
+
+    if (result?.kind === 'denied') {
+      this.dependencies.logger?.debug(
+        'session',
+        `raw LLM postprocess callout append denied (${rawText.length} chars): ${result.reason}`,
+      );
+    }
   }
 
   private applyReplace(
@@ -364,4 +416,26 @@ function findOpenMarkdownViewForFile(
   }
 
   return null;
+}
+
+function formatRawPostprocessCallout(rawText: string): string {
+  const quoted = rawText
+    .split(/\r?\n/u)
+    .map((line) => `> ${line}`)
+    .join('\n');
+
+  return `> [!note]- raw\n${quoted}`;
+}
+
+function missingNewlines(tailContent: string, requiredTrailingNewlines: number): string {
+  let existing = 0;
+
+  for (let index = tailContent.length - 1; index >= 0; index -= 1) {
+    if (tailContent.charAt(index) !== '\n') {
+      break;
+    }
+    existing += 1;
+  }
+
+  return '\n'.repeat(Math.max(0, requiredTrailingNewlines - existing));
 }

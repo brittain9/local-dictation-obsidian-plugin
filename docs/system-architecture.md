@@ -29,7 +29,7 @@ flowchart LR
 
 ### Proposed
 
-Post-transcript enrichment adds two pipelines separated by a canonical transcript struct. The **audio pipeline** (VAD → diarization → inference → normalize) runs in the audio domain. The **text pipeline** (hallucination filter → punctuation → user rules) runs on the normalized transcript and preserves segment boundaries. An **LLM post-processor** sits outside the text pipeline as an experimental side branch because it may restructure text freely and destroy alignment. A final **render** stage applies the user's timestamp and format choices.
+Post-transcript enrichment adds two pipelines separated by a canonical transcript struct. The **audio pipeline** (VAD → diarization → inference → normalize) runs in the audio domain. The **text pipeline** (hallucination filter → LLM postprocess → punctuation → user rules) runs on the normalized transcript. Most text stages preserve segment boundaries; `llm_postprocess` is the explicit exception and may collapse one utterance to a single synthetic segment. Whole-session LLM rewrite remains a separate experimental artifact, not a transcript stage. A final **render** stage applies the user's timestamp and format choices.
 
 ```mermaid
 flowchart TB
@@ -47,17 +47,15 @@ flowchart TB
             VAD["VAD"] --> DIA["Diarization<br/>(optional, capability-gated)"] --> INF["Inference<br/>(engine registry)"] --> NORM["Normalize →<br/>canonical transcript"]
         end
 
-        subgraph Text ["Text pipeline · segment-preserving"]
+        subgraph Text ["Text pipeline"]
             direction LR
-            FILT["Hallucination<br/>filter"] --> PUNCT["Punctuation"] --> RULES["User rules"]
+            FILT["Hallucination<br/>filter"] --> LLM["LLM postprocess<br/>(optional · boundary-collapsing)"] --> PUNCT["Punctuation"] --> RULES["User rules"]
         end
 
-        LLM["LLM post-processor<br/>(experimental · structure-destroying)"]
         RENDER["Render<br/>(apply timestamp mode + format)"]
 
         NORM --> FILT
         RULES --> RENDER
-        RULES -.-> LLM -.-> RENDER
     end
 
     MIC -->|"stdin: audio frames (binary protocol)"| VAD
@@ -70,7 +68,7 @@ What this architecture makes explicit:
 - **Two pipelines, one seam.** The canonical transcript at `Normalize` is the boundary — everything before is audio-signal work, everything after is struct manipulation. No stage crosses the seam.
 - **Diarization lives in the audio pipeline**, not the text pipeline. It's a capability-gated model that labels segments by speaker; the label rides along as a field on the canonical transcript. Whether it registers under `pipeline/` or alongside engine adapters is an open question tracked in the design spec.
 - **Text stages are segment-preserving.** The contract is that they may rewrite text *within* a segment but never change boundaries or timestamps. That is what makes them composable in any order and individually skippable.
-- **LLM is a dashed side branch**, deliberately outside the text pipeline. It is allowed to rewrite freely, which destroys segment alignment — so nothing else in the architecture depends on its behaviour. Two future modes (per-segment rolling vs whole-transcript batch) both slot into this same branch.
+- **Per-utterance LLM postprocess is a text-pipeline stage with an explicit boundary-collapsing exception.** It may rewrite one finalized utterance into one synthetic utterance-span segment, so timestamped sessions disable it in v1. Whole-session LLM rewrite stays a separate experimental artifact, not a transcript stage.
 - **Render is the single endpoint.** "Timestamps off" strips them here; format choice (plain text, timestamped list, speaker-prefixed) is applied here. No earlier stage renders.
 - **stdin still carries both audio and commands.** `start_session` starts the configured capture session; `transcript_ready` includes `stageResults[]` reporting which stages ran, were skipped, or failed. Stage processor inventory and per-stage toggles land with real processors, not placeholders.
 
