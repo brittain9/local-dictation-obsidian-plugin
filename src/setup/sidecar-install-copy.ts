@@ -11,10 +11,10 @@ export interface InstallCopy {
 
 const CPU_FIRST_RUN: InstallCopy = {
   bodyText:
-    'Local Transcript needs a one-time download of the CPU speech-to-text sidecar. Transcription stays local on your machine after this completes.',
+    'Local Dictation needs a one-time download of the CPU speech-to-text sidecar. Transcription stays local on your machine after this completes.',
   primaryButtonText: 'Download CPU sidecar',
-  successNotice: 'Local Transcript sidecar installed and started.',
-  title: 'Finish setting up Local Transcript',
+  successNotice: 'Local Dictation sidecar installed and started.',
+  title: 'Finish setting up Local Dictation',
 };
 
 const CPU_INSTALL: InstallCopy = {

@@ -26,13 +26,13 @@ interface EngineBackend {
   missingGpu: { accelerator: AcceleratorId; reason: string } | null;
 }
 
-export interface AccelerationFallback {
+interface AccelerationFallback {
   engine: string;
   accelerator: AcceleratorId;
   reason: string;
 }
 
-export interface AccelerationDescription {
+interface AccelerationDescription {
   label: string;
   fallbacks: AccelerationFallback[];
 }

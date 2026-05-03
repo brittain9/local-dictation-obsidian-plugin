@@ -346,7 +346,7 @@ export class DictationSessionController {
 
     const detail = event.details ? `${event.message} (${event.details})` : event.message;
     this.applyUiState('error');
-    this.dependencies.notice(`Local Transcript: ${detail}`);
+    this.dependencies.notice(`Local Dictation: ${detail}`);
 
     if (event.sessionId !== undefined && event.sessionId === this.sessionId) {
       void this.abortSessionAfterError(event.sessionId);
@@ -369,7 +369,7 @@ export class DictationSessionController {
 
     if (event.reason === 'timeout') {
       this.dependencies.notice(
-        'Local Transcript: one-sentence mode timed out before speech started.',
+        'Local Dictation: one-sentence mode timed out before speech started.',
       );
     }
   }
@@ -405,7 +405,7 @@ export class DictationSessionController {
       case 'warning':
         if (event.sessionId === undefined || event.sessionId === this.sessionId) {
           const detail = event.details ? `${event.message} (${event.details})` : event.message;
-          this.dependencies.notice(`Local Transcript: ${detail}`);
+          this.dependencies.notice(`Local Dictation: ${detail}`);
         }
         return;
 
@@ -441,7 +441,7 @@ export class DictationSessionController {
       !recoveringFromSaturation
     ) {
       this.dependencies.notice(
-        'Local Transcript: transcription is falling behind — pause to let it catch up.',
+        'Local Dictation: transcription is falling behind — pause to let it catch up.',
       );
     }
   }
@@ -604,7 +604,7 @@ export class DictationSessionController {
       return settings.selectedModel;
     }
 
-    throw new Error('Select a Local Transcript model before starting dictation.');
+    throw new Error('Select a Local Dictation model before starting dictation.');
   }
 }
 

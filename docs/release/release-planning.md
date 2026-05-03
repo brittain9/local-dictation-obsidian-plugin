@@ -38,8 +38,8 @@ The installer fetches `checksums.txt` at runtime alongside the selected sidecar 
 
 Installed sidecars live under the plugin directory:
 
-- CPU: `<vault>/.obsidian/plugins/local-transcript/bin/cpu/`
-- CUDA: `<vault>/.obsidian/plugins/local-transcript/bin/cuda/`
+- CPU: `<vault>/.obsidian/plugins/local-dictation/bin/cpu/`
+- CUDA: `<vault>/.obsidian/plugins/local-dictation/bin/cuda/`
 
 Resolution order in `resolveSidecarExecutablePath()`:
 

@@ -111,7 +111,7 @@ export class Session {
   constructor(private readonly dependencies: SessionDependencies) {
     this.journal = new SessionJournal(dependencies.sessionId);
     this.renderer = new TranscriptRenderer(dependencies.rendererOptions);
-    this.recoveryFilePath = `${dependencies.app.vault.configDir}/local-transcript/recovery-${dependencies.sessionId}.json`;
+    this.recoveryFilePath = `${dependencies.app.vault.configDir}/local-dictation/recovery-${dependencies.sessionId}.json`;
     this.surface = (dependencies.noteSurfaceFactory ?? createNoteSurface)(
       dependencies.view,
       dependencies.placement,
@@ -374,7 +374,7 @@ export class Session {
 
   private async persistRecovery(): Promise<void> {
     const adapter = this.dependencies.app.vault.adapter;
-    const directoryPath = `${this.dependencies.app.vault.configDir}/local-transcript`;
+    const directoryPath = `${this.dependencies.app.vault.configDir}/local-dictation`;
 
     try {
       if (!(await adapter.exists(directoryPath))) {

@@ -58,27 +58,27 @@ function buildRibbonState(
 } {
   switch (state) {
     case 'idle':
-      return { icon: 'mic', label: 'Local Transcript: Click to start' };
+      return { icon: 'mic', label: 'Local Dictation: Click to start' };
 
     case 'starting':
-      return { icon: 'loader', label: 'Local Transcript: Starting...' };
+      return { icon: 'loader', label: 'Local Dictation: Starting...' };
 
     case 'listening':
-      return { icon: 'audio-lines', label: 'Local Transcript: Listening' };
+      return { icon: 'audio-lines', label: 'Local Dictation: Listening' };
 
     case 'speech_detected':
-      return { icon: 'audio-lines', label: 'Local Transcript: Hearing speech' };
+      return { icon: 'audio-lines', label: 'Local Dictation: Hearing speech' };
 
     case 'speech_ending':
-      return { icon: 'audio-lines', label: 'Local Transcript: Hearing speech' };
+      return { icon: 'audio-lines', label: 'Local Dictation: Hearing speech' };
 
     case 'transcribing':
       return queueTier === 'catching_up'
-        ? { icon: 'loader', label: 'Local Transcript: Catching up...' }
-        : { icon: 'loader', label: 'Local Transcript: Transcribing...' };
+        ? { icon: 'loader', label: 'Local Dictation: Catching up...' }
+        : { icon: 'loader', label: 'Local Dictation: Transcribing...' };
 
     case 'error':
-      return { icon: 'mic-off', label: 'Local Transcript: Error' };
+      return { icon: 'mic-off', label: 'Local Dictation: Error' };
   }
 }
 

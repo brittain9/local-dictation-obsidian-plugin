@@ -5,7 +5,7 @@ import process from 'node:process';
 
 import { listCudaArtifacts } from './lib/cuda-artifacts.mjs';
 
-const PLUGIN_ID = 'local-transcript';
+const PLUGIN_ID = 'local-dictation';
 const PLUGIN_FILES = ['manifest.json', 'main.js', 'styles.css'];
 const SIDECAR_BASENAME = 'local-transcript-sidecar';
 const SIDECAR_SUFFIX = process.platform === 'win32' ? '.exe' : '';

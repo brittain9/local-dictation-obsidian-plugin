@@ -392,8 +392,8 @@ flowchart LR
 | `speakingStyle` | `balanced` | UX preset driving the VAD tuning table (Responsive / Balanced / Patient) |
 | `accelerationPreference` | `auto` | GPU vs CPU-only |
 | `selectedModel` | `null` | Active model selection |
-| `sidecarRequestTimeoutMs` | 300,000 (5 min) | Command/response timeout |
-| `sidecarStartupTimeoutMs` | 4,000 (4 s) | Health check timeout on launch |
+| `sidecarRequestTimeoutSeconds` | 300 (5 min) | Command/response timeout |
+| `sidecarStartupTimeoutSeconds` | 4 | Health check timeout on launch |
 | `sidecarPathOverride` | `""` | Custom sidecar executable path |
 | `modelStorePathOverride` | `""` | Custom model storage directory |
 | `cudaLibraryPath` | `""` | Linux LD_LIBRARY_PATH for CUDA |

@@ -22,8 +22,8 @@ describe('resolvePluginSettings', () => {
           runtimeId: 'whisper_cpp',
         },
         sidecarPathOverride: ' /tmp/sidecar ',
-        sidecarRequestTimeoutMs: 12_000,
-        sidecarStartupTimeoutMs: 6_000,
+        sidecarRequestTimeoutSeconds: 12,
+        sidecarStartupTimeoutSeconds: 6,
         showTimestamps: true,
         speakingStyle: 'patient',
         transcriptFormatting: 'new_paragraph',
@@ -43,8 +43,8 @@ describe('resolvePluginSettings', () => {
         runtimeId: 'whisper_cpp',
       },
       sidecarPathOverride: '/tmp/sidecar',
-      sidecarRequestTimeoutMs: 12_000,
-      sidecarStartupTimeoutMs: 6_000,
+      sidecarRequestTimeoutSeconds: 12,
+      sidecarStartupTimeoutSeconds: 6,
       showTimestamps: true,
       speakingStyle: 'patient',
       transcriptFormatting: 'new_paragraph',
@@ -89,8 +89,8 @@ describe('resolvePluginSettings', () => {
         listeningMode: 'unsupported',
         modelStorePathOverride: 42,
         sidecarPathOverride: 12,
-        sidecarRequestTimeoutMs: -1,
-        sidecarStartupTimeoutMs: 'fast',
+        sidecarRequestTimeoutSeconds: -1,
+        sidecarStartupTimeoutSeconds: 'fast',
         showTimestamps: 'yes',
         transcriptFormatting: 'tab',
         useNoteAsContext: 'yes',
@@ -122,5 +122,12 @@ describe('resolvePluginSettings', () => {
 
   it('falls back speakingStyle to balanced when persisted value is invalid', () => {
     expect(resolvePluginSettings({ speakingStyle: 'loud' }).speakingStyle).toBe('balanced');
+  });
+
+  it.each([
+    'always_on',
+    'one_sentence',
+  ] as const)('accepts the supported listening mode %s', (listeningMode) => {
+    expect(resolvePluginSettings({ listeningMode }).listeningMode).toBe(listeningMode);
   });
 });

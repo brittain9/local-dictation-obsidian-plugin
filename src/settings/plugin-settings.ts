@@ -4,7 +4,12 @@ import {
   type SelectedModel,
 } from '../models/model-management-types';
 import { isRecord } from '../shared/type-guards';
-import type { AccelerationPreference, ListeningMode, SpeakingStyle } from '../sidecar/protocol';
+import {
+  type AccelerationPreference,
+  LISTENING_MODES,
+  type ListeningMode,
+  type SpeakingStyle,
+} from '../sidecar/protocol';
 
 export const DICTATION_ANCHORS = ['at_cursor', 'end_of_note'] as const;
 
@@ -29,8 +34,8 @@ export interface PluginSettings {
   modelStorePathOverride: string;
   selectedModel: SelectedModel | null;
   sidecarPathOverride: string;
-  sidecarRequestTimeoutMs: number;
-  sidecarStartupTimeoutMs: number;
+  sidecarRequestTimeoutSeconds: number;
+  sidecarStartupTimeoutSeconds: number;
   showTimestamps: boolean;
   speakingStyle: SpeakingStyle;
   transcriptFormatting: TranscriptFormattingMode;
@@ -46,8 +51,8 @@ export const DEFAULT_PLUGIN_SETTINGS: PluginSettings = {
   modelStorePathOverride: '',
   selectedModel: null,
   sidecarPathOverride: '',
-  sidecarRequestTimeoutMs: 300_000,
-  sidecarStartupTimeoutMs: 4_000,
+  sidecarRequestTimeoutSeconds: 300,
+  sidecarStartupTimeoutSeconds: 4,
   showTimestamps: false,
   speakingStyle: 'balanced',
   transcriptFormatting: 'smart',
@@ -74,13 +79,13 @@ export function resolvePluginSettings(data: unknown): PluginSettings {
       raw.sidecarPathOverride,
       DEFAULT_PLUGIN_SETTINGS.sidecarPathOverride,
     ),
-    sidecarRequestTimeoutMs: readPositiveInteger(
-      raw.sidecarRequestTimeoutMs,
-      DEFAULT_PLUGIN_SETTINGS.sidecarRequestTimeoutMs,
+    sidecarRequestTimeoutSeconds: readPositiveInteger(
+      raw.sidecarRequestTimeoutSeconds,
+      DEFAULT_PLUGIN_SETTINGS.sidecarRequestTimeoutSeconds,
     ),
-    sidecarStartupTimeoutMs: readPositiveInteger(
-      raw.sidecarStartupTimeoutMs,
-      DEFAULT_PLUGIN_SETTINGS.sidecarStartupTimeoutMs,
+    sidecarStartupTimeoutSeconds: readPositiveInteger(
+      raw.sidecarStartupTimeoutSeconds,
+      DEFAULT_PLUGIN_SETTINGS.sidecarStartupTimeoutSeconds,
     ),
     showTimestamps: readBoolean(raw.showTimestamps, DEFAULT_PLUGIN_SETTINGS.showTimestamps),
     speakingStyle: isSpeakingStyle(raw.speakingStyle)
@@ -127,6 +132,10 @@ export function isTranscriptFormattingMode(value: unknown): value is TranscriptF
   );
 }
 
+export function isListeningMode(value: unknown): value is ListeningMode {
+  return typeof value === 'string' && (LISTENING_MODES as readonly string[]).includes(value);
+}
+
 function readSelectedModel(selectedModel: unknown): SelectedModel | null {
   if (isSelectedModel(selectedModel)) {
     return normalizeSelectedModel(selectedModel);
@@ -136,7 +145,5 @@ function readSelectedModel(selectedModel: unknown): SelectedModel | null {
 }
 
 function readListeningMode(value: unknown): ListeningMode {
-  return value === 'always_on' || value === 'one_sentence'
-    ? value
-    : DEFAULT_PLUGIN_SETTINGS.listeningMode;
+  return isListeningMode(value) ? value : DEFAULT_PLUGIN_SETTINGS.listeningMode;
 }

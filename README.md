@@ -1,12 +1,13 @@
-# Local Transcript
+# Local Dictation
 
-Run cutting-edge local transcription directly in Obsidian. Choose between Cohere Transcribe, a new best-in-class model, and Whisper, a well-known standard for offline speech recognition.
+Run private, GPU-accelerated dictation directly in Obsidian with Whisper, Cohere Transcribe, Silero VAD, and optional LLM processing via Ollama.
 
 ## Features
 - **Cross-platform design** — built for desktop Obsidian on macOS, Linux, and Windows.
 - **Cohere Transcribe support** — use a [Hugging Face Open ASR Leaderboard](https://huggingface.co/spaces/hf-audio/open_asr_leaderboard)-topping speech recognition model directly inside Obsidian.
 - **Whisper support** — choose a mature offline transcription model with a wide range of size and performance options.
 - **Silero v6 voice activity detection** — [enterprise-grade neural VAD](https://github.com/snakers4/silero-vad) for accurate, real-time speech boundary detection.
+- **Optional LLM processing via Ollama** — clean up dictated text with a local LLM when you want an extra pass.
 - **One-click model management** — browse, download, and remove models from inside the plugin.
 - **Hardware acceleration** — supports Metal on macOS and CUDA on Linux/Windows with Turing-or-newer NVIDIA GPUs.
 - **Obsidian-native experience** — integrates cleanly with the app through native settings, commands, and interface elements.
@@ -43,13 +44,13 @@ The community-plugin package contains only Obsidian's three plugin files:
 - `manifest.json`
 - `styles.css`
 
-After those files are installed, open `Settings -> Local Transcript` and install the sidecar from the plugin settings. The plugin downloads the sidecar archive from the GitHub Release matching its own `manifest.version`, verifies it, and stores it under the plugin's `bin/` directory. Then click `Manage models`, install a model, open a note, and start dictation from the ribbon button or `Local Transcript: Start Dictation Session`.
+After those files are installed, open `Settings -> Local Dictation` and install the sidecar from the plugin settings. The plugin downloads the sidecar archive from the GitHub Release matching its own `manifest.version`, verifies it, and stores it under the plugin's `bin/` directory. Then click `Manage models`, install a model, open a note, and start dictation from the ribbon button or `Local Dictation: Start Dictation Session`.
 
 The sidecar and model downloads are separate on purpose: Obsidian installs the plugin UI, the plugin installs the native sidecar, and the sidecar manages model downloads. Transcription runs locally after setup.
 
 ### Manual Release Install
 
-For manual testing of a published release, download these files from the same GitHub Release tag and place them in `<vault>/.obsidian/plugins/local-transcript/`:
+For manual testing of a published release, download these files from the same GitHub Release tag and place them in `<vault>/.obsidian/plugins/local-dictation/`:
 
 ```text
 main.js
@@ -57,7 +58,7 @@ manifest.json
 styles.css
 ```
 
-Restart Obsidian or reload plugins, enable `Local Transcript`, then use the settings page to download the sidecar and models.
+Restart Obsidian or reload plugins, enable `Local Dictation`, then use the settings page to download the sidecar and models.
 
 Do not mix plugin files from one version with sidecar assets from another version. Sidecar downloads are version-locked to `manifest.version`, not to the latest GitHub Release.
 
@@ -88,7 +89,7 @@ Install dependencies:
 npm install
 ```
 
-For fast frontend iteration, symlink or clone this repo into `<vault>/.obsidian/plugins/local-transcript`, run watch mode, and reload Obsidian after rebuilds:
+For fast frontend iteration, symlink or clone this repo into `<vault>/.obsidian/plugins/local-dictation`, run watch mode, and reload Obsidian after rebuilds:
 
 ```sh
 npm run build:sidecar

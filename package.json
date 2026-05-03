@@ -1,7 +1,7 @@
 {
-  "name": "local-transcript",
-  "version": "2026.4.30",
-  "description": "Local speech-to-text for Obsidian",
+  "name": "local-dictation",
+  "version": "2026.5.3",
+  "description": "Private, GPU-accelerated dictation for Obsidian using Whisper, Cohere Transcribe, Silero VAD, and optional LLM processing via Ollama.",
   "private": true,
   "license": "MIT",
   "main": "main.js",

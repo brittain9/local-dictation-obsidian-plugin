@@ -259,16 +259,16 @@ describe('Session', () => {
     await vi.waitFor(() => {
       expect(adapter.write).toHaveBeenCalledTimes(1);
     });
-    expect(adapter.mkdir).toHaveBeenCalledWith('.obsidian/local-transcript');
+    expect(adapter.mkdir).toHaveBeenCalledWith('.obsidian/local-dictation');
     expect(adapter.write.mock.calls[0]?.[0]).toBe(
-      '.obsidian/local-transcript/recovery-session-1.json',
+      '.obsidian/local-dictation/recovery-session-1.json',
     );
 
-    adapter.existing.add('.obsidian/local-transcript/recovery-session-1.json');
+    adapter.existing.add('.obsidian/local-dictation/recovery-session-1.json');
     await session.dispose();
 
     expect(adapter.remove).toHaveBeenCalledWith(
-      '.obsidian/local-transcript/recovery-session-1.json',
+      '.obsidian/local-dictation/recovery-session-1.json',
     );
   });
 
