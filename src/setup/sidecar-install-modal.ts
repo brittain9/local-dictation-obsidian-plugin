@@ -1,12 +1,18 @@
 import type { App } from 'obsidian';
 import { Modal, Notice } from 'obsidian';
 
-import { formatBytes, formatErrorMessage } from '../shared/format-utils';
-import type { PluginLogger } from '../shared/plugin-logger';
+import {
+  createInstallProgressElement,
+  updateInstallProgressElement,
+} from '../models/model-install-progress';
+import { formatErrorMessage } from '../shared/format-utils';
+import {
+  type ActiveSidecarInstall,
+  buildSidecarProgressState,
+  type SidecarInstallManager,
+} from '../sidecar/sidecar-install-manager';
 import {
   detectPlatformAssetForCurrentEnv,
-  type InstallProgress,
-  installSidecar,
   type SidecarInstallVariant,
 } from '../sidecar/sidecar-installer';
 import type { InstallCopy } from './sidecar-install-copy';
@@ -14,24 +20,17 @@ import type { InstallCopy } from './sidecar-install-copy';
 export interface SidecarInstallModalOptions {
   beforeReplace?: (() => Promise<void>) | undefined;
   copy: InstallCopy;
-  logger?: PluginLogger | undefined;
+  manager: SidecarInstallManager;
   onInstalled: () => Promise<void>;
   pluginDirectory: string;
   variant: SidecarInstallVariant;
   version: string;
 }
 
-const STATUS_TONES = ['info', 'success', 'error'] as const;
-type StatusTone = (typeof STATUS_TONES)[number];
-
 export class SidecarInstallModal extends Modal {
-  private abortController: AbortController | null = null;
-  private installInProgress = false;
-  private progressLabelEl: HTMLDivElement | null = null;
-  private progressBarEl: HTMLDivElement | null = null;
-  private primaryButtonEl: HTMLButtonElement | null = null;
-  private secondaryButtonEl: HTMLButtonElement | null = null;
-  private statusEl: HTMLDivElement | null = null;
+  private installProgressEl: HTMLDivElement | null = null;
+  private unsubscribe: (() => void) | null = null;
+  private wasActive = false;
 
   constructor(
     app: App,
@@ -43,8 +42,66 @@ export class SidecarInstallModal extends Modal {
   override onOpen(): void {
     this.modalEl.addClass('local-stt-sidecar-install');
     this.titleEl.setText(this.options.copy.title);
-    this.contentEl.empty();
+    this.unsubscribe = this.options.manager.subscribe(() => {
+      this.handleManagerChange();
+    });
+    this.render();
+  }
 
+  override onClose(): void {
+    this.unsubscribe?.();
+    this.unsubscribe = null;
+    this.contentEl.empty();
+  }
+
+  private handleManagerChange(): void {
+    const state = this.options.manager.getState();
+
+    if (state.activeInstall !== null) {
+      this.wasActive = true;
+
+      if (this.installProgressEl !== null) {
+        updateInstallProgressElement(
+          this.installProgressEl,
+          buildSidecarProgressState(state.activeInstall),
+        );
+        return;
+      }
+
+      this.render();
+      return;
+    }
+
+    if (this.wasActive && state.lastError === null) {
+      this.close();
+      return;
+    }
+
+    this.wasActive = false;
+    this.render();
+  }
+
+  private render(): void {
+    this.contentEl.empty();
+    this.installProgressEl = null;
+
+    const state = this.options.manager.getState();
+
+    if (state.activeInstall !== null) {
+      this.wasActive = true;
+      this.renderProgress(state.activeInstall);
+      return;
+    }
+
+    if (state.lastError !== null) {
+      this.renderFailure(state.lastError);
+      return;
+    }
+
+    this.renderPreInstall();
+  }
+
+  private renderPreInstall(): void {
     const asset = detectPlatformAssetForCurrentEnv(this.options.variant);
 
     this.contentEl.createEl('p', { text: this.options.copy.bodyText });
@@ -53,152 +110,69 @@ export class SidecarInstallModal extends Modal {
     details.createEl('li', { text: `Archive: ${asset.assetName}` });
     details.createEl('li', { text: `Release: ${this.options.version}` });
 
-    this.statusEl = this.contentEl.createDiv({ cls: 'local-stt-sidecar-install__status' });
-    this.progressLabelEl = this.contentEl.createDiv({
-      cls: 'local-stt-sidecar-install__progress-label',
+    const buttons = this.contentEl.createDiv({ cls: 'local-stt-sidecar-install__buttons' });
+    buttons.createEl('button', { text: 'Later' }).addEventListener('click', () => {
+      this.close();
     });
-    const progressTrack = this.contentEl.createDiv({
-      cls: 'local-stt-sidecar-install__progress',
-    });
-    this.progressBarEl = progressTrack.createDiv({
-      cls: 'local-stt-sidecar-install__progress-bar',
-    });
-    this.progressBarEl.style.width = '0%';
+    buttons
+      .createEl('button', {
+        cls: 'mod-cta',
+        text: this.options.copy.primaryButtonText,
+      })
+      .addEventListener('click', () => {
+        this.startInstall();
+      });
+  }
+
+  private renderProgress(active: ActiveSidecarInstall): void {
+    const progressState = buildSidecarProgressState(active);
+    const fragment = document.createDocumentFragment();
+    this.installProgressEl = createInstallProgressElement(progressState);
+    fragment.append(this.installProgressEl);
+    this.contentEl.append(fragment);
 
     const buttons = this.contentEl.createDiv({ cls: 'local-stt-sidecar-install__buttons' });
-    this.secondaryButtonEl = buttons.createEl('button', { text: 'Later' });
-    this.primaryButtonEl = buttons.createEl('button', {
+    buttons.createEl('button', {
       cls: 'mod-cta',
-      text: this.options.copy.primaryButtonText,
-    });
-
-    this.secondaryButtonEl.addEventListener('click', () => {
-      this.handleSecondaryClick();
-    });
-    this.primaryButtonEl.addEventListener('click', () => {
-      void this.handlePrimaryClick();
+      text: active.phase === 'canceling' ? 'Cancelling...' : 'Downloading...',
+    }).disabled = true;
+    buttons.createEl('button', { text: 'Close' }).addEventListener('click', () => {
+      this.close();
     });
   }
 
-  override onClose(): void {
-    this.abortController?.abort();
-    this.contentEl.empty();
+  private renderFailure(errorMessage: string): void {
+    this.contentEl.createEl('p', {
+      cls: 'local-stt-sidecar-install__status local-stt-sidecar-install__status--error',
+      text: `Install failed: ${errorMessage}`,
+    });
+
+    const buttons = this.contentEl.createDiv({ cls: 'local-stt-sidecar-install__buttons' });
+    buttons
+      .createEl('button', {
+        cls: 'mod-cta',
+        text: 'Retry download',
+      })
+      .addEventListener('click', () => {
+        this.startInstall();
+      });
+    buttons.createEl('button', { text: 'Close' }).addEventListener('click', () => {
+      this.close();
+    });
   }
 
-  private handleSecondaryClick(): void {
-    if (this.installInProgress) {
-      this.abortController?.abort();
-      return;
-    }
-
-    this.close();
-  }
-
-  private async handlePrimaryClick(): Promise<void> {
-    if (this.installInProgress) return;
-
-    this.installInProgress = true;
-    this.abortController = new AbortController();
-
-    if (this.primaryButtonEl !== null) {
-      this.primaryButtonEl.disabled = true;
-      this.primaryButtonEl.setText('Downloading…');
-    }
-
-    if (this.secondaryButtonEl !== null) {
-      this.secondaryButtonEl.setText('Cancel');
-    }
-
-    this.setStatus('Fetching release metadata…', 'info');
-
+  private startInstall(): void {
     try {
-      await installSidecar({
+      this.options.manager.install({
         beforeReplace: this.options.beforeReplace,
-        logger: this.options.logger,
-        onProgress: (progress) => {
-          this.updateProgress(progress);
-        },
+        onInstalled: this.options.onInstalled,
         pluginDirectory: this.options.pluginDirectory,
-        signal: this.abortController.signal,
+        successNotice: this.options.copy.successNotice,
         variant: this.options.variant,
         version: this.options.version,
       });
-
-      this.setStatus('Sidecar installed. Starting…', 'success');
-      await this.options.onInstalled();
-      new Notice(this.options.copy.successNotice);
-      this.close();
     } catch (error) {
-      this.options.logger?.error('installer', 'sidecar install failed', error);
-      this.setStatus(`Install failed: ${formatErrorMessage(error)}`, 'error');
-
-      if (this.primaryButtonEl !== null) {
-        this.primaryButtonEl.disabled = false;
-        this.primaryButtonEl.setText('Retry download');
-      }
-
-      if (this.secondaryButtonEl !== null) {
-        this.secondaryButtonEl.setText('Later');
-      }
-    } finally {
-      this.installInProgress = false;
-      this.abortController = null;
-    }
-  }
-
-  private updateProgress(progress: InstallProgress): void {
-    if (progress.phase === 'verify') {
-      this.setStatus('Verifying checksum…', 'info');
-      this.progressLabelEl?.setText('');
-      this.setProgressPercent(null);
-      return;
-    }
-
-    if (progress.phase === 'extract') {
-      this.setStatus('Extracting archive…', 'info');
-      this.progressLabelEl?.setText('');
-      this.setProgressPercent(null);
-      return;
-    }
-
-    const percent =
-      progress.totalBytes !== null && progress.totalBytes > 0
-        ? (progress.bytesDownloaded / progress.totalBytes) * 100
-        : null;
-
-    const label =
-      progress.totalBytes !== null
-        ? `${formatBytes(progress.bytesDownloaded)} of ${formatBytes(progress.totalBytes)}`
-        : formatBytes(progress.bytesDownloaded);
-
-    if (this.progressLabelEl !== null) {
-      this.progressLabelEl.setText(label);
-    }
-
-    this.setProgressPercent(percent);
-  }
-
-  private setProgressPercent(percent: number | null): void {
-    if (this.progressBarEl === null) return;
-
-    if (percent === null) {
-      this.progressBarEl.style.width = '100%';
-      this.progressBarEl.classList.add('local-stt-sidecar-install__progress-bar--indeterminate');
-      return;
-    }
-
-    this.progressBarEl.classList.remove('local-stt-sidecar-install__progress-bar--indeterminate');
-    this.progressBarEl.style.width = `${Math.max(0, Math.min(100, percent))}%`;
-  }
-
-  private setStatus(message: string, tone: StatusTone): void {
-    if (this.statusEl === null) return;
-    this.statusEl.setText(message);
-    for (const candidate of STATUS_TONES) {
-      this.statusEl.classList.toggle(
-        `local-stt-sidecar-install__status--${candidate}`,
-        candidate === tone,
-      );
+      new Notice(formatErrorMessage(error));
     }
   }
 }

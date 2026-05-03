@@ -3,6 +3,7 @@ import { Notice, Platform, PluginSettingTab, Setting } from 'obsidian';
 import { resolveEngineCapabilities } from '../models/capability-view';
 import { ManageModelsModal } from '../models/manage-models-modal';
 import type { ModelInstallManager } from '../models/model-install-manager';
+import { updateInstallProgressElement } from '../models/model-install-progress';
 import { ExternalModelFileModal, ModelDetailsModal } from '../models/model-management-modals';
 import { matchesModelTriple } from '../models/model-management-types';
 import { getInstallCopy, type InstallIntent } from '../setup/sidecar-install-copy';
@@ -13,12 +14,17 @@ import { detectNvidiaDriver, type NvidiaDriverStatus } from '../sidecar/gpu-prec
 import type { SpeakingStyle } from '../sidecar/protocol';
 import type { SidecarConnection } from '../sidecar/sidecar-connection';
 import {
+  buildSidecarProgressState,
+  type SidecarInstallManager,
+} from '../sidecar/sidecar-install-manager';
+import {
   type InstallManifest,
   readInstallManifest,
   type SidecarInstallVariant,
   uninstallSidecarVariant,
   variantDirectoryPath,
 } from '../sidecar/sidecar-installer';
+import { renderActiveInstallCard } from './install-progress-row';
 import { renderModelSection } from './model-settings-section';
 import {
   type DictationAnchor,
@@ -40,6 +46,7 @@ interface SettingsTabDependencies {
   restartSidecar: () => Promise<void>;
   saveSettings: (settings: PluginSettings) => Promise<void>;
   sidecarConnection: Pick<SidecarConnection, 'shutdown'>;
+  sidecarInstallManager: SidecarInstallManager;
 }
 
 // Filters PluginSettings keys whose value type is exactly T (not just assignable
@@ -90,8 +97,12 @@ const SPEAKING_STYLE_OPTIONS: ReadonlyArray<DropdownOption<SpeakingStyle>> = [
 
 export class LocalSttSettingTab extends PluginSettingTab {
   private disposeEngineSection: (() => void) | null = null;
+  private disposeMissingSidecarBanner: (() => void) | null = null;
   private disposeModelSection: (() => void) | null = null;
+  private disposeSidecarSection: (() => void) | null = null;
+  private missingSidecarProgressEl: HTMLDivElement | null = null;
   private nvidiaDriverStatus: Promise<NvidiaDriverStatus> | null = null;
+  private sidecarProgressEl: HTMLDivElement | null = null;
 
   constructor(
     app: App,
@@ -109,6 +120,9 @@ export class LocalSttSettingTab extends PluginSettingTab {
 
     containerEl.empty();
     containerEl.createEl('h2', { text: 'Local Dictation' });
+
+    const missingSidecarGroup = containerEl.createDiv({ cls: 'setting-group' });
+    this.disposeMissingSidecarBanner = this.renderMissingSidecarBanner(missingSidecarGroup);
 
     // --- Model ---
     const modelSection = this.createSettingGroup(containerEl, 'Model');
@@ -201,6 +215,9 @@ export class LocalSttSettingTab extends PluginSettingTab {
     // --- Sidecar ---
     const sidecarSection = this.createSettingGroup(containerEl, 'Sidecar');
     void this.renderSidecarSection(sidecarSection);
+    this.disposeSidecarSection = this.dependencies.sidecarInstallManager.subscribe(() => {
+      this.handleSidecarSectionChange(sidecarSection);
+    });
 
     // --- Advanced ---
     const advancedSection = this.createSettingGroup(containerEl, 'Advanced');
@@ -214,10 +231,15 @@ export class LocalSttSettingTab extends PluginSettingTab {
       placeholder: 'Use the shared default model store',
     });
 
-    this.addToggleSetting(advancedSection, {
-      name: 'Developer mode',
-      desc: 'Verbose console diagnostics.',
-      key: 'developerMode',
+    const developerModeSetting = new Setting(advancedSection)
+      .setName('Developer mode')
+      .setDesc('Verbose console diagnostics.');
+    developerModeSetting.addToggle((toggle) => {
+      toggle.setValue(this.dependencies.getSettings().developerMode);
+      toggle.onChange(async (value) => {
+        await this.persistOne('developerMode', value);
+        this.display();
+      });
     });
   }
 
@@ -230,6 +252,12 @@ export class LocalSttSettingTab extends PluginSettingTab {
     this.disposeModelSection = null;
     this.disposeEngineSection?.();
     this.disposeEngineSection = null;
+    this.disposeSidecarSection?.();
+    this.disposeSidecarSection = null;
+    this.disposeMissingSidecarBanner?.();
+    this.disposeMissingSidecarBanner = null;
+    this.sidecarProgressEl = null;
+    this.missingSidecarProgressEl = null;
     this.nvidiaDriverStatus = null;
   }
 
@@ -334,6 +362,9 @@ export class LocalSttSettingTab extends PluginSettingTab {
   }
 
   private async renderSidecarSection(section: HTMLDivElement): Promise<void> {
+    section.empty();
+    this.sidecarProgressEl = null;
+
     const pluginDirectory = await this.resolvePluginDirectorySafe();
     if (pluginDirectory === null || !section.isConnected) return;
 
@@ -365,14 +396,6 @@ export class LocalSttSettingTab extends PluginSettingTab {
       if (!section.isConnected) return;
     }
 
-    this.addTextSetting(section, {
-      name: 'Sidecar path override',
-      desc: 'Custom sidecar executable.',
-      tooltip: 'Optional absolute path to an installed or dev sidecar executable file.',
-      key: 'sidecarPathOverride',
-      placeholder: 'Auto-detect from bin/cpu, bin/cuda, or native/target debug builds',
-    });
-
     if (Platform.isLinux) {
       this.addTextSetting(section, {
         name: 'CUDA library path',
@@ -384,20 +407,133 @@ export class LocalSttSettingTab extends PluginSettingTab {
       });
     }
 
-    this.addPositiveIntSetting(section, {
-      name: 'Startup timeout (s)',
-      desc: 'Startup health-check limit.',
-      tooltip: 'Maximum time allowed for the startup health handshake.',
-      key: 'sidecarStartupTimeoutSeconds',
-    });
+    if (this.dependencies.getSettings().developerMode) {
+      this.addTextSetting(section, {
+        name: 'Sidecar path override',
+        desc: 'Custom sidecar executable.',
+        tooltip: 'Optional absolute path to an installed or dev sidecar executable file.',
+        key: 'sidecarPathOverride',
+        placeholder: 'Auto-detect from bin/cpu, bin/cuda, or native/target debug builds',
+      });
 
-    this.addPositiveIntSetting(section, {
-      name: 'Request timeout (s)',
-      desc: 'Sidecar request limit.',
-      tooltip:
-        'Maximum time allowed for start, stop, cancel, health, and model-management requests before failing them.',
-      key: 'sidecarRequestTimeoutSeconds',
-    });
+      this.addPositiveIntSetting(section, {
+        name: 'Startup timeout (s)',
+        desc: 'Startup health-check limit.',
+        tooltip: 'Maximum time allowed for the startup health handshake.',
+        key: 'sidecarStartupTimeoutSeconds',
+      });
+
+      this.addPositiveIntSetting(section, {
+        name: 'Request timeout (s)',
+        desc: 'Sidecar request limit.',
+        tooltip:
+          'Maximum time allowed for start, stop, cancel, health, and model-management requests before failing them.',
+        key: 'sidecarRequestTimeoutSeconds',
+      });
+    }
+
+    const activeInstall = this.dependencies.sidecarInstallManager.getState().activeInstall;
+    if (activeInstall !== null) {
+      const { progressEl } = renderActiveInstallCard(section, {
+        isCancelling: activeInstall.phase === 'canceling',
+        name: `Installing: ${activeInstall.variant.toUpperCase()} sidecar`,
+        onCancel: () => {
+          this.dependencies.sidecarInstallManager.cancel();
+        },
+        progressState: buildSidecarProgressState(activeInstall),
+      });
+      this.sidecarProgressEl = progressEl;
+    }
+  }
+
+  private handleSidecarSectionChange(section: HTMLDivElement): void {
+    const activeInstall = this.dependencies.sidecarInstallManager.getState().activeInstall;
+
+    if (activeInstall !== null && this.sidecarProgressEl !== null) {
+      updateInstallProgressElement(
+        this.sidecarProgressEl,
+        buildSidecarProgressState(activeInstall),
+      );
+      return;
+    }
+
+    void this.renderSidecarSection(section);
+  }
+
+  private renderMissingSidecarBanner(group: HTMLDivElement): () => void {
+    let disposed = false;
+
+    const render = async (): Promise<void> => {
+      this.missingSidecarProgressEl = null;
+      group.empty();
+
+      const pluginDirectory = await this.resolvePluginDirectorySafe();
+      if (disposed || pluginDirectory === null || !group.isConnected) return;
+
+      const [cpuManifest, cudaManifest] = await Promise.all([
+        readInstallManifest(variantDirectoryPath(pluginDirectory, 'cpu')),
+        readInstallManifest(variantDirectoryPath(pluginDirectory, 'cuda')),
+      ]);
+      if (disposed || !group.isConnected) return;
+
+      const activeInstall = this.dependencies.sidecarInstallManager.getState().activeInstall;
+      if (cpuManifest !== null || cudaManifest !== null) {
+        group.style.display = 'none';
+        return;
+      }
+
+      group.style.display = '';
+      const items = group.createDiv({ cls: 'setting-items' });
+
+      if (activeInstall !== null) {
+        const { progressEl } = renderActiveInstallCard(items, {
+          isCancelling: activeInstall.phase === 'canceling',
+          name: `Installing: ${activeInstall.variant.toUpperCase()} sidecar`,
+          onCancel: () => {
+            this.dependencies.sidecarInstallManager.cancel();
+          },
+          progressState: buildSidecarProgressState(activeInstall),
+        });
+        this.missingSidecarProgressEl = progressEl;
+        return;
+      }
+
+      const setting = new Setting(items)
+        .setName('Sidecar required')
+        .setDesc(
+          'Local Dictation needs the speech-to-text sidecar to work. Install it to enable dictation.',
+        );
+      setting.addButton((button) => {
+        button
+          .setCta()
+          .setButtonText('Install sidecar')
+          .onClick(() => {
+            this.openInstallModal(pluginDirectory, 'cpu', 'install');
+          });
+      });
+    };
+
+    const handleChange = (): void => {
+      const activeInstall = this.dependencies.sidecarInstallManager.getState().activeInstall;
+
+      if (activeInstall !== null && this.missingSidecarProgressEl !== null) {
+        updateInstallProgressElement(
+          this.missingSidecarProgressEl,
+          buildSidecarProgressState(activeInstall),
+        );
+        return;
+      }
+
+      void render();
+    };
+
+    void render();
+    const unsubscribe = this.dependencies.sidecarInstallManager.subscribe(handleChange);
+
+    return () => {
+      disposed = true;
+      unsubscribe();
+    };
   }
 
   private renderSidecarInstallRow(
@@ -614,7 +750,7 @@ export class LocalSttSettingTab extends PluginSettingTab {
         await this.shutdownSidecarBeforeFileMutation(`${variant} install`);
       },
       copy: getInstallCopy(variant, intent),
-      logger: this.dependencies.logger,
+      manager: this.dependencies.sidecarInstallManager,
       onInstalled: async () => {
         await onInstalled?.();
         await this.dependencies.restartSidecar();

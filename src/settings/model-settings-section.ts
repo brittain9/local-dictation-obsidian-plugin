@@ -1,11 +1,9 @@
 import { Setting } from 'obsidian';
 
 import { isCancellingPhase, type ModelInstallManager } from '../models/model-install-manager';
-import {
-  createInstallProgressElement,
-  updateInstallProgressElement,
-} from '../models/model-install-progress';
+import { updateInstallProgressElement } from '../models/model-install-progress';
 import { deriveCurrentModelDisplay } from '../models/model-row-state';
+import { renderActiveInstallCard } from './install-progress-row';
 
 // ---------------------------------------------------------------------------
 // Badge helper (maps installedLabel -> CSS modifier + display text)
@@ -107,9 +105,6 @@ export function renderModelSection(
         ...activeInstall.installUpdate,
         isCancelling: isCancellingPhase(activeInstall.phase),
       };
-      const progressEl = createInstallProgressElement(progressState);
-      installProgressEl = progressEl;
-
       const activeInstallDisplayName =
         state.catalog.models.find(
           (m) =>
@@ -118,9 +113,16 @@ export function renderModelSection(
             m.modelId === activeInstall.installUpdate.modelId,
         )?.displayName ?? activeInstall.installUpdate.modelId;
 
-      const fragment = document.createDocumentFragment();
-      fragment.append(progressEl);
-      new Setting(container).setName(`Installing: ${activeInstallDisplayName}`).setDesc(fragment);
+      const isCancelling = isCancellingPhase(activeInstall.phase);
+      const { progressEl } = renderActiveInstallCard(container, {
+        isCancelling,
+        name: `Installing: ${activeInstallDisplayName}`,
+        onCancel: () => {
+          void manager.cancel();
+        },
+        progressState,
+      });
+      installProgressEl = progressEl;
     }
   }
 

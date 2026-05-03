@@ -22,6 +22,7 @@ import { createPluginLogger, type PluginLogger } from './shared/plugin-logger';
 import { assertSidecarExecutableIsFresh } from './sidecar/sidecar-build-state';
 import { SidecarConnection } from './sidecar/sidecar-connection';
 import { formatSidecarExecutableName } from './sidecar/sidecar-executable';
+import { SidecarInstallManager } from './sidecar/sidecar-install-manager';
 import { resolveSidecarExecutablePath, SidecarNotInstalledError } from './sidecar/sidecar-paths';
 import type { SidecarLaunchSpec } from './sidecar/sidecar-process';
 import { DictationRibbonController } from './ui/dictation-ribbon';
@@ -34,6 +35,7 @@ export default class LocalSttPlugin extends Plugin {
   private ribbonController: DictationRibbonController | null = null;
   private settings: PluginSettings = DEFAULT_PLUGIN_SETTINGS;
   private sidecarConnection: SidecarConnection | null = null;
+  private sidecarInstallManager: SidecarInstallManager | null = null;
 
   override async onload(): Promise<void> {
     this.settings = resolvePluginSettings(await this.loadData());
@@ -55,6 +57,12 @@ export default class LocalSttPlugin extends Plugin {
         await this.updateSettings(nextSettings);
       },
       sidecarConnection: this.sidecarConnection,
+    });
+    this.sidecarInstallManager = new SidecarInstallManager({
+      logger: this.logger,
+      notice: (message) => {
+        new Notice(message);
+      },
     });
 
     const ribbonElement = this.addRibbonIcon('mic', 'Local Dictation: Click to start', () => {
@@ -105,6 +113,7 @@ export default class LocalSttPlugin extends Plugin {
           await this.updateSettings(nextSettings);
         },
         sidecarConnection: this.requireSidecarConnection(),
+        sidecarInstallManager: this.requireSidecarInstallManager(),
       }),
     );
 
@@ -160,7 +169,7 @@ export default class LocalSttPlugin extends Plugin {
     }
 
     openFirstRunSetupModal(this.app, {
-      logger: this.logger,
+      manager: this.requireSidecarInstallManager(),
       onInstalled: async () => {
         await this.requireSidecarConnection().restart(
           this.settings.sidecarStartupTimeoutSeconds * 1000,
@@ -179,6 +188,12 @@ export default class LocalSttPlugin extends Plugin {
       this.modelInstallManager?.dispose();
     } catch (error) {
       this.logger.error('model', 'failed to dispose model install manager cleanly', error);
+    }
+
+    try {
+      this.sidecarInstallManager?.dispose();
+    } catch (error) {
+      this.logger.error('installer', 'failed to dispose sidecar install manager cleanly', error);
     }
 
     try {
@@ -267,6 +282,14 @@ export default class LocalSttPlugin extends Plugin {
     }
 
     return this.modelInstallManager;
+  }
+
+  private requireSidecarInstallManager(): SidecarInstallManager {
+    if (this.sidecarInstallManager === null) {
+      throw new Error('Sidecar install manager has not been initialized.');
+    }
+
+    return this.sidecarInstallManager;
   }
 
   private async resolveSidecarLaunchSpec(): Promise<SidecarLaunchSpec> {
