@@ -85,8 +85,8 @@ Under `Engine options`, leave `GPU acceleration` on `Use when available` unless 
 
 ## Step 5: Run And Verify
 
-1. Run `Local Transcript: Check Sidecar Health`.
-2. Open `Settings -> Local Transcript`.
+1. Run `Local Dictation: Check Sidecar Health`.
+2. Open `Settings -> Local Dictation`.
 3. Confirm the acceleration card reports:
 
 - `Whisper: CUDA`

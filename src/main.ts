@@ -57,7 +57,7 @@ export default class LocalSttPlugin extends Plugin {
       sidecarConnection: this.sidecarConnection,
     });
 
-    const ribbonElement = this.addRibbonIcon('mic', 'Local Transcript: Click to start', () => {
+    const ribbonElement = this.addRibbonIcon('mic', 'Local Dictation: Click to start', () => {
       this.requireDictationController().handleRibbonClick();
     });
     this.ribbonController = new DictationRibbonController(ribbonElement);
@@ -207,7 +207,7 @@ export default class LocalSttPlugin extends Plugin {
       );
 
       if (options.showNotice ?? true) {
-        new Notice(`Local Transcript sidecar is ready (${health.sidecarVersion}).`);
+        new Notice(`Local Dictation sidecar is ready (${health.sidecarVersion}).`);
       }
     } catch (error) {
       this.handleError('Sidecar health check failed', error, options.showNotice ?? true);
@@ -234,7 +234,7 @@ export default class LocalSttPlugin extends Plugin {
         this.settings.sidecarStartupTimeoutSeconds * 1000,
       );
 
-      new Notice(`Restarted Local Transcript sidecar (${health.sidecarVersion}).`);
+      new Notice(`Restarted Local Dictation sidecar (${health.sidecarVersion}).`);
     } catch (error) {
       this.handleError('Sidecar restart failed', error, true);
     }
@@ -317,7 +317,7 @@ export default class LocalSttPlugin extends Plugin {
 
   private async resolvePluginDirectoryPath(): Promise<string> {
     if (!Platform.isDesktopApp) {
-      throw new Error('Local Transcript requires Obsidian desktop.');
+      throw new Error('Local Dictation requires Obsidian desktop.');
     }
 
     const vaultAdapter = this.app.vault.adapter;

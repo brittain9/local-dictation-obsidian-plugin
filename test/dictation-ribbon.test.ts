@@ -60,12 +60,12 @@ describe('DictationRibbonController', () => {
     const controller = new DictationRibbonController(element);
 
     controller.setState('transcribing');
-    expect(setAttribute).toHaveBeenCalledWith('aria-label', 'Local Transcript: Transcribing...');
-    expect(element.title).toBe('Local Transcript: Transcribing...');
+    expect(setAttribute).toHaveBeenCalledWith('aria-label', 'Local Dictation: Transcribing...');
+    expect(element.title).toBe('Local Dictation: Transcribing...');
 
     controller.setState('speech_ending');
-    expect(setAttribute).toHaveBeenCalledWith('aria-label', 'Local Transcript: Hearing speech');
-    expect(element.title).toBe('Local Transcript: Hearing speech');
+    expect(setAttribute).toHaveBeenCalledWith('aria-label', 'Local Dictation: Hearing speech');
+    expect(element.title).toBe('Local Dictation: Hearing speech');
   });
 
   it('shows the catching-up label when transcribing under catching_up backpressure', () => {
@@ -75,8 +75,8 @@ describe('DictationRibbonController', () => {
     controller.setState('transcribing');
     controller.setQueueTier('catching_up');
 
-    expect(setAttribute).toHaveBeenCalledWith('aria-label', 'Local Transcript: Catching up...');
-    expect(element.title).toBe('Local Transcript: Catching up...');
+    expect(setAttribute).toHaveBeenCalledWith('aria-label', 'Local Dictation: Catching up...');
+    expect(element.title).toBe('Local Dictation: Catching up...');
   });
 
   it('returns to the default transcribing label when the queue tier returns to normal', () => {
@@ -87,8 +87,8 @@ describe('DictationRibbonController', () => {
     controller.setQueueTier('catching_up');
     controller.setQueueTier('normal');
 
-    expect(setAttribute).toHaveBeenCalledWith('aria-label', 'Local Transcript: Transcribing...');
-    expect(element.title).toBe('Local Transcript: Transcribing...');
+    expect(setAttribute).toHaveBeenCalledWith('aria-label', 'Local Dictation: Transcribing...');
+    expect(element.title).toBe('Local Dictation: Transcribing...');
   });
 
   it('keeps the listening label even when the queue tier reports catching_up', () => {
@@ -98,6 +98,6 @@ describe('DictationRibbonController', () => {
     controller.setState('listening');
     controller.setQueueTier('catching_up');
 
-    expect(setAttribute).toHaveBeenCalledWith('aria-label', 'Local Transcript: Listening');
+    expect(setAttribute).toHaveBeenCalledWith('aria-label', 'Local Dictation: Listening');
   });
 });

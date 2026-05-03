@@ -847,7 +847,7 @@ impl AppState {
                     details: Some(format!(
                         "queue depth reached saturation at {MAX_QUEUED_UTTERANCES}"
                     )),
-                    message: "Local Transcript stopped because the transcription backlog reached capacity. Already accepted utterances will finish processing.".to_string(),
+                    message: "Local Dictation stopped because the transcription backlog reached capacity. Already accepted utterances will finish processing.".to_string(),
                     session_id: Some(session_id),
                 });
             }

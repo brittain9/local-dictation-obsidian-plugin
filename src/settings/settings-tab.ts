@@ -108,7 +108,7 @@ export class LocalSttSettingTab extends PluginSettingTab {
     const settings = this.dependencies.getSettings();
 
     containerEl.empty();
-    containerEl.createEl('h2', { text: 'Local Transcript' });
+    containerEl.createEl('h2', { text: 'Local Dictation' });
 
     // --- Model ---
     const modelSection = this.createSettingGroup(containerEl, 'Model');
