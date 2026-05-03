@@ -10,7 +10,7 @@ import { SidecarInstallModal } from '../setup/sidecar-install-modal';
 import { formatErrorMessage } from '../shared/format-utils';
 import type { PluginLogger } from '../shared/plugin-logger';
 import { detectNvidiaDriver, type NvidiaDriverStatus } from '../sidecar/gpu-precheck';
-import { LISTENING_MODES, type ListeningMode, type SystemInfoEvent } from '../sidecar/protocol';
+import { LISTENING_MODES, type ListeningMode } from '../sidecar/protocol';
 import type { SidecarConnection } from '../sidecar/sidecar-connection';
 import {
   type InstallManifest,
@@ -19,7 +19,6 @@ import {
   uninstallSidecarVariant,
   variantDirectoryPath,
 } from '../sidecar/sidecar-installer';
-import { describeAcceleration } from './acceleration-info';
 import { renderModelSection } from './model-settings-section';
 import {
   type DICTATION_ANCHORS,
@@ -40,7 +39,7 @@ interface SettingsTabDependencies {
   resolvePluginDirectory: () => Promise<string>;
   restartSidecar: () => Promise<void>;
   saveSettings: (settings: PluginSettings) => Promise<void>;
-  sidecarConnection: Pick<SidecarConnection, 'getSystemInfo' | 'shutdown'>;
+  sidecarConnection: Pick<SidecarConnection, 'shutdown'>;
 }
 
 // Keys whose value type is exactly T (not a string-literal union assignable to T).
@@ -201,9 +200,9 @@ export class LocalSttSettingTab extends PluginSettingTab {
     // access to the wrapper group so it can hide the whole card when no rows apply
     // (e.g. macOS with a model that doesn't support initial prompts).
     const engineGroup = containerEl.createDiv({ cls: 'setting-group' });
-    new Setting(engineGroup).setName('Engine options').setHeading();
+    const engineHeading = new Setting(engineGroup).setName('Engine options').setHeading();
     const engineSection = engineGroup.createDiv({ cls: 'setting-items' });
-    void this.bindEngineOptions(engineGroup, engineSection, manager);
+    this.bindEngineOptions(engineGroup, engineHeading, engineSection, manager);
 
     // --- Sidecar ---
     const sidecarSection = this.createSettingGroup(containerEl, 'Sidecar');
@@ -314,53 +313,66 @@ export class LocalSttSettingTab extends PluginSettingTab {
     };
   }
 
-  private async bindEngineOptions(
+  private bindEngineOptions(
     group: HTMLDivElement,
+    heading: Setting,
     containerEl: HTMLDivElement,
     manager: ModelInstallManager,
-  ): Promise<void> {
-    const systemInfo = await this.fetchSystemInfo();
-    this.renderEngineOptions(group, containerEl, systemInfo);
+  ): void {
+    this.renderEngineOptions(group, heading, containerEl);
     this.disposeEngineSection = manager.subscribe(() => {
-      this.renderEngineOptions(group, containerEl, systemInfo);
+      this.renderEngineOptions(group, heading, containerEl);
     });
   }
 
   private renderEngineOptions(
     group: HTMLDivElement,
+    heading: Setting,
     containerEl: HTMLDivElement,
-    systemInfo: SystemInfoEvent | null,
   ): void {
     const settings = this.dependencies.getSettings();
+    const state = this.dependencies.modelInstallManager.getState();
+    const sel = settings.selectedModel;
+    const selectedAdapter =
+      sel === null
+        ? null
+        : (state.compiledAdapters.find(
+            (a) => a.runtimeId === sel.runtimeId && a.familyId === sel.familyId,
+          ) ?? null);
+    const selectedRuntime =
+      sel === null
+        ? null
+        : (state.compiledRuntimes.find((r) => r.runtimeId === sel.runtimeId) ?? null);
 
     containerEl.empty();
+    heading.setName(
+      selectedAdapter === null ? 'Engine options' : `${selectedAdapter.displayName} engine`,
+    );
 
     let rendered = 0;
 
-    if (!Platform.isMacOS) {
-      const { label } = describeAcceleration(systemInfo, settings.accelerationPreference);
-      const descFragment = document.createDocumentFragment();
-      descFragment.createSpan({ text: 'Use the GPU when available.' });
-      descFragment.createEl('br');
-      descFragment.createSpan({ text: `Currently: ${label}` });
+    const hasNonCpuAccelerator =
+      selectedRuntime?.runtimeCapabilities.availableAccelerators.some((id) => id !== 'cpu') ??
+      false;
 
+    if (!Platform.isMacOS && hasNonCpuAccelerator) {
       // accelerationPreference is a string enum, not a boolean, so the simple
       // toggle builder doesn't fit — toggle here drives an enum mapping.
       const accelSetting = new Setting(containerEl)
         .setName('Hardware acceleration')
-        .setDesc(descFragment);
+        .setDesc('Use CUDA GPU acceleration.');
       accelSetting.addToggle((toggle) => {
         toggle.setValue(settings.accelerationPreference === 'auto');
         toggle.onChange(async (value) => {
           await this.persistOne('accelerationPreference', value ? 'auto' : 'cpu_only');
-          this.renderEngineOptions(group, containerEl, systemInfo);
+          this.renderEngineOptions(group, heading, containerEl);
         });
       });
-      this.appendInfoTooltip(accelSetting, 'Turn off to run every engine on CPU.');
+      this.appendInfoTooltip(accelSetting, 'Use CUDA GPU acceleration for this engine.');
       rendered += 1;
     }
 
-    const caps = this.dependencies.modelInstallManager.getState().selectedModelCapabilities;
+    const caps = state.selectedModelCapabilities;
     if (caps.status === 'ready' && caps.capabilities.family.supportsInitialPrompt) {
       this.addToggleSetting(containerEl, {
         name: 'Use note as context',
@@ -676,14 +688,6 @@ export class LocalSttSettingTab extends PluginSettingTab {
       return await this.dependencies.resolvePluginDirectory();
     } catch (error) {
       this.dependencies.logger?.error('installer', 'failed to resolve plugin directory', error);
-      return null;
-    }
-  }
-
-  private async fetchSystemInfo(): Promise<SystemInfoEvent | null> {
-    try {
-      return await this.dependencies.sidecarConnection.getSystemInfo();
-    } catch {
       return null;
     }
   }
