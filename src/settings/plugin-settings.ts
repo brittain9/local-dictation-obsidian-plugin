@@ -4,7 +4,12 @@ import {
   type SelectedModel,
 } from '../models/model-management-types';
 import { isRecord } from '../shared/type-guards';
-import type { AccelerationPreference, ListeningMode, SpeakingStyle } from '../sidecar/protocol';
+import {
+  type AccelerationPreference,
+  LISTENING_MODES,
+  type ListeningMode,
+  type SpeakingStyle,
+} from '../sidecar/protocol';
 
 export const DICTATION_ANCHORS = ['at_cursor', 'end_of_note'] as const;
 
@@ -127,6 +132,10 @@ export function isTranscriptFormattingMode(value: unknown): value is TranscriptF
   );
 }
 
+export function isListeningMode(value: unknown): value is ListeningMode {
+  return typeof value === 'string' && (LISTENING_MODES as readonly string[]).includes(value);
+}
+
 function readSelectedModel(selectedModel: unknown): SelectedModel | null {
   if (isSelectedModel(selectedModel)) {
     return normalizeSelectedModel(selectedModel);
@@ -136,7 +145,5 @@ function readSelectedModel(selectedModel: unknown): SelectedModel | null {
 }
 
 function readListeningMode(value: unknown): ListeningMode {
-  return value === 'always_on' || value === 'one_sentence'
-    ? value
-    : DEFAULT_PLUGIN_SETTINGS.listeningMode;
+  return isListeningMode(value) ? value : DEFAULT_PLUGIN_SETTINGS.listeningMode;
 }

@@ -10,7 +10,7 @@ import { SidecarInstallModal } from '../setup/sidecar-install-modal';
 import { formatErrorMessage } from '../shared/format-utils';
 import type { PluginLogger } from '../shared/plugin-logger';
 import { detectNvidiaDriver, type NvidiaDriverStatus } from '../sidecar/gpu-precheck';
-import { LISTENING_MODES, type ListeningMode } from '../sidecar/protocol';
+import type { SpeakingStyle } from '../sidecar/protocol';
 import type { SidecarConnection } from '../sidecar/sidecar-connection';
 import {
   type InstallManifest,
@@ -21,13 +21,13 @@ import {
 } from '../sidecar/sidecar-installer';
 import { renderModelSection } from './model-settings-section';
 import {
-  type DICTATION_ANCHORS,
+  type DictationAnchor,
   isDictationAnchor,
+  isListeningMode,
   isSpeakingStyle,
   isTranscriptFormattingMode,
   type PluginSettings,
-  type SPEAKING_STYLES,
-  type TRANSCRIPT_FORMATTING_MODES,
+  type TranscriptFormattingMode,
 } from './plugin-settings';
 
 interface SettingsTabDependencies {
@@ -42,10 +42,10 @@ interface SettingsTabDependencies {
   sidecarConnection: Pick<SidecarConnection, 'shutdown'>;
 }
 
-// Keys whose value type is exactly T (not a string-literal union assignable to T).
-// Both directions guard against e.g. accelerationPreference ('auto' | 'cpu_only')
-// leaking into addTextSetting<SettingsKeyOf<string>>. Tuple-wrapped to suppress
-// distribution over boolean = true | false.
+// Filters PluginSettings keys whose value type is exactly T (not just assignable
+// to T). Tuple-wrapping prevents distribution and the bidirectional check rejects
+// narrower unions, so e.g. addTextSetting<SettingsKeyOf<string>> won't accept
+// accelerationPreference ('auto' | 'cpu_only').
 type SettingsKeyOf<T> = {
   [K in keyof PluginSettings]: [T] extends [PluginSettings[K]]
     ? [PluginSettings[K]] extends [T]
@@ -65,35 +65,28 @@ interface DropdownOption<V extends string> {
   value: V;
 }
 
-const LISTENING_MODE_OPTIONS: ReadonlyArray<DropdownOption<ListeningMode>> = [
+const LISTENING_MODE_OPTIONS: ReadonlyArray<DropdownOption<'always_on' | 'one_sentence'>> = [
   { label: 'Always on', value: 'always_on' },
   { label: 'One sentence', value: 'one_sentence' },
 ];
 
-const DICTATION_ANCHOR_OPTIONS: ReadonlyArray<DropdownOption<(typeof DICTATION_ANCHORS)[number]>> =
-  [
-    { label: 'At cursor', value: 'at_cursor' },
-    { label: 'End of note', value: 'end_of_note' },
-  ];
+const DICTATION_ANCHOR_OPTIONS: ReadonlyArray<DropdownOption<DictationAnchor>> = [
+  { label: 'At cursor', value: 'at_cursor' },
+  { label: 'End of note', value: 'end_of_note' },
+];
 
-const TRANSCRIPT_FORMATTING_OPTIONS: ReadonlyArray<
-  DropdownOption<(typeof TRANSCRIPT_FORMATTING_MODES)[number]>
-> = [
+const TRANSCRIPT_FORMATTING_OPTIONS: ReadonlyArray<DropdownOption<TranscriptFormattingMode>> = [
   { label: 'Smart paragraphs', value: 'smart' },
   { label: 'Space', value: 'space' },
   { label: 'New line', value: 'new_line' },
   { label: 'New paragraph', value: 'new_paragraph' },
 ];
 
-const SPEAKING_STYLE_OPTIONS: ReadonlyArray<DropdownOption<(typeof SPEAKING_STYLES)[number]>> = [
+const SPEAKING_STYLE_OPTIONS: ReadonlyArray<DropdownOption<SpeakingStyle>> = [
   { label: 'Responsive', value: 'responsive' },
   { label: 'Balanced', value: 'balanced' },
   { label: 'Patient', value: 'patient' },
 ];
-
-function isListeningMode(value: unknown): value is ListeningMode {
-  return typeof value === 'string' && (LISTENING_MODES as readonly string[]).includes(value);
-}
 
 export class LocalSttSettingTab extends PluginSettingTab {
   private disposeEngineSection: (() => void) | null = null;
@@ -196,53 +189,21 @@ export class LocalSttSettingTab extends PluginSettingTab {
     });
 
     // --- Engine options ---
-    // Inline construction (rather than createSettingGroup) gives bindEngineOptions
-    // access to the wrapper group so it can hide the whole card when no rows apply
-    // (e.g. macOS with a model that doesn't support initial prompts).
+    // Built inline (rather than via createSettingGroup) so renderEngineOptions
+    // can hide the whole card when no rows apply (e.g. macOS + a model with
+    // no initial-prompt support).
     const engineGroup = containerEl.createDiv({ cls: 'setting-group' });
     const engineHeading = new Setting(engineGroup).setName('Engine options').setHeading();
     const engineSection = engineGroup.createDiv({ cls: 'setting-items' });
-    this.bindEngineOptions(engineGroup, engineHeading, engineSection, manager);
+    const renderEngine = (): void => {
+      this.renderEngineOptions(engineGroup, engineHeading, engineSection);
+    };
+    renderEngine();
+    this.disposeEngineSection = manager.subscribe(renderEngine);
 
     // --- Sidecar ---
     const sidecarSection = this.createSettingGroup(containerEl, 'Sidecar');
-    void (async () => {
-      await this.renderSidecarRows(sidecarSection);
-
-      this.addTextSetting(sidecarSection, {
-        name: 'Sidecar path override',
-        desc: 'Custom sidecar executable.',
-        tooltip: 'Optional absolute path to an installed or dev sidecar executable file.',
-        key: 'sidecarPathOverride',
-        placeholder: 'Auto-detect from bin/cpu, bin/cuda, or native/target debug builds',
-      });
-
-      if (Platform.isLinux) {
-        this.addTextSetting(sidecarSection, {
-          name: 'CUDA library path',
-          desc: 'Sidecar-only CUDA search path.',
-          tooltip:
-            'Optional colon-separated library search path for the sidecar process only. Use this for Flatpak or custom CUDA installs without changing Obsidian’s global environment.',
-          key: 'cudaLibraryPath',
-          placeholder: '/run/host/usr/local/cuda-12.9/targets/x86_64-linux/lib:/run/host/usr/lib64',
-        });
-      }
-
-      this.addPositiveIntSetting(sidecarSection, {
-        name: 'Startup timeout (s)',
-        desc: 'Startup health-check limit.',
-        tooltip: 'Maximum time allowed for the startup health handshake.',
-        key: 'sidecarStartupTimeoutSeconds',
-      });
-
-      this.addPositiveIntSetting(sidecarSection, {
-        name: 'Request timeout (s)',
-        desc: 'Sidecar request limit.',
-        tooltip:
-          'Maximum time allowed for start, stop, cancel, health, and model-management requests before failing them.',
-        key: 'sidecarRequestTimeoutSeconds',
-      });
-    })();
+    void this.renderSidecarSection(sidecarSection);
 
     // --- Advanced ---
     const advancedSection = this.createSettingGroup(containerEl, 'Advanced');
@@ -313,18 +274,6 @@ export class LocalSttSettingTab extends PluginSettingTab {
     };
   }
 
-  private bindEngineOptions(
-    group: HTMLDivElement,
-    heading: Setting,
-    containerEl: HTMLDivElement,
-    manager: ModelInstallManager,
-  ): void {
-    this.renderEngineOptions(group, heading, containerEl);
-    this.disposeEngineSection = manager.subscribe(() => {
-      this.renderEngineOptions(group, heading, containerEl);
-    });
-  }
-
   private renderEngineOptions(
     group: HTMLDivElement,
     heading: Setting,
@@ -356,19 +305,21 @@ export class LocalSttSettingTab extends PluginSettingTab {
       false;
 
     if (!Platform.isMacOS && hasNonCpuAccelerator) {
-      // accelerationPreference is a string enum, not a boolean, so the simple
-      // toggle builder doesn't fit — toggle here drives an enum mapping.
+      // accelerationPreference is a string enum mapped onto a boolean toggle, so
+      // the addEnumSetting / addToggleSetting helpers don't fit.
       const accelSetting = new Setting(containerEl)
         .setName('Hardware acceleration')
-        .setDesc('Use CUDA GPU acceleration.');
+        .setDesc('GPU when available.');
       accelSetting.addToggle((toggle) => {
         toggle.setValue(settings.accelerationPreference === 'auto');
         toggle.onChange(async (value) => {
           await this.persistOne('accelerationPreference', value ? 'auto' : 'cpu_only');
-          this.renderEngineOptions(group, heading, containerEl);
         });
       });
-      this.appendInfoTooltip(accelSetting, 'Use CUDA GPU acceleration for this engine.');
+      this.appendInfoTooltip(
+        accelSetting,
+        'Run inference on the GPU when supported. Disable to force CPU on every engine.',
+      );
       rendered += 1;
     }
 
@@ -387,17 +338,14 @@ export class LocalSttSettingTab extends PluginSettingTab {
     group.style.display = rendered === 0 ? 'none' : '';
   }
 
-  private async renderSidecarRows(container: HTMLDivElement): Promise<void> {
+  private async renderSidecarSection(section: HTMLDivElement): Promise<void> {
     const pluginDirectory = await this.resolvePluginDirectorySafe();
-    if (pluginDirectory === null) return;
-
-    const [cpuManifest, cudaManifest] = await Promise.all([
-      readInstallManifest(variantDirectoryPath(pluginDirectory, 'cpu')),
-      readInstallManifest(variantDirectoryPath(pluginDirectory, 'cuda')),
-    ]);
+    if (pluginDirectory === null || !section.isConnected) return;
 
     if (Platform.isMacOS) {
-      this.renderInstallableRow(container, {
+      const cpuManifest = await readInstallManifest(variantDirectoryPath(pluginDirectory, 'cpu'));
+      if (!section.isConnected) return;
+      this.renderSidecarInstallRow(section, {
         desc: 'Speech-to-text engine.',
         manifest: cpuManifest,
         name: 'Sidecar',
@@ -405,21 +353,59 @@ export class LocalSttSettingTab extends PluginSettingTab {
         tooltipExtra: 'Includes Metal acceleration on Apple Silicon and Intel Macs.',
         variant: 'cpu',
       });
-      return;
+    } else {
+      const [cpuManifest, cudaManifest] = await Promise.all([
+        readInstallManifest(variantDirectoryPath(pluginDirectory, 'cpu')),
+        readInstallManifest(variantDirectoryPath(pluginDirectory, 'cuda')),
+      ]);
+      if (!section.isConnected) return;
+      this.renderSidecarInstallRow(section, {
+        desc: 'Speech-to-text engine. Required.',
+        manifest: cpuManifest,
+        name: 'CPU sidecar',
+        pluginDirectory,
+        variant: 'cpu',
+      });
+      await this.renderGpuSidecarRow(section, cudaManifest, pluginDirectory);
+      if (!section.isConnected) return;
     }
 
-    this.renderInstallableRow(container, {
-      desc: 'Speech-to-text engine. Required.',
-      manifest: cpuManifest,
-      name: 'CPU sidecar',
-      pluginDirectory,
-      variant: 'cpu',
+    this.addTextSetting(section, {
+      name: 'Sidecar path override',
+      desc: 'Custom sidecar executable.',
+      tooltip: 'Optional absolute path to an installed or dev sidecar executable file.',
+      key: 'sidecarPathOverride',
+      placeholder: 'Auto-detect from bin/cpu, bin/cuda, or native/target debug builds',
     });
 
-    await this.renderGpuSidecarRow(container, cudaManifest, pluginDirectory);
+    if (Platform.isLinux) {
+      this.addTextSetting(section, {
+        name: 'CUDA library path',
+        desc: 'Sidecar-only CUDA search path.',
+        tooltip:
+          'Optional colon-separated library search path for the sidecar process only. Use this for Flatpak or custom CUDA installs without changing Obsidian’s global environment.',
+        key: 'cudaLibraryPath',
+        placeholder: '/run/host/usr/local/cuda-12.9/targets/x86_64-linux/lib:/run/host/usr/lib64',
+      });
+    }
+
+    this.addPositiveIntSetting(section, {
+      name: 'Startup timeout (s)',
+      desc: 'Startup health-check limit.',
+      tooltip: 'Maximum time allowed for the startup health handshake.',
+      key: 'sidecarStartupTimeoutSeconds',
+    });
+
+    this.addPositiveIntSetting(section, {
+      name: 'Request timeout (s)',
+      desc: 'Sidecar request limit.',
+      tooltip:
+        'Maximum time allowed for start, stop, cancel, health, and model-management requests before failing them.',
+      key: 'sidecarRequestTimeoutSeconds',
+    });
   }
 
-  private renderInstallableRow(
+  private renderSidecarInstallRow(
     container: HTMLDivElement,
     opts: {
       desc: string;
@@ -430,31 +416,18 @@ export class LocalSttSettingTab extends PluginSettingTab {
       variant: SidecarInstallVariant;
     },
   ): void {
-    const isInstalled = opts.manifest !== null;
     const setting = new Setting(container).setName(opts.name).setDesc(opts.desc);
-
-    if (isInstalled) {
-      setting.addButton((button) => {
-        button.setButtonText('Reinstall');
-        button.onClick(() => {
-          this.openInstallModal(opts.pluginDirectory, opts.variant, 'reinstall');
-        });
-      });
-      setting.addButton((button) => {
-        button.setButtonText('Uninstall').setWarning();
-        button.onClick(() => {
-          void this.handleUninstallVariant(opts.pluginDirectory, opts.variant);
-        });
-      });
-    } else {
-      setting.addButton((button) => {
-        button.setButtonText('Install').setCta();
-        button.onClick(() => {
-          this.openInstallModal(opts.pluginDirectory, opts.variant, 'install');
-        });
-      });
-    }
-
+    this.addInstallButtons(setting, opts.manifest !== null, {
+      onInstall: () => {
+        this.openInstallModal(opts.pluginDirectory, opts.variant, 'install');
+      },
+      onReinstall: () => {
+        this.openInstallModal(opts.pluginDirectory, opts.variant, 'reinstall');
+      },
+      onUninstall: () => {
+        void this.handleUninstallVariant(opts.pluginDirectory, opts.variant);
+      },
+    });
     this.appendInfoTooltip(setting, formatSidecarTooltip(opts.manifest, opts.tooltipExtra));
   }
 
@@ -463,8 +436,6 @@ export class LocalSttSettingTab extends PluginSettingTab {
     manifest: InstallManifest | null,
     pluginDirectory: string,
   ): Promise<void> {
-    const isInstalled = manifest !== null;
-
     // Memoize the nvidia-smi probe for the tab's lifetime. display() can fire
     // multiple times per tab open; spawning a child process on each render is
     // wasteful. Cleared in tearDown() so the driver state is re-probed next
@@ -473,49 +444,72 @@ export class LocalSttSettingTab extends PluginSettingTab {
       this.nvidiaDriverStatus = detectNvidiaDriver();
     }
     const driverStatus = await this.nvidiaDriverStatus;
+    if (!container.isConnected) return;
     const driverReason = describeDriverStatus(driverStatus);
 
+    const isInstalled = manifest !== null;
     const setting = new Setting(container)
       .setName('GPU sidecar')
       .setDesc(isInstalled ? 'NVIDIA CUDA acceleration.' : driverReason.label);
 
-    if (isInstalled) {
+    this.addInstallButtons(setting, isInstalled, {
+      installCta: driverStatus === 'present',
+      installDisabled: driverStatus === 'absent',
+      onInstall: () => {
+        this.openCudaInstallModal(pluginDirectory);
+      },
+      onReinstall: () => {
+        this.openInstallModal(pluginDirectory, 'cuda', 'reinstall');
+      },
+      onUninstall: () => {
+        void this.handleUninstallVariant(pluginDirectory, 'cuda');
+      },
+    });
+
+    if (!isInstalled && driverStatus === 'absent') {
       setting.addButton((button) => {
-        button.setButtonText('Reinstall');
-        button.onClick(() => {
-          this.openInstallModal(pluginDirectory, 'cuda', 'reinstall');
-        });
-      });
-      setting.addButton((button) => {
-        button.setButtonText('Uninstall').setWarning();
-        button.onClick(() => {
-          void this.handleUninstallVariant(pluginDirectory, 'cuda');
-        });
-      });
-    } else {
-      setting.addButton((button) => {
-        button.setButtonText('Install');
-        if (driverStatus === 'absent') button.setDisabled(true);
-        else if (driverStatus === 'present') button.setCta();
+        button.setButtonText('Install anyway');
+        button.setTooltip('Proceed with CUDA install even though no NVIDIA driver was detected.');
         button.onClick(() => {
           this.openCudaInstallModal(pluginDirectory);
         });
       });
-      if (driverStatus === 'absent') {
-        setting.addButton((button) => {
-          button.setButtonText('Install anyway');
-          button.setTooltip('Proceed with CUDA install even though no NVIDIA driver was detected.');
-          button.onClick(() => {
-            this.openCudaInstallModal(pluginDirectory);
-          });
-        });
-      }
     }
 
-    const tooltip = isInstalled
-      ? formatSidecarTooltip(manifest, 'NVIDIA CUDA backend.')
-      : formatSidecarTooltip(null, driverReason.tooltip);
-    this.appendInfoTooltip(setting, tooltip);
+    this.appendInfoTooltip(
+      setting,
+      isInstalled
+        ? formatSidecarTooltip(manifest, 'NVIDIA CUDA backend.')
+        : formatSidecarTooltip(null, driverReason.tooltip),
+    );
+  }
+
+  private addInstallButtons(
+    setting: Setting,
+    isInstalled: boolean,
+    opts: {
+      installCta?: boolean;
+      installDisabled?: boolean;
+      onInstall: () => void;
+      onReinstall: () => void;
+      onUninstall: () => void;
+    },
+  ): void {
+    if (isInstalled) {
+      setting.addButton((button) => {
+        button.setButtonText('Reinstall').onClick(opts.onReinstall);
+      });
+      setting.addButton((button) => {
+        button.setButtonText('Uninstall').setWarning().onClick(opts.onUninstall);
+      });
+      return;
+    }
+
+    setting.addButton((button) => {
+      button.setButtonText('Install').onClick(opts.onInstall);
+      if (opts.installCta ?? true) button.setCta();
+      if (opts.installDisabled === true) button.setDisabled(true);
+    });
   }
 
   // Build the native Obsidian "setting-group" structure used by core settings

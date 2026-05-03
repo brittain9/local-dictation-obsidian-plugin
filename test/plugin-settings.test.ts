@@ -123,4 +123,11 @@ describe('resolvePluginSettings', () => {
   it('falls back speakingStyle to balanced when persisted value is invalid', () => {
     expect(resolvePluginSettings({ speakingStyle: 'loud' }).speakingStyle).toBe('balanced');
   });
+
+  it.each([
+    'always_on',
+    'one_sentence',
+  ] as const)('accepts the supported listening mode %s', (listeningMode) => {
+    expect(resolvePluginSettings({ listeningMode }).listeningMode).toBe(listeningMode);
+  });
 });
