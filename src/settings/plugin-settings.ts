@@ -29,8 +29,8 @@ export interface PluginSettings {
   modelStorePathOverride: string;
   selectedModel: SelectedModel | null;
   sidecarPathOverride: string;
-  sidecarRequestTimeoutMs: number;
-  sidecarStartupTimeoutMs: number;
+  sidecarRequestTimeoutSeconds: number;
+  sidecarStartupTimeoutSeconds: number;
   showTimestamps: boolean;
   speakingStyle: SpeakingStyle;
   transcriptFormatting: TranscriptFormattingMode;
@@ -46,8 +46,8 @@ export const DEFAULT_PLUGIN_SETTINGS: PluginSettings = {
   modelStorePathOverride: '',
   selectedModel: null,
   sidecarPathOverride: '',
-  sidecarRequestTimeoutMs: 300_000,
-  sidecarStartupTimeoutMs: 4_000,
+  sidecarRequestTimeoutSeconds: 300,
+  sidecarStartupTimeoutSeconds: 4,
   showTimestamps: false,
   speakingStyle: 'balanced',
   transcriptFormatting: 'smart',
@@ -74,13 +74,13 @@ export function resolvePluginSettings(data: unknown): PluginSettings {
       raw.sidecarPathOverride,
       DEFAULT_PLUGIN_SETTINGS.sidecarPathOverride,
     ),
-    sidecarRequestTimeoutMs: readPositiveInteger(
-      raw.sidecarRequestTimeoutMs,
-      DEFAULT_PLUGIN_SETTINGS.sidecarRequestTimeoutMs,
+    sidecarRequestTimeoutSeconds: readPositiveInteger(
+      raw.sidecarRequestTimeoutSeconds,
+      DEFAULT_PLUGIN_SETTINGS.sidecarRequestTimeoutSeconds,
     ),
-    sidecarStartupTimeoutMs: readPositiveInteger(
-      raw.sidecarStartupTimeoutMs,
-      DEFAULT_PLUGIN_SETTINGS.sidecarStartupTimeoutMs,
+    sidecarStartupTimeoutSeconds: readPositiveInteger(
+      raw.sidecarStartupTimeoutSeconds,
+      DEFAULT_PLUGIN_SETTINGS.sidecarStartupTimeoutSeconds,
     ),
     showTimestamps: readBoolean(raw.showTimestamps, DEFAULT_PLUGIN_SETTINGS.showTimestamps),
     speakingStyle: isSpeakingStyle(raw.speakingStyle)

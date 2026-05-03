@@ -197,13 +197,18 @@ export class LocalSttSettingTab extends PluginSettingTab {
     });
 
     // --- Engine options ---
-    const engineSection = this.createSettingGroup(containerEl, 'Engine options');
-    void this.bindEngineOptions(engineSection, manager);
+    // Inline construction (rather than createSettingGroup) gives bindEngineOptions
+    // access to the wrapper group so it can hide the whole card when no rows apply
+    // (e.g. macOS with a model that doesn't support initial prompts).
+    const engineGroup = containerEl.createDiv({ cls: 'setting-group' });
+    new Setting(engineGroup).setName('Engine options').setHeading();
+    const engineSection = engineGroup.createDiv({ cls: 'setting-items' });
+    void this.bindEngineOptions(engineGroup, engineSection, manager);
 
     // --- Sidecar ---
     const sidecarSection = this.createSettingGroup(containerEl, 'Sidecar');
     void (async () => {
-      await this.renderGpuSidecarControls(sidecarSection);
+      await this.renderSidecarRows(sidecarSection);
 
       this.addTextSetting(sidecarSection, {
         name: 'Sidecar path override',
@@ -225,18 +230,18 @@ export class LocalSttSettingTab extends PluginSettingTab {
       }
 
       this.addPositiveIntSetting(sidecarSection, {
-        name: 'Startup timeout (ms)',
+        name: 'Startup timeout (s)',
         desc: 'Startup health-check limit.',
         tooltip: 'Maximum time allowed for the startup health handshake.',
-        key: 'sidecarStartupTimeoutMs',
+        key: 'sidecarStartupTimeoutSeconds',
       });
 
       this.addPositiveIntSetting(sidecarSection, {
-        name: 'Request timeout (ms)',
+        name: 'Request timeout (s)',
         desc: 'Sidecar request limit.',
         tooltip:
           'Maximum time allowed for start, stop, cancel, health, and model-management requests before failing them.',
-        key: 'sidecarRequestTimeoutMs',
+        key: 'sidecarRequestTimeoutSeconds',
       });
     })();
 
@@ -310,43 +315,50 @@ export class LocalSttSettingTab extends PluginSettingTab {
   }
 
   private async bindEngineOptions(
+    group: HTMLDivElement,
     containerEl: HTMLDivElement,
     manager: ModelInstallManager,
   ): Promise<void> {
     const systemInfo = await this.fetchSystemInfo();
-    this.renderEngineOptions(containerEl, systemInfo);
+    this.renderEngineOptions(group, containerEl, systemInfo);
     this.disposeEngineSection = manager.subscribe(() => {
-      this.renderEngineOptions(containerEl, systemInfo);
+      this.renderEngineOptions(group, containerEl, systemInfo);
     });
   }
 
   private renderEngineOptions(
+    group: HTMLDivElement,
     containerEl: HTMLDivElement,
     systemInfo: SystemInfoEvent | null,
   ): void {
     const settings = this.dependencies.getSettings();
-    const { label } = describeAcceleration(systemInfo, settings.accelerationPreference);
 
     containerEl.empty();
 
-    const descFragment = document.createDocumentFragment();
-    descFragment.createSpan({ text: 'Use the GPU when available.' });
-    descFragment.createEl('br');
-    descFragment.createSpan({ text: `Currently: ${label}` });
+    let rendered = 0;
 
-    // accelerationPreference is a string enum, not a boolean, so the simple
-    // toggle builder doesn't fit — toggle here drives an enum mapping.
-    const accelSetting = new Setting(containerEl)
-      .setName('Hardware acceleration')
-      .setDesc(descFragment);
-    accelSetting.addToggle((toggle) => {
-      toggle.setValue(settings.accelerationPreference === 'auto');
-      toggle.onChange(async (value) => {
-        await this.persistOne('accelerationPreference', value ? 'auto' : 'cpu_only');
-        this.renderEngineOptions(containerEl, systemInfo);
+    if (!Platform.isMacOS) {
+      const { label } = describeAcceleration(systemInfo, settings.accelerationPreference);
+      const descFragment = document.createDocumentFragment();
+      descFragment.createSpan({ text: 'Use the GPU when available.' });
+      descFragment.createEl('br');
+      descFragment.createSpan({ text: `Currently: ${label}` });
+
+      // accelerationPreference is a string enum, not a boolean, so the simple
+      // toggle builder doesn't fit — toggle here drives an enum mapping.
+      const accelSetting = new Setting(containerEl)
+        .setName('Hardware acceleration')
+        .setDesc(descFragment);
+      accelSetting.addToggle((toggle) => {
+        toggle.setValue(settings.accelerationPreference === 'auto');
+        toggle.onChange(async (value) => {
+          await this.persistOne('accelerationPreference', value ? 'auto' : 'cpu_only');
+          this.renderEngineOptions(group, containerEl, systemInfo);
+        });
       });
-    });
-    this.appendInfoTooltip(accelSetting, 'Turn off to run every engine on CPU.');
+      this.appendInfoTooltip(accelSetting, 'Turn off to run every engine on CPU.');
+      rendered += 1;
+    }
 
     const caps = this.dependencies.modelInstallManager.getState().selectedModelCapabilities;
     if (caps.status === 'ready' && caps.capabilities.family.supportsInitialPrompt) {
@@ -357,12 +369,14 @@ export class LocalSttSettingTab extends PluginSettingTab {
           'Send a glossary of distinctive terms from the note as the engine’s prompt. Helps spell proper nouns and technical terms. Only used by engines that support initial prompts.',
         key: 'useNoteAsContext',
       });
+      rendered += 1;
     }
+
+    group.style.display = rendered === 0 ? 'none' : '';
   }
 
-  private async renderGpuSidecarControls(containerEl: HTMLDivElement): Promise<void> {
+  private async renderSidecarRows(container: HTMLDivElement): Promise<void> {
     const pluginDirectory = await this.resolvePluginDirectorySafe();
-
     if (pluginDirectory === null) return;
 
     const [cpuManifest, cudaManifest] = await Promise.all([
@@ -370,119 +384,126 @@ export class LocalSttSettingTab extends PluginSettingTab {
       readInstallManifest(variantDirectoryPath(pluginDirectory, 'cuda')),
     ]);
 
-    this.renderInstalledStatus(containerEl, cpuManifest, cudaManifest);
-    this.renderCpuInstallRow(containerEl, pluginDirectory, cpuManifest);
-
     if (Platform.isMacOS) {
-      containerEl.createEl('p', {
-        cls: 'setting-item-description',
-        text: 'On macOS, Metal acceleration is compiled into the sidecar binary — no separate install step. The hardware acceleration toggle auto-enables it when the sidecar is running.',
+      this.renderInstallableRow(container, {
+        desc: 'Speech-to-text engine.',
+        manifest: cpuManifest,
+        name: 'Sidecar',
+        pluginDirectory,
+        tooltipExtra: 'Includes Metal acceleration on Apple Silicon and Intel Macs.',
+        variant: 'cpu',
       });
       return;
     }
 
-    if (cudaManifest === null) {
-      await this.renderInstallCudaRow(containerEl, pluginDirectory);
-    } else {
-      this.renderUninstallCudaRow(containerEl, pluginDirectory);
-    }
-  }
-
-  private renderCpuInstallRow(
-    containerEl: HTMLDivElement,
-    pluginDirectory: string,
-    cpuManifest: InstallManifest | null,
-  ): void {
-    const isInstalled = cpuManifest !== null;
-    const setting = new Setting(containerEl)
-      .setName(isInstalled ? 'Reinstall CPU sidecar' : 'Install CPU sidecar')
-      .setDesc(isInstalled ? 'Refresh the CPU sidecar.' : 'Download the required CPU sidecar.');
-
-    setting.addButton((button) => {
-      button.setButtonText(isInstalled ? 'Reinstall' : 'Download CPU sidecar');
-      if (!isInstalled) button.setCta();
-      button.onClick(() => {
-        this.openInstallModal(pluginDirectory, 'cpu', isInstalled ? 'reinstall' : 'install');
-      });
+    this.renderInstallableRow(container, {
+      desc: 'Speech-to-text engine. Required.',
+      manifest: cpuManifest,
+      name: 'CPU sidecar',
+      pluginDirectory,
+      variant: 'cpu',
     });
 
-    this.appendInfoTooltip(
-      setting,
-      isInstalled
-        ? 'Re-downloads the CPU sidecar archive from GitHub releases. Useful if the install looks corrupted.'
-        : 'Downloads the CPU speech-to-text sidecar from GitHub releases. Required to run transcription.',
-    );
+    await this.renderGpuSidecarRow(container, cudaManifest, pluginDirectory);
   }
 
-  private renderInstalledStatus(
-    containerEl: HTMLDivElement,
-    cpuManifest: InstallManifest | null,
-    cudaManifest: InstallManifest | null,
+  private renderInstallableRow(
+    container: HTMLDivElement,
+    opts: {
+      desc: string;
+      manifest: InstallManifest | null;
+      name: string;
+      pluginDirectory: string;
+      tooltipExtra?: string;
+      variant: SidecarInstallVariant;
+    },
   ): void {
-    const status = containerEl.createEl('p', { cls: 'setting-item-description' });
-    status.setText(
-      `Installed sidecars — CPU: ${formatInstalledStatus(cpuManifest)} · CUDA: ${formatInstalledStatus(cudaManifest)}`,
-    );
+    const isInstalled = opts.manifest !== null;
+    const setting = new Setting(container).setName(opts.name).setDesc(opts.desc);
+
+    if (isInstalled) {
+      setting.addButton((button) => {
+        button.setButtonText('Reinstall');
+        button.onClick(() => {
+          this.openInstallModal(opts.pluginDirectory, opts.variant, 'reinstall');
+        });
+      });
+      setting.addButton((button) => {
+        button.setButtonText('Uninstall').setWarning();
+        button.onClick(() => {
+          void this.handleUninstallVariant(opts.pluginDirectory, opts.variant);
+        });
+      });
+    } else {
+      setting.addButton((button) => {
+        button.setButtonText('Install').setCta();
+        button.onClick(() => {
+          this.openInstallModal(opts.pluginDirectory, opts.variant, 'install');
+        });
+      });
+    }
+
+    this.appendInfoTooltip(setting, formatSidecarTooltip(opts.manifest, opts.tooltipExtra));
   }
 
-  private async renderInstallCudaRow(
-    containerEl: HTMLDivElement,
+  private async renderGpuSidecarRow(
+    container: HTMLDivElement,
+    manifest: InstallManifest | null,
     pluginDirectory: string,
   ): Promise<void> {
+    const isInstalled = manifest !== null;
+
     // Memoize the nvidia-smi probe for the tab's lifetime. display() can fire
-    // multiple times per tab open (e.g. after the accel toggle flips), and
-    // spawning a child process on each render is wasteful. Cleared in
-    // tearDown() so the driver state is re-probed next time the tab opens.
+    // multiple times per tab open; spawning a child process on each render is
+    // wasteful. Cleared in tearDown() so the driver state is re-probed next
+    // time the tab opens.
     if (this.nvidiaDriverStatus === null) {
       this.nvidiaDriverStatus = detectNvidiaDriver();
     }
     const driverStatus = await this.nvidiaDriverStatus;
     const driverReason = describeDriverStatus(driverStatus);
 
-    const setting = new Setting(containerEl)
-      .setName('Install CUDA acceleration')
-      .setDesc(driverReason.label);
+    const setting = new Setting(container)
+      .setName('GPU sidecar')
+      .setDesc(isInstalled ? 'NVIDIA CUDA acceleration.' : driverReason.label);
 
-    setting.addButton((button) => {
-      button.setButtonText('Install CUDA sidecar');
-      if (driverStatus === 'absent') {
-        button.setDisabled(true);
-      } else if (driverStatus === 'present') {
-        button.setCta();
-      }
-      button.onClick(() => {
-        this.openCudaInstallModal(pluginDirectory);
-      });
-    });
-
-    if (driverStatus === 'absent') {
+    if (isInstalled) {
       setting.addButton((button) => {
-        button.setButtonText('Install anyway');
-        button.setTooltip('Proceed with CUDA install even though no NVIDIA driver was detected.');
+        button.setButtonText('Reinstall');
+        button.onClick(() => {
+          this.openInstallModal(pluginDirectory, 'cuda', 'reinstall');
+        });
+      });
+      setting.addButton((button) => {
+        button.setButtonText('Uninstall').setWarning();
+        button.onClick(() => {
+          void this.handleUninstallVariant(pluginDirectory, 'cuda');
+        });
+      });
+    } else {
+      setting.addButton((button) => {
+        button.setButtonText('Install');
+        if (driverStatus === 'absent') button.setDisabled(true);
+        else if (driverStatus === 'present') button.setCta();
         button.onClick(() => {
           this.openCudaInstallModal(pluginDirectory);
         });
       });
+      if (driverStatus === 'absent') {
+        setting.addButton((button) => {
+          button.setButtonText('Install anyway');
+          button.setTooltip('Proceed with CUDA install even though no NVIDIA driver was detected.');
+          button.onClick(() => {
+            this.openCudaInstallModal(pluginDirectory);
+          });
+        });
+      }
     }
 
-    this.appendInfoTooltip(setting, driverReason.tooltip);
-  }
-
-  private renderUninstallCudaRow(containerEl: HTMLDivElement, pluginDirectory: string): void {
-    const setting = new Setting(containerEl)
-      .setName('Uninstall GPU acceleration')
-      .setDesc('Remove the CUDA sidecar.');
-    setting.addButton((button) => {
-      button.setButtonText('Uninstall CUDA sidecar');
-      button.setWarning();
-      button.onClick(() => {
-        void this.handleUninstallCuda(pluginDirectory);
-      });
-    });
-    this.appendInfoTooltip(
-      setting,
-      'Removes the CUDA sidecar from this plugin directory and restarts on CPU.',
-    );
+    const tooltip = isInstalled
+      ? formatSidecarTooltip(manifest, 'NVIDIA CUDA backend.')
+      : formatSidecarTooltip(null, driverReason.tooltip);
+    this.appendInfoTooltip(setting, tooltip);
   }
 
   // Build the native Obsidian "setting-group" structure used by core settings
@@ -605,22 +626,34 @@ export class LocalSttSettingTab extends PluginSettingTab {
     }).open();
   }
 
-  private async handleUninstallCuda(pluginDirectory: string): Promise<void> {
+  private async handleUninstallVariant(
+    pluginDirectory: string,
+    variant: SidecarInstallVariant,
+  ): Promise<void> {
+    const variantLabel = variant === 'cuda' ? 'CUDA' : 'CPU';
     if (this.dependencies.isDictationBusy()) {
-      new Notice('Stop dictation before uninstalling the CUDA sidecar.');
+      new Notice(`Stop dictation before uninstalling the ${variantLabel} sidecar.`);
       return;
     }
 
-    await this.shutdownSidecarBeforeFileMutation('CUDA uninstall');
+    await this.shutdownSidecarBeforeFileMutation(`${variantLabel} uninstall`);
 
     try {
-      await uninstallSidecarVariant(pluginDirectory, 'cuda');
+      await uninstallSidecarVariant(pluginDirectory, variant);
       await this.dependencies.restartSidecar();
-      new Notice('CUDA sidecar uninstalled. Running on CPU.');
+      new Notice(
+        variant === 'cuda'
+          ? 'CUDA sidecar uninstalled. Running on CPU.'
+          : 'CPU sidecar uninstalled.',
+      );
       this.display();
     } catch (error) {
-      this.dependencies.logger?.error('installer', 'failed to uninstall CUDA sidecar', error);
-      new Notice(`Failed to uninstall CUDA sidecar: ${formatErrorMessage(error)}`);
+      this.dependencies.logger?.error(
+        'installer',
+        `failed to uninstall ${variantLabel} sidecar`,
+        error,
+      );
+      new Notice(`Failed to uninstall ${variantLabel} sidecar: ${formatErrorMessage(error)}`);
     }
   }
 
@@ -666,9 +699,9 @@ export class LocalSttSettingTab extends PluginSettingTab {
   }
 }
 
-function formatInstalledStatus(manifest: InstallManifest | null): string {
-  if (manifest === null) return 'not installed';
-  return manifest.version;
+function formatSidecarTooltip(manifest: InstallManifest | null, extra?: string): string {
+  const base = manifest === null ? 'Not installed.' : `Installed: ${manifest.version}.`;
+  return extra === undefined ? base : `${base} ${extra}`;
 }
 
 function describeDriverStatus(status: NvidiaDriverStatus): { label: string; tooltip: string } {

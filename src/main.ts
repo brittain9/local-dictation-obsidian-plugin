@@ -41,7 +41,7 @@ export default class LocalSttPlugin extends Plugin {
     this.registerEditorExtension(dictationAnchorExtension());
     this.registerEditorExtension(noteSurfaceUpdateListenerExtension());
     this.sidecarConnection = new SidecarConnection({
-      getRequestTimeoutMs: () => this.settings.sidecarRequestTimeoutMs,
+      getRequestTimeoutMs: () => this.settings.sidecarRequestTimeoutSeconds * 1000,
       logger: this.logger,
       resolveLaunchSpec: async () => this.resolveSidecarLaunchSpec(),
     });
@@ -97,7 +97,9 @@ export default class LocalSttPlugin extends Plugin {
         pluginVersion: this.manifest.version,
         resolvePluginDirectory: () => this.resolvePluginDirectoryPath(),
         restartSidecar: async () => {
-          await this.requireSidecarConnection().restart(this.settings.sidecarStartupTimeoutMs);
+          await this.requireSidecarConnection().restart(
+            this.settings.sidecarStartupTimeoutSeconds * 1000,
+          );
         },
         saveSettings: async (nextSettings) => {
           await this.updateSettings(nextSettings);
@@ -160,7 +162,9 @@ export default class LocalSttPlugin extends Plugin {
     openFirstRunSetupModal(this.app, {
       logger: this.logger,
       onInstalled: async () => {
-        await this.requireSidecarConnection().restart(this.settings.sidecarStartupTimeoutMs);
+        await this.requireSidecarConnection().restart(
+          this.settings.sidecarStartupTimeoutSeconds * 1000,
+        );
         const systemInfo = await this.requireSidecarConnection().getSystemInfo();
         logAccelerationFallbacks(systemInfo, this.settings.accelerationPreference, this.logger);
         await this.requireModelInstallManager().init();
@@ -198,7 +202,9 @@ export default class LocalSttPlugin extends Plugin {
     const sidecarConnection = this.requireSidecarConnection();
 
     try {
-      const health = await sidecarConnection.healthCheck(this.settings.sidecarStartupTimeoutMs);
+      const health = await sidecarConnection.healthCheck(
+        this.settings.sidecarStartupTimeoutSeconds * 1000,
+      );
 
       if (options.showNotice ?? true) {
         new Notice(`Local Transcript sidecar is ready (${health.sidecarVersion}).`);
@@ -224,7 +230,9 @@ export default class LocalSttPlugin extends Plugin {
     const sidecarConnection = this.requireSidecarConnection();
 
     try {
-      const health = await sidecarConnection.restart(this.settings.sidecarStartupTimeoutMs);
+      const health = await sidecarConnection.restart(
+        this.settings.sidecarStartupTimeoutSeconds * 1000,
+      );
 
       new Notice(`Restarted Local Transcript sidecar (${health.sidecarVersion}).`);
     } catch (error) {
