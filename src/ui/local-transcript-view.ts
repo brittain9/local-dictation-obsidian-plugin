@@ -14,7 +14,7 @@ const MODEL_REQUIRED_NOTICE = 'Select an Ollama model, then enable LLM post-proc
 const MODEL_MISSING_NOTICE =
   'Refresh models, select an installed model, then enable LLM post-processing again.';
 const EXPECTATIONS_TEXT =
-  'Local LLM cleanup is experimental. The reliable wins are punctuation, casing, paragraph structure, and terminology fidelity. Word-error-rate reduction is not guaranteed and may be negative on already-clean speech. If output regresses, raise the skip-confidence threshold or simplify the prompt.';
+  'Sends each transcribed utterance to a local Ollama model to clean up punctuation, capitalization, paragraphs, and terminology before insertion. Disable if quality drops.';
 
 interface LocalTranscriptViewDependencies {
   getSettings: () => PluginSettings;
@@ -26,7 +26,7 @@ interface LocalTranscriptViewDependencies {
 }
 
 export class LocalTranscriptView extends ItemView {
-  private focusedTextArea: HTMLTextAreaElement | null = null;
+  private focusedInput: HTMLElement | null = null;
   private models: OllamaModelOption[] = [];
   private ollamaStatus = 'Ollama status unknown.';
   private queueDepth = 0;
@@ -70,22 +70,25 @@ export class LocalTranscriptView extends ItemView {
     const timestampsEnabled = settings.showTimestamps;
     const inFlightCount = this.queueDepth + (this.sessionState === 'transcribing' ? 1 : 0);
 
-    this.focusedTextArea = null;
+    this.focusedInput = null;
     contentEl.empty();
     contentEl.addClass('local-transcript-sidebar');
 
-    new Setting(contentEl).setHeading().setName('LLM post-processing');
+    new Setting(contentEl).setHeading().setName('LLM post-processing (experimental)');
     contentEl.createEl('p', {
       cls: 'local-transcript-preamble',
       text: EXPECTATIONS_TEXT,
     });
 
-    new Setting(contentEl).setName('Enable').addToggle((toggle) => {
-      toggle.setValue(settings.llmPostprocessEnabled);
-      toggle.onChange(async (enabled) => {
-        await this.handleEnableChanged(enabled);
+    new Setting(contentEl)
+      .setName('Enable')
+      .setDesc('Run each utterance through the selected Ollama model before it lands in the note.')
+      .addToggle((toggle) => {
+        toggle.setValue(settings.llmPostprocessEnabled);
+        toggle.onChange(async (enabled) => {
+          await this.handleEnableChanged(enabled);
+        });
       });
-    });
 
     if (timestampsEnabled) {
       contentEl.createEl('p', {
@@ -99,26 +102,34 @@ export class LocalTranscriptView extends ItemView {
       text: this.ollamaStatus,
     });
 
-    new Setting(contentEl).setName('Ollama models').addButton((button) => {
-      button.setButtonText('Refresh models');
-      button.onClick(async () => {
-        await this.refreshModels({ disableOnFailure: settings.llmPostprocessEnabled });
-      });
-    });
-
-    new Setting(contentEl).setName('Model').addDropdown((dropdown) => {
-      dropdown.addOption('', 'Select a model');
-      for (const model of this.models) {
-        dropdown.addOption(model.id, model.displayName);
-      }
-      dropdown.setValue(settings.llmPostprocessModel);
-      dropdown.onChange(async (value) => {
-        await this.persistSettings({
-          ...this.dependencies.getSettings(),
-          llmPostprocessModel: value.trim(),
+    new Setting(contentEl)
+      .setName('Ollama models')
+      .setDesc('Re-query Ollama for installed chat models.')
+      .addButton((button) => {
+        button.setButtonText('Refresh models');
+        button.onClick(async () => {
+          await this.refreshModels({ disableOnFailure: settings.llmPostprocessEnabled });
         });
       });
-    });
+
+    new Setting(contentEl)
+      .setName('Model')
+      .setDesc(
+        'The Ollama model used to clean transcripts. Smaller models are faster but less reliable.',
+      )
+      .addDropdown((dropdown) => {
+        dropdown.addOption('', 'Select a model');
+        for (const model of this.models) {
+          dropdown.addOption(model.id, model.displayName);
+        }
+        dropdown.setValue(settings.llmPostprocessModel);
+        dropdown.onChange(async (value) => {
+          await this.persistSettings({
+            ...this.dependencies.getSettings(),
+            llmPostprocessModel: value.trim(),
+          });
+        });
+      });
 
     this.renderContextSection(contentEl, settings);
     this.renderPromptSection(contentEl, settings);
@@ -143,26 +154,34 @@ export class LocalTranscriptView extends ItemView {
 
   private renderContextSection(parent: HTMLElement, settings: PluginSettings): void {
     new Setting(parent).setHeading().setName('Context');
-    this.addNumberSetting(parent, 'Note context chars', settings.llmPostprocessNoteContextChars, {
-      onChange: async (value) => {
-        await this.saveField('llmPostprocessNoteContextChars', value);
-      },
-    });
-    this.addNumberSetting(parent, 'Prior utterances', settings.llmPostprocessPriorUtterancesN, {
-      onChange: async (value) => {
-        await this.saveField('llmPostprocessPriorUtterancesN', value);
-      },
-    });
-    this.addNumberSetting(parent, 'Glossary context chars', settings.llmPostprocessGlossaryChars, {
-      onChange: async (value) => {
-        await this.saveField('llmPostprocessGlossaryChars', value);
-      },
-    });
-    this.addNumberSetting(parent, 'Total context cap', settings.llmPostprocessTotalContextCap, {
-      onChange: async (value) => {
-        await this.saveField('llmPostprocessTotalContextCap', value);
-      },
-    });
+    this.addNumberSetting(
+      parent,
+      'Note context chars',
+      'Characters of surrounding note text fed to the model as context.',
+      settings.llmPostprocessNoteContextChars,
+      (value) => this.saveField('llmPostprocessNoteContextChars', value, { rerender: false }),
+    );
+    this.addNumberSetting(
+      parent,
+      'Prior utterances',
+      'Number of recent transcribed utterances included as conversation history.',
+      settings.llmPostprocessPriorUtterancesN,
+      (value) => this.saveField('llmPostprocessPriorUtterancesN', value, { rerender: false }),
+    );
+    this.addNumberSetting(
+      parent,
+      'Glossary context chars',
+      'Characters from your glossary file included as context.',
+      settings.llmPostprocessGlossaryChars,
+      (value) => this.saveField('llmPostprocessGlossaryChars', value, { rerender: false }),
+    );
+    this.addNumberSetting(
+      parent,
+      'Total context cap',
+      'Hard cap on total context characters across note + utterances + glossary.',
+      settings.llmPostprocessTotalContextCap,
+      (value) => this.saveField('llmPostprocessTotalContextCap', value, { rerender: false }),
+    );
 
     if (Math.ceil(settings.llmPostprocessTotalContextCap / 4) >= 4_000) {
       parent.createEl('p', {
@@ -173,81 +192,110 @@ export class LocalTranscriptView extends ItemView {
   }
 
   private renderPromptSection(parent: HTMLElement, settings: PluginSettings): void {
-    new Setting(parent).setHeading().setName('Prompt Slots');
-    this.addTextAreaSetting(parent, 'System slot', settings.llmPostprocessSystemSlot, {
-      rows: 5,
-      onChange: async (value) => {
-        await this.saveField('llmPostprocessSystemSlot', value, { rerender: false });
-      },
-    });
-    this.addTextAreaSetting(parent, 'Voice slot', settings.llmPostprocessVoiceSlot, {
-      rows: 4,
-      onChange: async (value) => {
-        await this.saveField('llmPostprocessVoiceSlot', value, { rerender: false });
-      },
-    });
-    this.addTextAreaSetting(parent, 'Glossary slot', settings.llmPostprocessGlossarySlot, {
-      rows: 5,
-      onChange: async (value) => {
-        await this.saveField('llmPostprocessGlossarySlot', value, { rerender: false });
-      },
-    });
-    this.addTextAreaSetting(parent, 'Format slot', settings.llmPostprocessFormatSlot, {
-      rows: 4,
-      onChange: async (value) => {
-        await this.saveField('llmPostprocessFormatSlot', value, { rerender: false });
-      },
-    });
-    this.addTextAreaSetting(parent, 'User template', settings.llmPostprocessUserTemplate, {
-      rows: 12,
-      onChange: async (value) => {
-        await this.saveField('llmPostprocessUserTemplate', value, { rerender: false });
-      },
-    });
+    new Setting(parent).setHeading().setName('Prompt slots');
+    this.addTextAreaSetting(
+      parent,
+      'System slot',
+      'Sets the model role and the rules it must follow when rewriting.',
+      settings.llmPostprocessSystemSlot,
+      5,
+      (value) => this.saveField('llmPostprocessSystemSlot', value, { rerender: false }),
+    );
+    this.addTextAreaSetting(
+      parent,
+      'Voice slot',
+      'Hints about the speaker voice and tone.',
+      settings.llmPostprocessVoiceSlot,
+      4,
+      (value) => this.saveField('llmPostprocessVoiceSlot', value, { rerender: false }),
+    );
+    this.addTextAreaSetting(
+      parent,
+      'Glossary slot',
+      'Wraps the glossary text injected into the prompt.',
+      settings.llmPostprocessGlossarySlot,
+      5,
+      (value) => this.saveField('llmPostprocessGlossarySlot', value, { rerender: false }),
+    );
+    this.addTextAreaSetting(
+      parent,
+      'Format slot',
+      'Output format constraints (e.g. plain text, no markdown).',
+      settings.llmPostprocessFormatSlot,
+      4,
+      (value) => this.saveField('llmPostprocessFormatSlot', value, { rerender: false }),
+    );
+    this.addTextAreaSetting(
+      parent,
+      'User template',
+      'Per-utterance prompt with placeholders for context, prior text, glossary, and the raw transcript.',
+      settings.llmPostprocessUserTemplate,
+      12,
+      (value) => this.saveField('llmPostprocessUserTemplate', value, { rerender: false }),
+    );
   }
 
   private renderSkipSection(parent: HTMLElement, settings: PluginSettings): void {
-    new Setting(parent).setHeading().setName('Skip Gates');
-    this.addNumberSetting(parent, 'Min words', settings.llmPostprocessSkipMinWords, {
-      onChange: async (value) => {
-        await this.saveField('llmPostprocessSkipMinWords', value);
-      },
-    });
-    new Setting(parent).setName('Skip if avg logprob above').addText((text) => {
-      text.setValue(settings.llmPostprocessSkipIfAvgLogprobAbove?.toString() ?? '');
-      text.onChange(async (value) => {
-        const trimmed = value.trim();
-        await this.saveField(
-          'llmPostprocessSkipIfAvgLogprobAbove',
-          trimmed.length === 0 ? null : Number(trimmed),
-        );
+    new Setting(parent).setHeading().setName('Skip gates');
+    this.addNumberSetting(
+      parent,
+      'Min words',
+      'Skip cleanup when the utterance has fewer words than this.',
+      settings.llmPostprocessSkipMinWords,
+      (value) => this.saveField('llmPostprocessSkipMinWords', value, { rerender: false }),
+    );
+    new Setting(parent)
+      .setName('Skip if avg logprob above')
+      .setDesc(
+        'Skip cleanup when ASR confidence (average log-probability) is above this. Blank to never skip on confidence.',
+      )
+      .addText((text) => {
+        text.setValue(settings.llmPostprocessSkipIfAvgLogprobAbove?.toString() ?? '');
+        this.trackInputFocus(text.inputEl);
+        text.onChange(async (value) => {
+          const trimmed = value.trim();
+          await this.saveField(
+            'llmPostprocessSkipIfAvgLogprobAbove',
+            trimmed.length === 0 ? null : Number(trimmed),
+            { rerender: false },
+          );
+        });
       });
-    });
   }
 
   private renderGenerationSection(parent: HTMLElement, settings: PluginSettings): void {
     new Setting(parent).setHeading().setName('Generation');
-    this.addNumberSetting(parent, 'Temperature', settings.llmPostprocessTemperature, {
-      onChange: async (value) => {
-        await this.saveField('llmPostprocessTemperature', value);
-      },
-    });
-    this.addNumberSetting(parent, 'Max predictions', settings.llmPostprocessNumPredict, {
-      onChange: async (value) => {
-        await this.saveField('llmPostprocessNumPredict', value);
-      },
-    });
-    this.addNumberSetting(parent, 'Seed', settings.llmPostprocessSeed, {
-      onChange: async (value) => {
-        await this.saveField('llmPostprocessSeed', value);
-      },
-    });
-    new Setting(parent).setName('Keep alive').addText((text) => {
-      text.setValue(settings.llmPostprocessKeepAlive);
-      text.onChange(async (value) => {
-        await this.saveField('llmPostprocessKeepAlive', value);
+    this.addNumberSetting(
+      parent,
+      'Temperature',
+      'Sampling randomness. 0 is deterministic; higher is more varied.',
+      settings.llmPostprocessTemperature,
+      (value) => this.saveField('llmPostprocessTemperature', value, { rerender: false }),
+    );
+    this.addNumberSetting(
+      parent,
+      'Max predictions',
+      'Maximum tokens the model can generate per utterance.',
+      settings.llmPostprocessNumPredict,
+      (value) => this.saveField('llmPostprocessNumPredict', value, { rerender: false }),
+    );
+    this.addNumberSetting(
+      parent,
+      'Seed',
+      'Random seed. Same seed + input + model produces the same output.',
+      settings.llmPostprocessSeed,
+      (value) => this.saveField('llmPostprocessSeed', value, { rerender: false }),
+    );
+    new Setting(parent)
+      .setName('Keep alive')
+      .setDesc('How long Ollama keeps the model loaded after each request (e.g. 30m, 1h).')
+      .addText((text) => {
+        text.setValue(settings.llmPostprocessKeepAlive);
+        this.trackInputFocus(text.inputEl);
+        text.onChange(async (value) => {
+          await this.saveField('llmPostprocessKeepAlive', value, { rerender: false });
+        });
       });
-    });
   }
 
   private renderDisplaySection(
@@ -256,47 +304,70 @@ export class LocalTranscriptView extends ItemView {
     timestampsEnabled: boolean,
   ): void {
     new Setting(parent).setHeading().setName('Display');
-    new Setting(parent).setName('Show raw beneath LLM output').addToggle((toggle) => {
-      toggle.setValue(settings.llmPostprocessShowRawBelow);
-      toggle.setDisabled(timestampsEnabled);
-      toggle.onChange(async (value) => {
-        await this.saveField('llmPostprocessShowRawBelow', value);
+    new Setting(parent)
+      .setName('Show raw beneath LLM output')
+      .setDesc('Append the original transcript below the cleaned version in the note.')
+      .addToggle((toggle) => {
+        toggle.setValue(settings.llmPostprocessShowRawBelow);
+        toggle.setDisabled(timestampsEnabled);
+        toggle.onChange(async (value) => {
+          await this.saveField('llmPostprocessShowRawBelow', value);
+        });
       });
-    });
   }
 
   private addNumberSetting(
     parent: HTMLElement,
     name: string,
+    desc: string,
     value: number,
-    options: { onChange: (value: number) => Promise<void> },
+    onChange: (value: number) => Promise<void>,
   ): void {
-    new Setting(parent).setName(name).addText((text) => {
-      text.inputEl.type = 'number';
-      text.setValue(value.toString());
-      text.onChange(async (nextValue) => {
-        await options.onChange(Number(nextValue));
+    new Setting(parent)
+      .setName(name)
+      .setDesc(desc)
+      .addText((text) => {
+        text.inputEl.type = 'number';
+        text.setValue(value.toString());
+        this.trackInputFocus(text.inputEl);
+        text.onChange(async (nextValue) => {
+          await onChange(Number(nextValue));
+        });
       });
-    });
   }
 
   private addTextAreaSetting(
     parent: HTMLElement,
     name: string,
+    desc: string,
     value: string,
-    options: { onChange: (value: string) => Promise<void>; rows: number },
+    rows: number,
+    onChange: (value: string) => Promise<void>,
   ): void {
-    new Setting(parent).setName(name).addTextArea((text) => {
-      text.inputEl.rows = options.rows;
-      text.setValue(value);
-      text.inputEl.addEventListener('focus', () => {
-        this.focusedTextArea = text.inputEl;
+    new Setting(parent)
+      .setName(name)
+      .setDesc(desc)
+      .addTextArea((text) => {
+        text.inputEl.rows = rows;
+        text.setValue(value);
+        this.trackInputFocus(text.inputEl);
+        text.onChange(onChange);
       });
-      text.inputEl.addEventListener('blur', () => {
-        this.focusedTextArea = null;
-        this.render();
-      });
-      text.onChange(options.onChange);
+  }
+
+  private trackInputFocus(element: HTMLElement): void {
+    element.addEventListener('focus', () => {
+      this.focusedInput = element;
+    });
+    element.addEventListener('blur', () => {
+      this.focusedInput = null;
+      // Defer so a follow-up focus on another tracked input wins before the
+      // re-render destroys it (browsers fire blur on A then focus on B).
+      window.setTimeout(() => {
+        if (this.focusedInput === null) {
+          this.render();
+        }
+      }, 0);
     });
   }
 
@@ -371,13 +442,13 @@ export class LocalTranscriptView extends ItemView {
   private handleSidecarEvent(event: SidecarEvent): void {
     if (event.type === 'transcription_queue_changed') {
       this.queueDepth = event.queuedUtterances;
-      this.renderIfTextAreaIsNotFocused();
+      this.renderIfInputNotFocused();
       return;
     }
 
     if (event.type === 'session_state_changed') {
       this.sessionState = event.state;
-      this.renderIfTextAreaIsNotFocused();
+      this.renderIfInputNotFocused();
     }
   }
 
@@ -405,8 +476,8 @@ export class LocalTranscriptView extends ItemView {
     }
   }
 
-  private renderIfTextAreaIsNotFocused(): void {
-    if (this.focusedTextArea !== null && document.activeElement === this.focusedTextArea) {
+  private renderIfInputNotFocused(): void {
+    if (this.focusedInput !== null && document.activeElement === this.focusedInput) {
       return;
     }
     this.render();
