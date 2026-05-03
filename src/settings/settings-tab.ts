@@ -10,7 +10,7 @@ import { SidecarInstallModal } from '../setup/sidecar-install-modal';
 import { formatErrorMessage } from '../shared/format-utils';
 import type { PluginLogger } from '../shared/plugin-logger';
 import { detectNvidiaDriver, type NvidiaDriverStatus } from '../sidecar/gpu-precheck';
-import type { SpeakingStyle, SystemInfoEvent } from '../sidecar/protocol';
+import { LISTENING_MODES, type ListeningMode, type SystemInfoEvent } from '../sidecar/protocol';
 import type { SidecarConnection } from '../sidecar/sidecar-connection';
 import {
   type InstallManifest,
@@ -22,12 +22,13 @@ import {
 import { describeAcceleration } from './acceleration-info';
 import { renderModelSection } from './model-settings-section';
 import {
-  type DictationAnchor,
+  type DICTATION_ANCHORS,
   isDictationAnchor,
   isSpeakingStyle,
   isTranscriptFormattingMode,
   type PluginSettings,
-  type TranscriptFormattingMode,
+  type SPEAKING_STYLES,
+  type TRANSCRIPT_FORMATTING_MODES,
 } from './plugin-settings';
 
 interface SettingsTabDependencies {
@@ -42,29 +43,57 @@ interface SettingsTabDependencies {
   sidecarConnection: Pick<SidecarConnection, 'getSystemInfo' | 'shutdown'>;
 }
 
-const DICTATION_ANCHOR_OPTIONS: Array<{ label: string; value: DictationAnchor }> = [
-  { label: 'At cursor', value: 'at_cursor' },
-  { label: 'End of note', value: 'end_of_note' },
+// Keys whose value type is exactly T (not a string-literal union assignable to T).
+// Both directions guard against e.g. accelerationPreference ('auto' | 'cpu_only')
+// leaking into addTextSetting<SettingsKeyOf<string>>. Tuple-wrapped to suppress
+// distribution over boolean = true | false.
+type SettingsKeyOf<T> = {
+  [K in keyof PluginSettings]: [T] extends [PluginSettings[K]]
+    ? [PluginSettings[K]] extends [T]
+      ? K
+      : never
+    : never;
+}[keyof PluginSettings];
+
+interface SettingSpec {
+  name: string;
+  desc: string | DocumentFragment;
+  tooltip?: string;
+}
+
+interface DropdownOption<V extends string> {
+  label: string;
+  value: V;
+}
+
+const LISTENING_MODE_OPTIONS: ReadonlyArray<DropdownOption<ListeningMode>> = [
+  { label: 'Always on', value: 'always_on' },
+  { label: 'One sentence', value: 'one_sentence' },
 ];
 
-const TRANSCRIPT_FORMATTING_OPTIONS: Array<{ label: string; value: TranscriptFormattingMode }> = [
+const DICTATION_ANCHOR_OPTIONS: ReadonlyArray<DropdownOption<(typeof DICTATION_ANCHORS)[number]>> =
+  [
+    { label: 'At cursor', value: 'at_cursor' },
+    { label: 'End of note', value: 'end_of_note' },
+  ];
+
+const TRANSCRIPT_FORMATTING_OPTIONS: ReadonlyArray<
+  DropdownOption<(typeof TRANSCRIPT_FORMATTING_MODES)[number]>
+> = [
   { label: 'Smart paragraphs', value: 'smart' },
   { label: 'Space', value: 'space' },
   { label: 'New line', value: 'new_line' },
   { label: 'New paragraph', value: 'new_paragraph' },
 ];
 
-const SPEAKING_STYLE_OPTIONS: Array<{ label: string; value: SpeakingStyle }> = [
-  { label: 'Responsive — ends utterances quickly after you stop talking', value: 'responsive' },
-  { label: 'Balanced — standard detection (default)', value: 'balanced' },
-  { label: 'Patient — waits longer through pauses', value: 'patient' },
+const SPEAKING_STYLE_OPTIONS: ReadonlyArray<DropdownOption<(typeof SPEAKING_STYLES)[number]>> = [
+  { label: 'Responsive', value: 'responsive' },
+  { label: 'Balanced', value: 'balanced' },
+  { label: 'Patient', value: 'patient' },
 ];
 
-function addInfoTooltip(setting: Setting, tooltip: string): Setting {
-  setting.addExtraButton((button) => {
-    button.setIcon('info').setTooltip(tooltip);
-  });
-  return setting;
+function isListeningMode(value: unknown): value is ListeningMode {
+  return typeof value === 'string' && (LISTENING_MODES as readonly string[]).includes(value);
 }
 
 export class LocalSttSettingTab extends PluginSettingTab {
@@ -88,13 +117,9 @@ export class LocalSttSettingTab extends PluginSettingTab {
 
     containerEl.empty();
     containerEl.createEl('h2', { text: 'Local Transcript' });
-    containerEl.createEl('p', {
-      text: 'Configure transcript placement, managed local models, listening mode, and the native sidecar.',
-    });
 
     // --- Model ---
-    new Setting(containerEl).setName('Model').setHeading();
-    const modelSection = containerEl.createDiv();
+    const modelSection = this.createSettingGroup(containerEl, 'Model');
     const manager = this.dependencies.modelInstallManager;
     this.disposeModelSection = renderModelSection(modelSection, manager, {
       onManageModels: () => {
@@ -122,239 +147,118 @@ export class LocalSttSettingTab extends PluginSettingTab {
     });
 
     // --- Transcription ---
-    new Setting(containerEl).setName('Transcription').setHeading();
+    const transcriptionCard = this.createSettingGroup(containerEl, 'Transcription');
 
-    addInfoTooltip(
-      new Setting(containerEl)
-        .setName('Listening mode')
-        .setDesc('Continuous or single-utterance capture.')
-        .addDropdown((dropdown) => {
-          dropdown.addOption('always_on', 'Always on');
-          dropdown.addOption('one_sentence', 'One sentence');
-          dropdown.setValue(settings.listeningMode);
-          dropdown.onChange(async (value) => {
-            await this.persistSettings({
-              ...this.dependencies.getSettings(),
-              listeningMode:
-                value === 'always_on' || value === 'one_sentence' ? value : 'always_on',
-            });
-          });
-        }),
-      'Choose whether dictation keeps listening continuously or captures one utterance and stops.',
-    );
+    this.addEnumSetting(transcriptionCard, {
+      name: 'Listening mode',
+      desc: 'Continuous or single-phrase capture.',
+      tooltip:
+        'Choose whether dictation keeps listening continuously or captures one phrase and stops.',
+      key: 'listeningMode',
+      options: LISTENING_MODE_OPTIONS,
+      isValid: isListeningMode,
+    });
 
-    addInfoTooltip(
-      new Setting(containerEl)
-        .setName('Speaking style')
-        .setDesc('Utterance-end detection speed.')
-        .addDropdown((dropdown) => {
-          for (const option of SPEAKING_STYLE_OPTIONS) {
-            dropdown.addOption(option.value, option.label);
-          }
+    this.addEnumSetting(transcriptionCard, {
+      name: 'Speaking style',
+      desc: 'Pause detection speed.',
+      tooltip:
+        "How quickly the engine decides you've stopped speaking. Responsive — ends quickly. Balanced — standard detection (default). Patient — waits longer through pauses.",
+      key: 'speakingStyle',
+      options: SPEAKING_STYLE_OPTIONS,
+      isValid: isSpeakingStyle,
+    });
 
-          dropdown.setValue(settings.speakingStyle);
-          dropdown.onChange(async (value) => {
-            if (!isSpeakingStyle(value)) {
-              return;
-            }
-            await this.persistSettings({
-              ...this.dependencies.getSettings(),
-              speakingStyle: value,
-            });
-          });
-        }),
-      'Tune how quickly utterances end after you stop speaking.',
-    );
+    this.addEnumSetting(transcriptionCard, {
+      name: 'Dictation anchor',
+      desc: 'Session insertion point.',
+      tooltip:
+        'Where each dictation session anchors. The first phrase lands here and stays pinned for the rest of the session, even if you click elsewhere in the note.',
+      key: 'dictationAnchor',
+      options: DICTATION_ANCHOR_OPTIONS,
+      isValid: isDictationAnchor,
+    });
 
-    addInfoTooltip(
-      new Setting(containerEl)
-        .setName('Dictation anchor')
-        .setDesc('Session insertion point.')
-        .addDropdown((dropdown) => {
-          for (const option of DICTATION_ANCHOR_OPTIONS) {
-            dropdown.addOption(option.value, option.label);
-          }
+    this.addEnumSetting(transcriptionCard, {
+      name: 'Transcript formatting',
+      desc: 'How speech is joined.',
+      tooltip:
+        'How dictated speech is joined within one session. Smart paragraphs use longer pauses as paragraph breaks.',
+      key: 'transcriptFormatting',
+      options: TRANSCRIPT_FORMATTING_OPTIONS,
+      isValid: isTranscriptFormattingMode,
+    });
 
-          dropdown.setValue(settings.dictationAnchor);
-          dropdown.onChange(async (value) => {
-            if (!isDictationAnchor(value)) {
-              return;
-            }
-            await this.persistSettings({
-              ...this.dependencies.getSettings(),
-              dictationAnchor: value,
-            });
-          });
-        }),
-      'Where each dictation session anchors. The first phrase lands here and stays pinned for the rest of the session, even if you click elsewhere in the note.',
-    );
-
-    addInfoTooltip(
-      new Setting(containerEl)
-        .setName('Transcript formatting')
-        .setDesc('How utterances are joined.')
-        .addDropdown((dropdown) => {
-          for (const option of TRANSCRIPT_FORMATTING_OPTIONS) {
-            dropdown.addOption(option.value, option.label);
-          }
-
-          dropdown.setValue(settings.transcriptFormatting);
-          dropdown.onChange(async (value) => {
-            if (!isTranscriptFormattingMode(value)) {
-              return;
-            }
-            await this.persistSettings({
-              ...this.dependencies.getSettings(),
-              transcriptFormatting: value,
-            });
-          });
-        }),
-      'How dictated utterances are joined within one session. Smart paragraphs use longer pauses as paragraph breaks.',
-    );
-
-    addInfoTooltip(
-      new Setting(containerEl)
-        .setName('Show timestamps')
-        .setDesc('Sparse elapsed-session timestamps.')
-        .addToggle((toggle) => {
-          toggle.setValue(settings.showTimestamps);
-          toggle.onChange(async (value) => {
-            await this.persistSettings({
-              ...this.dependencies.getSettings(),
-              showTimestamps: value,
-            });
-          });
-        }),
-      'Add sparse elapsed-session timestamps before selected utterances.',
-    );
+    this.addToggleSetting(transcriptionCard, {
+      name: 'Show timestamps',
+      desc: 'Sparse elapsed-session timestamps.',
+      tooltip: 'Add sparse elapsed-session timestamps before selected speech segments.',
+      key: 'showTimestamps',
+    });
 
     // --- Engine options ---
-    new Setting(containerEl).setName('Engine options').setHeading();
-    const engineSection = containerEl.createDiv();
+    const engineSection = this.createSettingGroup(containerEl, 'Engine options');
     void this.bindEngineOptions(engineSection, manager);
-    const gpuSection = containerEl.createDiv();
-    void this.renderGpuSidecarControls(gpuSection);
 
-    // --- Advanced: Sidecar (collapsible) ---
-    const advancedDetails = containerEl.createEl('details', { cls: 'local-stt-advanced' });
-    advancedDetails.createEl('summary', { text: 'Advanced: Sidecar' });
+    // --- Sidecar ---
+    const sidecarSection = this.createSettingGroup(containerEl, 'Sidecar');
+    void (async () => {
+      await this.renderGpuSidecarControls(sidecarSection);
 
-    addInfoTooltip(
-      new Setting(advancedDetails)
-        .setName('Sidecar path override')
-        .setDesc('Custom sidecar executable.')
-        .addText((text) => {
-          text.setPlaceholder('Auto-detect from bin/cpu, bin/cuda, or native/target debug builds');
-          text.setValue(settings.sidecarPathOverride);
-          text.onChange(async (value) => {
-            await this.persistSettings({
-              ...this.dependencies.getSettings(),
-              sidecarPathOverride: value.trim(),
-            });
-          });
-        }),
-      'Optional absolute path to an installed or dev sidecar executable file.',
-    );
+      this.addTextSetting(sidecarSection, {
+        name: 'Sidecar path override',
+        desc: 'Custom sidecar executable.',
+        tooltip: 'Optional absolute path to an installed or dev sidecar executable file.',
+        key: 'sidecarPathOverride',
+        placeholder: 'Auto-detect from bin/cpu, bin/cuda, or native/target debug builds',
+      });
 
-    if (Platform.isLinux) {
-      addInfoTooltip(
-        new Setting(advancedDetails)
-          .setName('CUDA library path')
-          .setDesc('Sidecar-only CUDA search path.')
-          .addText((text) => {
-            text.setPlaceholder(
-              '/run/host/usr/local/cuda-12.9/targets/x86_64-linux/lib:/run/host/usr/lib64',
-            );
-            text.setValue(settings.cudaLibraryPath);
-            text.onChange(async (value) => {
-              await this.persistSettings({
-                ...this.dependencies.getSettings(),
-                cudaLibraryPath: value.trim(),
-              });
-            });
-          }),
-        'Optional colon-separated library search path for the sidecar process only. Use this for Flatpak or custom CUDA installs without changing Obsidian’s global environment.',
-      );
-    }
+      if (Platform.isLinux) {
+        this.addTextSetting(sidecarSection, {
+          name: 'CUDA library path',
+          desc: 'Sidecar-only CUDA search path.',
+          tooltip:
+            'Optional colon-separated library search path for the sidecar process only. Use this for Flatpak or custom CUDA installs without changing Obsidian’s global environment.',
+          key: 'cudaLibraryPath',
+          placeholder: '/run/host/usr/local/cuda-12.9/targets/x86_64-linux/lib:/run/host/usr/lib64',
+        });
+      }
 
-    addInfoTooltip(
-      new Setting(advancedDetails)
-        .setName('Startup timeout (ms)')
-        .setDesc('Startup health-check limit.')
-        .addText((text) => {
-          text.inputEl.type = 'number';
-          text.setValue(String(settings.sidecarStartupTimeoutMs));
-          text.onChange(async (value) => {
-            const parsedValue = Number.parseInt(value, 10);
+      this.addPositiveIntSetting(sidecarSection, {
+        name: 'Startup timeout (ms)',
+        desc: 'Startup health-check limit.',
+        tooltip: 'Maximum time allowed for the startup health handshake.',
+        key: 'sidecarStartupTimeoutMs',
+      });
 
-            if (!Number.isInteger(parsedValue) || parsedValue <= 0) {
-              return;
-            }
+      this.addPositiveIntSetting(sidecarSection, {
+        name: 'Request timeout (ms)',
+        desc: 'Sidecar request limit.',
+        tooltip:
+          'Maximum time allowed for start, stop, cancel, health, and model-management requests before failing them.',
+        key: 'sidecarRequestTimeoutMs',
+      });
+    })();
 
-            await this.persistSettings({
-              ...this.dependencies.getSettings(),
-              sidecarStartupTimeoutMs: parsedValue,
-            });
-          });
-        }),
-      'Maximum time allowed for the startup health handshake.',
-    );
+    // --- Advanced ---
+    const advancedSection = this.createSettingGroup(containerEl, 'Advanced');
 
-    addInfoTooltip(
-      new Setting(advancedDetails)
-        .setName('Request timeout (ms)')
-        .setDesc('Sidecar request limit.')
-        .addText((text) => {
-          text.inputEl.type = 'number';
-          text.setValue(String(settings.sidecarRequestTimeoutMs));
-          text.onChange(async (value) => {
-            const parsedValue = Number.parseInt(value, 10);
+    this.addTextSetting(advancedSection, {
+      name: 'Model store folder override',
+      desc: 'Custom managed-model folder.',
+      tooltip:
+        'Optional absolute folder path for managed downloads. Leave blank to use the shared default model store.',
+      key: 'modelStorePathOverride',
+      placeholder: 'Use the shared default model store',
+    });
 
-            if (!Number.isInteger(parsedValue) || parsedValue <= 0) {
-              return;
-            }
-
-            await this.persistSettings({
-              ...this.dependencies.getSettings(),
-              sidecarRequestTimeoutMs: parsedValue,
-            });
-          });
-        }),
-      'Maximum time allowed for start, stop, cancel, health, and model-management requests before failing them.',
-    );
-
-    addInfoTooltip(
-      new Setting(advancedDetails)
-        .setName('Model store folder override')
-        .setDesc('Custom managed-model folder.')
-        .addText((text) => {
-          text.setPlaceholder('Use the shared default model store');
-          text.setValue(settings.modelStorePathOverride);
-          text.onChange(async (value) => {
-            await this.persistSettings({
-              ...this.dependencies.getSettings(),
-              modelStorePathOverride: value.trim(),
-            });
-          });
-        }),
-      'Optional absolute folder path for managed downloads. Leave blank to use the shared default model store.',
-    );
-
-    addInfoTooltip(
-      new Setting(advancedDetails)
-        .setName('Developer mode')
-        .setDesc('Verbose console diagnostics.')
-        .addToggle((toggle) => {
-          toggle.setValue(settings.developerMode);
-          toggle.onChange(async (value) => {
-            await this.persistSettings({
-              ...this.dependencies.getSettings(),
-              developerMode: value,
-            });
-          });
-        }),
-      'Log verbose diagnostic output to the developer console (Ctrl+Shift+I). Useful for debugging or reporting issues.',
-    );
+    this.addToggleSetting(advancedSection, {
+      name: 'Developer mode',
+      desc: 'Verbose console diagnostics.',
+      tooltip:
+        'Log verbose diagnostic output to the developer console (Ctrl+Shift+I). Useful for debugging or reporting issues.',
+      key: 'developerMode',
+    });
   }
 
   override hide(): void {
@@ -426,46 +330,33 @@ export class LocalSttSettingTab extends PluginSettingTab {
     containerEl.empty();
 
     const descFragment = document.createDocumentFragment();
-    descFragment.createSpan({
-      text: 'Use the GPU when available.',
-    });
+    descFragment.createSpan({ text: 'Use the GPU when available.' });
     descFragment.createEl('br');
     descFragment.createSpan({ text: `Currently: ${label}` });
 
-    addInfoTooltip(
-      new Setting(containerEl)
-        .setName('Hardware acceleration')
-        .setDesc(descFragment)
-        .addToggle((toggle) => {
-          toggle.setValue(settings.accelerationPreference === 'auto');
-          toggle.onChange(async (value) => {
-            await this.persistSettings({
-              ...this.dependencies.getSettings(),
-              accelerationPreference: value ? 'auto' : 'cpu_only',
-            });
-            this.renderEngineOptions(containerEl, systemInfo);
-          });
-        }),
-      'Use the GPU when available. Turn off to run every engine on CPU.',
-    );
+    // accelerationPreference is a string enum, not a boolean, so the simple
+    // toggle builder doesn't fit — toggle here drives an enum mapping.
+    const accelSetting = new Setting(containerEl)
+      .setName('Hardware acceleration')
+      .setDesc(descFragment);
+    accelSetting.addToggle((toggle) => {
+      toggle.setValue(settings.accelerationPreference === 'auto');
+      toggle.onChange(async (value) => {
+        await this.persistOne('accelerationPreference', value ? 'auto' : 'cpu_only');
+        this.renderEngineOptions(containerEl, systemInfo);
+      });
+    });
+    this.appendInfoTooltip(accelSetting, 'Turn off to run every engine on CPU.');
 
     const caps = this.dependencies.modelInstallManager.getState().selectedModelCapabilities;
     if (caps.status === 'ready' && caps.capabilities.family.supportsInitialPrompt) {
-      addInfoTooltip(
-        new Setting(containerEl)
-          .setName('Use note as context')
-          .setDesc('Glossary prompt for supported engines.')
-          .addToggle((toggle) => {
-            toggle.setValue(settings.useNoteAsContext);
-            toggle.onChange(async (value) => {
-              await this.persistSettings({
-                ...this.dependencies.getSettings(),
-                useNoteAsContext: value,
-              });
-            });
-          }),
-        'Send a glossary of distinctive terms from the note as the engine’s prompt. Helps spell proper nouns and technical terms. Only used by engines that support initial prompts.',
-      );
+      this.addToggleSetting(containerEl, {
+        name: 'Use note as context',
+        desc: 'Glossary prompt for supported engines.',
+        tooltip:
+          'Send a glossary of distinctive terms from the note as the engine’s prompt. Helps spell proper nouns and technical terms. Only used by engines that support initial prompts.',
+        key: 'useNoteAsContext',
+      });
     }
   }
 
@@ -485,7 +376,7 @@ export class LocalSttSettingTab extends PluginSettingTab {
     if (Platform.isMacOS) {
       containerEl.createEl('p', {
         cls: 'setting-item-description',
-        text: 'On macOS, Metal acceleration is compiled into the sidecar binary — no separate install step. The toggle above auto-enables it when the sidecar is running.',
+        text: 'On macOS, Metal acceleration is compiled into the sidecar binary — no separate install step. The hardware acceleration toggle auto-enables it when the sidecar is running.',
       });
       return;
     }
@@ -515,7 +406,7 @@ export class LocalSttSettingTab extends PluginSettingTab {
       });
     });
 
-    addInfoTooltip(
+    this.appendInfoTooltip(
       setting,
       isInstalled
         ? 'Re-downloads the CPU sidecar archive from GitHub releases. Useful if the install looks corrupted.'
@@ -574,31 +465,114 @@ export class LocalSttSettingTab extends PluginSettingTab {
       });
     }
 
-    addInfoTooltip(setting, driverReason.tooltip);
+    this.appendInfoTooltip(setting, driverReason.tooltip);
   }
 
   private renderUninstallCudaRow(containerEl: HTMLDivElement, pluginDirectory: string): void {
-    addInfoTooltip(
-      new Setting(containerEl)
-        .setName('Uninstall GPU acceleration')
-        .setDesc('Remove the CUDA sidecar.')
-        .addButton((button) => {
-          button.setButtonText('Uninstall CUDA sidecar');
-          button.setWarning();
-          button.onClick(() => {
-            void this.handleUninstallCuda(pluginDirectory);
-          });
-        }),
+    const setting = new Setting(containerEl)
+      .setName('Uninstall GPU acceleration')
+      .setDesc('Remove the CUDA sidecar.');
+    setting.addButton((button) => {
+      button.setButtonText('Uninstall CUDA sidecar');
+      button.setWarning();
+      button.onClick(() => {
+        void this.handleUninstallCuda(pluginDirectory);
+      });
+    });
+    this.appendInfoTooltip(
+      setting,
       'Removes the CUDA sidecar from this plugin directory and restarts on CPU.',
     );
   }
 
+  // Build the native Obsidian "setting-group" structure used by core settings
+  // tabs: a wrapper div with a heading row, then a "setting-items" sibling
+  // that holds the actual rows. Obsidian's bundled CSS targets this shape to
+  // produce the rounded card with internal dividers.
+  private createSettingGroup(parent: HTMLElement, heading: string): HTMLDivElement {
+    const group = parent.createDiv({ cls: 'setting-group' });
+    new Setting(group).setName(heading).setHeading();
+    return group.createDiv({ cls: 'setting-items' });
+  }
+
+  private addEnumSetting<K extends keyof PluginSettings>(
+    parent: HTMLElement,
+    spec: SettingSpec & {
+      key: K;
+      options: ReadonlyArray<DropdownOption<PluginSettings[K] & string>>;
+      isValid: (value: unknown) => value is PluginSettings[K];
+    },
+  ): void {
+    const setting = new Setting(parent).setName(spec.name).setDesc(spec.desc);
+    setting.addDropdown((dropdown) => {
+      for (const option of spec.options) {
+        dropdown.addOption(option.value, option.label);
+      }
+      dropdown.setValue(this.dependencies.getSettings()[spec.key] as unknown as string);
+      dropdown.onChange(async (value) => {
+        if (!spec.isValid(value)) return;
+        await this.persistOne(spec.key, value);
+      });
+    });
+    this.appendInfoTooltip(setting, spec.tooltip);
+  }
+
+  private addToggleSetting<K extends SettingsKeyOf<boolean>>(
+    parent: HTMLElement,
+    spec: SettingSpec & { key: K },
+  ): void {
+    const setting = new Setting(parent).setName(spec.name).setDesc(spec.desc);
+    setting.addToggle((toggle) => {
+      toggle.setValue(this.dependencies.getSettings()[spec.key] as boolean);
+      toggle.onChange(async (value) => {
+        await this.persistOne(spec.key, value as PluginSettings[K]);
+      });
+    });
+    this.appendInfoTooltip(setting, spec.tooltip);
+  }
+
+  private addTextSetting<K extends SettingsKeyOf<string>>(
+    parent: HTMLElement,
+    spec: SettingSpec & { key: K; placeholder?: string },
+  ): void {
+    const setting = new Setting(parent).setName(spec.name).setDesc(spec.desc);
+    setting.addText((text) => {
+      if (spec.placeholder !== undefined) text.setPlaceholder(spec.placeholder);
+      text.setValue(this.dependencies.getSettings()[spec.key] as string);
+      text.onChange(async (value) => {
+        await this.persistOne(spec.key, value.trim() as PluginSettings[K]);
+      });
+    });
+    this.appendInfoTooltip(setting, spec.tooltip);
+  }
+
+  private addPositiveIntSetting<K extends SettingsKeyOf<number>>(
+    parent: HTMLElement,
+    spec: SettingSpec & { key: K },
+  ): void {
+    const setting = new Setting(parent).setName(spec.name).setDesc(spec.desc);
+    setting.addText((text) => {
+      text.inputEl.type = 'number';
+      text.setValue(String(this.dependencies.getSettings()[spec.key]));
+      text.onChange(async (value) => {
+        const parsed = Number.parseInt(value, 10);
+        if (!Number.isInteger(parsed) || parsed <= 0) return;
+        await this.persistOne(spec.key, parsed as PluginSettings[K]);
+      });
+    });
+    this.appendInfoTooltip(setting, spec.tooltip);
+  }
+
+  private appendInfoTooltip(setting: Setting, tooltip: string | undefined): void {
+    if (tooltip === undefined) return;
+    setting.addExtraButton((button) => {
+      button.setIcon('info').setTooltip(tooltip);
+    });
+  }
+
   private openCudaInstallModal(pluginDirectory: string): void {
     this.openInstallModal(pluginDirectory, 'cuda', 'install', async () => {
-      await this.persistSettings({
-        ...this.dependencies.getSettings(),
-        accelerationPreference: 'auto',
-      });
+      await this.persistOne('accelerationPreference', 'auto');
     });
   }
 
@@ -681,8 +655,14 @@ export class LocalSttSettingTab extends PluginSettingTab {
     }
   }
 
-  private async persistSettings(nextSettings: PluginSettings): Promise<void> {
-    await this.dependencies.saveSettings(nextSettings);
+  private async persistOne<K extends keyof PluginSettings>(
+    key: K,
+    value: PluginSettings[K],
+  ): Promise<void> {
+    await this.dependencies.saveSettings({
+      ...this.dependencies.getSettings(),
+      [key]: value,
+    });
   }
 }
 
@@ -696,13 +676,13 @@ function describeDriverStatus(status: NvidiaDriverStatus): { label: string; tool
     case 'present':
       return {
         label: 'NVIDIA driver detected.',
-        tooltip: 'NVIDIA driver detected. Downloads the CUDA sidecar archive from GitHub releases.',
+        tooltip: 'Downloads the CUDA sidecar archive from GitHub releases.',
       };
     case 'absent':
       return {
         label: 'No NVIDIA driver detected.',
         tooltip:
-          'No NVIDIA driver detected (nvidia-smi not on PATH). Use "Install anyway" if you are certain your system supports CUDA.',
+          'nvidia-smi was not found on PATH. Use "Install anyway" if you are certain your system supports CUDA.',
       };
     case 'unknown':
       return {

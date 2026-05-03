@@ -254,27 +254,6 @@
   border-bottom: 1px solid var(--background-modifier-border-hover, rgba(128, 128, 128, 0.1));
 }
 
-/* --- Advanced (collapsible sidecar section) ----------------------- */
-
-.local-stt-advanced {
-  margin-top: 16px;
-  border: 1px solid var(--background-modifier-border, rgba(128, 128, 128, 0.2));
-  border-radius: var(--radius-s, 4px);
-  padding: 0 12px;
-}
-
-.local-stt-advanced summary {
-  cursor: pointer;
-  padding: 8px 0;
-  font-weight: 600;
-  color: var(--text-muted);
-  font-size: var(--font-ui-medium);
-}
-
-.local-stt-advanced[open] summary {
-  margin-bottom: 4px;
-}
-
 /* --- Manage-models modal width constraint ------------------------- */
 
 .local-stt-manage-models {
