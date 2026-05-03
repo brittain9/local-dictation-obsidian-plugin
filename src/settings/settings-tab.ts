@@ -144,8 +144,6 @@ export class LocalSttSettingTab extends PluginSettingTab {
     this.addEnumSetting(transcriptionCard, {
       name: 'Listening mode',
       desc: 'Continuous or single-phrase capture.',
-      tooltip:
-        'Choose whether dictation keeps listening continuously or captures one phrase and stops.',
       key: 'listeningMode',
       options: LISTENING_MODE_OPTIONS,
       isValid: isListeningMode,
@@ -162,10 +160,8 @@ export class LocalSttSettingTab extends PluginSettingTab {
     });
 
     this.addEnumSetting(transcriptionCard, {
-      name: 'Dictation anchor',
-      desc: 'Session insertion point.',
-      tooltip:
-        'Where each dictation session anchors. The first phrase lands here and stays pinned for the rest of the session, even if you click elsewhere in the note.',
+      name: 'Insert text',
+      desc: 'Where dictated text appears.',
       key: 'dictationAnchor',
       options: DICTATION_ANCHOR_OPTIONS,
       isValid: isDictationAnchor,
@@ -184,7 +180,8 @@ export class LocalSttSettingTab extends PluginSettingTab {
     this.addToggleSetting(transcriptionCard, {
       name: 'Show timestamps',
       desc: 'Sparse elapsed-session timestamps.',
-      tooltip: 'Add sparse elapsed-session timestamps before selected speech segments.',
+      tooltip:
+        'Add sparse elapsed-session timestamps at speech-segment boundaries from the voice-activity detector (VAD).',
       key: 'showTimestamps',
     });
 
@@ -220,8 +217,6 @@ export class LocalSttSettingTab extends PluginSettingTab {
     this.addToggleSetting(advancedSection, {
       name: 'Developer mode',
       desc: 'Verbose console diagnostics.',
-      tooltip:
-        'Log verbose diagnostic output to the developer console (Ctrl+Shift+I). Useful for debugging or reporting issues.',
       key: 'developerMode',
     });
   }
