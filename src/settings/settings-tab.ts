@@ -24,6 +24,7 @@ import {
   uninstallSidecarVariant,
   variantDirectoryPath,
 } from '../sidecar/sidecar-installer';
+import { SidecarNotInstalledError } from '../sidecar/sidecar-paths';
 import { renderActiveInstallCard } from './install-progress-row';
 import { renderModelSection } from './model-settings-section';
 import {
@@ -95,6 +96,10 @@ const SPEAKING_STYLE_OPTIONS: ReadonlyArray<DropdownOption<SpeakingStyle>> = [
   { label: 'Patient', value: 'patient' },
 ];
 
+// Tags rows owned by renderSidecarSection so re-renders can find and remove
+// only those rows from a section it shares with non-sidecar settings.
+const SIDECAR_ROW_MARKER = 'data-stt-sidecar-row';
+
 export class LocalSttSettingTab extends PluginSettingTab {
   private disposeEngineSection: (() => void) | null = null;
   private disposeMissingSidecarBanner: (() => void) | null = null;
@@ -103,6 +108,7 @@ export class LocalSttSettingTab extends PluginSettingTab {
   private missingSidecarProgressEl: HTMLDivElement | null = null;
   private nvidiaDriverStatus: Promise<NvidiaDriverStatus> | null = null;
   private sidecarProgressEl: HTMLDivElement | null = null;
+  private sidecarRenderToken = 0;
 
   constructor(
     app: App,
@@ -212,15 +218,16 @@ export class LocalSttSettingTab extends PluginSettingTab {
     renderEngine();
     this.disposeEngineSection = manager.subscribe(renderEngine);
 
-    // --- Sidecar ---
-    const sidecarSection = this.createSettingGroup(containerEl, 'Sidecar');
-    void this.renderSidecarSection(sidecarSection);
-    this.disposeSidecarSection = this.dependencies.sidecarInstallManager.subscribe(() => {
-      this.handleSidecarSectionChange(sidecarSection);
-    });
-
-    // --- Advanced ---
+    // --- Advanced (includes sidecar install/uninstall) ---
     const advancedSection = this.createSettingGroup(containerEl, 'Advanced');
+
+    // Sidecar rows live alongside Model store / Developer mode in this section.
+    // renderSidecarSection tags its rows with SIDECAR_ROW_MARKER so re-renders
+    // only touch those rows.
+    void this.renderSidecarSection(advancedSection);
+    this.disposeSidecarSection = this.dependencies.sidecarInstallManager.subscribe(() => {
+      this.handleSidecarSectionChange(advancedSection);
+    });
 
     this.addTextSetting(advancedSection, {
       name: 'Model store folder override',
@@ -259,6 +266,7 @@ export class LocalSttSettingTab extends PluginSettingTab {
     this.sidecarProgressEl = null;
     this.missingSidecarProgressEl = null;
     this.nvidiaDriverStatus = null;
+    this.sidecarRenderToken = 0;
   }
 
   private buildModelInfoCallback(
@@ -362,87 +370,149 @@ export class LocalSttSettingTab extends PluginSettingTab {
   }
 
   private async renderSidecarSection(section: HTMLDivElement): Promise<void> {
-    section.empty();
-    this.sidecarProgressEl = null;
+    // Generation token: when the install manager fires multiple notify()s,
+    // handleSidecarSectionChange schedules concurrent renders on the same live
+    // section element. Without coalescing, both pass the remove step and both
+    // append rows, producing duplicates. Each render captures a token, and any
+    // call whose token is no longer current bails before mutating the DOM.
+    const token = ++this.sidecarRenderToken;
+    const isStale = (): boolean => token !== this.sidecarRenderToken || !section.isConnected;
 
     const pluginDirectory = await this.resolvePluginDirectorySafe();
-    if (pluginDirectory === null || !section.isConnected) return;
+    if (pluginDirectory === null || isStale()) return;
+
+    let cpuManifest: InstallManifest | null;
+    let cudaManifest: InstallManifest | null = null;
+    let driverStatus: NvidiaDriverStatus = 'absent';
 
     if (Platform.isMacOS) {
-      const cpuManifest = await readInstallManifest(variantDirectoryPath(pluginDirectory, 'cpu'));
-      if (!section.isConnected) return;
-      this.renderSidecarInstallRow(section, {
-        desc: 'Speech-to-text engine.',
-        manifest: cpuManifest,
-        name: 'Sidecar',
-        pluginDirectory,
-        tooltipExtra: 'Includes Metal acceleration on Apple Silicon and Intel Macs.',
-        variant: 'cpu',
-      });
+      cpuManifest = await readInstallManifest(variantDirectoryPath(pluginDirectory, 'cpu'));
+      if (isStale()) return;
     } else {
-      const [cpuManifest, cudaManifest] = await Promise.all([
+      if (this.nvidiaDriverStatus === null) {
+        this.nvidiaDriverStatus = detectNvidiaDriver();
+      }
+      [cpuManifest, cudaManifest, driverStatus] = await Promise.all([
         readInstallManifest(variantDirectoryPath(pluginDirectory, 'cpu')),
         readInstallManifest(variantDirectoryPath(pluginDirectory, 'cuda')),
+        this.nvidiaDriverStatus,
       ]);
-      if (!section.isConnected) return;
-      this.renderSidecarInstallRow(section, {
-        desc: 'Speech-to-text engine. Required.',
-        manifest: cpuManifest,
-        name: 'CPU sidecar',
-        pluginDirectory,
-        variant: 'cpu',
+      if (isStale()) return;
+    }
+
+    // Anchor for re-render insertion: the first child not tagged as ours
+    // (Model store / Developer mode on first paint, same on subsequent paints
+    // because we always insert before this anchor).
+    const insertBefore =
+      Array.from(section.children).find((c) => !c.hasAttribute(SIDECAR_ROW_MARKER)) ?? null;
+
+    for (const child of Array.from(section.children)) {
+      if (child.hasAttribute(SIDECAR_ROW_MARKER)) child.remove();
+    }
+    this.sidecarProgressEl = null;
+
+    // Render into a detached scratch div, tag each new top-level child, then
+    // move them in front of the anchor. Lets us reuse helpers that append to
+    // their parent without splicing them by hand.
+    const append = (renderFn: (target: HTMLDivElement) => void): void => {
+      const scratch = document.createElement('div');
+      renderFn(scratch as HTMLDivElement);
+      while (scratch.firstChild !== null) {
+        const child = scratch.firstChild as HTMLElement;
+        child.setAttribute(SIDECAR_ROW_MARKER, '');
+        section.insertBefore(child, insertBefore);
+      }
+    };
+
+    const activeInstall = this.dependencies.sidecarInstallManager.getState().activeInstall;
+    const renderActiveCard = (active: NonNullable<typeof activeInstall>): void => {
+      append((target) => {
+        const { progressEl } = renderActiveInstallCard(target, {
+          isCancelling: active.phase === 'canceling',
+          name: Platform.isMacOS
+            ? 'Installing sidecar'
+            : `Installing: ${active.variant.toUpperCase()} sidecar`,
+          onCancel: () => {
+            this.dependencies.sidecarInstallManager.cancel();
+          },
+          progressState: buildSidecarProgressState(active),
+        });
+        this.sidecarProgressEl = progressEl;
       });
-      await this.renderGpuSidecarRow(section, cudaManifest, pluginDirectory);
-      if (!section.isConnected) return;
+    };
+
+    if (Platform.isMacOS) {
+      append((target) => {
+        this.renderSidecarInstallRow(target, {
+          desc: 'Speech-to-text engine.',
+          manifest: cpuManifest,
+          name: 'Sidecar',
+          pluginDirectory,
+          tooltipExtra: 'Includes Metal acceleration on Apple Silicon and Intel Macs.',
+          variant: 'cpu',
+        });
+      });
+      if (activeInstall !== null) renderActiveCard(activeInstall);
+    } else {
+      append((target) => {
+        this.renderSidecarInstallRow(target, {
+          desc: 'Speech-to-text engine. Required.',
+          manifest: cpuManifest,
+          name: 'CPU sidecar',
+          pluginDirectory,
+          variant: 'cpu',
+        });
+      });
+      if (activeInstall !== null && activeInstall.variant === 'cpu') {
+        renderActiveCard(activeInstall);
+      }
+
+      append((target) => {
+        this.renderGpuSidecarRow(target, cudaManifest, pluginDirectory, driverStatus);
+      });
+      if (activeInstall !== null && activeInstall.variant === 'cuda') {
+        renderActiveCard(activeInstall);
+      }
     }
 
     if (Platform.isLinux) {
-      this.addTextSetting(section, {
-        name: 'CUDA library path',
-        desc: 'Sidecar-only CUDA search path.',
-        tooltip:
-          'Optional colon-separated library search path for the sidecar process only. Use this for Flatpak or custom CUDA installs without changing Obsidian’s global environment.',
-        key: 'cudaLibraryPath',
-        placeholder: '/run/host/usr/local/cuda-12.9/targets/x86_64-linux/lib:/run/host/usr/lib64',
+      append((target) => {
+        this.addTextSetting(target, {
+          name: 'CUDA library path',
+          desc: 'Sidecar-only CUDA search path.',
+          tooltip:
+            'Optional colon-separated library search path for the sidecar process only. Use this for Flatpak or custom CUDA installs without changing Obsidian’s global environment.',
+          key: 'cudaLibraryPath',
+          placeholder: '/run/host/usr/local/cuda-12.9/targets/x86_64-linux/lib:/run/host/usr/lib64',
+        });
       });
     }
 
     if (this.dependencies.getSettings().developerMode) {
-      this.addTextSetting(section, {
-        name: 'Sidecar path override',
-        desc: 'Custom sidecar executable.',
-        tooltip: 'Optional absolute path to an installed or dev sidecar executable file.',
-        key: 'sidecarPathOverride',
-        placeholder: 'Auto-detect from bin/cpu, bin/cuda, or native/target debug builds',
-      });
+      append((target) => {
+        this.addTextSetting(target, {
+          name: 'Sidecar path override',
+          desc: 'Custom sidecar executable.',
+          tooltip: 'Optional absolute path to an installed or dev sidecar executable file.',
+          key: 'sidecarPathOverride',
+          placeholder: 'Auto-detect from bin/cpu, bin/cuda, or native/target debug builds',
+        });
 
-      this.addPositiveIntSetting(section, {
-        name: 'Startup timeout (s)',
-        desc: 'Startup health-check limit.',
-        tooltip: 'Maximum time allowed for the startup health handshake.',
-        key: 'sidecarStartupTimeoutSeconds',
-      });
+        this.addPositiveIntSetting(target, {
+          name: 'Startup timeout (s)',
+          desc: 'Startup health-check limit.',
+          tooltip: 'Maximum time allowed for the startup health handshake.',
+          key: 'sidecarStartupTimeoutSeconds',
+        });
 
-      this.addPositiveIntSetting(section, {
-        name: 'Request timeout (s)',
-        desc: 'Sidecar request limit.',
-        tooltip:
-          'Maximum time allowed for start, stop, cancel, health, and model-management requests before failing them.',
-        key: 'sidecarRequestTimeoutSeconds',
+        this.addPositiveIntSetting(target, {
+          name: 'Request timeout (s)',
+          desc: 'Sidecar request limit.',
+          tooltip:
+            'Maximum time allowed for start, stop, cancel, health, and model-management requests before failing them.',
+          key: 'sidecarRequestTimeoutSeconds',
+        });
       });
-    }
-
-    const activeInstall = this.dependencies.sidecarInstallManager.getState().activeInstall;
-    if (activeInstall !== null) {
-      const { progressEl } = renderActiveInstallCard(section, {
-        isCancelling: activeInstall.phase === 'canceling',
-        name: `Installing: ${activeInstall.variant.toUpperCase()} sidecar`,
-        onCancel: () => {
-          this.dependencies.sidecarInstallManager.cancel();
-        },
-        progressState: buildSidecarProgressState(activeInstall),
-      });
-      this.sidecarProgressEl = progressEl;
     }
   }
 
@@ -562,20 +632,12 @@ export class LocalSttSettingTab extends PluginSettingTab {
     this.appendInfoTooltip(setting, formatSidecarTooltip(opts.manifest, opts.tooltipExtra));
   }
 
-  private async renderGpuSidecarRow(
+  private renderGpuSidecarRow(
     container: HTMLDivElement,
     manifest: InstallManifest | null,
     pluginDirectory: string,
-  ): Promise<void> {
-    // Memoize the nvidia-smi probe for the tab's lifetime. display() can fire
-    // multiple times per tab open; spawning a child process on each render is
-    // wasteful. Cleared in tearDown() so the driver state is re-probed next
-    // time the tab opens.
-    if (this.nvidiaDriverStatus === null) {
-      this.nvidiaDriverStatus = detectNvidiaDriver();
-    }
-    const driverStatus = await this.nvidiaDriverStatus;
-    if (!container.isConnected) return;
+    driverStatus: NvidiaDriverStatus,
+  ): void {
     const driverReason = describeDriverStatus(driverStatus);
 
     const isInstalled = manifest !== null;
@@ -768,8 +830,10 @@ export class LocalSttSettingTab extends PluginSettingTab {
     variant: SidecarInstallVariant,
   ): Promise<void> {
     const variantLabel = variant === 'cuda' ? 'CUDA' : 'CPU';
+    const userFacingName = Platform.isMacOS ? 'sidecar' : `${variantLabel} sidecar`;
+
     if (this.dependencies.isDictationBusy()) {
-      new Notice(`Stop dictation before uninstalling the ${variantLabel} sidecar.`);
+      new Notice(`Stop dictation before uninstalling the ${userFacingName}.`);
       return;
     }
 
@@ -777,20 +841,31 @@ export class LocalSttSettingTab extends PluginSettingTab {
 
     try {
       await uninstallSidecarVariant(pluginDirectory, variant);
-      await this.dependencies.restartSidecar();
-      new Notice(
-        variant === 'cuda'
-          ? 'CUDA sidecar uninstalled. Running on CPU.'
-          : 'CPU sidecar uninstalled.',
-      );
-      this.display();
     } catch (error) {
       this.dependencies.logger?.error(
         'installer',
         `failed to uninstall ${variantLabel} sidecar`,
         error,
       );
-      new Notice(`Failed to uninstall ${variantLabel} sidecar: ${formatErrorMessage(error)}`);
+      new Notice(`Failed to uninstall ${userFacingName}: ${formatErrorMessage(error)}`);
+      return;
+    }
+
+    new Notice(
+      Platform.isMacOS
+        ? 'Sidecar uninstalled.'
+        : variant === 'cuda'
+          ? 'CUDA sidecar uninstalled. Running on CPU.'
+          : 'CPU sidecar uninstalled.',
+    );
+    this.display();
+
+    try {
+      await this.dependencies.restartSidecar();
+    } catch (error) {
+      if (error instanceof SidecarNotInstalledError) return;
+      this.dependencies.logger?.warn('installer', 'sidecar restart after uninstall failed', error);
+      new Notice(`Sidecar could not restart: ${formatErrorMessage(error)}`);
     }
   }
 

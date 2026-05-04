@@ -18,3 +18,5 @@ data.json
 .idea/
 .vscode/
 .worktrees/
+.claude/
+PLANS.md
