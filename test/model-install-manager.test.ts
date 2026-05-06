@@ -169,6 +169,7 @@ function sampleSelection(modelId = 'whisper_large_v3_turbo_q8_0'): CatalogModelS
 function sampleMergedCapabilities(): EngineCapabilitiesRecord {
   return {
     family: {
+      livePartialStrategies: [],
       maxAudioDurationSecs: null,
       producesPunctuation: true,
       supportedLanguages: { kind: 'english_only' },

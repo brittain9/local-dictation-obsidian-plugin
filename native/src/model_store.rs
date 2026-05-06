@@ -327,7 +327,7 @@ mod tests {
     };
     use crate::catalog::{
         ArtifactRole, CatalogModel, ModelArtifact, ModelCatalog, ModelCollection,
-        ModelFamilyDescriptor, ModelRuntimeDescriptor,
+        ModelFamilyDescriptor, ModelRuntimeDescriptor, RuntimeLocationKind,
     };
     use crate::engine::capabilities::{ModelFamilyId, RuntimeId};
 
@@ -429,9 +429,11 @@ mod tests {
                 language_tags: vec!["en".to_string()],
                 license_label: "MIT".to_string(),
                 license_url: "https://example.com/license".to_string(),
+                live_partials: None,
                 model_card_url: None,
                 model_id: "small".to_string(),
                 notes: vec![],
+                runtime_location_kind: RuntimeLocationKind::PrimaryArtifactFile,
                 source_url: "https://example.com".to_string(),
                 summary: "summary".to_string(),
                 ux_tags: vec![],

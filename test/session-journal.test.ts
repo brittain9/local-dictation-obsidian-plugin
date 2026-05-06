@@ -104,6 +104,38 @@ describe('SessionJournal', () => {
     expect(journal.allUtterancesInOrder()).toEqual([accepted]);
   });
 
+  it('marks partials that arrive after a final as stale', () => {
+    const journal = new SessionJournal('session-1');
+    const partial = transcript({
+      isFinal: false,
+      revision: 0,
+      text: 'rough',
+      utteranceId: 'u1',
+    });
+    const final = transcript({
+      isFinal: true,
+      revision: 1,
+      text: 'rough but right',
+      utteranceId: 'u1',
+    });
+    const latePartial = transcript({
+      isFinal: false,
+      revision: 2,
+      text: 'late partial',
+      utteranceId: 'u1',
+    });
+
+    journal.upsert(partial);
+    journal.upsert(final);
+
+    expect(journal.upsert(latePartial)).toEqual({
+      incoming: latePartial,
+      kind: 'stale',
+      latest: final,
+    });
+    expect(journal.latestForUtterance('u1')).toBe(final);
+  });
+
   it('rejects impossible identity and revision inputs', () => {
     const journal = new SessionJournal('session-1');
     const wrongSession = transcript({
