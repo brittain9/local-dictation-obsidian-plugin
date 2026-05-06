@@ -2,7 +2,12 @@ import type { EditorView } from '@codemirror/view';
 import type { App, EventRef, TFile } from 'obsidian';
 import { describe, expect, it, vi } from 'vitest';
 
-import type { AppendResult, NotePlacementOptions, ReplaceResult } from '../src/editor/note-surface';
+import type {
+  AppendResult,
+  NotePlacementOptions,
+  NoteProjectionContext,
+  ReplaceResult,
+} from '../src/editor/note-surface';
 import { Session } from '../src/session/session';
 import type {
   TranscriptInsertProjection,
@@ -16,8 +21,8 @@ class FakeSurface {
     utteranceId: string;
   }> = [];
   public readonly replaceCalls: Array<{
-    expectedOldText: string;
-    newText: string;
+    expectedOldProjection: TranscriptInsertProjection;
+    newProjection: TranscriptInsertProjection;
     utteranceId: string;
   }> = [];
   public readonly dispose = vi.fn();
@@ -29,7 +34,7 @@ class FakeSurface {
   public nextAppendResult: AppendResult | null = null;
   public nextReplaceResult: ReplaceResult | null = null;
 
-  public projectionContext = { tailContent: '' };
+  public projectionContext: NoteProjectionContext = { tailContent: '' };
 
   readProjectionContext(): { tailContent: string } {
     return this.projectionContext;
@@ -43,7 +48,7 @@ class FakeSurface {
         kind: 'appended',
         span: {
           end: projection.projectedText.length,
-          projectedText: projection.insertedText,
+          projectedText: projection.projectedText,
           start: 0,
           textEnd: projection.textEndOffset,
           textStart: projection.textStartOffset,
@@ -53,18 +58,22 @@ class FakeSurface {
     );
   }
 
-  replaceAnchor(utteranceId: string, newText: string, expectedOldText: string): ReplaceResult {
-    this.replaceCalls.push({ expectedOldText, newText, utteranceId });
+  replaceProjection(
+    utteranceId: string,
+    newProjection: TranscriptInsertProjection,
+    expectedOldProjection: TranscriptInsertProjection,
+  ): ReplaceResult {
+    this.replaceCalls.push({ expectedOldProjection, newProjection, utteranceId });
 
     return (
       this.nextReplaceResult ?? {
         kind: 'replaced',
         span: {
-          end: newText.length,
-          projectedText: newText,
+          end: newProjection.projectedText.length,
+          projectedText: newProjection.projectedText,
           start: 0,
-          textEnd: newText.length,
-          textStart: 0,
+          textEnd: newProjection.textEndOffset,
+          textStart: newProjection.textStartOffset,
           utteranceId,
         },
       }
@@ -73,7 +82,7 @@ class FakeSurface {
 }
 
 describe('Session', () => {
-  it('projects new and revised transcripts through append then replace using last projected text', () => {
+  it('projects new and revised transcripts through append then full-projection replace', () => {
     const { session, surface } = createSessionHarness();
 
     expect(
@@ -92,9 +101,12 @@ describe('Session', () => {
       projection: { insertedText: 'rough', projectedText: 'rough' },
       utteranceId: 'u1',
     });
-    expect(surface.replaceCalls).toEqual([
-      { expectedOldText: 'rough', newText: 'polished', utteranceId: 'u1' },
-    ]);
+    expect(surface.replaceCalls).toHaveLength(1);
+    expect(surface.replaceCalls[0]).toMatchObject({
+      expectedOldProjection: { projectedText: 'rough' },
+      newProjection: { insertedText: 'polished', projectedText: 'polished' },
+      utteranceId: 'u1',
+    });
   });
 
   it('does not project duplicate or stale revisions', () => {
@@ -171,6 +183,123 @@ describe('Session', () => {
       projection: { projectedText: '(0:10) second' },
       utteranceId: 'u2',
     });
+  });
+
+  it('projects partial to partial to final using the original append context', () => {
+    const { session, surface } = createSessionHarness();
+    surface.projectionContext = { tailContent: 'note' };
+
+    expect(
+      session.acceptTranscript(
+        transcript({ isFinal: false, revision: 0, text: 'twenty', utteranceId: 'u1' }),
+      ),
+    ).toEqual({ kind: 'accepted' });
+    surface.projectionContext = { tailContent: 'ignored current tail' };
+    expect(
+      session.acceptTranscript(
+        transcript({ isFinal: false, revision: 1, text: 'twenty twenty', utteranceId: 'u1' }),
+      ),
+    ).toEqual({ kind: 'accepted' });
+    expect(
+      session.acceptTranscript(
+        transcript({ isFinal: true, revision: 2, text: '2020', utteranceId: 'u1' }),
+      ),
+    ).toEqual({ kind: 'accepted' });
+
+    expect(surface.appendCalls).toHaveLength(1);
+    expect(surface.appendCalls[0]?.projection.projectedText).toBe(' twenty');
+    expect(surface.replaceCalls.map((call) => call.newProjection.projectedText)).toEqual([
+      ' twenty twenty',
+      ' 2020',
+    ]);
+  });
+
+  it('ignores empty initial partials', () => {
+    const { session, surface } = createSessionHarness({
+      rendererOptions: { showTimestamps: true, transcriptFormatting: 'space' },
+    });
+
+    expect(
+      session.acceptTranscript(
+        transcript({ isFinal: false, revision: 0, text: '', utteranceId: 'u1' }),
+      ),
+    ).toEqual({ kind: 'accepted' });
+
+    expect(surface.appendCalls).toHaveLength(0);
+    expect(surface.replaceCalls).toHaveLength(0);
+  });
+
+  it('allows an empty final to clear an existing partial projection', () => {
+    const { session, surface } = createSessionHarness({
+      rendererOptions: { showTimestamps: true, transcriptFormatting: 'new_paragraph' },
+    });
+    surface.projectionContext = { tailContent: 'note' };
+
+    session.acceptTranscript(
+      transcript({
+        isFinal: false,
+        revision: 0,
+        text: 'false start',
+        utteranceId: 'u1',
+        utteranceStartMsInSession: 12_000,
+      }),
+    );
+    session.acceptTranscript(
+      transcript({
+        isFinal: true,
+        revision: 1,
+        text: '',
+        utteranceId: 'u1',
+        utteranceStartMsInSession: 12_000,
+      }),
+    );
+
+    expect(surface.replaceCalls).toHaveLength(1);
+    expect(surface.replaceCalls[0]).toMatchObject({
+      expectedOldProjection: { projectedText: ' false start' },
+      newProjection: { projectedText: '' },
+      utteranceId: 'u1',
+    });
+
+    surface.projectionContext = { tailContent: 'note' };
+    session.acceptTranscript(
+      transcript({
+        isFinal: true,
+        revision: 0,
+        text: 'next',
+        utteranceId: 'u2',
+        utteranceStartMsInSession: 15_000,
+      }),
+    );
+    expect(surface.appendCalls[1]?.projection.projectedText).toBe(' (0:15) next');
+  });
+
+  it('adds timestamp only when a partial projection is finalized', () => {
+    const { session, surface } = createSessionHarness({
+      rendererOptions: { showTimestamps: true, transcriptFormatting: 'space' },
+    });
+
+    session.acceptTranscript(
+      transcript({
+        isFinal: false,
+        revision: 0,
+        text: 'twenty twenty',
+        utteranceId: 'u1',
+        utteranceStartMsInSession: 25_000,
+      }),
+    );
+    session.acceptTranscript(
+      transcript({
+        isFinal: true,
+        revision: 1,
+        text: '2020',
+        utteranceId: 'u1',
+        utteranceStartMsInSession: 25_000,
+      }),
+    );
+
+    expect(surface.appendCalls[0]?.projection.projectedText).toBe('twenty twenty');
+    expect(surface.replaceCalls[0]?.newProjection.projectedText).toBe('(0:25) 2020');
   });
 
   it('keeps projecting to the locked background note when the active tab changes', () => {

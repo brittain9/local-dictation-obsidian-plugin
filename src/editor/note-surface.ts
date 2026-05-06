@@ -67,6 +67,8 @@ export type ReplaceResult =
       utteranceId: UtteranceId;
     };
 
+export type ReplaceProjectionResult = ReplaceResult;
+
 export interface RewriteRange {
   from: number;
   to: number;
@@ -179,7 +181,7 @@ export class NoteSurface {
 
     const span: ProjectedSpan = {
       end: to,
-      projectedText: projection.insertedText,
+      projectedText: projection.projectedText,
       start: from,
       textEnd,
       textStart,
@@ -189,6 +191,56 @@ export class NoteSurface {
     this.pendingInitialPrefix = '';
 
     return { kind: 'appended', span: cloneSpan(span) };
+  }
+
+  replaceProjection(
+    utteranceId: UtteranceId,
+    newProjection: TranscriptInsertProjection,
+    expectedOldProjection: TranscriptInsertProjection,
+  ): ReplaceProjectionResult {
+    if (this.disposed) {
+      return { kind: 'denied', reason: { kind: 'disposed' }, utteranceId };
+    }
+
+    const span = this.spans.get(utteranceId);
+
+    if (span === undefined) {
+      return { kind: 'denied', reason: { kind: 'not_found' }, utteranceId };
+    }
+
+    if (span.latched !== undefined) {
+      return { kind: 'denied', reason: this.latchedReason(span), utteranceId };
+    }
+
+    const currentProjection = this.view.state.doc.sliceString(span.start, span.end);
+
+    if (
+      currentProjection !== expectedOldProjection.projectedText ||
+      currentProjection !== span.projectedText
+    ) {
+      span.latched = 'span_mismatch';
+      return {
+        kind: 'denied',
+        reason: { currentText: currentProjection, kind: 'span_mismatch' },
+        utteranceId,
+      };
+    }
+
+    const textStart = span.start + newProjection.textStartOffset;
+    const textEnd = span.start + newProjection.textEndOffset;
+    const end = span.start + newProjection.projectedText.length;
+
+    this.view.dispatch({
+      changes: { from: span.start, to: span.end, insert: newProjection.projectedText },
+      effects: [setAnchorEffect.of(end), EditorView.scrollIntoView(end, { y: 'nearest' })],
+    });
+
+    span.end = end;
+    span.projectedText = newProjection.projectedText;
+    span.textEnd = textEnd;
+    span.textStart = textStart;
+
+    return { kind: 'replaced', span: cloneSpan(span) };
   }
 
   replaceAnchor(utteranceId: UtteranceId, newText: string, expectedOldText: string): ReplaceResult {
@@ -208,7 +260,10 @@ export class NoteSurface {
 
     const currentText = this.view.state.doc.sliceString(span.textStart, span.textEnd);
 
-    if (currentText !== expectedOldText || currentText !== span.projectedText) {
+    if (
+      currentText !== expectedOldText ||
+      this.view.state.doc.sliceString(span.start, span.end) !== span.projectedText
+    ) {
       span.latched = 'span_mismatch';
       return {
         kind: 'denied',
@@ -225,10 +280,10 @@ export class NoteSurface {
       ],
     });
 
-    const delta = newText.length - span.projectedText.length;
+    const delta = newText.length - expectedOldText.length;
     span.textEnd = span.textStart + newText.length;
     span.end += delta;
-    span.projectedText = newText;
+    span.projectedText = this.view.state.doc.sliceString(span.start, span.end);
 
     return { kind: 'replaced', span: cloneSpan(span) };
   }
@@ -263,7 +318,7 @@ export class NoteSurface {
         return { kind: 'denied', reason: { kind: span.latched } };
       }
 
-      if (this.view.state.doc.sliceString(span.textStart, span.textEnd) !== span.projectedText) {
+      if (this.view.state.doc.sliceString(span.start, span.end) !== span.projectedText) {
         span.latched = 'span_mismatch';
         return { kind: 'denied', reason: { kind: 'span_mismatch' } };
       }
@@ -288,7 +343,7 @@ export class NoteSurface {
         continue;
       }
 
-      if (this.view.state.doc.sliceString(span.textStart, span.textEnd) !== span.projectedText) {
+      if (this.view.state.doc.sliceString(span.start, span.end) !== span.projectedText) {
         span.latched = 'span_mismatch';
       }
     }
