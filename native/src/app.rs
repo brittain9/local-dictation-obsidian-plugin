@@ -14,8 +14,8 @@ use crate::model_store::{
 };
 use crate::protocol::{
     AccelerationPreference, Command, CompiledAdapterInfo, CompiledRuntimeInfo, ContextWindow,
-    Event, HealthStatus, ListeningMode, ModelInstallState, ModelProbeStatus, QueueBackpressureTier,
-    SelectedModel, SessionState, SessionStopReason, system_info_string,
+    Event, HealthStatus, ListeningMode, LivePartialMode, ModelInstallState, ModelProbeStatus,
+    QueueBackpressureTier, SelectedModel, SessionState, SessionStopReason, system_info_string,
 };
 use crate::session::{
     FinalizedUtterance, ListeningSession, SessionAction, SessionBaseState, SessionConfig,
@@ -68,6 +68,7 @@ struct ActiveSession {
     last_reported_queue_tier: QueueBackpressureTier,
     last_reported_state: Option<SessionState>,
     overload_draining: bool,
+    partial_in_flight: bool,
     pending_context_requests: Vec<PendingContextRequest>,
     queued_utterances: usize,
     session: ListeningSession,
@@ -87,6 +88,7 @@ struct ResolvedModelSelection {
     runtime_id: RuntimeId,
     family_id: ModelFamilyId,
     installed: bool,
+    live_partials: Option<crate::catalog::LivePartialCapability>,
     model_id: Option<String>,
     resolved_path: PathBuf,
     selection: SelectedModel,
@@ -195,6 +197,7 @@ impl AppState {
                     self.handle_session_action(action, &mut events);
                 }
 
+                self.maybe_dispatch_partial(&mut events);
                 self.emit_state_if_changed(&mut events);
             }
             Err((session_id, error)) => {
@@ -208,6 +211,42 @@ impl AppState {
         }
 
         events
+    }
+
+    fn maybe_dispatch_partial(&mut self, events: &mut Vec<Event>) {
+        let Some(active_session) = self.active_session.as_mut() else {
+            return;
+        };
+        if !active_session.session.live_partials_enabled()
+            || active_session.partial_in_flight
+            || active_session.draining
+            || active_session.overload_draining
+        {
+            return;
+        }
+        let Some(snapshot) = active_session.session.take_partial_snapshot() else {
+            return;
+        };
+        let session_id = active_session.session.config().session_id.clone();
+        active_session.partial_in_flight = true;
+        let send_result = self
+            .transcription_worker
+            .send(WorkerCommand::TranscribePartial {
+                context: None,
+                session_id: session_id.clone(),
+                snapshot,
+            });
+        if send_result.is_err() {
+            if let Some(active_session) = self.active_session.as_mut() {
+                active_session.partial_in_flight = false;
+            }
+            events.push(Event::Warning {
+                code: "partial_dispatch_failed".to_string(),
+                details: None,
+                message: "Failed to enqueue a live partial transcription request.".to_string(),
+                session_id: Some(session_id),
+            });
+        }
     }
 
     pub fn handle_command(&mut self, command: Command) -> (ControlFlow, Vec<Event>) {
@@ -379,7 +418,7 @@ impl AppState {
             Command::StartSession {
                 acceleration_preference,
                 language,
-                live_partial_mode: _,
+                live_partial_mode,
                 mode,
                 model_selection,
                 model_store_path_override,
@@ -410,7 +449,7 @@ impl AppState {
                             session_id: session_id.clone(),
                             style: speaking_style,
                         };
-                        let session = match (self.session_factory)(config) {
+                        let mut session = match (self.session_factory)(config) {
                             Ok(session) => session,
                             Err(SessionInitError::VadLoad(details)) => {
                                 events.push(Event::Error {
@@ -424,6 +463,19 @@ impl AppState {
                                 return (ControlFlow::Continue, events);
                             }
                         };
+
+                        if let Some(capability) = pick_live_partial_capability(
+                            live_partial_mode,
+                            resolved_model.live_partials.as_ref(),
+                            resolved_model.runtime_id,
+                            resolved_model.family_id,
+                            self.registry.as_ref(),
+                        ) {
+                            session.enable_live_partials(
+                                capability.min_audio_ms,
+                                capability.recommended_update_ms,
+                            );
+                        }
 
                         if self
                             .transcription_worker
@@ -458,6 +510,7 @@ impl AppState {
                             last_reported_queue_tier: QueueBackpressureTier::Normal,
                             last_reported_state: None,
                             overload_draining: false,
+                            partial_in_flight: false,
                             pending_context_requests: Vec::new(),
                             queued_utterances: 0,
                             session,
@@ -688,6 +741,7 @@ impl AppState {
             WorkerEvent::SessionError {
                 code,
                 details,
+                is_partial,
                 message,
                 session_id,
                 utterance_id: _,
@@ -698,6 +752,17 @@ impl AppState {
                     };
 
                     if active_session.session.config().session_id != session_id {
+                        return;
+                    }
+
+                    if is_partial {
+                        active_session.partial_in_flight = false;
+                        events.push(Event::Warning {
+                            code: code.clone(),
+                            details: details.clone(),
+                            message: message.clone(),
+                            session_id: Some(session_id.clone()),
+                        });
                         return;
                     }
 
@@ -729,6 +794,8 @@ impl AppState {
                 utterance_start_ms_in_session,
                 warnings,
             } => {
+                let is_final = transcript.is_final();
+
                 {
                     let Some(active_session) = self.active_session.as_mut() else {
                         return;
@@ -738,11 +805,14 @@ impl AppState {
                         return;
                     }
 
-                    advance_transcription_queue(active_session);
-                    emit_queue_tier_if_changed(active_session, events);
+                    if is_final {
+                        advance_transcription_queue(active_session);
+                        emit_queue_tier_if_changed(active_session, events);
+                    } else {
+                        active_session.partial_in_flight = false;
+                    }
                 }
 
-                let is_final = transcript.is_final();
                 let text = transcript.joined_text();
                 events.push(Event::TranscriptReady {
                     is_final,
@@ -760,6 +830,10 @@ impl AppState {
                     utterance_start_ms_in_session,
                     warnings,
                 });
+
+                if !is_final {
+                    return;
+                }
 
                 if self.maybe_complete_drain(&session_id, events) {
                     return;
@@ -806,7 +880,7 @@ impl AppState {
         }
 
         let was_transcribing = active_session.transcription_active;
-        let utterance_id = Uuid::new_v4();
+        let utterance_id = utterance.utterance_id;
         let correlation_id = Uuid::new_v4();
         let deadline = Instant::now() + CONTEXT_REQUEST_TIMEOUT;
 
@@ -1073,6 +1147,7 @@ impl AppState {
                     runtime_id,
                     family_id,
                     installed: true,
+                    live_partials: model.live_partials.clone(),
                     model_id: Some(model_id.clone()),
                     resolved_path,
                     selection: selection.clone(),
@@ -1130,6 +1205,7 @@ impl AppState {
                     runtime_id,
                     family_id,
                     installed: false,
+                    live_partials: None,
                     model_id: None,
                     resolved_path: model_path.to_path_buf(),
                     selection: selection.clone(),
@@ -1179,6 +1255,32 @@ fn resolved_model_supports_initial_prompt(
     registry
         .adapter(runtime_id, family_id)
         .is_some_and(|adapter| adapter.capabilities().supports_initial_prompt)
+}
+
+fn pick_live_partial_capability<'a>(
+    mode: LivePartialMode,
+    capability: Option<&'a crate::catalog::LivePartialCapability>,
+    runtime_id: RuntimeId,
+    family_id: ModelFamilyId,
+    registry: &EngineRegistry,
+) -> Option<&'a crate::catalog::LivePartialCapability> {
+    let capability = capability?;
+    let family_supports = registry
+        .adapter(runtime_id, family_id)
+        .is_some_and(|adapter| {
+            adapter
+                .capabilities()
+                .live_partial_strategies
+                .contains(&capability.strategy)
+        });
+    if !family_supports {
+        return None;
+    }
+    match mode {
+        LivePartialMode::Off => None,
+        LivePartialMode::Always => Some(capability),
+        LivePartialMode::Auto => capability.auto_enabled.then_some(capability),
+    }
 }
 
 fn derive_session_state(
@@ -2350,7 +2452,9 @@ mod tests {
     fn fake_utterance() -> FinalizedUtterance {
         FinalizedUtterance {
             pause_ms_before_utterance: None,
+            revision: 0,
             samples: vec![0i16; 16000],
+            utterance_id: Uuid::new_v4(),
             utterance_index: 0,
             vad_probabilities: Vec::new(),
             voice_activity: fake_voice_activity(),
