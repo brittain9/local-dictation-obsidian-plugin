@@ -3,6 +3,7 @@ import type { App, Editor, EventRef, TAbstractFile, TFile } from 'obsidian';
 import type { DictationAnchorMode } from '../editor/dictation-anchor-extension';
 import {
   type AppendResult,
+  isLatchKind,
   type NotePlacementOptions,
   type NoteProjectionContext,
   NoteSurface,
@@ -32,8 +33,8 @@ interface MarkdownLeafLike {
 type ProjectionState =
   | { kind: 'unprojected' }
   | { kind: 'projected'; lastRevision: number; projectedText: string }
-  | { kind: 'latched'; lastProjectedRevision?: number; reason: string }
-  | { kind: 'denied'; lastAttemptedRevision: number; reason: string };
+  | { kind: 'latched' }
+  | { kind: 'denied' };
 
 export type SessionAcceptResult =
   | { kind: 'accepted' }
@@ -149,20 +150,12 @@ export class Session {
 
   private projectRevision(revision: TranscriptRevision): void {
     if (this.noteDeleted) {
-      this.projectionByUtterance.set(revision.utteranceId, {
-        kind: 'denied',
-        lastAttemptedRevision: revision.revision,
-        reason: 'Locked note was deleted.',
-      });
+      this.projectionByUtterance.set(revision.utteranceId, { kind: 'denied' });
       return;
     }
 
     if (!this.noteOpen || this.surface === null) {
-      this.projectionByUtterance.set(revision.utteranceId, {
-        kind: 'denied',
-        lastAttemptedRevision: revision.revision,
-        reason: 'Locked note is not open.',
-      });
+      this.projectionByUtterance.set(revision.utteranceId, { kind: 'denied' });
       return;
     }
 
@@ -216,11 +209,7 @@ export class Session {
       return;
     }
 
-    this.projectionByUtterance.set(revision.utteranceId, {
-      kind: 'denied',
-      lastAttemptedRevision: revision.revision,
-      reason: result.reason.kind,
-    });
+    this.projectionByUtterance.set(revision.utteranceId, { kind: 'denied' });
     this.dependencies.logger?.debug('session', `projection append denied: ${result.reason.kind}`);
   }
 
@@ -251,18 +240,10 @@ export class Session {
       return;
     }
 
-    if (result.reason.kind === 'user_edited' || result.reason.kind === 'span_mismatch') {
-      this.projectionByUtterance.set(revision.utteranceId, {
-        kind: 'latched',
-        lastProjectedRevision: state.lastRevision,
-        reason: result.reason.kind,
-      });
+    if (isLatchKind(result.reason.kind)) {
+      this.projectionByUtterance.set(revision.utteranceId, { kind: 'latched' });
     } else {
-      this.projectionByUtterance.set(revision.utteranceId, {
-        kind: 'denied',
-        lastAttemptedRevision: revision.revision,
-        reason: result.reason.kind,
-      });
+      this.projectionByUtterance.set(revision.utteranceId, { kind: 'denied' });
     }
     this.dependencies.logger?.debug('session', `projection replace denied: ${result.reason.kind}`);
   }

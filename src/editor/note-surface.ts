@@ -23,6 +23,10 @@ export interface NoteProjectionContext {
 
 export type LatchKind = 'user_edited' | 'span_mismatch';
 
+export function isLatchKind(kind: string): kind is LatchKind {
+  return kind === 'user_edited' || kind === 'span_mismatch';
+}
+
 export interface ProjectedSpan {
   end: number;
   latched?: LatchKind;

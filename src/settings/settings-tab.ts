@@ -34,7 +34,12 @@ import {
   type DropdownOption,
   type SettingAccess,
 } from './setting-helpers';
-import { openSidecarInstallModal, SidecarSettingsSection } from './sidecar-settings-section';
+import {
+  openSidecarInstallModal,
+  resolvePluginDirectorySafe,
+  type SidecarInstallActionDeps,
+  SidecarSettingsSection,
+} from './sidecar-settings-section';
 
 interface SettingsTabDependencies {
   getSettings: () => PluginSettings;
@@ -204,19 +209,9 @@ export class LocalSttSettingTab extends PluginSettingTab {
     // empty + rebuild without disturbing the rest of the Advanced section.
     const sidecarContainer = advancedSection.createDiv();
     const sidecarSection = new SidecarSettingsSection(sidecarContainer, {
+      ...this.buildSidecarInstallActionDeps(),
       access: this.access,
-      app: this.app,
-      isDictationBusy: this.dependencies.isDictationBusy,
-      logger: this.dependencies.logger,
-      modelInstallManager: this.dependencies.modelInstallManager,
-      pluginVersion: this.dependencies.pluginVersion,
-      refreshSettingsTab: () => {
-        this.display();
-      },
       resolvePluginDirectory: this.dependencies.resolvePluginDirectory,
-      restartSidecar: this.dependencies.restartSidecar,
-      sidecarConnection: this.dependencies.sidecarConnection,
-      sidecarInstallManager: this.dependencies.sidecarInstallManager,
     });
     this.disposeSidecarSection = sidecarSection.init();
 
@@ -405,22 +400,11 @@ export class LocalSttSettingTab extends PluginSettingTab {
           .setCta()
           .setButtonText('Install sidecar')
           .onClick(() => {
-            openSidecarInstallModal(
-              {
-                app: this.app,
-                isDictationBusy: this.dependencies.isDictationBusy,
-                logger: this.dependencies.logger,
-                modelInstallManager: this.dependencies.modelInstallManager,
-                pluginVersion: this.dependencies.pluginVersion,
-                refreshSettingsTab: () => {
-                  this.display();
-                },
-                restartSidecar: this.dependencies.restartSidecar,
-                sidecarConnection: this.dependencies.sidecarConnection,
-                sidecarInstallManager: this.dependencies.sidecarInstallManager,
-              },
-              { intent: 'install', pluginDirectory, variant: 'cpu' },
-            );
+            openSidecarInstallModal(this.buildSidecarInstallActionDeps(), {
+              intent: 'install',
+              pluginDirectory,
+              variant: 'cpu',
+            });
           });
       });
     };
@@ -458,12 +442,26 @@ export class LocalSttSettingTab extends PluginSettingTab {
     return group.createDiv({ cls: 'setting-items' });
   }
 
-  private async resolvePluginDirectorySafe(): Promise<string | null> {
-    try {
-      return await this.dependencies.resolvePluginDirectory();
-    } catch (error) {
-      this.dependencies.logger?.error('installer', 'failed to resolve plugin directory', error);
-      return null;
-    }
+  private resolvePluginDirectorySafe(): Promise<string | null> {
+    return resolvePluginDirectorySafe(
+      this.dependencies.resolvePluginDirectory,
+      this.dependencies.logger,
+    );
+  }
+
+  private buildSidecarInstallActionDeps(): SidecarInstallActionDeps {
+    return {
+      app: this.app,
+      isDictationBusy: this.dependencies.isDictationBusy,
+      logger: this.dependencies.logger,
+      modelInstallManager: this.dependencies.modelInstallManager,
+      pluginVersion: this.dependencies.pluginVersion,
+      refreshSettingsTab: () => {
+        this.display();
+      },
+      restartSidecar: this.dependencies.restartSidecar,
+      sidecarConnection: this.dependencies.sidecarConnection,
+      sidecarInstallManager: this.dependencies.sidecarInstallManager,
+    };
   }
 }

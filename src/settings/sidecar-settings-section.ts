@@ -276,13 +276,20 @@ export class SidecarSettingsSection {
     });
   }
 
-  private async resolvePluginDirectorySafe(): Promise<string | null> {
-    try {
-      return await this.deps.resolvePluginDirectory();
-    } catch (error) {
-      this.deps.logger?.error('installer', 'failed to resolve plugin directory', error);
-      return null;
-    }
+  private resolvePluginDirectorySafe(): Promise<string | null> {
+    return resolvePluginDirectorySafe(this.deps.resolvePluginDirectory, this.deps.logger);
+  }
+}
+
+export async function resolvePluginDirectorySafe(
+  resolvePluginDirectory: () => Promise<string>,
+  logger: PluginLogger | undefined,
+): Promise<string | null> {
+  try {
+    return await resolvePluginDirectory();
+  } catch (error) {
+    logger?.error('installer', 'failed to resolve plugin directory', error);
+    return null;
   }
 }
 
