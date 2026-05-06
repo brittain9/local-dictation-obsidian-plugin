@@ -379,6 +379,7 @@ impl AppState {
             Command::StartSession {
                 acceleration_preference,
                 language,
+                live_partial_mode: _,
                 mode,
                 model_selection,
                 model_store_path_override,
@@ -1275,7 +1276,7 @@ mod tests {
     use super::{AppState, ControlFlow};
     use crate::catalog::{
         ArtifactRole, CatalogModel, ModelArtifact, ModelCatalog, ModelCollection,
-        ModelFamilyDescriptor, ModelRuntimeDescriptor,
+        ModelFamilyDescriptor, ModelRuntimeDescriptor, RuntimeLocationKind,
     };
     use crate::engine::capabilities::{
         AcceleratorAvailability, AcceleratorId, LanguageSupport, ModelFamilyCapabilities,
@@ -1285,8 +1286,8 @@ mod tests {
     use crate::engine::traits::{LoadedModel, ModelFamilyAdapter, Runtime};
     use crate::protocol::{
         AccelerationPreference, Command, ContextWindow, ContextWindowSource, Event, HealthStatus,
-        ListeningMode, ModelProbeStatus, QueueBackpressureTier, SelectedModel, SessionState,
-        SessionStopReason, StageId, StageOutcome, StageStatus,
+        ListeningMode, LivePartialMode, ModelProbeStatus, QueueBackpressureTier, SelectedModel,
+        SessionState, SessionStopReason, StageId, StageOutcome, StageStatus,
     };
     use crate::session::{FinalizedUtterance, ListeningSession, SessionInitError, SpeakingStyle};
     use crate::transcription::{
@@ -1373,6 +1374,7 @@ mod tests {
                     supported_languages: LanguageSupport::EnglishOnly,
                     max_audio_duration_secs: None,
                     produces_punctuation: true,
+                    live_partial_strategies: Vec::new(),
                 },
             }
         }
@@ -2319,6 +2321,7 @@ mod tests {
         Command::StartSession {
             acceleration_preference: AccelerationPreference::Auto,
             language: "en".to_string(),
+            live_partial_mode: LivePartialMode::Auto,
             mode: ListeningMode::AlwaysOn,
             model_selection: SelectedModel::ExternalFile {
                 runtime_id: RuntimeId::WhisperCpp,
@@ -2434,9 +2437,11 @@ mod tests {
                 language_tags: vec!["en".to_string()],
                 license_label: "MIT".to_string(),
                 license_url: "https://example.com/license".to_string(),
+                live_partials: None,
                 model_card_url: None,
                 model_id: "small".to_string(),
                 notes: vec![],
+                runtime_location_kind: RuntimeLocationKind::PrimaryArtifactFile,
                 source_url: "https://example.com".to_string(),
                 summary: "summary".to_string(),
                 ux_tags: vec![],

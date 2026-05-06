@@ -535,6 +535,7 @@ mod tests {
         supported_languages: LanguageSupport::EnglishOnly,
         max_audio_duration_secs: None,
         produces_punctuation: true,
+        live_partial_strategies: Vec::new(),
     };
     static ENABLEMENT: StageEnablement = StageEnablement {
         hallucination_filter: true,

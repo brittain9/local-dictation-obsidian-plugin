@@ -78,6 +78,13 @@ pub enum ModelFormat {
     Onnx,
 }
 
+#[derive(Debug, Clone, Copy, Hash, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum LivePartialStrategy {
+    Snapshot,
+    Streaming,
+}
+
 /// Language support for a model family adapter.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
@@ -160,6 +167,8 @@ pub struct ModelFamilyCapabilities {
     pub max_audio_duration_secs: Option<f32>,
     #[serde(rename = "producesPunctuation")]
     pub produces_punctuation: bool,
+    #[serde(rename = "livePartialStrategies", default)]
+    pub live_partial_strategies: Vec<LivePartialStrategy>,
 }
 
 impl ModelFamilyCapabilities {
@@ -175,6 +184,7 @@ impl ModelFamilyCapabilities {
             supported_languages: LanguageSupport::Unknown,
             max_audio_duration_secs: None,
             produces_punctuation: false,
+            live_partial_strategies: Vec::new(),
         }
     }
 }

@@ -1,6 +1,7 @@
 use std::borrow::Cow;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use std::sync::LazyLock;
 
 use ort::session::{Session, SessionInputValue};
 use ort::value::{DynValue, TensorElementType, Value, ValueType};
@@ -42,15 +43,17 @@ const TOKENIZER_FILENAME: &str = "tokenizer.json";
 #[derive(Default)]
 pub struct CohereTranscribeAdapter;
 
-const CAPABILITIES: ModelFamilyCapabilities = ModelFamilyCapabilities {
-    supports_segment_timestamps: false,
-    supports_word_timestamps: false,
-    supports_initial_prompt: false,
-    supports_language_selection: false,
-    supported_languages: LanguageSupport::EnglishOnly,
-    max_audio_duration_secs: Some(MAX_AUDIO_DURATION_SECS),
-    produces_punctuation: true,
-};
+static CAPABILITIES: LazyLock<ModelFamilyCapabilities> =
+    LazyLock::new(|| ModelFamilyCapabilities {
+        supports_segment_timestamps: false,
+        supports_word_timestamps: false,
+        supports_initial_prompt: false,
+        supports_language_selection: false,
+        supported_languages: LanguageSupport::EnglishOnly,
+        max_audio_duration_secs: Some(MAX_AUDIO_DURATION_SECS),
+        produces_punctuation: true,
+        live_partial_strategies: Vec::new(),
+    });
 
 impl ModelFamilyAdapter for CohereTranscribeAdapter {
     fn runtime_id(&self) -> RuntimeId {

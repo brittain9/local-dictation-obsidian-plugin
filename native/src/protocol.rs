@@ -73,6 +73,15 @@ pub enum ListeningMode {
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
+pub enum LivePartialMode {
+    #[default]
+    Auto,
+    Always,
+    Off,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum AccelerationPreference {
     #[default]
     Auto,
@@ -259,6 +268,8 @@ pub enum Command {
         #[serde(default)]
         acceleration_preference: AccelerationPreference,
         language: String,
+        #[serde(default)]
+        live_partial_mode: LivePartialMode,
         mode: ListeningMode,
         model_selection: SelectedModel,
         #[serde(default)]
@@ -557,9 +568,9 @@ fn read_exact_or_eof<R: Read>(reader: &mut R, buffer: &mut [u8]) -> Result<usize
 mod tests {
     use super::{
         AUDIO_FRAME_KIND, AccelerationPreference, Command, Event, EventEnvelope,
-        FRAME_HEADER_LENGTH, IncomingFrame, JSON_FRAME_KIND, ListeningMode, MAX_FRAME_PAYLOAD,
-        PCM_BYTES_PER_FRAME, QueueBackpressureTier, SelectedModel, SessionStopReason,
-        SpeakingStyle, read_frame, write_event_frame, write_frame,
+        FRAME_HEADER_LENGTH, IncomingFrame, JSON_FRAME_KIND, ListeningMode, LivePartialMode,
+        MAX_FRAME_PAYLOAD, PCM_BYTES_PER_FRAME, QueueBackpressureTier, SelectedModel,
+        SessionStopReason, SpeakingStyle, read_frame, write_event_frame, write_frame,
     };
     use crate::engine::capabilities::{ModelFamilyId, RuntimeId};
     use uuid::Uuid;
@@ -592,6 +603,7 @@ mod tests {
             IncomingFrame::Command(Command::StartSession {
                 acceleration_preference: AccelerationPreference::Auto,
                 language: "en".to_string(),
+                live_partial_mode: LivePartialMode::Auto,
                 mode: ListeningMode::AlwaysOn,
                 model_selection: SelectedModel::ExternalFile {
                     runtime_id: RuntimeId::WhisperCpp,
