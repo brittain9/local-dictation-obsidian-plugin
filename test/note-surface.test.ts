@@ -278,8 +278,10 @@ describe('NoteSurface', () => {
 
     const result = surface.replaceAnchor('u1', 'FIRST', 'first');
 
-    expect(result.kind).toBe('denied');
-    expect(result).toMatchObject({ currentText: 'First' });
+    expect(result).toMatchObject({
+      kind: 'denied',
+      reason: { currentText: 'First', kind: 'span_mismatch' },
+    });
   });
 
   it('selectively latches externally modified spans by byte identity', () => {
@@ -292,18 +294,6 @@ describe('NoteSurface', () => {
 
     expect(surface.replaceAnchor('u1', 'FIRST', 'first').kind).toBe('denied');
     expect(surface.replaceAnchor('u2', 'SECOND', 'second').kind).toBe('replaced');
-  });
-
-  it('latches all spans on request', () => {
-    const { surface } = createSurface();
-
-    expect(append(surface, 'u1', 'first').kind).toBe('appended');
-    surface.latchAll('closed');
-
-    expect(surface.replaceAnchor('u1', 'FIRST', 'first')).toMatchObject({
-      kind: 'denied',
-      reason: 'closed',
-    });
   });
 
   it('rewrites an intact region and drops old anchors', () => {
@@ -328,7 +318,7 @@ describe('NoteSurface', () => {
 
     expect(surface.rewriteRegion({ from: 1, to: 4 }, 'ir', [])).toEqual({
       kind: 'denied',
-      reason: 'Rewrite range intersects a partial utterance span.',
+      reason: { kind: 'range_partial' },
     });
   });
 

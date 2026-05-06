@@ -21,8 +21,8 @@ Single source of truth: a GitHub Release per `manifest.version`, tagged exactly 
 | `sidecar-macos-arm64.tar.gz` | macOS arm64 | `local-transcript-sidecar` with Whisper Metal + Cohere CPU |
 | `sidecar-linux-x86_64-cpu.tar.gz` | Linux x86_64 | `local-transcript-sidecar` CPU binary |
 | `sidecar-linux-x86_64-cuda.tar.gz` | Linux x86_64 | `local-transcript-sidecar` CUDA binary + ONNX Runtime CUDA provider libraries + bundled CUDA runtime libraries |
-| `sidecar-windows-x86_64-cpu.zip` | Windows x86_64 | `local-transcript-sidecar.exe` CPU binary |
-| `sidecar-windows-x86_64-cuda.zip` | Windows x86_64 | `local-transcript-sidecar.exe` CUDA binary + ONNX Runtime CUDA provider libraries + bundled CUDA runtime libraries |
+| `sidecar-windows-x86_64-cpu.tar.gz` | Windows x86_64 | `local-transcript-sidecar.exe` CPU binary |
+| `sidecar-windows-x86_64-cuda.tar.gz` | Windows x86_64 | `local-transcript-sidecar.exe` CUDA binary + ONNX Runtime CUDA provider libraries + bundled CUDA runtime libraries |
 | `checksums.txt` | - | SHA-256 of every sidecar archive, exactly five lines, sorted |
 | `main.js`, `manifest.json`, `styles.css` | - | Plugin files for manual release install and Obsidian community-plugin ingestion |
 

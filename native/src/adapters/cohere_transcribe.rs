@@ -37,11 +37,7 @@ const TOKEN_NO_TIMESTAMP: i64 = 11; // <|notimestamp|>
 const TOKEN_NO_DIARIZE: i64 = 13; // <|nodiarize|>
 const TOKEN_LANG_EN: i64 = 62; // <|en|>
 
-/// Sibling filenames derived from the primary artifact path.
-/// `tokens.txt` is retained as a candidate for backward compatibility with
-/// manually converted tokenizer files. The HuggingFace-shipped format is
-/// `tokenizer.json`, which the loader now handles natively.
-const TOKENS_CANDIDATES: &[&str] = &["tokens.txt", "tokenizer.json"];
+const TOKENIZER_FILENAME: &str = "tokenizer.json";
 
 #[derive(Default)]
 pub struct CohereTranscribeAdapter;
@@ -193,8 +189,7 @@ fn load_cohere_model(
 
     let encoder = build_session(&encoder_path, gpu_config)?;
     // Decoder must run on CPU: ORT's CUDA GroupQueryAttention kernel does not
-    // support attention_bias, which the Cohere decoder graph requires. See
-    // docs/decisions.md D-003 for the platform GPU-support implications.
+    // support attention_bias, which the Cohere decoder graph requires.
     let decoder = build_session(&decoder_path, GpuConfig { use_gpu: false })?;
     verify_decoder_topology(&decoder)?;
     let decoder_uses_fp16 = decoder_past_kv_is_fp16(&decoder);
@@ -354,12 +349,12 @@ fn find_first_existing(
     )))
 }
 
-/// Search for a tokenizer file in the model directory and its parent.
+/// Search for `tokenizer.json` in the model directory and its parent.
 /// HuggingFace repos place `tokenizer.json` at the repo root, which ends up
 /// one level above the `onnx/` subdirectory that contains the ONNX models.
-/// For external-file selections this parent-directory search can match tokenizer
-/// files outside the model directory itself when the chosen model path lives in
-/// an arbitrary user directory.
+/// For external-file selections this parent-directory search can match
+/// tokenizer files outside the model directory itself when the chosen model
+/// path lives in an arbitrary user directory.
 fn find_tokens_path(model_dir: &Path) -> Result<PathBuf, TranscriptionError> {
     let search_dirs: Vec<&Path> = if let Some(parent) = model_dir.parent() {
         vec![model_dir, parent]
@@ -368,16 +363,14 @@ fn find_tokens_path(model_dir: &Path) -> Result<PathBuf, TranscriptionError> {
     };
 
     for dir in &search_dirs {
-        for name in TOKENS_CANDIDATES {
-            let path = dir.join(name);
-            if path.is_file() {
-                return Ok(path);
-            }
+        let path = dir.join(TOKENIZER_FILENAME);
+        if path.is_file() {
+            return Ok(path);
         }
     }
 
     Err(TranscriptionError::invalid_model_with_details(format!(
-        "tokenizer file missing: no tokens.txt or tokenizer.json found in {}",
+        "tokenizer file missing: no {TOKENIZER_FILENAME} found in {}",
         model_dir.display()
     )))
 }
@@ -390,19 +383,7 @@ fn load_vocab(path: &Path) -> Result<HashMap<u32, String>, TranscriptionError> {
         ))
     })?;
 
-    let is_json = path
-        .extension()
-        .is_some_and(|ext| ext.eq_ignore_ascii_case("json"));
-
-    if is_json {
-        load_vocab_from_json(&content)
-    } else {
-        load_vocab_from_tsv(&content)
-    }
-}
-
-fn load_vocab_from_json(content: &str) -> Result<HashMap<u32, String>, TranscriptionError> {
-    let root: serde_json::Value = serde_json::from_str(content).map_err(|e| {
+    let root: serde_json::Value = serde_json::from_str(&content).map_err(|e| {
         TranscriptionError::invalid_model_with_details(format!(
             "failed to parse tokenizer.json: {e}"
         ))
@@ -423,36 +404,6 @@ fn load_vocab_from_json(content: &str) -> Result<HashMap<u32, String>, Transcrip
         if let Some(id) = id_val.as_u64() {
             vocab.insert(id as u32, token.clone());
         }
-    }
-
-    Ok(vocab)
-}
-
-fn load_vocab_from_tsv(content: &str) -> Result<HashMap<u32, String>, TranscriptionError> {
-    let mut vocab = HashMap::new();
-
-    for line in content.lines() {
-        let line = line.trim();
-        if line.is_empty() {
-            continue;
-        }
-
-        let (id_str, token) = line
-            .split_once('\t')
-            .or_else(|| line.split_once(' '))
-            .ok_or_else(|| {
-                TranscriptionError::invalid_model_with_details(format!(
-                    "malformed tokens.txt line: {line}"
-                ))
-            })?;
-
-        let id: u32 = id_str.parse().map_err(|_| {
-            TranscriptionError::invalid_model_with_details(format!(
-                "invalid token ID in tokens.txt: {id_str}"
-            ))
-        })?;
-
-        vocab.insert(id, token.to_string());
     }
 
     Ok(vocab)
@@ -766,36 +717,11 @@ mod tests {
     }
 
     #[test]
-    fn probe_rejects_corrupt_encoder_when_tokens_txt_present() {
-        // File layout is valid (every candidate found), but the encoder bytes
-        // are not a real ONNX model. Probe must fail with invalid_model_file
-        // rather than let install report success.
-        let temp = temp_dir("probe-corrupt-tsv");
-        std::fs::write(temp.join("encoder_model_fp16.onnx"), b"fake").unwrap();
-        std::fs::write(temp.join("decoder_model_merged_fp16.onnx"), b"fake").unwrap();
-        std::fs::write(temp.join("tokens.txt"), b"0\thello").unwrap();
-
-        let adapter = CohereTranscribeAdapter;
-        let error = adapter
-            .probe_model(&temp.join("encoder_model_fp16.onnx"))
-            .expect_err("corrupt encoder bytes must fail probe");
-        assert_eq!(error.code, "invalid_model_file");
-        assert!(
-            error
-                .details
-                .as_deref()
-                .is_some_and(|details| details.contains("encoder"))
-        );
-
-        let _ = std::fs::remove_dir_all(&temp);
-    }
-
-    #[test]
     fn probe_finds_quantized_encoder_before_failing_to_load() {
         let temp = temp_dir("probe-corrupt-quant");
         std::fs::write(temp.join("encoder_model_quantized.onnx"), b"fake").unwrap();
         std::fs::write(temp.join("decoder_model_merged_quantized.onnx"), b"fake").unwrap();
-        std::fs::write(temp.join("tokens.txt"), b"0\thello").unwrap();
+        std::fs::write(temp.join("tokenizer.json"), b"{}").unwrap();
 
         let adapter = CohereTranscribeAdapter;
         let error = adapter
@@ -884,19 +810,6 @@ mod tests {
             decode_bpe_bytes("\u{2581}Hello\u{2581}world"),
             " Hello world"
         );
-    }
-
-    #[test]
-    fn load_vocab_parses_tab_separated() {
-        let temp = temp_dir("vocab-tab");
-        let path = temp.join("tokens.txt");
-        std::fs::write(&path, "0\thello\n1\t world\n").unwrap();
-
-        let vocab = load_vocab(&path).expect("should parse");
-        assert_eq!(vocab.get(&0), Some(&"hello".to_string()));
-        assert_eq!(vocab.get(&1), Some(&" world".to_string()));
-
-        let _ = std::fs::remove_dir_all(&temp);
     }
 
     #[test]

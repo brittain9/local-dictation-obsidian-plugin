@@ -71,12 +71,9 @@ interface NoteSurfaceLike {
 export class Session {
   private readonly journal: SessionJournal;
   private readonly renderer: TranscriptRenderer;
-  private disposed = false;
   private noteDeleted = false;
   private noteOpen = true;
   private readonly projectionByUtterance = new Map<string, ProjectionState>();
-  private readonly recoveryFilePath: string;
-  private recoveryWrite = Promise.resolve();
   private readonly refs: Array<{ offref: (ref: EventRef) => void; ref: EventRef }> = [];
   private surface: NoteSurfaceLike | null;
 
@@ -111,7 +108,6 @@ export class Session {
   constructor(private readonly dependencies: SessionDependencies) {
     this.journal = new SessionJournal(dependencies.sessionId);
     this.renderer = new TranscriptRenderer(dependencies.rendererOptions);
-    this.recoveryFilePath = `${dependencies.app.vault.configDir}/local-dictation/recovery-${dependencies.sessionId}.json`;
     this.surface = (dependencies.noteSurfaceFactory ?? createNoteSurface)(
       dependencies.view,
       dependencies.placement,
@@ -132,7 +128,6 @@ export class Session {
     }
 
     this.projectRevision(result.revision);
-    this.queueRecoveryPersistence();
 
     return { kind: 'accepted' };
   }
@@ -145,17 +140,11 @@ export class Session {
     this.surface?.setAnchorMode(mode);
   }
 
-  async dispose(options: { deleteRecovery: boolean } = { deleteRecovery: true }): Promise<void> {
-    this.disposed = true;
+  dispose(): void {
     this.journal.finalize();
     this.surface?.dispose();
     this.surface = null;
     this.releaseSubscriptions();
-    await this.recoveryWrite;
-
-    if (options.deleteRecovery) {
-      await this.deleteRecovery();
-    }
   }
 
   private projectRevision(revision: TranscriptRevision): void {
@@ -230,9 +219,9 @@ export class Session {
     this.projectionByUtterance.set(revision.utteranceId, {
       kind: 'denied',
       lastAttemptedRevision: revision.revision,
-      reason: result.reason,
+      reason: result.reason.kind,
     });
-    this.dependencies.logger?.debug('session', `projection append denied: ${result.reason}`);
+    this.dependencies.logger?.debug('session', `projection append denied: ${result.reason.kind}`);
   }
 
   private applyReplace(
@@ -262,20 +251,20 @@ export class Session {
       return;
     }
 
-    if (isLatchReason(result.reason)) {
+    if (result.reason.kind === 'user_edited' || result.reason.kind === 'span_mismatch') {
       this.projectionByUtterance.set(revision.utteranceId, {
         kind: 'latched',
         lastProjectedRevision: state.lastRevision,
-        reason: result.reason,
+        reason: result.reason.kind,
       });
     } else {
       this.projectionByUtterance.set(revision.utteranceId, {
         kind: 'denied',
         lastAttemptedRevision: revision.revision,
-        reason: result.reason,
+        reason: result.reason.kind,
       });
     }
-    this.dependencies.logger?.debug('session', `projection replace denied: ${result.reason}`);
+    this.dependencies.logger?.debug('session', `projection replace denied: ${result.reason.kind}`);
   }
 
   private registerLifecycleSubscriptions(): void {
@@ -363,52 +352,6 @@ export class Session {
       findOpenMarkdownViewForFile(this.dependencies.app, this.dependencies.lockedFile) !== null
     );
   }
-
-  private queueRecoveryPersistence(): void {
-    this.recoveryWrite = this.recoveryWrite.then(async () => {
-      if (!this.disposed) {
-        await this.persistRecovery();
-      }
-    });
-  }
-
-  private async persistRecovery(): Promise<void> {
-    const adapter = this.dependencies.app.vault.adapter;
-    const directoryPath = `${this.dependencies.app.vault.configDir}/local-dictation`;
-
-    try {
-      if (!(await adapter.exists(directoryPath))) {
-        await adapter.mkdir(directoryPath);
-      }
-
-      await adapter.write(this.recoveryFilePath, JSON.stringify(this.createRecoverySnapshot()));
-    } catch (error) {
-      this.dependencies.logger?.warn('session', 'failed to persist recovery journal', error);
-    }
-  }
-
-  private async deleteRecovery(): Promise<void> {
-    const adapter = this.dependencies.app.vault.adapter;
-
-    try {
-      if (await adapter.exists(this.recoveryFilePath)) {
-        await adapter.remove(this.recoveryFilePath);
-      }
-    } catch (error) {
-      this.dependencies.logger?.warn('session', 'failed to delete recovery journal', error);
-    }
-  }
-
-  private createRecoverySnapshot(): unknown {
-    const latest = this.journal.allUtterancesInOrder();
-
-    return {
-      latest,
-      lockedFilePath: this.dependencies.lockedFile.path,
-      projection: Object.fromEntries(this.projectionByUtterance.entries()),
-      sessionId: this.dependencies.sessionId,
-    };
-  }
 }
 
 function createNoteSurface(view: EditorView, placement: NotePlacementOptions): NoteSurface {
@@ -440,8 +383,4 @@ function findOpenMarkdownViewForFile(
   }
 
   return null;
-}
-
-function isLatchReason(reason: string): boolean {
-  return reason.includes('User edited') || reason.includes('no longer matches');
 }

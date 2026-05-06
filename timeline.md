@@ -286,7 +286,7 @@ What shipped:
   timestamp landmarks.
 - `NoteSurface` becomes a prefix-only projection writer. Boundary and timestamp
   prefixes are stored inside the span (`start..end`), so user edits to either
-  latch the utterance via the existing user-wins rule (D-014). Replacements
+  latch the utterance via the existing user-wins rule. Replacements
   rewrite only the utterance text region (`textStart..textEnd`); timestamp text
   and paragraph breaks from the original append remain stable across revisions.
 - The old eager trailing-separator model is gone; nothing leaves dangling blank

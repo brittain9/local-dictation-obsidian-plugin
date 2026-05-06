@@ -39,7 +39,7 @@ class FakeSession {
   public readonly readNoteContext = vi.fn(
     (_maxChars: number): { text: string; truncated: boolean } | null => null,
   );
-  public readonly dispose = vi.fn(async (_options?: { deleteRecovery: boolean }) => {});
+  public readonly dispose = vi.fn(() => {});
   public readonly modeCalls: string[] = [];
 
   setAnchorMode(mode: 'hidden' | 'visible'): void {
@@ -216,7 +216,7 @@ describe('DictationSessionController', () => {
     await controller.startDictation();
 
     expect(captureStream.stop).toHaveBeenCalledTimes(1);
-    expect(session.dispose).toHaveBeenCalledWith({ deleteRecovery: true });
+    expect(session.dispose).toHaveBeenCalled();
     expect(controller.getState()).toBe('error');
     expect(controller.isBusy()).toBe(false);
   });
@@ -678,7 +678,7 @@ describe('DictationSessionController', () => {
     });
 
     await vi.waitFor(() => {
-      expect(session.dispose).toHaveBeenCalledWith({ deleteRecovery: true });
+      expect(session.dispose).toHaveBeenCalled();
     });
   });
 
@@ -701,7 +701,7 @@ describe('DictationSessionController', () => {
     });
 
     await vi.waitFor(() => {
-      expect(session.dispose).toHaveBeenCalledWith({ deleteRecovery: true });
+      expect(session.dispose).toHaveBeenCalled();
     });
   });
 
@@ -1006,7 +1006,7 @@ describe('DictationSessionController', () => {
     });
 
     await vi.waitFor(() => {
-      expect(session.dispose).toHaveBeenCalledWith({ deleteRecovery: true });
+      expect(session.dispose).toHaveBeenCalled();
       expect(controller.getState()).toBe('idle');
     });
     expect(setRibbonQueueTier).toHaveBeenLastCalledWith('normal');

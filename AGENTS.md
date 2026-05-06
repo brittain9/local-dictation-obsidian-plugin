@@ -59,30 +59,9 @@ For multi-step tasks, state a brief plan with a verify step per item. Strong suc
 
 ## Workflow
 
-Trunk-based development. Short-lived feature branches merged via PR. `main` stays releasable. GitHub issues are the primary tracker for planned work, bugs, and feature requests.
+Trunk-based development. Short-lived feature branches merged via PR. `main` stays releasable. GitHub issues are the primary tracker for planned work, bugs, and feature requests. Code is the source of truth.
 
-Local docs support ongoing work:
-
-- `docs/decisions.md` = durable product and architecture decisions
-- `docs/lessons.md` = execution mistakes, corrections, and preventive rules
-- `PLANS.md` = temporary large-change working plan only
-
-### Session Bootstrap
-
-At the start of a non-trivial task, glance at `docs/decisions.md` and any `docs/lessons.md` entries that look relevant. Code is the source of truth. Github issues track work.
-
-### Decisions and Lessons
-
-These two files are lightweight reminders. They're low-stakes. Their only job is to save the user from re-explaining the same things.
-
-- `docs/decisions.md` is a short list of architectural calls the user has made. One paragraph each. Glance at it for context; let code carry the details.
-- `docs/lessons.md` is a short list of mistakes worth catching twice. One line each. Add an entry when the user corrects something concrete that would otherwise repeat.
-
-Keep both files small. Sharpen existing entries before adding new ones. Reference code in PRs.
-
-### Plans
-
-Use `PLANS.md` only for active large-change work. Distill completed outcomes back into `AGENTS.md` and `docs/`. Do not keep stale plan text as a second source of truth.
+Use `PLANS.md` only for active large-change work. Do not keep stale plan text as a second source of truth.
 
 ## Architecture
 
@@ -95,10 +74,7 @@ Rules:
 
 - the plugin owns Obsidian UX, settings, editor insertion, and capture-side concerns
 - the sidecar owns inference and native audio-processing concerns
-- keep the plugin/sidecar boundary explicit and versioned
 - keep the plugin class thin and push logic into focused modules
 - desktop-first remains the active default
 - evolve the design within this split instead of reshaping it for each new backend
 - prefer broadly portable backends over platform-locked ones
-
-Product and architecture decisions live in `docs/decisions.md`. Implementation detail and large-change design live in `PLANS.md`.

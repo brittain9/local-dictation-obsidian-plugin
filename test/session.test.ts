@@ -121,9 +121,8 @@ describe('Session', () => {
 
     session.acceptTranscript(transcript({ revision: 0, text: 'manual target', utteranceId: 'u1' }));
     surface.nextReplaceResult = {
-      currentText: 'manual edit',
       kind: 'denied',
-      reason: 'Projected transcript text no longer matches the note.',
+      reason: { currentText: 'manual edit', kind: 'span_mismatch' },
       utteranceId: 'u1',
     };
     session.acceptTranscript(transcript({ revision: 1, text: 'replacement', utteranceId: 'u1' }));
@@ -139,7 +138,7 @@ describe('Session', () => {
 
     surface.nextAppendResult = {
       kind: 'denied',
-      reason: 'Locked note is not open.',
+      reason: { kind: 'disposed' },
       utteranceId: 'u1',
     };
     session.acceptTranscript(transcript({ revision: 0, text: 'first', utteranceId: 'u1' }));
@@ -156,7 +155,7 @@ describe('Session', () => {
 
     surface.nextAppendResult = {
       kind: 'denied',
-      reason: 'Locked note is not open.',
+      reason: { kind: 'disposed' },
       utteranceId: 'u1',
     };
     session.acceptTranscript(
@@ -244,58 +243,15 @@ describe('Session', () => {
     expect(surface.readNoteGlossary).toHaveBeenCalledWith(256);
   });
 
-  it('returns null from readNoteContext when the surface is detached', async () => {
+  it('returns null from readNoteContext when the surface is detached', () => {
     const { session } = createSessionHarness();
-    await session.dispose();
+    session.dispose();
 
     expect(session.readNoteContext(256)).toBeNull();
-  });
-
-  it('persists recovery after accepted transcripts and deletes it on dispose', async () => {
-    const { adapter, session } = createSessionHarness();
-
-    session.acceptTranscript(transcript({ text: 'recover me', utteranceId: 'u1' }));
-
-    await vi.waitFor(() => {
-      expect(adapter.write).toHaveBeenCalledTimes(1);
-    });
-    expect(adapter.mkdir).toHaveBeenCalledWith('.obsidian/local-dictation');
-    expect(adapter.write.mock.calls[0]?.[0]).toBe(
-      '.obsidian/local-dictation/recovery-session-1.json',
-    );
-
-    adapter.existing.add('.obsidian/local-dictation/recovery-session-1.json');
-    await session.dispose();
-
-    expect(adapter.remove).toHaveBeenCalledWith(
-      '.obsidian/local-dictation/recovery-session-1.json',
-    );
-  });
-
-  it('persists pause metadata in recovery snapshots', async () => {
-    const { adapter, session } = createSessionHarness();
-
-    session.acceptTranscript(
-      transcript({
-        pauseMsBeforeUtterance: 3200,
-        text: 'recover pause',
-        utteranceId: 'u1',
-      }),
-    );
-
-    await vi.waitFor(() => {
-      expect(adapter.write).toHaveBeenCalledTimes(1);
-    });
-
-    const payload = JSON.parse(adapter.write.mock.calls[0]?.[1] ?? '{}') as {
-      latest?: Array<{ pauseMsBeforeUtterance?: number | null }>;
-    };
-    expect(payload.latest?.[0]?.pauseMsBeforeUtterance).toBe(3200);
   });
 });
 
 function createSessionHarness(options: { rendererOptions?: TranscriptRenderOptions } = {}): {
-  adapter: FakeAdapter;
   callbacks: {
     onLockedNoteClosed: ReturnType<typeof vi.fn>;
     onLockedNoteDeleted: ReturnType<typeof vi.fn>;
@@ -303,16 +259,12 @@ function createSessionHarness(options: { rendererOptions?: TranscriptRenderOptio
   lockedFile: TFile;
   session: Session;
   surface: FakeSurface;
-  vault: FakeEvents & { adapter: FakeAdapter; configDir: string };
+  vault: FakeEvents;
   workspace: FakeWorkspace;
 } {
   const lockedFile = fakeFile('note.md');
   const surface = new FakeSurface();
-  const adapter = new FakeAdapter();
-  const vault = Object.assign(new FakeEvents(), {
-    adapter,
-    configDir: '.obsidian',
-  });
+  const vault = new FakeEvents();
   const workspace = new FakeWorkspace(lockedFile);
   const callbacks = {
     onLockedNoteClosed: vi.fn(),
@@ -334,7 +286,7 @@ function createSessionHarness(options: { rendererOptions?: TranscriptRenderOptio
     view: {} as EditorView,
   });
 
-  return { adapter, callbacks, lockedFile, session, surface, vault, workspace };
+  return { callbacks, lockedFile, session, surface, vault, workspace };
 }
 
 class FakeEvents {
@@ -380,23 +332,6 @@ class FakeWorkspace extends FakeEvents {
 
   getLeavesOfType(viewType: string): Array<{ view: { editor: { cm: EditorView }; file: TFile } }> {
     return viewType === 'markdown' ? this.leaves : [];
-  }
-}
-
-class FakeAdapter {
-  public readonly existing = new Set<string>();
-  public readonly mkdir = vi.fn(async (path: string) => {
-    this.existing.add(path);
-  });
-  public readonly remove = vi.fn(async (path: string) => {
-    this.existing.delete(path);
-  });
-  public readonly write = vi.fn(async (path: string, _data: string) => {
-    this.existing.add(path);
-  });
-
-  async exists(path: string): Promise<boolean> {
-    return this.existing.has(path);
   }
 }
 

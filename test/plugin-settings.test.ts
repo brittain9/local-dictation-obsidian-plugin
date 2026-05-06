@@ -70,18 +70,6 @@ describe('resolvePluginSettings', () => {
     );
   });
 
-  it('silently drops legacy formatting fields without migrating them', () => {
-    const resolved = resolvePluginSettings({
-      insertionMode: 'append_as_new_paragraph',
-      phraseSeparator: 'new_paragraph',
-    });
-
-    expect(resolved.dictationAnchor).toBe(DEFAULT_PLUGIN_SETTINGS.dictationAnchor);
-    expect(resolved.transcriptFormatting).toBe(DEFAULT_PLUGIN_SETTINGS.transcriptFormatting);
-    expect(resolved).not.toHaveProperty('insertionMode');
-    expect(resolved).not.toHaveProperty('phraseSeparator');
-  });
-
   it('falls back when persisted values are invalid', () => {
     expect(
       resolvePluginSettings({
@@ -96,14 +84,6 @@ describe('resolvePluginSettings', () => {
         useNoteAsContext: 'yes',
       }),
     ).toEqual(DEFAULT_PLUGIN_SETTINGS);
-  });
-
-  it('ignores legacy useGpu false and defaults to auto', () => {
-    expect(resolvePluginSettings({ useGpu: false }).accelerationPreference).toBe('auto');
-  });
-
-  it('ignores legacy useGpu true and defaults to auto', () => {
-    expect(resolvePluginSettings({ useGpu: true }).accelerationPreference).toBe('auto');
   });
 
   it('falls back accelerationPreference to auto when persisted value is invalid', () => {

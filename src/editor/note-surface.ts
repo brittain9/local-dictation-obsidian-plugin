@@ -21,15 +21,19 @@ export interface NoteProjectionContext {
   readonly tailContent: string;
 }
 
+export type LatchKind = 'user_edited' | 'span_mismatch';
+
 export interface ProjectedSpan {
   end: number;
-  latchedReason?: string;
+  latched?: LatchKind;
   projectedText: string;
   start: number;
   textEnd: number;
   textStart: number;
   utteranceId: UtteranceId;
 }
+
+export type AppendDenialReason = { kind: 'disposed' } | { kind: 'already_projected' };
 
 export type AppendResult =
   | {
@@ -38,9 +42,15 @@ export type AppendResult =
     }
   | {
       kind: 'denied';
-      reason: string;
+      reason: AppendDenialReason;
       utteranceId: UtteranceId;
     };
+
+export type ReplaceDenialReason =
+  | { kind: 'disposed' }
+  | { kind: 'not_found' }
+  | { kind: 'user_edited' }
+  | { currentText: string; kind: 'span_mismatch' };
 
 export type ReplaceResult =
   | {
@@ -48,9 +58,8 @@ export type ReplaceResult =
       span: ProjectedSpan;
     }
   | {
-      currentText?: string;
       kind: 'denied';
-      reason: string;
+      reason: ReplaceDenialReason;
       utteranceId: UtteranceId;
     };
 
@@ -63,6 +72,13 @@ export interface PreservedSpan {
   utteranceId: UtteranceId;
 }
 
+export type RewriteDenialReason =
+  | { kind: 'disposed' }
+  | { kind: 'range_invalid' }
+  | { kind: 'range_partial' }
+  | { kind: 'user_edited' }
+  | { kind: 'span_mismatch' };
+
 export type RewriteResult =
   | {
       kind: 'rewritten';
@@ -70,7 +86,7 @@ export type RewriteResult =
     }
   | {
       kind: 'denied';
-      reason: string;
+      reason: RewriteDenialReason;
     };
 
 let activeNoteSurface: NoteSurface | null = null;
@@ -119,12 +135,12 @@ export class NoteSurface {
     for (const before of spansBefore) {
       const current = this.spans.get(before.utteranceId);
 
-      if (current === undefined || current.latchedReason !== undefined) {
+      if (current === undefined || current.latched !== undefined) {
         continue;
       }
 
       if (changeIntersectsSpan(update, before)) {
-        current.latchedReason = 'User edited projected transcript text.';
+        current.latched = 'user_edited';
       }
     }
   }
@@ -140,11 +156,11 @@ export class NoteSurface {
 
   appendProjection(utteranceId: UtteranceId, projection: TranscriptInsertProjection): AppendResult {
     if (this.disposed) {
-      return { kind: 'denied', reason: 'Note surface is disposed.', utteranceId };
+      return { kind: 'denied', reason: { kind: 'disposed' }, utteranceId };
     }
 
     if (this.spans.has(utteranceId)) {
-      return { kind: 'denied', reason: 'Utterance is already projected.', utteranceId };
+      return { kind: 'denied', reason: { kind: 'already_projected' }, utteranceId };
     }
 
     const from = this.writingRegionTail();
@@ -173,27 +189,26 @@ export class NoteSurface {
 
   replaceAnchor(utteranceId: UtteranceId, newText: string, expectedOldText: string): ReplaceResult {
     if (this.disposed) {
-      return { kind: 'denied', reason: 'Note surface is disposed.', utteranceId };
+      return { kind: 'denied', reason: { kind: 'disposed' }, utteranceId };
     }
 
     const span = this.spans.get(utteranceId);
 
     if (span === undefined) {
-      return { kind: 'denied', reason: 'Utterance anchor was not found.', utteranceId };
+      return { kind: 'denied', reason: { kind: 'not_found' }, utteranceId };
     }
 
-    if (span.latchedReason !== undefined) {
-      return { kind: 'denied', reason: span.latchedReason, utteranceId };
+    if (span.latched !== undefined) {
+      return { kind: 'denied', reason: this.latchedReason(span), utteranceId };
     }
 
     const currentText = this.view.state.doc.sliceString(span.textStart, span.textEnd);
 
     if (currentText !== expectedOldText || currentText !== span.projectedText) {
-      span.latchedReason = 'Projected transcript text no longer matches the note.';
+      span.latched = 'span_mismatch';
       return {
-        currentText,
         kind: 'denied',
-        reason: span.latchedReason,
+        reason: { currentText, kind: 'span_mismatch' },
         utteranceId,
       };
     }
@@ -220,11 +235,11 @@ export class NoteSurface {
     preservedSpans: PreservedSpan[],
   ): RewriteResult {
     if (this.disposed) {
-      return { kind: 'denied', reason: 'Note surface is disposed.' };
+      return { kind: 'denied', reason: { kind: 'disposed' } };
     }
 
     if (!this.isValidRange(range)) {
-      return { kind: 'denied', reason: 'Rewrite range is outside the current document.' };
+      return { kind: 'denied', reason: { kind: 'range_invalid' } };
     }
 
     const preserved = new Set(preservedSpans.map((span) => span.utteranceId));
@@ -236,17 +251,17 @@ export class NoteSurface {
     );
 
     if (overlappingSpans.length !== spansInRange.length) {
-      return { kind: 'denied', reason: 'Rewrite range intersects a partial utterance span.' };
+      return { kind: 'denied', reason: { kind: 'range_partial' } };
     }
 
     for (const span of spansInRange) {
-      if (span.latchedReason !== undefined && !preserved.has(span.utteranceId)) {
-        return { kind: 'denied', reason: span.latchedReason };
+      if (span.latched !== undefined && !preserved.has(span.utteranceId)) {
+        return { kind: 'denied', reason: { kind: span.latched } };
       }
 
       if (this.view.state.doc.sliceString(span.textStart, span.textEnd) !== span.projectedText) {
-        span.latchedReason = 'Projected transcript text no longer matches the note.';
-        return { kind: 'denied', reason: span.latchedReason };
+        span.latched = 'span_mismatch';
+        return { kind: 'denied', reason: { kind: 'span_mismatch' } };
       }
     }
 
@@ -265,19 +280,13 @@ export class NoteSurface {
     }
 
     for (const span of this.spans.values()) {
-      if (span.latchedReason !== undefined) {
+      if (span.latched !== undefined) {
         continue;
       }
 
       if (this.view.state.doc.sliceString(span.textStart, span.textEnd) !== span.projectedText) {
-        span.latchedReason = 'Projected transcript text no longer matches the note.';
+        span.latched = 'span_mismatch';
       }
-    }
-  }
-
-  latchAll(reason: string): void {
-    for (const span of this.spans.values()) {
-      span.latchedReason = reason;
     }
   }
 
@@ -389,8 +398,19 @@ export class NoteSurface {
       span.end = update.changes.mapPos(span.end, 1);
     }
 
-    // Tail bias: insertions at the initial anchor extend the writing region (D-014).
+    // Tail bias: insertions at the initial anchor extend the writing region.
     this.initialAnchorPos = update.changes.mapPos(this.initialAnchorPos, 1);
+  }
+
+  private latchedReason(span: ProjectedSpan): ReplaceDenialReason {
+    if (span.latched === 'user_edited') {
+      return { kind: 'user_edited' };
+    }
+
+    return {
+      currentText: this.view.state.doc.sliceString(span.textStart, span.textEnd),
+      kind: 'span_mismatch',
+    };
   }
 
   private hasLatchableUserChange(update: ViewUpdate): boolean {

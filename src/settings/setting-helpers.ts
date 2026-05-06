@@ -1,0 +1,110 @@
+import { Setting } from 'obsidian';
+
+import type { PluginSettings } from './plugin-settings';
+
+// Filters PluginSettings keys whose value type is exactly T (not just assignable
+// to T). Tuple-wrapping prevents distribution and the bidirectional check rejects
+// narrower unions, so e.g. addTextSetting<SettingsKeyOf<string>> won't accept
+// accelerationPreference ('auto' | 'cpu_only').
+export type SettingsKeyOf<T> = {
+  [K in keyof PluginSettings]: [T] extends [PluginSettings[K]]
+    ? [PluginSettings[K]] extends [T]
+      ? K
+      : never
+    : never;
+}[keyof PluginSettings];
+
+export interface SettingSpec {
+  name: string;
+  desc: string | DocumentFragment;
+  tooltip?: string;
+}
+
+export interface DropdownOption<V extends string> {
+  label: string;
+  value: V;
+}
+
+export interface SettingAccess {
+  getSettings(): PluginSettings;
+  persistOne<K extends keyof PluginSettings>(key: K, value: PluginSettings[K]): Promise<void>;
+}
+
+export function addEnumSetting<K extends keyof PluginSettings>(
+  parent: HTMLElement,
+  access: SettingAccess,
+  spec: SettingSpec & {
+    key: K;
+    options: ReadonlyArray<DropdownOption<PluginSettings[K] & string>>;
+    isValid: (value: unknown) => value is PluginSettings[K];
+  },
+): void {
+  const setting = new Setting(parent).setName(spec.name).setDesc(spec.desc);
+  setting.addDropdown((dropdown) => {
+    for (const option of spec.options) {
+      dropdown.addOption(option.value, option.label);
+    }
+    dropdown.setValue(access.getSettings()[spec.key] as unknown as string);
+    dropdown.onChange(async (value) => {
+      if (!spec.isValid(value)) return;
+      await access.persistOne(spec.key, value);
+    });
+  });
+  appendInfoTooltip(setting, spec.tooltip);
+}
+
+export function addToggleSetting<K extends SettingsKeyOf<boolean>>(
+  parent: HTMLElement,
+  access: SettingAccess,
+  spec: SettingSpec & { key: K },
+): void {
+  const setting = new Setting(parent).setName(spec.name).setDesc(spec.desc);
+  setting.addToggle((toggle) => {
+    toggle.setValue(access.getSettings()[spec.key] as boolean);
+    toggle.onChange(async (value) => {
+      await access.persistOne(spec.key, value as PluginSettings[K]);
+    });
+  });
+  appendInfoTooltip(setting, spec.tooltip);
+}
+
+export function addTextSetting<K extends SettingsKeyOf<string>>(
+  parent: HTMLElement,
+  access: SettingAccess,
+  spec: SettingSpec & { key: K; placeholder?: string },
+): void {
+  const setting = new Setting(parent).setName(spec.name).setDesc(spec.desc);
+  setting.addText((text) => {
+    if (spec.placeholder !== undefined) text.setPlaceholder(spec.placeholder);
+    text.setValue(access.getSettings()[spec.key] as string);
+    text.onChange(async (value) => {
+      await access.persistOne(spec.key, value.trim() as PluginSettings[K]);
+    });
+  });
+  appendInfoTooltip(setting, spec.tooltip);
+}
+
+export function addPositiveIntSetting<K extends SettingsKeyOf<number>>(
+  parent: HTMLElement,
+  access: SettingAccess,
+  spec: SettingSpec & { key: K },
+): void {
+  const setting = new Setting(parent).setName(spec.name).setDesc(spec.desc);
+  setting.addText((text) => {
+    text.inputEl.type = 'number';
+    text.setValue(String(access.getSettings()[spec.key]));
+    text.onChange(async (value) => {
+      const parsed = Number.parseInt(value, 10);
+      if (!Number.isInteger(parsed) || parsed <= 0) return;
+      await access.persistOne(spec.key, parsed as PluginSettings[K]);
+    });
+  });
+  appendInfoTooltip(setting, spec.tooltip);
+}
+
+export function appendInfoTooltip(setting: Setting, tooltip: string | undefined): void {
+  if (tooltip === undefined) return;
+  setting.addExtraButton((button) => {
+    button.setIcon('info').setTooltip(tooltip);
+  });
+}

@@ -236,14 +236,14 @@ jobs:
       matrix:
         include:
           - asset_name: sidecar-windows-x86_64-cpu
-            archive_name: sidecar-windows-x86_64-cpu.zip
+            archive_name: sidecar-windows-x86_64-cpu.tar.gz
             binary_path: native/target/release/local-transcript-sidecar.exe
             build_command: npm run build:sidecar:release
             cache_workspaces: native -> target
             cuda: false
             cuda_architectures: ''
           - asset_name: sidecar-windows-x86_64-cuda
-            archive_name: sidecar-windows-x86_64-cuda.zip
+            archive_name: sidecar-windows-x86_64-cuda.tar.gz
             binary_path: native/target-cuda/release/local-transcript-sidecar.exe
             build_command: npm run build:sidecar:cuda:windows:release
             cache_workspaces: native -> target-cuda

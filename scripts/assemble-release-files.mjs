@@ -21,13 +21,13 @@ export const EXPECTED_SIDECAR_ARCHIVES = Object.freeze([
   'sidecar-linux-x86_64-cpu.tar.gz',
   'sidecar-linux-x86_64-cuda.tar.gz',
   'sidecar-macos-arm64.tar.gz',
-  'sidecar-windows-x86_64-cpu.zip',
-  'sidecar-windows-x86_64-cuda.zip',
+  'sidecar-windows-x86_64-cpu.tar.gz',
+  'sidecar-windows-x86_64-cuda.tar.gz',
 ]);
 
 const PLUGIN_FILES = Object.freeze(['main.js', 'manifest.json', 'styles.css']);
 
-const ARCHIVE_EXTENSIONS = ['.tar.gz', '.zip'];
+const ARCHIVE_EXTENSIONS = ['.tar.gz'];
 
 /**
  * Validate that exactly the expected sidecar archives are present in

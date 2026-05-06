@@ -154,7 +154,7 @@ sequenceDiagram
 | `start_session` | Begin transcription (specifies model, mode, sessionId) |
 | `stop_session` | Graceful stop (drain pending transcriptions) |
 | `cancel_session` | Immediate cancel (discard pending) |
-| `context_response` | Reply to a `context_request` with the plugin-assembled `ContextWindow` (or `null`); correlated by `correlationId` (D-017) |
+| `context_response` | Reply to a `context_request` with the plugin-assembled `ContextWindow` (or `null`); correlated by `correlationId` |
 | `shutdown` | Request sidecar exit |
 | `get_model_store` | Query model store path |
 | `list_model_catalog` | Fetch built-in model catalog |
@@ -172,8 +172,8 @@ sequenceDiagram
 | `system_info` | `compiledRuntimes[]` + `compiledAdapters[]` with declared capabilities |
 | `session_started` | Session confirmed active |
 | `session_state_changed` | State machine transition |
-| `transcript_ready` | Completed transcript with segments + timing + `stageResults[]` (engine + post-engine stage history per D-015) + `warnings[]` for capability-dropped fields |
-| `context_request` | Sidecar asks the plugin for a `ContextWindow` for the next utterance; bounded by a short timeout, correlated by `correlationId` (D-017) |
+| `transcript_ready` | Completed transcript with segments + timing + `stageResults[]` (engine + post-engine stage history) + `warnings[]` for capability-dropped fields |
+| `context_request` | Sidecar asks the plugin for a `ContextWindow` for the next utterance; bounded by a short timeout, correlated by `correlationId` |
 | `session_stopped` | Session ended with reason |
 | `warning` | Non-fatal warning |
 | `error` | Fatal error |
@@ -265,7 +265,7 @@ flowchart LR
 
 **What it does:** Looks up the family adapter for the session's `(runtimeId, familyId)`, soft-drops request fields the adapter doesn't declare support for (emitting `RequestWarning[]`), runs the model on the completed utterance, and produces timestamped text segments.
 
-**Three-layer engine abstraction (see D-008):**
+**Three-layer engine abstraction:**
 
 | Layer | Trait | Owns |
 |---|---|---|

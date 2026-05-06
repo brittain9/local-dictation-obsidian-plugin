@@ -124,7 +124,7 @@ Cohere CUDA is also encoder-only. The ONNX Runtime CUDA `GroupQueryAttention` ke
 
 ## Runtime Capability Probing
 
-Accelerator probing lives on the `Runtime` layer (D-008). Each compiled `Runtime` reports `RuntimeCapabilities { availableAccelerators, acceleratorDetails, supportedModelFormats }` at startup; results are cached and surfaced to the plugin through `system_info.compiledRuntimes[]`. Per-selection merges (`model_probe_result.mergedCapabilities`) combine runtime caps with the family adapter's `ModelFamilyCapabilities`.
+Accelerator probing lives on the `Runtime` layer. Each compiled `Runtime` reports `RuntimeCapabilities { availableAccelerators, acceleratorDetails, supportedModelFormats }` at startup; results are cached and surfaced to the plugin through `system_info.compiledRuntimes[]`. Per-selection merges (`model_probe_result.mergedCapabilities`) combine runtime caps with the family adapter's `ModelFamilyCapabilities`.
 
 | Runtime | Probe method |
 |---|---|
@@ -151,8 +151,8 @@ The `onnx_runtime` probe is stronger — it catches missing userspace libraries,
 |---|---|---|
 | `sidecar-linux-x86_64-cpu.tar.gz` | `ubuntu-latest` | `npm run build:sidecar:release` |
 | `sidecar-linux-x86_64-cuda.tar.gz` | `ubuntu-latest` | `npm run build:sidecar:cuda:release` |
-| `sidecar-windows-x86_64-cpu.zip` | `windows-latest` | `npm run build:sidecar:release` |
-| `sidecar-windows-x86_64-cuda.zip` | `windows-latest` | `npm run build:sidecar:cuda:windows:release` |
+| `sidecar-windows-x86_64-cpu.tar.gz` | `windows-latest` | `npm run build:sidecar:release` |
+| `sidecar-windows-x86_64-cuda.tar.gz` | `windows-latest` | `npm run build:sidecar:cuda:windows:release` |
 | `sidecar-macos-arm64.tar.gz` | `macos-15` | `npm run build:sidecar:release` |
 
 All release jobs set `GGML_NATIVE=OFF` (workflow-level) to avoid inheriting runner CPU SIMD. CUDA release jobs additionally set `CMAKE_CUDA_ARCHITECTURES=75-virtual` to ship one forward-compatible Turing PTX target. Each CUDA archive is one GPU archive per OS and includes both Whisper CUDA and Cohere CUDA capability.
