@@ -37,6 +37,7 @@ interface ActiveSessionSnapshot {
   accelerationPreference: PluginSettings['accelerationPreference'];
   dictationAnchor: PluginSettings['dictationAnchor'];
   listeningMode: PluginSettings['listeningMode'];
+  livePartialMode: PluginSettings['livePartialMode'];
   modelSelection: NonNullable<PluginSettings['selectedModel']>;
   modelStorePathOverride: string;
   sessionStartUnixMs: number;
@@ -151,6 +152,7 @@ export class DictationSessionController {
       accelerationPreference: settings.accelerationPreference,
       dictationAnchor: settings.dictationAnchor,
       listeningMode: settings.listeningMode,
+      livePartialMode: settings.livePartialMode,
       modelSelection: selectedModel,
       modelStorePathOverride: settings.modelStorePathOverride,
       sessionStartUnixMs: Date.now(),
@@ -217,6 +219,7 @@ export class DictationSessionController {
         await this.dependencies.sidecarConnection.startSession({
           accelerationPreference: snapshot.accelerationPreference,
           language: 'en',
+          livePartialMode: snapshot.livePartialMode,
           mode: snapshot.listeningMode,
           modelSelection: snapshot.modelSelection,
           sessionStartUnixMs: snapshot.sessionStartUnixMs,

@@ -8,7 +8,7 @@ import { updateInstallProgressElement } from '../models/model-install-progress';
 import { ExternalModelFileModal, ModelDetailsModal } from '../models/model-management-modals';
 import { matchesModelTriple } from '../models/model-management-types';
 import type { PluginLogger } from '../shared/plugin-logger';
-import type { SpeakingStyle } from '../sidecar/protocol';
+import type { LivePartialMode, SpeakingStyle } from '../sidecar/protocol';
 import type { SidecarConnection } from '../sidecar/sidecar-connection';
 import {
   buildSidecarProgressState,
@@ -21,6 +21,7 @@ import {
   type DictationAnchor,
   isDictationAnchor,
   isListeningMode,
+  isLivePartialMode,
   isSpeakingStyle,
   isTranscriptFormattingMode,
   type PluginSettings,
@@ -57,6 +58,12 @@ interface SettingsTabDependencies {
 const LISTENING_MODE_OPTIONS: ReadonlyArray<DropdownOption<'always_on' | 'one_sentence'>> = [
   { label: 'Always on', value: 'always_on' },
   { label: 'One sentence', value: 'one_sentence' },
+];
+
+const LIVE_PARTIAL_MODE_OPTIONS: ReadonlyArray<DropdownOption<LivePartialMode>> = [
+  { label: 'Auto', value: 'auto' },
+  { label: 'Always', value: 'always' },
+  { label: 'Off', value: 'off' },
 ];
 
 const DICTATION_ANCHOR_OPTIONS: ReadonlyArray<DropdownOption<DictationAnchor>> = [
@@ -151,6 +158,16 @@ export class LocalSttSettingTab extends PluginSettingTab {
       key: 'listeningMode',
       options: LISTENING_MODE_OPTIONS,
       isValid: isListeningMode,
+    });
+
+    addEnumSetting(transcriptionCard, this.access, {
+      name: 'Live dictation',
+      desc: 'Show partial text as you speak.',
+      tooltip:
+        'Auto — enable when the active model supports it. Always — request live partials regardless of model (may be ignored). Off — only show finalized transcripts.',
+      key: 'livePartialMode',
+      options: LIVE_PARTIAL_MODE_OPTIONS,
+      isValid: isLivePartialMode,
     });
 
     addEnumSetting(transcriptionCard, this.access, {
