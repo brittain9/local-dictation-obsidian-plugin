@@ -311,6 +311,7 @@ fn run_transcription(
     let mut request = TranscriptionRequest {
         audio_samples,
         gpu_config: session.metadata.gpu_config,
+        is_partial: !is_final,
         language: session.metadata.language.clone(),
         model_file_path: session.metadata.model_file_path.clone(),
         context,

@@ -365,6 +365,7 @@ mod tests {
         TranscriptionRequest {
             audio_samples: vec![0.0; 16_000],
             gpu_config: GpuConfig::default(),
+            is_partial: false,
             language: "en".to_string(),
             model_file_path: PathBuf::from("/tmp/model.bin"),
             context,

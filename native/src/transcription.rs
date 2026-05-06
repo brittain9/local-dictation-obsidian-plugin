@@ -16,6 +16,11 @@ pub struct GpuConfig {
 pub struct TranscriptionRequest {
     pub audio_samples: Vec<f32>,
     pub gpu_config: GpuConfig,
+    /// True when this request is a live partial (interim) decode rather than
+    /// a finalized utterance. Adapters use this to swap to interim-tuned
+    /// decode params (faster, less context) without contaminating final
+    /// decode behavior.
+    pub is_partial: bool,
     pub language: String,
     pub model_file_path: PathBuf,
     /// Structured context window the plugin assembled for this utterance.

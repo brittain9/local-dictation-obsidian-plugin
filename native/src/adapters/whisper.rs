@@ -83,6 +83,17 @@ impl LoadedModel for LoadedWhisperModel {
         params.set_print_realtime(false);
         params.set_print_timestamps(false);
 
+        if request.is_partial {
+            // Partial-only tuning: deterministic, single-segment, narrow
+            // encoder context, no carry-over from prior partial. Final decode
+            // keeps Whisper's default behavior so the canonical revision is
+            // unaffected.
+            params.set_no_context(true);
+            params.set_temperature(0.0);
+            params.set_single_segment(true);
+            params.set_audio_ctx(768);
+        }
+
         if let Some(context) = request.context.as_ref() {
             params.set_initial_prompt(&context.text);
         }

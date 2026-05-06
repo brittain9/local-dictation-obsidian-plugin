@@ -12,17 +12,19 @@ use crate::model_store::{
     remove_installed_model, resolve_catalog_model_runtime_path, resolve_model_store_info,
     scan_installed_models,
 };
+use crate::partial_stabilizer::PartialStabilizer;
 use crate::protocol::{
     AccelerationPreference, Command, CompiledAdapterInfo, CompiledRuntimeInfo, ContextWindow,
     Event, HealthStatus, ListeningMode, LivePartialMode, ModelInstallState, ModelProbeStatus,
-    QueueBackpressureTier, SelectedModel, SessionState, SessionStopReason, system_info_string,
+    QueueBackpressureTier, SelectedModel, SessionState, SessionStopReason, TimestampGranularity,
+    TimestampSource, TranscriptSegment, system_info_string,
 };
 use crate::session::{
     FinalizedUtterance, ListeningSession, SessionAction, SessionBaseState, SessionConfig,
     SessionInitError,
 };
 use crate::stages::{StageEnablement, any_registered_stage_needs_context};
-use crate::transcription::GpuConfig;
+use crate::transcription::{GpuConfig, Transcript};
 use crate::worker::{SessionMetadata, TranscriptionWorker, WorkerCommand, WorkerEvent};
 
 /// Hard cap on waiting utterances behind the active worker item. Reaching
@@ -69,6 +71,7 @@ struct ActiveSession {
     last_reported_state: Option<SessionState>,
     overload_draining: bool,
     partial_in_flight: bool,
+    partial_stabilizer: PartialStabilizer,
     pending_context_requests: Vec<PendingContextRequest>,
     queued_utterances: usize,
     session: ListeningSession,
@@ -511,6 +514,7 @@ impl AppState {
                             last_reported_state: None,
                             overload_draining: false,
                             partial_in_flight: false,
+                            partial_stabilizer: PartialStabilizer::new(),
                             pending_context_requests: Vec::new(),
                             queued_utterances: 0,
                             session,
@@ -796,7 +800,7 @@ impl AppState {
             } => {
                 let is_final = transcript.is_final();
 
-                {
+                let emitted_transcript: Option<Transcript> = {
                     let Some(active_session) = self.active_session.as_mut() else {
                         return;
                     };
@@ -808,10 +812,23 @@ impl AppState {
                     if is_final {
                         advance_transcription_queue(active_session);
                         emit_queue_tier_if_changed(active_session, events);
+                        active_session.partial_stabilizer.clear();
+                        Some(transcript)
                     } else {
                         active_session.partial_in_flight = false;
+                        let raw_text = transcript.joined_text();
+                        active_session
+                            .partial_stabilizer
+                            .apply(transcript.utterance_id, &raw_text)
+                            .map(|stable_text| {
+                                stabilize_partial_transcript(&transcript, stable_text)
+                            })
                     }
-                }
+                };
+
+                let Some(transcript) = emitted_transcript else {
+                    return;
+                };
 
                 let text = transcript.joined_text();
                 events.push(Event::TranscriptReady {
@@ -1225,6 +1242,34 @@ fn advance_transcription_queue(active_session: &mut ActiveSession) {
     }
 }
 
+fn stabilize_partial_transcript(transcript: &Transcript, stable_text: String) -> Transcript {
+    let (start_ms, end_ms, granularity, source) = transcript
+        .segments
+        .first()
+        .map(|seg| {
+            (
+                seg.start_ms,
+                seg.end_ms,
+                seg.timestamp_granularity,
+                seg.timestamp_source,
+            )
+        })
+        .unwrap_or((0, 0, TimestampGranularity::Segment, TimestampSource::Engine));
+
+    Transcript {
+        utterance_id: transcript.utterance_id,
+        revision: transcript.revision,
+        segments: vec![TranscriptSegment {
+            start_ms,
+            end_ms,
+            text: stable_text,
+            timestamp_granularity: granularity,
+            timestamp_source: source,
+        }],
+        stage_history: transcript.stage_history.clone(),
+    }
+}
+
 fn queue_backpressure_tier(queued_utterances: usize) -> QueueBackpressureTier {
     match queued_utterances {
         0..=2 => QueueBackpressureTier::Normal,
@@ -1389,7 +1434,8 @@ mod tests {
     use crate::protocol::{
         AccelerationPreference, Command, ContextWindow, ContextWindowSource, Event, HealthStatus,
         ListeningMode, LivePartialMode, ModelProbeStatus, QueueBackpressureTier, SelectedModel,
-        SessionState, SessionStopReason, StageId, StageOutcome, StageStatus,
+        SessionState, SessionStopReason, StageId, StageOutcome, StageStatus, TimestampGranularity,
+        TimestampSource, TranscriptSegment,
     };
     use crate::session::{FinalizedUtterance, ListeningSession, SessionInitError, SpeakingStyle};
     use crate::transcription::{
@@ -2417,6 +2463,245 @@ mod tests {
             events.is_empty(),
             "worker events for a cancelled session must be dropped silently: {events:?}"
         );
+    }
+
+    #[test]
+    fn first_partial_emits_no_transcript_ready_event() {
+        let model_file_path = create_model_file();
+        let mut app = test_app();
+        let _ = app.handle_command(start_session_command("session-1", &model_file_path));
+
+        let utterance_id = Uuid::new_v4();
+        let mut events = Vec::new();
+        app.handle_worker_event(
+            partial_event(
+                make_partial_transcript(utterance_id, 0, "the cat"),
+                "session-1",
+            ),
+            &mut events,
+        );
+
+        assert!(
+            !events
+                .iter()
+                .any(|e| matches!(e, Event::TranscriptReady { .. })),
+            "first partial has no previous decode to agree with"
+        );
+    }
+
+    #[test]
+    fn second_partial_emits_word_aligned_committed_prefix() {
+        let model_file_path = create_model_file();
+        let mut app = test_app();
+        let _ = app.handle_command(start_session_command("session-1", &model_file_path));
+
+        let utterance_id = Uuid::new_v4();
+        let mut events = Vec::new();
+        app.handle_worker_event(
+            partial_event(
+                make_partial_transcript(utterance_id, 0, "the cat"),
+                "session-1",
+            ),
+            &mut events,
+        );
+        events.clear();
+        app.handle_worker_event(
+            partial_event(
+                make_partial_transcript(utterance_id, 1, "the cat sat"),
+                "session-1",
+            ),
+            &mut events,
+        );
+
+        let emitted = events
+            .iter()
+            .find_map(|e| match e {
+                Event::TranscriptReady { text, is_final, .. } if !is_final => Some(text.clone()),
+                _ => None,
+            })
+            .expect("stabilized partial should be emitted");
+        assert_eq!(emitted, "the cat");
+    }
+
+    #[test]
+    fn partial_with_no_new_agreement_is_suppressed() {
+        let model_file_path = create_model_file();
+        let mut app = test_app();
+        let _ = app.handle_command(start_session_command("session-1", &model_file_path));
+
+        let utterance_id = Uuid::new_v4();
+        let mut events = Vec::new();
+        app.handle_worker_event(
+            partial_event(
+                make_partial_transcript(utterance_id, 0, "the cat"),
+                "session-1",
+            ),
+            &mut events,
+        );
+        app.handle_worker_event(
+            partial_event(
+                make_partial_transcript(utterance_id, 1, "the cat sat"),
+                "session-1",
+            ),
+            &mut events,
+        );
+        app.handle_worker_event(
+            partial_event(
+                make_partial_transcript(utterance_id, 2, "the cat sat around"),
+                "session-1",
+            ),
+            &mut events,
+        );
+        events.clear();
+        app.handle_worker_event(
+            partial_event(
+                make_partial_transcript(utterance_id, 3, "the cat sat beside"),
+                "session-1",
+            ),
+            &mut events,
+        );
+
+        assert!(
+            !events
+                .iter()
+                .any(|e| matches!(e, Event::TranscriptReady { .. })),
+            "no-op partial must be suppressed"
+        );
+    }
+
+    #[test]
+    fn final_transcript_bypasses_stabilizer_and_emits_full_text() {
+        let model_file_path = create_model_file();
+        let mut app = test_app();
+        let _ = app.handle_command(start_session_command("session-1", &model_file_path));
+
+        let utterance_id = Uuid::new_v4();
+        let mut events = Vec::new();
+        app.handle_worker_event(
+            partial_event(
+                make_partial_transcript(utterance_id, 0, "the cat"),
+                "session-1",
+            ),
+            &mut events,
+        );
+        events.clear();
+        app.handle_worker_event(
+            partial_event(
+                make_final_transcript(utterance_id, 1, "the cat sat down"),
+                "session-1",
+            ),
+            &mut events,
+        );
+
+        let emitted = events
+            .iter()
+            .find_map(|e| match e {
+                Event::TranscriptReady { text, is_final, .. } if *is_final => Some(text.clone()),
+                _ => None,
+            })
+            .expect("final must emit");
+        assert_eq!(emitted, "the cat sat down", "finals are unstabilized");
+    }
+
+    #[test]
+    fn new_utterance_after_final_starts_stabilizer_fresh() {
+        let model_file_path = create_model_file();
+        let mut app = test_app();
+        let _ = app.handle_command(start_session_command("session-1", &model_file_path));
+
+        let u1 = Uuid::new_v4();
+        let u2 = Uuid::new_v4();
+        let mut events = Vec::new();
+
+        app.handle_worker_event(
+            partial_event(make_partial_transcript(u1, 0, "the cat"), "session-1"),
+            &mut events,
+        );
+        app.handle_worker_event(
+            partial_event(make_partial_transcript(u1, 1, "the cat sat"), "session-1"),
+            &mut events,
+        );
+        app.handle_worker_event(
+            partial_event(
+                make_final_transcript(u1, 2, "the cat sat down"),
+                "session-1",
+            ),
+            &mut events,
+        );
+        events.clear();
+
+        app.handle_worker_event(
+            partial_event(
+                make_partial_transcript(u2, 0, "another phrase"),
+                "session-1",
+            ),
+            &mut events,
+        );
+        assert!(
+            !events
+                .iter()
+                .any(|e| matches!(e, Event::TranscriptReady { .. })),
+            "first partial of new utterance must not emit"
+        );
+
+        app.handle_worker_event(
+            partial_event(
+                make_partial_transcript(u2, 1, "another phrase here"),
+                "session-1",
+            ),
+            &mut events,
+        );
+        let emitted = events
+            .iter()
+            .find_map(|e| match e {
+                Event::TranscriptReady { text, is_final, .. } if !is_final => Some(text.clone()),
+                _ => None,
+            })
+            .expect("u2 partial should emit");
+        assert_eq!(emitted, "another phrase");
+    }
+
+    fn make_partial_transcript(utterance_id: Uuid, revision: u32, text: &str) -> Transcript {
+        Transcript {
+            utterance_id,
+            revision,
+            segments: vec![TranscriptSegment {
+                start_ms: 0,
+                end_ms: 1_000,
+                text: text.to_string(),
+                timestamp_granularity: TimestampGranularity::Segment,
+                timestamp_source: TimestampSource::Engine,
+            }],
+            stage_history: vec![StageOutcome {
+                duration_ms: 5,
+                is_final: false,
+                payload: None,
+                revision_in: revision,
+                revision_out: Some(revision),
+                stage_id: StageId::Engine,
+                status: StageStatus::Ok,
+            }],
+        }
+    }
+
+    fn make_final_transcript(utterance_id: Uuid, revision: u32, text: &str) -> Transcript {
+        let mut transcript = make_partial_transcript(utterance_id, revision, text);
+        transcript.stage_history[0].is_final = true;
+        transcript
+    }
+
+    fn partial_event(transcript: Transcript, session_id: &str) -> WorkerEvent {
+        WorkerEvent::TranscriptReady {
+            pause_ms_before_utterance: None,
+            processing_duration_ms: 5,
+            session_id: session_id.to_string(),
+            transcript,
+            utterance_duration_ms: 1_000,
+            utterance_end_ms_in_session: 1_000,
+            utterance_index: 0,
+            utterance_start_ms_in_session: 0,
+            warnings: Vec::new(),
+        }
     }
 
     fn start_session_command(session_id: &str, model_file_path: &std::path::Path) -> Command {
