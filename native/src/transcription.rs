@@ -18,12 +18,12 @@ pub struct TranscriptionRequest {
     pub gpu_config: GpuConfig,
     pub language: String,
     pub model_file_path: PathBuf,
-    /// Structured context window (per D-017) the plugin assembled for this
-    /// utterance. Adapters that support prompt conditioning extract `text`;
-    /// adapters that do not are gated upstream by `apply_capability_gates`,
-    /// which clears this field and emits a `RequestWarning`. Sources are
-    /// preserved so future stages (e.g. summarisation, source-attribution
-    /// telemetry) can inspect them without a second wire round-trip.
+    /// Structured context window the plugin assembled for this utterance.
+    /// Adapters that support prompt conditioning extract `text`; adapters that
+    /// do not are gated upstream by `apply_capability_gates`, which clears
+    /// this field and emits a `RequestWarning`. Sources are preserved so
+    /// future stages (e.g. summarisation, source-attribution telemetry) can
+    /// inspect them without a second wire round-trip.
     pub context: Option<ContextWindow>,
 }
 
@@ -70,10 +70,10 @@ impl Transcript {
         pieces.join(" ")
     }
 
-    /// Per D-015 the engine stage outcome is the canonical record of whether
-    /// a revision is a finalized engine pass. Returns `false` if the engine
-    /// stage is absent — that is a producer contract violation, but treating
-    /// it as a partial is safer than auto-finalizing into the journal.
+    /// The engine stage outcome is the canonical record of whether a revision
+    /// is a finalized engine pass. Returns `false` if the engine stage is
+    /// absent — that is a producer contract violation, but treating it as a
+    /// partial is safer than auto-finalizing into the journal.
     pub fn is_final(&self) -> bool {
         self.stage_history
             .first()

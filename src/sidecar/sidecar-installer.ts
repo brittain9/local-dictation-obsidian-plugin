@@ -4,14 +4,13 @@ import { chmod, mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import type { IncomingMessage } from 'node:http';
 import { get as httpsGet, type RequestOptions } from 'node:https';
 import { dirname, join, normalize, sep } from 'node:path';
-import { gunzipSync, inflateRawSync } from 'node:zlib';
+import { gunzipSync } from 'node:zlib';
 
 import { asError } from '../shared/error-utils';
 import type { PluginLogger } from '../shared/plugin-logger';
 import { formatSidecarExecutableName } from './sidecar-executable';
 
 export type SidecarInstallVariant = 'cpu' | 'cuda';
-export type ArchiveKind = 'tar.gz' | 'zip';
 export type InstallPhase = 'download' | 'verify' | 'extract';
 export type TargetPlatform = 'darwin' | 'linux' | 'win32';
 export type TargetArch = 'arm64' | 'x64';
@@ -21,11 +20,6 @@ export interface InstallManifest {
   variant: SidecarInstallVariant;
   sha256: string;
   installedAt: string;
-}
-
-export interface PlatformAsset {
-  assetName: string;
-  archiveKind: ArchiveKind;
 }
 
 export interface InstallProgress {
@@ -59,7 +53,7 @@ export function detectPlatformAsset(
   platform: TargetPlatform,
   arch: TargetArch,
   variant: SidecarInstallVariant,
-): PlatformAsset {
+): string {
   if (platform === 'darwin') {
     if (variant === 'cuda') {
       throw new Error('CUDA sidecar is not available on macOS.');
@@ -69,7 +63,7 @@ export function detectPlatformAsset(
       throw new Error(`Unsupported macOS architecture for sidecar: ${arch}.`);
     }
 
-    return { assetName: 'sidecar-macos-arm64.tar.gz', archiveKind: 'tar.gz' };
+    return 'sidecar-macos-arm64.tar.gz';
   }
 
   if (arch !== 'x64') {
@@ -77,19 +71,13 @@ export function detectPlatformAsset(
   }
 
   if (platform === 'linux') {
-    return {
-      assetName: `sidecar-linux-x86_64-${variant}.tar.gz`,
-      archiveKind: 'tar.gz',
-    };
+    return `sidecar-linux-x86_64-${variant}.tar.gz`;
   }
 
-  return {
-    assetName: `sidecar-windows-x86_64-${variant}.zip`,
-    archiveKind: 'zip',
-  };
+  return `sidecar-windows-x86_64-${variant}.tar.gz`;
 }
 
-export function detectPlatformAssetForCurrentEnv(variant: SidecarInstallVariant): PlatformAsset {
+export function detectPlatformAssetForCurrentEnv(variant: SidecarInstallVariant): string {
   return detectPlatformAsset(
     process.platform as TargetPlatform,
     process.arch as TargetArch,
@@ -136,9 +124,9 @@ export async function uninstallSidecarVariant(
 export async function installSidecar(
   options: InstallSidecarOptions,
 ): Promise<InstallSidecarResult> {
-  const asset = detectPlatformAssetForCurrentEnv(options.variant);
+  const assetName = detectPlatformAssetForCurrentEnv(options.variant);
   const releaseBaseUrl = (options.releaseBaseUrl ?? DEFAULT_RELEASE_BASE_URL).replace(/\/$/, '');
-  const archiveUrl = `${releaseBaseUrl}/${options.version}/${asset.assetName}`;
+  const archiveUrl = `${releaseBaseUrl}/${options.version}/${assetName}`;
   const checksumsUrl = `${releaseBaseUrl}/${options.version}/checksums.txt`;
 
   const binDirectory = join(options.pluginDirectory, 'bin');
@@ -150,9 +138,9 @@ export async function installSidecar(
 
   try {
     const checksumsText = await fetchText(checksumsUrl, options.signal);
-    const expectedSha256 = parseChecksum(checksumsText, asset.assetName);
+    const expectedSha256 = parseChecksum(checksumsText, assetName);
 
-    const archivePath = join(stagingDirectory, asset.assetName);
+    const archivePath = join(stagingDirectory, assetName);
     const actualSha256 = await downloadToFile(
       archiveUrl,
       archivePath,
@@ -166,16 +154,12 @@ export async function installSidecar(
 
     if (actualSha256 !== expectedSha256) {
       throw new Error(
-        `Checksum mismatch for ${asset.assetName}: expected ${expectedSha256}, got ${actualSha256}.`,
+        `Checksum mismatch for ${assetName}: expected ${expectedSha256}, got ${actualSha256}.`,
       );
     }
 
     options.onProgress?.({ bytesDownloaded: 0, totalBytes: null, phase: 'extract' });
-    if (asset.archiveKind === 'tar.gz') {
-      await extractTarGz(archivePath, stagingDirectory);
-    } else {
-      await extractZip(archivePath, stagingDirectory);
-    }
+    await extractTarGz(archivePath, stagingDirectory);
 
     await rm(archivePath, { force: true });
 
@@ -230,7 +214,10 @@ export function parseChecksum(checksumsText: string, targetFilename: string): st
   throw new Error(`Checksum entry for ${targetFilename} not found in checksums.txt.`);
 }
 
-const MAX_REDIRECTS = 5;
+// GitHub Releases redirects from github.com URLs to objects.githubusercontent.com
+// (signed URL with query params). One hop is all we ever need; refuse more so a
+// misconfigured proxy or hijacked CDN can't bounce us through arbitrary URLs.
+const MAX_REDIRECTS = 1;
 const CHECKSUMS_SIZE_LIMIT = 1024 * 1024;
 
 async function openHttpsStream(
@@ -496,102 +483,6 @@ async function extractTarGz(archivePath: string, destDir: string): Promise<void>
 
     offset += Math.ceil(size / blockSize) * blockSize;
   }
-}
-
-async function extractZip(archivePath: string, destDir: string): Promise<void> {
-  const archive = await readFile(archivePath);
-  const eocdOffset = findEocd(archive);
-
-  if (eocdOffset === -1) {
-    throw new Error('Zip end-of-central-directory record not found.');
-  }
-
-  const totalEntries = archive.readUInt16LE(eocdOffset + 10);
-
-  if (totalEntries === 0xffff) {
-    throw new Error('ZIP64 archives are not supported.');
-  }
-
-  let cursor = archive.readUInt32LE(eocdOffset + 16);
-
-  if (cursor === 0xffffffff) {
-    throw new Error('ZIP64 archives are not supported.');
-  }
-
-  for (let entryIndex = 0; entryIndex < totalEntries; entryIndex += 1) {
-    if (archive.readUInt32LE(cursor) !== 0x02014b50) {
-      throw new Error(`Invalid zip central directory signature at offset ${cursor}.`);
-    }
-
-    const gpFlags = archive.readUInt16LE(cursor + 8);
-    const compressionMethod = archive.readUInt16LE(cursor + 10);
-    const compressedSize = archive.readUInt32LE(cursor + 20);
-    const fileNameLength = archive.readUInt16LE(cursor + 28);
-    const extraFieldLength = archive.readUInt16LE(cursor + 30);
-    const fileCommentLength = archive.readUInt16LE(cursor + 32);
-    const localHeaderOffset = archive.readUInt32LE(cursor + 42);
-    const fileName = archive.subarray(cursor + 46, cursor + 46 + fileNameLength).toString('utf8');
-
-    // Bit 3 = sizes deferred to a post-data descriptor. We rely on sizes from
-    // the central directory; rather than trust a producer that sets this flag,
-    // fail loudly so a CI change can't silently corrupt extraction.
-    if ((gpFlags & 0x0008) !== 0) {
-      throw new Error(
-        `Zip entry ${fileName} uses data-descriptor encoding, which is not supported.`,
-      );
-    }
-
-    if (compressedSize === 0xffffffff || localHeaderOffset === 0xffffffff) {
-      throw new Error(`Zip entry ${fileName} uses ZIP64 extensions, which are not supported.`);
-    }
-
-    if (archive.readUInt32LE(localHeaderOffset) !== 0x04034b50) {
-      throw new Error(`Invalid zip local header signature at offset ${localHeaderOffset}.`);
-    }
-
-    const localFileNameLength = archive.readUInt16LE(localHeaderOffset + 26);
-    const localExtraFieldLength = archive.readUInt16LE(localHeaderOffset + 28);
-    const dataStart = localHeaderOffset + 30 + localFileNameLength + localExtraFieldLength;
-    const compressedData = archive.subarray(dataStart, dataStart + compressedSize);
-
-    const isDirectory = fileName.endsWith('/');
-    const resolvedPath = resolveArchiveMemberPath(fileName, destDir);
-
-    if (isDirectory) {
-      await mkdir(resolvedPath, { recursive: true });
-    } else {
-      await mkdir(dirname(resolvedPath), { recursive: true });
-      const fileBytes = decompressZipEntry(compressionMethod, compressedData);
-      await writeFile(resolvedPath, fileBytes);
-    }
-
-    cursor += 46 + fileNameLength + extraFieldLength + fileCommentLength;
-  }
-}
-
-function decompressZipEntry(compressionMethod: number, compressedData: Buffer): Buffer {
-  if (compressionMethod === 0) {
-    return Buffer.from(compressedData);
-  }
-
-  if (compressionMethod === 8) {
-    return inflateRawSync(compressedData);
-  }
-
-  throw new Error(`Unsupported zip compression method: ${compressionMethod}.`);
-}
-
-function findEocd(archive: Buffer): number {
-  const signature = 0x06054b50;
-  const minOffset = Math.max(0, archive.length - 65558);
-
-  for (let offset = archive.length - 22; offset >= minOffset; offset -= 1) {
-    if (archive.readUInt32LE(offset) === signature) {
-      return offset;
-    }
-  }
-
-  return -1;
 }
 
 function resolveArchiveMemberPath(memberName: string, destDir: string): string {

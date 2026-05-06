@@ -103,27 +103,11 @@ function runStrip(path) {
 }
 
 async function createArchive(sourceDir, archivePath) {
-  if (archivePath.endsWith('.tar.gz')) {
-    runOrThrow('tar', ['-czf', archivePath, '-C', sourceDir, '.']);
-    return;
+  if (!archivePath.endsWith('.tar.gz')) {
+    throw new Error(`Unsupported archive extension for ${archivePath}.`);
   }
-
-  if (archivePath.endsWith('.zip')) {
-    if (isWindows) {
-      // PowerShell's Compress-Archive is the only zero-dependency zipper on
-      // Windows runners. Star-glob to keep entries at archive root.
-      runOrThrow('powershell', [
-        '-NoProfile',
-        '-Command',
-        `Compress-Archive -Path "${sourceDir}/*" -DestinationPath "${archivePath}" -Force`,
-      ]);
-    } else {
-      runOrThrow('zip', ['-r', '-q', archivePath, '.'], sourceDir);
-    }
-    return;
-  }
-
-  throw new Error(`Unsupported archive extension for ${archivePath}.`);
+  // Windows 10+ ships bsdtar as tar.exe, so this works on every runner.
+  runOrThrow('tar', ['-czf', archivePath, '-C', sourceDir, '.']);
 }
 
 function runOrThrow(command, args, cwd) {

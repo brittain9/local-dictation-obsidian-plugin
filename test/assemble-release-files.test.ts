@@ -76,10 +76,10 @@ describe('buildChecksumsFile', () => {
   it('refuses to emit when any expected archive is missing from the map', () => {
     const contents = new Map<string, Buffer>();
     for (const name of EXPECTED_SIDECAR_ARCHIVES) {
-      if (name === 'sidecar-windows-x86_64-cuda.zip') continue;
+      if (name === 'sidecar-windows-x86_64-cuda.tar.gz') continue;
       contents.set(name, Buffer.from(`payload-${name}`, 'utf8'));
     }
-    expect(() => buildChecksumsFile(contents)).toThrow(/sidecar-windows-x86_64-cuda\.zip/);
+    expect(() => buildChecksumsFile(contents)).toThrow(/sidecar-windows-x86_64-cuda\.tar\.gz/);
   });
 
   it('refuses to emit when an unexpected archive is in the map', () => {

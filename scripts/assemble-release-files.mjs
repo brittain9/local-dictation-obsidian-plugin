@@ -21,13 +21,11 @@ export const EXPECTED_SIDECAR_ARCHIVES = Object.freeze([
   'sidecar-linux-x86_64-cpu.tar.gz',
   'sidecar-linux-x86_64-cuda.tar.gz',
   'sidecar-macos-arm64.tar.gz',
-  'sidecar-windows-x86_64-cpu.zip',
-  'sidecar-windows-x86_64-cuda.zip',
+  'sidecar-windows-x86_64-cpu.tar.gz',
+  'sidecar-windows-x86_64-cuda.tar.gz',
 ]);
 
 const PLUGIN_FILES = Object.freeze(['main.js', 'manifest.json', 'styles.css']);
-
-const ARCHIVE_EXTENSIONS = ['.tar.gz', '.zip'];
 
 /**
  * Validate that exactly the expected sidecar archives are present in
@@ -121,7 +119,7 @@ async function listArchiveCandidates(releaseDir) {
       continue;
     }
     const name = entry.name;
-    if (!ARCHIVE_EXTENSIONS.some((ext) => name.endsWith(ext))) {
+    if (!name.endsWith('.tar.gz')) {
       continue;
     }
     const fullPath = join(releaseDir, name);
@@ -154,12 +152,6 @@ async function main() {
   }
 
   const body = buildChecksumsFile(archiveContents);
-  const lineCount = body.trimEnd().split('\n').length;
-  if (lineCount !== EXPECTED_SIDECAR_ARCHIVES.length) {
-    throw new Error(
-      `checksum file has ${lineCount} lines; expected ${EXPECTED_SIDECAR_ARCHIVES.length}`,
-    );
-  }
   await writeFile(join(releaseDir, 'checksums.txt'), body);
 
   console.log(

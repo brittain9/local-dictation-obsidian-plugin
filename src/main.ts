@@ -16,7 +16,8 @@ import {
   resolvePluginSettings,
 } from './settings/plugin-settings';
 import { LocalSttSettingTab } from './settings/settings-tab';
-import { openFirstRunSetupModal } from './setup/first-run-setup-modal';
+import { getInstallCopy } from './setup/sidecar-install-copy';
+import { SidecarInstallModal } from './setup/sidecar-install-modal';
 import { formatErrorMessage } from './shared/format-utils';
 import { createPluginLogger, type PluginLogger } from './shared/plugin-logger';
 import { assertSidecarExecutableIsFresh } from './sidecar/sidecar-build-state';
@@ -168,7 +169,8 @@ export default class LocalSttPlugin extends Plugin {
       return;
     }
 
-    openFirstRunSetupModal(this.app, {
+    new SidecarInstallModal(this.app, {
+      copy: getInstallCopy('cpu', 'first-run'),
       manager: this.requireSidecarInstallManager(),
       onInstalled: async () => {
         await this.requireSidecarConnection().restart(
@@ -179,8 +181,9 @@ export default class LocalSttPlugin extends Plugin {
         await this.requireModelInstallManager().init();
       },
       pluginDirectory,
+      variant: 'cpu',
       version: this.manifest.version,
-    });
+    }).open();
   }
 
   override async onunload(): Promise<void> {

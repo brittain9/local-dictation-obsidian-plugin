@@ -107,7 +107,7 @@ export class SidecarInstallModal extends Modal {
     this.contentEl.createEl('p', { text: this.options.copy.bodyText });
 
     const details = this.contentEl.createEl('ul', { cls: 'local-stt-sidecar-install__details' });
-    details.createEl('li', { text: `Archive: ${asset.assetName}` });
+    details.createEl('li', { text: `Archive: ${asset}` });
     details.createEl('li', { text: `Release: ${this.options.version}` });
 
     const buttons = this.contentEl.createDiv({ cls: 'local-stt-sidecar-install__buttons' });
