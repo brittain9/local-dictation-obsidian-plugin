@@ -52,68 +52,6 @@ describe('TranscriptRenderer', () => {
     expect(second.projectedText).toBe(' second');
   });
 
-  it('does not emit timestamps for partial or empty projections', () => {
-    const renderer = new TranscriptRenderer({
-      showTimestamps: true,
-      transcriptFormatting: 'space',
-    });
-
-    const partial = renderer.planAppend(
-      {
-        isFinal: false,
-        pauseMsBeforeUtterance: null,
-        text: 'partial',
-        utteranceId: 'utt',
-        utteranceStartMsInSession: 12_000,
-      },
-      { tailContent: '' },
-    );
-    const emptyFinal = renderer.planAppend(
-      {
-        isFinal: true,
-        pauseMsBeforeUtterance: null,
-        text: '',
-        utteranceId: 'utt',
-        utteranceStartMsInSession: 12_000,
-      },
-      { tailContent: 'note' },
-    );
-
-    expect(partial.projectedText).toBe('partial');
-    expect(emptyFinal.projectedText).toBe('');
-  });
-
-  it('emits a timestamp when a partial projection is finalized', () => {
-    const renderer = new TranscriptRenderer({
-      showTimestamps: true,
-      transcriptFormatting: 'space',
-    });
-
-    const partial = renderer.planAppend(
-      {
-        isFinal: false,
-        pauseMsBeforeUtterance: null,
-        text: 'twenty twenty',
-        utteranceId: 'utt',
-        utteranceStartMsInSession: 12_000,
-      },
-      { tailContent: '' },
-    );
-    const final = renderer.planAppend(
-      {
-        isFinal: true,
-        pauseMsBeforeUtterance: null,
-        text: '2020',
-        utteranceId: 'utt',
-        utteranceStartMsInSession: 12_000,
-      },
-      { tailContent: '' },
-    );
-
-    expect(partial.projectedText).toBe('twenty twenty');
-    expect(final.projectedText).toBe('(0:12) 2020');
-  });
-
   it('emits a timestamp at the next utterance boundary after the landmark interval', () => {
     const renderer = new TranscriptRenderer({
       showTimestamps: true,
@@ -227,7 +165,6 @@ function planAndCommit(
 ) {
   const projection = renderer.planAppend(
     {
-      isFinal: true,
       pauseMsBeforeUtterance: null,
       utteranceId: 'utt',
       utteranceStartMsInSession: 0,

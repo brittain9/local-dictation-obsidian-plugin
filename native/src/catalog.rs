@@ -4,7 +4,7 @@ use std::path::{Component, Path};
 use anyhow::{Context, Result, ensure};
 use serde::{Deserialize, Serialize};
 
-use crate::engine::capabilities::{LivePartialStrategy, ModelFamilyId, RuntimeId};
+use crate::engine::capabilities::{ModelFamilyId, RuntimeId};
 
 const BUNDLED_CATALOG_JSON: &str =
     include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/catalog.json"));
@@ -48,24 +48,6 @@ pub struct ModelCollection {
     pub summary: String,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum RuntimeLocationKind {
-    InstallDirectory,
-    PrimaryArtifactFile,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct LivePartialCapability {
-    #[serde(rename = "autoEnabled")]
-    pub auto_enabled: bool,
-    #[serde(rename = "minAudioMs")]
-    pub min_audio_ms: u64,
-    #[serde(rename = "recommendedUpdateMs")]
-    pub recommended_update_ms: u64,
-    pub strategy: LivePartialStrategy,
-}
-
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CatalogModel {
     pub artifacts: Vec<ModelArtifact>,
@@ -83,27 +65,16 @@ pub struct CatalogModel {
     pub license_label: String,
     #[serde(rename = "licenseUrl")]
     pub license_url: String,
-    #[serde(rename = "livePartials", default)]
-    pub live_partials: Option<LivePartialCapability>,
     #[serde(rename = "modelCardUrl")]
     pub model_card_url: Option<String>,
     #[serde(rename = "modelId")]
     pub model_id: String,
     pub notes: Vec<String>,
-    #[serde(
-        rename = "runtimeLocationKind",
-        default = "default_runtime_location_kind"
-    )]
-    pub runtime_location_kind: RuntimeLocationKind,
     #[serde(rename = "sourceUrl")]
     pub source_url: String,
     pub summary: String,
     #[serde(rename = "uxTags")]
     pub ux_tags: Vec<String>,
-}
-
-const fn default_runtime_location_kind() -> RuntimeLocationKind {
-    RuntimeLocationKind::PrimaryArtifactFile
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -320,7 +291,7 @@ fn is_valid_sha256(value: &str) -> bool {
 mod tests {
     use super::{
         ArtifactRole, CatalogModel, ModelArtifact, ModelCatalog, ModelCollection,
-        ModelFamilyDescriptor, ModelRuntimeDescriptor, RuntimeLocationKind,
+        ModelFamilyDescriptor, ModelRuntimeDescriptor,
     };
     use crate::engine::capabilities::{ModelFamilyId, RuntimeId};
 
@@ -410,11 +381,9 @@ mod tests {
             language_tags: vec!["en".to_string()],
             license_label: "MIT".to_string(),
             license_url: "https://example.com/license".to_string(),
-            live_partials: None,
             model_card_url: None,
             model_id: "model".to_string(),
             notes: vec![],
-            runtime_location_kind: RuntimeLocationKind::PrimaryArtifactFile,
             source_url: "https://example.com".to_string(),
             summary: "summary".to_string(),
             ux_tags: vec![],

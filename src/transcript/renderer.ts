@@ -10,7 +10,6 @@ export interface TranscriptRenderOptions {
 }
 
 export interface TranscriptAppendInput {
-  readonly isFinal: boolean;
   readonly pauseMsBeforeUtterance: number | null;
   readonly text: string;
   readonly utteranceId: UtteranceId;
@@ -44,24 +43,13 @@ export class TranscriptRenderer {
     input: TranscriptAppendInput,
     context: TranscriptRenderContext,
   ): TranscriptInsertProjection {
-    if (input.text.length === 0) {
-      return {
-        emittedTimestamp: null,
-        insertedText: '',
-        projectedText: '',
-        textEndOffset: 0,
-        textStartOffset: 0,
-      };
-    }
-
     const boundary = this.formatBoundary(input, context);
-    const emittedTimestamp =
-      input.isFinal && this.shouldEmitTimestamp(input)
-        ? {
-            elapsedMs: input.utteranceStartMsInSession,
-            text: formatSessionTimestamp(input.utteranceStartMsInSession),
-          }
-        : null;
+    const emittedTimestamp = this.shouldEmitTimestamp(input)
+      ? {
+          elapsedMs: input.utteranceStartMsInSession,
+          text: formatSessionTimestamp(input.utteranceStartMsInSession),
+        }
+      : null;
     const timestampPrefix = emittedTimestamp === null ? '' : `${emittedTimestamp.text} `;
     const textStartOffset = boundary.length + timestampPrefix.length;
     const projectedText = `${boundary}${timestampPrefix}${input.text}`;

@@ -38,7 +38,6 @@ describe('sidecar protocol', () => {
     const command = createStartSessionCommand({
       accelerationPreference: 'auto',
       language: 'en',
-      livePartialMode: 'auto',
       mode: 'always_on',
       modelSelection: {
         familyId: 'whisper',
@@ -77,7 +76,6 @@ describe('sidecar protocol', () => {
       supportedModelFormats: ['ggml' as const],
     };
     const familyCapabilities = {
-      livePartialStrategies: [],
       maxAudioDurationSecs: null,
       producesPunctuation: true,
       supportedLanguages: { kind: 'all' as const },
@@ -122,7 +120,6 @@ describe('sidecar protocol', () => {
   it('parses model_probe_result event carrying merged capabilities', () => {
     const mergedCapabilities = {
       family: {
-        livePartialStrategies: [],
         maxAudioDurationSecs: null,
         producesPunctuation: true,
         supportedLanguages: { kind: 'english_only' as const },

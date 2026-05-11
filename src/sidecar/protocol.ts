@@ -6,8 +6,6 @@ import {
   getPrimaryArtifact,
   type InstalledModelRecord,
   type LanguageSupport,
-  LIVE_PARTIAL_STRATEGIES,
-  type LivePartialModelCapability,
   MODEL_FAMILY_IDS,
   type ModelCatalogRecord,
   type ModelCollectionRecord,
@@ -17,17 +15,14 @@ import {
   type ModelFormat,
   type ModelInstallState,
   type ModelInstallUpdateRecord,
-  type LivePartialStrategy as ModelLivePartialStrategy,
   type ModelProbeResultRecord,
   type ModelRemovedRecord,
   type ModelStoreRecord,
   normalizeSelectedModel,
   type RequestWarning,
   RUNTIME_IDS,
-  RUNTIME_LOCATION_KINDS,
   type RuntimeCapabilitiesRecord,
   type RuntimeId,
-  type RuntimeLocationKind,
   type SelectedModel,
 } from '../models/model-management-types';
 import {
@@ -49,9 +44,6 @@ export type SpeakingStyle = 'responsive' | 'balanced' | 'patient';
 
 export const LISTENING_MODES = ['always_on', 'one_sentence'] as const;
 export type ListeningMode = (typeof LISTENING_MODES)[number];
-
-export const LIVE_PARTIAL_MODES = ['auto', 'always', 'off'] as const;
-export type LivePartialMode = (typeof LIVE_PARTIAL_MODES)[number];
 
 export const SESSION_STATES = [
   'error',
@@ -138,7 +130,6 @@ export interface HealthCommand extends EnvelopeBase<'health'> {}
 export interface StartSessionCommand extends EnvelopeBase<'start_session'> {
   accelerationPreference: AccelerationPreference;
   language: 'en';
-  livePartialMode: LivePartialMode;
   mode: ListeningMode;
   modelSelection: SelectedModel;
   modelStorePathOverride?: string;
@@ -925,10 +916,6 @@ function readModelFamilyCapabilities(
   const record = readRecord(value, fieldName);
 
   return {
-    livePartialStrategies: readLivePartialStrategyArray(
-      record.livePartialStrategies,
-      `${fieldName}.livePartialStrategies`,
-    ),
     maxAudioDurationSecs: readNullableNumber(
       record.maxAudioDurationSecs,
       `${fieldName}.maxAudioDurationSecs`,
@@ -958,48 +945,6 @@ function readModelFamilyCapabilities(
       `${fieldName}.supportsWordTimestamps`,
     ),
   };
-}
-
-function readLivePartialStrategy(value: unknown, fieldName: string): ModelLivePartialStrategy {
-  return readEnumValue(value, LIVE_PARTIAL_STRATEGIES, fieldName);
-}
-
-function readLivePartialStrategyArray(
-  value: unknown,
-  fieldName: string,
-): ModelLivePartialStrategy[] {
-  if (value === undefined || value === null) {
-    return [];
-  }
-
-  return readArray(value, fieldName).map((entry, index) =>
-    readLivePartialStrategy(entry, `${fieldName}[${index}]`),
-  );
-}
-
-function readLivePartialModelCapability(
-  value: unknown,
-  fieldName: string,
-): LivePartialModelCapability | null {
-  if (value === undefined || value === null) {
-    return null;
-  }
-
-  const record = readRecord(value, fieldName);
-
-  return {
-    autoEnabled: readBoolean(record.autoEnabled, `${fieldName}.autoEnabled`),
-    minAudioMs: readNonNegativeInteger(record.minAudioMs, `${fieldName}.minAudioMs`),
-    recommendedUpdateMs: readNonNegativeInteger(
-      record.recommendedUpdateMs,
-      `${fieldName}.recommendedUpdateMs`,
-    ),
-    strategy: readLivePartialStrategy(record.strategy, `${fieldName}.strategy`),
-  };
-}
-
-function readRuntimeLocationKind(value: unknown, fieldName: string): RuntimeLocationKind {
-  return readEnumValue(value, RUNTIME_LOCATION_KINDS, fieldName);
 }
 
 function readOptionalEngineCapabilities(
@@ -1192,18 +1137,10 @@ function readCatalogModels(value: unknown): CatalogModelRecord[] {
       languageTags: readStringArray(record.languageTags, `event.models[${index}].languageTags`),
       licenseLabel: readString(record.licenseLabel, `event.models[${index}].licenseLabel`),
       licenseUrl: readString(record.licenseUrl, `event.models[${index}].licenseUrl`),
-      livePartials: readLivePartialModelCapability(
-        record.livePartials,
-        `event.models[${index}].livePartials`,
-      ),
       modelCardUrl: readNullableString(record.modelCardUrl, `event.models[${index}].modelCardUrl`),
       modelId: readString(record.modelId, `event.models[${index}].modelId`),
       notes: readStringArray(record.notes, `event.models[${index}].notes`),
       runtimeId: readRuntimeId(record.runtimeId, `event.models[${index}].runtimeId`),
-      runtimeLocationKind: readRuntimeLocationKind(
-        record.runtimeLocationKind,
-        `event.models[${index}].runtimeLocationKind`,
-      ),
       sourceUrl: readString(record.sourceUrl, `event.models[${index}].sourceUrl`),
       summary: readString(record.summary, `event.models[${index}].summary`),
       uxTags: readStringArray(record.uxTags, `event.models[${index}].uxTags`),

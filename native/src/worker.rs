@@ -14,7 +14,7 @@ use crate::engine::registry::{EngineRegistry, apply_capability_gates, missing_ad
 use crate::engine::traits::LoadedModel;
 use crate::panic_util::format_panic_message;
 use crate::protocol::{ContextWindow, EngineStagePayload, StageId, StageOutcome, StageStatus};
-use crate::session::{FinalizedUtterance, PartialSnapshot};
+use crate::session::FinalizedUtterance;
 use crate::stages::{
     StageContext, StageEnablement, StageProcessor, post_engine_processors, run_post_engine,
 };
@@ -41,11 +41,6 @@ pub enum WorkerCommand {
         session_id: String,
     },
     Shutdown,
-    TranscribePartial {
-        context: Option<ContextWindow>,
-        session_id: String,
-        snapshot: PartialSnapshot,
-    },
     TranscribeUtterance {
         context: Option<ContextWindow>,
         session_id: String,
@@ -59,7 +54,6 @@ pub enum WorkerEvent {
     SessionError {
         code: String,
         details: Option<String>,
-        is_partial: bool,
         message: String,
         session_id: String,
         utterance_id: Option<Uuid>,
@@ -149,7 +143,6 @@ fn worker_main(
                         let _ = event_tx.send(WorkerEvent::SessionError {
                             code: error.code.to_string(),
                             details: error.details,
-                            is_partial: false,
                             message: error.message.to_string(),
                             session_id: metadata.session_id,
                             utterance_id: None,
@@ -164,7 +157,6 @@ fn worker_main(
                         let _ = event_tx.send(WorkerEvent::SessionError {
                             code: "worker_panic".to_string(),
                             details: None,
-                            is_partial: false,
                             message,
                             session_id: metadata.session_id,
                             utterance_id: None,
@@ -183,38 +175,6 @@ fn worker_main(
                 }
             }
             WorkerCommand::Shutdown => break,
-            WorkerCommand::TranscribePartial {
-                context,
-                session_id,
-                snapshot,
-            } => {
-                let Some(session) = active.as_mut() else {
-                    continue;
-                };
-                if session.metadata.session_id != session_id {
-                    continue;
-                }
-                run_transcription(
-                    session,
-                    registry.as_ref(),
-                    &event_tx,
-                    TranscriptionInputs {
-                        context,
-                        is_final: false,
-                        pause_ms_before_utterance: None,
-                        revision: snapshot.revision,
-                        samples: snapshot.samples,
-                        session_id,
-                        utterance_id: snapshot.utterance_id,
-                        utterance_duration_ms: snapshot.voice_activity.duration_ms(),
-                        utterance_end_ms_in_session: snapshot.voice_activity.audio_end_ms,
-                        utterance_index: snapshot.utterance_index,
-                        utterance_start_ms_in_session: snapshot.voice_activity.audio_start_ms,
-                        vad_probabilities: snapshot.vad_probabilities,
-                        voice_activity: snapshot.voice_activity,
-                    },
-                );
-            }
             WorkerCommand::TranscribeUtterance {
                 context,
                 session_id,
@@ -224,6 +184,7 @@ fn worker_main(
                 let Some(session) = active.as_mut() else {
                     continue;
                 };
+
                 if session.metadata.session_id != session_id {
                     continue;
                 }
@@ -233,156 +194,91 @@ fn worker_main(
                 let utterance_start_ms_in_session = utterance.utterance_start_ms_in_session();
                 let FinalizedUtterance {
                     pause_ms_before_utterance,
-                    revision,
                     samples,
-                    utterance_id: _,
                     utterance_index,
                     vad_probabilities,
                     voice_activity,
                 } = utterance;
-                run_transcription(
-                    session,
-                    registry.as_ref(),
-                    &event_tx,
-                    TranscriptionInputs {
-                        context,
-                        is_final: true,
-                        pause_ms_before_utterance,
-                        revision,
-                        samples,
-                        session_id,
-                        utterance_id,
-                        utterance_duration_ms,
-                        utterance_end_ms_in_session,
-                        utterance_index,
-                        utterance_start_ms_in_session,
-                        vad_probabilities,
-                        voice_activity,
-                    },
-                );
+                let audio_samples: Vec<f32> = samples
+                    .iter()
+                    .map(|&sample| sample as f32 / 32768.0)
+                    .collect();
+
+                let mut request = TranscriptionRequest {
+                    audio_samples,
+                    gpu_config: session.metadata.gpu_config,
+                    language: session.metadata.language.clone(),
+                    model_file_path: session.metadata.model_file_path.clone(),
+                    context,
+                };
+                let stage_context = request.context.clone();
+
+                let warnings = registry
+                    .adapter(session.metadata.runtime_id, session.metadata.family_id)
+                    .map(|adapter| apply_capability_gates(adapter.capabilities(), &mut request))
+                    .unwrap_or_default();
+
+                let started_at = Instant::now();
+                let result = panic::catch_unwind(AssertUnwindSafe(|| {
+                    session.loaded_model.transcribe(&request)
+                }));
+                let engine_duration_ms = started_at.elapsed().as_millis() as u64;
+
+                match result {
+                    Ok(Ok(engine_output)) => {
+                        let family_capabilities = registry
+                            .adapter(session.metadata.runtime_id, session.metadata.family_id)
+                            .map(|adapter| adapter.capabilities().clone())
+                            .unwrap_or_else(ModelFamilyCapabilities::unknown);
+                        let transcript = assemble_transcript(TranscriptAssembly {
+                            utterance_id,
+                            engine_output,
+                            engine_duration_ms,
+                            is_final: true,
+                            pause_ms_before_utterance,
+                            vad_probabilities: &vad_probabilities,
+                            voice_activity,
+                            context: stage_context.as_ref(),
+                            family_capabilities: &family_capabilities,
+                            stage_enablement: &session.metadata.stage_enablement,
+                            processors: &post_engine_processors(),
+                        });
+                        let _ = event_tx.send(WorkerEvent::TranscriptReady {
+                            pause_ms_before_utterance,
+                            processing_duration_ms: engine_duration_ms,
+                            session_id,
+                            transcript,
+                            utterance_duration_ms,
+                            utterance_end_ms_in_session,
+                            utterance_index,
+                            utterance_start_ms_in_session,
+                            warnings,
+                        });
+                    }
+                    Ok(Err(error)) => {
+                        let _ = event_tx.send(WorkerEvent::SessionError {
+                            code: error.code.to_string(),
+                            details: error.details,
+                            message: error.message.to_string(),
+                            session_id,
+                            utterance_id: Some(utterance_id),
+                        });
+                    }
+                    Err(payload) => {
+                        let message = format_panic_message(
+                            payload.as_ref(),
+                            "Worker thread panicked during transcription",
+                        );
+                        let _ = event_tx.send(WorkerEvent::SessionError {
+                            code: "worker_panic".to_string(),
+                            details: None,
+                            message,
+                            session_id,
+                            utterance_id: Some(utterance_id),
+                        });
+                    }
+                }
             }
-        }
-    }
-}
-
-struct TranscriptionInputs {
-    context: Option<ContextWindow>,
-    is_final: bool,
-    pause_ms_before_utterance: Option<u64>,
-    revision: u32,
-    samples: Vec<i16>,
-    session_id: String,
-    utterance_id: Uuid,
-    utterance_duration_ms: u64,
-    utterance_end_ms_in_session: u64,
-    utterance_index: u64,
-    utterance_start_ms_in_session: u64,
-    vad_probabilities: Vec<f32>,
-    voice_activity: crate::audio_metadata::VoiceActivityEvidence,
-}
-
-fn run_transcription(
-    session: &mut ActiveSession,
-    registry: &EngineRegistry,
-    event_tx: &Sender<WorkerEvent>,
-    inputs: TranscriptionInputs,
-) {
-    let TranscriptionInputs {
-        context,
-        is_final,
-        pause_ms_before_utterance,
-        revision,
-        samples,
-        session_id,
-        utterance_id,
-        utterance_duration_ms,
-        utterance_end_ms_in_session,
-        utterance_index,
-        utterance_start_ms_in_session,
-        vad_probabilities,
-        voice_activity,
-    } = inputs;
-
-    let audio_samples: Vec<f32> = samples
-        .iter()
-        .map(|&sample| sample as f32 / 32768.0)
-        .collect();
-
-    let mut request = TranscriptionRequest {
-        audio_samples,
-        gpu_config: session.metadata.gpu_config,
-        language: session.metadata.language.clone(),
-        model_file_path: session.metadata.model_file_path.clone(),
-        context,
-    };
-    let stage_context = request.context.clone();
-
-    let warnings = registry
-        .adapter(session.metadata.runtime_id, session.metadata.family_id)
-        .map(|adapter| apply_capability_gates(adapter.capabilities(), &mut request))
-        .unwrap_or_default();
-
-    let started_at = Instant::now();
-    let result = panic::catch_unwind(AssertUnwindSafe(|| {
-        session.loaded_model.transcribe(&request)
-    }));
-    let engine_duration_ms = started_at.elapsed().as_millis() as u64;
-
-    match result {
-        Ok(Ok(engine_output)) => {
-            let family_capabilities = registry
-                .adapter(session.metadata.runtime_id, session.metadata.family_id)
-                .map(|adapter| adapter.capabilities().clone())
-                .unwrap_or_else(ModelFamilyCapabilities::unknown);
-            let transcript = assemble_transcript(TranscriptAssembly {
-                utterance_id,
-                engine_output,
-                engine_duration_ms,
-                is_final,
-                pause_ms_before_utterance,
-                revision,
-                vad_probabilities: &vad_probabilities,
-                voice_activity,
-                context: stage_context.as_ref(),
-                family_capabilities: &family_capabilities,
-                stage_enablement: &session.metadata.stage_enablement,
-                processors: &post_engine_processors(),
-            });
-            let _ = event_tx.send(WorkerEvent::TranscriptReady {
-                pause_ms_before_utterance,
-                processing_duration_ms: engine_duration_ms,
-                session_id,
-                transcript,
-                utterance_duration_ms,
-                utterance_end_ms_in_session,
-                utterance_index,
-                utterance_start_ms_in_session,
-                warnings,
-            });
-        }
-        Ok(Err(error)) => {
-            let _ = event_tx.send(WorkerEvent::SessionError {
-                code: error.code.to_string(),
-                details: error.details,
-                is_partial: !is_final,
-                message: error.message.to_string(),
-                session_id,
-                utterance_id: Some(utterance_id),
-            });
-        }
-        Err(payload) => {
-            let message = format_panic_message(
-                payload.as_ref(),
-                "Worker thread panicked during transcription",
-            );
-            let _ = event_tx.send(WorkerEvent::SessionError {
-                code: "worker_panic".to_string(),
-                details: None,
-                is_partial: !is_final,
-                message,
-                session_id,
-                utterance_id: Some(utterance_id),
-            });
         }
     }
 }
@@ -393,7 +289,6 @@ struct TranscriptAssembly<'a> {
     engine_duration_ms: u64,
     is_final: bool,
     pause_ms_before_utterance: Option<u64>,
-    revision: u32,
     vad_probabilities: &'a [f32],
     voice_activity: crate::audio_metadata::VoiceActivityEvidence,
     context: Option<&'a ContextWindow>,
@@ -403,7 +298,7 @@ struct TranscriptAssembly<'a> {
 }
 
 fn assemble_transcript(input: TranscriptAssembly<'_>) -> Transcript {
-    let revision: u32 = input.revision;
+    let revision: u32 = 0;
     let mut stage_history: Vec<StageOutcome> = Vec::with_capacity(1 + input.processors.len());
     let EngineTranscriptOutput {
         segments,
@@ -527,7 +422,6 @@ mod tests {
             is_final: true,
             pause_ms_before_utterance: None,
             processors: &[],
-            revision: 0,
             stage_enablement: &StageEnablement::default(),
             utterance_id: Uuid::nil(),
             vad_probabilities: &[],
@@ -562,7 +456,6 @@ mod tests {
             is_final: true,
             pause_ms_before_utterance: None,
             processors: &processors,
-            revision: 0,
             stage_enablement: &StageEnablement::default(),
             utterance_id: Uuid::nil(),
             vad_probabilities: &[],
@@ -589,7 +482,6 @@ mod tests {
             is_final: true,
             pause_ms_before_utterance: Some(420),
             processors: &[],
-            revision: 0,
             stage_enablement: &StageEnablement::default(),
             utterance_id: Uuid::nil(),
             vad_probabilities: &[],
@@ -621,7 +513,6 @@ mod tests {
             is_final: true,
             pause_ms_before_utterance: Some(150),
             processors: &processors,
-            revision: 0,
             stage_enablement: &StageEnablement::default(),
             utterance_id: Uuid::nil(),
             vad_probabilities: &[],
@@ -651,7 +542,6 @@ mod tests {
             is_final: true,
             pause_ms_before_utterance: None,
             processors: &processors,
-            revision: 0,
             stage_enablement: &StageEnablement::default(),
             utterance_id: Uuid::nil(),
             vad_probabilities: &trace,
@@ -701,7 +591,6 @@ mod tests {
             supported_languages: LanguageSupport::EnglishOnly,
             max_audio_duration_secs: None,
             produces_punctuation: true,
-            live_partial_strategies: Vec::new(),
         }
     }
 }

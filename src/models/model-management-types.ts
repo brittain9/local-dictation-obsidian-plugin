@@ -8,21 +8,6 @@ export const MODEL_FAMILY_IDS = ['cohere_transcribe', 'whisper'] as const;
 
 export type ModelFamilyId = (typeof MODEL_FAMILY_IDS)[number];
 
-export const LIVE_PARTIAL_STRATEGIES = ['snapshot', 'streaming'] as const;
-
-export type LivePartialStrategy = (typeof LIVE_PARTIAL_STRATEGIES)[number];
-
-export interface LivePartialModelCapability {
-  autoEnabled: boolean;
-  minAudioMs: number;
-  recommendedUpdateMs: number;
-  strategy: LivePartialStrategy;
-}
-
-export const RUNTIME_LOCATION_KINDS = ['install_directory', 'primary_artifact_file'] as const;
-
-export type RuntimeLocationKind = (typeof RUNTIME_LOCATION_KINDS)[number];
-
 export type AcceleratorId = 'cpu' | 'cuda' | 'direct_ml' | 'metal';
 
 export type ModelFormat = 'ggml' | 'gguf' | 'onnx';
@@ -45,7 +30,6 @@ export interface RuntimeCapabilitiesRecord {
 }
 
 export interface ModelFamilyCapabilitiesRecord {
-  livePartialStrategies: LivePartialStrategy[];
   supportsSegmentTimestamps: boolean;
   supportsWordTimestamps: boolean;
   supportsInitialPrompt: boolean;
@@ -116,12 +100,10 @@ export interface CatalogModelRecord {
   languageTags: string[];
   licenseLabel: string;
   licenseUrl: string;
-  livePartials: LivePartialModelCapability | null;
   modelCardUrl: string | null;
   modelId: string;
   notes: string[];
   runtimeId: RuntimeId;
-  runtimeLocationKind: RuntimeLocationKind;
   sourceUrl: string;
   summary: string;
   uxTags: string[];

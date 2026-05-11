@@ -12,7 +12,6 @@ import {
 import type { PluginLogger } from '../shared/plugin-logger';
 import {
   type TranscriptInsertProjection,
-  type TranscriptRenderContext,
   TranscriptRenderer,
   type TranscriptRenderOptions,
 } from '../transcript/renderer';
@@ -33,12 +32,7 @@ interface MarkdownLeafLike {
 
 type ProjectionState =
   | { kind: 'unprojected' }
-  | {
-      appendContext: TranscriptRenderContext;
-      kind: 'projected';
-      lastProjection: TranscriptInsertProjection;
-      lastRevision: number;
-    }
+  | { kind: 'projected'; lastRevision: number; projectedText: string }
   | { kind: 'latched' }
   | { kind: 'denied' };
 
@@ -70,11 +64,7 @@ interface NoteSurfaceLike {
   dispose(): void;
   readNoteGlossary(maxChars: number): { text: string; truncated: boolean } | null;
   readProjectionContext(): NoteProjectionContext;
-  replaceProjection(
-    utteranceId: string,
-    newProjection: TranscriptInsertProjection,
-    expectedOldProjection: TranscriptInsertProjection,
-  ): ReplaceResult;
+  replaceAnchor(utteranceId: string, newText: string, expectedOldText: string): ReplaceResult;
   setAnchorMode(mode: DictationAnchorMode): void;
   validateExternalModification(): void;
 }
@@ -180,7 +170,7 @@ export class Session {
       return;
     }
 
-    if (revision.text.length === 0) {
+    if (revision.isFinal && revision.text.length === 0) {
       return;
     }
 
@@ -197,7 +187,6 @@ export class Session {
     const projection = this.renderer.planAppend(
       {
         pauseMsBeforeUtterance: revision.pauseMsBeforeUtterance,
-        isFinal: revision.isFinal,
         text: revision.text,
         utteranceId: revision.utteranceId,
         utteranceStartMsInSession: revision.utteranceStartMsInSession,
@@ -212,14 +201,11 @@ export class Session {
 
     if (result.kind === 'appended') {
       this.projectionByUtterance.set(revision.utteranceId, {
-        appendContext: context,
         kind: 'projected',
-        lastProjection: projection,
         lastRevision: revision.revision,
+        projectedText: projection.insertedText,
       });
-      if (revision.isFinal && projection.projectedText.length > 0) {
-        this.renderer.commitAppend(projection);
-      }
+      this.renderer.commitAppend(projection);
       return;
     }
 
@@ -235,20 +221,10 @@ export class Session {
       return;
     }
 
-    const projection = this.renderer.planAppend(
-      {
-        pauseMsBeforeUtterance: revision.pauseMsBeforeUtterance,
-        isFinal: revision.isFinal,
-        text: revision.text,
-        utteranceId: revision.utteranceId,
-        utteranceStartMsInSession: revision.utteranceStartMsInSession,
-      },
-      state.appendContext,
-    );
-    const result = this.surface?.replaceProjection(
+    const result = this.surface?.replaceAnchor(
       revision.utteranceId,
-      projection,
-      state.lastProjection,
+      revision.text,
+      state.projectedText,
     );
 
     if (result === undefined) {
@@ -257,14 +233,10 @@ export class Session {
 
     if (result.kind === 'replaced') {
       this.projectionByUtterance.set(revision.utteranceId, {
-        appendContext: state.appendContext,
         kind: 'projected',
-        lastProjection: projection,
         lastRevision: revision.revision,
+        projectedText: revision.text,
       });
-      if (revision.isFinal && projection.projectedText.length > 0) {
-        this.renderer.commitAppend(projection);
-      }
       return;
     }
 

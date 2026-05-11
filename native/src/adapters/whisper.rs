@@ -1,10 +1,9 @@
 use std::path::Path;
-use std::sync::LazyLock;
 
 use whisper_rs::{FullParams, SamplingStrategy, WhisperContext, WhisperContextParameters};
 
 use crate::engine::capabilities::{
-    LanguageSupport, LivePartialStrategy, ModelFamilyCapabilities, ModelFamilyId, RuntimeId,
+    LanguageSupport, ModelFamilyCapabilities, ModelFamilyId, RuntimeId,
 };
 use crate::engine::traits::{LoadedModel, ModelFamilyAdapter};
 use crate::protocol::{TimestampGranularity, TimestampSource, TranscriptSegment};
@@ -16,17 +15,15 @@ use crate::transcription::{
 #[derive(Default)]
 pub struct WhisperAdapter;
 
-static CAPABILITIES: LazyLock<ModelFamilyCapabilities> =
-    LazyLock::new(|| ModelFamilyCapabilities {
-        supports_segment_timestamps: true,
-        supports_word_timestamps: false,
-        supports_initial_prompt: true,
-        supports_language_selection: false,
-        supported_languages: LanguageSupport::EnglishOnly,
-        max_audio_duration_secs: None,
-        produces_punctuation: true,
-        live_partial_strategies: vec![LivePartialStrategy::Snapshot],
-    });
+const CAPABILITIES: ModelFamilyCapabilities = ModelFamilyCapabilities {
+    supports_segment_timestamps: true,
+    supports_word_timestamps: false,
+    supports_initial_prompt: true,
+    supports_language_selection: false,
+    supported_languages: LanguageSupport::EnglishOnly,
+    max_audio_duration_secs: None,
+    produces_punctuation: true,
+};
 
 impl ModelFamilyAdapter for WhisperAdapter {
     fn runtime_id(&self) -> RuntimeId {

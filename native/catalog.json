@@ -52,13 +52,6 @@
       "licenseUrl": "https://raw.githubusercontent.com/ggml-org/whisper.cpp/master/LICENSE",
       "sourceUrl": "https://huggingface.co/ggerganov/whisper.cpp/tree/5359861c739e955e79d9a303bcbc70fb988958b1",
       "modelCardUrl": "https://github.com/ggml-org/whisper.cpp",
-      "runtimeLocationKind": "primary_artifact_file",
-      "livePartials": {
-        "autoEnabled": true,
-        "minAudioMs": 1000,
-        "recommendedUpdateMs": 500,
-        "strategy": "snapshot"
-      },
       "notes": [
         "Fastest inference but lowest accuracy. Best for quick tests or constrained hardware.",
         "Upgrade to Small or Base for everyday dictation quality."
@@ -88,13 +81,6 @@
       "licenseUrl": "https://raw.githubusercontent.com/ggml-org/whisper.cpp/master/LICENSE",
       "sourceUrl": "https://huggingface.co/ggerganov/whisper.cpp/tree/5359861c739e955e79d9a303bcbc70fb988958b1",
       "modelCardUrl": "https://github.com/ggml-org/whisper.cpp",
-      "runtimeLocationKind": "primary_artifact_file",
-      "livePartials": {
-        "autoEnabled": true,
-        "minAudioMs": 1000,
-        "recommendedUpdateMs": 500,
-        "strategy": "snapshot"
-      },
       "notes": [
         "Noticeably better accuracy than Tiny with a small size increase.",
         "Still very fast on modern CPUs."
@@ -124,8 +110,6 @@
       "licenseUrl": "https://raw.githubusercontent.com/ggml-org/whisper.cpp/master/LICENSE",
       "sourceUrl": "https://huggingface.co/ggerganov/whisper.cpp/tree/5359861c739e955e79d9a303bcbc70fb988958b1",
       "modelCardUrl": "https://github.com/ggml-org/whisper.cpp",
-      "runtimeLocationKind": "primary_artifact_file",
-      "livePartials": null,
       "notes": [
         "Start here for everyday English dictation.",
         "Best tradeoff between download size, inference speed, and transcription quality."
@@ -155,8 +139,6 @@
       "licenseUrl": "https://raw.githubusercontent.com/ggml-org/whisper.cpp/master/LICENSE",
       "sourceUrl": "https://huggingface.co/ggerganov/whisper.cpp/tree/5359861c739e955e79d9a303bcbc70fb988958b1",
       "modelCardUrl": "https://github.com/ggml-org/whisper.cpp",
-      "runtimeLocationKind": "primary_artifact_file",
-      "livePartials": null,
       "notes": [
         "Significantly better accuracy than Small, especially with technical vocabulary.",
         "CPU inference is slower — consider GPU acceleration or patience."
@@ -186,8 +168,6 @@
       "licenseUrl": "https://raw.githubusercontent.com/ggml-org/whisper.cpp/master/LICENSE",
       "sourceUrl": "https://huggingface.co/ggerganov/whisper.cpp/tree/5359861c739e955e79d9a303bcbc70fb988958b1",
       "modelCardUrl": "https://github.com/ggml-org/whisper.cpp",
-      "runtimeLocationKind": "primary_artifact_file",
-      "livePartials": null,
       "notes": [
         "Highest accuracy available. The Turbo architecture is faster than standard Large V3.",
         "CPU inference is slow — best paired with hardware acceleration."
@@ -217,8 +197,6 @@
       "licenseUrl": "https://huggingface.co/CohereForAI/cohere-transcribe-03-2026/blob/main/LICENSE",
       "sourceUrl": "https://huggingface.co/onnx-community/cohere-transcribe-03-2026-ONNX",
       "modelCardUrl": "https://huggingface.co/CohereForAI/cohere-transcribe-03-2026",
-      "runtimeLocationKind": "primary_artifact_file",
-      "livePartials": null,
       "notes": [
         "Leads the HuggingFace Open ASR Leaderboard at 5.42% average WER.",
         "FP16 is effectively lossless for inference and half the size of FP32."
@@ -293,8 +271,6 @@
       "licenseUrl": "https://huggingface.co/CohereForAI/cohere-transcribe-03-2026/blob/main/LICENSE",
       "sourceUrl": "https://huggingface.co/onnx-community/cohere-transcribe-03-2026-ONNX",
       "modelCardUrl": "https://huggingface.co/CohereForAI/cohere-transcribe-03-2026",
-      "runtimeLocationKind": "primary_artifact_file",
-      "livePartials": null,
       "notes": [
         "INT8 quantization with minimal accuracy loss compared to FP16.",
         "Good choice when storage or memory is a concern."
@@ -369,8 +345,6 @@
       "licenseUrl": "https://huggingface.co/CohereForAI/cohere-transcribe-03-2026/blob/main/LICENSE",
       "sourceUrl": "https://huggingface.co/onnx-community/cohere-transcribe-03-2026-ONNX",
       "modelCardUrl": "https://huggingface.co/CohereForAI/cohere-transcribe-03-2026",
-      "runtimeLocationKind": "primary_artifact_file",
-      "livePartials": null,
       "notes": [
         "Aggressive 4-bit quantization trades some accuracy for the smallest download.",
         "Best for trying Cohere Transcribe on space-constrained systems."

@@ -35,7 +35,6 @@ describe('resolvePluginSettings', () => {
       developerMode: false,
       dictationAnchor: 'end_of_note',
       listeningMode: 'always_on',
-      livePartialMode: 'auto',
       modelStorePathOverride: '/tmp/models',
       selectedModel: {
         familyId: 'whisper',
@@ -110,17 +109,5 @@ describe('resolvePluginSettings', () => {
     'one_sentence',
   ] as const)('accepts the supported listening mode %s', (listeningMode) => {
     expect(resolvePluginSettings({ listeningMode }).listeningMode).toBe(listeningMode);
-  });
-
-  it.each([
-    'auto',
-    'always',
-    'off',
-  ] as const)('accepts the supported live partial mode %s', (livePartialMode) => {
-    expect(resolvePluginSettings({ livePartialMode }).livePartialMode).toBe(livePartialMode);
-  });
-
-  it('falls back livePartialMode to auto when persisted value is invalid', () => {
-    expect(resolvePluginSettings({ livePartialMode: 'fast' }).livePartialMode).toBe('auto');
   });
 });

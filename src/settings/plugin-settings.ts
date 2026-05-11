@@ -7,9 +7,7 @@ import { isRecord } from '../shared/type-guards';
 import {
   type AccelerationPreference,
   LISTENING_MODES,
-  LIVE_PARTIAL_MODES,
   type ListeningMode,
-  type LivePartialMode,
   type SpeakingStyle,
 } from '../sidecar/protocol';
 
@@ -33,7 +31,6 @@ export interface PluginSettings {
   developerMode: boolean;
   dictationAnchor: DictationAnchor;
   listeningMode: ListeningMode;
-  livePartialMode: LivePartialMode;
   modelStorePathOverride: string;
   selectedModel: SelectedModel | null;
   sidecarPathOverride: string;
@@ -51,7 +48,6 @@ export const DEFAULT_PLUGIN_SETTINGS: PluginSettings = {
   developerMode: false,
   dictationAnchor: 'at_cursor',
   listeningMode: 'always_on',
-  livePartialMode: 'auto',
   modelStorePathOverride: '',
   selectedModel: null,
   sidecarPathOverride: '',
@@ -74,7 +70,6 @@ export function resolvePluginSettings(data: unknown): PluginSettings {
       ? raw.dictationAnchor
       : DEFAULT_PLUGIN_SETTINGS.dictationAnchor,
     listeningMode: readListeningMode(raw.listeningMode),
-    livePartialMode: readLivePartialMode(raw.livePartialMode),
     modelStorePathOverride: readString(
       raw.modelStorePathOverride,
       DEFAULT_PLUGIN_SETTINGS.modelStorePathOverride,
@@ -141,10 +136,6 @@ export function isListeningMode(value: unknown): value is ListeningMode {
   return typeof value === 'string' && (LISTENING_MODES as readonly string[]).includes(value);
 }
 
-export function isLivePartialMode(value: unknown): value is LivePartialMode {
-  return typeof value === 'string' && (LIVE_PARTIAL_MODES as readonly string[]).includes(value);
-}
-
 function readSelectedModel(selectedModel: unknown): SelectedModel | null {
   if (isSelectedModel(selectedModel)) {
     return normalizeSelectedModel(selectedModel);
@@ -155,8 +146,4 @@ function readSelectedModel(selectedModel: unknown): SelectedModel | null {
 
 function readListeningMode(value: unknown): ListeningMode {
   return isListeningMode(value) ? value : DEFAULT_PLUGIN_SETTINGS.listeningMode;
-}
-
-function readLivePartialMode(value: unknown): LivePartialMode {
-  return isLivePartialMode(value) ? value : DEFAULT_PLUGIN_SETTINGS.livePartialMode;
 }

@@ -1,7 +1,6 @@
 use std::collections::VecDeque;
 
 use serde::{Deserialize, Serialize};
-use uuid::Uuid;
 
 use crate::audio_metadata::{VOICED_THRESHOLD, VoiceActivityEvidence};
 use crate::protocol::{
@@ -87,9 +86,7 @@ pub struct SessionConfig {
 #[derive(Debug, Clone, PartialEq)]
 pub struct FinalizedUtterance {
     pub pause_ms_before_utterance: Option<u64>,
-    pub revision: u32,
     pub samples: Vec<i16>,
-    pub utterance_id: Uuid,
     pub utterance_index: u64,
     pub vad_probabilities: Vec<f32>,
     pub voice_activity: VoiceActivityEvidence,
@@ -107,16 +104,6 @@ impl FinalizedUtterance {
     pub fn duration_ms(&self) -> u64 {
         self.voice_activity.duration_ms()
     }
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub struct PartialSnapshot {
-    pub revision: u32,
-    pub samples: Vec<i16>,
-    pub utterance_id: Uuid,
-    pub utterance_index: u64,
-    pub vad_probabilities: Vec<f32>,
-    pub voice_activity: VoiceActivityEvidence,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -153,19 +140,14 @@ pub trait VoiceActivityDetector {
 }
 
 pub struct ListeningSession<TVad: VoiceActivityDetector = SileroVadDetector> {
-    active_utterance_id: Option<Uuid>,
-    active_utterance_revision: u32,
     config: SessionConfig,
     activity_frames: usize,
     consecutive_above_threshold: usize,
     frames_since_confident_speech: usize,
     last_final_speech_end_ms: Option<u64>,
-    last_partial_emit_frames: Option<usize>,
     last_silence_boundary: Option<usize>,
     next_utterance_index: u64,
     next_utterance_is_continuation: bool,
-    partial_min_audio_frames: Option<usize>,
-    partial_update_interval_frames: Option<usize>,
     pending_end_start: Option<usize>,
     pre_speech_frames: VecDeque<BufferedAudioFrame>,
     session_frames: usize,
@@ -194,19 +176,14 @@ impl<TVad: VoiceActivityDetector> ListeningSession<TVad> {
     pub fn with_vad(config: SessionConfig, vad: TVad) -> Self {
         let tuning = config.style.tuning();
         Self {
-            active_utterance_id: None,
-            active_utterance_revision: 0,
             config,
             activity_frames: 0,
             consecutive_above_threshold: 0,
             frames_since_confident_speech: 0,
             last_final_speech_end_ms: None,
-            last_partial_emit_frames: None,
             last_silence_boundary: None,
             next_utterance_index: 0,
             next_utterance_is_continuation: false,
-            partial_min_audio_frames: None,
-            partial_update_interval_frames: None,
             pending_end_start: None,
             pre_speech_frames: VecDeque::with_capacity(tuning.pre_speech_pad_frames),
             session_frames: 0,
@@ -215,25 +192,6 @@ impl<TVad: VoiceActivityDetector> ListeningSession<TVad> {
             utterance_frames: Vec::new(),
             vad,
         }
-    }
-
-    /// Configure live partial cadence. `min_audio_ms` is the minimum captured
-    /// audio before the first snapshot; `update_interval_ms` is the cadence
-    /// between snapshots after that. Pass `None` to disable partial emission.
-    pub fn enable_live_partials(&mut self, min_audio_ms: u64, update_interval_ms: u64) {
-        let frame_ms = PCM_FRAME_DURATION_MS as u64;
-        self.partial_min_audio_frames = Some(div_ceil_u64(min_audio_ms, frame_ms) as usize);
-        self.partial_update_interval_frames =
-            Some(div_ceil_u64(update_interval_ms, frame_ms).max(1) as usize);
-    }
-
-    pub fn disable_live_partials(&mut self) {
-        self.partial_min_audio_frames = None;
-        self.partial_update_interval_frames = None;
-    }
-
-    pub fn live_partials_enabled(&self) -> bool {
-        self.partial_update_interval_frames.is_some()
     }
 
     pub fn base_state(&self) -> SessionBaseState {
@@ -254,12 +212,9 @@ impl<TVad: VoiceActivityDetector> ListeningSession<TVad> {
     }
 
     fn clear_activity_state(&mut self) {
-        self.active_utterance_id = None;
-        self.active_utterance_revision = 0;
         self.consecutive_above_threshold = 0;
         self.activity_frames = 0;
         self.frames_since_confident_speech = 0;
-        self.last_partial_emit_frames = None;
         self.last_silence_boundary = None;
         self.pending_end_start = None;
         self.pre_speech_frames.clear();
@@ -314,11 +269,8 @@ impl<TVad: VoiceActivityDetector> ListeningSession<TVad> {
                 self.consecutive_above_threshold += 1;
                 if self.consecutive_above_threshold >= self.tuning.min_speech_frames {
                     self.speech_started = true;
-                    self.active_utterance_id = Some(Uuid::new_v4());
-                    self.active_utterance_revision = 0;
                     self.consecutive_above_threshold = 0;
                     self.frames_since_confident_speech = 0;
-                    self.last_partial_emit_frames = None;
                     self.pending_end_start = None;
                     self.utterance_frames
                         .extend(self.pre_speech_frames.drain(..));
@@ -473,56 +425,13 @@ impl<TVad: VoiceActivityDetector> ListeningSession<TVad> {
         }
         self.next_utterance_is_continuation = cap_split;
 
-        let utterance_id = self.active_utterance_id.take().unwrap_or_else(Uuid::new_v4);
-        let revision = self.active_utterance_revision;
-        self.active_utterance_revision = 0;
-
         FinalizedUtterance {
             pause_ms_before_utterance,
-            revision,
             samples: flattened.samples,
-            utterance_id,
             utterance_index: self.next_utterance_index,
             vad_probabilities: flattened.vad_probabilities,
             voice_activity,
         }
-    }
-
-    /// Snapshot the in-progress utterance for live partial transcription.
-    /// Returns `None` when partials are disabled, no utterance is active, or
-    /// the next snapshot interval has not elapsed.
-    pub fn take_partial_snapshot(&mut self) -> Option<PartialSnapshot> {
-        let interval = self.partial_update_interval_frames?;
-        let min_frames = self.partial_min_audio_frames.unwrap_or(0);
-        let utterance_id = self.active_utterance_id?;
-        if !self.speech_started {
-            return None;
-        }
-        let frames_so_far = self.utterance_frames.len();
-        if frames_so_far < min_frames {
-            return None;
-        }
-        let due = match self.last_partial_emit_frames {
-            None => true,
-            Some(last) => frames_so_far.saturating_sub(last) >= interval,
-        };
-        if !due {
-            return None;
-        }
-
-        let flattened = flatten_frames(&self.utterance_frames);
-        self.last_partial_emit_frames = Some(frames_so_far);
-        let revision = self.active_utterance_revision;
-        self.active_utterance_revision = self.active_utterance_revision.saturating_add(1);
-
-        Some(PartialSnapshot {
-            revision,
-            samples: flattened.samples,
-            utterance_id,
-            utterance_index: self.next_utterance_index,
-            vad_probabilities: flattened.vad_probabilities,
-            voice_activity: flattened.voice_activity,
-        })
     }
 
     fn push_pre_speech_frame(&mut self, frame: BufferedAudioFrame) {
@@ -612,14 +521,6 @@ fn decode_pcm_frame(frame_bytes: &[u8]) -> Vec<i16> {
         .chunks_exact(2)
         .map(|chunk| i16::from_le_bytes([chunk[0], chunk[1]]))
         .collect()
-}
-
-const fn div_ceil_u64(numerator: u64, denominator: u64) -> u64 {
-    if denominator == 0 {
-        0
-    } else {
-        numerator.div_ceil(denominator)
-    }
 }
 
 #[cfg(test)]

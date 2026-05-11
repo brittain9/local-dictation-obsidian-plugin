@@ -75,15 +75,10 @@ function appendWithRenderer(
   renderer: TranscriptRenderer,
   utteranceId: string,
   text: string,
-  input: {
-    isFinal?: boolean;
-    pauseMsBeforeUtterance?: number | null;
-    utteranceStartMsInSession?: number;
-  } = {},
+  input: { pauseMsBeforeUtterance?: number | null; utteranceStartMsInSession?: number } = {},
 ): ReturnType<NoteSurface['appendProjection']> {
   const projection = renderer.planAppend(
     {
-      isFinal: input.isFinal ?? true,
       pauseMsBeforeUtterance: input.pauseMsBeforeUtterance ?? null,
       text,
       utteranceId,
@@ -165,79 +160,6 @@ describe('NoteSurface', () => {
     expect(surface.replaceAnchor('u2', 'SECOND', 'second').kind).toBe('replaced');
 
     expect(doc(view)).toBe('(0:00) first\n\n(1:10) SECOND');
-  });
-
-  it('replaces the full projection so a final can add timestamp and rewrite partial text', () => {
-    const { surface, view } = createSurface();
-    const renderer = new TranscriptRenderer({
-      showTimestamps: true,
-      transcriptFormatting: 'space',
-    });
-    const context = surface.readProjectionContext();
-    const partial = renderer.planAppend(
-      {
-        isFinal: false,
-        pauseMsBeforeUtterance: null,
-        text: 'twenty twenty',
-        utteranceId: 'u1',
-        utteranceStartMsInSession: 25_000,
-      },
-      context,
-    );
-    const final = renderer.planAppend(
-      {
-        isFinal: true,
-        pauseMsBeforeUtterance: null,
-        text: '2020',
-        utteranceId: 'u1',
-        utteranceStartMsInSession: 25_000,
-      },
-      context,
-    );
-
-    expect(surface.appendProjection('u1', partial).kind).toBe('appended');
-    expect(surface.replaceProjection('u1', final, partial).kind).toBe('replaced');
-
-    expect(doc(view)).toBe('(0:25) 2020');
-  });
-
-  it('latches full-projection replacements when a user edits the boundary prefix', () => {
-    const { surface, view } = createSurface({ doc: 'note', selectionHead: 4 });
-    const renderer = new TranscriptRenderer({
-      showTimestamps: false,
-      transcriptFormatting: 'space',
-    });
-    const context = surface.readProjectionContext();
-    const partial = renderer.planAppend(
-      {
-        isFinal: false,
-        pauseMsBeforeUtterance: null,
-        text: 'partial',
-        utteranceId: 'u1',
-        utteranceStartMsInSession: 0,
-      },
-      context,
-    );
-    const final = renderer.planAppend(
-      {
-        isFinal: true,
-        pauseMsBeforeUtterance: null,
-        text: 'final',
-        utteranceId: 'u1',
-        utteranceStartMsInSession: 0,
-      },
-      context,
-    );
-
-    expect(surface.appendProjection('u1', partial).kind).toBe('appended');
-    surface.observeTransaction(
-      view.apply({
-        annotations: Transaction.userEvent.of('input.type'),
-        changes: { from: 4, to: 5, insert: '\n' },
-      }),
-    );
-
-    expect(surface.replaceProjection('u1', final, partial).kind).toBe('denied');
   });
 
   it('latches replacements when a user edits the timestamp prefix', () => {
