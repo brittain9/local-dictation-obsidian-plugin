@@ -638,8 +638,8 @@ impl AppState {
         }
 
         let active_session = self.active_session.as_mut()?;
-        let _ = active_session.cancel_tx.send(true);
         if !active_session.transcription_active {
+            let _ = active_session.cancel_tx.send(true);
             let session_id = active_session.session.config().session_id.clone();
             self.active_session.take()?;
             let _ = self.transcription_worker.send(WorkerCommand::EndSession {
@@ -653,7 +653,10 @@ impl AppState {
         }
 
         // Transcription is still in flight; defer SessionStopped until the last
-        // TranscriptReady drains through the worker.
+        // TranscriptReady drains through the worker. Do not signal cancel — the
+        // LLM postprocess stage skips on cancel, so draining must run to
+        // completion with stages intact. maybe_complete_drain emits the final
+        // cancel as teardown.
         active_session.draining = true;
         self.emit_state_if_changed(&mut events);
         Some(events)
@@ -1236,7 +1239,7 @@ fn context_budget_chars(
         })
         .unwrap_or(0);
 
-    engine_budget.saturating_add(llm_budget).max(engine_budget)
+    engine_budget.saturating_add(llm_budget)
 }
 
 fn context_source_chars(window: &ContextWindow) -> usize {

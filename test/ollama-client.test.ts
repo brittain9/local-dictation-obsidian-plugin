@@ -74,11 +74,11 @@ describe('Ollama client', () => {
     });
 
     await expect(
-      createOllamaClient({ port }).prewarmModel('llama3.2:latest'),
+      createOllamaClient({ port }).prewarmModel('llama3.2:latest', '1h'),
     ).resolves.toBeUndefined();
     expect(bodies).toEqual([
       {
-        keep_alive: '30m',
+        keep_alive: '1h',
         messages: [{ content: 'ok', role: 'user' }],
         model: 'llama3.2:latest',
         options: { num_predict: 1 },

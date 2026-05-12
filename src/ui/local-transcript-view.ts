@@ -395,10 +395,12 @@ export class LocalTranscriptView extends ItemView {
       }
 
       await this.persistSettings({ ...settings, llmPostprocessEnabled: true });
-      void this.dependencies.ollamaClient.prewarmModel(selectedModel).catch((error: unknown) => {
-        this.dependencies.logger?.warn('llm', 'Ollama pre-warm failed', error);
-        this.notice('Local Transcript: Ollama pre-warm failed.');
-      });
+      void this.dependencies.ollamaClient
+        .prewarmModel(selectedModel, settings.llmPostprocessKeepAlive)
+        .catch((error: unknown) => {
+          this.dependencies.logger?.warn('llm', 'Ollama pre-warm failed', error);
+          this.notice('Local Transcript: Ollama pre-warm failed.');
+        });
     } catch (error) {
       this.dependencies.logger?.warn('llm', 'Ollama preflight failed', error);
       await this.persistSettings({

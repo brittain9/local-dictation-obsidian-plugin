@@ -777,10 +777,6 @@ function enforceLlmContextCap(
         text: truncated.text,
         truncated: true,
       };
-
-      if (truncated.text.length === source.text.length) {
-        result[index] = { ...source, text: '', truncated: true };
-      }
     }
   }
 

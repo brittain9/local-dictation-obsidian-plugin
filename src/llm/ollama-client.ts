@@ -29,7 +29,7 @@ export class OllamaClientError extends Error {
 
 export interface OllamaClient {
   listOllamaModels(): Promise<OllamaModelOption[]>;
-  prewarmModel(modelId: string): Promise<void>;
+  prewarmModel(modelId: string, keepAlive: string): Promise<void>;
   probeOllama(): Promise<void>;
 }
 
@@ -39,7 +39,7 @@ export function createOllamaClient(options: OllamaClientOptions = {}): OllamaCli
 
   return {
     listOllamaModels: () => listOllamaModels({ host, port }),
-    prewarmModel: (modelId) => prewarmModel(modelId, { host, port }),
+    prewarmModel: (modelId, keepAlive) => prewarmModel(modelId, keepAlive, { host, port }),
     probeOllama: () => probeOllama({ host, port }),
   };
 }
@@ -71,13 +71,17 @@ async function listOllamaModels(options: OllamaClientOptions = {}): Promise<Olla
     .sort((left, right) => left.displayName.localeCompare(right.displayName));
 }
 
-async function prewarmModel(modelId: string, options: OllamaClientOptions = {}): Promise<void> {
+async function prewarmModel(
+  modelId: string,
+  keepAlive: string,
+  options: OllamaClientOptions = {},
+): Promise<void> {
   try {
     await requestJson(
       'POST',
       '/api/chat',
       {
-        keep_alive: '30m',
+        keep_alive: keepAlive,
         messages: [{ content: 'ok', role: 'user' }],
         model: modelId,
         options: { num_predict: 1 },
