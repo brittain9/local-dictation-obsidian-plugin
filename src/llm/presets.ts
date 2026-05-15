@@ -1,10 +1,25 @@
-export type LlmBuiltinPresetId = 'clean-up' | 'professional-writing';
+export const LLM_POSTPROCESS_MODES = ['off', 'per_utterance', 'batch'] as const;
+
+export type LlmPostprocessMode = (typeof LLM_POSTPROCESS_MODES)[number];
+
+export function isLlmPostprocessMode(value: unknown): value is LlmPostprocessMode {
+  return typeof value === 'string' && (LLM_POSTPROCESS_MODES as readonly string[]).includes(value);
+}
+
+export type LlmPresetMode = Exclude<LlmPostprocessMode, 'off'>;
+
+export function isLlmPresetMode(value: unknown): value is LlmPresetMode {
+  return value === 'per_utterance' || value === 'batch';
+}
+
+export type LlmBuiltinPresetId = 'clean-up' | 'professional-writing' | 'tldr';
 
 export interface LlmBuiltinPreset {
   id: LlmBuiltinPresetId;
   label: string;
   description: string;
   prompt: string;
+  mode?: LlmPresetMode;
 }
 
 export interface LlmUserPreset {
@@ -12,6 +27,7 @@ export interface LlmUserPreset {
   label: string;
   description: string;
   prompt: string;
+  mode?: LlmPresetMode;
 }
 
 export type LlmStyleRef =
@@ -22,6 +38,7 @@ export interface LlmStyleOption {
   description: string;
   isBuiltin: boolean;
   label: string;
+  mode?: LlmPresetMode;
   prompt: string;
   ref: string;
 }
@@ -31,6 +48,9 @@ const CLEAN_UP_PROMPT =
 
 const PROFESSIONAL_WRITING_PROMPT =
   'Rewrite dictated speech as concise professional prose. Active voice, no filler or hedging. Preserve every fact, name, and term. Use the reference context for spelling. Return only the rewritten text — no preamble, no commentary.';
+
+const TLDR_PROMPT =
+  "Output a TLDR summary, then a blank line, then the dictated transcript with light cleanup. TLDR: a 'TLDR' heading followed by 1-3 short bullets covering the key points. Light cleanup: fix filler, false starts, punctuation, and capitalization; preserve the speaker's voice and wording — do not rewrite or restructure. Return only the formatted output — no preamble, no commentary.";
 
 export const LLM_BUILTIN_PRESETS: readonly LlmBuiltinPreset[] = [
   {
@@ -46,6 +66,14 @@ export const LLM_BUILTIN_PRESETS: readonly LlmBuiltinPreset[] = [
     description:
       'Rewrite into concise, polished professional prose while preserving facts, names, decisions, and technical terms.',
     prompt: PROFESSIONAL_WRITING_PROMPT,
+  },
+  {
+    id: 'tldr',
+    label: 'TLDR + transcript',
+    description:
+      'Summary at the top, lightly cleaned transcript below. Designed for batch cleanup at the end of a session.',
+    mode: 'batch',
+    prompt: TLDR_PROMPT,
   },
 ];
 
@@ -94,24 +122,24 @@ export function parseStyleRef(value: unknown): LlmStyleRef | null {
 }
 
 export function listStyleOptions(userPresets: readonly LlmUserPreset[]): LlmStyleOption[] {
-  const builtinOptions = LLM_BUILTIN_PRESETS.map(
-    (preset): LlmStyleOption => ({
-      description: preset.description,
-      isBuiltin: true,
-      label: preset.label,
-      prompt: preset.prompt,
-      ref: formatStyleRef({ kind: 'builtin', id: preset.id }),
-    }),
-  );
+  const toOption = (
+    preset: LlmBuiltinPreset | LlmUserPreset,
+    ref: LlmStyleRef,
+    isBuiltin: boolean,
+  ): LlmStyleOption => ({
+    description: preset.description,
+    isBuiltin,
+    label: preset.label,
+    ...(preset.mode !== undefined ? { mode: preset.mode } : {}),
+    prompt: preset.prompt,
+    ref: formatStyleRef(ref),
+  });
 
-  const userOptions = userPresets.map(
-    (preset): LlmStyleOption => ({
-      description: preset.description,
-      isBuiltin: false,
-      label: preset.label,
-      prompt: preset.prompt,
-      ref: formatStyleRef({ kind: 'user', id: preset.id }),
-    }),
+  const builtinOptions = LLM_BUILTIN_PRESETS.map((preset) =>
+    toOption(preset, { kind: 'builtin', id: preset.id }, true),
+  );
+  const userOptions = userPresets.map((preset) =>
+    toOption(preset, { kind: 'user', id: preset.id }, false),
   );
 
   return [...builtinOptions, ...userOptions];

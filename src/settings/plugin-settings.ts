@@ -3,6 +3,9 @@ import {
   findMatchingStyleRef,
   formatStyleRef,
   getLlmBuiltinPreset,
+  isLlmPostprocessMode,
+  isLlmPresetMode,
+  type LlmPostprocessMode,
   type LlmUserPreset,
 } from '../llm/presets';
 import {
@@ -18,6 +21,12 @@ import {
   type SpeakingStyle,
 } from '../sidecar/protocol';
 
+export {
+  isLlmPostprocessMode,
+  LLM_POSTPROCESS_MODES,
+  type LlmPostprocessMode,
+} from '../llm/presets';
+
 export const DICTATION_ANCHORS = ['at_cursor', 'end_of_note'] as const;
 
 export type DictationAnchor = (typeof DICTATION_ANCHORS)[number];
@@ -31,10 +40,6 @@ export const SPEAKING_STYLES = [
   'balanced',
   'patient',
 ] as const satisfies readonly SpeakingStyle[];
-
-export const LLM_POSTPROCESS_MODES = ['off', 'per_utterance', 'batch'] as const;
-
-export type LlmPostprocessMode = (typeof LLM_POSTPROCESS_MODES)[number];
 
 const DEFAULT_LLM_PRESET = getLlmBuiltinPreset(DEFAULT_LLM_BUILTIN_PRESET_ID);
 const DEFAULT_LLM_ACTIVE_PRESET_REF = formatStyleRef({
@@ -318,21 +323,19 @@ function readUserPresets(value: unknown): LlmUserPreset[] {
     }
 
     const description = typeof entry.description === 'string' ? entry.description : '';
+    const mode = isLlmPresetMode(entry.mode) ? entry.mode : undefined;
 
     accepted.push({
       description: description.slice(0, LLM_USER_PRESET_MAX_DESCRIPTION_CHARS),
       id,
       label: label.slice(0, LLM_USER_PRESET_MAX_LABEL_CHARS),
+      ...(mode !== undefined ? { mode } : {}),
       prompt: readPrompt(entry.prompt, DEFAULT_PLUGIN_SETTINGS.llmPostprocessPrompt),
     });
     seenIds.add(id);
   }
 
   return accepted;
-}
-
-export function isLlmPostprocessMode(value: unknown): value is LlmPostprocessMode {
-  return typeof value === 'string' && (LLM_POSTPROCESS_MODES as readonly string[]).includes(value);
 }
 
 export function isSpeakingStyle(value: unknown): value is SpeakingStyle {

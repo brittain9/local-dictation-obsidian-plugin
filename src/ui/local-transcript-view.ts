@@ -6,6 +6,7 @@ import type { OllamaClient, OllamaModelOption } from '../llm/ollama-client';
 import {
   findMatchingStyleRef,
   formatStyleRef,
+  type LlmPresetMode,
   type LlmUserPreset,
   listStyleOptions,
   parseStyleRef,
@@ -229,16 +230,16 @@ export class LocalTranscriptView extends ItemView {
     const isCustom = activeOption === null;
     const activeRef = activeOption?.ref ?? CUSTOM_STYLE_VALUE;
 
+    const description = isCustom
+      ? 'Custom - current prompt does not match any saved style.'
+      : `${activeOption.description}${describeMode(activeOption.mode)}`;
+
     const setting = new Setting(parent)
       .setName('Writing style')
-      .setDesc(
-        isCustom
-          ? 'Custom - current prompt does not match any saved style.'
-          : activeOption.description,
-      )
+      .setDesc(description)
       .addDropdown((dropdown) => {
         for (const option of styleOptions) {
-          dropdown.addOption(option.ref, option.label);
+          dropdown.addOption(option.ref, formatStyleOptionLabel(option.label, option.mode));
         }
         if (isCustom) {
           dropdown.addOption(CUSTOM_STYLE_VALUE, 'Custom');
@@ -286,6 +287,7 @@ export class LocalTranscriptView extends ItemView {
     await this.persistSettings({
       ...settings,
       llmPostprocessActivePresetRef: option.ref,
+      ...(option.mode !== undefined ? { llmPostprocessMode: option.mode } : {}),
       llmPostprocessPrompt: option.prompt,
     });
   }
@@ -298,8 +300,8 @@ export class LocalTranscriptView extends ItemView {
     new SaveStyleModal(this.app, {
       existingLabels,
       reachedMaxCount,
-      onSave: async ({ description, label }) => {
-        await this.saveCurrentAsUserStyle({ description, label });
+      onSave: async ({ description, label, mode }) => {
+        await this.saveCurrentAsUserStyle({ description, label, mode });
       },
     }).open();
   }
@@ -307,6 +309,7 @@ export class LocalTranscriptView extends ItemView {
   private async saveCurrentAsUserStyle(options: {
     description: string;
     label: string;
+    mode: LlmPresetMode | null;
   }): Promise<void> {
     const settings = this.dependencies.getSettings();
     if (settings.llmPostprocessUserPresets.length >= LLM_USER_PRESET_MAX_COUNT) {
@@ -320,6 +323,7 @@ export class LocalTranscriptView extends ItemView {
       description: options.description,
       id,
       label: options.label,
+      ...(options.mode !== null ? { mode: options.mode } : {}),
       prompt: settings.llmPostprocessPrompt,
     };
 
@@ -623,4 +627,24 @@ export class LocalTranscriptView extends ItemView {
     }
     new Notice(message);
   }
+}
+
+function describeMode(mode: LlmPresetMode | undefined): string {
+  if (mode === 'per_utterance') {
+    return ' Runs after each phrase.';
+  }
+  if (mode === 'batch') {
+    return ' Runs once on stop.';
+  }
+  return '';
+}
+
+function formatStyleOptionLabel(label: string, mode: LlmPresetMode | undefined): string {
+  if (mode === 'per_utterance') {
+    return `${label} (per phrase)`;
+  }
+  if (mode === 'batch') {
+    return `${label} (batch)`;
+  }
+  return label;
 }

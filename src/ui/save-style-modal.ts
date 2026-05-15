@@ -1,16 +1,29 @@
 import type { App } from 'obsidian';
 import { Modal, Setting } from 'obsidian';
 
+import type { LlmPresetMode } from '../llm/presets';
 import {
   LLM_USER_PRESET_MAX_COUNT,
   LLM_USER_PRESET_MAX_DESCRIPTION_CHARS,
   LLM_USER_PRESET_MAX_LABEL_CHARS,
 } from '../settings/plugin-settings';
 
+const MODE_ANY = '__any__';
+
+const MODE_OPTIONS: ReadonlyArray<{ label: string; value: LlmPresetMode | typeof MODE_ANY }> = [
+  { label: 'Any mode (use current cleanup mode)', value: MODE_ANY },
+  { label: 'After each phrase', value: 'per_utterance' },
+  { label: 'All at once on stop', value: 'batch' },
+];
+
 export interface SaveStyleModalOptions {
   existingLabels: readonly string[];
   initialLabel?: string;
-  onSave: (result: { description: string; label: string }) => Promise<void> | void;
+  onSave: (result: {
+    description: string;
+    label: string;
+    mode: LlmPresetMode | null;
+  }) => Promise<void> | void;
   reachedMaxCount: boolean;
 }
 
@@ -18,6 +31,7 @@ export class SaveStyleModal extends Modal {
   private descriptionInput: HTMLTextAreaElement | null = null;
   private errorEl: HTMLElement | null = null;
   private labelInput: HTMLInputElement | null = null;
+  private mode: LlmPresetMode | null = null;
 
   constructor(
     app: App,
@@ -61,6 +75,19 @@ export class SaveStyleModal extends Modal {
       this.descriptionInput = text.inputEl;
     });
 
+    new Setting(this.contentEl)
+      .setName('Cleanup mode')
+      .setDesc('Switch to this mode when the style is picked. Choose Any to keep the current mode.')
+      .addDropdown((dropdown) => {
+        for (const option of MODE_OPTIONS) {
+          dropdown.addOption(option.value, option.label);
+        }
+        dropdown.setValue(MODE_ANY);
+        dropdown.onChange((value) => {
+          this.mode = value === MODE_ANY ? null : (value as LlmPresetMode);
+        });
+      });
+
     this.errorEl = this.contentEl.createEl('p', { cls: 'local-stt-save-style__error' });
     this.errorEl.style.display = 'none';
 
@@ -87,6 +114,7 @@ export class SaveStyleModal extends Modal {
     this.descriptionInput = null;
     this.errorEl = null;
     this.labelInput = null;
+    this.mode = null;
   }
 
   private async handleSave(): Promise<void> {
@@ -107,7 +135,7 @@ export class SaveStyleModal extends Modal {
     }
 
     try {
-      await this.options.onSave({ description, label });
+      await this.options.onSave({ description, label, mode: this.mode });
       this.close();
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Could not save the style.';

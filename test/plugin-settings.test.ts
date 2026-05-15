@@ -268,6 +268,26 @@ describe('resolvePluginSettings', () => {
     expect(preset?.prompt).toBe(DEFAULT_LLM_POSTPROCESS_PROMPT);
   });
 
+  it('keeps valid preset modes and drops invalid ones', () => {
+    const presets = resolvePluginSettings({
+      llmPostprocessUserPresets: [
+        { id: 'a', label: 'Phrase', mode: 'per_utterance', prompt: 'p' },
+        { id: 'b', label: 'Batch', mode: 'batch', prompt: 'p' },
+        { id: 'c', label: 'Off rejected', mode: 'off', prompt: 'p' },
+        { id: 'd', label: 'Unknown rejected', mode: 'whenever', prompt: 'p' },
+        { id: 'e', label: 'No mode', prompt: 'p' },
+      ],
+    }).llmPostprocessUserPresets;
+
+    expect(presets.map((preset) => preset.mode)).toEqual([
+      'per_utterance',
+      'batch',
+      undefined,
+      undefined,
+      undefined,
+    ]);
+  });
+
   it('clamps user style label and description lengths', () => {
     const longLabel = 'L'.repeat(LLM_USER_PRESET_MAX_LABEL_CHARS + 20);
     const longDesc = 'D'.repeat(LLM_USER_PRESET_MAX_DESCRIPTION_CHARS + 50);
