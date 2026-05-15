@@ -233,11 +233,11 @@ export class LocalTranscriptView extends ItemView {
       });
     appendInfoTooltip(setting, STYLE_PICKER_TOOLTIP);
 
-    const showSaveAs = activeOption === null || activeOption.isBuiltin === false;
+    const showSave = activeOption === null;
     const showDelete = activeOption !== null && activeOption.isBuiltin === false;
     const reachedMaxCount = settings.llmPostprocessUserPresets.length >= LLM_USER_PRESET_MAX_COUNT;
 
-    if (showSaveAs) {
+    if (showSave) {
       setting.addExtraButton((button) => {
         button.setIcon('save');
         if (reachedMaxCount) {
@@ -247,11 +247,7 @@ export class LocalTranscriptView extends ItemView {
           );
           return;
         }
-        button.setTooltip(
-          activeOption === null
-            ? 'Save current prompt as a preset'
-            : 'Save current prompt as a new preset',
-        );
+        button.setTooltip('Save current prompt as a preset');
         button.onClick(() => {
           this.openSaveStyleModal();
         });
