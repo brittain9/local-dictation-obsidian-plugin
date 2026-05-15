@@ -163,17 +163,35 @@ export class LocalTranscriptView extends ItemView {
       .addToggle((toggle) => {
         toggle.setValue(enabled);
         toggle.onChange(async (value) => {
-          if (!value && this.dependencies.getSettings().llmPostprocessMode !== 'off') {
-            this.lastEnabledMode = this.dependencies.getSettings()
-              .llmPostprocessMode as EnabledLlmPostprocessMode;
+          const current = this.dependencies.getSettings();
+          if (!value && current.llmPostprocessMode !== 'off') {
+            this.lastEnabledMode = current.llmPostprocessMode as EnabledLlmPostprocessMode;
           }
-          await this.saveField('llmPostprocessMode', value ? this.lastEnabledMode : 'off');
+          const nextMode = value ? this.resolveModeOnEnable(current) : 'off';
+          await this.saveField('llmPostprocessMode', nextMode);
         });
       });
   }
 
+  private resolveModeOnEnable(settings: PluginSettings): EnabledLlmPostprocessMode {
+    const activeOption = resolveStyleOption(
+      settings.llmPostprocessActivePresetRef,
+      settings.llmPostprocessUserPresets,
+    );
+    return activeOption?.mode ?? this.lastEnabledMode;
+  }
+
   private renderCleanupMode(parent: HTMLElement, settings: PluginSettings): void {
     if (settings.llmPostprocessMode === 'off') {
+      return;
+    }
+    const activeOption = resolveStyleOption(
+      settings.llmPostprocessActivePresetRef,
+      settings.llmPostprocessUserPresets,
+    );
+    if (activeOption !== null && activeOption.mode !== undefined) {
+      // The preset declares its mode; don't show a dropdown that could create a
+      // mismatch (e.g., running a batch-only summarization preset per-utterance).
       return;
     }
 
