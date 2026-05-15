@@ -84,9 +84,9 @@ export const LLM_BUILTIN_PRESETS: readonly LlmBuiltinPreset[] = [
   },
   {
     id: 'tldr',
-    label: 'TLDR + transcript',
+    label: 'TLDR',
     description:
-      'Summary at the top, lightly cleaned transcript below. Designed for batch cleanup at the end of a session.',
+      'Summary at the top, lightly cleaned transcript below. Designed for batch LLM transform at the end of a session.',
     mode: 'batch',
     prompt: TLDR_PROMPT,
   },

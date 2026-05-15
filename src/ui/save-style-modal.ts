@@ -11,7 +11,7 @@ import {
 const MODE_ANY = '__any__';
 
 const MODE_OPTIONS: ReadonlyArray<{ label: string; value: LlmPresetMode | typeof MODE_ANY }> = [
-  { label: 'Any mode (use current cleanup mode)', value: MODE_ANY },
+  { label: 'Any mode (use current mode)', value: MODE_ANY },
   { label: 'After each phrase', value: 'per_utterance' },
   { label: 'All at once on stop', value: 'batch' },
 ];
@@ -76,7 +76,7 @@ export class SaveStyleModal extends Modal {
     });
 
     new Setting(this.contentEl)
-      .setName('Cleanup mode')
+      .setName('Mode')
       .setDesc(
         'Switch to this mode when the preset is picked. Choose Any to keep the current mode.',
       )

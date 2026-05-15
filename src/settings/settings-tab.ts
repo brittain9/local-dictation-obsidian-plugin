@@ -226,7 +226,7 @@ export class LocalSttSettingTab extends PluginSettingTab {
 
     const disableLlmSetting = new Setting(advancedSection)
       .setName('Disable LLM features')
-      .setDesc('Turn off Ollama cleanup and remove the LLM cleanup sidebar.');
+      .setDesc('Turn off the Ollama LLM transform and remove the LLM transformation sidebar.');
     disableLlmSetting.addToggle((toggle) => {
       toggle.setValue(!this.dependencies.getSettings().llmFeaturesEnabled);
       toggle.onChange(async (value) => {

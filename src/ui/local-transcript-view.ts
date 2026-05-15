@@ -29,9 +29,9 @@ export const LOCAL_TRANSCRIPT_VIEW_TYPE = 'local-transcript-sidebar';
 const LOCAL_TRANSCRIPT_VIEW_TITLE = 'Local Transcript';
 const LOCAL_TRANSCRIPT_VIEW_ICON = 'audio-lines';
 const HEADING_TOOLTIP =
-  'Uses a local Ollama model to clean up punctuation, capitalization, paragraphs, and terminology. Transcription stays local.';
+  'Uses a local Ollama model to transform the dictated transcript — cleaning, rewriting, summarizing, reformatting, or running custom prompts. Transcription stays local.';
 const STYLE_PICKER_TOOLTIP =
-  'A preset is a saved cleanup prompt. Pick a built-in preset or a saved preset. Editing the prompt switches to Custom. The suffix after each preset name shows which cleanup mode it is meant for: (per phrase) runs after every spoken phrase, (batch) runs once when you stop, (either) works in both — picking a (per phrase) or (batch) preset will switch the cleanup mode for you.';
+  'A preset is a saved LLM transform prompt. Pick a built-in preset or a saved preset. Editing the prompt switches to Custom. The suffix after each preset name shows which mode it is meant for: (per phrase) runs after every spoken phrase, (batch) runs once when you stop, (either) works in both — picking a (per phrase) or (batch) preset will switch the mode for you.';
 const CUSTOM_STYLE_VALUE = '__custom__';
 
 type EnabledLlmPostprocessMode = Exclude<LlmPostprocessMode, 'off'>;
@@ -110,7 +110,7 @@ export class LocalTranscriptView extends ItemView {
       this.lastEnabledMode = settings.llmPostprocessMode;
     }
 
-    const cleanupGroup = this.createSettingGroup(contentEl, 'LLM cleanup', HEADING_TOOLTIP);
+    const cleanupGroup = this.createSettingGroup(contentEl, 'LLM transformation', HEADING_TOOLTIP);
 
     this.renderCleanupToggle(cleanupGroup, settings);
     this.renderCleanupMode(cleanupGroup, settings);
@@ -147,8 +147,8 @@ export class LocalTranscriptView extends ItemView {
   private renderCleanupToggle(parent: HTMLElement, settings: PluginSettings): void {
     const enabled = settings.llmPostprocessMode !== 'off';
     new Setting(parent)
-      .setName('Cleanup')
-      .setDesc(enabled ? 'LLM cleanup is on.' : 'Raw Whisper text is inserted directly.')
+      .setName('Transform')
+      .setDesc(enabled ? 'LLM transform is on.' : 'Raw Whisper text is inserted directly.')
       .addToggle((toggle) => {
         toggle.setValue(enabled);
         toggle.onChange(async (value) => {
@@ -167,8 +167,8 @@ export class LocalTranscriptView extends ItemView {
     }
 
     const setting = new Setting(parent)
-      .setName('Cleanup mode')
-      .setDesc('Choose when cleanup runs.')
+      .setName('Mode')
+      .setDesc('Choose when the LLM transform runs.')
       .addDropdown((dropdown) => {
         for (const option of CLEANUP_MODE_OPTIONS) {
           dropdown.addOption(option.value, option.label);
@@ -185,7 +185,7 @@ export class LocalTranscriptView extends ItemView {
 
     appendInfoTooltip(
       setting,
-      'When the Ollama cleanup runs. "After each phrase" (per-utterance) — every spoken phrase is sent to the model as soon as Whisper finishes transcribing it, and the cleaned version replaces the raw text in-line. Best for short prompts that fix one phrase at a time (filler, punctuation). "All at once on stop" (batch) — raw Whisper text is inserted while you talk, then on stop the whole session is sent to the model and replaced with the cleaned result. Required for prompts that need the full context (summary, reformatting, markdown structure).',
+      'When the LLM transform runs. "After each phrase" (per-utterance) — every spoken phrase is sent to the model as soon as Whisper finishes transcribing it, and the transformed version replaces the raw text in-line. Best for prompts that operate on one phrase at a time (filler cleanup, punctuation). "All at once on stop" (batch) — raw Whisper text is inserted while you talk, then on stop the whole session is sent to the model and replaced with the transformed result. Required for prompts that need the full context (summary, reformatting, markdown structure, brain-dump organization).',
     );
   }
 
@@ -371,7 +371,7 @@ export class LocalTranscriptView extends ItemView {
     const items = this.createSettingGroup(
       parent,
       'Context',
-      'Bounded slice of recent note text and prior utterances fed to the model so cleanup matches existing style and terminology.',
+      'Bounded slice of recent note text and prior utterances fed to the model so the LLM transform matches existing style and terminology.',
     );
     this.addNumberSetting(
       items,
@@ -405,7 +405,7 @@ export class LocalTranscriptView extends ItemView {
     if (Math.ceil(settings.llmPostprocessTotalContextCap / 4) >= 4_000) {
       items.createEl('p', {
         cls: 'local-transcript-muted',
-        text: 'Large context windows can slow local models and reduce cleanup quality.',
+        text: 'Large context windows can slow local models and reduce LLM transform quality.',
       });
     }
   }
@@ -419,13 +419,13 @@ export class LocalTranscriptView extends ItemView {
     this.addTextAreaSetting(
       items,
       'Prompt',
-      'Cleanup instructions',
+      'LLM transform instructions',
       settings.llmPostprocessPrompt,
       10,
       async (value) => {
         await this.savePrompt(value);
       },
-      'Instructions sent as the system prompt for local cleanup.',
+      'Instructions sent as the system prompt for the local LLM transform.',
     );
   }
 
@@ -441,7 +441,7 @@ export class LocalTranscriptView extends ItemView {
       'Skip below N words',
       settings.llmPostprocessSkipMinWords,
       (value) => this.saveField('llmPostprocessSkipMinWords', value, { rerender: false }),
-      'Skip cleanup when the utterance has fewer words than this.',
+      'Skip the LLM transform when the utterance has fewer words than this.',
     );
   }
 
@@ -475,7 +475,7 @@ export class LocalTranscriptView extends ItemView {
       });
     appendInfoTooltip(
       showRawSetting,
-      'Inserts the raw Whisper text below the cleaned text inside a collapsible "raw" callout. After each phrase: a small raw callout is appended under every cleaned phrase. All at once on stop: one combined raw callout is appended below the cleaned session text. Useful while iterating on a cleanup prompt so you can compare the model output against what was actually said.',
+      'Inserts the raw Whisper text below the transformed text inside a collapsible "raw" callout. After each phrase: a small raw callout is appended under every transformed phrase. All at once on stop: one combined raw callout is appended below the transformed session text. Useful while iterating on an LLM transform prompt so you can compare the model output against what was actually said.',
     );
 
     new Setting(items)
@@ -653,7 +653,7 @@ function describeMode(mode: LlmPresetMode | undefined): string {
   if (mode === 'batch') {
     return ' Runs once on stop.';
   }
-  return ' Works in either cleanup mode.';
+  return ' Works in either mode.';
 }
 
 function formatStyleOptionLabel(label: string, mode: LlmPresetMode | undefined): string {
