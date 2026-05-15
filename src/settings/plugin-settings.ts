@@ -56,7 +56,6 @@ export const DEFAULT_LLM_POSTPROCESS_CONTEXT = {
 } as const;
 
 export const DEFAULT_LLM_POSTPROCESS_GENERATION = {
-  keepAlive: '30m',
   temperature: 0.2,
 } as const;
 
@@ -76,7 +75,6 @@ export interface PluginSettings {
   listeningMode: ListeningMode;
   llmFeaturesEnabled: boolean;
   llmPostprocessActivePresetRef: string | null;
-  llmPostprocessKeepAlive: string;
   llmPostprocessMode: LlmPostprocessMode;
   llmPostprocessModel: string;
   llmPostprocessNoteContextChars: number;
@@ -106,7 +104,6 @@ export const DEFAULT_PLUGIN_SETTINGS: PluginSettings = {
   listeningMode: 'always_on',
   llmFeaturesEnabled: true,
   llmPostprocessActivePresetRef: DEFAULT_LLM_ACTIVE_PRESET_REF,
-  llmPostprocessKeepAlive: DEFAULT_LLM_POSTPROCESS_GENERATION.keepAlive,
   llmPostprocessMode: 'per_utterance',
   llmPostprocessModel: '',
   llmPostprocessNoteContextChars: DEFAULT_LLM_POSTPROCESS_CONTEXT.noteContextChars,
@@ -146,10 +143,6 @@ export function resolvePluginSettings(data: unknown): PluginSettings {
       DEFAULT_PLUGIN_SETTINGS.llmFeaturesEnabled,
     ),
     llmPostprocessActivePresetRef: findMatchingStyleRef(llmPostprocessPrompt, userPresets),
-    llmPostprocessKeepAlive: readNonEmptyTrimmedString(
-      raw.llmPostprocessKeepAlive,
-      DEFAULT_PLUGIN_SETTINGS.llmPostprocessKeepAlive,
-    ),
     llmPostprocessMode: readLlmPostprocessMode(raw.llmPostprocessMode),
     llmPostprocessModel: readString(
       raw.llmPostprocessModel,
@@ -223,7 +216,6 @@ export function resetLlmPostprocessDefaults(settings: PluginSettings): PluginSet
   return {
     ...settings,
     llmPostprocessActivePresetRef: DEFAULT_PLUGIN_SETTINGS.llmPostprocessActivePresetRef,
-    llmPostprocessKeepAlive: DEFAULT_PLUGIN_SETTINGS.llmPostprocessKeepAlive,
     llmPostprocessMode: DEFAULT_PLUGIN_SETTINGS.llmPostprocessMode,
     llmPostprocessNoteContextChars: DEFAULT_PLUGIN_SETTINGS.llmPostprocessNoteContextChars,
     llmPostprocessPriorUtterancesN: DEFAULT_PLUGIN_SETTINGS.llmPostprocessPriorUtterancesN,
@@ -248,15 +240,6 @@ function readBoolean(value: unknown, fallback: boolean): boolean {
 
 function readString(value: unknown, fallback: string): string {
   return typeof value === 'string' ? value.trim() : fallback;
-}
-
-function readNonEmptyTrimmedString(value: unknown, fallback: string): string {
-  if (typeof value !== 'string') {
-    return fallback;
-  }
-
-  const trimmed = value.trim();
-  return trimmed.length > 0 ? trimmed : fallback;
 }
 
 function readPositiveInteger(value: unknown, fallback: number): number {

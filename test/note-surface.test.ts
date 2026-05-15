@@ -311,6 +311,25 @@ describe('NoteSurface', () => {
     expect(surface.replaceAnchor('u2', 'SECOND', 'second').kind).toBe('replaced');
   });
 
+  it('rewrites a changed region when the contained spans are allowed', () => {
+    const { surface, view } = createSurface();
+
+    expect(append(surface, 'u1', 'first').kind).toBe('appended');
+    expect(append(surface, 'u2', 'second').kind).toBe('appended');
+    surface.observeTransaction(view.apply({ changes: { from: 0, to: 1, insert: 'F' } }));
+
+    expect(
+      surface.rewriteRegion({ from: 0, to: doc(view).length }, 'Cleaned.', [
+        { utteranceId: 'u1' },
+        { utteranceId: 'u2' },
+      ]),
+    ).toEqual({
+      kind: 'rewritten',
+      range: { from: 0, to: 'First second'.length },
+    });
+    expect(doc(view)).toBe('Cleaned.');
+  });
+
   it('denies rewrites that cut through an utterance span', () => {
     const { surface } = createSurface();
 

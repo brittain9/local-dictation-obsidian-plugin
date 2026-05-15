@@ -161,7 +161,7 @@ export default class LocalSttPlugin extends Plugin {
   }
 
   private async runPostLayoutStartup(): Promise<void> {
-    await this.ensureLocalTranscriptSidebar();
+    await this.syncLocalTranscriptSidebar();
 
     try {
       await this.checkSidecarHealth({ showNotice: false });
@@ -188,6 +188,17 @@ export default class LocalSttPlugin extends Plugin {
       active: false,
       type: LOCAL_TRANSCRIPT_VIEW_TYPE,
     });
+  }
+
+  private async syncLocalTranscriptSidebar(): Promise<void> {
+    if (!this.settings.llmFeaturesEnabled) {
+      for (const leaf of this.app.workspace.getLeavesOfType(LOCAL_TRANSCRIPT_VIEW_TYPE)) {
+        leaf.detach();
+      }
+      return;
+    }
+
+    await this.ensureLocalTranscriptSidebar();
   }
 
   private async openFirstRunSetup(): Promise<void> {
@@ -294,8 +305,12 @@ export default class LocalSttPlugin extends Plugin {
   }
 
   private async updateSettings(nextSettings: PluginSettings): Promise<void> {
+    const previousLlmFeaturesEnabled = this.settings.llmFeaturesEnabled;
     this.settings = resolvePluginSettings(nextSettings);
     await this.saveData(this.settings);
+    if (previousLlmFeaturesEnabled !== this.settings.llmFeaturesEnabled) {
+      await this.syncLocalTranscriptSidebar();
+    }
   }
 
   private requireDictationController(): DictationSessionController {

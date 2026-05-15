@@ -31,6 +31,24 @@ describe('LLM presets', () => {
     expect(tldr.prompt).toMatch(/TLDR/);
   });
 
+  it('exposes a batch-only Markdown formatting built-in', () => {
+    const md = getLlmBuiltinPreset('markdown-formatting');
+    expect(md.mode).toBe('batch');
+    expect(md.prompt).toMatch(/Markdown/);
+  });
+
+  it('exposes a batch-only Brain dump organizer built-in', () => {
+    const bd = getLlmBuiltinPreset('brain-dump');
+    expect(bd.mode).toBe('batch');
+    expect(bd.prompt).toMatch(/brain dump/i);
+  });
+
+  it('exposes a batch-only Voice commands built-in', () => {
+    const vc = getLlmBuiltinPreset('voice-commands');
+    expect(vc.mode).toBe('batch');
+    expect(vc.prompt).toMatch(/directive/i);
+  });
+
   it('clean-up and professional-writing built-ins are mode-agnostic', () => {
     expect(getLlmBuiltinPreset('clean-up').mode).toBeUndefined();
     expect(getLlmBuiltinPreset('professional-writing').mode).toBeUndefined();

@@ -12,7 +12,13 @@ export function isLlmPresetMode(value: unknown): value is LlmPresetMode {
   return value === 'per_utterance' || value === 'batch';
 }
 
-export type LlmBuiltinPresetId = 'clean-up' | 'professional-writing' | 'tldr';
+export type LlmBuiltinPresetId =
+  | 'clean-up'
+  | 'professional-writing'
+  | 'tldr'
+  | 'markdown-formatting'
+  | 'brain-dump'
+  | 'voice-commands';
 
 export interface LlmBuiltinPreset {
   id: LlmBuiltinPresetId;
@@ -52,6 +58,15 @@ const PROFESSIONAL_WRITING_PROMPT =
 const TLDR_PROMPT =
   "Output a TLDR summary, then a blank line, then the dictated transcript with light cleanup. TLDR: a 'TLDR' heading followed by 1-3 short bullets covering the key points. Light cleanup: fix filler, false starts, punctuation, and capitalization; preserve the speaker's voice and wording — do not rewrite or restructure. Return only the formatted output — no preamble, no commentary.";
 
+const MARKDOWN_FORMATTING_PROMPT =
+  "Reformat dictated speech as well-structured Markdown. Add headings, bullet or numbered lists, bold, emphasis, and fenced code blocks where the content calls for it. Lightly clean filler, false starts, punctuation, and capitalization; preserve the speaker's wording, every fact, name, and term. Return only the Markdown — no preamble, no commentary.";
+
+const BRAIN_DUMP_PROMPT =
+  "Organize a free-form brain dump into clear structure. Cluster the speaker's points into themes with short headings, and surface action items, open questions, and decisions as separate sections where present. Drop pure filler. Preserve every fact, name, and term. Use the reference context only for spelling. Return only the organized Markdown — no preamble, no commentary.";
+
+const VOICE_COMMANDS_PROMPT =
+  "Interpret the dictated transcript as a mix of content and inline instructions to you. When the speaker gives a directive ('make this a list', 'summarize the above', 'rewrite that as a code block', 'remove the last part'), apply it to the surrounding text. Otherwise treat the speech as content to clean lightly. Preserve facts, names, and terms unless the speaker explicitly asks otherwise. Use the reference context only for spelling. Return only the final result — no preamble, no acknowledgment of the directives, no commentary.";
+
 export const LLM_BUILTIN_PRESETS: readonly LlmBuiltinPreset[] = [
   {
     id: 'clean-up',
@@ -74,6 +89,30 @@ export const LLM_BUILTIN_PRESETS: readonly LlmBuiltinPreset[] = [
       'Summary at the top, lightly cleaned transcript below. Designed for batch cleanup at the end of a session.',
     mode: 'batch',
     prompt: TLDR_PROMPT,
+  },
+  {
+    id: 'markdown-formatting',
+    label: 'Markdown formatting',
+    description:
+      'Reformat the session transcript as structured Markdown with headings, lists, and emphasis. Batch only.',
+    mode: 'batch',
+    prompt: MARKDOWN_FORMATTING_PROMPT,
+  },
+  {
+    id: 'brain-dump',
+    label: 'Brain dump organizer',
+    description:
+      'Cluster a rambling brain dump into themes, action items, questions, and decisions. Batch only.',
+    mode: 'batch',
+    prompt: BRAIN_DUMP_PROMPT,
+  },
+  {
+    id: 'voice-commands',
+    label: 'Voice commands (experimental)',
+    description:
+      'Mix speech with inline directives ("make this a list", "summarize the above") and the model applies them. Batch only, experimental.',
+    mode: 'batch',
+    prompt: VOICE_COMMANDS_PROMPT,
   },
 ];
 

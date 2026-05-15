@@ -224,10 +224,10 @@ export class LocalSttSettingTab extends PluginSettingTab {
       placeholder: 'Use the shared default model store',
     });
 
-    const hideCleanupSetting = new Setting(advancedSection)
-      .setName('Hide local AI cleanup')
-      .setDesc('Hide Ollama cleanup controls in the Local Transcript sidebar.');
-    hideCleanupSetting.addToggle((toggle) => {
+    const disableLlmSetting = new Setting(advancedSection)
+      .setName('Disable LLM features')
+      .setDesc('Turn off Ollama cleanup and remove the LLM cleanup sidebar.');
+    disableLlmSetting.addToggle((toggle) => {
       toggle.setValue(!this.dependencies.getSettings().llmFeaturesEnabled);
       toggle.onChange(async (value) => {
         await this.access.persistOne('llmFeaturesEnabled', !value);

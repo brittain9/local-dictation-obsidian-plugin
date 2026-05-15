@@ -29,13 +29,16 @@ export const LOCAL_TRANSCRIPT_VIEW_TYPE = 'local-transcript-sidebar';
 const LOCAL_TRANSCRIPT_VIEW_TITLE = 'Local Transcript';
 const LOCAL_TRANSCRIPT_VIEW_ICON = 'audio-lines';
 const HEADING_TOOLTIP =
-  'Uses a local Ollama model to clean up punctuation, capitalization, paragraphs, and terminology before insertion. Transcription stays local.';
+  'Uses a local Ollama model to clean up punctuation, capitalization, paragraphs, and terminology. Transcription stays local.';
 const STYLE_PICKER_TOOLTIP =
-  'A writing style is a saved cleanup prompt. Pick a built-in style or a saved style. Editing the prompt switches to Custom.';
+  'A preset is a saved cleanup prompt. Pick a built-in preset or a saved preset. Editing the prompt switches to Custom. The suffix after each preset name shows which cleanup mode it is meant for: (per phrase) runs after every spoken phrase, (batch) runs once when you stop, (either) works in both — picking a (per phrase) or (batch) preset will switch the cleanup mode for you.';
 const CUSTOM_STYLE_VALUE = '__custom__';
 
-const CLEANUP_MODE_OPTIONS: ReadonlyArray<{ label: string; value: LlmPostprocessMode }> = [
-  { label: 'Off', value: 'off' },
+type EnabledLlmPostprocessMode = Exclude<LlmPostprocessMode, 'off'>;
+
+const DEFAULT_ENABLED_CLEANUP_MODE: EnabledLlmPostprocessMode = 'per_utterance';
+
+const CLEANUP_MODE_OPTIONS: ReadonlyArray<{ label: string; value: EnabledLlmPostprocessMode }> = [
   { label: 'After each phrase', value: 'per_utterance' },
   { label: 'All at once on stop', value: 'batch' },
 ];
@@ -54,6 +57,7 @@ export class LocalTranscriptView extends ItemView {
   private focusedInput: HTMLElement | null = null;
   private models: OllamaModelOption[] = [];
   private ollamaStatus = 'Ollama status unknown.';
+  private lastEnabledMode: EnabledLlmPostprocessMode = DEFAULT_ENABLED_CLEANUP_MODE;
   private queueDepth = 0;
   private releaseSidecarSubscription: (() => void) | null = null;
   private sessionState: SessionState = 'idle';
@@ -98,76 +102,25 @@ export class LocalTranscriptView extends ItemView {
     contentEl.empty();
     contentEl.addClass('local-transcript-sidebar');
 
-    appendInfoTooltip(
-      new Setting(contentEl).setHeading().setName('Local AI cleanup (experimental)'),
-      HEADING_TOOLTIP,
-    );
-
     if (!settings.llmFeaturesEnabled) {
-      contentEl.createEl('p', {
-        cls: 'local-transcript-muted',
-        text: 'Local AI cleanup is hidden. Re-enable in plugin settings -> Advanced.',
-      });
       return;
     }
 
-    this.renderCleanupMode(contentEl, settings);
+    if (settings.llmPostprocessMode !== 'off') {
+      this.lastEnabledMode = settings.llmPostprocessMode;
+    }
+
+    const cleanupGroup = this.createSettingGroup(contentEl, 'LLM cleanup', HEADING_TOOLTIP);
+
+    this.renderCleanupToggle(cleanupGroup, settings);
+    this.renderCleanupMode(cleanupGroup, settings);
 
     if (settings.llmPostprocessMode === 'off') {
       return;
     }
 
-    contentEl.createEl('p', {
-      cls: 'local-transcript-status',
-      text: this.ollamaStatus,
-    });
-
-    new Setting(contentEl)
-      .setName('Ollama models')
-      .setDesc('Re-query Ollama for installed chat models.')
-      .addButton((button) => {
-        button.setButtonText('Refresh models');
-        button.onClick(async () => {
-          await this.refreshModels();
-        });
-      });
-
-    new Setting(contentEl)
-      .setName('Model')
-      .setDesc(
-        'The Ollama model used to clean transcripts. Smaller models are faster but less reliable.',
-      )
-      .addDropdown((dropdown) => {
-        dropdown.addOption('', 'Select a model');
-        for (const model of this.models) {
-          dropdown.addOption(model.id, model.displayName);
-        }
-        dropdown.setValue(settings.llmPostprocessModel);
-        dropdown.onChange(async (value) => {
-          const nextModel = value.trim();
-          const nextSettings = {
-            ...this.dependencies.getSettings(),
-            llmPostprocessModel: nextModel,
-          };
-          await this.persistSettings(nextSettings);
-          if (nextModel.length > 0) {
-            void this.dependencies.ollamaClient
-              .prewarmModel(nextModel, nextSettings.llmPostprocessKeepAlive)
-              .catch((error: unknown) => {
-                this.dependencies.logger?.warn('llm', 'Ollama pre-warm failed', error);
-              });
-          }
-        });
-      });
-
-    this.renderStylePicker(contentEl, settings);
-
-    if (settings.llmPostprocessMode === 'batch') {
-      contentEl.createEl('p', {
-        cls: 'local-transcript-muted',
-        text: 'Raw text appears as you speak; cleanup runs once when you stop.',
-      });
-    }
+    this.renderStylePicker(cleanupGroup, settings);
+    this.renderModelPicker(cleanupGroup, settings);
 
     const advanced = contentEl.createEl('details', { cls: 'local-transcript-advanced' });
     advanced.createEl('summary', { text: 'Advanced' });
@@ -180,14 +133,7 @@ export class LocalTranscriptView extends ItemView {
     this.renderCustomizeStyleSection(advanced, settings);
     this.renderSkipSection(advanced, settings);
     this.renderGenerationSection(advanced, settings);
-    this.renderOutputSection(advanced, settings);
-
-    new Setting(advanced).addButton((button) => {
-      button.setButtonText('Reset LLM defaults');
-      button.onClick(async () => {
-        await this.persistSettings(resetLlmPostprocessDefaults(this.dependencies.getSettings()));
-      });
-    });
+    this.renderDiagnosticsSection(advanced, settings);
 
     if (settings.llmPostprocessMode === 'per_utterance' && inFlightCount > 0) {
       const word = inFlightCount === 1 ? 'utterance' : 'utterances';
@@ -198,26 +144,48 @@ export class LocalTranscriptView extends ItemView {
     }
   }
 
+  private renderCleanupToggle(parent: HTMLElement, settings: PluginSettings): void {
+    const enabled = settings.llmPostprocessMode !== 'off';
+    new Setting(parent)
+      .setName('Cleanup')
+      .setDesc(enabled ? 'LLM cleanup is on.' : 'Raw Whisper text is inserted directly.')
+      .addToggle((toggle) => {
+        toggle.setValue(enabled);
+        toggle.onChange(async (value) => {
+          if (!value && this.dependencies.getSettings().llmPostprocessMode !== 'off') {
+            this.lastEnabledMode = this.dependencies.getSettings()
+              .llmPostprocessMode as EnabledLlmPostprocessMode;
+          }
+          await this.saveField('llmPostprocessMode', value ? this.lastEnabledMode : 'off');
+        });
+      });
+  }
+
   private renderCleanupMode(parent: HTMLElement, settings: PluginSettings): void {
+    if (settings.llmPostprocessMode === 'off') {
+      return;
+    }
+
     const setting = new Setting(parent)
       .setName('Cleanup mode')
-      .setDesc('Choose when Ollama cleanup runs.')
+      .setDesc('Choose when cleanup runs.')
       .addDropdown((dropdown) => {
         for (const option of CLEANUP_MODE_OPTIONS) {
           dropdown.addOption(option.value, option.label);
         }
         dropdown.setValue(settings.llmPostprocessMode);
         dropdown.onChange(async (value) => {
-          if (!isLlmPostprocessMode(value)) {
+          if (!isLlmPostprocessMode(value) || value === 'off') {
             return;
           }
+          this.lastEnabledMode = value;
           await this.saveField('llmPostprocessMode', value);
         });
       });
 
     appendInfoTooltip(
       setting,
-      'Off inserts raw Whisper text. After each phrase cleans each utterance live. All at once inserts raw text while recording and replaces the session after stop.',
+      'When the Ollama cleanup runs. "After each phrase" (per-utterance) — every spoken phrase is sent to the model as soon as Whisper finishes transcribing it, and the cleaned version replaces the raw text in-line. Best for short prompts that fix one phrase at a time (filler, punctuation). "All at once on stop" (batch) — raw Whisper text is inserted while you talk, then on stop the whole session is sent to the model and replaced with the cleaned result. Required for prompts that need the full context (summary, reformatting, markdown structure).',
     );
   }
 
@@ -231,11 +199,11 @@ export class LocalTranscriptView extends ItemView {
     const activeRef = activeOption?.ref ?? CUSTOM_STYLE_VALUE;
 
     const description = isCustom
-      ? 'Custom - current prompt does not match any saved style.'
+      ? 'Custom - current prompt does not match any saved preset.'
       : `${activeOption.description}${describeMode(activeOption.mode)}`;
 
     const setting = new Setting(parent)
-      .setName('Writing style')
+      .setName('Preset')
       .setDesc(description)
       .addDropdown((dropdown) => {
         for (const option of styleOptions) {
@@ -259,7 +227,7 @@ export class LocalTranscriptView extends ItemView {
 
     if (showSaveAs) {
       setting.addButton((button) => {
-        button.setButtonText('Save as style');
+        button.setButtonText('Save preset');
         button.onClick(() => {
           this.openSaveStyleModal();
         });
@@ -275,6 +243,48 @@ export class LocalTranscriptView extends ItemView {
         });
       });
     }
+  }
+
+  private renderModelPicker(parent: HTMLElement, settings: PluginSettings): void {
+    const selectedModel = settings.llmPostprocessModel;
+    const hasSelectedModel =
+      selectedModel.length > 0 && this.models.some((model) => model.id === selectedModel);
+
+    const setting = new Setting(parent)
+      .setName('Model')
+      .setDesc('The Ollama model used to clean transcripts.')
+      .addDropdown((dropdown) => {
+        dropdown.addOption('', 'Select a model');
+        if (selectedModel.length > 0 && !hasSelectedModel) {
+          dropdown.addOption(selectedModel, selectedModel);
+        }
+        for (const model of this.models) {
+          dropdown.addOption(model.id, model.displayName);
+        }
+        dropdown.setValue(selectedModel);
+        dropdown.onChange(async (value) => {
+          const nextModel = value.trim();
+          await this.saveField('llmPostprocessModel', nextModel);
+          if (nextModel.length > 0) {
+            void this.dependencies.ollamaClient.prewarmModel(nextModel).catch((error: unknown) => {
+              this.dependencies.logger?.warn('llm', 'Ollama pre-warm failed', error);
+            });
+          }
+        });
+      })
+      .addButton((button) => {
+        button
+          .setIcon('refresh-cw')
+          .setTooltip('Refresh Ollama models')
+          .onClick(async () => {
+            await this.refreshModels();
+          });
+      });
+
+    appendInfoTooltip(
+      setting,
+      'Refresh re-queries Ollama for installed chat models. Smaller models are faster but less reliable.',
+    );
   }
 
   private async applyStyleByRef(ref: string): Promise<void> {
@@ -314,7 +324,7 @@ export class LocalTranscriptView extends ItemView {
     const settings = this.dependencies.getSettings();
     if (settings.llmPostprocessUserPresets.length >= LLM_USER_PRESET_MAX_COUNT) {
       throw new Error(
-        `You can save up to ${LLM_USER_PRESET_MAX_COUNT} writing styles. Delete one before saving a new style.`,
+        `You can save up to ${LLM_USER_PRESET_MAX_COUNT} presets. Delete one before saving a new preset.`,
       );
     }
 
@@ -358,12 +368,13 @@ export class LocalTranscriptView extends ItemView {
   }
 
   private renderContextSection(parent: HTMLElement, settings: PluginSettings): void {
-    appendInfoTooltip(
-      new Setting(parent).setHeading().setName('Context'),
+    const items = this.createSettingGroup(
+      parent,
+      'Context',
       'Bounded slice of recent note text and prior utterances fed to the model so cleanup matches existing style and terminology.',
     );
     this.addNumberSetting(
-      parent,
+      items,
       'Note context chars',
       'Chars of note text',
       settings.llmPostprocessNoteContextChars,
@@ -373,7 +384,7 @@ export class LocalTranscriptView extends ItemView {
 
     if (settings.llmPostprocessMode !== 'batch') {
       this.addNumberSetting(
-        parent,
+        items,
         'Prior utterances',
         'Recent utterances kept',
         settings.llmPostprocessPriorUtterancesN,
@@ -383,7 +394,7 @@ export class LocalTranscriptView extends ItemView {
     }
 
     this.addNumberSetting(
-      parent,
+      items,
       'Total context cap',
       'Hard cap on context chars',
       settings.llmPostprocessTotalContextCap,
@@ -392,7 +403,7 @@ export class LocalTranscriptView extends ItemView {
     );
 
     if (Math.ceil(settings.llmPostprocessTotalContextCap / 4) >= 4_000) {
-      parent.createEl('p', {
+      items.createEl('p', {
         cls: 'local-transcript-muted',
         text: 'Large context windows can slow local models and reduce cleanup quality.',
       });
@@ -400,12 +411,13 @@ export class LocalTranscriptView extends ItemView {
   }
 
   private renderCustomizeStyleSection(parent: HTMLElement, settings: PluginSettings): void {
-    appendInfoTooltip(
-      new Setting(parent).setHeading().setName('Customize style'),
-      'Edit the prompt for the current writing style. Any change switches the style picker to Custom.',
+    const items = this.createSettingGroup(
+      parent,
+      'Prompt',
+      'Edit the prompt for the current preset. Any change switches the preset picker to Custom.',
     );
     this.addTextAreaSetting(
-      parent,
+      items,
       'Prompt',
       'Cleanup instructions',
       settings.llmPostprocessPrompt,
@@ -418,12 +430,13 @@ export class LocalTranscriptView extends ItemView {
   }
 
   private renderSkipSection(parent: HTMLElement, settings: PluginSettings): void {
-    appendInfoTooltip(
-      new Setting(parent).setHeading().setName('Skip gates'),
+    const items = this.createSettingGroup(
+      parent,
+      'Skip gates',
       'Conditions that bypass the LLM so short utterances pass straight through to the note.',
     );
     this.addNumberSetting(
-      parent,
+      items,
       'Min words',
       'Skip below N words',
       settings.llmPostprocessSkipMinWords,
@@ -433,42 +446,27 @@ export class LocalTranscriptView extends ItemView {
   }
 
   private renderGenerationSection(parent: HTMLElement, settings: PluginSettings): void {
-    appendInfoTooltip(
-      new Setting(parent).setHeading().setName('Generation'),
-      'Ollama sampling parameters controlling output randomness and how long the model stays loaded.',
+    const items = this.createSettingGroup(
+      parent,
+      'Generation',
+      'Ollama sampling parameters controlling output randomness.',
     );
     this.addNumberSetting(
-      parent,
+      items,
       'Temperature',
       'Sampling randomness',
       settings.llmPostprocessTemperature,
       (value) => this.saveField('llmPostprocessTemperature', value, { rerender: false }),
       'Sampling randomness. 0 is deterministic; higher is more varied.',
     );
-    const keepAliveSetting = new Setting(parent)
-      .setName('Keep alive')
-      .setDesc('Model load duration (e.g. 30m)')
-      .addText((text) => {
-        text.setValue(settings.llmPostprocessKeepAlive);
-        this.trackInputFocus(text.inputEl);
-        text.onChange(async (value) => {
-          await this.saveField('llmPostprocessKeepAlive', value, { rerender: false });
-        });
-      });
-    appendInfoTooltip(
-      keepAliveSetting,
-      'How long Ollama keeps the model loaded after each request (e.g. 30m, 1h).',
-    );
   }
 
-  private renderOutputSection(parent: HTMLElement, settings: PluginSettings): void {
-    appendInfoTooltip(
-      new Setting(parent).setHeading().setName('Output'),
-      'How the cleaned and raw transcripts are surfaced in the note.',
-    );
-    const showRawSetting = new Setting(parent)
+  private renderDiagnosticsSection(parent: HTMLElement, settings: PluginSettings): void {
+    const items = this.createSettingGroup(parent, 'Diagnostics');
+
+    const showRawSetting = new Setting(items)
       .setName('Show raw beneath LLM output')
-      .setDesc('Append raw below cleaned')
+      .setDesc('Keep the original Whisper transcript visible in a collapsible callout.')
       .addToggle((toggle) => {
         toggle.setValue(settings.llmPostprocessShowRawBelow);
         toggle.onChange(async (value) => {
@@ -477,8 +475,27 @@ export class LocalTranscriptView extends ItemView {
       });
     appendInfoTooltip(
       showRawSetting,
-      'Append the original transcript below the cleaned version in the note.',
+      'Inserts the raw Whisper text below the cleaned text inside a collapsible "raw" callout. After each phrase: a small raw callout is appended under every cleaned phrase. All at once on stop: one combined raw callout is appended below the cleaned session text. Useful while iterating on a cleanup prompt so you can compare the model output against what was actually said.',
     );
+
+    new Setting(items)
+      .setName('Ollama status')
+      .setDesc(this.ollamaStatus)
+      .addButton((button) => {
+        button.setButtonText('Reset LLM defaults');
+        button.onClick(async () => {
+          await this.persistSettings(resetLlmPostprocessDefaults(this.dependencies.getSettings()));
+        });
+      });
+  }
+
+  private createSettingGroup(parent: HTMLElement, heading: string, tooltip?: string): HTMLDivElement {
+    const group = parent.createDiv({ cls: 'setting-group' });
+    const headingSetting = new Setting(group).setName(heading).setHeading();
+    if (tooltip !== undefined) {
+      appendInfoTooltip(headingSetting, tooltip);
+    }
+    return group.createDiv({ cls: 'setting-items' });
   }
 
   private addNumberSetting(
@@ -636,7 +653,7 @@ function describeMode(mode: LlmPresetMode | undefined): string {
   if (mode === 'batch') {
     return ' Runs once on stop.';
   }
-  return '';
+  return ' Works in either cleanup mode.';
 }
 
 function formatStyleOptionLabel(label: string, mode: LlmPresetMode | undefined): string {
@@ -646,5 +663,5 @@ function formatStyleOptionLabel(label: string, mode: LlmPresetMode | undefined):
   if (mode === 'batch') {
     return `${label} (batch)`;
   }
-  return label;
+  return `${label} (either)`;
 }

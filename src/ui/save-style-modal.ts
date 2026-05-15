@@ -41,13 +41,13 @@ export class SaveStyleModal extends Modal {
   }
 
   override onOpen(): void {
-    this.titleEl.setText('Save writing style');
+    this.titleEl.setText('Save preset');
     this.contentEl.empty();
 
     if (this.options.reachedMaxCount) {
       this.contentEl.createEl('p', {
         cls: 'local-stt-save-style__error',
-        text: `You can save up to ${LLM_USER_PRESET_MAX_COUNT} writing styles. Delete one before saving a new style.`,
+        text: `You can save up to ${LLM_USER_PRESET_MAX_COUNT} presets. Delete one before saving a new preset.`,
       });
       new Setting(this.contentEl).addButton((button) => {
         button.setButtonText('Close').onClick(() => {
@@ -58,7 +58,7 @@ export class SaveStyleModal extends Modal {
     }
 
     this.contentEl.createEl('p', {
-      text: 'Save the current prompt as a reusable writing style. The Ollama model and other settings are not included.',
+      text: 'Save the current prompt as a reusable preset. The Ollama model and other settings are not included.',
     });
 
     new Setting(this.contentEl).setName('Name').addText((text) => {
@@ -69,7 +69,7 @@ export class SaveStyleModal extends Modal {
     });
 
     new Setting(this.contentEl).setName('Description (optional)').addTextArea((text) => {
-      text.setPlaceholder('When to use this style');
+      text.setPlaceholder('When to use this preset');
       text.inputEl.rows = 3;
       text.inputEl.maxLength = LLM_USER_PRESET_MAX_DESCRIPTION_CHARS;
       this.descriptionInput = text.inputEl;
@@ -77,7 +77,9 @@ export class SaveStyleModal extends Modal {
 
     new Setting(this.contentEl)
       .setName('Cleanup mode')
-      .setDesc('Switch to this mode when the style is picked. Choose Any to keep the current mode.')
+      .setDesc(
+        'Switch to this mode when the preset is picked. Choose Any to keep the current mode.',
+      )
       .addDropdown((dropdown) => {
         for (const option of MODE_OPTIONS) {
           dropdown.addOption(option.value, option.label);
@@ -122,7 +124,7 @@ export class SaveStyleModal extends Modal {
     const description = (this.descriptionInput?.value ?? '').trim();
 
     if (label.length === 0) {
-      this.showError('Enter a name for this style.');
+      this.showError('Enter a name for this preset.');
       return;
     }
 
@@ -130,7 +132,7 @@ export class SaveStyleModal extends Modal {
       (existing) => existing.toLowerCase() === label.toLowerCase(),
     );
     if (duplicate) {
-      this.showError('A writing style with that name already exists.');
+      this.showError('A preset with that name already exists.');
       return;
     }
 
@@ -138,7 +140,7 @@ export class SaveStyleModal extends Modal {
       await this.options.onSave({ description, label, mode: this.mode });
       this.close();
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Could not save the style.';
+      const message = error instanceof Error ? error.message : 'Could not save the preset.';
       this.showError(message);
     }
   }

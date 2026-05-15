@@ -184,9 +184,26 @@ export class Session {
       .trim();
   }
 
+  readCurrentSessionText(): string {
+    if (this.surface === null || this.rawSessionEntries.length === 0) {
+      return '';
+    }
+
+    const range = this.resolveSessionRange();
+    if (range === null) {
+      return '';
+    }
+
+    return (this.surface.readRange(range) ?? '').trim();
+  }
+
   replaceSessionRangeWithCleaned(
     cleanText: string,
-    options: { showRawBelow?: boolean } = {},
+    options: {
+      allowEditedRange?: boolean;
+      rawTextForCallout?: string;
+      showRawBelow?: boolean;
+    } = {},
   ): boolean {
     if (this.surface === null || this.rawSessionEntries.length === 0) {
       return false;
@@ -198,12 +215,20 @@ export class Session {
     }
 
     const expectedText = this.expectedSessionText();
-    if (this.surface.readRange(range) !== expectedText) {
+    if (options.allowEditedRange !== true && this.surface.readRange(range) !== expectedText) {
       return false;
     }
 
-    const replacement = this.buildCleanedReplacement(cleanText, options.showRawBelow === true);
-    const result = this.surface.rewriteRegion(range, replacement, []);
+    const replacement = this.buildCleanedReplacement(
+      cleanText,
+      options.showRawBelow === true,
+      options.rawTextForCallout,
+    );
+    const result = this.surface.rewriteRegion(
+      range,
+      replacement,
+      options.allowEditedRange === true ? this.rawSessionEntries : [],
+    );
 
     return result.kind === 'rewritten';
   }
@@ -493,18 +518,23 @@ export class Session {
       .join('');
   }
 
-  private buildCleanedReplacement(cleanText: string, showRawBelow: boolean): string {
+  private buildCleanedReplacement(
+    cleanText: string,
+    showRawBelow: boolean,
+    rawTextForCallout?: string,
+  ): string {
+    const firstPrefix = this.rawSessionEntries[0]?.projectedPrefix ?? '';
     const trimmed = cleanText.trim();
     if (!showRawBelow) {
-      return trimmed;
+      return `${firstPrefix}${trimmed}`;
     }
 
-    const rawText = this.joinRawSessionText();
+    const rawText = (rawTextForCallout ?? this.joinRawSessionText()).trim();
     if (rawText.length === 0) {
-      return trimmed;
+      return `${firstPrefix}${trimmed}`;
     }
 
-    return `${trimmed}\n\n${formatRawPostprocessCallout(rawText)}`;
+    return `${firstPrefix}${trimmed}\n\n${formatRawPostprocessCallout(rawText)}`;
   }
 }
 

@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 
 import type { AudioCaptureStream } from '../audio/audio-capture-stream';
 import type { NotePlacementOptions } from '../editor/note-surface';
-import type { OllamaClient } from '../llm/ollama-client';
+import { OLLAMA_KEEP_ALIVE, type OllamaClient } from '../llm/ollama-client';
 import { formatBatchUserMessage } from '../llm/templates';
 import type { Session } from '../session/session';
 import type { StageId } from '../session/session-journal';
@@ -37,7 +37,7 @@ type ControllerSession = Pick<
   Session,
   | 'acceptTranscript'
   | 'dispose'
-  | 'joinRawSessionText'
+  | 'readCurrentSessionText'
   | 'readNoteGlossary'
   | 'readNoteText'
   | 'readPriorUtterances'
@@ -51,7 +51,6 @@ interface ActiveSessionSnapshot {
   listeningMode: PluginSettings['listeningMode'];
   llmFeaturesEnabled: PluginSettings['llmFeaturesEnabled'];
   llmPostprocess: LlmPostprocessConfig | null;
-  llmPostprocessKeepAlive: PluginSettings['llmPostprocessKeepAlive'];
   llmPostprocessMode: LlmPostprocessMode;
   llmPostprocessModel: PluginSettings['llmPostprocessModel'];
   llmPostprocessNoteContextChars: PluginSettings['llmPostprocessNoteContextChars'];
@@ -196,7 +195,6 @@ export class DictationSessionController {
       listeningMode: settings.listeningMode,
       llmFeaturesEnabled: settings.llmFeaturesEnabled,
       llmPostprocess: resolveLlmPostprocessSnapshot(settings),
-      llmPostprocessKeepAlive: settings.llmPostprocessKeepAlive,
       llmPostprocessMode: settings.llmPostprocessMode,
       llmPostprocessModel: settings.llmPostprocessModel,
       llmPostprocessNoteContextChars: settings.llmPostprocessNoteContextChars,
@@ -444,9 +442,15 @@ export class DictationSessionController {
     session: ControllerSession,
   ): Promise<void> {
     const model = snapshot.llmPostprocessModel.trim();
-    const sessionTranscript = session.joinRawSessionText();
+    const sessionTranscript = session.readCurrentSessionText();
 
-    if (model.length === 0 || sessionTranscript.length === 0) {
+    if (model.length === 0) {
+      this.dependencies.logger?.debug('llm', 'batch cleanup skipped: no Ollama model selected');
+      return;
+    }
+
+    if (sessionTranscript.length === 0) {
+      this.dependencies.logger?.debug('llm', 'batch cleanup skipped: no transcript text');
       return;
     }
 
@@ -460,28 +464,45 @@ export class DictationSessionController {
     const userMessage = formatBatchUserMessage(noteContext, sessionTranscript);
 
     try {
+      this.dependencies.logger?.debug('llm', 'batch cleanup started', {
+        chars: sessionTranscript.length,
+        model,
+      });
       const cleanText = await this.dependencies.ollamaClient.cleanup({
         abortSignal: abortController.signal,
-        keepAlive: snapshot.llmPostprocessKeepAlive,
         model,
         prompt: snapshot.llmPostprocessPrompt,
         temperature: snapshot.llmPostprocessTemperature,
         userMessage,
       });
+      if (cleanText.trim().length === 0) {
+        this.dependencies.logger?.debug('llm', 'batch cleanup returned empty text');
+        return;
+      }
 
       const replaced = session.replaceSessionRangeWithCleaned(cleanText, {
+        allowEditedRange: true,
+        rawTextForCallout: sessionTranscript,
         showRawBelow: snapshot.llmPostprocessShowRawBelow,
       });
       if (!replaced) {
-        this.dependencies.notice('Cleanup skipped — text was edited during the session.');
+        this.dependencies.logger?.debug('llm', 'batch cleanup replacement skipped');
+        return;
       }
+
+      this.dependencies.logger?.debug('llm', 'batch cleanup complete', {
+        chars: cleanText.trim().length,
+      });
     } catch (error) {
       if (abortController.signal.aborted) {
         return;
       }
 
-      this.dependencies.logger?.warn('llm', 'batch cleanup failed', error);
-      this.dependencies.notice('Cleanup failed; raw transcript kept.');
+      this.dependencies.logger?.debug(
+        'llm',
+        `batch cleanup failed; raw transcript kept: ${formatErrorMessage(error)}`,
+        error,
+      );
     } finally {
       if (this.batchCleanupAbortController === abortController) {
         this.batchCleanupAbortController = null;
@@ -801,7 +822,7 @@ function resolveLlmPostprocessSnapshot(settings: PluginSettings): LlmPostprocess
   }
 
   return {
-    keepAlive: settings.llmPostprocessKeepAlive,
+    keepAlive: OLLAMA_KEEP_ALIVE,
     model,
     noteContextChars: settings.llmPostprocessNoteContextChars,
     priorUtterancesN: settings.llmPostprocessPriorUtterancesN,

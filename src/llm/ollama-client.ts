@@ -6,6 +6,7 @@ const OLLAMA_HOST = '127.0.0.1';
 const OLLAMA_PORT = 11434;
 const PREFLIGHT_TIMEOUT_MS = 3_000;
 const CLEANUP_TIMEOUT_MS = 60_000;
+export const OLLAMA_KEEP_ALIVE = '30m';
 const NON_CHAT_MODEL_PATTERN = /embed|embedding|bge|nomic|clip/i;
 
 interface OllamaClientOptions {
@@ -36,13 +37,12 @@ export class OllamaClientError extends Error {
 export interface OllamaClient {
   cleanup(options: OllamaCleanupOptions): Promise<string>;
   listOllamaModels(): Promise<OllamaModelOption[]>;
-  prewarmModel(modelId: string, keepAlive: string): Promise<void>;
+  prewarmModel(modelId: string): Promise<void>;
   probeOllama(): Promise<void>;
 }
 
 export interface OllamaCleanupOptions {
   abortSignal?: AbortSignal;
-  keepAlive: string;
   model: string;
   prompt: string;
   temperature: number;
@@ -56,7 +56,7 @@ export function createOllamaClient(options: OllamaClientOptions = {}): OllamaCli
   return {
     cleanup: (cleanupOptions) => cleanup(cleanupOptions, { host, port }),
     listOllamaModels: () => listOllamaModels({ host, port }),
-    prewarmModel: (modelId, keepAlive) => prewarmModel(modelId, keepAlive, { host, port }),
+    prewarmModel: (modelId) => prewarmModel(modelId, { host, port }),
     probeOllama: () => probeOllama({ host, port }),
   };
 }
@@ -88,17 +88,13 @@ async function listOllamaModels(options: OllamaClientOptions = {}): Promise<Olla
     .sort((left, right) => left.displayName.localeCompare(right.displayName));
 }
 
-async function prewarmModel(
-  modelId: string,
-  keepAlive: string,
-  options: OllamaClientOptions = {},
-): Promise<void> {
+async function prewarmModel(modelId: string, options: OllamaClientOptions = {}): Promise<void> {
   try {
     await requestJson(
       'POST',
       '/api/chat',
       {
-        keep_alive: keepAlive,
+        keep_alive: OLLAMA_KEEP_ALIVE,
         messages: [{ content: 'ok', role: 'user' }],
         model: modelId,
         options: { num_predict: 1 },
@@ -120,7 +116,7 @@ async function cleanup(
     'POST',
     '/api/chat',
     {
-      keep_alive: cleanupOptions.keepAlive,
+      keep_alive: OLLAMA_KEEP_ALIVE,
       messages: [
         { content: cleanupOptions.prompt, role: 'system' },
         { content: cleanupOptions.userMessage, role: 'user' },

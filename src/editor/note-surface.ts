@@ -268,7 +268,11 @@ export class NoteSurface {
     }
 
     for (const span of spansInRange) {
-      if (span.latched !== undefined && !preserved.has(span.utteranceId)) {
+      if (preserved.has(span.utteranceId)) {
+        continue;
+      }
+
+      if (span.latched !== undefined) {
         return { kind: 'denied', reason: { kind: span.latched } };
       }
 

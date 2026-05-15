@@ -561,6 +561,7 @@
 .local-transcript-advanced > summary {
   cursor: pointer;
   padding: 0.25em 0;
+  margin-bottom: 0.4em;
   color: var(--text-muted);
   font-weight: 500;
 }

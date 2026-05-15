@@ -63,6 +63,10 @@ Trunk-based development. Short-lived feature branches merged via PR. `main` stay
 
 Use `PLANS.md` only for active large-change work. Do not keep stale plan text as a second source of truth.
 
+## Dev vault
+
+Build and dev-install target this vault: `C:\Users\alex\Documents\stt-test-vault` (used by `npm run install:dev`).
+
 ## Architecture
 
 The repository is split into two runtime boundaries:

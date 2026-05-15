@@ -74,11 +74,11 @@ describe('Ollama client', () => {
     });
 
     await expect(
-      createOllamaClient({ port }).prewarmModel('llama3.2:latest', '1h'),
+      createOllamaClient({ port }).prewarmModel('llama3.2:latest'),
     ).resolves.toBeUndefined();
     expect(bodies).toEqual([
       {
-        keep_alive: '1h',
+        keep_alive: '30m',
         messages: [{ content: 'ok', role: 'user' }],
         model: 'llama3.2:latest',
         options: { num_predict: 1 },
@@ -97,7 +97,6 @@ describe('Ollama client', () => {
 
     await expect(
       createOllamaClient({ port }).cleanup({
-        keepAlive: '30m',
         model: 'llama3.2:latest',
         prompt: 'Clean this.',
         temperature: 0.2,
@@ -126,7 +125,6 @@ describe('Ollama client', () => {
     const controller = new AbortController();
     const promise = createOllamaClient({ port }).cleanup({
       abortSignal: controller.signal,
-      keepAlive: '30m',
       model: 'llama3.2:latest',
       prompt: 'Clean this.',
       temperature: 0.2,
