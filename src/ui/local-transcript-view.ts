@@ -1,10 +1,12 @@
 import { ItemView, Notice, Setting, type WorkspaceLeaf } from 'obsidian';
 
 import type { OllamaClient, OllamaModelOption } from '../llm/ollama-client';
+import { DEFAULT_LLM_PRESET_ID, LLM_PRESETS, type LlmPresetId } from '../llm/presets';
 import { type PluginSettings, resetLlmPostprocessDefaults } from '../settings/plugin-settings';
 import type { PluginLogger } from '../shared/plugin-logger';
 import type { SessionState, SidecarEvent } from '../sidecar/protocol';
 import type { SidecarConnection } from '../sidecar/sidecar-connection';
+import { appendInfoTooltip } from './info-tooltip';
 
 export const LOCAL_TRANSCRIPT_VIEW_TYPE = 'local-transcript-sidebar';
 const LOCAL_TRANSCRIPT_VIEW_TITLE = 'Local Transcript';
@@ -13,7 +15,7 @@ const OLLAMA_ENABLE_FAILURE_NOTICE = 'Start Ollama, then enable LLM post-process
 const MODEL_REQUIRED_NOTICE = 'Select an Ollama model, then enable LLM post-processing again.';
 const MODEL_MISSING_NOTICE =
   'Refresh models, select an installed model, then enable LLM post-processing again.';
-const EXPECTATIONS_TEXT =
+const HEADING_TOOLTIP =
   'Sends each transcribed utterance to a local Ollama model to clean up punctuation, capitalization, paragraphs, and terminology before insertion. Disable if quality drops.';
 
 interface LocalTranscriptViewDependencies {
@@ -26,9 +28,11 @@ interface LocalTranscriptViewDependencies {
 }
 
 export class LocalTranscriptView extends ItemView {
+  private advancedOpen = false;
   private focusedInput: HTMLElement | null = null;
   private models: OllamaModelOption[] = [];
   private ollamaStatus = 'Ollama status unknown.';
+  private pendingPresetId: LlmPresetId = DEFAULT_LLM_PRESET_ID;
   private queueDepth = 0;
   private releaseSidecarSubscription: (() => void) | null = null;
   private sessionState: SessionState = 'idle';
@@ -74,11 +78,10 @@ export class LocalTranscriptView extends ItemView {
     contentEl.empty();
     contentEl.addClass('local-transcript-sidebar');
 
-    new Setting(contentEl).setHeading().setName('LLM post-processing (experimental)');
-    contentEl.createEl('p', {
-      cls: 'local-transcript-preamble',
-      text: EXPECTATIONS_TEXT,
-    });
+    appendInfoTooltip(
+      new Setting(contentEl).setHeading().setName('LLM post-processing (experimental)'),
+      HEADING_TOOLTIP,
+    );
 
     new Setting(contentEl)
       .setName('Enable')
@@ -131,13 +134,20 @@ export class LocalTranscriptView extends ItemView {
         });
       });
 
-    this.renderContextSection(contentEl, settings);
-    this.renderPromptSection(contentEl, settings);
-    this.renderSkipSection(contentEl, settings);
-    this.renderGenerationSection(contentEl, settings);
-    this.renderDisplaySection(contentEl, settings, timestampsEnabled);
+    const advanced = contentEl.createEl('details', { cls: 'local-transcript-advanced' });
+    advanced.createEl('summary', { text: 'Advanced' });
+    advanced.open = this.advancedOpen;
+    advanced.addEventListener('toggle', () => {
+      this.advancedOpen = advanced.open;
+    });
 
-    new Setting(contentEl).addButton((button) => {
+    this.renderContextSection(advanced, settings);
+    this.renderPromptSection(advanced, settings);
+    this.renderSkipSection(advanced, settings);
+    this.renderGenerationSection(advanced, settings);
+    this.renderOutputSection(advanced, settings, timestampsEnabled);
+
+    new Setting(advanced).addButton((button) => {
       button.setButtonText('Reset LLM defaults');
       button.onClick(async () => {
         await this.persistSettings(resetLlmPostprocessDefaults(this.dependencies.getSettings()));
@@ -145,42 +155,59 @@ export class LocalTranscriptView extends ItemView {
     });
 
     if (settings.llmPostprocessEnabled && inFlightCount > 0) {
+      const word = inFlightCount === 1 ? 'utterance' : 'utterances';
       contentEl.createEl('p', {
         cls: 'local-transcript-processing',
-        text: `Processing ${inFlightCount} utterance(s)...`,
+        text: `Cleaning ${inFlightCount} ${word}…`,
       });
     }
   }
 
   private renderContextSection(parent: HTMLElement, settings: PluginSettings): void {
-    new Setting(parent).setHeading().setName('Context');
+    appendInfoTooltip(
+      new Setting(parent).setHeading().setName('Context'),
+      'Bounded slice of recent note text, prior utterances, and glossary fed to the model so cleanup matches existing style and terminology.',
+    );
     this.addNumberSetting(
       parent,
       'Note context chars',
-      'Characters of surrounding note text fed to the model as context.',
+      'Chars of note text',
       settings.llmPostprocessNoteContextChars,
       (value) => this.saveField('llmPostprocessNoteContextChars', value, { rerender: false }),
+      'Characters of surrounding note text fed to the model as context.',
     );
     this.addNumberSetting(
       parent,
       'Prior utterances',
-      'Number of recent transcribed utterances included as conversation history.',
+      'Recent utterances kept',
       settings.llmPostprocessPriorUtterancesN,
       (value) => this.saveField('llmPostprocessPriorUtterancesN', value, { rerender: false }),
-    );
-    this.addNumberSetting(
-      parent,
-      'Glossary context chars',
-      'Characters from your glossary file included as context.',
-      settings.llmPostprocessGlossaryChars,
-      (value) => this.saveField('llmPostprocessGlossaryChars', value, { rerender: false }),
+      'Number of recent transcribed utterances included as conversation history.',
     );
     this.addNumberSetting(
       parent,
       'Total context cap',
-      'Hard cap on total context characters across note + utterances + glossary.',
+      'Hard cap on context chars',
       settings.llmPostprocessTotalContextCap,
       (value) => this.saveField('llmPostprocessTotalContextCap', value, { rerender: false }),
+      'Hard cap on total context characters across note + utterances + glossary.',
+    );
+    this.addTextAreaSetting(
+      parent,
+      'Glossary',
+      'Proper nouns and spellings',
+      settings.llmPostprocessGlossarySlot,
+      5,
+      (value) => this.saveField('llmPostprocessGlossarySlot', value, { rerender: false }),
+      'Proper nouns, names, and preferred spellings the model should preserve. Leave blank to omit.',
+    );
+    this.addNumberSetting(
+      parent,
+      'Glossary char cap',
+      'Max glossary chars',
+      settings.llmPostprocessGlossaryChars,
+      (value) => this.saveField('llmPostprocessGlossaryChars', value, { rerender: false }),
+      'Maximum characters of glossary text fed to the model. Longer glossaries are truncated.',
     );
 
     if (Math.ceil(settings.llmPostprocessTotalContextCap / 4) >= 4_000) {
@@ -192,63 +219,65 @@ export class LocalTranscriptView extends ItemView {
   }
 
   private renderPromptSection(parent: HTMLElement, settings: PluginSettings): void {
-    new Setting(parent).setHeading().setName('Prompt slots');
+    appendInfoTooltip(
+      new Setting(parent).setHeading().setName('Prompt'),
+      'Building blocks of the prompt sent to Ollama. The user prompt template combines system role, voice, glossary, and format hints with each utterance.',
+    );
+    this.renderPresetPicker(parent);
     this.addTextAreaSetting(
       parent,
-      'System slot',
-      'Sets the model role and the rules it must follow when rewriting.',
+      'System prompt',
+      'Model role + rules',
       settings.llmPostprocessSystemSlot,
       5,
       (value) => this.saveField('llmPostprocessSystemSlot', value, { rerender: false }),
+      'Sets the model role and the rules it must follow when rewriting.',
     );
     this.addTextAreaSetting(
       parent,
-      'Voice slot',
-      'Hints about the speaker voice and tone.',
+      'Voice & style',
+      'Speaker voice + tone',
       settings.llmPostprocessVoiceSlot,
       4,
       (value) => this.saveField('llmPostprocessVoiceSlot', value, { rerender: false }),
+      'Hints about the speaker voice and tone.',
     );
     this.addTextAreaSetting(
       parent,
-      'Glossary slot',
-      'Wraps the glossary text injected into the prompt.',
-      settings.llmPostprocessGlossarySlot,
-      5,
-      (value) => this.saveField('llmPostprocessGlossarySlot', value, { rerender: false }),
-    );
-    this.addTextAreaSetting(
-      parent,
-      'Format slot',
-      'Output format constraints (e.g. plain text, no markdown).',
+      'Output format',
+      'Output format constraints',
       settings.llmPostprocessFormatSlot,
       4,
       (value) => this.saveField('llmPostprocessFormatSlot', value, { rerender: false }),
+      'Output format constraints (e.g. plain text, no markdown).',
     );
     this.addTextAreaSetting(
       parent,
-      'User template',
-      'Per-utterance prompt with placeholders for context, prior text, glossary, and the raw transcript.',
+      'User prompt template',
+      'Per-utterance prompt',
       settings.llmPostprocessUserTemplate,
       12,
       (value) => this.saveField('llmPostprocessUserTemplate', value, { rerender: false }),
+      'Per-utterance prompt with placeholders for context, prior text, glossary, and the raw transcript.',
     );
   }
 
   private renderSkipSection(parent: HTMLElement, settings: PluginSettings): void {
-    new Setting(parent).setHeading().setName('Skip gates');
+    appendInfoTooltip(
+      new Setting(parent).setHeading().setName('Skip gates'),
+      'Conditions that bypass the LLM so short or high-confidence utterances pass straight through to the note.',
+    );
     this.addNumberSetting(
       parent,
       'Min words',
-      'Skip cleanup when the utterance has fewer words than this.',
+      'Skip below N words',
       settings.llmPostprocessSkipMinWords,
       (value) => this.saveField('llmPostprocessSkipMinWords', value, { rerender: false }),
+      'Skip cleanup when the utterance has fewer words than this.',
     );
-    new Setting(parent)
+    const logprobSetting = new Setting(parent)
       .setName('Skip if avg logprob above')
-      .setDesc(
-        'Skip cleanup when ASR confidence (average log-probability) is above this. Blank to never skip on confidence.',
-      )
+      .setDesc('Confidence threshold (blank = always run)')
       .addText((text) => {
         text.setValue(settings.llmPostprocessSkipIfAvgLogprobAbove?.toString() ?? '');
         this.trackInputFocus(text.inputEl);
@@ -261,34 +290,44 @@ export class LocalTranscriptView extends ItemView {
           );
         });
       });
+    appendInfoTooltip(
+      logprobSetting,
+      'Skip cleanup when ASR confidence (average log-probability) is above this. Blank to never skip on confidence.',
+    );
   }
 
   private renderGenerationSection(parent: HTMLElement, settings: PluginSettings): void {
-    new Setting(parent).setHeading().setName('Generation');
+    appendInfoTooltip(
+      new Setting(parent).setHeading().setName('Generation'),
+      'Ollama sampling parameters controlling output randomness, length, seed, and how long the model stays loaded.',
+    );
     this.addNumberSetting(
       parent,
       'Temperature',
-      'Sampling randomness. 0 is deterministic; higher is more varied.',
+      'Sampling randomness',
       settings.llmPostprocessTemperature,
       (value) => this.saveField('llmPostprocessTemperature', value, { rerender: false }),
+      'Sampling randomness. 0 is deterministic; higher is more varied.',
     );
     this.addNumberSetting(
       parent,
       'Max predictions',
-      'Maximum tokens the model can generate per utterance.',
+      'Max tokens per utterance',
       settings.llmPostprocessNumPredict,
       (value) => this.saveField('llmPostprocessNumPredict', value, { rerender: false }),
+      'Maximum tokens the model can generate per utterance.',
     );
     this.addNumberSetting(
       parent,
       'Seed',
-      'Random seed. Same seed + input + model produces the same output.',
+      'Reproducibility seed',
       settings.llmPostprocessSeed,
       (value) => this.saveField('llmPostprocessSeed', value, { rerender: false }),
+      'Random seed. Same seed + input + model produces the same output.',
     );
-    new Setting(parent)
+    const keepAliveSetting = new Setting(parent)
       .setName('Keep alive')
-      .setDesc('How long Ollama keeps the model loaded after each request (e.g. 30m, 1h).')
+      .setDesc('Model load duration (e.g. 30m)')
       .addText((text) => {
         text.setValue(settings.llmPostprocessKeepAlive);
         this.trackInputFocus(text.inputEl);
@@ -296,24 +335,70 @@ export class LocalTranscriptView extends ItemView {
           await this.saveField('llmPostprocessKeepAlive', value, { rerender: false });
         });
       });
+    appendInfoTooltip(
+      keepAliveSetting,
+      'How long Ollama keeps the model loaded after each request (e.g. 30m, 1h).',
+    );
   }
 
-  private renderDisplaySection(
+  private renderOutputSection(
     parent: HTMLElement,
     settings: PluginSettings,
     timestampsEnabled: boolean,
   ): void {
-    new Setting(parent).setHeading().setName('Display');
-    new Setting(parent)
+    appendInfoTooltip(
+      new Setting(parent).setHeading().setName('Output'),
+      'How the cleaned and raw transcripts are surfaced in the note.',
+    );
+    const showRawSetting = new Setting(parent)
       .setName('Show raw beneath LLM output')
-      .setDesc('Append the original transcript below the cleaned version in the note.')
+      .setDesc('Append raw below cleaned')
       .addToggle((toggle) => {
         toggle.setValue(settings.llmPostprocessShowRawBelow);
         toggle.setDisabled(timestampsEnabled);
         toggle.onChange(async (value) => {
-          await this.saveField('llmPostprocessShowRawBelow', value);
+          await this.saveField('llmPostprocessShowRawBelow', value, { rerender: false });
         });
       });
+    appendInfoTooltip(
+      showRawSetting,
+      'Append the original transcript below the cleaned version in the note.',
+    );
+  }
+
+  private renderPresetPicker(parent: HTMLElement): void {
+    const setting = new Setting(parent)
+      .setName('Preset')
+      .setDesc('Apply a named bundle of prompt settings.')
+      .addDropdown((dropdown) => {
+        for (const preset of LLM_PRESETS) {
+          dropdown.addOption(preset.id, preset.label);
+        }
+        dropdown.setValue(this.pendingPresetId);
+        dropdown.onChange((value) => {
+          this.pendingPresetId = value as LlmPresetId;
+        });
+      })
+      .addButton((button) => {
+        button.setButtonText('Apply');
+        button.onClick(async () => {
+          const preset = LLM_PRESETS.find((entry) => entry.id === this.pendingPresetId);
+          if (preset === undefined) {
+            return;
+          }
+          await this.persistSettings({
+            ...this.dependencies.getSettings(),
+            llmPostprocessFormatSlot: preset.formatSlot,
+            llmPostprocessSystemSlot: preset.systemSlot,
+            llmPostprocessUserTemplate: preset.userTemplate,
+            llmPostprocessVoiceSlot: preset.voiceSlot,
+          });
+        });
+      });
+    appendInfoTooltip(
+      setting,
+      'Pick a preset and click Apply to overwrite the system prompt, voice, format, and user template. Edits made afterward are yours.',
+    );
   }
 
   private addNumberSetting(
@@ -322,8 +407,9 @@ export class LocalTranscriptView extends ItemView {
     desc: string,
     value: number,
     onChange: (value: number) => Promise<void>,
+    tooltip: string,
   ): void {
-    new Setting(parent)
+    const setting = new Setting(parent)
       .setName(name)
       .setDesc(desc)
       .addText((text) => {
@@ -334,6 +420,7 @@ export class LocalTranscriptView extends ItemView {
           await onChange(Number(nextValue));
         });
       });
+    appendInfoTooltip(setting, tooltip);
   }
 
   private addTextAreaSetting(
@@ -343,8 +430,9 @@ export class LocalTranscriptView extends ItemView {
     value: string,
     rows: number,
     onChange: (value: string) => Promise<void>,
+    tooltip: string,
   ): void {
-    new Setting(parent)
+    const setting = new Setting(parent)
       .setName(name)
       .setDesc(desc)
       .addTextArea((text) => {
@@ -353,6 +441,7 @@ export class LocalTranscriptView extends ItemView {
         this.trackInputFocus(text.inputEl);
         text.onChange(onChange);
       });
+    appendInfoTooltip(setting, tooltip);
   }
 
   private trackInputFocus(element: HTMLElement): void {

@@ -67,9 +67,6 @@ impl StageProcessor for LlmPostprocessStage {
         if trimmed_input.is_empty() {
             return skipped(base, "empty_input");
         }
-        if *ctx.cancel_rx.borrow() {
-            return skipped(base, "cancelled");
-        }
         if config.skip_min_words > 0 && word_count(trimmed_input) < config.skip_min_words as usize {
             return skipped(base, "below_min_words");
         }
@@ -92,7 +89,6 @@ impl StageProcessor for LlmPostprocessStage {
             &self.chat_url,
             config,
             user_message,
-            ctx.cancel_rx.clone(),
         )) {
             Ok(response) => response,
             Err(error) => return failed(base, error, "error", false),
@@ -181,7 +177,6 @@ async fn send_chat(
     chat_url: &str,
     config: &LlmPostprocessConfig,
     user_message: String,
-    mut cancel_rx: tokio::sync::watch::Receiver<bool>,
 ) -> Result<OllamaChatResponse, String> {
     let request = client.post(chat_url).json(&json!({
         "keep_alive": config.keep_alive,
@@ -199,12 +194,7 @@ async fn send_chat(
         "think": false,
     }));
 
-    let response = tokio::select! {
-        _ = cancel_rx.changed() => {
-            return Err("cancelled".to_string());
-        }
-        response = request.send() => response.map_err(|error| error.to_string())?,
-    };
+    let response = request.send().await.map_err(|error| error.to_string())?;
 
     if response.status() != StatusCode::OK {
         return Err(format!("Ollama returned HTTP {}", response.status()));

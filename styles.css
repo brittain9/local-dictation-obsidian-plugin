@@ -551,3 +551,16 @@
     opacity: 1;
   }
 }
+
+/* --- LLM sidebar Advanced disclosure ------------------------------ */
+
+.local-transcript-advanced {
+  margin-top: 1em;
+}
+
+.local-transcript-advanced > summary {
+  cursor: pointer;
+  padding: 0.25em 0;
+  color: var(--text-muted);
+  font-weight: 500;
+}

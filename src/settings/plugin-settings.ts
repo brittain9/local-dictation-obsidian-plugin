@@ -1,3 +1,4 @@
+import { getLlmPreset } from '../llm/presets';
 import {
   isSelectedModel,
   normalizeSelectedModel,
@@ -25,30 +26,13 @@ export const SPEAKING_STYLES = [
   'patient',
 ] as const satisfies readonly SpeakingStyle[];
 
-export const DEFAULT_LLM_POSTPROCESS_SYSTEM_SLOT =
-  'You clean a single dictated utterance. Use reference context only for spelling, terminology, continuity, and style. Never modify, continue, summarize, or quote the reference context. If the utterance already reads correctly, return it unchanged. Return only the cleaned utterance.';
-export const DEFAULT_LLM_POSTPROCESS_VOICE_SLOT = '';
+const DEFAULT_LLM_PRESET = getLlmPreset('light-cleanup');
+
+export const DEFAULT_LLM_POSTPROCESS_SYSTEM_SLOT = DEFAULT_LLM_PRESET.systemSlot;
+export const DEFAULT_LLM_POSTPROCESS_VOICE_SLOT = DEFAULT_LLM_PRESET.voiceSlot;
 export const DEFAULT_LLM_POSTPROCESS_GLOSSARY_SLOT = '';
-export const DEFAULT_LLM_POSTPROCESS_FORMAT_SLOT = '';
-export const DEFAULT_LLM_POSTPROCESS_USER_TEMPLATE = `{{glossary}}
-
-{{voice}}
-
-{{format}}
-
-<note_context>
-{{note_context}}
-</note_context>
-
-<prior_utterances>
-{{prior_utterances}}
-</prior_utterances>
-
-<utterance>
-{{utterance}}
-</utterance>
-
-<cleaned>`;
+export const DEFAULT_LLM_POSTPROCESS_FORMAT_SLOT = DEFAULT_LLM_PRESET.formatSlot;
+export const DEFAULT_LLM_POSTPROCESS_USER_TEMPLATE = DEFAULT_LLM_PRESET.userTemplate;
 
 export const DEFAULT_LLM_POSTPROCESS_CONTEXT = {
   glossaryChars: 1_000,
