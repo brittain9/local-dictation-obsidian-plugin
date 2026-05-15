@@ -102,9 +102,63 @@ export function addPositiveIntSetting<K extends SettingsKeyOf<number>>(
   appendInfoTooltip(setting, spec.tooltip);
 }
 
+export interface NumberInputOptions extends SettingSpec {
+  onChange: (value: number) => void | Promise<void>;
+  onElement?: (element: HTMLInputElement) => void;
+  value: number;
+}
+
+export function addNumberInputSetting(parent: HTMLElement, options: NumberInputOptions): Setting {
+  const setting = new Setting(parent).setName(options.name).setDesc(options.desc);
+  setting.addText((text) => {
+    text.inputEl.type = 'number';
+    text.setValue(options.value.toString());
+    options.onElement?.(text.inputEl);
+    text.onChange(async (next) => {
+      await options.onChange(Number(next));
+    });
+  });
+  appendInfoTooltip(setting, options.tooltip);
+  return setting;
+}
+
+export interface TextAreaOptions extends SettingSpec {
+  onChange: (value: string) => void;
+  onElement?: (element: HTMLTextAreaElement) => void;
+  rows: number;
+  value: string;
+}
+
+export function addTextAreaSetting(parent: HTMLElement, options: TextAreaOptions): Setting {
+  const setting = new Setting(parent).setName(options.name).setDesc(options.desc);
+  setting.addTextArea((text) => {
+    text.inputEl.rows = options.rows;
+    text.setValue(options.value);
+    options.onElement?.(text.inputEl);
+    text.onChange(options.onChange);
+  });
+  appendInfoTooltip(setting, options.tooltip);
+  return setting;
+}
+
 export function appendInfoTooltip(setting: Setting, tooltip: string | undefined): void {
   if (tooltip === undefined) return;
   setting.addExtraButton((button) => {
     button.setIcon('info').setTooltip(tooltip);
   });
+}
+
+// Build the native Obsidian "setting-group" structure used by core settings
+// tabs: a wrapper div with a heading row, then a "setting-items" sibling
+// that holds the actual rows. Obsidian's bundled CSS targets this shape to
+// produce the rounded card with internal dividers.
+export function createSettingGroup(
+  parent: HTMLElement,
+  heading: string,
+  tooltip?: string,
+): HTMLDivElement {
+  const group = parent.createDiv({ cls: 'setting-group' });
+  const headingSetting = new Setting(group).setName(heading).setHeading();
+  appendInfoTooltip(headingSetting, tooltip);
+  return group.createDiv({ cls: 'setting-items' });
 }

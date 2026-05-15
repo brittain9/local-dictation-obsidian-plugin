@@ -4,6 +4,7 @@ import { EditorView, type ViewUpdate } from '@codemirror/view';
 
 import type { UtteranceId } from '../session/session-journal';
 import type { DictationAnchor } from '../settings/plugin-settings';
+import { truncateTrailingText } from '../shared/text-truncation';
 import type { TranscriptInsertProjection } from '../transcript/renderer';
 import {
   clearAnchorEffect,
@@ -11,6 +12,10 @@ import {
   setAnchorEffect,
   setAnchorModeEffect,
 } from './dictation-anchor-extension';
+import {
+  type SessionProcessingRange,
+  setSessionProcessingEffect,
+} from './session-processing-extension';
 import { computeFirstPhrasePrefix } from './transcript-placement';
 
 export interface NotePlacementOptions {
@@ -233,6 +238,14 @@ export class NoteSurface {
     return { kind: 'replaced', span: cloneSpan(span) };
   }
 
+  readRange(range: RewriteRange): string | null {
+    if (this.disposed || !this.isValidRange(range)) {
+      return null;
+    }
+
+    return this.view.state.doc.sliceString(range.from, range.to);
+  }
+
   rewriteRegion(
     range: RewriteRange,
     newText: string,
@@ -259,7 +272,11 @@ export class NoteSurface {
     }
 
     for (const span of spansInRange) {
-      if (span.latched !== undefined && !preserved.has(span.utteranceId)) {
+      if (preserved.has(span.utteranceId)) {
+        continue;
+      }
+
+      if (span.latched !== undefined) {
         return { kind: 'denied', reason: { kind: span.latched } };
       }
 
@@ -269,7 +286,12 @@ export class NoteSurface {
       }
     }
 
-    this.view.dispatch({ changes: { from: range.from, to: range.to, insert: newText } });
+    const end = range.from + newText.length;
+    this.view.dispatch({
+      changes: { from: range.from, to: range.to, insert: newText },
+      effects: [setAnchorEffect.of(end), EditorView.scrollIntoView(end, { y: 'nearest' })],
+      selection: { anchor: end },
+    });
     for (const span of spansInRange) {
       this.spans.delete(span.utteranceId);
     }
@@ -300,6 +322,13 @@ export class NoteSurface {
     }
   }
 
+  setProcessingRange(range: SessionProcessingRange | null): void {
+    if (this.disposed) {
+      return;
+    }
+    this.view.dispatch({ effects: setSessionProcessingEffect.of(range) });
+  }
+
   trimPendingInitialPrefix(): void {
     if (this.disposed || this.pendingInitialPrefix.length === 0) {
       return;
@@ -324,7 +353,9 @@ export class NoteSurface {
 
   dispose(): void {
     this.trimPendingInitialPrefix();
-    this.view.dispatch({ effects: clearAnchorEffect.of(null) });
+    this.view.dispatch({
+      effects: [clearAnchorEffect.of(null), setSessionProcessingEffect.of(null)],
+    });
     this.disposed = true;
 
     if (activeNoteSurface === this) {
@@ -348,6 +379,19 @@ export class NoteSurface {
     }
 
     return buildGlossary(this.view.state.doc.toString(), maxChars);
+  }
+
+  readNoteText(maxChars: number): { text: string; truncated: boolean } | null {
+    if (this.disposed || maxChars <= 0) {
+      return null;
+    }
+
+    const beforeAnchor = this.view.state.doc.sliceString(0, this.writingRegionTail()).trim();
+    if (beforeAnchor.length === 0) {
+      return null;
+    }
+
+    return truncateTrailingText(beforeAnchor, maxChars);
   }
 
   private insertInitialPrefix(): void {

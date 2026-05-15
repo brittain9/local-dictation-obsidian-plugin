@@ -94,11 +94,14 @@ export type ContextWindowSource =
       truncated: boolean;
     }
   | {
-      endRevision: number;
-      kind: 'session_utterance';
+      kind: 'note_text';
       text: string;
       truncated: boolean;
-      utteranceId: UtteranceId;
+    }
+  | {
+      kind: 'prior_utterance';
+      text: string;
+      truncated: boolean;
     };
 
 export interface ContextWindow {
@@ -127,9 +130,22 @@ interface EnvelopeBase<TType extends string> {
 
 export interface HealthCommand extends EnvelopeBase<'health'> {}
 
+export interface LlmPostprocessConfig {
+  keepAlive: string;
+  model: string;
+  noteContextChars: number;
+  priorUtterancesN: number;
+  prompt: string;
+  showRawBelow: boolean;
+  skipMinWords: number;
+  temperature: number;
+  totalContextCap: number;
+}
+
 export interface StartSessionCommand extends EnvelopeBase<'start_session'> {
   accelerationPreference: AccelerationPreference;
   language: 'en';
+  llmPostprocess?: LlmPostprocessConfig;
   mode: ListeningMode;
   modelSelection: SelectedModel;
   modelStorePathOverride?: string;
@@ -243,6 +259,7 @@ export interface SessionStateChangedEvent extends EnvelopeBase<'session_state_ch
 
 export interface TranscriptReadyEvent extends EnvelopeBase<'transcript_ready'> {
   isFinal: boolean;
+  llmPostprocessRawText: string | null;
   pauseMsBeforeUtterance: number | null;
   processingDurationMs: number;
   revision: number;
@@ -592,6 +609,10 @@ export function parseEventFrame(jsonText: string): SidecarEvent {
     case 'transcript_ready':
       return {
         isFinal: readBoolean(parsedValue.isFinal, 'event.isFinal'),
+        llmPostprocessRawText: readNullableString(
+          parsedValue.llmPostprocessRawText,
+          'event.llmPostprocessRawText',
+        ),
         pauseMsBeforeUtterance: readNullableNumber(
           parsedValue.pauseMsBeforeUtterance,
           'event.pauseMsBeforeUtterance',

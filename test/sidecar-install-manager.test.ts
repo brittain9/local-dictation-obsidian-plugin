@@ -33,7 +33,7 @@ function createInstallOptions(
     pluginDirectory: '/plugin',
     successNotice: 'Installed.',
     variant: 'cpu' as const,
-    version: '2026.5.3',
+    version: '2026.5.15',
     ...overrides,
   };
 }
@@ -98,7 +98,7 @@ describe('SidecarInstallManager', () => {
         installedAt: '2026-05-03T00:00:00.000Z',
         sha256: 'abc',
         variant: 'cpu',
-        version: '2026.5.3',
+        version: '2026.5.15',
       },
       variantDirectory: '/plugin/bin/cpu',
     });

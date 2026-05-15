@@ -428,6 +428,11 @@
     animation: none;
     opacity: 0.55;
   }
+
+  .local-stt-session-processing {
+    animation: none;
+    opacity: 1;
+  }
 }
 
 /* --- Dictation anchor widget -------------------------------------- */
@@ -478,6 +483,28 @@
   }
   50% {
     opacity: 0.15;
+  }
+}
+
+/* --- Preset delete icon ------------------------------------------- */
+
+.local-stt-preset-delete:hover {
+  color: var(--text-error, var(--text-normal));
+}
+
+/* --- Batch LLM processing pulse ----------------------------------- */
+
+.local-stt-session-processing {
+  animation: local-stt-session-processing-pulse 1.4s ease-in-out infinite;
+}
+
+@keyframes local-stt-session-processing-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
   }
 }
 
@@ -550,4 +577,22 @@
   50% {
     opacity: 1;
   }
+}
+
+/* --- LLM sidebar Advanced disclosure ------------------------------ */
+
+.local-transcript-advanced {
+  margin-top: 1em;
+}
+
+.local-transcript-advanced > summary {
+  cursor: pointer;
+  padding: 0.25em 0;
+  margin-bottom: 0.4em;
+  color: var(--text-muted);
+  font-weight: 500;
+}
+
+.local-stt-hidden {
+  display: none;
 }

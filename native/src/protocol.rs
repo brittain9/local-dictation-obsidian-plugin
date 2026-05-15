@@ -168,6 +168,7 @@ pub enum TimestampGranularity {
 pub enum StageId {
     Engine,
     HallucinationFilter,
+    LlmPostprocess,
     Punctuation,
     UserRules,
 }
@@ -207,12 +208,19 @@ pub enum ContextWindowSource {
     #[serde(rename_all = "camelCase")]
     NoteGlossary { text: String, truncated: bool },
     #[serde(rename_all = "camelCase")]
-    SessionUtterance {
-        end_revision: u32,
-        text: String,
-        truncated: bool,
-        utterance_id: Uuid,
-    },
+    NoteText { text: String, truncated: bool },
+    #[serde(rename_all = "camelCase")]
+    PriorUtterance { text: String, truncated: bool },
+}
+
+impl ContextWindowSource {
+    pub fn text(&self) -> &str {
+        match self {
+            Self::NoteGlossary { text, .. }
+            | Self::NoteText { text, .. }
+            | Self::PriorUtterance { text, .. } => text,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -222,6 +230,20 @@ pub struct ContextWindow {
     pub sources: Vec<ContextWindowSource>,
     pub text: String,
     pub truncated: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LlmPostprocessConfig {
+    pub keep_alive: String,
+    pub model: String,
+    pub note_context_chars: u32,
+    pub prior_utterances_n: u32,
+    pub prompt: String,
+    pub show_raw_below: bool,
+    pub skip_min_words: u32,
+    pub temperature: f32,
+    pub total_context_cap: u32,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -259,6 +281,8 @@ pub enum Command {
         #[serde(default)]
         acceleration_preference: AccelerationPreference,
         language: String,
+        #[serde(default)]
+        llm_postprocess: Option<Box<LlmPostprocessConfig>>,
         mode: ListeningMode,
         model_selection: SelectedModel,
         #[serde(default)]
@@ -401,6 +425,7 @@ pub enum Event {
     },
     TranscriptReady {
         is_final: bool,
+        llm_postprocess_raw_text: Option<String>,
         pause_ms_before_utterance: Option<u64>,
         processing_duration_ms: u64,
         revision: u32,
@@ -559,7 +584,7 @@ mod tests {
         AUDIO_FRAME_KIND, AccelerationPreference, Command, Event, EventEnvelope,
         FRAME_HEADER_LENGTH, IncomingFrame, JSON_FRAME_KIND, ListeningMode, MAX_FRAME_PAYLOAD,
         PCM_BYTES_PER_FRAME, QueueBackpressureTier, SelectedModel, SessionStopReason,
-        SpeakingStyle, read_frame, write_event_frame, write_frame,
+        SpeakingStyle, StageId, read_frame, write_event_frame, write_frame,
     };
     use crate::engine::capabilities::{ModelFamilyId, RuntimeId};
     use uuid::Uuid;
@@ -598,11 +623,20 @@ mod tests {
                     family_id: ModelFamilyId::Whisper,
                     file_path: "/tmp/model.bin".to_string(),
                 },
+                llm_postprocess: None,
                 model_store_path_override: None,
                 session_start_unix_ms: 1_700_000_000_000,
                 session_id: "session-1".to_string(),
                 speaking_style: SpeakingStyle::Balanced,
             })
+        );
+    }
+
+    #[test]
+    fn stage_id_llm_postprocess_serializes_as_snake_case() {
+        assert_eq!(
+            serde_json::to_value(StageId::LlmPostprocess).unwrap(),
+            serde_json::json!("llm_postprocess")
         );
     }
 
@@ -758,6 +792,7 @@ mod tests {
         let utterance_id = Uuid::new_v4();
         let make_event = |pause: Option<u64>| Event::TranscriptReady {
             is_final: true,
+            llm_postprocess_raw_text: None,
             pause_ms_before_utterance: pause,
             processing_duration_ms: 12,
             revision: 0,

@@ -7,15 +7,20 @@ import {
   type NotePlacementOptions,
   type NoteProjectionContext,
   NoteSurface,
+  type PreservedSpan,
+  type ProjectedSpan,
   type ReplaceResult,
+  type RewriteRange,
+  type RewriteResult,
 } from '../editor/note-surface';
 import type { PluginLogger } from '../shared/plugin-logger';
+import { truncateLeadingText } from '../shared/text-truncation';
 import {
   type TranscriptInsertProjection,
   TranscriptRenderer,
   type TranscriptRenderOptions,
 } from '../transcript/renderer';
-import { SessionJournal, type TranscriptRevision } from './session-journal';
+import { SessionJournal, type TranscriptRevision, type UtteranceId } from './session-journal';
 
 interface EditorWithCm extends Editor {
   cm?: EditorView;
@@ -62,11 +67,26 @@ export interface SessionDependencies {
 interface NoteSurfaceLike {
   appendProjection(utteranceId: string, projection: TranscriptInsertProjection): AppendResult;
   dispose(): void;
+  getSpan(utteranceId: UtteranceId): ProjectedSpan | undefined;
+  readRange(range: RewriteRange): string | null;
   readNoteGlossary(maxChars: number): { text: string; truncated: boolean } | null;
+  readNoteText(maxChars: number): { text: string; truncated: boolean } | null;
   readProjectionContext(): NoteProjectionContext;
   replaceAnchor(utteranceId: string, newText: string, expectedOldText: string): ReplaceResult;
+  rewriteRegion(
+    range: RewriteRange,
+    newText: string,
+    preservedSpans: PreservedSpan[],
+  ): RewriteResult;
   setAnchorMode(mode: DictationAnchorMode): void;
+  setProcessingRange(range: { from: number; to: number } | null): void;
   validateExternalModification(): void;
+}
+
+interface RawSessionEntry {
+  projectedPrefix: string;
+  rawText: string;
+  utteranceId: UtteranceId;
 }
 
 export class Session {
@@ -75,6 +95,8 @@ export class Session {
   private noteDeleted = false;
   private noteOpen = true;
   private readonly projectionByUtterance = new Map<string, ProjectionState>();
+  private readonly rawSessionEntries: RawSessionEntry[] = [];
+  private readonly rawSessionEntryIndexByUtterance = new Map<UtteranceId, number>();
   private readonly refs: Array<{ offref: (ref: EventRef) => void; ref: EventRef }> = [];
   private surface: NoteSurfaceLike | null;
 
@@ -133,12 +155,98 @@ export class Session {
     return { kind: 'accepted' };
   }
 
-  readNoteContext(maxChars: number): { text: string; truncated: boolean } | null {
+  readNoteGlossary(maxChars: number): { text: string; truncated: boolean } | null {
     return this.surface?.readNoteGlossary(maxChars) ?? null;
+  }
+
+  readNoteText(maxChars: number): { text: string; truncated: boolean } | null {
+    return this.surface?.readNoteText(maxChars) ?? null;
+  }
+
+  readPriorUtterances(
+    maxCount: number,
+    maxCharsPerUtterance: number,
+  ): Array<{ text: string; truncated: boolean }> {
+    if (maxCount <= 0 || maxCharsPerUtterance <= 0) {
+      return [];
+    }
+
+    return this.journal
+      .allUtterancesInOrder()
+      .filter((revision) => revision.isFinal && revision.text.trim().length > 0)
+      .slice(-maxCount)
+      .map((revision) => truncateLeadingText(revision.text, maxCharsPerUtterance));
+  }
+
+  joinRawSessionText(): string {
+    return this.rawSessionEntries
+      .map((entry) => entry.rawText)
+      .join(' ')
+      .trim();
+  }
+
+  readCurrentSessionText(): string {
+    if (this.surface === null || this.rawSessionEntries.length === 0) {
+      return '';
+    }
+
+    const range = this.resolveSessionRange();
+    if (range === null) {
+      return '';
+    }
+
+    return (this.surface.readRange(range) ?? '').trim();
+  }
+
+  replaceSessionRangeWithCleaned(
+    cleanText: string,
+    options: {
+      rawTextForCallout?: string;
+      showRawBelow?: boolean;
+    } = {},
+  ): boolean {
+    if (this.surface === null || this.rawSessionEntries.length === 0) {
+      return false;
+    }
+
+    const range = this.resolveSessionRange();
+    if (range === null) {
+      return false;
+    }
+
+    const expectedText = this.expectedSessionText();
+    if (this.surface.readRange(range) !== expectedText) {
+      return false;
+    }
+
+    const replacement = this.buildCleanedReplacement(
+      cleanText,
+      options.showRawBelow === true,
+      options.rawTextForCallout,
+    );
+    const result = this.surface.rewriteRegion(range, replacement, []);
+
+    return result.kind === 'rewritten';
   }
 
   setAnchorMode(mode: DictationAnchorMode): void {
     this.surface?.setAnchorMode(mode);
+  }
+
+  markSessionRangeAsProcessing(): boolean {
+    if (this.surface === null) {
+      return false;
+    }
+    const range = this.resolveSessionRange();
+    if (range === null) {
+      return false;
+    }
+    this.surface.setProcessingRange(range);
+    return true;
+  }
+
+  clearSessionProcessingMark(): void {
+    this.surface?.setProcessingRange(null);
   }
 
   dispose(): void {
@@ -205,12 +313,44 @@ export class Session {
         lastRevision: revision.revision,
         projectedText: projection.insertedText,
       });
+      this.recordRawSessionAppend(revision, projection);
       this.renderer.commitAppend(projection);
+      this.applyRawPostprocessCallout(revision);
       return;
     }
 
     this.projectionByUtterance.set(revision.utteranceId, { kind: 'denied' });
     this.dependencies.logger?.debug('session', `projection append denied: ${result.reason.kind}`);
+  }
+
+  private applyRawPostprocessCallout(revision: TranscriptRevision): void {
+    const rawText = revision.llmPostprocessRawText?.trim();
+    if (rawText === undefined || rawText.length === 0) {
+      return;
+    }
+
+    const context = this.surface?.readProjectionContext();
+    if (context === undefined) {
+      return;
+    }
+
+    const callout = formatRawPostprocessCallout(rawText);
+    const boundary = missingNewlines(context.tailContent, 2);
+    const projection: TranscriptInsertProjection = {
+      emittedTimestamp: null,
+      insertedText: callout,
+      projectedText: `${boundary}${callout}`,
+      textEndOffset: boundary.length + callout.length,
+      textStartOffset: boundary.length,
+    };
+    const result = this.surface?.appendProjection(`${revision.utteranceId}:llm_raw`, projection);
+
+    if (result?.kind === 'denied') {
+      this.dependencies.logger?.debug(
+        'session',
+        `raw LLM postprocess callout append denied (${rawText.length} chars): ${result.reason}`,
+      );
+    }
   }
 
   private applyReplace(
@@ -237,6 +377,7 @@ export class Session {
         lastRevision: revision.revision,
         projectedText: revision.text,
       });
+      this.recordRawSessionReplace(revision);
       return;
     }
 
@@ -333,6 +474,80 @@ export class Session {
       findOpenMarkdownViewForFile(this.dependencies.app, this.dependencies.lockedFile) !== null
     );
   }
+
+  private recordRawSessionAppend(
+    revision: TranscriptRevision,
+    projection: TranscriptInsertProjection,
+  ): void {
+    if (this.rawSessionEntryIndexByUtterance.has(revision.utteranceId)) {
+      return;
+    }
+
+    this.rawSessionEntryIndexByUtterance.set(revision.utteranceId, this.rawSessionEntries.length);
+    this.rawSessionEntries.push({
+      projectedPrefix: projection.projectedText.slice(0, projection.textStartOffset),
+      rawText: revision.text,
+      utteranceId: revision.utteranceId,
+    });
+  }
+
+  private recordRawSessionReplace(revision: TranscriptRevision): void {
+    const index = this.rawSessionEntryIndexByUtterance.get(revision.utteranceId);
+    if (index === undefined) {
+      return;
+    }
+
+    const entry = this.rawSessionEntries[index];
+    if (entry === undefined) {
+      return;
+    }
+
+    entry.rawText = revision.text;
+  }
+
+  private resolveSessionRange(): RewriteRange | null {
+    if (this.surface === null || this.rawSessionEntries.length === 0) {
+      return null;
+    }
+
+    const spans = this.rawSessionEntries.map((entry) => this.surface?.getSpan(entry.utteranceId));
+    if (spans.some((span) => span === undefined)) {
+      return null;
+    }
+
+    const first = spans[0];
+    const last = spans.at(-1);
+    if (first === undefined || last === undefined) {
+      return null;
+    }
+
+    return { from: first.start, to: last.end };
+  }
+
+  private expectedSessionText(): string {
+    return this.rawSessionEntries
+      .map((entry) => `${entry.projectedPrefix}${entry.rawText}`)
+      .join('');
+  }
+
+  private buildCleanedReplacement(
+    cleanText: string,
+    showRawBelow: boolean,
+    rawTextForCallout?: string,
+  ): string {
+    const firstPrefix = this.rawSessionEntries[0]?.projectedPrefix ?? '';
+    const trimmed = cleanText.trim();
+    if (!showRawBelow) {
+      return `${firstPrefix}${trimmed}`;
+    }
+
+    const rawText = (rawTextForCallout ?? this.joinRawSessionText()).trim();
+    if (rawText.length === 0) {
+      return `${firstPrefix}${trimmed}`;
+    }
+
+    return `${firstPrefix}${trimmed}\n\n${formatRawPostprocessCallout(rawText)}`;
+  }
 }
 
 function createNoteSurface(view: EditorView, placement: NotePlacementOptions): NoteSurface {
@@ -364,4 +579,26 @@ function findOpenMarkdownViewForFile(
   }
 
   return null;
+}
+
+function formatRawPostprocessCallout(rawText: string): string {
+  const quoted = rawText
+    .split(/\r?\n/u)
+    .map((line) => `> ${line}`)
+    .join('\n');
+
+  return `> [!note]- raw\n${quoted}`;
+}
+
+function missingNewlines(tailContent: string, requiredTrailingNewlines: number): string {
+  let existing = 0;
+
+  for (let index = tailContent.length - 1; index >= 0; index -= 1) {
+    if (tailContent.charAt(index) !== '\n') {
+      break;
+    }
+    existing += 1;
+  }
+
+  return '\n'.repeat(Math.max(0, requiredTrailingNewlines - existing));
 }

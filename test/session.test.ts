@@ -2,7 +2,14 @@ import type { EditorView } from '@codemirror/view';
 import type { App, EventRef, TFile } from 'obsidian';
 import { describe, expect, it, vi } from 'vitest';
 
-import type { AppendResult, NotePlacementOptions, ReplaceResult } from '../src/editor/note-surface';
+import type {
+  AppendResult,
+  NotePlacementOptions,
+  ProjectedSpan,
+  ReplaceResult,
+  RewriteRange,
+  RewriteResult,
+} from '../src/editor/note-surface';
 import { Session } from '../src/session/session';
 import type {
   TranscriptInsertProjection,
@@ -20,55 +27,112 @@ class FakeSurface {
     newText: string;
     utteranceId: string;
   }> = [];
+  public readonly rewriteCalls: Array<{
+    newText: string;
+    range: RewriteRange;
+  }> = [];
   public readonly dispose = vi.fn();
   public readonly readNoteGlossary = vi.fn(
     (_maxChars: number): { text: string; truncated: boolean } | null => null,
   );
+  public readonly readNoteText = vi.fn(
+    (_maxChars: number): { text: string; truncated: boolean } | null => null,
+  );
   public readonly setAnchorMode = vi.fn();
+  public readonly setProcessingRange = vi.fn(
+    (_range: { from: number; to: number } | null): void => undefined,
+  );
   public readonly validateExternalModification = vi.fn();
+  public documentText = '';
   public nextAppendResult: AppendResult | null = null;
   public nextReplaceResult: ReplaceResult | null = null;
+  public nextRewriteResult: RewriteResult | null = null;
 
   public projectionContext = { tailContent: '' };
+  private readonly spans = new Map<string, ProjectedSpan>();
 
   readProjectionContext(): { tailContent: string } {
-    return this.projectionContext;
+    return { tailContent: this.documentText.slice(-2) || this.projectionContext.tailContent };
   }
 
   appendProjection(utteranceId: string, projection: TranscriptInsertProjection): AppendResult {
     this.appendCalls.push({ projection, utteranceId });
 
-    return (
-      this.nextAppendResult ?? {
-        kind: 'appended',
-        span: {
-          end: projection.projectedText.length,
-          projectedText: projection.insertedText,
-          start: 0,
-          textEnd: projection.textEndOffset,
-          textStart: projection.textStartOffset,
-          utteranceId,
-        },
-      }
-    );
+    const from = this.documentText.length;
+    const result = this.nextAppendResult ?? {
+      kind: 'appended',
+      span: {
+        end: from + projection.projectedText.length,
+        projectedText: projection.insertedText,
+        start: from,
+        textEnd: from + projection.textEndOffset,
+        textStart: from + projection.textStartOffset,
+        utteranceId,
+      },
+    };
+
+    if (result.kind === 'appended') {
+      this.documentText = `${this.documentText}${projection.projectedText}`;
+      this.spans.set(utteranceId, result.span);
+    }
+
+    return result;
   }
 
   replaceAnchor(utteranceId: string, newText: string, expectedOldText: string): ReplaceResult {
     this.replaceCalls.push({ expectedOldText, newText, utteranceId });
 
-    return (
-      this.nextReplaceResult ?? {
-        kind: 'replaced',
-        span: {
-          end: newText.length,
-          projectedText: newText,
-          start: 0,
-          textEnd: newText.length,
-          textStart: 0,
-          utteranceId,
-        },
-      }
-    );
+    const span = this.spans.get(utteranceId);
+    const result: ReplaceResult =
+      this.nextReplaceResult ??
+      (span === undefined
+        ? { kind: 'denied', reason: { kind: 'not_found' }, utteranceId }
+        : {
+            kind: 'replaced',
+            span: {
+              ...span,
+              end: span.end + newText.length - expectedOldText.length,
+              projectedText: newText,
+              textEnd: span.textStart + newText.length,
+            },
+          });
+
+    if (result.kind === 'replaced' && span !== undefined) {
+      this.documentText = `${this.documentText.slice(0, span.textStart)}${newText}${this.documentText.slice(span.textEnd)}`;
+      this.spans.set(utteranceId, result.span);
+    }
+
+    return result;
+  }
+
+  getSpan(utteranceId: string): ProjectedSpan | undefined {
+    const span = this.spans.get(utteranceId);
+    return span === undefined ? undefined : { ...span };
+  }
+
+  readRange(range: RewriteRange): string | null {
+    if (range.from < 0 || range.to < range.from || range.to > this.documentText.length) {
+      return null;
+    }
+
+    return this.documentText.slice(range.from, range.to);
+  }
+
+  rewriteRegion(range: RewriteRange, newText: string): RewriteResult {
+    this.rewriteCalls.push({ newText, range });
+
+    if (this.nextRewriteResult !== null) {
+      return this.nextRewriteResult;
+    }
+
+    if (this.readRange(range) === null) {
+      return { kind: 'denied', reason: { kind: 'range_invalid' } };
+    }
+
+    this.documentText = `${this.documentText.slice(0, range.from)}${newText}${this.documentText.slice(range.to)}`;
+    this.spans.clear();
+
+    return { kind: 'rewritten', range };
   }
 }
 
@@ -229,25 +293,125 @@ describe('Session', () => {
     });
   });
 
-  it('proxies readNoteContext to the active surface', () => {
+  it('proxies readNoteGlossary to the active surface', () => {
     const { session, surface } = createSessionHarness();
     surface.readNoteGlossary.mockReturnValueOnce({
       text: 'Glossary: NVIDIA',
       truncated: true,
     });
 
-    expect(session.readNoteContext(256)).toEqual({
+    expect(session.readNoteGlossary(256)).toEqual({
       text: 'Glossary: NVIDIA',
       truncated: true,
     });
     expect(surface.readNoteGlossary).toHaveBeenCalledWith(256);
   });
 
-  it('returns null from readNoteContext when the surface is detached', () => {
+  it('replaceSessionRangeWithCleaned succeeds when the current range matches recorded raw text', () => {
+    const { session, surface } = createSessionHarness();
+
+    session.acceptTranscript(transcript({ text: 'hello', utteranceId: 'u1' }));
+    session.acceptTranscript(transcript({ text: 'world', utteranceId: 'u2' }));
+
+    expect(surface.documentText).toBe('hello world');
+    expect(session.joinRawSessionText()).toBe('hello world');
+    expect(session.replaceSessionRangeWithCleaned('Hello world.')).toBe(true);
+
+    expect(surface.rewriteCalls).toEqual([
+      { newText: 'Hello world.', range: { from: 0, to: 'hello world'.length } },
+    ]);
+    expect(surface.documentText).toBe('Hello world.');
+  });
+
+  it('replaceSessionRangeWithCleaned returns false when the session range diverges', () => {
+    const { session, surface } = createSessionHarness();
+
+    session.acceptTranscript(transcript({ text: 'raw words', utteranceId: 'u1' }));
+    surface.documentText = 'edited raw words';
+
+    expect(session.replaceSessionRangeWithCleaned('Cleaned words.')).toBe(false);
+    expect(surface.rewriteCalls).toHaveLength(0);
+    expect(surface.documentText).toBe('edited raw words');
+  });
+
+  it('skips batch replace when the session range has been edited', () => {
+    const { session, surface } = createSessionHarness();
+
+    session.acceptTranscript(transcript({ text: 'raw words', utteranceId: 'u1' }));
+    surface.documentText = 'new words';
+
+    expect(session.readCurrentSessionText()).toBe('new words');
+    expect(
+      session.replaceSessionRangeWithCleaned('Cleaned words.', {
+        rawTextForCallout: 'new words',
+        showRawBelow: true,
+      }),
+    ).toBe(false);
+    expect(surface.rewriteCalls).toHaveLength(0);
+    expect(surface.documentText).toBe('new words');
+  });
+
+  it('appends the raw callout below the cleaned text when showRawBelow is set', () => {
+    const { session, surface } = createSessionHarness();
+
+    session.acceptTranscript(transcript({ text: 'raw words', utteranceId: 'u1' }));
+
+    expect(
+      session.replaceSessionRangeWithCleaned('Cleaned words.', {
+        showRawBelow: true,
+      }),
+    ).toBe(true);
+    expect(surface.documentText).toBe('Cleaned words.\n\n> [!note]- raw\n> raw words');
+  });
+
+  it('range tracking follows transcript revisions across multiple acceptTranscript calls', () => {
+    const { session, surface } = createSessionHarness();
+
+    session.acceptTranscript(transcript({ revision: 0, text: 'rough', utteranceId: 'u1' }));
+    session.acceptTranscript(transcript({ revision: 1, text: 'polished', utteranceId: 'u1' }));
+    session.acceptTranscript(transcript({ text: 'tail', utteranceId: 'u2' }));
+
+    expect(surface.documentText).toBe('polished tail');
+    expect(session.joinRawSessionText()).toBe('polished tail');
+    expect(session.replaceSessionRangeWithCleaned('Polished tail.')).toBe(true);
+    expect(surface.rewriteCalls[0]?.range).toEqual({ from: 0, to: 'polished tail'.length });
+  });
+
+  it('preserves the first insertion boundary when replacing a batch-cleaned range', () => {
+    const { session, surface } = createSessionHarness();
+    surface.documentText = 'Existing';
+
+    session.acceptTranscript(transcript({ text: 'raw words', utteranceId: 'u1' }));
+
+    expect(surface.documentText).toBe('Existing raw words');
+    expect(session.replaceSessionRangeWithCleaned('Cleaned words.')).toBe(true);
+    expect(surface.documentText).toBe('Existing Cleaned words.');
+  });
+
+  it('marks the session range as processing and clears the mark on demand', () => {
+    const { session, surface } = createSessionHarness();
+
+    expect(session.markSessionRangeAsProcessing()).toBe(false);
+    expect(surface.setProcessingRange).not.toHaveBeenCalled();
+
+    session.acceptTranscript(transcript({ text: 'hello', utteranceId: 'u1' }));
+    session.acceptTranscript(transcript({ text: 'world', utteranceId: 'u2' }));
+
+    expect(session.markSessionRangeAsProcessing()).toBe(true);
+    expect(surface.setProcessingRange).toHaveBeenLastCalledWith({
+      from: 0,
+      to: 'hello world'.length,
+    });
+
+    session.clearSessionProcessingMark();
+    expect(surface.setProcessingRange).toHaveBeenLastCalledWith(null);
+  });
+
+  it('returns null from readNoteGlossary when the surface is detached', () => {
     const { session } = createSessionHarness();
     session.dispose();
 
-    expect(session.readNoteContext(256)).toBeNull();
+    expect(session.readNoteGlossary(256)).toBeNull();
   });
 });
 

@@ -5,6 +5,8 @@ use std::sync::mpsc::{self, Receiver, Sender};
 use std::thread;
 use std::time::Instant;
 
+use tokio::runtime::{Builder, Runtime};
+use tokio::sync::watch;
 use uuid::Uuid;
 
 use crate::engine::capabilities::{
@@ -13,7 +15,9 @@ use crate::engine::capabilities::{
 use crate::engine::registry::{EngineRegistry, apply_capability_gates, missing_adapter_error};
 use crate::engine::traits::LoadedModel;
 use crate::panic_util::format_panic_message;
-use crate::protocol::{ContextWindow, EngineStagePayload, StageId, StageOutcome, StageStatus};
+use crate::protocol::{
+    ContextWindow, EngineStagePayload, LlmPostprocessConfig, StageId, StageOutcome, StageStatus,
+};
 use crate::session::FinalizedUtterance;
 use crate::stages::{
     StageContext, StageEnablement, StageProcessor, post_engine_processors, run_post_engine,
@@ -22,13 +26,15 @@ use crate::transcription::{
     EngineTranscriptOutput, GpuConfig, Transcript, TranscriptionError, TranscriptionRequest,
 };
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone)]
 pub struct SessionMetadata {
     pub runtime_id: RuntimeId,
     pub family_id: ModelFamilyId,
     pub gpu_config: GpuConfig,
     pub language: String,
+    pub llm_postprocess: Option<LlmPostprocessConfig>,
     pub model_file_path: PathBuf,
+    pub cancel_rx: watch::Receiver<bool>,
     pub session_start_unix_ms: u64,
     pub session_id: String,
     pub stage_enablement: StageEnablement,
@@ -106,6 +112,7 @@ impl TranscriptionWorker {
 struct ActiveSession {
     metadata: SessionMetadata,
     loaded_model: Box<dyn LoadedModel>,
+    processors: Vec<Box<dyn StageProcessor>>,
 }
 
 fn load_model_for_session(
@@ -124,6 +131,10 @@ fn worker_main(
     registry: Arc<EngineRegistry>,
 ) {
     let mut active: Option<ActiveSession> = None;
+    let tokio_runtime = Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .expect("worker tokio runtime should build");
 
     while let Ok(command) = command_rx.recv() {
         match command {
@@ -137,6 +148,7 @@ fn worker_main(
                         active = Some(ActiveSession {
                             metadata,
                             loaded_model,
+                            processors: post_engine_processors(),
                         });
                     }
                     Ok(Err(error)) => {
@@ -241,11 +253,14 @@ fn worker_main(
                             context: stage_context.as_ref(),
                             family_capabilities: &family_capabilities,
                             stage_enablement: &session.metadata.stage_enablement,
-                            processors: &post_engine_processors(),
+                            processors: &session.processors,
+                            tokio_runtime: &tokio_runtime,
+                            llm_postprocess: session.metadata.llm_postprocess.as_ref(),
+                            cancel_rx: &session.metadata.cancel_rx,
                         });
                         let _ = event_tx.send(WorkerEvent::TranscriptReady {
                             pause_ms_before_utterance,
-                            processing_duration_ms: engine_duration_ms,
+                            processing_duration_ms: started_at.elapsed().as_millis() as u64,
                             session_id,
                             transcript,
                             utterance_duration_ms,
@@ -295,6 +310,9 @@ struct TranscriptAssembly<'a> {
     family_capabilities: &'a ModelFamilyCapabilities,
     stage_enablement: &'a StageEnablement,
     processors: &'a [Box<dyn StageProcessor>],
+    tokio_runtime: &'a Runtime,
+    llm_postprocess: Option<&'a LlmPostprocessConfig>,
+    cancel_rx: &'a watch::Receiver<bool>,
 }
 
 fn assemble_transcript(input: TranscriptAssembly<'_>) -> Transcript {
@@ -333,6 +351,9 @@ fn assemble_transcript(input: TranscriptAssembly<'_>) -> Transcript {
         family_capabilities: input.family_capabilities,
         stage_enabled: input.stage_enablement,
         is_final: input.is_final,
+        tokio_runtime: input.tokio_runtime,
+        llm_postprocess: input.llm_postprocess,
+        cancel_rx: input.cancel_rx,
         pause_ms_before_utterance: input.pause_ms_before_utterance,
         segment_diagnostics: &diagnostics,
         vad_probabilities: input.vad_probabilities,
@@ -414,15 +435,20 @@ mod tests {
     #[test]
     fn assemble_transcript_includes_voice_activity_in_engine_payload() {
         let voice_activity = voice_activity();
+        let runtime = test_runtime();
+        let (_cancel_tx, cancel_rx) = watch::channel(false);
         let transcript = assemble_transcript(TranscriptAssembly {
+            cancel_rx: &cancel_rx,
             context: None,
             engine_duration_ms: 7,
             engine_output: engine_output(),
             family_capabilities: &whisper_caps(),
             is_final: true,
+            llm_postprocess: None,
             pause_ms_before_utterance: None,
             processors: &[],
             stage_enablement: &StageEnablement::default(),
+            tokio_runtime: &runtime,
             utterance_id: Uuid::nil(),
             vad_probabilities: &[],
             voice_activity,
@@ -448,15 +474,20 @@ mod tests {
         let voice_activity = voice_activity();
         let processors: Vec<Box<dyn StageProcessor>> =
             vec![Box::new(VoiceActivityReadingProcessor)];
+        let runtime = test_runtime();
+        let (_cancel_tx, cancel_rx) = watch::channel(false);
         let transcript = assemble_transcript(TranscriptAssembly {
+            cancel_rx: &cancel_rx,
             context: None,
             engine_duration_ms: 7,
             engine_output: engine_output(),
             family_capabilities: &whisper_caps(),
             is_final: true,
+            llm_postprocess: None,
             pause_ms_before_utterance: None,
             processors: &processors,
             stage_enablement: &StageEnablement::default(),
+            tokio_runtime: &runtime,
             utterance_id: Uuid::nil(),
             vad_probabilities: &[],
             voice_activity,
@@ -474,15 +505,20 @@ mod tests {
     #[test]
     fn assemble_transcript_threads_pause_into_engine_payload() {
         let voice_activity = voice_activity();
+        let runtime = test_runtime();
+        let (_cancel_tx, cancel_rx) = watch::channel(false);
         let transcript = assemble_transcript(TranscriptAssembly {
+            cancel_rx: &cancel_rx,
             context: None,
             engine_duration_ms: 7,
             engine_output: engine_output(),
             family_capabilities: &whisper_caps(),
             is_final: true,
+            llm_postprocess: None,
             pause_ms_before_utterance: Some(420),
             processors: &[],
             stage_enablement: &StageEnablement::default(),
+            tokio_runtime: &runtime,
             utterance_id: Uuid::nil(),
             vad_probabilities: &[],
             voice_activity,
@@ -505,15 +541,20 @@ mod tests {
     #[test]
     fn stage_context_exposes_pause_ms_before_utterance_to_processors() {
         let processors: Vec<Box<dyn StageProcessor>> = vec![Box::new(PauseReadingProcessor)];
+        let runtime = test_runtime();
+        let (_cancel_tx, cancel_rx) = watch::channel(false);
         let transcript = assemble_transcript(TranscriptAssembly {
+            cancel_rx: &cancel_rx,
             context: None,
             engine_duration_ms: 7,
             engine_output: engine_output(),
             family_capabilities: &whisper_caps(),
             is_final: true,
+            llm_postprocess: None,
             pause_ms_before_utterance: Some(150),
             processors: &processors,
             stage_enablement: &StageEnablement::default(),
+            tokio_runtime: &runtime,
             utterance_id: Uuid::nil(),
             vad_probabilities: &[],
             voice_activity: voice_activity(),
@@ -534,15 +575,20 @@ mod tests {
         let processors: Vec<Box<dyn StageProcessor>> = vec![Box::new(VoicedFractionProcessor)];
 
         let voice_activity = voice_activity();
+        let runtime = test_runtime();
+        let (_cancel_tx, cancel_rx) = watch::channel(false);
         let transcript = assemble_transcript(TranscriptAssembly {
+            cancel_rx: &cancel_rx,
             context: None,
             engine_duration_ms: 7,
             engine_output: engine_output(),
             family_capabilities: &whisper_caps(),
             is_final: true,
+            llm_postprocess: None,
             pause_ms_before_utterance: None,
             processors: &processors,
             stage_enablement: &StageEnablement::default(),
+            tokio_runtime: &runtime,
             utterance_id: Uuid::nil(),
             vad_probabilities: &trace,
             voice_activity,
@@ -580,6 +626,10 @@ mod tests {
             mean_probability: 0.75,
             max_probability: 0.95,
         }
+    }
+
+    fn test_runtime() -> Runtime {
+        Builder::new_current_thread().enable_all().build().unwrap()
     }
 
     fn whisper_caps() -> ModelFamilyCapabilities {

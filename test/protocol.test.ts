@@ -57,6 +57,49 @@ describe('sidecar protocol', () => {
     expect(payload.sessionId).toBe('session-gpu');
   });
 
+  it('serializes start_session command with llmPostprocess config', () => {
+    const command = createStartSessionCommand({
+      accelerationPreference: 'auto',
+      language: 'en',
+      llmPostprocess: {
+        keepAlive: '30m',
+        model: 'llama3.2:latest',
+        noteContextChars: 3000,
+        priorUtterancesN: 2,
+        prompt: 'Clean it.',
+        showRawBelow: true,
+        skipMinWords: 4,
+        temperature: 0.2,
+        totalContextCap: 7000,
+      },
+      mode: 'always_on',
+      modelSelection: {
+        familyId: 'whisper',
+        filePath: '/tmp/m.bin',
+        kind: 'external_file',
+        runtimeId: 'whisper_cpp',
+      },
+      sessionStartUnixMs: 1_700_000_000_000,
+      sessionId: 'session-llm',
+      speakingStyle: 'balanced',
+    });
+
+    expect(readPayload(encodeJsonFrame(command))).toMatchObject({
+      llmPostprocess: {
+        keepAlive: '30m',
+        model: 'llama3.2:latest',
+        noteContextChars: 3000,
+        priorUtterancesN: 2,
+        prompt: 'Clean it.',
+        showRawBelow: true,
+        skipMinWords: 4,
+        temperature: 0.2,
+        totalContextCap: 7000,
+      },
+      type: 'start_session',
+    });
+  });
+
   it('serializes get_system_info command', () => {
     const frame = encodeJsonFrame(createGetSystemInfoCommand());
 
@@ -233,6 +276,7 @@ describe('sidecar protocol', () => {
       parseEventFrame(
         JSON.stringify({
           isFinal: true,
+          llmPostprocessRawText: null,
           pauseMsBeforeUtterance: null,
           processingDurationMs: 100,
           revision: 0,
@@ -256,6 +300,7 @@ describe('sidecar protocol', () => {
       parseEventFrame(
         JSON.stringify({
           isFinal: true,
+          llmPostprocessRawText: null,
           pauseMsBeforeUtterance: null,
           processingDurationMs: 100,
           revision: 0,
@@ -278,6 +323,7 @@ describe('sidecar protocol', () => {
     const event = parseEventFrame(
       JSON.stringify({
         isFinal: true,
+        llmPostprocessRawText: null,
         pauseMsBeforeUtterance: 320,
         processingDurationMs: 100,
         revision: 0,
@@ -305,6 +351,7 @@ describe('sidecar protocol', () => {
     const event = parseEventFrame(
       JSON.stringify({
         isFinal: true,
+        llmPostprocessRawText: null,
         pauseMsBeforeUtterance: null,
         processingDurationMs: 100,
         revision: 0,
@@ -381,6 +428,7 @@ describe('sidecar protocol', () => {
     const event = parseEventFrame(
       JSON.stringify({
         isFinal: true,
+        llmPostprocessRawText: null,
         pauseMsBeforeUtterance: 250,
         processingDurationMs: 125,
         revision: 0,
@@ -428,6 +476,7 @@ describe('sidecar protocol', () => {
 
     expect(event).toEqual({
       isFinal: true,
+      llmPostprocessRawText: null,
       pauseMsBeforeUtterance: 250,
       processingDurationMs: 125,
       revision: 0,
@@ -498,11 +547,9 @@ describe('sidecar protocol', () => {
       budgetChars: 512,
       sources: [
         {
-          endRevision: 0,
-          kind: 'session_utterance',
+          kind: 'prior_utterance',
           text: 'hello',
           truncated: false,
-          utteranceId: 'utt-prior',
         },
       ],
       text: 'hello',
@@ -534,6 +581,7 @@ describe('sidecar protocol', () => {
     const parser = new FramedMessageParser(parseEventFrame);
     const transcriptFrame = encodeJsonFrame({
       isFinal: true,
+      llmPostprocessRawText: null,
       pauseMsBeforeUtterance: null,
       processingDurationMs: 125,
       revision: 0,
@@ -564,6 +612,7 @@ describe('sidecar protocol', () => {
     expect(frames[0]).toEqual({
       envelope: {
         isFinal: true,
+        llmPostprocessRawText: null,
         pauseMsBeforeUtterance: null,
         processingDurationMs: 125,
         revision: 0,

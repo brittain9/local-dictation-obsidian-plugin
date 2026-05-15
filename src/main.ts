@@ -7,6 +7,8 @@ import { registerCommands } from './commands/register-commands';
 import { DictationSessionController } from './dictation/dictation-session-controller';
 import { dictationAnchorExtension } from './editor/dictation-anchor-extension';
 import { noteSurfaceUpdateListenerExtension } from './editor/note-surface';
+import { sessionProcessingExtension } from './editor/session-processing-extension';
+import { createOllamaClient } from './llm/ollama-client';
 import { ModelInstallManager } from './models/model-install-manager';
 import { Session } from './session/session';
 import { logAccelerationFallbacks } from './settings/acceleration-info';
@@ -27,6 +29,7 @@ import { SidecarInstallManager } from './sidecar/sidecar-install-manager';
 import { resolveSidecarExecutablePath, SidecarNotInstalledError } from './sidecar/sidecar-paths';
 import type { SidecarLaunchSpec } from './sidecar/sidecar-process';
 import { DictationRibbonController } from './ui/dictation-ribbon';
+import { LOCAL_TRANSCRIPT_VIEW_TYPE, LocalTranscriptView } from './ui/local-transcript-view';
 
 export default class LocalSttPlugin extends Plugin {
   private audioCaptureStream: AudioCaptureStream | null = null;
@@ -43,6 +46,7 @@ export default class LocalSttPlugin extends Plugin {
 
     this.registerEditorExtension(dictationAnchorExtension());
     this.registerEditorExtension(noteSurfaceUpdateListenerExtension());
+    this.registerEditorExtension(sessionProcessingExtension());
     this.sidecarConnection = new SidecarConnection({
       getRequestTimeoutMs: () => this.settings.sidecarRequestTimeoutSeconds * 1000,
       logger: this.logger,
@@ -51,6 +55,7 @@ export default class LocalSttPlugin extends Plugin {
     this.audioCaptureStream = new AudioCaptureStream({
       logger: this.logger,
     });
+    const ollamaClient = createOllamaClient();
     this.modelInstallManager = new ModelInstallManager({
       getSettings: () => this.settings,
       logger: this.logger,
@@ -65,6 +70,21 @@ export default class LocalSttPlugin extends Plugin {
         new Notice(message);
       },
     });
+    this.registerView(
+      LOCAL_TRANSCRIPT_VIEW_TYPE,
+      (leaf) =>
+        new LocalTranscriptView(leaf, {
+          getSettings: () => this.settings,
+          logger: this.logger,
+          notice: (message) => {
+            new Notice(message);
+          },
+          ollamaClient,
+          saveSettings: async (nextSettings) => {
+            await this.updateSettings(nextSettings);
+          },
+        }),
+    );
 
     const ribbonElement = this.addRibbonIcon('mic', 'Local Dictation: Click to start', () => {
       this.requireDictationController().handleRibbonClick();
@@ -85,6 +105,7 @@ export default class LocalSttPlugin extends Plugin {
       notice: (message) => {
         new Notice(message);
       },
+      ollamaClient,
       onSidecarMissing: () => {
         void this.openFirstRunSetup();
       },
@@ -141,6 +162,8 @@ export default class LocalSttPlugin extends Plugin {
   }
 
   private async runPostLayoutStartup(): Promise<void> {
+    await this.bootstrapLocalTranscriptSidebar();
+
     try {
       await this.checkSidecarHealth({ showNotice: false });
       const systemInfo = await this.requireSidecarConnection().getSystemInfo();
@@ -153,6 +176,44 @@ export default class LocalSttPlugin extends Plugin {
       }
       this.logger.error('sidecar', 'initial startup check failed', error);
     }
+  }
+
+  private async ensureLocalTranscriptSidebar(): Promise<void> {
+    if (this.app.workspace.getLeavesOfType(LOCAL_TRANSCRIPT_VIEW_TYPE).length > 0) {
+      return;
+    }
+
+    const leaf = this.app.workspace.getLeftLeaf(false);
+    await leaf?.setViewState({
+      active: false,
+      type: LOCAL_TRANSCRIPT_VIEW_TYPE,
+    });
+  }
+
+  private async bootstrapLocalTranscriptSidebar(): Promise<void> {
+    if (!this.settings.llmFeaturesEnabled) {
+      return;
+    }
+    if (this.settings.localTranscriptSidebarBootstrapped) {
+      return;
+    }
+
+    await this.ensureLocalTranscriptSidebar();
+    await this.updateSettings({
+      ...this.settings,
+      localTranscriptSidebarBootstrapped: true,
+    });
+  }
+
+  private async syncLocalTranscriptSidebar(): Promise<void> {
+    if (!this.settings.llmFeaturesEnabled) {
+      for (const leaf of this.app.workspace.getLeavesOfType(LOCAL_TRANSCRIPT_VIEW_TYPE)) {
+        leaf.detach();
+      }
+      return;
+    }
+
+    await this.ensureLocalTranscriptSidebar();
   }
 
   private async openFirstRunSetup(): Promise<void> {
@@ -259,8 +320,12 @@ export default class LocalSttPlugin extends Plugin {
   }
 
   private async updateSettings(nextSettings: PluginSettings): Promise<void> {
+    const previousLlmFeaturesEnabled = this.settings.llmFeaturesEnabled;
     this.settings = resolvePluginSettings(nextSettings);
     await this.saveData(this.settings);
+    if (previousLlmFeaturesEnabled !== this.settings.llmFeaturesEnabled) {
+      await this.syncLocalTranscriptSidebar();
+    }
   }
 
   private requireDictationController(): DictationSessionController {

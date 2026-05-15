@@ -2,6 +2,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
+use tokio::sync::watch;
 use uuid::Uuid;
 
 use crate::catalog::ModelCatalog;
@@ -14,14 +15,15 @@ use crate::model_store::{
 };
 use crate::protocol::{
     AccelerationPreference, Command, CompiledAdapterInfo, CompiledRuntimeInfo, ContextWindow,
-    Event, HealthStatus, ListeningMode, ModelInstallState, ModelProbeStatus, QueueBackpressureTier,
-    SelectedModel, SessionState, SessionStopReason, system_info_string,
+    Event, HealthStatus, ListeningMode, LlmPostprocessConfig, ModelInstallState, ModelProbeStatus,
+    QueueBackpressureTier, SelectedModel, SessionState, SessionStopReason, StageId,
+    system_info_string,
 };
 use crate::session::{
     FinalizedUtterance, ListeningSession, SessionAction, SessionBaseState, SessionConfig,
     SessionInitError,
 };
-use crate::stages::{StageEnablement, any_registered_stage_needs_context};
+use crate::stages::StageEnablement;
 use crate::transcription::GpuConfig;
 use crate::worker::{SessionMetadata, TranscriptionWorker, WorkerCommand, WorkerEvent};
 
@@ -64,6 +66,8 @@ pub struct AppState {
 
 struct ActiveSession {
     context_required: bool,
+    context_budget_chars: u32,
+    cancel_tx: watch::Sender<bool>,
     draining: bool,
     last_reported_queue_tier: QueueBackpressureTier,
     last_reported_state: Option<SessionState>,
@@ -379,6 +383,7 @@ impl AppState {
             Command::StartSession {
                 acceleration_preference,
                 language,
+                llm_postprocess,
                 mode,
                 model_selection,
                 model_store_path_override,
@@ -386,6 +391,7 @@ impl AppState {
                 session_id,
                 speaking_style,
             } => {
+                let llm_postprocess = llm_postprocess.map(|boxed| *boxed);
                 if let Some(replaced_events) =
                     self.finish_active_session(SessionStopReason::SessionReplaced)
                 {
@@ -409,6 +415,7 @@ impl AppState {
                             session_id: session_id.clone(),
                             style: speaking_style,
                         };
+                        let (cancel_tx, cancel_rx) = watch::channel(false);
                         let session = match (self.session_factory)(config) {
                             Ok(session) => session,
                             Err(SessionInitError::VadLoad(details)) => {
@@ -424,6 +431,18 @@ impl AppState {
                             }
                         };
 
+                        let engine_context_supported = resolved_model_supports_initial_prompt(
+                            self.registry.as_ref(),
+                            resolved_model.runtime_id,
+                            resolved_model.family_id,
+                        );
+                        let context_budget_chars = context_budget_chars(
+                            engine_context_supported,
+                            llm_postprocess.as_ref(),
+                        );
+                        let context_required =
+                            engine_context_supported || llm_postprocess.is_some();
+
                         if self
                             .transcription_worker
                             .send(WorkerCommand::BeginSession(SessionMetadata {
@@ -431,7 +450,9 @@ impl AppState {
                                 family_id: resolved_model.family_id,
                                 gpu_config: GpuConfig { use_gpu },
                                 language,
+                                llm_postprocess,
                                 model_file_path: resolved_model.resolved_path.clone(),
+                                cancel_rx,
                                 session_start_unix_ms,
                                 session_id: session_id.clone(),
                                 stage_enablement: StageEnablement::default(),
@@ -448,11 +469,9 @@ impl AppState {
                         }
 
                         self.active_session = Some(ActiveSession {
-                            context_required: resolved_model_supports_initial_prompt(
-                                self.registry.as_ref(),
-                                resolved_model.runtime_id,
-                                resolved_model.family_id,
-                            ) || any_registered_stage_needs_context(),
+                            cancel_tx,
+                            context_budget_chars,
+                            context_required,
                             draining: false,
                             last_reported_queue_tier: QueueBackpressureTier::Normal,
                             last_reported_state: None,
@@ -503,8 +522,10 @@ impl AppState {
                 (ControlFlow::Continue, events)
             }
             Command::Shutdown => {
+                if let Some(active_session) = self.active_session.take() {
+                    let _ = active_session.cancel_tx.send(true);
+                }
                 let _ = self.transcription_worker.send(WorkerCommand::Shutdown);
-                self.active_session = None;
 
                 (ControlFlow::Shutdown, events)
             }
@@ -596,6 +617,7 @@ impl AppState {
         }
 
         let active_session = self.active_session.take()?;
+        let _ = active_session.cancel_tx.send(true);
         let session_id = active_session.session.config().session_id.clone();
         let _ = self.transcription_worker.send(WorkerCommand::EndSession {
             session_id: session_id.clone(),
@@ -617,8 +639,9 @@ impl AppState {
 
         let active_session = self.active_session.as_mut()?;
         if !active_session.transcription_active {
+            let _ = active_session.cancel_tx.send(true);
             let session_id = active_session.session.config().session_id.clone();
-            self.active_session = None;
+            self.active_session.take()?;
             let _ = self.transcription_worker.send(WorkerCommand::EndSession {
                 session_id: session_id.clone(),
             });
@@ -630,7 +653,10 @@ impl AppState {
         }
 
         // Transcription is still in flight; defer SessionStopped until the last
-        // TranscriptReady drains through the worker.
+        // TranscriptReady drains through the worker. Do not signal cancel — the
+        // LLM postprocess stage skips on cancel, so draining must run to
+        // completion with stages intact. maybe_complete_drain emits the final
+        // cancel as teardown.
         active_session.draining = true;
         self.emit_state_if_changed(&mut events);
         Some(events)
@@ -658,7 +684,10 @@ impl AppState {
             SessionStopReason::UserStop
         };
 
-        self.active_session = None;
+        let Some(active_session) = self.active_session.take() else {
+            return false;
+        };
+        let _ = active_session.cancel_tx.send(true);
         let _ = self.transcription_worker.send(WorkerCommand::EndSession {
             session_id: session_id.to_owned(),
         });
@@ -743,8 +772,17 @@ impl AppState {
 
                 let is_final = transcript.is_final();
                 let text = transcript.joined_text();
+                let llm_postprocess_raw_text = transcript
+                    .stage_history
+                    .iter()
+                    .find(|stage| stage.stage_id == StageId::LlmPostprocess)
+                    .and_then(|stage| stage.payload.as_ref())
+                    .and_then(|payload| payload.get("rawText"))
+                    .and_then(|value| value.as_str())
+                    .map(String::from);
                 events.push(Event::TranscriptReady {
                     is_final,
+                    llm_postprocess_raw_text,
                     pause_ms_before_utterance,
                     processing_duration_ms,
                     revision: transcript.revision,
@@ -826,7 +864,7 @@ impl AppState {
         if active_session.context_required {
             active_session.pending_context_requests.push(pending);
             events.push(Event::ContextRequest {
-                budget_chars: CONTEXT_BUDGET_CHARS,
+                budget_chars: active_session.context_budget_chars,
                 correlation_id,
                 session_id: session_id.clone(),
                 utterance_id,
@@ -873,9 +911,11 @@ impl AppState {
         };
 
         let pending = active_session.pending_context_requests.remove(index);
+        let context_budget_chars = active_session.context_budget_chars;
         let context = context.filter(|window| {
-            window.budget_chars <= CONTEXT_BUDGET_CHARS
-                && window.text.chars().count() <= CONTEXT_BUDGET_CHARS as usize
+            window.budget_chars <= context_budget_chars
+                && window.text.chars().count() <= context_budget_chars as usize
+                && context_source_chars(window) <= context_budget_chars as usize
         });
         self.dispatch_pending(pending, context, events);
     }
@@ -1178,6 +1218,30 @@ fn resolved_model_supports_initial_prompt(
     registry
         .adapter(runtime_id, family_id)
         .is_some_and(|adapter| adapter.capabilities().supports_initial_prompt)
+}
+
+fn context_budget_chars(
+    engine_context_supported: bool,
+    llm_postprocess: Option<&LlmPostprocessConfig>,
+) -> u32 {
+    let engine_budget = if engine_context_supported {
+        CONTEXT_BUDGET_CHARS
+    } else {
+        0
+    };
+    let llm_budget = llm_postprocess
+        .map(|config| config.total_context_cap.max(config.note_context_chars))
+        .unwrap_or(0);
+
+    engine_budget.saturating_add(llm_budget)
+}
+
+fn context_source_chars(window: &ContextWindow) -> usize {
+    window
+        .sources
+        .iter()
+        .map(|source| source.text().chars().count())
+        .sum()
 }
 
 fn derive_session_state(
@@ -1796,11 +1860,9 @@ mod tests {
 
         let context_window = ContextWindow {
             budget_chars: 384,
-            sources: vec![ContextWindowSource::SessionUtterance {
-                end_revision: 0,
+            sources: vec![ContextWindowSource::PriorUtterance {
                 text: "previous note text".to_string(),
                 truncated: false,
-                utterance_id: Uuid::new_v4(),
             }],
             text: "previous note text".to_string(),
             truncated: false,
@@ -2319,6 +2381,7 @@ mod tests {
         Command::StartSession {
             acceleration_preference: AccelerationPreference::Auto,
             language: "en".to_string(),
+            llm_postprocess: None,
             mode: ListeningMode::AlwaysOn,
             model_selection: SelectedModel::ExternalFile {
                 runtime_id: RuntimeId::WhisperCpp,

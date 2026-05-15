@@ -2,14 +2,20 @@ import { randomUUID } from 'node:crypto';
 
 import type { AudioCaptureStream } from '../audio/audio-capture-stream';
 import type { NotePlacementOptions } from '../editor/note-surface';
+import { OLLAMA_KEEP_ALIVE, type OllamaClient } from '../llm/ollama-client';
+import { type LlmPostprocessMode, resolveStyleOption } from '../llm/presets';
+import { formatBatchUserMessage } from '../llm/templates';
 import type { Session } from '../session/session';
 import type { StageId } from '../session/session-journal';
 import type { PluginSettings } from '../settings/plugin-settings';
 import { formatErrorMessage } from '../shared/format-utils';
 import type { PluginLogger } from '../shared/plugin-logger';
+import { truncateLeadingText } from '../shared/text-truncation';
 import type {
   ContextRequestEvent,
   ContextWindow,
+  ContextWindowSource,
+  LlmPostprocessConfig,
   QueueBackpressureTier,
   SessionState,
   SidecarEvent,
@@ -30,13 +36,30 @@ export type DictationControllerState =
 
 type ControllerSession = Pick<
   Session,
-  'acceptTranscript' | 'dispose' | 'readNoteContext' | 'setAnchorMode'
+  | 'acceptTranscript'
+  | 'clearSessionProcessingMark'
+  | 'dispose'
+  | 'markSessionRangeAsProcessing'
+  | 'readCurrentSessionText'
+  | 'readNoteGlossary'
+  | 'readNoteText'
+  | 'readPriorUtterances'
+  | 'replaceSessionRangeWithCleaned'
+  | 'setAnchorMode'
 >;
 
 interface ActiveSessionSnapshot {
   accelerationPreference: PluginSettings['accelerationPreference'];
   dictationAnchor: PluginSettings['dictationAnchor'];
   listeningMode: PluginSettings['listeningMode'];
+  llmFeaturesEnabled: PluginSettings['llmFeaturesEnabled'];
+  llmPostprocess: LlmPostprocessConfig | null;
+  llmPostprocessMode: LlmPostprocessMode;
+  llmPostprocessModel: PluginSettings['llmPostprocessModel'];
+  llmPostprocessNoteContextChars: PluginSettings['llmPostprocessNoteContextChars'];
+  llmPostprocessPrompt: PluginSettings['llmPostprocessPrompt'];
+  llmPostprocessShowRawBelow: PluginSettings['llmPostprocessShowRawBelow'];
+  llmPostprocessTemperature: PluginSettings['llmPostprocessTemperature'];
   modelSelection: NonNullable<PluginSettings['selectedModel']>;
   modelStorePathOverride: string;
   sessionStartUnixMs: number;
@@ -60,6 +83,7 @@ interface DictationSessionControllerDependencies {
   getSettings: () => PluginSettings;
   logger?: PluginLogger;
   notice: (message: string) => void;
+  ollamaClient: Pick<OllamaClient, 'cleanup'>;
   onSidecarMissing?: () => void;
   setRibbonQueueTier: (tier: QueueBackpressureTier) => void;
   setRibbonState: (state: DictationControllerState) => void;
@@ -80,6 +104,8 @@ const ANCHOR_VISIBLE_DELAY_MS = 2500;
 export class DictationSessionController {
   private abortingSessionId: string | null = null;
   private anchorTimerId: ReturnType<typeof setTimeout> | null = null;
+  private batchCleanupAbortController: AbortController | null = null;
+  private llmFailureLoggedForSessionId: string | null = null;
   private pendingStartSessionId: string | null = null;
   private queueTier: QueueBackpressureTier = 'normal';
   private readonly releaseSidecarSubscription: () => void;
@@ -105,6 +131,11 @@ export class DictationSessionController {
 
   async cancelDictation(): Promise<void> {
     if (this.sessionId === null) {
+      if (this.batchCleanupAbortController !== null) {
+        this.abortBatchCleanup();
+        return;
+      }
+
       this.dependencies.notice('Dictation is not currently active.');
       return;
     }
@@ -118,6 +149,19 @@ export class DictationSessionController {
   }
 
   async dispose(): Promise<void> {
+    this.abortBatchCleanup();
+    const activeSessionId = this.sessionId;
+    if (activeSessionId !== null) {
+      try {
+        await this.dependencies.sidecarConnection.stopSession(activeSessionId, 500);
+      } catch (error) {
+        this.dependencies.logger?.warn(
+          'session',
+          'timed out stopping dictation during unload',
+          error,
+        );
+      }
+    }
     this.releaseSidecarSubscription();
     await this.cleanupLocalSession();
     this.applyUiState('idle');
@@ -133,6 +177,8 @@ export class DictationSessionController {
       return;
     }
 
+    this.abortBatchCleanup();
+
     try {
       await this.dependencies.sidecarConnection.ensureStarted();
     } catch (error) {
@@ -147,10 +193,19 @@ export class DictationSessionController {
 
     const settings = this.dependencies.getSettings();
     const selectedModel = this.requireSelectedModel(settings);
+    const effectiveGeneration = resolveActiveGenerationDefaults(settings);
     const snapshot: ActiveSessionSnapshot = {
       accelerationPreference: settings.accelerationPreference,
       dictationAnchor: settings.dictationAnchor,
       listeningMode: settings.listeningMode,
+      llmFeaturesEnabled: settings.llmFeaturesEnabled,
+      llmPostprocess: resolveLlmPostprocessSnapshot(settings),
+      llmPostprocessMode: settings.llmPostprocessMode,
+      llmPostprocessModel: settings.llmPostprocessModel,
+      llmPostprocessNoteContextChars: settings.llmPostprocessNoteContextChars,
+      llmPostprocessPrompt: settings.llmPostprocessPrompt,
+      llmPostprocessShowRawBelow: settings.llmPostprocessShowRawBelow,
+      llmPostprocessTemperature: effectiveGeneration.temperature,
       modelSelection: selectedModel,
       modelStorePathOverride: settings.modelStorePathOverride,
       sessionStartUnixMs: Date.now(),
@@ -217,6 +272,7 @@ export class DictationSessionController {
         await this.dependencies.sidecarConnection.startSession({
           accelerationPreference: snapshot.accelerationPreference,
           language: 'en',
+          ...(snapshot.llmPostprocess !== null ? { llmPostprocess: snapshot.llmPostprocess } : {}),
           mode: snapshot.listeningMode,
           modelSelection: snapshot.modelSelection,
           sessionStartUnixMs: snapshot.sessionStartUnixMs,
@@ -282,11 +338,12 @@ export class DictationSessionController {
     this.dependencies.setRibbonState(state);
   }
 
-  private async cleanupLocalSession(): Promise<void> {
+  private async detachSession(): Promise<ControllerSession | null> {
     this.abortingSessionId = null;
     this.pendingStartSessionId = null;
     this.sessionId = null;
     this.sessionSnapshot = null;
+    this.llmFailureLoggedForSessionId = null;
     const session = this.session;
     this.session = null;
     this.clearAnchorTimer();
@@ -296,6 +353,11 @@ export class DictationSessionController {
       await this.dependencies.captureStream.stop();
     }
 
+    return session;
+  }
+
+  private async cleanupLocalSession(): Promise<void> {
+    const session = await this.detachSession();
     session?.dispose();
   }
 
@@ -364,14 +426,103 @@ export class DictationSessionController {
       'session',
       `session ${event.sessionId} stopped (reason: ${event.reason})`,
     );
-    await this.cleanupLocalSession();
+    const snapshot = this.sessionSnapshot;
+    const session = await this.detachSession();
     this.applyUiState('idle');
+
+    if (snapshot !== null && session !== null && shouldRunBatchCleanup(snapshot, event.reason)) {
+      await this.runBatchCleanup(snapshot, session);
+    }
+
+    session?.dispose();
 
     if (event.reason === 'timeout') {
       this.dependencies.notice(
         'Local Dictation: one-sentence mode timed out before speech started.',
       );
     }
+  }
+
+  private async runBatchCleanup(
+    snapshot: ActiveSessionSnapshot,
+    session: ControllerSession,
+  ): Promise<void> {
+    const model = snapshot.llmPostprocessModel.trim();
+    const sessionTranscript = session.readCurrentSessionText();
+
+    if (model.length === 0) {
+      this.dependencies.logger?.debug('llm', 'batch cleanup skipped: no Ollama model selected');
+      return;
+    }
+
+    if (sessionTranscript.length === 0) {
+      this.dependencies.logger?.debug('llm', 'batch cleanup skipped: no transcript text');
+      return;
+    }
+
+    const abortController = new AbortController();
+    this.batchCleanupAbortController = abortController;
+
+    const noteContext =
+      snapshot.llmPostprocessNoteContextChars > 0
+        ? (session.readNoteText(snapshot.llmPostprocessNoteContextChars)?.text ?? '')
+        : '';
+    const userMessage = formatBatchUserMessage(noteContext, sessionTranscript);
+
+    try {
+      this.dependencies.logger?.debug('llm', 'batch cleanup started', {
+        chars: sessionTranscript.length,
+        model,
+      });
+      session.markSessionRangeAsProcessing();
+      const cleanText = await this.dependencies.ollamaClient.cleanup({
+        abortSignal: abortController.signal,
+        model,
+        prompt: snapshot.llmPostprocessPrompt,
+        temperature: snapshot.llmPostprocessTemperature,
+        userMessage,
+      });
+      if (cleanText.trim().length === 0) {
+        this.dependencies.logger?.debug('llm', 'batch cleanup returned empty text');
+        return;
+      }
+
+      const replaced = session.replaceSessionRangeWithCleaned(cleanText, {
+        rawTextForCallout: sessionTranscript,
+        showRawBelow: snapshot.llmPostprocessShowRawBelow,
+      });
+      if (!replaced) {
+        this.dependencies.logger?.warn(
+          'llm',
+          'batch cleanup replacement skipped — transcript was edited during cleanup',
+        );
+        return;
+      }
+
+      this.dependencies.logger?.debug('llm', 'batch cleanup complete', {
+        chars: cleanText.trim().length,
+      });
+    } catch (error) {
+      if (abortController.signal.aborted) {
+        return;
+      }
+
+      this.dependencies.logger?.warn(
+        'llm',
+        `batch cleanup failed; raw transcript kept: ${formatErrorMessage(error)}`,
+        error,
+      );
+    } finally {
+      session.clearSessionProcessingMark();
+      if (this.batchCleanupAbortController === abortController) {
+        this.batchCleanupAbortController = null;
+      }
+    }
+  }
+
+  private abortBatchCleanup(): void {
+    this.batchCleanupAbortController?.abort();
+    this.batchCleanupAbortController = null;
   }
 
   private async handleSidecarEvent(event: SidecarEvent): Promise<void> {
@@ -427,6 +578,9 @@ export class DictationSessionController {
     }
 
     const previousTier = this.queueTier;
+    if (previousTier === event.tier) {
+      return;
+    }
     this.queueTier = event.tier;
     this.dependencies.setRibbonQueueTier(event.tier);
 
@@ -457,31 +611,84 @@ export class DictationSessionController {
     }
 
     const snapshot = this.sessionSnapshot;
-    const note = snapshot?.useNoteAsContext
-      ? (this.session?.readNoteContext(event.budgetChars) ?? null)
-      : null;
-    const context: ContextWindow | null =
-      note === null
-        ? null
-        : {
-            budgetChars: event.budgetChars,
-            sources: [{ kind: 'note_glossary', text: note.text, truncated: note.truncated }],
-            text: note.text,
-            truncated: note.truncated,
-          };
+    const context = snapshot === null ? null : this.buildContextWindow(snapshot, event.budgetChars);
 
-    if (note !== null) {
-      this.dependencies.logger?.debug(
-        'session',
-        `context_request: ${note.text} (${note.text.length}/${event.budgetChars} chars, truncated=${note.truncated})`,
-      );
-    }
+    this.dependencies.logger?.debug(
+      'session',
+      `context_request: ${context?.sources.length ?? 0} source(s), budget=${event.budgetChars}, truncated=${context?.truncated ?? false}`,
+    );
 
     try {
       this.dependencies.sidecarConnection.sendContextResponse(event.correlationId, context);
     } catch (error) {
       this.dependencies.logger?.warn('session', 'failed to send context response', error);
     }
+  }
+
+  private buildContextWindow(
+    snapshot: ActiveSessionSnapshot,
+    budgetChars: number,
+  ): ContextWindow | null {
+    const sources: ContextWindowSource[] = [];
+    let promptText = '';
+
+    if (snapshot.useNoteAsContext) {
+      const glossary = this.session?.readNoteGlossary(Math.min(384, budgetChars)) ?? null;
+      if (glossary !== null) {
+        sources.push({
+          kind: 'note_glossary',
+          text: glossary.text,
+          truncated: glossary.truncated,
+        });
+        promptText = glossary.text;
+      }
+    }
+
+    if (snapshot.llmPostprocess !== null) {
+      sources.push(...this.buildLlmContextSources(snapshot.llmPostprocess));
+    }
+
+    if (sources.length === 0) {
+      return null;
+    }
+
+    const truncated = sources.some((source) => source.truncated);
+
+    return {
+      budgetChars,
+      sources,
+      text: promptText,
+      truncated,
+    };
+  }
+
+  private buildLlmContextSources(config: LlmPostprocessConfig): ContextWindowSource[] {
+    const sources: ContextWindowSource[] = [];
+    const noteText =
+      config.noteContextChars > 0
+        ? (this.session?.readNoteText(config.noteContextChars) ?? null)
+        : null;
+
+    if (noteText !== null) {
+      sources.push({ kind: 'note_text', text: noteText.text, truncated: noteText.truncated });
+    }
+
+    const priorUtteranceBudget =
+      config.priorUtterancesN > 0
+        ? Math.max(1, Math.ceil(config.totalContextCap / config.priorUtterancesN))
+        : 0;
+    for (const utterance of this.session?.readPriorUtterances(
+      config.priorUtterancesN,
+      priorUtteranceBudget,
+    ) ?? []) {
+      sources.push({
+        kind: 'prior_utterance',
+        text: utterance.text,
+        truncated: utterance.truncated,
+      });
+    }
+
+    return enforceLlmContextCap(sources, config.totalContextCap);
   }
 
   private async handleTranscriptReady(event: TranscriptReadyEvent): Promise<void> {
@@ -504,6 +711,7 @@ export class DictationSessionController {
       );
     }
     this.logDroppedHallucinations(event);
+    this.maybeLogLlmStageFailure(event);
 
     const text = event.text.trim();
 
@@ -514,6 +722,9 @@ export class DictationSessionController {
 
     const result = session.acceptTranscript({
       isFinal: event.isFinal,
+      llmPostprocessRawText: shouldAppendRawLlmPostprocessCallout(event, this.sessionSnapshot)
+        ? event.llmPostprocessRawText
+        : null,
       pauseMsBeforeUtterance: event.pauseMsBeforeUtterance,
       revision: event.revision,
       segments: event.segments,
@@ -529,6 +740,23 @@ export class DictationSessionController {
       this.handleError('Failed to record the local transcript', new Error(result.reason));
       void this.abortSessionAfterError(event.sessionId);
     }
+  }
+
+  private maybeLogLlmStageFailure(event: TranscriptReadyEvent): void {
+    if (this.llmFailureLoggedForSessionId === event.sessionId) {
+      return;
+    }
+    const failed = event.stageResults.find(
+      (stage) => stage.stageId === 'llm_postprocess' && stage.status.kind === 'failed',
+    );
+    if (failed === undefined || failed.status.kind !== 'failed') {
+      return;
+    }
+    this.llmFailureLoggedForSessionId = event.sessionId;
+    this.dependencies.logger?.warn(
+      'llm',
+      `per-utterance LLM transform failed: ${failed.status.error}`,
+    );
   }
 
   private logDroppedHallucinations(event: TranscriptReadyEvent): void {
@@ -612,6 +840,112 @@ function createSessionId(): string {
   return `session-${randomUUID()}`;
 }
 
+function resolveLlmPostprocessSnapshot(settings: PluginSettings): LlmPostprocessConfig | null {
+  const model = settings.llmPostprocessModel.trim();
+
+  if (
+    !settings.llmFeaturesEnabled ||
+    settings.llmPostprocessMode !== 'per_utterance' ||
+    settings.showTimestamps ||
+    model.length === 0
+  ) {
+    return null;
+  }
+
+  const { skipMinWords, temperature } = resolveActiveGenerationDefaults(settings);
+
+  return {
+    keepAlive: OLLAMA_KEEP_ALIVE,
+    model,
+    noteContextChars: settings.llmPostprocessNoteContextChars,
+    priorUtterancesN: settings.llmPostprocessPriorUtterancesN,
+    prompt: settings.llmPostprocessPrompt,
+    showRawBelow: settings.llmPostprocessShowRawBelow,
+    skipMinWords,
+    temperature,
+    totalContextCap: settings.llmPostprocessTotalContextCap,
+  };
+}
+
+function resolveActiveGenerationDefaults(settings: PluginSettings): {
+  skipMinWords: number;
+  temperature: number;
+} {
+  const activeOption = resolveStyleOption(
+    settings.llmPostprocessActivePresetRef,
+    settings.llmPostprocessUserPresets,
+  );
+  return {
+    skipMinWords: activeOption?.minWords ?? settings.llmPostprocessSkipMinWords,
+    temperature: activeOption?.temperature ?? settings.llmPostprocessTemperature,
+  };
+}
+
+function shouldRunBatchCleanup(
+  snapshot: ActiveSessionSnapshot,
+  reason: Extract<SidecarEvent, { type: 'session_stopped' }>['reason'],
+): boolean {
+  if (!snapshot.llmFeaturesEnabled || snapshot.llmPostprocessMode !== 'batch') {
+    return false;
+  }
+
+  return reason === 'user_stop' || reason === 'sentence_complete';
+}
+
 function isAnchorVisibleSessionState(state: SessionState): boolean {
   return state === 'speech_detected' || state === 'speech_ending' || state === 'transcribing';
+}
+
+function shouldAppendRawLlmPostprocessCallout(
+  event: TranscriptReadyEvent,
+  snapshot: ActiveSessionSnapshot | null,
+): boolean {
+  if (snapshot?.llmPostprocess?.showRawBelow !== true || event.llmPostprocessRawText === null) {
+    return false;
+  }
+
+  return event.stageResults.some(
+    (stage) => stage.stageId === 'llm_postprocess' && stage.status.kind === 'ok',
+  );
+}
+
+function enforceLlmContextCap(
+  sources: ContextWindowSource[],
+  totalContextCap: number,
+): ContextWindowSource[] {
+  if (totalContextCap <= 0) {
+    return [];
+  }
+
+  const result = sources.map((source) => ({ ...source }));
+
+  for (const kind of ['note_text', 'prior_utterance'] as const) {
+    while (totalSourceChars(result) > totalContextCap) {
+      const index = result.findIndex((source) => source.kind === kind && source.text.length > 0);
+      if (index < 0) {
+        break;
+      }
+
+      const source = result[index];
+      if (source === undefined) {
+        break;
+      }
+      const overflow = totalSourceChars(result) - totalContextCap;
+      const nextMaxChars = Math.max(0, source.text.length - overflow);
+      const truncated = truncateLeadingText(source.text, nextMaxChars);
+      result[index] = {
+        ...source,
+        text: truncated.text,
+        truncated: true,
+      };
+    }
+  }
+
+  return result.filter(
+    (source) => source.text.trim().length > 0 || source.kind === 'note_glossary',
+  );
+}
+
+function totalSourceChars(sources: readonly ContextWindowSource[]): number {
+  return sources.reduce((sum, source) => sum + source.text.length, 0);
 }
