@@ -68,6 +68,8 @@ class FakeSession {
       },
     ) => true,
   );
+  public readonly markSessionRangeAsProcessing = vi.fn(() => true);
+  public readonly clearSessionProcessingMark = vi.fn();
 
   setAnchorMode(mode: 'hidden' | 'visible'): void {
     this.modeCalls.push(mode);
@@ -857,6 +859,14 @@ describe('DictationSessionController', () => {
       rawTextForCallout: 'edited dictated text',
       showRawBelow: true,
     });
+    expect(session.markSessionRangeAsProcessing).toHaveBeenCalledTimes(1);
+    expect(session.clearSessionProcessingMark).toHaveBeenCalledTimes(1);
+    expect(
+      session.markSessionRangeAsProcessing.mock.invocationCallOrder[0] ?? Number.POSITIVE_INFINITY,
+    ).toBeLessThan(ollamaClient.cleanup.mock.invocationCallOrder[0] ?? 0);
+    expect(session.clearSessionProcessingMark.mock.invocationCallOrder[0] ?? 0).toBeGreaterThan(
+      ollamaClient.cleanup.mock.invocationCallOrder[0] ?? Number.POSITIVE_INFINITY,
+    );
   });
 
   it('logs a missing Ollama model instead of showing a cleanup notice', async () => {
@@ -1032,6 +1042,8 @@ describe('DictationSessionController', () => {
       'Local Dictation: LLM transform failed — raw transcript kept. (Ollama failed)',
     );
     expect(session.replaceSessionRangeWithCleaned).not.toHaveBeenCalled();
+    expect(session.markSessionRangeAsProcessing).toHaveBeenCalledTimes(1);
+    expect(session.clearSessionProcessingMark).toHaveBeenCalledTimes(1);
   });
 
   it('aborts in-flight batch cleanup when cancel is requested after sidecar stop', async () => {

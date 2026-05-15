@@ -12,6 +12,10 @@ import {
   setAnchorEffect,
   setAnchorModeEffect,
 } from './dictation-anchor-extension';
+import {
+  type SessionProcessingRange,
+  setSessionProcessingEffect,
+} from './session-processing-extension';
 import { computeFirstPhrasePrefix } from './transcript-placement';
 
 export interface NotePlacementOptions {
@@ -318,6 +322,13 @@ export class NoteSurface {
     }
   }
 
+  setProcessingRange(range: SessionProcessingRange | null): void {
+    if (this.disposed) {
+      return;
+    }
+    this.view.dispatch({ effects: setSessionProcessingEffect.of(range) });
+  }
+
   trimPendingInitialPrefix(): void {
     if (this.disposed || this.pendingInitialPrefix.length === 0) {
       return;
@@ -342,7 +353,9 @@ export class NoteSurface {
 
   dispose(): void {
     this.trimPendingInitialPrefix();
-    this.view.dispatch({ effects: clearAnchorEffect.of(null) });
+    this.view.dispatch({
+      effects: [clearAnchorEffect.of(null), setSessionProcessingEffect.of(null)],
+    });
     this.disposed = true;
 
     if (activeNoteSurface === this) {

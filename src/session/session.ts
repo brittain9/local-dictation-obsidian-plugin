@@ -79,6 +79,7 @@ interface NoteSurfaceLike {
     preservedSpans: PreservedSpan[],
   ): RewriteResult;
   setAnchorMode(mode: DictationAnchorMode): void;
+  setProcessingRange(range: { from: number; to: number } | null): void;
   validateExternalModification(): void;
 }
 
@@ -230,6 +231,22 @@ export class Session {
 
   setAnchorMode(mode: DictationAnchorMode): void {
     this.surface?.setAnchorMode(mode);
+  }
+
+  markSessionRangeAsProcessing(): boolean {
+    if (this.surface === null) {
+      return false;
+    }
+    const range = this.resolveSessionRange();
+    if (range === null) {
+      return false;
+    }
+    this.surface.setProcessingRange(range);
+    return true;
+  }
+
+  clearSessionProcessingMark(): void {
+    this.surface?.setProcessingRange(null);
   }
 
   dispose(): void {

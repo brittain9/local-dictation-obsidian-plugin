@@ -7,6 +7,7 @@ import { registerCommands } from './commands/register-commands';
 import { DictationSessionController } from './dictation/dictation-session-controller';
 import { dictationAnchorExtension } from './editor/dictation-anchor-extension';
 import { noteSurfaceUpdateListenerExtension } from './editor/note-surface';
+import { sessionProcessingExtension } from './editor/session-processing-extension';
 import { createOllamaClient } from './llm/ollama-client';
 import { ModelInstallManager } from './models/model-install-manager';
 import { Session } from './session/session';
@@ -45,6 +46,7 @@ export default class LocalSttPlugin extends Plugin {
 
     this.registerEditorExtension(dictationAnchorExtension());
     this.registerEditorExtension(noteSurfaceUpdateListenerExtension());
+    this.registerEditorExtension(sessionProcessingExtension());
     this.sidecarConnection = new SidecarConnection({
       getRequestTimeoutMs: () => this.settings.sidecarRequestTimeoutSeconds * 1000,
       logger: this.logger,

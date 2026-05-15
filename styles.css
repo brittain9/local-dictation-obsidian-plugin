@@ -428,6 +428,11 @@
     animation: none;
     opacity: 0.55;
   }
+
+  .local-stt-session-processing {
+    animation: none;
+    opacity: 1;
+  }
 }
 
 /* --- Dictation anchor widget -------------------------------------- */
@@ -478,6 +483,22 @@
   }
   50% {
     opacity: 0.15;
+  }
+}
+
+/* --- Batch LLM processing pulse ----------------------------------- */
+
+.local-stt-session-processing {
+  animation: local-stt-session-processing-pulse 1.4s ease-in-out infinite;
+}
+
+@keyframes local-stt-session-processing-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
   }
 }
 

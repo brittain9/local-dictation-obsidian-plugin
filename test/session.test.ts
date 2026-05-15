@@ -39,6 +39,9 @@ class FakeSurface {
     (_maxChars: number): { text: string; truncated: boolean } | null => null,
   );
   public readonly setAnchorMode = vi.fn();
+  public readonly setProcessingRange = vi.fn(
+    (_range: { from: number; to: number } | null): void => undefined,
+  );
   public readonly validateExternalModification = vi.fn();
   public documentText = '';
   public nextAppendResult: AppendResult | null = null;
@@ -383,6 +386,25 @@ describe('Session', () => {
     expect(surface.documentText).toBe('Existing raw words');
     expect(session.replaceSessionRangeWithCleaned('Cleaned words.')).toBe(true);
     expect(surface.documentText).toBe('Existing Cleaned words.');
+  });
+
+  it('marks the session range as processing and clears the mark on demand', () => {
+    const { session, surface } = createSessionHarness();
+
+    expect(session.markSessionRangeAsProcessing()).toBe(false);
+    expect(surface.setProcessingRange).not.toHaveBeenCalled();
+
+    session.acceptTranscript(transcript({ text: 'hello', utteranceId: 'u1' }));
+    session.acceptTranscript(transcript({ text: 'world', utteranceId: 'u2' }));
+
+    expect(session.markSessionRangeAsProcessing()).toBe(true);
+    expect(surface.setProcessingRange).toHaveBeenLastCalledWith({
+      from: 0,
+      to: 'hello world'.length,
+    });
+
+    session.clearSessionProcessingMark();
+    expect(surface.setProcessingRange).toHaveBeenLastCalledWith(null);
   });
 
   it('returns null from readNoteGlossary when the surface is detached', () => {

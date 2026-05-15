@@ -36,7 +36,9 @@ export type DictationControllerState =
 type ControllerSession = Pick<
   Session,
   | 'acceptTranscript'
+  | 'clearSessionProcessingMark'
   | 'dispose'
+  | 'markSessionRangeAsProcessing'
   | 'readCurrentSessionText'
   | 'readNoteGlossary'
   | 'readNoteText'
@@ -471,6 +473,7 @@ export class DictationSessionController {
         model,
       });
       this.dependencies.notice('Local Dictation: cleaning session transcript…');
+      session.markSessionRangeAsProcessing();
       const cleanText = await this.dependencies.ollamaClient.cleanup({
         abortSignal: abortController.signal,
         model,
@@ -515,6 +518,7 @@ export class DictationSessionController {
         `Local Dictation: LLM transform failed — raw transcript kept. (${formatErrorMessage(error)})`,
       );
     } finally {
+      session.clearSessionProcessingMark();
       if (this.batchCleanupAbortController === abortController) {
         this.batchCleanupAbortController = null;
       }
