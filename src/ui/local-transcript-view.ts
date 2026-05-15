@@ -501,13 +501,17 @@ export class LocalTranscriptView extends ItemView {
       'Skip gates',
       'Conditions that bypass the LLM so short utterances pass straight through to the note.',
     );
+    const override = activePresetOverride(settings, 'minWords');
     this.addNumberSetting(
       items,
       'Min words',
-      'Skip below N words',
-      settings.llmPostprocessSkipMinWords,
+      override !== null
+        ? `Set by preset "${override.label}". Delete and re-save the preset to change.`
+        : 'Skip below N words',
+      override?.value ?? settings.llmPostprocessSkipMinWords,
       (value) => this.saveField('llmPostprocessSkipMinWords', value, { rerender: false }),
       'Skip the LLM transform when the utterance has fewer words than this.',
+      { disabled: override !== null },
     );
   }
 
@@ -517,13 +521,17 @@ export class LocalTranscriptView extends ItemView {
       'Generation',
       'Ollama sampling parameters controlling output randomness.',
     );
+    const override = activePresetOverride(settings, 'temperature');
     this.addNumberSetting(
       items,
       'Temperature',
-      'Sampling randomness',
-      settings.llmPostprocessTemperature,
+      override !== null
+        ? `Set by preset "${override.label}". Delete and re-save the preset to change.`
+        : 'Sampling randomness',
+      override?.value ?? settings.llmPostprocessTemperature,
       (value) => this.saveField('llmPostprocessTemperature', value, { rerender: false }),
       'Sampling randomness. 0 is deterministic; higher is more varied.',
+      { disabled: override !== null },
     );
   }
 
@@ -587,12 +595,17 @@ export class LocalTranscriptView extends ItemView {
     value: number,
     onChange: (value: number) => Promise<void>,
     tooltip: string,
+    options: { disabled?: boolean } = {},
   ): void {
     addNumberInputSetting(parent, {
       desc,
       name,
       onChange,
       onElement: (element) => {
+        if (options.disabled === true) {
+          element.disabled = true;
+          return;
+        }
         this.trackInputFocus(element);
       },
       tooltip,
@@ -748,6 +761,20 @@ export class LocalTranscriptView extends ItemView {
     }
     new Notice(message);
   }
+}
+
+function activePresetOverride(
+  settings: PluginSettings,
+  field: 'minWords' | 'temperature',
+): { label: string; value: number } | null {
+  const option = resolveStyleOption(
+    settings.llmPostprocessActivePresetRef,
+    settings.llmPostprocessUserPresets,
+  );
+  if (option === null) return null;
+  const value = option[field];
+  if (value === undefined) return null;
+  return { label: option.label, value };
 }
 
 function describeMode(mode: LlmPresetMode | undefined): string {
