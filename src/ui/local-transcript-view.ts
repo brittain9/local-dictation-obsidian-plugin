@@ -24,8 +24,6 @@ import {
 } from '../settings/plugin-settings';
 import { appendInfoTooltip, createSettingGroup } from '../settings/setting-helpers';
 import type { PluginLogger } from '../shared/plugin-logger';
-import type { SessionState, SidecarEvent } from '../sidecar/protocol';
-import type { SidecarConnection } from '../sidecar/sidecar-connection';
 import { SaveStyleModal } from './save-style-modal';
 
 export const LOCAL_TRANSCRIPT_VIEW_TYPE = 'local-transcript-sidebar';
@@ -52,7 +50,6 @@ interface LocalTranscriptViewDependencies {
   notice?: (message: string) => void;
   ollamaClient: OllamaClient;
   saveSettings: (settings: PluginSettings) => Promise<void>;
-  sidecarConnection: Pick<SidecarConnection, 'subscribe'>;
 }
 
 const PROMPT_SAVE_DEBOUNCE_MS = 400;
@@ -65,9 +62,6 @@ export class LocalTranscriptView extends ItemView {
   private lastEnabledMode: EnabledLlmPostprocessMode = DEFAULT_ENABLED_CLEANUP_MODE;
   private promptSaveTimerId: ReturnType<typeof setTimeout> | null = null;
   private pendingPromptValue: string | null = null;
-  private queueDepth = 0;
-  private releaseSidecarSubscription: (() => void) | null = null;
-  private sessionState: SessionState = 'idle';
 
   constructor(
     leaf: WorkspaceLeaf,
@@ -89,9 +83,6 @@ export class LocalTranscriptView extends ItemView {
   }
 
   override async onOpen(): Promise<void> {
-    this.releaseSidecarSubscription = this.dependencies.sidecarConnection.subscribe((event) => {
-      this.handleSidecarEvent(event);
-    });
     this.render();
     if (this.dependencies.getSettings().llmFeaturesEnabled) {
       void this.refreshModels({ silent: true });
@@ -99,15 +90,12 @@ export class LocalTranscriptView extends ItemView {
   }
 
   override async onClose(): Promise<void> {
-    this.releaseSidecarSubscription?.();
-    this.releaseSidecarSubscription = null;
     await this.flushPendingPromptSave();
   }
 
   private render(): void {
     const { contentEl } = this;
     const settings = this.dependencies.getSettings();
-    const inFlightCount = this.queueDepth + (this.sessionState === 'transcribing' ? 1 : 0);
 
     this.focusedInput = null;
     contentEl.empty();
@@ -145,14 +133,6 @@ export class LocalTranscriptView extends ItemView {
     this.renderSkipSection(advanced, settings);
     this.renderGenerationSection(advanced, settings);
     this.renderDiagnosticsSection(advanced, settings);
-
-    if (settings.llmPostprocessMode === 'per_utterance' && inFlightCount > 0) {
-      const word = inFlightCount === 1 ? 'utterance' : 'utterances';
-      contentEl.createEl('p', {
-        cls: 'local-transcript-processing',
-        text: `Cleaning ${inFlightCount} ${word}...`,
-      });
-    }
   }
 
   private renderCleanupToggle(parent: HTMLElement, settings: PluginSettings): void {
@@ -688,25 +668,6 @@ export class LocalTranscriptView extends ItemView {
     }
   }
 
-  private handleSidecarEvent(event: SidecarEvent): void {
-    if (event.type === 'transcription_queue_changed') {
-      if (this.queueDepth === event.queuedUtterances) {
-        return;
-      }
-      this.queueDepth = event.queuedUtterances;
-      this.renderIfInputNotFocused();
-      return;
-    }
-
-    if (event.type === 'session_state_changed') {
-      if (this.sessionState === event.state) {
-        return;
-      }
-      this.sessionState = event.state;
-      this.renderIfInputNotFocused();
-    }
-  }
-
   private async saveField<TKey extends keyof PluginSettings>(
     key: TKey,
     value: PluginSettings[TKey],
@@ -729,13 +690,6 @@ export class LocalTranscriptView extends ItemView {
     if (options.rerender ?? true) {
       this.render();
     }
-  }
-
-  private renderIfInputNotFocused(): void {
-    if (this.focusedInput !== null && document.activeElement === this.focusedInput) {
-      return;
-    }
-    this.render();
   }
 
   private notice(message: string): void {

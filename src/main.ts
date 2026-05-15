@@ -83,7 +83,6 @@ export default class LocalSttPlugin extends Plugin {
           saveSettings: async (nextSettings) => {
             await this.updateSettings(nextSettings);
           },
-          sidecarConnection: this.requireSidecarConnection(),
         }),
     );
 
