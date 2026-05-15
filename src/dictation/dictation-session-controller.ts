@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import type { AudioCaptureStream } from '../audio/audio-capture-stream';
 import type { NotePlacementOptions } from '../editor/note-surface';
 import { OLLAMA_KEEP_ALIVE, type OllamaClient } from '../llm/ollama-client';
+import { resolveStyleOption } from '../llm/presets';
 import { formatBatchUserMessage } from '../llm/templates';
 import type { Session } from '../session/session';
 import type { StageId } from '../session/session-journal';
@@ -192,6 +193,7 @@ export class DictationSessionController {
 
     const settings = this.dependencies.getSettings();
     const selectedModel = this.requireSelectedModel(settings);
+    const effectiveGeneration = resolveActiveGenerationDefaults(settings);
     const snapshot: ActiveSessionSnapshot = {
       accelerationPreference: settings.accelerationPreference,
       dictationAnchor: settings.dictationAnchor,
@@ -203,7 +205,7 @@ export class DictationSessionController {
       llmPostprocessNoteContextChars: settings.llmPostprocessNoteContextChars,
       llmPostprocessPrompt: settings.llmPostprocessPrompt,
       llmPostprocessShowRawBelow: settings.llmPostprocessShowRawBelow,
-      llmPostprocessTemperature: settings.llmPostprocessTemperature,
+      llmPostprocessTemperature: effectiveGeneration.temperature,
       modelSelection: selectedModel,
       modelStorePathOverride: settings.modelStorePathOverride,
       sessionStartUnixMs: Date.now(),
@@ -850,6 +852,8 @@ function resolveLlmPostprocessSnapshot(settings: PluginSettings): LlmPostprocess
     return null;
   }
 
+  const { skipMinWords, temperature } = resolveActiveGenerationDefaults(settings);
+
   return {
     keepAlive: OLLAMA_KEEP_ALIVE,
     model,
@@ -857,9 +861,23 @@ function resolveLlmPostprocessSnapshot(settings: PluginSettings): LlmPostprocess
     priorUtterancesN: settings.llmPostprocessPriorUtterancesN,
     prompt: settings.llmPostprocessPrompt,
     showRawBelow: settings.llmPostprocessShowRawBelow,
-    skipMinWords: settings.llmPostprocessSkipMinWords,
-    temperature: settings.llmPostprocessTemperature,
+    skipMinWords,
+    temperature,
     totalContextCap: settings.llmPostprocessTotalContextCap,
+  };
+}
+
+function resolveActiveGenerationDefaults(settings: PluginSettings): {
+  skipMinWords: number;
+  temperature: number;
+} {
+  const activeOption = resolveStyleOption(
+    settings.llmPostprocessActivePresetRef,
+    settings.llmPostprocessUserPresets,
+  );
+  return {
+    skipMinWords: activeOption?.minWords ?? settings.llmPostprocessSkipMinWords,
+    temperature: activeOption?.temperature ?? settings.llmPostprocessTemperature,
   };
 }
 

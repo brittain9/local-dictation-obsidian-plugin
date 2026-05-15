@@ -296,6 +296,26 @@ describe('resolvePluginSettings', () => {
     expect(preset?.prompt).toBe(DEFAULT_LLM_POSTPROCESS_PROMPT);
   });
 
+  it('keeps valid per-preset minWords and temperature overrides; drops invalid', () => {
+    const presets = resolvePluginSettings({
+      llmPostprocessUserPresets: [
+        { id: 'a', label: 'Has both', prompt: 'p', minWords: 0, temperature: 0.7 },
+        { id: 'b', label: 'Clamped high', prompt: 'p', minWords: 999, temperature: 99 },
+        { id: 'c', label: 'Bad types', prompt: 'p', minWords: '3', temperature: 'hot' },
+        { id: 'd', label: 'None', prompt: 'p' },
+      ],
+    }).llmPostprocessUserPresets;
+
+    expect(presets[0]?.minWords).toBe(0);
+    expect(presets[0]?.temperature).toBe(0.7);
+    expect(presets[1]?.minWords).toBe(50);
+    expect(presets[1]?.temperature).toBe(2);
+    expect(presets[2]?.minWords).toBeUndefined();
+    expect(presets[2]?.temperature).toBeUndefined();
+    expect(presets[3]?.minWords).toBeUndefined();
+    expect(presets[3]?.temperature).toBeUndefined();
+  });
+
   it('keeps valid preset modes and drops invalid ones', () => {
     const presets = resolvePluginSettings({
       llmPostprocessUserPresets: [

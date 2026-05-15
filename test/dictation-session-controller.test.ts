@@ -233,6 +233,44 @@ describe('DictationSessionController', () => {
     });
   });
 
+  it('applies per-preset minWords and temperature overrides to the snapshot', async () => {
+    const sidecarConnection = new FakeSidecarConnection();
+    const controller = createController({
+      getSettings: () =>
+        createSettings({
+          llmFeaturesEnabled: true,
+          llmPostprocessActivePresetRef: 'user:translate',
+          llmPostprocessMode: 'per_utterance',
+          llmPostprocessModel: 'llama3.2:latest',
+          llmPostprocessPrompt: 'Translate.',
+          llmPostprocessSkipMinWords: 4,
+          llmPostprocessTemperature: 0.2,
+          llmPostprocessUserPresets: [
+            {
+              description: '',
+              id: 'translate',
+              label: 'Translate',
+              minWords: 0,
+              prompt: 'Translate.',
+              temperature: 0.7,
+            },
+          ],
+          selectedModel: createExternalModelSelection(),
+          showTimestamps: false,
+        }),
+      sidecarConnection,
+    });
+
+    await controller.startDictation();
+
+    expect(sidecarConnection.startSession.mock.calls[0]?.[0]).toMatchObject({
+      llmPostprocess: {
+        skipMinWords: 0,
+        temperature: 0.7,
+      },
+    });
+  });
+
   it.each([
     'off',
     'batch',

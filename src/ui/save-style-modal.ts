@@ -16,14 +16,24 @@ const MODE_OPTIONS: ReadonlyArray<{ label: string; value: LlmPresetMode | typeof
   { label: 'All at once on stop', value: 'batch' },
 ];
 
+export interface SaveStyleModalDefaults {
+  minWords: number;
+  temperature: number;
+}
+
+export interface SaveStyleModalResult {
+  description: string;
+  label: string;
+  minWords: number | null;
+  mode: LlmPresetMode | null;
+  temperature: number | null;
+}
+
 export interface SaveStyleModalOptions {
+  defaults: SaveStyleModalDefaults;
   existingLabels: readonly string[];
   initialLabel?: string;
-  onSave: (result: {
-    description: string;
-    label: string;
-    mode: LlmPresetMode | null;
-  }) => Promise<void> | void;
+  onSave: (result: SaveStyleModalResult) => Promise<void> | void;
   reachedMaxCount: boolean;
 }
 
@@ -31,7 +41,11 @@ export class SaveStyleModal extends Modal {
   private descriptionInput: HTMLTextAreaElement | null = null;
   private errorEl: HTMLElement | null = null;
   private labelInput: HTMLInputElement | null = null;
+  private minWordsInput: HTMLInputElement | null = null;
   private mode: LlmPresetMode | null = null;
+  private overrideContainer: HTMLDivElement | null = null;
+  private overrideEnabled = false;
+  private temperatureInput: HTMLInputElement | null = null;
 
   constructor(
     app: App,
@@ -96,6 +110,47 @@ export class SaveStyleModal extends Modal {
         });
       });
 
+    new Setting(this.contentEl)
+      .setName('Override min words and temperature')
+      .setDesc(
+        'When on, this preset uses its own min words and temperature instead of the global Advanced values.',
+      )
+      .addToggle((toggle) => {
+        toggle.setValue(false);
+        toggle.onChange((value) => {
+          this.overrideEnabled = value;
+          if (this.overrideContainer !== null) {
+            this.overrideContainer.style.display = value ? '' : 'none';
+          }
+        });
+      });
+
+    this.overrideContainer = this.contentEl.createDiv();
+    this.overrideContainer.style.display = 'none';
+
+    new Setting(this.overrideContainer)
+      .setName('Min words')
+      .setDesc('Skip the LLM transform when the utterance has fewer words than this.')
+      .addText((text) => {
+        text.inputEl.type = 'number';
+        text.inputEl.min = '0';
+        text.inputEl.max = '50';
+        text.setValue(String(this.options.defaults.minWords));
+        this.minWordsInput = text.inputEl;
+      });
+
+    new Setting(this.overrideContainer)
+      .setName('Temperature')
+      .setDesc('Sampling randomness. 0 is deterministic; higher is more varied.')
+      .addText((text) => {
+        text.inputEl.type = 'number';
+        text.inputEl.min = '0';
+        text.inputEl.max = '2';
+        text.inputEl.step = '0.05';
+        text.setValue(String(this.options.defaults.temperature));
+        this.temperatureInput = text.inputEl;
+      });
+
     this.errorEl = this.contentEl.createEl('p', { cls: 'local-stt-save-style__error' });
     this.errorEl.setAttribute('role', 'alert');
     this.errorEl.setAttribute('aria-live', 'polite');
@@ -124,7 +179,11 @@ export class SaveStyleModal extends Modal {
     this.descriptionInput = null;
     this.errorEl = null;
     this.labelInput = null;
+    this.minWordsInput = null;
     this.mode = null;
+    this.overrideContainer = null;
+    this.overrideEnabled = false;
+    this.temperatureInput = null;
   }
 
   private async handleSave(): Promise<void> {
@@ -144,13 +203,50 @@ export class SaveStyleModal extends Modal {
       return;
     }
 
+    let minWords: number | null = null;
+    let temperature: number | null = null;
+    if (this.overrideEnabled) {
+      const parsedMinWords = this.parseInteger(this.minWordsInput?.value, 0, 50);
+      if (parsedMinWords === null) {
+        this.showError('Min words must be a whole number between 0 and 50.');
+        return;
+      }
+      const parsedTemperature = this.parseNumber(this.temperatureInput?.value, 0, 2);
+      if (parsedTemperature === null) {
+        this.showError('Temperature must be a number between 0 and 2.');
+        return;
+      }
+      minWords = parsedMinWords;
+      temperature = parsedTemperature;
+    }
+
     try {
-      await this.options.onSave({ description, label, mode: this.mode });
+      await this.options.onSave({
+        description,
+        label,
+        minWords,
+        mode: this.mode,
+        temperature,
+      });
       this.close();
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Could not save the preset.';
       this.showError(message);
     }
+  }
+
+  private parseInteger(value: string | undefined, min: number, max: number): number | null {
+    if (value === undefined || value.trim() === '') return null;
+    const parsed = Number.parseInt(value, 10);
+    if (!Number.isInteger(parsed) || parsed < min || parsed > max) return null;
+    return parsed;
+  }
+
+  private parseNumber(value: string | undefined, min: number, max: number): number | null {
+    if (value === undefined || value.trim() === '') return null;
+    const parsed = Number.parseFloat(value);
+    if (!Number.isFinite(parsed) || parsed < min || parsed > max) return null;
+    return parsed;
   }
 
   private showError(message: string): void {

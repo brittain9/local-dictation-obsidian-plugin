@@ -486,6 +486,12 @@
   }
 }
 
+/* --- Preset delete icon ------------------------------------------- */
+
+.local-stt-preset-delete:hover {
+  color: var(--text-error, var(--text-normal));
+}
+
 /* --- Batch LLM processing pulse ----------------------------------- */
 
 .local-stt-session-processing {

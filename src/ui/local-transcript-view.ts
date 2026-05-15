@@ -10,6 +10,7 @@ import {
   getLlmBuiltinPreset,
   LLM_BUILTIN_PRESETS,
   type LlmPresetMode,
+  type LlmStyleOption,
   type LlmUserPreset,
   listStyleOptions,
   parseStyleRef,
@@ -24,6 +25,7 @@ import {
 } from '../settings/plugin-settings';
 import { appendInfoTooltip, createSettingGroup } from '../settings/setting-helpers';
 import type { PluginLogger } from '../shared/plugin-logger';
+import { ConfirmModal } from './confirm-modal';
 import { SaveStyleModal } from './save-style-modal';
 
 export const LOCAL_TRANSCRIPT_VIEW_TYPE = 'local-transcript-sidebar';
@@ -236,8 +238,8 @@ export class LocalTranscriptView extends ItemView {
     const reachedMaxCount = settings.llmPostprocessUserPresets.length >= LLM_USER_PRESET_MAX_COUNT;
 
     if (showSaveAs) {
-      setting.addButton((button) => {
-        button.setButtonText('Save preset');
+      setting.addExtraButton((button) => {
+        button.setIcon('save');
         if (reachedMaxCount) {
           button.setDisabled(true);
           button.setTooltip(
@@ -245,6 +247,11 @@ export class LocalTranscriptView extends ItemView {
           );
           return;
         }
+        button.setTooltip(
+          activeOption === null
+            ? 'Save current prompt as a preset'
+            : 'Save current prompt as a new preset',
+        );
         button.onClick(() => {
           this.openSaveStyleModal();
         });
@@ -252,14 +259,28 @@ export class LocalTranscriptView extends ItemView {
     }
 
     if (showDelete && activeOption !== null) {
-      setting.addButton((button) => {
-        button.setButtonText('Delete');
-        button.setWarning();
-        button.onClick(async () => {
-          await this.deleteUserStyle(activeOption.ref);
+      setting.addExtraButton((button) => {
+        button.setIcon('trash-2');
+        button.setTooltip(`Delete preset "${activeOption.label}"`);
+        button.extraSettingsEl.addClass('local-stt-preset-delete');
+        button.onClick(() => {
+          this.confirmDeleteUserStyle(activeOption);
         });
       });
     }
+  }
+
+  private confirmDeleteUserStyle(option: LlmStyleOption): void {
+    const modal = new ConfirmModal(this.app, {
+      title: 'Delete preset',
+      message: `Delete preset "${option.label}"? This cannot be undone.`,
+      confirmLabel: 'Delete',
+      destructive: true,
+      onConfirm: async () => {
+        await this.deleteUserStyle(option.ref);
+      },
+    });
+    modal.open();
   }
 
   private renderModelPicker(parent: HTMLElement, settings: PluginSettings): void {
@@ -336,10 +357,14 @@ export class LocalTranscriptView extends ItemView {
     const reachedMaxCount = settings.llmPostprocessUserPresets.length >= LLM_USER_PRESET_MAX_COUNT;
 
     new SaveStyleModal(this.app, {
+      defaults: {
+        minWords: settings.llmPostprocessSkipMinWords,
+        temperature: settings.llmPostprocessTemperature,
+      },
       existingLabels,
       reachedMaxCount,
-      onSave: async ({ description, label, mode }) => {
-        await this.saveCurrentAsUserStyle({ description, label, mode });
+      onSave: async ({ description, label, minWords, mode, temperature }) => {
+        await this.saveCurrentAsUserStyle({ description, label, minWords, mode, temperature });
       },
     }).open();
   }
@@ -347,7 +372,9 @@ export class LocalTranscriptView extends ItemView {
   private async saveCurrentAsUserStyle(options: {
     description: string;
     label: string;
+    minWords: number | null;
     mode: LlmPresetMode | null;
+    temperature: number | null;
   }): Promise<void> {
     const settings = this.dependencies.getSettings();
     if (settings.llmPostprocessUserPresets.length >= LLM_USER_PRESET_MAX_COUNT) {
@@ -362,6 +389,8 @@ export class LocalTranscriptView extends ItemView {
       id,
       label: options.label,
       ...(options.mode !== null ? { mode: options.mode } : {}),
+      ...(options.minWords !== null ? { minWords: options.minWords } : {}),
+      ...(options.temperature !== null ? { temperature: options.temperature } : {}),
       prompt: settings.llmPostprocessPrompt,
     };
 

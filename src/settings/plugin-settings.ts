@@ -268,6 +268,20 @@ function readClampedNumber(value: unknown, fallback: number, min: number, max: n
   return Math.min(max, Math.max(min, value));
 }
 
+function readOptionalClampedInteger(value: unknown, min: number, max: number): number | undefined {
+  if (typeof value !== 'number' || !Number.isFinite(value) || !Number.isInteger(value)) {
+    return undefined;
+  }
+  return Math.min(max, Math.max(min, value));
+}
+
+function readOptionalClampedNumber(value: unknown, min: number, max: number): number | undefined {
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    return undefined;
+  }
+  return Math.min(max, Math.max(min, value));
+}
+
 function readActivePresetRef(
   value: unknown,
   prompt: string,
@@ -327,12 +341,16 @@ function readUserPresets(value: unknown): LlmUserPreset[] {
 
     const description = typeof entry.description === 'string' ? entry.description : '';
     const mode = isLlmPresetMode(entry.mode) ? entry.mode : undefined;
+    const minWords = readOptionalClampedInteger(entry.minWords, 0, 50);
+    const temperature = readOptionalClampedNumber(entry.temperature, 0, 2);
 
     accepted.push({
       description: description.slice(0, LLM_USER_PRESET_MAX_DESCRIPTION_CHARS),
       id,
       label: label.slice(0, LLM_USER_PRESET_MAX_LABEL_CHARS),
       ...(mode !== undefined ? { mode } : {}),
+      ...(minWords !== undefined ? { minWords } : {}),
+      ...(temperature !== undefined ? { temperature } : {}),
       prompt: readPrompt(entry.prompt, DEFAULT_PLUGIN_SETTINGS.llmPostprocessPrompt),
     });
     seenIds.add(id);

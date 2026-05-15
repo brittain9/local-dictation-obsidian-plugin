@@ -26,6 +26,8 @@ export interface LlmBuiltinPreset {
   description: string;
   prompt: string;
   mode?: LlmPresetMode;
+  minWords?: number;
+  temperature?: number;
 }
 
 export interface LlmUserPreset {
@@ -34,6 +36,8 @@ export interface LlmUserPreset {
   description: string;
   prompt: string;
   mode?: LlmPresetMode;
+  minWords?: number;
+  temperature?: number;
 }
 
 export type LlmStyleRef =
@@ -45,6 +49,8 @@ export interface LlmStyleOption {
   isBuiltin: boolean;
   label: string;
   mode?: LlmPresetMode;
+  minWords?: number;
+  temperature?: number;
   prompt: string;
   ref: string;
 }
@@ -170,6 +176,8 @@ export function listStyleOptions(userPresets: readonly LlmUserPreset[]): LlmStyl
     isBuiltin,
     label: preset.label,
     ...(preset.mode !== undefined ? { mode: preset.mode } : {}),
+    ...(preset.minWords !== undefined ? { minWords: preset.minWords } : {}),
+    ...(preset.temperature !== undefined ? { temperature: preset.temperature } : {}),
     prompt: preset.prompt,
     ref: formatStyleRef(ref),
   });
