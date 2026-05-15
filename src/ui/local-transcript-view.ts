@@ -489,7 +489,11 @@ export class LocalTranscriptView extends ItemView {
       });
   }
 
-  private createSettingGroup(parent: HTMLElement, heading: string, tooltip?: string): HTMLDivElement {
+  private createSettingGroup(
+    parent: HTMLElement,
+    heading: string,
+    tooltip?: string,
+  ): HTMLDivElement {
     const group = parent.createDiv({ cls: 'setting-group' });
     const headingSetting = new Setting(group).setName(heading).setHeading();
     if (tooltip !== undefined) {
