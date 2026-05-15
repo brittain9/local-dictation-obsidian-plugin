@@ -63,7 +63,6 @@ class FakeSession {
     (
       _cleanText: string,
       _options?: {
-        allowEditedRange?: boolean;
         rawTextForCallout?: string;
         showRawBelow?: boolean;
       },
@@ -855,7 +854,6 @@ describe('DictationSessionController', () => {
       '<note_context>\nnote context',
     );
     expect(session.replaceSessionRangeWithCleaned).toHaveBeenCalledWith('Cleaned transcript.', {
-      allowEditedRange: true,
       rawTextForCallout: 'edited dictated text',
       showRawBelow: true,
     });
@@ -958,11 +956,11 @@ describe('DictationSessionController', () => {
     await vi.waitFor(() => {
       expect(logger.debug).toHaveBeenCalledWith('llm', 'batch cleanup returned empty text');
     });
-    expect(notice).not.toHaveBeenCalled();
+    expect(notice).toHaveBeenCalledWith('Local Dictation: cleaning session transcript…');
     expect(session.replaceSessionRangeWithCleaned).not.toHaveBeenCalled();
   });
 
-  it('keeps raw text and logs when batch replacement cannot rewrite the range', async () => {
+  it('keeps raw text and notifies when batch replacement cannot rewrite the range', async () => {
     const logger = new FakeLogger();
     const notice = vi.fn();
     const session = new FakeSession();
@@ -987,12 +985,17 @@ describe('DictationSessionController', () => {
     await controller.stopDictation();
 
     await vi.waitFor(() => {
-      expect(logger.debug).toHaveBeenCalledWith('llm', 'batch cleanup replacement skipped');
+      expect(logger.warn).toHaveBeenCalledWith(
+        'llm',
+        'batch cleanup replacement skipped — transcript was edited during cleanup',
+      );
     });
-    expect(notice).not.toHaveBeenCalled();
+    expect(notice).toHaveBeenCalledWith(
+      'Local Dictation: LLM transform skipped — you edited the transcript during cleanup. Raw text kept.',
+    );
   });
 
-  it('keeps raw text and logs when batch cleanup fails', async () => {
+  it('keeps raw text and notifies when batch cleanup fails', async () => {
     const logger = new FakeLogger();
     const notice = vi.fn();
     const ollamaClient = new FakeOllamaClient();
@@ -1019,13 +1022,15 @@ describe('DictationSessionController', () => {
     await controller.stopDictation();
 
     await vi.waitFor(() => {
-      expect(logger.debug).toHaveBeenCalledWith(
+      expect(logger.warn).toHaveBeenCalledWith(
         'llm',
         'batch cleanup failed; raw transcript kept: Ollama failed',
         expect.any(Error),
       );
     });
-    expect(notice).not.toHaveBeenCalled();
+    expect(notice).toHaveBeenCalledWith(
+      'Local Dictation: LLM transform failed — raw transcript kept. (Ollama failed)',
+    );
     expect(session.replaceSessionRangeWithCleaned).not.toHaveBeenCalled();
   });
 

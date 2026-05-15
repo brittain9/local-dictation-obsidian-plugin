@@ -217,6 +217,37 @@ describe('resolvePluginSettings', () => {
     ).toBeNull();
   });
 
+  it('preserves a persisted active preset ref over content-based matching', () => {
+    const userPreset = makeUserPreset({
+      id: 'a',
+      label: 'Mirror clean-up',
+      prompt: getLlmBuiltinPreset(DEFAULT_LLM_BUILTIN_PRESET_ID).prompt,
+    });
+
+    expect(
+      resolvePluginSettings({
+        llmPostprocessActivePresetRef: 'user:a',
+        llmPostprocessPrompt: userPreset.prompt,
+        llmPostprocessUserPresets: [userPreset],
+      }).llmPostprocessActivePresetRef,
+    ).toBe('user:a');
+
+    expect(
+      resolvePluginSettings({
+        llmPostprocessActivePresetRef: null,
+        llmPostprocessPrompt: getLlmBuiltinPreset(DEFAULT_LLM_BUILTIN_PRESET_ID).prompt,
+      }).llmPostprocessActivePresetRef,
+    ).toBeNull();
+
+    expect(
+      resolvePluginSettings({
+        llmPostprocessActivePresetRef: 'user:gone',
+        llmPostprocessPrompt: PROFESSIONAL_WRITING_PRESET.prompt,
+        llmPostprocessUserPresets: [],
+      }).llmPostprocessActivePresetRef,
+    ).toBe('builtin:professional-writing');
+  });
+
   it('preserves valid prompt-shaped user styles in their original order', () => {
     const presets = [
       makeUserPreset({ id: 'a', label: 'Style A', description: 'first' }),

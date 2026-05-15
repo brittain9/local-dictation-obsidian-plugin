@@ -200,7 +200,6 @@ export class Session {
   replaceSessionRangeWithCleaned(
     cleanText: string,
     options: {
-      allowEditedRange?: boolean;
       rawTextForCallout?: string;
       showRawBelow?: boolean;
     } = {},
@@ -215,7 +214,7 @@ export class Session {
     }
 
     const expectedText = this.expectedSessionText();
-    if (options.allowEditedRange !== true && this.surface.readRange(range) !== expectedText) {
+    if (this.surface.readRange(range) !== expectedText) {
       return false;
     }
 
@@ -224,11 +223,7 @@ export class Session {
       options.showRawBelow === true,
       options.rawTextForCallout,
     );
-    const result = this.surface.rewriteRegion(
-      range,
-      replacement,
-      options.allowEditedRange === true ? this.rawSessionEntries : [],
-    );
+    const result = this.surface.rewriteRegion(range, replacement, []);
 
     return result.kind === 'rewritten';
   }

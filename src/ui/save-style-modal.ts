@@ -65,6 +65,12 @@ export class SaveStyleModal extends Modal {
       text.setPlaceholder('e.g. Meeting notes');
       text.setValue(this.options.initialLabel ?? '');
       text.inputEl.maxLength = LLM_USER_PRESET_MAX_LABEL_CHARS;
+      text.inputEl.addEventListener('keydown', (event) => {
+        if (event.key === 'Enter') {
+          event.preventDefault();
+          void this.handleSave();
+        }
+      });
       this.labelInput = text.inputEl;
     });
 
@@ -91,6 +97,8 @@ export class SaveStyleModal extends Modal {
       });
 
     this.errorEl = this.contentEl.createEl('p', { cls: 'local-stt-save-style__error' });
+    this.errorEl.setAttribute('role', 'alert');
+    this.errorEl.setAttribute('aria-live', 'polite');
     this.errorEl.style.display = 'none';
 
     new Setting(this.contentEl)

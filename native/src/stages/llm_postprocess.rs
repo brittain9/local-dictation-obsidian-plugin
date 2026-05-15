@@ -48,7 +48,7 @@ impl StageProcessor for LlmPostprocessStage {
     fn process(&self, transcript: &Transcript, ctx: &StageContext<'_>) -> StageProcess {
         let mut base = LlmPayloadInput {
             context_chars_total: context_chars_total(ctx.context),
-            done_reason: "skipped",
+            done_reason: None,
             eval_count: None,
             model: "",
             output_chars: 0,
@@ -80,11 +80,12 @@ impl StageProcessor for LlmPostprocessStage {
             user_message,
         )) {
             Ok(response) => response,
-            Err(error) => return failed(base, error, "error", false),
+            Err(error) => return failed(base, error, false),
         };
 
-        let output = response.message.content.trim().to_string();
         let done_reason = response.done_reason.unwrap_or_else(|| "stop".to_string());
+        let output = response.message.content.trim().to_string();
+        base.done_reason = Some(done_reason.clone());
         base.eval_count = response.eval_count;
         base.output_chars = output.len() as u32;
         base.prompt_eval_count = response.prompt_eval_count;
@@ -94,28 +95,20 @@ impl StageProcessor for LlmPostprocessStage {
             return failed(
                 base,
                 format!("Ollama stopped with done_reason={done_reason}"),
-                if truncated { "length" } else { "error" },
                 truncated,
             );
         }
         if output.is_empty() {
-            return failed(
-                base,
-                "Ollama returned empty output".to_string(),
-                "error",
-                false,
-            );
+            return failed(base, "Ollama returned empty output".to_string(), false);
         }
         if output.len() > trimmed_input.len().saturating_mul(10).saturating_add(1_000) {
             return failed(
                 base,
                 "Ollama output exceeded length guard".to_string(),
-                "error",
                 true,
             );
         }
 
-        base.done_reason = "stop";
         let mut payload = llm_payload(base);
         if config.show_raw_below
             && let serde_json::Value::Object(map) = &mut payload
@@ -147,13 +140,7 @@ fn skipped(mut base: LlmPayloadInput<'_>, reason: &'static str) -> StageProcess 
     }
 }
 
-fn failed(
-    mut base: LlmPayloadInput<'_>,
-    error: String,
-    done_reason: &'static str,
-    truncated: bool,
-) -> StageProcess {
-    base.done_reason = done_reason;
+fn failed(mut base: LlmPayloadInput<'_>, error: String, truncated: bool) -> StageProcess {
     base.truncated = truncated;
     StageProcess::Failed {
         error,
@@ -266,10 +253,10 @@ struct OllamaMessage {
     content: String,
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 struct LlmPayloadInput<'a> {
     context_chars_total: u32,
-    done_reason: &'a str,
+    done_reason: Option<String>,
     eval_count: Option<u32>,
     model: &'a str,
     output_chars: u32,

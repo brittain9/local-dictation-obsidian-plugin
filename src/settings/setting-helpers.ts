@@ -108,3 +108,18 @@ export function appendInfoTooltip(setting: Setting, tooltip: string | undefined)
     button.setIcon('info').setTooltip(tooltip);
   });
 }
+
+// Build the native Obsidian "setting-group" structure used by core settings
+// tabs: a wrapper div with a heading row, then a "setting-items" sibling
+// that holds the actual rows. Obsidian's bundled CSS targets this shape to
+// produce the rounded card with internal dividers.
+export function createSettingGroup(
+  parent: HTMLElement,
+  heading: string,
+  tooltip?: string,
+): HTMLDivElement {
+  const group = parent.createDiv({ cls: 'setting-group' });
+  const headingSetting = new Setting(group).setName(heading).setHeading();
+  appendInfoTooltip(headingSetting, tooltip);
+  return group.createDiv({ cls: 'setting-items' });
+}

@@ -4,8 +4,11 @@ import { ItemView, Notice, Setting, type WorkspaceLeaf } from 'obsidian';
 
 import type { OllamaClient, OllamaModelOption } from '../llm/ollama-client';
 import {
+  DEFAULT_LLM_BUILTIN_PRESET_ID,
   findMatchingStyleRef,
   formatStyleRef,
+  getLlmBuiltinPreset,
+  LLM_BUILTIN_PRESETS,
   type LlmPresetMode,
   type LlmUserPreset,
   listStyleOptions,
@@ -19,10 +22,10 @@ import {
   type PluginSettings,
   resetLlmPostprocessDefaults,
 } from '../settings/plugin-settings';
+import { appendInfoTooltip, createSettingGroup } from '../settings/setting-helpers';
 import type { PluginLogger } from '../shared/plugin-logger';
 import type { SessionState, SidecarEvent } from '../sidecar/protocol';
 import type { SidecarConnection } from '../sidecar/sidecar-connection';
-import { appendInfoTooltip } from './info-tooltip';
 import { SaveStyleModal } from './save-style-modal';
 
 export const LOCAL_TRANSCRIPT_VIEW_TYPE = 'local-transcript-sidebar';
@@ -52,12 +55,16 @@ interface LocalTranscriptViewDependencies {
   sidecarConnection: Pick<SidecarConnection, 'subscribe'>;
 }
 
+const PROMPT_SAVE_DEBOUNCE_MS = 400;
+
 export class LocalTranscriptView extends ItemView {
   private advancedOpen = false;
   private focusedInput: HTMLElement | null = null;
   private models: OllamaModelOption[] = [];
   private ollamaStatus = 'Ollama status unknown.';
   private lastEnabledMode: EnabledLlmPostprocessMode = DEFAULT_ENABLED_CLEANUP_MODE;
+  private promptSaveTimerId: ReturnType<typeof setTimeout> | null = null;
+  private pendingPromptValue: string | null = null;
   private queueDepth = 0;
   private releaseSidecarSubscription: (() => void) | null = null;
   private sessionState: SessionState = 'idle';
@@ -86,11 +93,15 @@ export class LocalTranscriptView extends ItemView {
       this.handleSidecarEvent(event);
     });
     this.render();
+    if (this.dependencies.getSettings().llmFeaturesEnabled) {
+      void this.refreshModels({ silent: true });
+    }
   }
 
   override async onClose(): Promise<void> {
     this.releaseSidecarSubscription?.();
     this.releaseSidecarSubscription = null;
+    await this.flushPendingPromptSave();
   }
 
   private render(): void {
@@ -110,7 +121,7 @@ export class LocalTranscriptView extends ItemView {
       this.lastEnabledMode = settings.llmPostprocessMode;
     }
 
-    const cleanupGroup = this.createSettingGroup(contentEl, 'LLM transformation', HEADING_TOOLTIP);
+    const cleanupGroup = createSettingGroup(contentEl, 'LLM transformation', HEADING_TOOLTIP);
 
     this.renderCleanupToggle(cleanupGroup, settings);
     this.renderCleanupMode(cleanupGroup, settings);
@@ -224,10 +235,18 @@ export class LocalTranscriptView extends ItemView {
 
     const showSaveAs = activeOption === null || activeOption.isBuiltin === false;
     const showDelete = activeOption !== null && activeOption.isBuiltin === false;
+    const reachedMaxCount = settings.llmPostprocessUserPresets.length >= LLM_USER_PRESET_MAX_COUNT;
 
     if (showSaveAs) {
       setting.addButton((button) => {
         button.setButtonText('Save preset');
+        if (reachedMaxCount) {
+          button.setDisabled(true);
+          button.setTooltip(
+            `Maximum ${LLM_USER_PRESET_MAX_COUNT} presets reached. Delete one first.`,
+          );
+          return;
+        }
         button.onClick(() => {
           this.openSaveStyleModal();
         });
@@ -272,19 +291,27 @@ export class LocalTranscriptView extends ItemView {
           }
         });
       })
-      .addButton((button) => {
+      .addExtraButton((button) => {
         button
           .setIcon('refresh-cw')
           .setTooltip('Refresh Ollama models')
-          .onClick(async () => {
-            await this.refreshModels();
+          .onClick(() => {
+            void this.refreshModels();
           });
+        button.extraSettingsEl.setAttribute('aria-label', 'Refresh Ollama models');
       });
 
     appendInfoTooltip(
       setting,
       'Refresh re-queries Ollama for installed chat models. Smaller models are faster but less reliable.',
     );
+
+    if (selectedModel.length === 0) {
+      parent.createEl('p', {
+        cls: 'local-transcript-muted',
+        text: 'Pick an Ollama model to enable LLM transform. Until then, raw Whisper text is inserted directly.',
+      });
+    }
   }
 
   private async applyStyleByRef(ref: string): Promise<void> {
@@ -304,7 +331,10 @@ export class LocalTranscriptView extends ItemView {
 
   private openSaveStyleModal(): void {
     const settings = this.dependencies.getSettings();
-    const existingLabels = settings.llmPostprocessUserPresets.map((preset) => preset.label);
+    const existingLabels = [
+      ...LLM_BUILTIN_PRESETS.map((preset) => preset.label),
+      ...settings.llmPostprocessUserPresets.map((preset) => preset.label),
+    ];
     const reachedMaxCount = settings.llmPostprocessUserPresets.length >= LLM_USER_PRESET_MAX_COUNT;
 
     new SaveStyleModal(this.app, {
@@ -359,16 +389,21 @@ export class LocalTranscriptView extends ItemView {
     }
 
     const wasActive = settings.llmPostprocessActivePresetRef === ref;
+    const fallbackPreset = wasActive ? getLlmBuiltinPreset(DEFAULT_LLM_BUILTIN_PRESET_ID) : null;
 
     await this.persistSettings({
       ...settings,
-      llmPostprocessActivePresetRef: wasActive ? null : settings.llmPostprocessActivePresetRef,
+      llmPostprocessActivePresetRef: wasActive
+        ? formatStyleRef({ kind: 'builtin', id: DEFAULT_LLM_BUILTIN_PRESET_ID })
+        : settings.llmPostprocessActivePresetRef,
+      llmPostprocessPrompt:
+        fallbackPreset !== null ? fallbackPreset.prompt : settings.llmPostprocessPrompt,
       llmPostprocessUserPresets: nextPresets,
     });
   }
 
   private renderContextSection(parent: HTMLElement, settings: PluginSettings): void {
-    const items = this.createSettingGroup(
+    const items = createSettingGroup(
       parent,
       'Context',
       'Bounded slice of recent note text and prior utterances fed to the model so the LLM transform matches existing style and terminology.',
@@ -411,7 +446,7 @@ export class LocalTranscriptView extends ItemView {
   }
 
   private renderCustomizeStyleSection(parent: HTMLElement, settings: PluginSettings): void {
-    const items = this.createSettingGroup(
+    const items = createSettingGroup(
       parent,
       'Prompt',
       'Edit the prompt for the current preset. Any change switches the preset picker to Custom.',
@@ -422,15 +457,15 @@ export class LocalTranscriptView extends ItemView {
       'LLM transform instructions',
       settings.llmPostprocessPrompt,
       10,
-      async (value) => {
-        await this.savePrompt(value);
+      (value) => {
+        this.schedulePromptSave(value);
       },
       'Instructions sent as the system prompt for the local LLM transform.',
     );
   }
 
   private renderSkipSection(parent: HTMLElement, settings: PluginSettings): void {
-    const items = this.createSettingGroup(
+    const items = createSettingGroup(
       parent,
       'Skip gates',
       'Conditions that bypass the LLM so short utterances pass straight through to the note.',
@@ -446,7 +481,7 @@ export class LocalTranscriptView extends ItemView {
   }
 
   private renderGenerationSection(parent: HTMLElement, settings: PluginSettings): void {
-    const items = this.createSettingGroup(
+    const items = createSettingGroup(
       parent,
       'Generation',
       'Ollama sampling parameters controlling output randomness.',
@@ -462,7 +497,14 @@ export class LocalTranscriptView extends ItemView {
   }
 
   private renderDiagnosticsSection(parent: HTMLElement, settings: PluginSettings): void {
-    const items = this.createSettingGroup(parent, 'Diagnostics');
+    const items = createSettingGroup(parent, 'Diagnostics');
+
+    if (settings.showTimestamps && settings.llmPostprocessMode !== 'off') {
+      items.createEl('p', {
+        cls: 'local-transcript-muted',
+        text: 'Timestamps are on, so LLM transform is paused. Turn off Show timestamps in Settings to re-enable.',
+      });
+    }
 
     const showRawSetting = new Setting(items)
       .setName('Show raw beneath LLM output')
@@ -478,28 +520,41 @@ export class LocalTranscriptView extends ItemView {
       'Inserts the raw Whisper text below the transformed text inside a collapsible "raw" callout. After each phrase: a small raw callout is appended under every transformed phrase. All at once on stop: one combined raw callout is appended below the transformed session text. Useful while iterating on an LLM transform prompt so you can compare the model output against what was actually said.',
     );
 
-    new Setting(items)
-      .setName('Ollama status')
-      .setDesc(this.ollamaStatus)
+    new Setting(items).setName('Ollama status').setDesc(this.ollamaStatus);
+
+    const resetSetting = new Setting(items)
+      .setName('Reset LLM defaults')
+      .setDesc(
+        'Restore the default prompt, mode, context, skip gates, and generation values. Your saved presets and selected model are kept.',
+      )
       .addButton((button) => {
-        button.setButtonText('Reset LLM defaults');
-        button.onClick(async () => {
-          await this.persistSettings(resetLlmPostprocessDefaults(this.dependencies.getSettings()));
+        button.setButtonText('Reset');
+        button.setWarning();
+        button.onClick(() => {
+          this.confirmResetDefaults(button.buttonEl);
         });
       });
+    appendInfoTooltip(
+      resetSetting,
+      'Click once to arm the reset, then click again within 5 seconds to confirm.',
+    );
   }
 
-  private createSettingGroup(
-    parent: HTMLElement,
-    heading: string,
-    tooltip?: string,
-  ): HTMLDivElement {
-    const group = parent.createDiv({ cls: 'setting-group' });
-    const headingSetting = new Setting(group).setName(heading).setHeading();
-    if (tooltip !== undefined) {
-      appendInfoTooltip(headingSetting, tooltip);
+  private confirmResetDefaults(buttonEl: HTMLElement): void {
+    const originalText = buttonEl.textContent ?? 'Reset';
+    if (buttonEl.dataset.armed === 'true') {
+      buttonEl.dataset.armed = '';
+      void this.persistSettings(resetLlmPostprocessDefaults(this.dependencies.getSettings()));
+      return;
     }
-    return group.createDiv({ cls: 'setting-items' });
+    buttonEl.dataset.armed = 'true';
+    buttonEl.textContent = 'Click again to confirm';
+    window.setTimeout(() => {
+      if (buttonEl.dataset.armed === 'true' && buttonEl.isConnected) {
+        buttonEl.dataset.armed = '';
+        buttonEl.textContent = originalText;
+      }
+    }, 5_000);
   }
 
   private addNumberSetting(
@@ -530,7 +585,7 @@ export class LocalTranscriptView extends ItemView {
     desc: string,
     value: string,
     rows: number,
-    onChange: (value: string) => Promise<void>,
+    onChange: (value: string) => void,
     tooltip: string,
   ): void {
     const setting = new Setting(parent)
@@ -545,8 +600,31 @@ export class LocalTranscriptView extends ItemView {
     appendInfoTooltip(setting, tooltip);
   }
 
+  private schedulePromptSave(value: string): void {
+    this.pendingPromptValue = value;
+    if (this.promptSaveTimerId !== null) {
+      clearTimeout(this.promptSaveTimerId);
+    }
+    this.promptSaveTimerId = setTimeout(() => {
+      this.promptSaveTimerId = null;
+      void this.flushPendingPromptSave();
+    }, PROMPT_SAVE_DEBOUNCE_MS);
+  }
+
+  private async flushPendingPromptSave(): Promise<void> {
+    if (this.promptSaveTimerId !== null) {
+      clearTimeout(this.promptSaveTimerId);
+      this.promptSaveTimerId = null;
+    }
+    const value = this.pendingPromptValue;
+    if (value === null) return;
+    this.pendingPromptValue = null;
+    await this.savePrompt(value);
+  }
+
   private async savePrompt(value: string): Promise<void> {
     const settings = this.dependencies.getSettings();
+    if (settings.llmPostprocessPrompt === value) return;
     const activeRef = findMatchingStyleRef(value, settings.llmPostprocessUserPresets);
 
     await this.persistSettings(
@@ -573,9 +651,8 @@ export class LocalTranscriptView extends ItemView {
     });
   }
 
-  private async refreshModels(): Promise<void> {
+  private async refreshModels(options: { silent?: boolean } = {}): Promise<void> {
     try {
-      await this.dependencies.ollamaClient.probeOllama();
       this.models = await this.dependencies.ollamaClient.listOllamaModels();
       this.ollamaStatus =
         this.models.length === 0
@@ -586,7 +663,9 @@ export class LocalTranscriptView extends ItemView {
       this.models = [];
       this.ollamaStatus = 'Ollama is unavailable.';
       this.dependencies.logger?.warn('llm', 'Ollama refresh failed', error);
-      this.notice('Local Transcript: Ollama is unavailable.');
+      if (options.silent !== true) {
+        this.notice('Local Transcript: Ollama is unavailable.');
+      }
       this.render();
     }
   }

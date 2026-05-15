@@ -6,6 +6,7 @@ const OLLAMA_HOST = '127.0.0.1';
 const OLLAMA_PORT = 11434;
 const PREFLIGHT_TIMEOUT_MS = 3_000;
 const CLEANUP_TIMEOUT_MS = 60_000;
+const MAX_RESPONSE_BYTES = 2 * 1024 * 1024;
 export const OLLAMA_KEEP_ALIVE = '30m';
 const NON_CHAT_MODEL_PATTERN = /embed|embedding|bge|nomic|clip/i;
 
@@ -190,11 +191,26 @@ function requestText(
       },
       (response) => {
         const chunks: Buffer[] = [];
+        let totalBytes = 0;
+        let exceeded = false;
 
         response.on('data', (chunk: Buffer) => {
+          if (exceeded) return;
+          totalBytes += chunk.byteLength;
+          if (totalBytes > MAX_RESPONSE_BYTES) {
+            exceeded = true;
+            request.destroy(
+              new OllamaClientError(
+                `Ollama response exceeded ${MAX_RESPONSE_BYTES} bytes.`,
+                'invalid_response',
+              ),
+            );
+            return;
+          }
           chunks.push(chunk);
         });
         response.on('end', () => {
+          if (exceeded) return;
           const statusCode = response.statusCode ?? 0;
           if (statusCode < 200 || statusCode >= 300) {
             reject(new OllamaClientError(`Ollama returned HTTP ${statusCode}.`, 'http_error'));

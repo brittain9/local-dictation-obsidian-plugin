@@ -331,7 +331,7 @@ describe('Session', () => {
     expect(surface.documentText).toBe('edited raw words');
   });
 
-  it('can replace an edited batch range and use that edited text as the raw callout', () => {
+  it('skips batch replace when the session range has been edited', () => {
     const { session, surface } = createSessionHarness();
 
     session.acceptTranscript(transcript({ text: 'raw words', utteranceId: 'u1' }));
@@ -340,12 +340,25 @@ describe('Session', () => {
     expect(session.readCurrentSessionText()).toBe('new words');
     expect(
       session.replaceSessionRangeWithCleaned('Cleaned words.', {
-        allowEditedRange: true,
         rawTextForCallout: 'new words',
         showRawBelow: true,
       }),
+    ).toBe(false);
+    expect(surface.rewriteCalls).toHaveLength(0);
+    expect(surface.documentText).toBe('new words');
+  });
+
+  it('appends the raw callout below the cleaned text when showRawBelow is set', () => {
+    const { session, surface } = createSessionHarness();
+
+    session.acceptTranscript(transcript({ text: 'raw words', utteranceId: 'u1' }));
+
+    expect(
+      session.replaceSessionRangeWithCleaned('Cleaned words.', {
+        showRawBelow: true,
+      }),
     ).toBe(true);
-    expect(surface.documentText).toBe('Cleaned words.\n\n> [!note]- raw\n> new words');
+    expect(surface.documentText).toBe('Cleaned words.\n\n> [!note]- raw\n> raw words');
   });
 
   it('range tracking follows transcript revisions across multiple acceptTranscript calls', () => {

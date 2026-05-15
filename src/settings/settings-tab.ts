@@ -31,6 +31,7 @@ import {
   addTextSetting,
   addToggleSetting,
   appendInfoTooltip,
+  createSettingGroup,
   type DropdownOption,
   type SettingAccess,
 } from './setting-helpers';
@@ -115,7 +116,7 @@ export class LocalSttSettingTab extends PluginSettingTab {
     this.disposeMissingSidecarBanner = this.renderMissingSidecarBanner(missingSidecarGroup);
 
     // --- Model ---
-    const modelSection = this.createSettingGroup(containerEl, 'Model');
+    const modelSection = createSettingGroup(containerEl, 'Model');
     const manager = this.dependencies.modelInstallManager;
     this.disposeModelSection = renderModelSection(modelSection, manager, {
       onManageModels: () => {
@@ -143,7 +144,7 @@ export class LocalSttSettingTab extends PluginSettingTab {
     });
 
     // --- Transcription ---
-    const transcriptionCard = this.createSettingGroup(containerEl, 'Transcription');
+    const transcriptionCard = createSettingGroup(containerEl, 'Transcription');
 
     addEnumSetting(transcriptionCard, this.access, {
       name: 'Listening mode',
@@ -203,7 +204,7 @@ export class LocalSttSettingTab extends PluginSettingTab {
     this.disposeEngineSection = manager.subscribe(renderEngine);
 
     // --- Advanced (includes sidecar install/uninstall) ---
-    const advancedSection = this.createSettingGroup(containerEl, 'Advanced');
+    const advancedSection = createSettingGroup(containerEl, 'Advanced');
 
     // Sidecar rows live in their own owned container so re-renders can simply
     // empty + rebuild without disturbing the rest of the Advanced section.
@@ -441,16 +442,6 @@ export class LocalSttSettingTab extends PluginSettingTab {
       disposed = true;
       unsubscribe();
     };
-  }
-
-  // Build the native Obsidian "setting-group" structure used by core settings
-  // tabs: a wrapper div with a heading row, then a "setting-items" sibling
-  // that holds the actual rows. Obsidian's bundled CSS targets this shape to
-  // produce the rounded card with internal dividers.
-  private createSettingGroup(parent: HTMLElement, heading: string): HTMLDivElement {
-    const group = parent.createDiv({ cls: 'setting-group' });
-    new Setting(group).setName(heading).setHeading();
-    return group.createDiv({ cls: 'setting-items' });
   }
 
   private resolvePluginDirectorySafe(): Promise<string | null> {

@@ -7,6 +7,7 @@ import {
   isLlmPresetMode,
   type LlmPostprocessMode,
   type LlmUserPreset,
+  resolveStyleOption,
 } from '../llm/presets';
 import {
   isSelectedModel,
@@ -129,6 +130,11 @@ export function resolvePluginSettings(data: unknown): PluginSettings {
   const raw = isRecord(data) ? data : {};
   const userPresets = readUserPresets(raw.llmPostprocessUserPresets);
   const llmPostprocessPrompt = readPrompt(raw.llmPostprocessPrompt, DEFAULT_LLM_POSTPROCESS_PROMPT);
+  const llmPostprocessActivePresetRef = readActivePresetRef(
+    raw.llmPostprocessActivePresetRef,
+    llmPostprocessPrompt,
+    userPresets,
+  );
 
   return {
     accelerationPreference: readAccelerationPreference(raw.accelerationPreference),
@@ -142,7 +148,7 @@ export function resolvePluginSettings(data: unknown): PluginSettings {
       raw.llmFeaturesEnabled,
       DEFAULT_PLUGIN_SETTINGS.llmFeaturesEnabled,
     ),
-    llmPostprocessActivePresetRef: findMatchingStyleRef(llmPostprocessPrompt, userPresets),
+    llmPostprocessActivePresetRef,
     llmPostprocessMode: readLlmPostprocessMode(raw.llmPostprocessMode),
     llmPostprocessModel: readString(
       raw.llmPostprocessModel,
@@ -260,6 +266,20 @@ function readClampedNumber(value: unknown, fallback: number, min: number, max: n
   }
 
   return Math.min(max, Math.max(min, value));
+}
+
+function readActivePresetRef(
+  value: unknown,
+  prompt: string,
+  userPresets: readonly LlmUserPreset[],
+): string | null {
+  if (typeof value === 'string' && resolveStyleOption(value, userPresets) !== null) {
+    return value;
+  }
+  if (value === null) {
+    return null;
+  }
+  return findMatchingStyleRef(prompt, userPresets);
 }
 
 function readPrompt(value: unknown, fallback: string): string {
