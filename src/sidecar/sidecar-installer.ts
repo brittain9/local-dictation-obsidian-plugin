@@ -45,7 +45,7 @@ export interface InstallSidecarResult {
 }
 
 export const DEFAULT_RELEASE_BASE_URL =
-  'https://github.com/brittain9/obsidian-local-speech-to-text/releases/download';
+  'https://github.com/brittain9/local-dictation-obsidian-plugin/releases/download';
 
 const INSTALL_MANIFEST_FILENAME = 'install.json';
 
