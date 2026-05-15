@@ -234,6 +234,14 @@ export class NoteSurface {
     return { kind: 'replaced', span: cloneSpan(span) };
   }
 
+  readRange(range: RewriteRange): string | null {
+    if (this.disposed || !this.isValidRange(range)) {
+      return null;
+    }
+
+    return this.view.state.doc.sliceString(range.from, range.to);
+  }
+
   rewriteRegion(
     range: RewriteRange,
     newText: string,
@@ -270,7 +278,12 @@ export class NoteSurface {
       }
     }
 
-    this.view.dispatch({ changes: { from: range.from, to: range.to, insert: newText } });
+    const end = range.from + newText.length;
+    this.view.dispatch({
+      changes: { from: range.from, to: range.to, insert: newText },
+      effects: [setAnchorEffect.of(end), EditorView.scrollIntoView(end, { y: 'nearest' })],
+      selection: { anchor: end },
+    });
     for (const span of spansInRange) {
       this.spans.delete(span.utteranceId);
     }

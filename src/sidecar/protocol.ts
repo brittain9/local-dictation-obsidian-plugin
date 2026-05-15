@@ -102,11 +102,6 @@ export type ContextWindowSource =
       kind: 'prior_utterance';
       text: string;
       truncated: boolean;
-    }
-  | {
-      kind: 'glossary_text';
-      text: string;
-      truncated: boolean;
     };
 
 export interface ContextWindow {
@@ -136,23 +131,15 @@ interface EnvelopeBase<TType extends string> {
 export interface HealthCommand extends EnvelopeBase<'health'> {}
 
 export interface LlmPostprocessConfig {
-  formatSlot: string;
-  glossaryChars: number;
-  glossaryText: string;
   keepAlive: string;
   model: string;
   noteContextChars: number;
-  numPredict: number;
   priorUtterancesN: number;
-  seed: number;
+  prompt: string;
   showRawBelow: boolean;
-  skipIfAvgLogprobAbove: number | null;
   skipMinWords: number;
-  systemSlot: string;
   temperature: number;
   totalContextCap: number;
-  userTemplate: string;
-  voiceSlot: string;
 }
 
 export interface StartSessionCommand extends EnvelopeBase<'start_session'> {

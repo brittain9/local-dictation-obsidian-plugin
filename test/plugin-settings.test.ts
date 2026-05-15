@@ -1,15 +1,44 @@
 import { describe, expect, it } from 'vitest';
 
 import {
-  DEFAULT_LLM_POSTPROCESS_SYSTEM_SLOT,
+  DEFAULT_LLM_BUILTIN_PRESET_ID,
+  getLlmBuiltinPreset,
+  type LlmUserPreset,
+} from '../src/llm/presets';
+import {
+  DEFAULT_LLM_POSTPROCESS_PROMPT,
   DEFAULT_PLUGIN_SETTINGS,
+  LLM_USER_PRESET_MAX_COUNT,
+  LLM_USER_PRESET_MAX_DESCRIPTION_CHARS,
+  LLM_USER_PRESET_MAX_LABEL_CHARS,
   resetLlmPostprocessDefaults,
   resolvePluginSettings,
 } from '../src/settings/plugin-settings';
 
+const PROFESSIONAL_WRITING_PRESET = getLlmBuiltinPreset('professional-writing');
+
+function makeUserPreset(overrides: Partial<LlmUserPreset> & { id: string }): LlmUserPreset {
+  return {
+    description: '',
+    label: `Style ${overrides.id}`,
+    prompt: 'Clean it my way.',
+    ...overrides,
+  };
+}
+
 describe('resolvePluginSettings', () => {
   it('returns defaults when persisted data is missing', () => {
     expect(resolvePluginSettings(undefined)).toEqual(DEFAULT_PLUGIN_SETTINGS);
+  });
+
+  it('defaults to visible per-utterance cleanup with the Clean up prompt', () => {
+    expect(DEFAULT_PLUGIN_SETTINGS).toMatchObject({
+      llmFeaturesEnabled: true,
+      llmPostprocessActivePresetRef: `builtin:${DEFAULT_LLM_BUILTIN_PRESET_ID}`,
+      llmPostprocessMode: 'per_utterance',
+      llmPostprocessPrompt: DEFAULT_LLM_POSTPROCESS_PROMPT,
+      llmPostprocessUserPresets: [],
+    });
   });
 
   it('merges valid persisted values', () => {
@@ -19,24 +48,17 @@ describe('resolvePluginSettings', () => {
         cudaLibraryPath: ' /run/host/usr/lib64 ',
         dictationAnchor: 'end_of_note',
         listeningMode: 'always_on',
-        llmPostprocessEnabled: true,
-        llmPostprocessFormatSlot: 'Format exactly.',
-        llmPostprocessGlossaryChars: 1200,
-        llmPostprocessGlossarySlot: ' Keep AcronymX. ',
+        llmFeaturesEnabled: false,
         llmPostprocessKeepAlive: ' 45m ',
+        llmPostprocessMode: 'batch',
         llmPostprocessModel: ' llama3.2:latest ',
         llmPostprocessNoteContextChars: 4000,
-        llmPostprocessNumPredict: 800,
         llmPostprocessPriorUtterancesN: 3,
-        llmPostprocessSeed: 42,
+        llmPostprocessPrompt: 'Custom prompt.',
         llmPostprocessShowRawBelow: true,
-        llmPostprocessSkipIfAvgLogprobAbove: -0.5,
         llmPostprocessSkipMinWords: 6,
-        llmPostprocessSystemSlot: '  Keep exact whitespace.  ',
         llmPostprocessTemperature: 0.4,
         llmPostprocessTotalContextCap: 9000,
-        llmPostprocessUserTemplate: '{{utterance}}\n{{unknown}}',
-        llmPostprocessVoiceSlot: 'voice',
         modelStorePathOverride: ' /tmp/models ',
         selectedModel: {
           familyId: 'whisper',
@@ -58,24 +80,18 @@ describe('resolvePluginSettings', () => {
       cudaLibraryPath: '/run/host/usr/lib64',
       dictationAnchor: 'end_of_note',
       listeningMode: 'always_on',
-      llmPostprocessEnabled: true,
-      llmPostprocessFormatSlot: 'Format exactly.',
-      llmPostprocessGlossaryChars: 1200,
-      llmPostprocessGlossarySlot: ' Keep AcronymX. ',
+      llmFeaturesEnabled: false,
+      llmPostprocessActivePresetRef: null,
       llmPostprocessKeepAlive: '45m',
+      llmPostprocessMode: 'batch',
       llmPostprocessModel: 'llama3.2:latest',
       llmPostprocessNoteContextChars: 4000,
-      llmPostprocessNumPredict: 800,
       llmPostprocessPriorUtterancesN: 3,
-      llmPostprocessSeed: 42,
+      llmPostprocessPrompt: 'Custom prompt.',
       llmPostprocessShowRawBelow: true,
-      llmPostprocessSkipIfAvgLogprobAbove: -0.5,
       llmPostprocessSkipMinWords: 6,
-      llmPostprocessSystemSlot: '  Keep exact whitespace.  ',
       llmPostprocessTemperature: 0.4,
       llmPostprocessTotalContextCap: 9000,
-      llmPostprocessUserTemplate: '{{utterance}}\n{{unknown}}',
-      llmPostprocessVoiceSlot: 'voice',
       modelStorePathOverride: '/tmp/models',
       selectedModel: {
         familyId: 'whisper',
@@ -119,7 +135,7 @@ describe('resolvePluginSettings', () => {
       llmTransformPrompt: 'legacy',
     });
 
-    expect(resolved.llmPostprocessEnabled).toBe(false);
+    expect(resolved.llmPostprocessMode).toBe('per_utterance');
     expect(resolved.llmPostprocessModel).toBe('');
     expect(resolved).not.toHaveProperty('llmTransformEnabled');
     expect(resolved).not.toHaveProperty('llmTransformPrompt');
@@ -142,10 +158,11 @@ describe('resolvePluginSettings', () => {
       resolvePluginSettings({
         dictationAnchor: 'at_end',
         listeningMode: 'unsupported',
-        llmPostprocessEnabled: 'yes',
+        llmFeaturesEnabled: 'yes',
         llmPostprocessKeepAlive: '',
+        llmPostprocessMode: 'later',
         llmPostprocessModel: 123,
-        llmPostprocessSystemSlot: false,
+        llmPostprocessPrompt: '',
         modelStorePathOverride: 42,
         sidecarPathOverride: 12,
         sidecarRequestTimeoutSeconds: -1,
@@ -159,128 +176,158 @@ describe('resolvePluginSettings', () => {
 
   it('clamps LLM postprocess numeric settings at the settings boundary', () => {
     const low = resolvePluginSettings({
-      llmPostprocessGlossaryChars: -1,
       llmPostprocessNoteContextChars: -1,
-      llmPostprocessNumPredict: -1,
       llmPostprocessPriorUtterancesN: -1,
-      llmPostprocessSeed: -9_999_999_999,
       llmPostprocessSkipMinWords: -1,
       llmPostprocessTemperature: -1,
       llmPostprocessTotalContextCap: -1,
     });
     const high = resolvePluginSettings({
-      llmPostprocessGlossaryChars: 9_999,
       llmPostprocessNoteContextChars: 99_999,
-      llmPostprocessNumPredict: 99_999,
       llmPostprocessPriorUtterancesN: 99,
-      llmPostprocessSeed: 9_999_999_999,
       llmPostprocessSkipMinWords: 99,
       llmPostprocessTemperature: 99,
       llmPostprocessTotalContextCap: 99_999,
     });
 
     expect(low).toMatchObject({
-      llmPostprocessGlossaryChars: 0,
       llmPostprocessNoteContextChars: 0,
-      llmPostprocessNumPredict: 1,
       llmPostprocessPriorUtterancesN: 0,
-      llmPostprocessSeed: -2_147_483_648,
       llmPostprocessSkipMinWords: 0,
       llmPostprocessTemperature: 0,
       llmPostprocessTotalContextCap: 0,
     });
     expect(high).toMatchObject({
-      llmPostprocessGlossaryChars: 4_000,
       llmPostprocessNoteContextChars: 12_000,
-      llmPostprocessNumPredict: 4_096,
       llmPostprocessPriorUtterancesN: 5,
-      llmPostprocessSeed: 2_147_483_647,
       llmPostprocessSkipMinWords: 50,
       llmPostprocessTemperature: 2,
       llmPostprocessTotalContextCap: 30_000,
     });
   });
 
-  it('normalizes skipIfAvgLogprobAbove strictly', () => {
-    expect(resolvePluginSettings({ llmPostprocessSkipIfAvgLogprobAbove: -0.5 })).toMatchObject({
-      llmPostprocessSkipIfAvgLogprobAbove: -0.5,
-    });
-    for (const value of [null, Number.NaN, Infinity, -10, 0.1, '0']) {
-      expect(
-        resolvePluginSettings({ llmPostprocessSkipIfAvgLogprobAbove: value })
-          .llmPostprocessSkipIfAvgLogprobAbove,
-      ).toBeNull();
-    }
-    expect(resolvePluginSettings({ llmPostprocessSkipIfAvgLogprobAbove: 0 })).toMatchObject({
-      llmPostprocessSkipIfAvgLogprobAbove: 0,
-    });
+  it('infers active style refs from the current prompt', () => {
+    expect(resolvePluginSettings({}).llmPostprocessActivePresetRef).toBe('builtin:clean-up');
+    expect(
+      resolvePluginSettings({
+        llmPostprocessPrompt: PROFESSIONAL_WRITING_PRESET.prompt,
+      }).llmPostprocessActivePresetRef,
+    ).toBe('builtin:professional-writing');
+    expect(
+      resolvePluginSettings({
+        llmPostprocessPrompt: 'something fully custom',
+      }).llmPostprocessActivePresetRef,
+    ).toBeNull();
   });
 
-  it('ignores legacy useGpu and defaults to auto', () => {
-    expect(resolvePluginSettings({ useGpu: false }).accelerationPreference).toBe('auto');
-    expect(resolvePluginSettings({ useGpu: true }).accelerationPreference).toBe('auto');
+  it('preserves valid prompt-shaped user styles in their original order', () => {
+    const presets = [
+      makeUserPreset({ id: 'a', label: 'Style A', description: 'first' }),
+      makeUserPreset({ id: 'b', label: 'Style B', prompt: 'second prompt' }),
+    ];
+    expect(
+      resolvePluginSettings({ llmPostprocessUserPresets: presets }).llmPostprocessUserPresets,
+    ).toEqual(presets);
   });
 
-  it('falls back accelerationPreference to auto when persisted value is invalid', () => {
-    expect(resolvePluginSettings({ accelerationPreference: 'gpu' }).accelerationPreference).toBe(
-      'auto',
+  it('drops invalid user style entries', () => {
+    expect(
+      resolvePluginSettings({
+        llmPostprocessUserPresets: [
+          null,
+          'string',
+          { id: '', label: 'empty id', prompt: 'x' },
+          { id: 'valid', label: '   ', prompt: 'x' },
+          { id: 'no-label', prompt: 'x' },
+          makeUserPreset({ id: 'ok', label: 'Keeper' }),
+        ],
+      }).llmPostprocessUserPresets,
+    ).toEqual([makeUserPreset({ id: 'ok', label: 'Keeper' })]);
+  });
+
+  it('drops duplicate user style IDs after the first valid entry', () => {
+    expect(
+      resolvePluginSettings({
+        llmPostprocessUserPresets: [
+          makeUserPreset({ id: 'a', label: 'First A' }),
+          makeUserPreset({ id: 'a', label: 'Second A' }),
+          makeUserPreset({ id: 'b', label: 'Keeper B' }),
+        ],
+      }).llmPostprocessUserPresets,
+    ).toEqual([
+      makeUserPreset({ id: 'a', label: 'First A' }),
+      makeUserPreset({ id: 'b', label: 'Keeper B' }),
+    ]);
+  });
+
+  it('falls back empty user-preset prompts to the Clean up prompt', () => {
+    const preset = resolvePluginSettings({
+      llmPostprocessUserPresets: [{ id: 'a', label: 'A', prompt: '' }],
+    }).llmPostprocessUserPresets[0];
+
+    expect(preset?.prompt).toBe(DEFAULT_LLM_POSTPROCESS_PROMPT);
+  });
+
+  it('clamps user style label and description lengths', () => {
+    const longLabel = 'L'.repeat(LLM_USER_PRESET_MAX_LABEL_CHARS + 20);
+    const longDesc = 'D'.repeat(LLM_USER_PRESET_MAX_DESCRIPTION_CHARS + 50);
+    const preset = resolvePluginSettings({
+      llmPostprocessUserPresets: [
+        { id: 'a', label: longLabel, description: longDesc, prompt: 'prompt' },
+      ],
+    }).llmPostprocessUserPresets[0];
+
+    expect(preset?.label.length).toBe(LLM_USER_PRESET_MAX_LABEL_CHARS);
+    expect(preset?.description.length).toBe(LLM_USER_PRESET_MAX_DESCRIPTION_CHARS);
+  });
+
+  it(`caps user style count at ${LLM_USER_PRESET_MAX_COUNT}`, () => {
+    const presets = Array.from({ length: LLM_USER_PRESET_MAX_COUNT + 5 }, (_, i) =>
+      makeUserPreset({ id: `id-${i}`, label: `Label ${i}` }),
     );
+
+    expect(
+      resolvePluginSettings({ llmPostprocessUserPresets: presets }).llmPostprocessUserPresets,
+    ).toHaveLength(LLM_USER_PRESET_MAX_COUNT);
   });
 
-  it.each([
-    'responsive',
-    'balanced',
-    'patient',
-  ] as const)('accepts the supported speaking style %s', (speakingStyle) => {
-    expect(resolvePluginSettings({ speakingStyle }).speakingStyle).toBe(speakingStyle);
+  it('drops non-array user preset values', () => {
+    expect(
+      resolvePluginSettings({ llmPostprocessUserPresets: 'oops' }).llmPostprocessUserPresets,
+    ).toEqual([]);
+    expect(
+      resolvePluginSettings({ llmPostprocessUserPresets: { 0: 'oops' } }).llmPostprocessUserPresets,
+    ).toEqual([]);
   });
 
-  it('falls back speakingStyle to balanced when persisted value is invalid', () => {
-    expect(resolvePluginSettings({ speakingStyle: 'loud' }).speakingStyle).toBe('balanced');
-  });
-
-  it.each([
-    'always_on',
-    'one_sentence',
-  ] as const)('accepts the supported listening mode %s', (listeningMode) => {
-    expect(resolvePluginSettings({ listeningMode }).listeningMode).toBe(listeningMode);
-  });
-
-  it('uses one default system slot constant for persisted fallback', () => {
-    expect(resolvePluginSettings({ llmPostprocessSystemSlot: null }).llmPostprocessSystemSlot).toBe(
-      DEFAULT_LLM_POSTPROCESS_SYSTEM_SLOT,
-    );
-  });
-
-  it('resets editable LLM defaults without touching enablement, model, or raw display', () => {
+  it('resets editable LLM defaults without touching visibility, model, raw display, or styles', () => {
+    const presets = [makeUserPreset({ id: 'a', label: 'Keep me' })];
     const reset = resetLlmPostprocessDefaults({
       ...DEFAULT_PLUGIN_SETTINGS,
-      llmPostprocessEnabled: true,
-      llmPostprocessFormatSlot: 'changed',
-      llmPostprocessGlossaryChars: 333,
-      llmPostprocessGlossarySlot: 'changed',
+      llmFeaturesEnabled: false,
+      llmPostprocessActivePresetRef: 'user:custom',
       llmPostprocessKeepAlive: '5m',
+      llmPostprocessMode: 'batch',
       llmPostprocessModel: 'llama3',
       llmPostprocessNoteContextChars: 333,
-      llmPostprocessNumPredict: 333,
       llmPostprocessPriorUtterancesN: 3,
-      llmPostprocessSeed: 333,
+      llmPostprocessPrompt: 'changed',
       llmPostprocessShowRawBelow: true,
-      llmPostprocessSkipIfAvgLogprobAbove: -0.5,
       llmPostprocessSkipMinWords: 3,
-      llmPostprocessSystemSlot: 'changed',
       llmPostprocessTemperature: 1,
       llmPostprocessTotalContextCap: 333,
-      llmPostprocessUserTemplate: 'changed {{utterance}}',
-      llmPostprocessVoiceSlot: 'changed',
+      llmPostprocessUserPresets: presets,
     });
 
     expect(reset).toMatchObject({
-      llmPostprocessEnabled: true,
+      llmFeaturesEnabled: false,
+      llmPostprocessActivePresetRef: `builtin:${DEFAULT_LLM_BUILTIN_PRESET_ID}`,
+      llmPostprocessKeepAlive: DEFAULT_PLUGIN_SETTINGS.llmPostprocessKeepAlive,
+      llmPostprocessMode: 'per_utterance',
       llmPostprocessModel: 'llama3',
+      llmPostprocessPrompt: DEFAULT_PLUGIN_SETTINGS.llmPostprocessPrompt,
       llmPostprocessShowRawBelow: true,
-      llmPostprocessSystemSlot: DEFAULT_PLUGIN_SETTINGS.llmPostprocessSystemSlot,
-      llmPostprocessUserTemplate: DEFAULT_PLUGIN_SETTINGS.llmPostprocessUserTemplate,
+      llmPostprocessUserPresets: presets,
     });
   });
 });

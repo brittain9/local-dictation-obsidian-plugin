@@ -2,9 +2,11 @@ import { randomUUID } from 'node:crypto';
 
 import type { AudioCaptureStream } from '../audio/audio-capture-stream';
 import type { NotePlacementOptions } from '../editor/note-surface';
+import type { OllamaClient } from '../llm/ollama-client';
+import { formatBatchUserMessage } from '../llm/templates';
 import type { Session } from '../session/session';
 import type { StageId } from '../session/session-journal';
-import type { PluginSettings } from '../settings/plugin-settings';
+import type { LlmPostprocessMode, PluginSettings } from '../settings/plugin-settings';
 import { formatErrorMessage } from '../shared/format-utils';
 import type { PluginLogger } from '../shared/plugin-logger';
 import { truncateLeadingText } from '../shared/text-truncation';
@@ -35,9 +37,11 @@ type ControllerSession = Pick<
   Session,
   | 'acceptTranscript'
   | 'dispose'
+  | 'joinRawSessionText'
   | 'readNoteGlossary'
   | 'readNoteText'
   | 'readPriorUtterances'
+  | 'replaceSessionRangeWithCleaned'
   | 'setAnchorMode'
 >;
 
@@ -45,7 +49,15 @@ interface ActiveSessionSnapshot {
   accelerationPreference: PluginSettings['accelerationPreference'];
   dictationAnchor: PluginSettings['dictationAnchor'];
   listeningMode: PluginSettings['listeningMode'];
+  llmFeaturesEnabled: PluginSettings['llmFeaturesEnabled'];
   llmPostprocess: LlmPostprocessConfig | null;
+  llmPostprocessKeepAlive: PluginSettings['llmPostprocessKeepAlive'];
+  llmPostprocessMode: LlmPostprocessMode;
+  llmPostprocessModel: PluginSettings['llmPostprocessModel'];
+  llmPostprocessNoteContextChars: PluginSettings['llmPostprocessNoteContextChars'];
+  llmPostprocessPrompt: PluginSettings['llmPostprocessPrompt'];
+  llmPostprocessShowRawBelow: PluginSettings['llmPostprocessShowRawBelow'];
+  llmPostprocessTemperature: PluginSettings['llmPostprocessTemperature'];
   modelSelection: NonNullable<PluginSettings['selectedModel']>;
   modelStorePathOverride: string;
   sessionStartUnixMs: number;
@@ -69,6 +81,7 @@ interface DictationSessionControllerDependencies {
   getSettings: () => PluginSettings;
   logger?: PluginLogger;
   notice: (message: string) => void;
+  ollamaClient: Pick<OllamaClient, 'cleanup'>;
   onSidecarMissing?: () => void;
   setRibbonQueueTier: (tier: QueueBackpressureTier) => void;
   setRibbonState: (state: DictationControllerState) => void;
@@ -89,6 +102,7 @@ const ANCHOR_VISIBLE_DELAY_MS = 2500;
 export class DictationSessionController {
   private abortingSessionId: string | null = null;
   private anchorTimerId: ReturnType<typeof setTimeout> | null = null;
+  private batchCleanupAbortController: AbortController | null = null;
   private pendingStartSessionId: string | null = null;
   private queueTier: QueueBackpressureTier = 'normal';
   private readonly releaseSidecarSubscription: () => void;
@@ -114,6 +128,11 @@ export class DictationSessionController {
 
   async cancelDictation(): Promise<void> {
     if (this.sessionId === null) {
+      if (this.batchCleanupAbortController !== null) {
+        this.abortBatchCleanup();
+        return;
+      }
+
       this.dependencies.notice('Dictation is not currently active.');
       return;
     }
@@ -127,6 +146,7 @@ export class DictationSessionController {
   }
 
   async dispose(): Promise<void> {
+    this.abortBatchCleanup();
     const activeSessionId = this.sessionId;
     if (activeSessionId !== null) {
       try {
@@ -154,6 +174,8 @@ export class DictationSessionController {
       return;
     }
 
+    this.abortBatchCleanup();
+
     try {
       await this.dependencies.sidecarConnection.ensureStarted();
     } catch (error) {
@@ -172,7 +194,15 @@ export class DictationSessionController {
       accelerationPreference: settings.accelerationPreference,
       dictationAnchor: settings.dictationAnchor,
       listeningMode: settings.listeningMode,
+      llmFeaturesEnabled: settings.llmFeaturesEnabled,
       llmPostprocess: resolveLlmPostprocessSnapshot(settings),
+      llmPostprocessKeepAlive: settings.llmPostprocessKeepAlive,
+      llmPostprocessMode: settings.llmPostprocessMode,
+      llmPostprocessModel: settings.llmPostprocessModel,
+      llmPostprocessNoteContextChars: settings.llmPostprocessNoteContextChars,
+      llmPostprocessPrompt: settings.llmPostprocessPrompt,
+      llmPostprocessShowRawBelow: settings.llmPostprocessShowRawBelow,
+      llmPostprocessTemperature: settings.llmPostprocessTemperature,
       modelSelection: selectedModel,
       modelStorePathOverride: settings.modelStorePathOverride,
       sessionStartUnixMs: Date.now(),
@@ -305,7 +335,7 @@ export class DictationSessionController {
     this.dependencies.setRibbonState(state);
   }
 
-  private async cleanupLocalSession(): Promise<void> {
+  private async detachSession(): Promise<ControllerSession | null> {
     this.abortingSessionId = null;
     this.pendingStartSessionId = null;
     this.sessionId = null;
@@ -319,6 +349,11 @@ export class DictationSessionController {
       await this.dependencies.captureStream.stop();
     }
 
+    return session;
+  }
+
+  private async cleanupLocalSession(): Promise<void> {
+    const session = await this.detachSession();
     session?.dispose();
   }
 
@@ -387,14 +422,76 @@ export class DictationSessionController {
       'session',
       `session ${event.sessionId} stopped (reason: ${event.reason})`,
     );
-    await this.cleanupLocalSession();
+    const snapshot = this.sessionSnapshot;
+    const session = await this.detachSession();
     this.applyUiState('idle');
+
+    if (snapshot !== null && session !== null && shouldRunBatchCleanup(snapshot, event.reason)) {
+      await this.runBatchCleanup(snapshot, session);
+    }
+
+    session?.dispose();
 
     if (event.reason === 'timeout') {
       this.dependencies.notice(
         'Local Dictation: one-sentence mode timed out before speech started.',
       );
     }
+  }
+
+  private async runBatchCleanup(
+    snapshot: ActiveSessionSnapshot,
+    session: ControllerSession,
+  ): Promise<void> {
+    const model = snapshot.llmPostprocessModel.trim();
+    const sessionTranscript = session.joinRawSessionText();
+
+    if (model.length === 0 || sessionTranscript.length === 0) {
+      return;
+    }
+
+    const abortController = new AbortController();
+    this.batchCleanupAbortController = abortController;
+
+    const noteContext =
+      snapshot.llmPostprocessNoteContextChars > 0
+        ? (session.readNoteText(snapshot.llmPostprocessNoteContextChars)?.text ?? '')
+        : '';
+    const userMessage = formatBatchUserMessage(noteContext, sessionTranscript);
+
+    try {
+      const cleanText = await this.dependencies.ollamaClient.cleanup({
+        abortSignal: abortController.signal,
+        keepAlive: snapshot.llmPostprocessKeepAlive,
+        model,
+        prompt: snapshot.llmPostprocessPrompt,
+        temperature: snapshot.llmPostprocessTemperature,
+        userMessage,
+      });
+
+      const replaced = session.replaceSessionRangeWithCleaned(cleanText, {
+        showRawBelow: snapshot.llmPostprocessShowRawBelow,
+      });
+      if (!replaced) {
+        this.dependencies.notice('Cleanup skipped — text was edited during the session.');
+      }
+    } catch (error) {
+      if (abortController.signal.aborted) {
+        return;
+      }
+
+      this.dependencies.logger?.warn('llm', 'batch cleanup failed', error);
+      this.dependencies.notice('Cleanup failed; raw transcript kept.');
+    } finally {
+      if (this.batchCleanupAbortController === abortController) {
+        this.batchCleanupAbortController = null;
+      }
+    }
+  }
+
+  private abortBatchCleanup(): void {
+    this.batchCleanupAbortController?.abort();
+    this.batchCleanupAbortController = null;
   }
 
   private async handleSidecarEvent(event: SidecarEvent): Promise<void> {
@@ -557,15 +654,6 @@ export class DictationSessionController {
       });
     }
 
-    const glossary = truncateLeadingText(config.glossaryText, config.glossaryChars);
-    if (glossary.text.trim().length > 0) {
-      sources.push({
-        kind: 'glossary_text',
-        text: glossary.text,
-        truncated: glossary.truncated,
-      });
-    }
-
     return enforceLlmContextCap(sources, config.totalContextCap);
   }
 
@@ -703,32 +791,37 @@ function createSessionId(): string {
 function resolveLlmPostprocessSnapshot(settings: PluginSettings): LlmPostprocessConfig | null {
   const model = settings.llmPostprocessModel.trim();
 
-  if (!settings.llmPostprocessEnabled || settings.showTimestamps || model.length === 0) {
+  if (
+    !settings.llmFeaturesEnabled ||
+    settings.llmPostprocessMode !== 'per_utterance' ||
+    settings.showTimestamps ||
+    model.length === 0
+  ) {
     return null;
   }
 
   return {
-    formatSlot: settings.llmPostprocessFormatSlot,
-    glossaryChars: settings.llmPostprocessGlossaryChars,
-    glossaryText: truncateLeadingText(
-      settings.llmPostprocessGlossarySlot,
-      settings.llmPostprocessGlossaryChars,
-    ).text,
     keepAlive: settings.llmPostprocessKeepAlive,
     model,
     noteContextChars: settings.llmPostprocessNoteContextChars,
-    numPredict: settings.llmPostprocessNumPredict,
     priorUtterancesN: settings.llmPostprocessPriorUtterancesN,
-    seed: settings.llmPostprocessSeed,
+    prompt: settings.llmPostprocessPrompt,
     showRawBelow: settings.llmPostprocessShowRawBelow,
-    skipIfAvgLogprobAbove: settings.llmPostprocessSkipIfAvgLogprobAbove,
     skipMinWords: settings.llmPostprocessSkipMinWords,
-    systemSlot: settings.llmPostprocessSystemSlot,
     temperature: settings.llmPostprocessTemperature,
     totalContextCap: settings.llmPostprocessTotalContextCap,
-    userTemplate: settings.llmPostprocessUserTemplate,
-    voiceSlot: settings.llmPostprocessVoiceSlot,
   };
+}
+
+function shouldRunBatchCleanup(
+  snapshot: ActiveSessionSnapshot,
+  reason: Extract<SidecarEvent, { type: 'session_stopped' }>['reason'],
+): boolean {
+  if (!snapshot.llmFeaturesEnabled || snapshot.llmPostprocessMode !== 'batch') {
+    return false;
+  }
+
+  return reason === 'user_stop' || reason === 'sentence_complete';
 }
 
 function isAnchorVisibleSessionState(state: SessionState): boolean {
@@ -758,7 +851,7 @@ function enforceLlmContextCap(
 
   const result = sources.map((source) => ({ ...source }));
 
-  for (const kind of ['note_text', 'prior_utterance', 'glossary_text'] as const) {
+  for (const kind of ['note_text', 'prior_utterance'] as const) {
     while (totalSourceChars(result) > totalContextCap) {
       const index = result.findIndex((source) => source.kind === kind && source.text.length > 0);
       if (index < 0) {

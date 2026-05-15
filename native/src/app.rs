@@ -1230,13 +1230,7 @@ fn context_budget_chars(
         0
     };
     let llm_budget = llm_postprocess
-        .map(|config| {
-            config.total_context_cap.max(
-                config
-                    .note_context_chars
-                    .saturating_add(config.glossary_chars),
-            )
-        })
+        .map(|config| config.total_context_cap.max(config.note_context_chars))
         .unwrap_or(0);
 
     engine_budget.saturating_add(llm_budget)

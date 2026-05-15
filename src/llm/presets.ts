@@ -1,123 +1,140 @@
-export type LlmPresetId =
-  | 'light-cleanup'
-  | 'heavy-cleanup'
-  | 'concise-professional'
-  | 'creative-writing'
-  | 'markdown-structure';
+export type LlmBuiltinPresetId = 'clean-up' | 'professional-writing';
 
-export interface LlmPreset {
-  id: LlmPresetId;
+export interface LlmBuiltinPreset {
+  id: LlmBuiltinPresetId;
   label: string;
   description: string;
-  systemSlot: string;
-  voiceSlot: string;
-  formatSlot: string;
-  userTemplate: string;
+  prompt: string;
 }
 
-const SHARED_USER_TEMPLATE = `{{glossary}}
+export interface LlmUserPreset {
+  id: string;
+  label: string;
+  description: string;
+  prompt: string;
+}
 
-{{voice}}
+export type LlmStyleRef =
+  | { kind: 'builtin'; id: LlmBuiltinPresetId }
+  | { kind: 'user'; id: string };
 
-{{format}}
+export interface LlmStyleOption {
+  description: string;
+  isBuiltin: boolean;
+  label: string;
+  prompt: string;
+  ref: string;
+}
 
-<note_context>
-{{note_context}}
-</note_context>
+const CLEAN_UP_PROMPT =
+  "Clean dictated speech-to-text. Fix filler, false starts, repetitions, punctuation, capitalization, and obvious recognition errors. Preserve the speaker's voice and meaning. Use the reference context only for spelling. Return only the cleaned text — no preamble, no commentary.";
 
-<prior_utterances>
-{{prior_utterances}}
-</prior_utterances>
+const PROFESSIONAL_WRITING_PROMPT =
+  'Rewrite dictated speech as concise professional prose. Active voice, no filler or hedging. Preserve every fact, name, and term. Use the reference context for spelling. Return only the rewritten text — no preamble, no commentary.';
 
-<utterance>
-{{utterance}}
-</utterance>
-
-<cleaned>`;
-
-const LIGHT_CLEANUP_SYSTEM =
-  "You clean a single dictated utterance from speech-to-text. Fix disfluencies (um, uh, like, you know), false starts, repetitions, and clear word-recognition errors. Preserve the speaker's voice, word choice, and meaning. Do not summarize, restructure, expand, or add information. Use the reference context only to disambiguate spelling and terminology. Return only the cleaned utterance — no preamble, no quotes, no commentary.";
-
-const HEAVY_CLEANUP_SYSTEM =
-  "You clean a single dictated utterance for written prose. Fix grammar, punctuation, capitalization, sentence boundaries, word choice, and pacing. Drop filler aggressively. Merge run-on fragments and split mashed-together sentences so the result reads as polished writing. Preserve the speaker's meaning and any technical terms. Use the reference context for spelling and continuity. Return only the cleaned utterance — no preamble, no quotes, no commentary.";
-
-const CONCISE_PROFESSIONAL_SYSTEM =
-  'You rewrite a single dictated utterance into concise professional prose. Strip filler, redundancy, conversational hedging, and self-corrections. Use direct active voice. Preserve every fact, decision, name, and technical term — do not change meaning. Use the reference context for spelling and continuity. Return only the cleaned utterance — no preamble, no quotes, no commentary.';
-
-const CONCISE_PROFESSIONAL_VOICE =
-  "Tone: professional, direct, neutral. Avoid 'I think', 'I guess', 'I mean', 'kind of', 'sort of', 'basically' unless they carry real meaning.";
-
-const CREATIVE_WRITING_SYSTEM =
-  "You polish a single dictated utterance for a creative-writing note. Fix only obvious transcription errors and disfluencies. Preserve voice, rhythm, imagery, and unconventional phrasing. Resist tightening — keep sentence variety and the speaker's natural cadence. Use the reference context for spelling and continuity. Return only the polished utterance — no preamble, no quotes, no commentary.";
-
-const CREATIVE_WRITING_VOICE =
-  "Tone: literary, expressive, faithful to the speaker's cadence. Preserve deliberate fragments, repetitions for effect, and stylistic choices.";
-
-const MARKDOWN_STRUCTURE_SYSTEM =
-  'You clean a single dictated utterance for an Obsidian note and lightly format it with markdown. Fix disfluencies and obvious errors as you would in a light cleanup. When the speaker clearly starts a new topic, prefix the result with a markdown header (## Topic). When the speaker lists items, format as a markdown bullet list. Wrap words the speaker visibly emphasizes in **bold**. Do not add structure the speaker did not imply. Return only the cleaned utterance with optional markdown — no preamble, no quotes, no commentary.';
-
-const MARKDOWN_STRUCTURE_FORMAT =
-  'Output rules: Markdown allowed. Headers: `## Topic`. Bullets: `- item`. Bold: `**word**`. Do not over-format. Do not add a header for short utterances. Do not wrap the entire output in a code block.';
-
-export const LLM_PRESETS: readonly LlmPreset[] = [
+export const LLM_BUILTIN_PRESETS: readonly LlmBuiltinPreset[] = [
   {
-    id: 'light-cleanup',
-    label: 'Light cleanup',
+    id: 'clean-up',
+    label: 'Clean up',
     description:
-      'Fix disfluencies, repetitions, and obvious transcription errors. Preserve voice and meaning.',
-    systemSlot: LIGHT_CLEANUP_SYSTEM,
-    voiceSlot: '',
-    formatSlot: '',
-    userTemplate: SHARED_USER_TEMPLATE,
+      'Fix transcription artifacts, filler, punctuation, and capitalization while preserving voice and meaning.',
+    prompt: CLEAN_UP_PROMPT,
   },
   {
-    id: 'heavy-cleanup',
-    label: 'Heavy cleanup',
+    id: 'professional-writing',
+    label: 'Professional writing',
     description:
-      'Fix grammar, punctuation, and sentence structure. Drop filler aggressively. Output reads as polished prose.',
-    systemSlot: HEAVY_CLEANUP_SYSTEM,
-    voiceSlot: '',
-    formatSlot: '',
-    userTemplate: SHARED_USER_TEMPLATE,
-  },
-  {
-    id: 'concise-professional',
-    label: 'Concise / professional',
-    description:
-      'Rewrite into concise professional prose. Strip hedging and filler. Preserve all facts and decisions.',
-    systemSlot: CONCISE_PROFESSIONAL_SYSTEM,
-    voiceSlot: CONCISE_PROFESSIONAL_VOICE,
-    formatSlot: '',
-    userTemplate: SHARED_USER_TEMPLATE,
-  },
-  {
-    id: 'creative-writing',
-    label: 'Creative writing',
-    description:
-      'Polish for a creative note. Preserve voice, rhythm, and imagery. Fix only obvious errors.',
-    systemSlot: CREATIVE_WRITING_SYSTEM,
-    voiceSlot: CREATIVE_WRITING_VOICE,
-    formatSlot: '',
-    userTemplate: SHARED_USER_TEMPLATE,
-  },
-  {
-    id: 'markdown-structure',
-    label: 'Markdown structure',
-    description:
-      'Light cleanup plus markdown when implied: headers for new topics, bullets for lists, bold for emphasis.',
-    systemSlot: MARKDOWN_STRUCTURE_SYSTEM,
-    voiceSlot: '',
-    formatSlot: MARKDOWN_STRUCTURE_FORMAT,
-    userTemplate: SHARED_USER_TEMPLATE,
+      'Rewrite into concise, polished professional prose while preserving facts, names, decisions, and technical terms.',
+    prompt: PROFESSIONAL_WRITING_PROMPT,
   },
 ];
 
-export const DEFAULT_LLM_PRESET_ID: LlmPresetId = 'light-cleanup';
+export const DEFAULT_LLM_BUILTIN_PRESET_ID: LlmBuiltinPresetId = 'clean-up';
 
-export function getLlmPreset(id: LlmPresetId): LlmPreset {
-  const preset = LLM_PRESETS.find((entry) => entry.id === id);
+export function getLlmBuiltinPreset(id: LlmBuiltinPresetId): LlmBuiltinPreset {
+  const preset = LLM_BUILTIN_PRESETS.find((entry) => entry.id === id);
   if (!preset) {
-    throw new Error(`Unknown LLM preset id: ${id}`);
+    throw new Error(`Unknown LLM built-in preset id: ${id}`);
   }
   return preset;
+}
+
+const BUILTIN_REF_PREFIX = 'builtin:';
+const USER_REF_PREFIX = 'user:';
+
+export function formatStyleRef(ref: LlmStyleRef): string {
+  if (ref.kind === 'builtin') {
+    return `${BUILTIN_REF_PREFIX}${ref.id}`;
+  }
+  return `${USER_REF_PREFIX}${ref.id}`;
+}
+
+export function parseStyleRef(value: unknown): LlmStyleRef | null {
+  if (typeof value !== 'string') {
+    return null;
+  }
+
+  if (value.startsWith(BUILTIN_REF_PREFIX)) {
+    const id = value.slice(BUILTIN_REF_PREFIX.length);
+    if (LLM_BUILTIN_PRESETS.some((entry) => entry.id === id)) {
+      return { kind: 'builtin', id: id as LlmBuiltinPresetId };
+    }
+    return null;
+  }
+
+  if (value.startsWith(USER_REF_PREFIX)) {
+    const id = value.slice(USER_REF_PREFIX.length);
+    if (id.length === 0) {
+      return null;
+    }
+    return { kind: 'user', id };
+  }
+
+  return null;
+}
+
+export function listStyleOptions(userPresets: readonly LlmUserPreset[]): LlmStyleOption[] {
+  const builtinOptions = LLM_BUILTIN_PRESETS.map(
+    (preset): LlmStyleOption => ({
+      description: preset.description,
+      isBuiltin: true,
+      label: preset.label,
+      prompt: preset.prompt,
+      ref: formatStyleRef({ kind: 'builtin', id: preset.id }),
+    }),
+  );
+
+  const userOptions = userPresets.map(
+    (preset): LlmStyleOption => ({
+      description: preset.description,
+      isBuiltin: false,
+      label: preset.label,
+      prompt: preset.prompt,
+      ref: formatStyleRef({ kind: 'user', id: preset.id }),
+    }),
+  );
+
+  return [...builtinOptions, ...userOptions];
+}
+
+export function resolveStyleOption(
+  ref: string | null,
+  userPresets: readonly LlmUserPreset[],
+): LlmStyleOption | null {
+  if (ref === null) {
+    return null;
+  }
+  return listStyleOptions(userPresets).find((option) => option.ref === ref) ?? null;
+}
+
+export function findMatchingStyleRef(
+  prompt: string,
+  userPresets: readonly LlmUserPreset[],
+): string | null {
+  for (const option of listStyleOptions(userPresets)) {
+    if (option.prompt === prompt) {
+      return option.ref;
+    }
+  }
+  return null;
 }

@@ -87,6 +87,59 @@ describe('Ollama client', () => {
       },
     ]);
   });
+
+  it('cleanup posts the expected chat payload and parses message content', async () => {
+    const bodies: unknown[] = [];
+    const { port } = await startServer(async (request, response) => {
+      bodies.push(JSON.parse(await readBody(request)));
+      response.end(JSON.stringify({ message: { content: '  Cleaned text.  ' } }));
+    });
+
+    await expect(
+      createOllamaClient({ port }).cleanup({
+        keepAlive: '30m',
+        model: 'llama3.2:latest',
+        prompt: 'Clean this.',
+        temperature: 0.2,
+        userMessage: '<session_transcript>raw</session_transcript>',
+      }),
+    ).resolves.toBe('Cleaned text.');
+    expect(bodies).toEqual([
+      {
+        keep_alive: '30m',
+        messages: [
+          { content: 'Clean this.', role: 'system' },
+          { content: '<session_transcript>raw</session_transcript>', role: 'user' },
+        ],
+        model: 'llama3.2:latest',
+        options: { num_predict: 512, temperature: 0.2 },
+        stream: false,
+        think: false,
+      },
+    ]);
+  });
+
+  it('cleanup aborts via the supplied signal', async () => {
+    const { port } = await startServer((_request, _response) => {
+      // Keep the request open until the client aborts.
+    });
+    const controller = new AbortController();
+    const promise = createOllamaClient({ port }).cleanup({
+      abortSignal: controller.signal,
+      keepAlive: '30m',
+      model: 'llama3.2:latest',
+      prompt: 'Clean this.',
+      temperature: 0.2,
+      userMessage: 'raw',
+    });
+
+    controller.abort();
+
+    await expect(promise).rejects.toMatchObject({
+      code: 'connection_failed',
+      name: 'OllamaClientError',
+    } satisfies Partial<OllamaClientError>);
+  });
 });
 
 async function startServer(

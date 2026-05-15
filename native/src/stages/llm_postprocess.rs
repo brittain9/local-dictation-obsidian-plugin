@@ -12,6 +12,7 @@ use crate::stages::{StageContext, StageProcess, StageProcessor};
 use crate::transcription::Transcript;
 
 const OLLAMA_CHAT_URL: &str = "http://127.0.0.1:11434/api/chat";
+const NUM_PREDICT: u32 = 512;
 
 pub struct LlmPostprocessStage {
     chat_url: String,
@@ -70,20 +71,8 @@ impl StageProcessor for LlmPostprocessStage {
         if config.skip_min_words > 0 && word_count(trimmed_input) < config.skip_min_words as usize {
             return skipped(base, "below_min_words");
         }
-        if confidence_gate_trips(transcript, ctx, config.skip_if_avg_logprob_above) {
-            return skipped(base, "high_confidence");
-        }
 
-        if !config.user_template.contains("{{utterance}}") {
-            return failed(
-                base,
-                "missing utterance placeholder".to_string(),
-                "error",
-                false,
-            );
-        }
-
-        let user_message = render_user_message(config, ctx.context, trimmed_input);
+        let user_message = render_user_message(ctx.context, trimmed_input);
         let response = match ctx.tokio_runtime.block_on(send_chat(
             &self.client,
             &self.chat_url,
@@ -181,13 +170,12 @@ async fn send_chat(
     let request = client.post(chat_url).json(&json!({
         "keep_alive": config.keep_alive,
         "messages": [
-            { "role": "system", "content": config.system_slot },
+            { "role": "system", "content": config.prompt },
             { "role": "user", "content": user_message }
         ],
         "model": config.model,
         "options": {
-            "num_predict": config.num_predict,
-            "seed": config.seed,
+            "num_predict": NUM_PREDICT,
             "temperature": config.temperature,
         },
         "stream": false,
@@ -206,67 +194,19 @@ async fn send_chat(
         .map_err(|error| error.to_string())
 }
 
-fn render_user_message(
-    config: &LlmPostprocessConfig,
-    context: Option<&ContextWindow>,
-    utterance: &str,
-) -> String {
+fn render_user_message(context: Option<&ContextWindow>, utterance: &str) -> String {
     let note_context = join_sources(context, |source| {
         matches!(source, ContextWindowSource::NoteText { .. })
     });
     let prior_utterances = join_sources(context, |source| {
         matches!(source, ContextWindowSource::PriorUtterance { .. })
     });
-    let glossary = {
-        let from_context = join_sources(context, |source| {
-            matches!(source, ContextWindowSource::GlossaryText { .. })
-        });
-        if from_context.is_empty() {
-            config.glossary_text.clone()
-        } else {
-            from_context
-        }
-    };
 
-    render_template(
-        &config.user_template,
-        &[
-            ("{{voice}}", config.voice_slot.as_str()),
-            ("{{glossary}}", glossary.as_str()),
-            ("{{format}}", config.format_slot.as_str()),
-            ("{{note_context}}", note_context.as_str()),
-            ("{{prior_utterances}}", prior_utterances.as_str()),
-            ("{{utterance}}", utterance),
-        ],
+    format!(
+        "<note_context>\n{note_context}\n</note_context>\n\n\
+         <prior_utterances>\n{prior_utterances}\n</prior_utterances>\n\n\
+         <utterance>\n{utterance}\n</utterance>"
     )
-}
-
-fn render_template(template: &str, replacements: &[(&str, &str)]) -> String {
-    let mut output = String::with_capacity(template.len());
-    let mut rest = template;
-
-    while let Some(start) = rest.find("{{") {
-        let Some(end_after_start) = rest[start + 2..].find("}}") else {
-            output.push_str(rest);
-            return output;
-        };
-        let end = start + 2 + end_after_start + 2;
-        let placeholder = &rest[start..end];
-
-        output.push_str(&rest[..start]);
-        if let Some((_, value)) = replacements
-            .iter()
-            .find(|(candidate, _)| *candidate == placeholder)
-        {
-            output.push_str(value);
-        } else {
-            output.push_str(placeholder);
-        }
-        rest = &rest[end..];
-    }
-
-    output.push_str(rest);
-    output
 }
 
 fn join_sources(
@@ -298,7 +238,6 @@ fn context_chars_total(context: Option<&ContextWindow>) -> u32 {
                         source,
                         ContextWindowSource::NoteText { .. }
                             | ContextWindowSource::PriorUtterance { .. }
-                            | ContextWindowSource::GlossaryText { .. }
                     )
                 })
                 .map(|source| source.text().chars().count() as u32)
@@ -309,34 +248,6 @@ fn context_chars_total(context: Option<&ContextWindow>) -> u32 {
 
 fn word_count(text: &str) -> usize {
     text.split_whitespace().count()
-}
-
-fn confidence_gate_trips(
-    transcript: &Transcript,
-    ctx: &StageContext<'_>,
-    threshold: Option<f32>,
-) -> bool {
-    let Some(threshold) = threshold else {
-        return false;
-    };
-
-    let mut total = 0.0_f32;
-    let mut count = 0_u32;
-
-    for index in 0..transcript.segments.len() {
-        let Some(avg_logprob) = ctx
-            .segment_diagnostics
-            .get(index)
-            .and_then(|diagnostics| diagnostics.avg_logprob)
-        else {
-            continue;
-        };
-
-        total += avg_logprob;
-        count += 1;
-    }
-
-    count > 0 && total / count as f32 > threshold
 }
 
 #[derive(Debug, Deserialize)]
@@ -397,7 +308,6 @@ mod tests {
     use crate::engine::capabilities::{LanguageSupport, ModelFamilyCapabilities};
     use crate::protocol::{StageOutcome, StageStatus};
     use crate::stages::StageEnablement;
-    use crate::transcription::SegmentDiagnostics;
 
     #[test]
     fn disabled_config_skips_without_transcript_payload() {
@@ -467,50 +377,7 @@ mod tests {
     }
 
     #[test]
-    fn high_confidence_gate_uses_available_logprobs_only() {
-        let runtime = runtime();
-        let (_cancel_tx, cancel_rx) = tokio::sync::watch::channel(false);
-        let transcript = transcript("this is clearly enough words");
-        let voice_activity = voice_activity();
-        let caps = caps();
-        let enablement = StageEnablement::default();
-        let mut config = config();
-        config.skip_if_avg_logprob_above = Some(-0.5);
-        let diagnostics = [SegmentDiagnostics {
-            avg_logprob: Some(-0.25),
-            decode_reached_eos: None,
-            no_speech_prob: None,
-            token_count: None,
-        }];
-        let ctx = StageContext {
-            cancel_rx: &cancel_rx,
-            context: None,
-            family_capabilities: &caps,
-            is_final: true,
-            llm_postprocess: Some(&config),
-            pause_ms_before_utterance: None,
-            segment_diagnostics: &diagnostics,
-            stage_enabled: &enablement,
-            tokio_runtime: &runtime,
-            vad_probabilities: &[],
-            voice_activity: &voice_activity,
-        };
-
-        let result = LlmPostprocessStage::with_chat_url("http://127.0.0.1:9/api/chat")
-            .process(&transcript, &ctx);
-
-        match result {
-            StageProcess::Skipped { reason, .. } => assert_eq!(reason, "high_confidence"),
-            _ => panic!("expected high_confidence skip"),
-        }
-    }
-
-    #[test]
-    fn prompt_renderer_substitutes_known_placeholders_once() {
-        let mut config = config();
-        config.voice_slot = "Voice {{utterance}}".to_string();
-        config.format_slot = "Format".to_string();
-        config.user_template = "{{glossary}}|{{voice}}|{{format}}|{{note_context}}|{{prior_utterances}}|{{utterance}}|{{unknown}}".to_string();
+    fn user_message_inlines_context_sources_in_order() {
         let context = ContextWindow {
             budget_chars: 7000,
             sources: vec![
@@ -526,20 +393,18 @@ mod tests {
                     text: "second prior".to_string(),
                     truncated: false,
                 },
-                ContextWindowSource::GlossaryText {
-                    text: "glossary".to_string(),
-                    truncated: false,
-                },
             ],
             text: String::new(),
             truncated: false,
         };
 
-        let rendered = render_user_message(&config, Some(&context), "current words");
+        let rendered = render_user_message(Some(&context), "current words");
 
         assert_eq!(
             rendered,
-            "glossary|Voice {{utterance}}|Format|note prose|first prior\n\nsecond prior|current words|{{unknown}}"
+            "<note_context>\nnote prose\n</note_context>\n\n\
+             <prior_utterances>\nfirst prior\n\nsecond prior\n</prior_utterances>\n\n\
+             <utterance>\ncurrent words\n</utterance>"
         );
     }
 
@@ -554,8 +419,7 @@ mod tests {
         let voice_activity = voice_activity();
         let caps = caps();
         let enablement = StageEnablement::default();
-        let mut config = config();
-        config.user_template = "<utterance>{{utterance}}</utterance>{{unknown}}".to_string();
+        let config = config();
         let context = ContextWindow {
             budget_chars: 7000,
             sources: vec![ContextWindowSource::NoteText {
@@ -602,12 +466,14 @@ mod tests {
         assert_eq!(body["keep_alive"], "30m");
         assert!((body["options"]["temperature"].as_f64().unwrap() - 0.2).abs() < 0.000_001);
         assert_eq!(body["options"]["num_predict"], 512);
-        assert_eq!(body["options"]["seed"], 0);
+        assert!(body["options"].get("seed").is_none());
         assert_eq!(body["messages"][0]["role"], "system");
         assert_eq!(body["messages"][0]["content"], "Clean this utterance.");
-        assert_eq!(
-            body["messages"][1]["content"],
-            "<utterance>input secret words now</utterance>{{unknown}}"
+        assert!(
+            body["messages"][1]["content"]
+                .as_str()
+                .unwrap()
+                .contains("<utterance>\ninput secret words now\n</utterance>")
         );
     }
 
@@ -640,23 +506,15 @@ mod tests {
 
     fn config() -> LlmPostprocessConfig {
         LlmPostprocessConfig {
-            format_slot: String::new(),
-            glossary_chars: 1000,
-            glossary_text: String::new(),
             keep_alive: "30m".to_string(),
             model: "llama3.2:latest".to_string(),
             note_context_chars: 3000,
-            num_predict: 512,
             prior_utterances_n: 2,
-            seed: 0,
+            prompt: "Clean this utterance.".to_string(),
             show_raw_below: false,
-            skip_if_avg_logprob_above: None,
             skip_min_words: 4,
-            system_slot: "Clean this utterance.".to_string(),
             temperature: 0.2,
             total_context_cap: 7000,
-            user_template: "{{utterance}}".to_string(),
-            voice_slot: String::new(),
         }
     }
 

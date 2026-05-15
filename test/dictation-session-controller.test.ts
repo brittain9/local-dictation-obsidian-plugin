@@ -33,9 +33,11 @@ class FakeCaptureStream {
 }
 
 class FakeSession {
+  public rawSessionText = '';
   public readonly acceptTranscript = vi.fn((_revision: TranscriptRevision) => ({
     kind: 'accepted' as const,
   }));
+  public readonly joinRawSessionText = vi.fn(() => this.rawSessionText);
   public readonly readNoteGlossary = vi.fn(
     (_maxChars: number): { text: string; truncated: boolean } | null => null,
   );
@@ -53,10 +55,26 @@ class FakeSession {
   );
   public readonly dispose = vi.fn(() => {});
   public readonly modeCalls: string[] = [];
+  public readonly replaceSessionRangeWithCleaned = vi.fn(
+    (_cleanText: string, _options?: { showRawBelow?: boolean }) => true,
+  );
 
   setAnchorMode(mode: 'hidden' | 'visible'): void {
     this.modeCalls.push(mode);
   }
+}
+
+class FakeOllamaClient {
+  public cleanup = vi.fn(
+    async (_options: {
+      abortSignal?: AbortSignal;
+      keepAlive: string;
+      model: string;
+      prompt: string;
+      temperature: number;
+      userMessage: string;
+    }) => 'Cleaned transcript.',
+  );
 }
 
 class FakeSidecarConnection {
@@ -169,18 +187,16 @@ describe('DictationSessionController', () => {
     expect(sidecarConnection.startSession.mock.calls[0]?.[0]).not.toHaveProperty('useGpu');
   });
 
-  it('includes llmPostprocess in the session snapshot when enabled with timestamps off', async () => {
+  it('includes llmPostprocess in the session snapshot for per-utterance cleanup', async () => {
     const sidecarConnection = new FakeSidecarConnection();
     const controller = createController({
       getSettings: () =>
         createSettings({
-          llmPostprocessEnabled: true,
-          llmPostprocessGlossaryChars: 10,
-          llmPostprocessGlossarySlot: 'glossary text beyond cap',
+          llmFeaturesEnabled: true,
+          llmPostprocessMode: 'per_utterance',
           llmPostprocessModel: ' llama3.2:latest ',
           llmPostprocessShowRawBelow: true,
-          llmPostprocessSkipIfAvgLogprobAbove: -0.5,
-          llmPostprocessSystemSlot: 'Clean it.',
+          llmPostprocessPrompt: 'Clean it.',
           selectedModel: createExternalModelSelection(),
           showTimestamps: false,
         }),
@@ -191,14 +207,52 @@ describe('DictationSessionController', () => {
 
     expect(sidecarConnection.startSession.mock.calls[0]?.[0]).toMatchObject({
       llmPostprocess: {
-        glossaryChars: 10,
-        glossaryText: 'glossary',
+        keepAlive: '30m',
         model: 'llama3.2:latest',
+        prompt: 'Clean it.',
         showRawBelow: true,
-        skipIfAvgLogprobAbove: -0.5,
-        systemSlot: 'Clean it.',
+        temperature: 0.2,
       },
     });
+  });
+
+  it.each([
+    'off',
+    'batch',
+  ] as const)('omits llmPostprocess from the sidecar snapshot when mode is %s', async (llmPostprocessMode) => {
+    const sidecarConnection = new FakeSidecarConnection();
+    const controller = createController({
+      getSettings: () =>
+        createSettings({
+          llmFeaturesEnabled: true,
+          llmPostprocessMode,
+          llmPostprocessModel: 'llama3.2:latest',
+          selectedModel: createExternalModelSelection(),
+        }),
+      sidecarConnection,
+    });
+
+    await controller.startDictation();
+
+    expect(sidecarConnection.startSession.mock.calls[0]?.[0]).not.toHaveProperty('llmPostprocess');
+  });
+
+  it('omits llmPostprocess when local AI cleanup is hidden', async () => {
+    const sidecarConnection = new FakeSidecarConnection();
+    const controller = createController({
+      getSettings: () =>
+        createSettings({
+          llmFeaturesEnabled: false,
+          llmPostprocessMode: 'per_utterance',
+          llmPostprocessModel: 'llama3.2:latest',
+          selectedModel: createExternalModelSelection(),
+        }),
+      sidecarConnection,
+    });
+
+    await controller.startDictation();
+
+    expect(sidecarConnection.startSession.mock.calls[0]?.[0]).not.toHaveProperty('llmPostprocess');
   });
 
   it('omits llmPostprocess from the session snapshot when timestamps are enabled', async () => {
@@ -206,7 +260,8 @@ describe('DictationSessionController', () => {
     const controller = createController({
       getSettings: () =>
         createSettings({
-          llmPostprocessEnabled: true,
+          llmFeaturesEnabled: true,
+          llmPostprocessMode: 'per_utterance',
           llmPostprocessModel: 'llama3.2:latest',
           selectedModel: createExternalModelSelection(),
           showTimestamps: true,
@@ -744,6 +799,149 @@ describe('DictationSessionController', () => {
     });
   });
 
+  it('runs batch cleanup on session_stopped with the active prompt and composed user message', async () => {
+    const ollamaClient = new FakeOllamaClient();
+    const session = new FakeSession();
+    session.rawSessionText = 'raw dictated text';
+    session.readNoteText.mockReturnValue({ text: 'note context', truncated: false });
+    const sidecarConnection = new FakeSidecarConnection();
+    const controller = createController({
+      createSession: () => session,
+      getSettings: () =>
+        createSettings({
+          llmFeaturesEnabled: true,
+          llmPostprocessMode: 'batch',
+          llmPostprocessModel: 'llama3.2:latest',
+          llmPostprocessPrompt: 'Clean the session.',
+          llmPostprocessShowRawBelow: true,
+          selectedModel: createExternalModelSelection(),
+        }),
+      ollamaClient,
+      sidecarConnection,
+    });
+
+    await controller.startDictation();
+    await controller.stopDictation();
+
+    await vi.waitFor(() => {
+      expect(ollamaClient.cleanup).toHaveBeenCalledTimes(1);
+    });
+    expect(ollamaClient.cleanup).toHaveBeenCalledWith(
+      expect.objectContaining({
+        keepAlive: '30m',
+        model: 'llama3.2:latest',
+        prompt: 'Clean the session.',
+        temperature: 0.2,
+        userMessage: expect.stringContaining('<session_transcript>\nraw dictated text'),
+      }),
+    );
+    expect(ollamaClient.cleanup.mock.calls[0]?.[0].userMessage).toContain(
+      '<note_context>\nnote context',
+    );
+    expect(session.replaceSessionRangeWithCleaned).toHaveBeenCalledWith('Cleaned transcript.', {
+      showRawBelow: true,
+    });
+  });
+
+  it('keeps raw text and emits a notice when batch replacement sees a divergent range', async () => {
+    const notice = vi.fn();
+    const session = new FakeSession();
+    session.rawSessionText = 'raw dictated text';
+    session.replaceSessionRangeWithCleaned.mockReturnValue(false);
+    const sidecarConnection = new FakeSidecarConnection();
+    const controller = createController({
+      createSession: () => session,
+      getSettings: () =>
+        createSettings({
+          llmFeaturesEnabled: true,
+          llmPostprocessMode: 'batch',
+          llmPostprocessModel: 'llama3.2:latest',
+          selectedModel: createExternalModelSelection(),
+        }),
+      notice,
+      sidecarConnection,
+    });
+
+    await controller.startDictation();
+    await controller.stopDictation();
+
+    await vi.waitFor(() => {
+      expect(notice).toHaveBeenCalledWith('Cleanup skipped — text was edited during the session.');
+    });
+  });
+
+  it('keeps raw text and emits a notice when batch cleanup fails', async () => {
+    const notice = vi.fn();
+    const ollamaClient = new FakeOllamaClient();
+    ollamaClient.cleanup.mockRejectedValueOnce(new Error('Ollama failed'));
+    const session = new FakeSession();
+    session.rawSessionText = 'raw dictated text';
+    const sidecarConnection = new FakeSidecarConnection();
+    const controller = createController({
+      createSession: () => session,
+      getSettings: () =>
+        createSettings({
+          llmFeaturesEnabled: true,
+          llmPostprocessMode: 'batch',
+          llmPostprocessModel: 'llama3.2:latest',
+          selectedModel: createExternalModelSelection(),
+        }),
+      notice,
+      ollamaClient,
+      sidecarConnection,
+    });
+
+    await controller.startDictation();
+    await controller.stopDictation();
+
+    await vi.waitFor(() => {
+      expect(notice).toHaveBeenCalledWith('Cleanup failed; raw transcript kept.');
+    });
+    expect(session.replaceSessionRangeWithCleaned).not.toHaveBeenCalled();
+  });
+
+  it('aborts in-flight batch cleanup when cancel is requested after sidecar stop', async () => {
+    const cleanupState: { signal: AbortSignal | null } = { signal: null };
+    const ollamaClient = new FakeOllamaClient();
+    ollamaClient.cleanup.mockImplementationOnce(
+      async ({ abortSignal }) =>
+        await new Promise<string>((_resolve, reject) => {
+          cleanupState.signal = abortSignal ?? null;
+          abortSignal?.addEventListener('abort', () => {
+            reject(new Error('aborted'));
+          });
+        }),
+    );
+    const session = new FakeSession();
+    session.rawSessionText = 'raw dictated text';
+    const sidecarConnection = new FakeSidecarConnection();
+    const controller = createController({
+      createSession: () => session,
+      getSettings: () =>
+        createSettings({
+          llmFeaturesEnabled: true,
+          llmPostprocessMode: 'batch',
+          llmPostprocessModel: 'llama3.2:latest',
+          selectedModel: createExternalModelSelection(),
+        }),
+      ollamaClient,
+      sidecarConnection,
+    });
+
+    await controller.startDictation();
+    await controller.stopDictation();
+    await vi.waitFor(() => {
+      expect(ollamaClient.cleanup).toHaveBeenCalledTimes(1);
+    });
+
+    await controller.cancelDictation();
+
+    expect(cleanupState.signal?.aborted).toBe(true);
+    await vi.waitFor(() => {
+      expect(session.dispose).toHaveBeenCalled();
+    });
+  });
+
   it('disposes the session when the sidecar stops regardless of reason', async () => {
     const session = new FakeSession();
     const sidecarConnection = new FakeSidecarConnection();
@@ -1127,6 +1325,7 @@ function createController(overrides: {
   }) => FakeSession;
   getSettings?: () => PluginSettings;
   notice?: ReturnType<typeof vi.fn>;
+  ollamaClient?: FakeOllamaClient;
   onSidecarMissing?: () => void;
   setRibbonQueueTier?: (tier: QueueBackpressureTier) => void;
   setRibbonState?: (state: DictationControllerState) => void;
@@ -1137,6 +1336,7 @@ function createController(overrides: {
     createSession: overrides.createSession ?? (() => new FakeSession()),
     getSettings: overrides.getSettings ?? (() => createSettings({})),
     notice: overrides.notice ?? (() => {}),
+    ollamaClient: overrides.ollamaClient ?? new FakeOllamaClient(),
     ...(overrides.onSidecarMissing ? { onSidecarMissing: overrides.onSidecarMissing } : {}),
     setRibbonQueueTier: overrides.setRibbonQueueTier ?? (() => {}),
     setRibbonState: overrides.setRibbonState ?? (() => {}),

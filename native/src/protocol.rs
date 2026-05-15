@@ -211,8 +211,6 @@ pub enum ContextWindowSource {
     NoteText { text: String, truncated: bool },
     #[serde(rename_all = "camelCase")]
     PriorUtterance { text: String, truncated: bool },
-    #[serde(rename_all = "camelCase")]
-    GlossaryText { text: String, truncated: bool },
 }
 
 impl ContextWindowSource {
@@ -220,8 +218,7 @@ impl ContextWindowSource {
         match self {
             Self::NoteGlossary { text, .. }
             | Self::NoteText { text, .. }
-            | Self::PriorUtterance { text, .. }
-            | Self::GlossaryText { text, .. } => text,
+            | Self::PriorUtterance { text, .. } => text,
         }
     }
 }
@@ -238,23 +235,15 @@ pub struct ContextWindow {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct LlmPostprocessConfig {
-    pub format_slot: String,
-    pub glossary_chars: u32,
-    pub glossary_text: String,
     pub keep_alive: String,
     pub model: String,
     pub note_context_chars: u32,
-    pub num_predict: u32,
     pub prior_utterances_n: u32,
-    pub seed: i32,
+    pub prompt: String,
     pub show_raw_below: bool,
-    pub skip_if_avg_logprob_above: Option<f32>,
     pub skip_min_words: u32,
-    pub system_slot: String,
     pub temperature: f32,
     pub total_context_cap: u32,
-    pub user_template: String,
-    pub voice_slot: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

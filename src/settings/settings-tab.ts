@@ -224,6 +224,17 @@ export class LocalSttSettingTab extends PluginSettingTab {
       placeholder: 'Use the shared default model store',
     });
 
+    const hideCleanupSetting = new Setting(advancedSection)
+      .setName('Hide local AI cleanup')
+      .setDesc('Hide Ollama cleanup controls in the Local Transcript sidebar.');
+    hideCleanupSetting.addToggle((toggle) => {
+      toggle.setValue(!this.dependencies.getSettings().llmFeaturesEnabled);
+      toggle.onChange(async (value) => {
+        await this.access.persistOne('llmFeaturesEnabled', !value);
+        this.display();
+      });
+    });
+
     const developerModeSetting = new Setting(advancedSection)
       .setName('Developer mode')
       .setDesc('Verbose console diagnostics.');

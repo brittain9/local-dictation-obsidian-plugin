@@ -1,4 +1,10 @@
-import { getLlmPreset } from '../llm/presets';
+import {
+  DEFAULT_LLM_BUILTIN_PRESET_ID,
+  findMatchingStyleRef,
+  formatStyleRef,
+  getLlmBuiltinPreset,
+  type LlmUserPreset,
+} from '../llm/presets';
 import {
   isSelectedModel,
   normalizeSelectedModel,
@@ -26,16 +32,19 @@ export const SPEAKING_STYLES = [
   'patient',
 ] as const satisfies readonly SpeakingStyle[];
 
-const DEFAULT_LLM_PRESET = getLlmPreset('light-cleanup');
+export const LLM_POSTPROCESS_MODES = ['off', 'per_utterance', 'batch'] as const;
 
-export const DEFAULT_LLM_POSTPROCESS_SYSTEM_SLOT = DEFAULT_LLM_PRESET.systemSlot;
-export const DEFAULT_LLM_POSTPROCESS_VOICE_SLOT = DEFAULT_LLM_PRESET.voiceSlot;
-export const DEFAULT_LLM_POSTPROCESS_GLOSSARY_SLOT = '';
-export const DEFAULT_LLM_POSTPROCESS_FORMAT_SLOT = DEFAULT_LLM_PRESET.formatSlot;
-export const DEFAULT_LLM_POSTPROCESS_USER_TEMPLATE = DEFAULT_LLM_PRESET.userTemplate;
+export type LlmPostprocessMode = (typeof LLM_POSTPROCESS_MODES)[number];
+
+const DEFAULT_LLM_PRESET = getLlmBuiltinPreset(DEFAULT_LLM_BUILTIN_PRESET_ID);
+const DEFAULT_LLM_ACTIVE_PRESET_REF = formatStyleRef({
+  kind: 'builtin',
+  id: DEFAULT_LLM_BUILTIN_PRESET_ID,
+});
+
+export const DEFAULT_LLM_POSTPROCESS_PROMPT = DEFAULT_LLM_PRESET.prompt;
 
 export const DEFAULT_LLM_POSTPROCESS_CONTEXT = {
-  glossaryChars: 1_000,
   noteContextChars: 3_000,
   priorUtterancesN: 2,
   totalContextCap: 7_000,
@@ -43,15 +52,16 @@ export const DEFAULT_LLM_POSTPROCESS_CONTEXT = {
 
 export const DEFAULT_LLM_POSTPROCESS_GENERATION = {
   keepAlive: '30m',
-  numPredict: 512,
-  seed: 0,
   temperature: 0.2,
 } as const;
 
 export const DEFAULT_LLM_POSTPROCESS_SKIP = {
   minWords: 4,
-  skipIfAvgLogprobAbove: null as number | null,
 } as const;
+
+export const LLM_USER_PRESET_MAX_LABEL_CHARS = 60;
+export const LLM_USER_PRESET_MAX_DESCRIPTION_CHARS = 240;
+export const LLM_USER_PRESET_MAX_COUNT = 25;
 
 export interface PluginSettings {
   accelerationPreference: AccelerationPreference;
@@ -59,24 +69,19 @@ export interface PluginSettings {
   developerMode: boolean;
   dictationAnchor: DictationAnchor;
   listeningMode: ListeningMode;
-  llmPostprocessEnabled: boolean;
-  llmPostprocessFormatSlot: string;
-  llmPostprocessGlossaryChars: number;
-  llmPostprocessGlossarySlot: string;
+  llmFeaturesEnabled: boolean;
+  llmPostprocessActivePresetRef: string | null;
   llmPostprocessKeepAlive: string;
+  llmPostprocessMode: LlmPostprocessMode;
   llmPostprocessModel: string;
   llmPostprocessNoteContextChars: number;
-  llmPostprocessNumPredict: number;
   llmPostprocessPriorUtterancesN: number;
-  llmPostprocessSeed: number;
+  llmPostprocessPrompt: string;
   llmPostprocessShowRawBelow: boolean;
-  llmPostprocessSkipIfAvgLogprobAbove: number | null;
   llmPostprocessSkipMinWords: number;
-  llmPostprocessSystemSlot: string;
   llmPostprocessTemperature: number;
   llmPostprocessTotalContextCap: number;
-  llmPostprocessUserTemplate: string;
-  llmPostprocessVoiceSlot: string;
+  llmPostprocessUserPresets: LlmUserPreset[];
   modelStorePathOverride: string;
   selectedModel: SelectedModel | null;
   sidecarPathOverride: string;
@@ -94,24 +99,19 @@ export const DEFAULT_PLUGIN_SETTINGS: PluginSettings = {
   developerMode: false,
   dictationAnchor: 'at_cursor',
   listeningMode: 'always_on',
-  llmPostprocessEnabled: false,
-  llmPostprocessFormatSlot: DEFAULT_LLM_POSTPROCESS_FORMAT_SLOT,
-  llmPostprocessGlossaryChars: DEFAULT_LLM_POSTPROCESS_CONTEXT.glossaryChars,
-  llmPostprocessGlossarySlot: DEFAULT_LLM_POSTPROCESS_GLOSSARY_SLOT,
+  llmFeaturesEnabled: true,
+  llmPostprocessActivePresetRef: DEFAULT_LLM_ACTIVE_PRESET_REF,
   llmPostprocessKeepAlive: DEFAULT_LLM_POSTPROCESS_GENERATION.keepAlive,
+  llmPostprocessMode: 'per_utterance',
   llmPostprocessModel: '',
   llmPostprocessNoteContextChars: DEFAULT_LLM_POSTPROCESS_CONTEXT.noteContextChars,
-  llmPostprocessNumPredict: DEFAULT_LLM_POSTPROCESS_GENERATION.numPredict,
   llmPostprocessPriorUtterancesN: DEFAULT_LLM_POSTPROCESS_CONTEXT.priorUtterancesN,
-  llmPostprocessSeed: DEFAULT_LLM_POSTPROCESS_GENERATION.seed,
+  llmPostprocessPrompt: DEFAULT_LLM_POSTPROCESS_PROMPT,
   llmPostprocessShowRawBelow: false,
-  llmPostprocessSkipIfAvgLogprobAbove: DEFAULT_LLM_POSTPROCESS_SKIP.skipIfAvgLogprobAbove,
   llmPostprocessSkipMinWords: DEFAULT_LLM_POSTPROCESS_SKIP.minWords,
-  llmPostprocessSystemSlot: DEFAULT_LLM_POSTPROCESS_SYSTEM_SLOT,
   llmPostprocessTemperature: DEFAULT_LLM_POSTPROCESS_GENERATION.temperature,
   llmPostprocessTotalContextCap: DEFAULT_LLM_POSTPROCESS_CONTEXT.totalContextCap,
-  llmPostprocessUserTemplate: DEFAULT_LLM_POSTPROCESS_USER_TEMPLATE,
-  llmPostprocessVoiceSlot: DEFAULT_LLM_POSTPROCESS_VOICE_SLOT,
+  llmPostprocessUserPresets: [],
   modelStorePathOverride: '',
   selectedModel: null,
   sidecarPathOverride: '',
@@ -125,6 +125,8 @@ export const DEFAULT_PLUGIN_SETTINGS: PluginSettings = {
 
 export function resolvePluginSettings(data: unknown): PluginSettings {
   const raw = isRecord(data) ? data : {};
+  const userPresets = readUserPresets(raw.llmPostprocessUserPresets);
+  const llmPostprocessPrompt = readPrompt(raw.llmPostprocessPrompt, DEFAULT_LLM_POSTPROCESS_PROMPT);
 
   return {
     accelerationPreference: readAccelerationPreference(raw.accelerationPreference),
@@ -134,28 +136,16 @@ export function resolvePluginSettings(data: unknown): PluginSettings {
       ? raw.dictationAnchor
       : DEFAULT_PLUGIN_SETTINGS.dictationAnchor,
     listeningMode: readListeningMode(raw.listeningMode),
-    llmPostprocessEnabled: readBoolean(
-      raw.llmPostprocessEnabled,
-      DEFAULT_PLUGIN_SETTINGS.llmPostprocessEnabled,
+    llmFeaturesEnabled: readBoolean(
+      raw.llmFeaturesEnabled,
+      DEFAULT_PLUGIN_SETTINGS.llmFeaturesEnabled,
     ),
-    llmPostprocessFormatSlot: readUserString(
-      raw.llmPostprocessFormatSlot,
-      DEFAULT_PLUGIN_SETTINGS.llmPostprocessFormatSlot,
-    ),
-    llmPostprocessGlossaryChars: readClampedInteger(
-      raw.llmPostprocessGlossaryChars,
-      DEFAULT_PLUGIN_SETTINGS.llmPostprocessGlossaryChars,
-      0,
-      4_000,
-    ),
-    llmPostprocessGlossarySlot: readUserString(
-      raw.llmPostprocessGlossarySlot,
-      DEFAULT_PLUGIN_SETTINGS.llmPostprocessGlossarySlot,
-    ),
+    llmPostprocessActivePresetRef: findMatchingStyleRef(llmPostprocessPrompt, userPresets),
     llmPostprocessKeepAlive: readNonEmptyTrimmedString(
       raw.llmPostprocessKeepAlive,
       DEFAULT_PLUGIN_SETTINGS.llmPostprocessKeepAlive,
     ),
+    llmPostprocessMode: readLlmPostprocessMode(raw.llmPostprocessMode),
     llmPostprocessModel: readString(
       raw.llmPostprocessModel,
       DEFAULT_PLUGIN_SETTINGS.llmPostprocessModel,
@@ -166,40 +156,22 @@ export function resolvePluginSettings(data: unknown): PluginSettings {
       0,
       12_000,
     ),
-    llmPostprocessNumPredict: readClampedInteger(
-      raw.llmPostprocessNumPredict,
-      DEFAULT_PLUGIN_SETTINGS.llmPostprocessNumPredict,
-      1,
-      4_096,
-    ),
     llmPostprocessPriorUtterancesN: readClampedInteger(
       raw.llmPostprocessPriorUtterancesN,
       DEFAULT_PLUGIN_SETTINGS.llmPostprocessPriorUtterancesN,
       0,
       5,
     ),
-    llmPostprocessSeed: readClampedInteger(
-      raw.llmPostprocessSeed,
-      DEFAULT_PLUGIN_SETTINGS.llmPostprocessSeed,
-      -2_147_483_648,
-      2_147_483_647,
-    ),
+    llmPostprocessPrompt,
     llmPostprocessShowRawBelow: readBoolean(
       raw.llmPostprocessShowRawBelow,
       DEFAULT_PLUGIN_SETTINGS.llmPostprocessShowRawBelow,
-    ),
-    llmPostprocessSkipIfAvgLogprobAbove: readSkipIfAvgLogprobAbove(
-      raw.llmPostprocessSkipIfAvgLogprobAbove,
     ),
     llmPostprocessSkipMinWords: readClampedInteger(
       raw.llmPostprocessSkipMinWords,
       DEFAULT_PLUGIN_SETTINGS.llmPostprocessSkipMinWords,
       0,
       50,
-    ),
-    llmPostprocessSystemSlot: readUserString(
-      raw.llmPostprocessSystemSlot,
-      DEFAULT_PLUGIN_SETTINGS.llmPostprocessSystemSlot,
     ),
     llmPostprocessTemperature: readClampedNumber(
       raw.llmPostprocessTemperature,
@@ -213,14 +185,7 @@ export function resolvePluginSettings(data: unknown): PluginSettings {
       0,
       30_000,
     ),
-    llmPostprocessUserTemplate: readUserString(
-      raw.llmPostprocessUserTemplate,
-      DEFAULT_PLUGIN_SETTINGS.llmPostprocessUserTemplate,
-    ),
-    llmPostprocessVoiceSlot: readUserString(
-      raw.llmPostprocessVoiceSlot,
-      DEFAULT_PLUGIN_SETTINGS.llmPostprocessVoiceSlot,
-    ),
+    llmPostprocessUserPresets: userPresets,
     modelStorePathOverride: readString(
       raw.modelStorePathOverride,
       DEFAULT_PLUGIN_SETTINGS.modelStorePathOverride,
@@ -252,22 +217,15 @@ export function resolvePluginSettings(data: unknown): PluginSettings {
 export function resetLlmPostprocessDefaults(settings: PluginSettings): PluginSettings {
   return {
     ...settings,
-    llmPostprocessFormatSlot: DEFAULT_PLUGIN_SETTINGS.llmPostprocessFormatSlot,
-    llmPostprocessGlossaryChars: DEFAULT_PLUGIN_SETTINGS.llmPostprocessGlossaryChars,
-    llmPostprocessGlossarySlot: DEFAULT_PLUGIN_SETTINGS.llmPostprocessGlossarySlot,
+    llmPostprocessActivePresetRef: DEFAULT_PLUGIN_SETTINGS.llmPostprocessActivePresetRef,
     llmPostprocessKeepAlive: DEFAULT_PLUGIN_SETTINGS.llmPostprocessKeepAlive,
+    llmPostprocessMode: DEFAULT_PLUGIN_SETTINGS.llmPostprocessMode,
     llmPostprocessNoteContextChars: DEFAULT_PLUGIN_SETTINGS.llmPostprocessNoteContextChars,
-    llmPostprocessNumPredict: DEFAULT_PLUGIN_SETTINGS.llmPostprocessNumPredict,
     llmPostprocessPriorUtterancesN: DEFAULT_PLUGIN_SETTINGS.llmPostprocessPriorUtterancesN,
-    llmPostprocessSeed: DEFAULT_PLUGIN_SETTINGS.llmPostprocessSeed,
-    llmPostprocessSkipIfAvgLogprobAbove:
-      DEFAULT_PLUGIN_SETTINGS.llmPostprocessSkipIfAvgLogprobAbove,
+    llmPostprocessPrompt: DEFAULT_PLUGIN_SETTINGS.llmPostprocessPrompt,
     llmPostprocessSkipMinWords: DEFAULT_PLUGIN_SETTINGS.llmPostprocessSkipMinWords,
-    llmPostprocessSystemSlot: DEFAULT_PLUGIN_SETTINGS.llmPostprocessSystemSlot,
     llmPostprocessTemperature: DEFAULT_PLUGIN_SETTINGS.llmPostprocessTemperature,
     llmPostprocessTotalContextCap: DEFAULT_PLUGIN_SETTINGS.llmPostprocessTotalContextCap,
-    llmPostprocessUserTemplate: DEFAULT_PLUGIN_SETTINGS.llmPostprocessUserTemplate,
-    llmPostprocessVoiceSlot: DEFAULT_PLUGIN_SETTINGS.llmPostprocessVoiceSlot,
   };
 }
 
@@ -296,10 +254,6 @@ function readNonEmptyTrimmedString(value: unknown, fallback: string): string {
   return trimmed.length > 0 ? trimmed : fallback;
 }
 
-function readUserString(value: unknown, fallback: string): string {
-  return typeof value === 'string' ? value : fallback;
-}
-
 function readPositiveInteger(value: unknown, fallback: number): number {
   return typeof value === 'number' && Number.isInteger(value) && value > 0 ? value : fallback;
 }
@@ -320,16 +274,65 @@ function readClampedNumber(value: unknown, fallback: number, min: number, max: n
   return Math.min(max, Math.max(min, value));
 }
 
-function readSkipIfAvgLogprobAbove(value: unknown): number | null {
-  if (value === null) {
-    return null;
+function readPrompt(value: unknown, fallback: string): string {
+  if (typeof value !== 'string') {
+    return fallback;
   }
 
-  if (typeof value !== 'number' || !Number.isFinite(value)) {
-    return null;
+  return value.trim().length > 0 ? value : fallback;
+}
+
+function readLlmPostprocessMode(value: unknown): LlmPostprocessMode {
+  if (value !== undefined) {
+    return isLlmPostprocessMode(value) ? value : DEFAULT_PLUGIN_SETTINGS.llmPostprocessMode;
   }
 
-  return value > -10 && value <= 0 ? value : null;
+  return DEFAULT_PLUGIN_SETTINGS.llmPostprocessMode;
+}
+
+function readUserPresets(value: unknown): LlmUserPreset[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  const accepted: LlmUserPreset[] = [];
+  const seenIds = new Set<string>();
+
+  for (const entry of value) {
+    if (accepted.length >= LLM_USER_PRESET_MAX_COUNT) {
+      break;
+    }
+
+    if (!isRecord(entry)) {
+      continue;
+    }
+
+    const id = typeof entry.id === 'string' ? entry.id.trim() : '';
+    if (id.length === 0 || seenIds.has(id)) {
+      continue;
+    }
+
+    const label = typeof entry.label === 'string' ? entry.label.trim() : '';
+    if (label.length === 0) {
+      continue;
+    }
+
+    const description = typeof entry.description === 'string' ? entry.description : '';
+
+    accepted.push({
+      description: description.slice(0, LLM_USER_PRESET_MAX_DESCRIPTION_CHARS),
+      id,
+      label: label.slice(0, LLM_USER_PRESET_MAX_LABEL_CHARS),
+      prompt: readPrompt(entry.prompt, DEFAULT_PLUGIN_SETTINGS.llmPostprocessPrompt),
+    });
+    seenIds.add(id);
+  }
+
+  return accepted;
+}
+
+export function isLlmPostprocessMode(value: unknown): value is LlmPostprocessMode {
+  return typeof value === 'string' && (LLM_POSTPROCESS_MODES as readonly string[]).includes(value);
 }
 
 export function isSpeakingStyle(value: unknown): value is SpeakingStyle {

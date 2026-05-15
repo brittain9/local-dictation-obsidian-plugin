@@ -5,11 +5,17 @@ import { isRecord } from '../shared/type-guards';
 const OLLAMA_HOST = '127.0.0.1';
 const OLLAMA_PORT = 11434;
 const PREFLIGHT_TIMEOUT_MS = 3_000;
+const CLEANUP_TIMEOUT_MS = 60_000;
 const NON_CHAT_MODEL_PATTERN = /embed|embedding|bge|nomic|clip/i;
 
 interface OllamaClientOptions {
   host?: string;
   port?: number;
+}
+
+interface OllamaRequestOptions extends OllamaClientOptions {
+  abortSignal?: AbortSignal;
+  timeoutMs?: number;
 }
 
 export interface OllamaModelOption {
@@ -28,9 +34,19 @@ export class OllamaClientError extends Error {
 }
 
 export interface OllamaClient {
+  cleanup(options: OllamaCleanupOptions): Promise<string>;
   listOllamaModels(): Promise<OllamaModelOption[]>;
   prewarmModel(modelId: string, keepAlive: string): Promise<void>;
   probeOllama(): Promise<void>;
+}
+
+export interface OllamaCleanupOptions {
+  abortSignal?: AbortSignal;
+  keepAlive: string;
+  model: string;
+  prompt: string;
+  temperature: number;
+  userMessage: string;
 }
 
 export function createOllamaClient(options: OllamaClientOptions = {}): OllamaClient {
@@ -38,6 +54,7 @@ export function createOllamaClient(options: OllamaClientOptions = {}): OllamaCli
   const port = options.port ?? OLLAMA_PORT;
 
   return {
+    cleanup: (cleanupOptions) => cleanup(cleanupOptions, { host, port }),
     listOllamaModels: () => listOllamaModels({ host, port }),
     prewarmModel: (modelId, keepAlive) => prewarmModel(modelId, keepAlive, { host, port }),
     probeOllama: () => probeOllama({ host, port }),
@@ -95,11 +112,49 @@ async function prewarmModel(
   }
 }
 
+async function cleanup(
+  cleanupOptions: OllamaCleanupOptions,
+  options: OllamaClientOptions = {},
+): Promise<string> {
+  const response = await requestJson(
+    'POST',
+    '/api/chat',
+    {
+      keep_alive: cleanupOptions.keepAlive,
+      messages: [
+        { content: cleanupOptions.prompt, role: 'system' },
+        { content: cleanupOptions.userMessage, role: 'user' },
+      ],
+      model: cleanupOptions.model,
+      options: { num_predict: 512, temperature: cleanupOptions.temperature },
+      stream: false,
+      think: false,
+    },
+    {
+      ...options,
+      ...(cleanupOptions.abortSignal !== undefined
+        ? { abortSignal: cleanupOptions.abortSignal }
+        : {}),
+      timeoutMs: CLEANUP_TIMEOUT_MS,
+    },
+  );
+
+  if (!isRecord(response) || !isRecord(response.message)) {
+    throw new OllamaClientError('Ollama returned an invalid chat response.', 'invalid_response');
+  }
+
+  if (typeof response.message.content !== 'string') {
+    throw new OllamaClientError('Ollama returned an invalid chat message.', 'invalid_response');
+  }
+
+  return response.message.content.trim();
+}
+
 async function requestJson(
   method: 'GET' | 'POST',
   path: string,
   body?: Record<string, unknown>,
-  options: OllamaClientOptions = {},
+  options: OllamaRequestOptions = {},
 ): Promise<unknown> {
   const responseText = await requestText(method, path, body, options);
 
@@ -117,7 +172,7 @@ function requestText(
   method: 'GET' | 'POST',
   path: string,
   body?: Record<string, unknown>,
-  options: OllamaClientOptions = {},
+  options: OllamaRequestOptions = {},
 ): Promise<string> {
   return new Promise((resolve, reject) => {
     const requestBody = body === undefined ? undefined : JSON.stringify(body);
@@ -134,7 +189,8 @@ function requestText(
         method,
         path,
         port: options.port ?? OLLAMA_PORT,
-        timeout: PREFLIGHT_TIMEOUT_MS,
+        signal: options.abortSignal,
+        timeout: options.timeoutMs ?? PREFLIGHT_TIMEOUT_MS,
       },
       (response) => {
         const chunks: Buffer[] = [];
@@ -157,6 +213,11 @@ function requestText(
       request.destroy(new OllamaClientError('Ollama request timed out.', 'timeout'));
     });
     request.on('error', (error) => {
+      if (options.abortSignal?.aborted === true) {
+        reject(new OllamaClientError('Ollama request aborted.', 'connection_failed'));
+        return;
+      }
+
       reject(
         error instanceof OllamaClientError
           ? error

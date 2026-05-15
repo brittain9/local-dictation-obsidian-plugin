@@ -2,7 +2,14 @@ import type { EditorView } from '@codemirror/view';
 import type { App, EventRef, TFile } from 'obsidian';
 import { describe, expect, it, vi } from 'vitest';
 
-import type { AppendResult, NotePlacementOptions, ReplaceResult } from '../src/editor/note-surface';
+import type {
+  AppendResult,
+  NotePlacementOptions,
+  ProjectedSpan,
+  ReplaceResult,
+  RewriteRange,
+  RewriteResult,
+} from '../src/editor/note-surface';
 import { Session } from '../src/session/session';
 import type {
   TranscriptInsertProjection,
@@ -20,6 +27,10 @@ class FakeSurface {
     newText: string;
     utteranceId: string;
   }> = [];
+  public readonly rewriteCalls: Array<{
+    newText: string;
+    range: RewriteRange;
+  }> = [];
   public readonly dispose = vi.fn();
   public readonly readNoteGlossary = vi.fn(
     (_maxChars: number): { text: string; truncated: boolean } | null => null,
@@ -29,49 +40,96 @@ class FakeSurface {
   );
   public readonly setAnchorMode = vi.fn();
   public readonly validateExternalModification = vi.fn();
+  public documentText = '';
   public nextAppendResult: AppendResult | null = null;
   public nextReplaceResult: ReplaceResult | null = null;
+  public nextRewriteResult: RewriteResult | null = null;
 
   public projectionContext = { tailContent: '' };
+  private readonly spans = new Map<string, ProjectedSpan>();
 
   readProjectionContext(): { tailContent: string } {
-    return this.projectionContext;
+    return { tailContent: this.documentText.slice(-2) || this.projectionContext.tailContent };
   }
 
   appendProjection(utteranceId: string, projection: TranscriptInsertProjection): AppendResult {
     this.appendCalls.push({ projection, utteranceId });
 
-    return (
-      this.nextAppendResult ?? {
-        kind: 'appended',
-        span: {
-          end: projection.projectedText.length,
-          projectedText: projection.insertedText,
-          start: 0,
-          textEnd: projection.textEndOffset,
-          textStart: projection.textStartOffset,
-          utteranceId,
-        },
-      }
-    );
+    const from = this.documentText.length;
+    const result = this.nextAppendResult ?? {
+      kind: 'appended',
+      span: {
+        end: from + projection.projectedText.length,
+        projectedText: projection.insertedText,
+        start: from,
+        textEnd: from + projection.textEndOffset,
+        textStart: from + projection.textStartOffset,
+        utteranceId,
+      },
+    };
+
+    if (result.kind === 'appended') {
+      this.documentText = `${this.documentText}${projection.projectedText}`;
+      this.spans.set(utteranceId, result.span);
+    }
+
+    return result;
   }
 
   replaceAnchor(utteranceId: string, newText: string, expectedOldText: string): ReplaceResult {
     this.replaceCalls.push({ expectedOldText, newText, utteranceId });
 
-    return (
-      this.nextReplaceResult ?? {
-        kind: 'replaced',
-        span: {
-          end: newText.length,
-          projectedText: newText,
-          start: 0,
-          textEnd: newText.length,
-          textStart: 0,
-          utteranceId,
-        },
-      }
-    );
+    const span = this.spans.get(utteranceId);
+    const result: ReplaceResult =
+      this.nextReplaceResult ??
+      (span === undefined
+        ? { kind: 'denied', reason: { kind: 'not_found' }, utteranceId }
+        : {
+            kind: 'replaced',
+            span: {
+              ...span,
+              end: span.end + newText.length - expectedOldText.length,
+              projectedText: newText,
+              textEnd: span.textStart + newText.length,
+            },
+          });
+
+    if (result.kind === 'replaced' && span !== undefined) {
+      this.documentText = `${this.documentText.slice(0, span.textStart)}${newText}${this.documentText.slice(span.textEnd)}`;
+      this.spans.set(utteranceId, result.span);
+    }
+
+    return result;
+  }
+
+  getSpan(utteranceId: string): ProjectedSpan | undefined {
+    const span = this.spans.get(utteranceId);
+    return span === undefined ? undefined : { ...span };
+  }
+
+  readRange(range: RewriteRange): string | null {
+    if (range.from < 0 || range.to < range.from || range.to > this.documentText.length) {
+      return null;
+    }
+
+    return this.documentText.slice(range.from, range.to);
+  }
+
+  rewriteRegion(range: RewriteRange, newText: string): RewriteResult {
+    this.rewriteCalls.push({ newText, range });
+
+    if (this.nextRewriteResult !== null) {
+      return this.nextRewriteResult;
+    }
+
+    if (this.readRange(range) === null) {
+      return { kind: 'denied', reason: { kind: 'range_invalid' } };
+    }
+
+    this.documentText = `${this.documentText.slice(0, range.from)}${newText}${this.documentText.slice(range.to)}`;
+    this.spans.clear();
+
+    return { kind: 'rewritten', range };
   }
 }
 
@@ -244,6 +302,46 @@ describe('Session', () => {
       truncated: true,
     });
     expect(surface.readNoteGlossary).toHaveBeenCalledWith(256);
+  });
+
+  it('replaceSessionRangeWithCleaned succeeds when the current range matches recorded raw text', () => {
+    const { session, surface } = createSessionHarness();
+
+    session.acceptTranscript(transcript({ text: 'hello', utteranceId: 'u1' }));
+    session.acceptTranscript(transcript({ text: 'world', utteranceId: 'u2' }));
+
+    expect(surface.documentText).toBe('hello world');
+    expect(session.joinRawSessionText()).toBe('hello world');
+    expect(session.replaceSessionRangeWithCleaned('Hello world.')).toBe(true);
+
+    expect(surface.rewriteCalls).toEqual([
+      { newText: 'Hello world.', range: { from: 0, to: 'hello world'.length } },
+    ]);
+    expect(surface.documentText).toBe('Hello world.');
+  });
+
+  it('replaceSessionRangeWithCleaned returns false when the session range diverges', () => {
+    const { session, surface } = createSessionHarness();
+
+    session.acceptTranscript(transcript({ text: 'raw words', utteranceId: 'u1' }));
+    surface.documentText = 'edited raw words';
+
+    expect(session.replaceSessionRangeWithCleaned('Cleaned words.')).toBe(false);
+    expect(surface.rewriteCalls).toHaveLength(0);
+    expect(surface.documentText).toBe('edited raw words');
+  });
+
+  it('range tracking follows transcript revisions across multiple acceptTranscript calls', () => {
+    const { session, surface } = createSessionHarness();
+
+    session.acceptTranscript(transcript({ revision: 0, text: 'rough', utteranceId: 'u1' }));
+    session.acceptTranscript(transcript({ revision: 1, text: 'polished', utteranceId: 'u1' }));
+    session.acceptTranscript(transcript({ text: 'tail', utteranceId: 'u2' }));
+
+    expect(surface.documentText).toBe('polished tail');
+    expect(session.joinRawSessionText()).toBe('polished tail');
+    expect(session.replaceSessionRangeWithCleaned('Polished tail.')).toBe(true);
+    expect(surface.rewriteCalls[0]?.range).toEqual({ from: 0, to: 'polished tail'.length });
   });
 
   it('returns null from readNoteGlossary when the surface is detached', () => {
