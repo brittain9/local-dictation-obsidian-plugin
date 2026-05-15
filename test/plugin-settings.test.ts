@@ -58,6 +58,7 @@ describe('resolvePluginSettings', () => {
         llmPostprocessSkipMinWords: 6,
         llmPostprocessTemperature: 0.4,
         llmPostprocessTotalContextCap: 9000,
+        localTranscriptSidebarBootstrapped: true,
         modelStorePathOverride: ' /tmp/models ',
         selectedModel: {
           familyId: 'whisper',
@@ -90,6 +91,7 @@ describe('resolvePluginSettings', () => {
       llmPostprocessSkipMinWords: 6,
       llmPostprocessTemperature: 0.4,
       llmPostprocessTotalContextCap: 9000,
+      localTranscriptSidebarBootstrapped: true,
       modelStorePathOverride: '/tmp/models',
       selectedModel: {
         familyId: 'whisper',
@@ -160,6 +162,7 @@ describe('resolvePluginSettings', () => {
         llmPostprocessMode: 'later',
         llmPostprocessModel: 123,
         llmPostprocessPrompt: '',
+        localTranscriptSidebarBootstrapped: 'yes',
         modelStorePathOverride: 42,
         sidecarPathOverride: 12,
         sidecarRequestTimeoutSeconds: -1,

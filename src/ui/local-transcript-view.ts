@@ -8,6 +8,7 @@ import {
   findMatchingStyleRef,
   formatStyleRef,
   getLlmBuiltinPreset,
+  isLlmPresetMode,
   LLM_BUILTIN_PRESETS,
   type LlmPresetMode,
   type LlmStyleOption,
@@ -17,13 +18,16 @@ import {
   resolveStyleOption,
 } from '../llm/presets';
 import {
-  isLlmPostprocessMode,
   LLM_USER_PRESET_MAX_COUNT,
-  type LlmPostprocessMode,
   type PluginSettings,
   resetLlmPostprocessDefaults,
 } from '../settings/plugin-settings';
-import { appendInfoTooltip, createSettingGroup } from '../settings/setting-helpers';
+import {
+  addNumberInputSetting,
+  addTextAreaSetting,
+  appendInfoTooltip,
+  createSettingGroup,
+} from '../settings/setting-helpers';
 import type { PluginLogger } from '../shared/plugin-logger';
 import { ConfirmModal } from './confirm-modal';
 import { SaveStyleModal } from './save-style-modal';
@@ -37,11 +41,9 @@ const STYLE_PICKER_TOOLTIP =
   'A preset is a saved LLM transform prompt. Pick a built-in preset or a saved preset. Editing the prompt switches to Custom. The suffix after each preset name shows which mode it is meant for: (per phrase) runs after every spoken phrase, (batch) runs once when you stop, (either) works in both — picking a (per phrase) or (batch) preset will switch the mode for you.';
 const CUSTOM_STYLE_VALUE = '__custom__';
 
-type EnabledLlmPostprocessMode = Exclude<LlmPostprocessMode, 'off'>;
+const DEFAULT_ENABLED_CLEANUP_MODE: LlmPresetMode = 'per_utterance';
 
-const DEFAULT_ENABLED_CLEANUP_MODE: EnabledLlmPostprocessMode = 'per_utterance';
-
-const CLEANUP_MODE_OPTIONS: ReadonlyArray<{ label: string; value: EnabledLlmPostprocessMode }> = [
+const CLEANUP_MODE_OPTIONS: ReadonlyArray<{ label: string; value: LlmPresetMode }> = [
   { label: 'After each phrase', value: 'per_utterance' },
   { label: 'All at once on stop', value: 'batch' },
 ];
@@ -61,7 +63,8 @@ export class LocalTranscriptView extends ItemView {
   private focusedInput: HTMLElement | null = null;
   private models: OllamaModelOption[] = [];
   private ollamaStatus = 'Ollama status unknown.';
-  private lastEnabledMode: EnabledLlmPostprocessMode = DEFAULT_ENABLED_CLEANUP_MODE;
+  private lastEnabledMode: LlmPresetMode = DEFAULT_ENABLED_CLEANUP_MODE;
+  private promptBlurRenderPending = false;
   private promptSaveTimerId: ReturnType<typeof setTimeout> | null = null;
   private pendingPromptValue: string | null = null;
 
@@ -100,6 +103,7 @@ export class LocalTranscriptView extends ItemView {
     const settings = this.dependencies.getSettings();
 
     this.focusedInput = null;
+    this.promptBlurRenderPending = false;
     contentEl.empty();
     contentEl.addClass('local-transcript-sidebar');
 
@@ -146,8 +150,8 @@ export class LocalTranscriptView extends ItemView {
         toggle.setValue(enabled);
         toggle.onChange(async (value) => {
           const current = this.dependencies.getSettings();
-          if (!value && current.llmPostprocessMode !== 'off') {
-            this.lastEnabledMode = current.llmPostprocessMode as EnabledLlmPostprocessMode;
+          if (!value && isLlmPresetMode(current.llmPostprocessMode)) {
+            this.lastEnabledMode = current.llmPostprocessMode;
           }
           const nextMode = value ? this.resolveModeOnEnable(current) : 'off';
           await this.saveField('llmPostprocessMode', nextMode);
@@ -155,7 +159,7 @@ export class LocalTranscriptView extends ItemView {
       });
   }
 
-  private resolveModeOnEnable(settings: PluginSettings): EnabledLlmPostprocessMode {
+  private resolveModeOnEnable(settings: PluginSettings): LlmPresetMode {
     const activeOption = resolveStyleOption(
       settings.llmPostprocessActivePresetRef,
       settings.llmPostprocessUserPresets,
@@ -186,7 +190,7 @@ export class LocalTranscriptView extends ItemView {
         }
         dropdown.setValue(settings.llmPostprocessMode);
         dropdown.onChange(async (value) => {
-          if (!isLlmPostprocessMode(value) || value === 'off') {
+          if (!isLlmPresetMode(value)) {
             return;
           }
           this.lastEnabledMode = value;
@@ -393,8 +397,12 @@ export class LocalTranscriptView extends ItemView {
     await this.persistSettings({
       ...settings,
       llmPostprocessActivePresetRef: formatStyleRef({ kind: 'user', id }),
+      ...(options.mode !== null ? { llmPostprocessMode: options.mode } : {}),
       llmPostprocessUserPresets: [...settings.llmPostprocessUserPresets, newPreset],
     });
+    if (options.mode !== null) {
+      this.lastEnabledMode = options.mode;
+    }
   }
 
   private async deleteUserStyle(ref: string): Promise<void> {
@@ -545,7 +553,7 @@ export class LocalTranscriptView extends ItemView {
 
     new Setting(items).setName('Ollama status').setDesc(this.ollamaStatus);
 
-    const resetSetting = new Setting(items)
+    new Setting(items)
       .setName('Reset LLM defaults')
       .setDesc(
         'Restore the default prompt, mode, context, skip gates, and generation values. Your saved presets and selected model are kept.',
@@ -554,30 +562,22 @@ export class LocalTranscriptView extends ItemView {
         button.setButtonText('Reset');
         button.setWarning();
         button.onClick(() => {
-          this.confirmResetDefaults(button.buttonEl);
+          this.confirmResetDefaults();
         });
       });
-    appendInfoTooltip(
-      resetSetting,
-      'Click once to arm the reset, then click again within 5 seconds to confirm.',
-    );
   }
 
-  private confirmResetDefaults(buttonEl: HTMLElement): void {
-    const originalText = buttonEl.textContent ?? 'Reset';
-    if (buttonEl.dataset.armed === 'true') {
-      buttonEl.dataset.armed = '';
-      void this.persistSettings(resetLlmPostprocessDefaults(this.dependencies.getSettings()));
-      return;
-    }
-    buttonEl.dataset.armed = 'true';
-    buttonEl.textContent = 'Click again to confirm';
-    window.setTimeout(() => {
-      if (buttonEl.dataset.armed === 'true' && buttonEl.isConnected) {
-        buttonEl.dataset.armed = '';
-        buttonEl.textContent = originalText;
-      }
-    }, 5_000);
+  private confirmResetDefaults(): void {
+    new ConfirmModal(this.app, {
+      title: 'Reset LLM defaults',
+      message:
+        'Restore the default prompt, mode, context, skip gates, and generation values? Your saved presets and selected model are kept.',
+      confirmLabel: 'Reset',
+      destructive: true,
+      onConfirm: async () => {
+        await this.persistSettings(resetLlmPostprocessDefaults(this.dependencies.getSettings()));
+      },
+    }).open();
   }
 
   private addNumberSetting(
@@ -588,18 +588,16 @@ export class LocalTranscriptView extends ItemView {
     onChange: (value: number) => Promise<void>,
     tooltip: string,
   ): void {
-    const setting = new Setting(parent)
-      .setName(name)
-      .setDesc(desc)
-      .addText((text) => {
-        text.inputEl.type = 'number';
-        text.setValue(value.toString());
-        this.trackInputFocus(text.inputEl);
-        text.onChange(async (nextValue) => {
-          await onChange(Number(nextValue));
-        });
-      });
-    appendInfoTooltip(setting, tooltip);
+    addNumberInputSetting(parent, {
+      desc,
+      name,
+      onChange,
+      onElement: (element) => {
+        this.trackInputFocus(element);
+      },
+      tooltip,
+      value,
+    });
   }
 
   private addTextAreaSetting(
@@ -611,16 +609,17 @@ export class LocalTranscriptView extends ItemView {
     onChange: (value: string) => void,
     tooltip: string,
   ): void {
-    const setting = new Setting(parent)
-      .setName(name)
-      .setDesc(desc)
-      .addTextArea((text) => {
-        text.inputEl.rows = rows;
-        text.setValue(value);
-        this.trackInputFocus(text.inputEl);
-        text.onChange(onChange);
-      });
-    appendInfoTooltip(setting, tooltip);
+    addTextAreaSetting(parent, {
+      desc,
+      name,
+      onChange,
+      onElement: (element) => {
+        this.trackPromptBlurRender(element);
+      },
+      rows,
+      tooltip,
+      value,
+    });
   }
 
   private schedulePromptSave(value: string): void {
@@ -665,13 +664,38 @@ export class LocalTranscriptView extends ItemView {
       this.focusedInput = element;
     });
     element.addEventListener('blur', () => {
-      this.focusedInput = null;
-      window.setTimeout(() => {
-        if (this.focusedInput === null) {
-          this.render();
-        }
-      }, 0);
+      if (this.focusedInput === element) {
+        this.focusedInput = null;
+      }
+      this.renderAfterPromptBlurWhenIdle();
     });
+  }
+
+  // Re-render after the prompt textarea loses focus so the preset dropdown
+  // flips to "Custom", but wait until the user leaves tracked input fields.
+  private trackPromptBlurRender(element: HTMLElement): void {
+    this.trackInputFocus(element);
+    element.addEventListener('blur', () => {
+      this.promptBlurRenderPending = true;
+      this.renderAfterPromptBlurWhenIdle();
+    });
+  }
+
+  private renderAfterPromptBlurWhenIdle(): void {
+    if (!this.promptBlurRenderPending) {
+      return;
+    }
+
+    window.setTimeout(() => {
+      if (!this.promptBlurRenderPending) {
+        return;
+      }
+      if (this.focusedInput?.isConnected) {
+        return;
+      }
+      this.promptBlurRenderPending = false;
+      this.render();
+    }, 0);
   }
 
   private async refreshModels(options: { silent?: boolean } = {}): Promise<void> {

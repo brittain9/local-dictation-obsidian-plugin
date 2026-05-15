@@ -73,7 +73,7 @@ const BRAIN_DUMP_PROMPT =
 const VOICE_COMMANDS_PROMPT =
   "Interpret the dictated transcript as a mix of content and inline instructions to you. When the speaker gives a directive ('make this a list', 'summarize the above', 'rewrite that as a code block', 'remove the last part'), apply it to the surrounding text. Otherwise treat the speech as content to clean lightly. Preserve facts, names, and terms unless the speaker explicitly asks otherwise. Use the reference context only for spelling. Return only the final result — no preamble, no acknowledgment of the directives, no commentary.";
 
-export const LLM_BUILTIN_PRESETS: readonly LlmBuiltinPreset[] = [
+export const LLM_BUILTIN_PRESETS = [
   {
     id: 'clean-up',
     label: 'Clean up',
@@ -120,7 +120,7 @@ export const LLM_BUILTIN_PRESETS: readonly LlmBuiltinPreset[] = [
     mode: 'batch',
     prompt: VOICE_COMMANDS_PROMPT,
   },
-];
+] as const satisfies readonly LlmBuiltinPreset[];
 
 export const DEFAULT_LLM_BUILTIN_PRESET_ID: LlmBuiltinPresetId = 'clean-up';
 

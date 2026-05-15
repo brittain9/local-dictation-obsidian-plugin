@@ -22,12 +22,6 @@ import {
   type SpeakingStyle,
 } from '../sidecar/protocol';
 
-export {
-  isLlmPostprocessMode,
-  LLM_POSTPROCESS_MODES,
-  type LlmPostprocessMode,
-} from '../llm/presets';
-
 export const DICTATION_ANCHORS = ['at_cursor', 'end_of_note'] as const;
 
 export type DictationAnchor = (typeof DICTATION_ANCHORS)[number];
@@ -86,6 +80,7 @@ export interface PluginSettings {
   llmPostprocessTemperature: number;
   llmPostprocessTotalContextCap: number;
   llmPostprocessUserPresets: LlmUserPreset[];
+  localTranscriptSidebarBootstrapped: boolean;
   modelStorePathOverride: string;
   selectedModel: SelectedModel | null;
   sidecarPathOverride: string;
@@ -115,6 +110,7 @@ export const DEFAULT_PLUGIN_SETTINGS: PluginSettings = {
   llmPostprocessTemperature: DEFAULT_LLM_POSTPROCESS_GENERATION.temperature,
   llmPostprocessTotalContextCap: DEFAULT_LLM_POSTPROCESS_CONTEXT.totalContextCap,
   llmPostprocessUserPresets: [],
+  localTranscriptSidebarBootstrapped: false,
   modelStorePathOverride: '',
   selectedModel: null,
   sidecarPathOverride: '',
@@ -190,6 +186,10 @@ export function resolvePluginSettings(data: unknown): PluginSettings {
       30_000,
     ),
     llmPostprocessUserPresets: userPresets,
+    localTranscriptSidebarBootstrapped: readBoolean(
+      raw.localTranscriptSidebarBootstrapped,
+      DEFAULT_PLUGIN_SETTINGS.localTranscriptSidebarBootstrapped,
+    ),
     modelStorePathOverride: readString(
       raw.modelStorePathOverride,
       DEFAULT_PLUGIN_SETTINGS.modelStorePathOverride,

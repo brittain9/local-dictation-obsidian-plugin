@@ -1,8 +1,10 @@
+use std::sync::OnceLock;
 use std::time::Duration;
 
 use reqwest::StatusCode;
 use serde::Deserialize;
-use serde_json::json;
+use serde_json::{Value, json};
+use tokio::sync::watch;
 
 use crate::protocol::{
     ContextWindow, ContextWindowSource, LlmPostprocessConfig, StageId, TimestampGranularity,
@@ -14,24 +16,34 @@ use crate::transcription::Transcript;
 const OLLAMA_CHAT_URL: &str = "http://127.0.0.1:11434/api/chat";
 const NUM_PREDICT: u32 = 512;
 
+static OLLAMA_CLIENT: OnceLock<reqwest::Client> = OnceLock::new();
+
+fn shared_ollama_client() -> Result<&'static reqwest::Client, String> {
+    if let Some(client) = OLLAMA_CLIENT.get() {
+        return Ok(client);
+    }
+    let built = reqwest::Client::builder()
+        .connect_timeout(Duration::from_secs(2))
+        .timeout(Duration::from_secs(60))
+        .build()
+        .map_err(|error| error.to_string())?;
+    Ok(OLLAMA_CLIENT.get_or_init(|| built))
+}
+
 pub struct LlmPostprocessStage {
     chat_url: String,
-    client: reqwest::Client,
 }
 
 impl LlmPostprocessStage {
+    #[must_use]
     pub fn new() -> Self {
         Self::with_chat_url(OLLAMA_CHAT_URL)
     }
 
+    #[must_use]
     pub(crate) fn with_chat_url(chat_url: impl Into<String>) -> Self {
         Self {
             chat_url: chat_url.into(),
-            client: reqwest::Client::builder()
-                .connect_timeout(Duration::from_secs(2))
-                .timeout(Duration::from_secs(60))
-                .build()
-                .expect("Ollama reqwest client should build"),
         }
     }
 }
@@ -46,76 +58,117 @@ impl StageProcessor for LlmPostprocessStage {
     }
 
     fn process(&self, transcript: &Transcript, ctx: &StageContext<'_>) -> StageProcess {
-        let mut base = LlmPayloadInput {
-            context_chars_total: context_chars_total(ctx.context),
-            done_reason: None,
-            eval_count: None,
-            model: "",
-            output_chars: 0,
-            prompt_eval_count: None,
-            skipped_reason: None,
-            truncated: false,
-        };
+        let context_chars = context_chars_total(ctx.context);
 
         let Some(config) = ctx.llm_postprocess else {
-            return skipped(base, "disabled");
+            return skipped(skipped_payload(None, context_chars, "disabled"), "disabled");
         };
-        base.model = &config.model;
 
         let input = transcript.joined_text();
         let trimmed_input = input.trim();
-
         if trimmed_input.is_empty() {
-            return skipped(base, "empty_input");
+            return skipped(
+                skipped_payload(Some(&config.model), context_chars, "empty_input"),
+                "empty_input",
+            );
         }
         if config.skip_min_words > 0 && word_count(trimmed_input) < config.skip_min_words as usize {
-            return skipped(base, "below_min_words");
+            return skipped(
+                skipped_payload(Some(&config.model), context_chars, "below_min_words"),
+                "below_min_words",
+            );
         }
 
-        let user_message = render_user_message(ctx.context, trimmed_input);
-        let response = match ctx.tokio_runtime.block_on(send_chat(
-            &self.client,
-            &self.chat_url,
-            config,
-            user_message,
-        )) {
-            Ok(response) => response,
-            Err(error) => return failed(base, error, false),
+        let client = match shared_ollama_client() {
+            Ok(client) => client,
+            Err(error) => {
+                return failed(
+                    failed_payload(&config.model, context_chars, None, 0, false),
+                    error,
+                );
+            }
         };
 
-        let done_reason = response.done_reason.unwrap_or_else(|| "stop".to_string());
+        let user_message = render_user_message(ctx.context, trimmed_input);
+        let mut cancel_rx = ctx.cancel_rx.clone();
+        let chat_result = ctx.tokio_runtime.block_on(async {
+            tokio::select! {
+                biased;
+                () = wait_until_cancelled(&mut cancel_rx) => None,
+                result = send_chat(client, &self.chat_url, config, user_message) => Some(result),
+            }
+        });
+
+        let response = match chat_result {
+            None => {
+                return skipped(
+                    skipped_payload(Some(&config.model), context_chars, "cancelled"),
+                    "cancelled",
+                );
+            }
+            Some(Ok(response)) => response,
+            Some(Err(error)) => {
+                return failed(
+                    failed_payload(&config.model, context_chars, None, 0, false),
+                    error,
+                );
+            }
+        };
+
+        let done_reason = response.done_reason.as_deref().unwrap_or("stop");
         let output = response.message.content.trim().to_string();
-        base.done_reason = Some(done_reason.clone());
-        base.eval_count = response.eval_count;
-        base.output_chars = output.len() as u32;
-        base.prompt_eval_count = response.prompt_eval_count;
+        let output_chars = output.len() as u32;
+        let telemetry = ChatTelemetry {
+            done_reason,
+            eval_count: response.eval_count,
+            prompt_eval_count: response.prompt_eval_count,
+        };
 
         if done_reason != "stop" {
             let truncated = done_reason == "length";
             return failed(
-                base,
+                failed_payload(
+                    &config.model,
+                    context_chars,
+                    Some(&telemetry),
+                    output_chars,
+                    truncated,
+                ),
                 format!("Ollama stopped with done_reason={done_reason}"),
-                truncated,
             );
         }
         if output.is_empty() {
-            return failed(base, "Ollama returned empty output".to_string(), false);
+            return failed(
+                failed_payload(
+                    &config.model,
+                    context_chars,
+                    Some(&telemetry),
+                    output_chars,
+                    false,
+                ),
+                "Ollama returned empty output".to_string(),
+            );
         }
         if output.len() > trimmed_input.len().saturating_mul(10).saturating_add(1_000) {
             return failed(
-                base,
+                failed_payload(
+                    &config.model,
+                    context_chars,
+                    Some(&telemetry),
+                    output_chars,
+                    true,
+                ),
                 "Ollama output exceeded length guard".to_string(),
-                true,
             );
         }
 
-        let mut payload = llm_payload(base);
+        let mut payload = ok_payload(&config.model, context_chars, &telemetry, output_chars);
         if config.show_raw_below
-            && let serde_json::Value::Object(map) = &mut payload
+            && let Value::Object(map) = &mut payload
         {
             map.insert(
                 "rawText".to_string(),
-                serde_json::Value::String(trimmed_input.to_string()),
+                Value::String(trimmed_input.to_string()),
             );
         }
 
@@ -132,19 +185,28 @@ impl StageProcessor for LlmPostprocessStage {
     }
 }
 
-fn skipped(mut base: LlmPayloadInput<'_>, reason: &'static str) -> StageProcess {
-    base.skipped_reason = Some(reason);
+fn skipped(payload: Value, reason: &'static str) -> StageProcess {
     StageProcess::Skipped {
         reason: reason.to_string(),
-        payload: Some(llm_payload(base)),
+        payload: Some(payload),
     }
 }
 
-fn failed(mut base: LlmPayloadInput<'_>, error: String, truncated: bool) -> StageProcess {
-    base.truncated = truncated;
+fn failed(payload: Value, error: String) -> StageProcess {
     StageProcess::Failed {
         error,
-        payload: Some(llm_payload(base)),
+        payload: Some(payload),
+    }
+}
+
+async fn wait_until_cancelled(rx: &mut watch::Receiver<bool>) {
+    loop {
+        if *rx.borrow_and_update() {
+            return;
+        }
+        if rx.changed().await.is_err() {
+            std::future::pending::<()>().await;
+        }
     }
 }
 
@@ -189,11 +251,17 @@ fn render_user_message(context: Option<&ContextWindow>, utterance: &str) -> Stri
         matches!(source, ContextWindowSource::PriorUtterance { .. })
     });
 
-    format!(
-        "<note_context>\n{note_context}\n</note_context>\n\n\
-         <prior_utterances>\n{prior_utterances}\n</prior_utterances>\n\n\
-         <utterance>\n{utterance}\n</utterance>"
-    )
+    let mut sections = Vec::with_capacity(3);
+    if !note_context.is_empty() {
+        sections.push(format!("<note_context>\n{note_context}\n</note_context>"));
+    }
+    if !prior_utterances.is_empty() {
+        sections.push(format!(
+            "<prior_utterances>\n{prior_utterances}\n</prior_utterances>"
+        ));
+    }
+    sections.push(format!("<utterance>\n{utterance}\n</utterance>"));
+    sections.join("\n\n")
 }
 
 fn join_sources(
@@ -253,29 +321,62 @@ struct OllamaMessage {
     content: String,
 }
 
-#[derive(Clone)]
-struct LlmPayloadInput<'a> {
-    context_chars_total: u32,
-    done_reason: Option<String>,
+struct ChatTelemetry<'a> {
+    done_reason: &'a str,
     eval_count: Option<u32>,
-    model: &'a str,
-    output_chars: u32,
     prompt_eval_count: Option<u32>,
-    skipped_reason: Option<&'a str>,
-    truncated: bool,
 }
 
-fn llm_payload(input: LlmPayloadInput<'_>) -> serde_json::Value {
+fn skipped_payload(model: Option<&str>, context_chars: u32, reason: &str) -> Value {
     json!({
-        "contextCharsTotal": input.context_chars_total,
-        "doneReason": input.done_reason,
+        "contextCharsTotal": context_chars,
+        "doneReason": Value::Null,
         "durationMs": 0,
-        "evalCount": input.eval_count,
-        "model": input.model,
-        "outputChars": input.output_chars,
-        "promptEvalCount": input.prompt_eval_count,
-        "skippedReason": input.skipped_reason,
-        "truncated": input.truncated,
+        "evalCount": Value::Null,
+        "model": model,
+        "outputChars": 0,
+        "promptEvalCount": Value::Null,
+        "skippedReason": reason,
+        "truncated": false,
+    })
+}
+
+fn failed_payload(
+    model: &str,
+    context_chars: u32,
+    telemetry: Option<&ChatTelemetry<'_>>,
+    output_chars: u32,
+    truncated: bool,
+) -> Value {
+    json!({
+        "contextCharsTotal": context_chars,
+        "doneReason": telemetry.map(|t| t.done_reason),
+        "durationMs": 0,
+        "evalCount": telemetry.and_then(|t| t.eval_count),
+        "model": model,
+        "outputChars": output_chars,
+        "promptEvalCount": telemetry.and_then(|t| t.prompt_eval_count),
+        "skippedReason": Value::Null,
+        "truncated": truncated,
+    })
+}
+
+fn ok_payload(
+    model: &str,
+    context_chars: u32,
+    telemetry: &ChatTelemetry<'_>,
+    output_chars: u32,
+) -> Value {
+    json!({
+        "contextCharsTotal": context_chars,
+        "doneReason": telemetry.done_reason,
+        "durationMs": 0,
+        "evalCount": telemetry.eval_count,
+        "model": model,
+        "outputChars": output_chars,
+        "promptEvalCount": telemetry.prompt_eval_count,
+        "skippedReason": Value::Null,
+        "truncated": false,
     })
 }
 
@@ -396,6 +497,29 @@ mod tests {
     }
 
     #[test]
+    fn user_message_omits_empty_context_sections() {
+        let context = ContextWindow {
+            budget_chars: 7000,
+            sources: vec![
+                ContextWindowSource::NoteText {
+                    text: "   ".to_string(),
+                    truncated: false,
+                },
+                ContextWindowSource::PriorUtterance {
+                    text: String::new(),
+                    truncated: false,
+                },
+            ],
+            text: String::new(),
+            truncated: false,
+        };
+
+        let rendered = render_user_message(Some(&context), "current words");
+
+        assert_eq!(rendered, "<utterance>\ncurrent words\n</utterance>");
+    }
+
+    #[test]
     fn successful_response_collapses_to_one_segment_and_uses_chat_shape() {
         let (url, body_rx) = start_mock_ollama(
             r#"{"message":{"content":"  Cleaned output.  "},"done_reason":"stop","prompt_eval_count":11,"eval_count":7}"#,
@@ -464,6 +588,90 @@ mod tests {
         );
     }
 
+    #[test]
+    fn closed_cancel_channel_does_not_skip_chat() {
+        let (url, body_rx) =
+            start_mock_ollama(r#"{"message":{"content":"Cleaned output."},"done_reason":"stop"}"#);
+        let runtime = runtime();
+        let (cancel_tx, cancel_rx) = tokio::sync::watch::channel(false);
+        drop(cancel_tx);
+        let transcript = transcript("input secret words now");
+        let voice_activity = voice_activity();
+        let caps = caps();
+        let enablement = StageEnablement::default();
+        let config = config();
+        let ctx = StageContext {
+            cancel_rx: &cancel_rx,
+            context: None,
+            family_capabilities: &caps,
+            is_final: true,
+            llm_postprocess: Some(&config),
+            pause_ms_before_utterance: None,
+            segment_diagnostics: &[],
+            stage_enabled: &enablement,
+            tokio_runtime: &runtime,
+            vad_probabilities: &[],
+            voice_activity: &voice_activity,
+        };
+
+        let result = LlmPostprocessStage::with_chat_url(url).process(&transcript, &ctx);
+
+        match result {
+            StageProcess::Ok { segments, .. } => assert_eq!(segments[0].text, "Cleaned output."),
+            _ => panic!("expected ok"),
+        }
+        body_rx.recv().expect("mock server should capture body");
+    }
+
+    #[test]
+    fn cancellation_interrupts_in_flight_chat() {
+        let (url, request_rx) = start_hanging_mock_ollama();
+        let (cancel_tx, cancel_rx) = tokio::sync::watch::channel(false);
+        let (result_tx, result_rx) = mpsc::channel();
+
+        thread::spawn(move || {
+            let runtime = runtime();
+            let transcript = transcript("input secret words now");
+            let voice_activity = voice_activity();
+            let caps = caps();
+            let enablement = StageEnablement::default();
+            let config = config();
+            let ctx = StageContext {
+                cancel_rx: &cancel_rx,
+                context: None,
+                family_capabilities: &caps,
+                is_final: true,
+                llm_postprocess: Some(&config),
+                pause_ms_before_utterance: None,
+                segment_diagnostics: &[],
+                stage_enabled: &enablement,
+                tokio_runtime: &runtime,
+                vad_probabilities: &[],
+                voice_activity: &voice_activity,
+            };
+
+            let result = LlmPostprocessStage::with_chat_url(url).process(&transcript, &ctx);
+            let reason = match result {
+                StageProcess::Skipped { reason, .. } => reason,
+                StageProcess::Ok { .. } => "ok".to_string(),
+                StageProcess::Failed { error, .. } => error,
+            };
+            result_tx.send(reason).expect("test should receive result");
+        });
+
+        request_rx
+            .recv_timeout(Duration::from_secs(2))
+            .expect("mock server should receive request");
+        cancel_tx.send(true).expect("cancel signal should send");
+
+        assert_eq!(
+            result_rx
+                .recv_timeout(Duration::from_secs(2))
+                .expect("LLM stage should return after cancellation"),
+            "cancelled"
+        );
+    }
+
     fn start_mock_ollama(response_body: &'static str) -> (String, mpsc::Receiver<Value>) {
         let listener = TcpListener::bind("127.0.0.1:0").expect("mock server binds");
         let addr = listener.local_addr().expect("mock server addr");
@@ -486,6 +694,22 @@ mod tests {
             stream
                 .write_all(response.as_bytes())
                 .expect("response should write");
+        });
+
+        (format!("http://{addr}/api/chat"), rx)
+    }
+
+    fn start_hanging_mock_ollama() -> (String, mpsc::Receiver<()>) {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("mock server binds");
+        let addr = listener.local_addr().expect("mock server addr");
+        let (tx, rx) = mpsc::channel();
+
+        thread::spawn(move || {
+            let (mut stream, _) = listener.accept().expect("request should arrive");
+            let mut buffer = vec![0_u8; 16 * 1024];
+            let _ = stream.read(&mut buffer).expect("request should read");
+            tx.send(()).expect("test should receive request signal");
+            thread::sleep(Duration::from_secs(10));
         });
 
         (format!("http://{addr}/api/chat"), rx)

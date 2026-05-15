@@ -12,6 +12,10 @@ use crate::transcription::{SegmentDiagnostics, Transcript};
 mod hallucination_filter;
 mod llm_postprocess;
 
+/// Boolean opt-out for stages that always have a runtime config to consume.
+/// Stages with optional per-session configuration (e.g. LLM postprocess) gate
+/// themselves on the presence of that config in `StageContext`, not a flag
+/// here.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct StageEnablement {
     pub hallucination_filter: bool,

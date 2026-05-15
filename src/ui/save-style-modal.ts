@@ -8,12 +8,18 @@ import {
   LLM_USER_PRESET_MAX_LABEL_CHARS,
 } from '../settings/plugin-settings';
 
-const MODE_ANY = '__any__';
+interface ModeOption {
+  key: string;
+  label: string;
+  mode: LlmPresetMode | null;
+}
 
-const MODE_OPTIONS: ReadonlyArray<{ label: string; value: LlmPresetMode | typeof MODE_ANY }> = [
-  { label: 'Any mode (use current mode)', value: MODE_ANY },
-  { label: 'After each phrase', value: 'per_utterance' },
-  { label: 'All at once on stop', value: 'batch' },
+const DEFAULT_MODE_KEY = 'any';
+
+const MODE_OPTIONS: readonly ModeOption[] = [
+  { key: DEFAULT_MODE_KEY, label: 'Any mode (use current mode)', mode: null },
+  { key: 'per_utterance', label: 'After each phrase', mode: 'per_utterance' },
+  { key: 'batch', label: 'All at once on stop', mode: 'batch' },
 ];
 
 export interface SaveStyleModalDefaults {
@@ -102,11 +108,11 @@ export class SaveStyleModal extends Modal {
       )
       .addDropdown((dropdown) => {
         for (const option of MODE_OPTIONS) {
-          dropdown.addOption(option.value, option.label);
+          dropdown.addOption(option.key, option.label);
         }
-        dropdown.setValue(MODE_ANY);
+        dropdown.setValue(DEFAULT_MODE_KEY);
         dropdown.onChange((value) => {
-          this.mode = value === MODE_ANY ? null : (value as LlmPresetMode);
+          this.mode = MODE_OPTIONS.find((option) => option.key === value)?.mode ?? null;
         });
       });
 
@@ -119,14 +125,11 @@ export class SaveStyleModal extends Modal {
         toggle.setValue(false);
         toggle.onChange((value) => {
           this.overrideEnabled = value;
-          if (this.overrideContainer !== null) {
-            this.overrideContainer.style.display = value ? '' : 'none';
-          }
+          this.overrideContainer?.toggleClass('local-stt-hidden', !value);
         });
       });
 
-    this.overrideContainer = this.contentEl.createDiv();
-    this.overrideContainer.style.display = 'none';
+    this.overrideContainer = this.contentEl.createDiv({ cls: 'local-stt-hidden' });
 
     new Setting(this.overrideContainer)
       .setName('Min words')
@@ -151,10 +154,11 @@ export class SaveStyleModal extends Modal {
         this.temperatureInput = text.inputEl;
       });
 
-    this.errorEl = this.contentEl.createEl('p', { cls: 'local-stt-save-style__error' });
+    this.errorEl = this.contentEl.createEl('p', {
+      cls: 'local-stt-save-style__error local-stt-hidden',
+    });
     this.errorEl.setAttribute('role', 'alert');
     this.errorEl.setAttribute('aria-live', 'polite');
-    this.errorEl.style.display = 'none';
 
     new Setting(this.contentEl)
       .addButton((button) => {
@@ -252,6 +256,6 @@ export class SaveStyleModal extends Modal {
   private showError(message: string): void {
     if (this.errorEl === null) return;
     this.errorEl.setText(message);
-    this.errorEl.style.display = '';
+    this.errorEl.removeClass('local-stt-hidden');
   }
 }

@@ -162,7 +162,7 @@ export default class LocalSttPlugin extends Plugin {
   }
 
   private async runPostLayoutStartup(): Promise<void> {
-    await this.syncLocalTranscriptSidebar();
+    await this.bootstrapLocalTranscriptSidebar();
 
     try {
       await this.checkSidecarHealth({ showNotice: false });
@@ -179,8 +179,7 @@ export default class LocalSttPlugin extends Plugin {
   }
 
   private async ensureLocalTranscriptSidebar(): Promise<void> {
-    const existingLeaf = this.app.workspace.getLeavesOfType(LOCAL_TRANSCRIPT_VIEW_TYPE)[0];
-    if (existingLeaf !== undefined) {
+    if (this.app.workspace.getLeavesOfType(LOCAL_TRANSCRIPT_VIEW_TYPE).length > 0) {
       return;
     }
 
@@ -188,6 +187,21 @@ export default class LocalSttPlugin extends Plugin {
     await leaf?.setViewState({
       active: false,
       type: LOCAL_TRANSCRIPT_VIEW_TYPE,
+    });
+  }
+
+  private async bootstrapLocalTranscriptSidebar(): Promise<void> {
+    if (!this.settings.llmFeaturesEnabled) {
+      return;
+    }
+    if (this.settings.localTranscriptSidebarBootstrapped) {
+      return;
+    }
+
+    await this.ensureLocalTranscriptSidebar();
+    await this.updateSettings({
+      ...this.settings,
+      localTranscriptSidebarBootstrapped: true,
     });
   }
 
