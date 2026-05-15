@@ -104,7 +104,7 @@ export class DictationSessionController {
   private abortingSessionId: string | null = null;
   private anchorTimerId: ReturnType<typeof setTimeout> | null = null;
   private batchCleanupAbortController: AbortController | null = null;
-  private llmFailureNotifiedForSessionId: string | null = null;
+  private llmFailureLoggedForSessionId: string | null = null;
   private pendingStartSessionId: string | null = null;
   private queueTier: QueueBackpressureTier = 'normal';
   private readonly releaseSidecarSubscription: () => void;
@@ -341,7 +341,7 @@ export class DictationSessionController {
     this.pendingStartSessionId = null;
     this.sessionId = null;
     this.sessionSnapshot = null;
-    this.llmFailureNotifiedForSessionId = null;
+    this.llmFailureLoggedForSessionId = null;
     const session = this.session;
     this.session = null;
     this.clearAnchorTimer();
@@ -472,7 +472,6 @@ export class DictationSessionController {
         chars: sessionTranscript.length,
         model,
       });
-      this.dependencies.notice('Local Dictation: cleaning session transcript…');
       session.markSessionRangeAsProcessing();
       const cleanText = await this.dependencies.ollamaClient.cleanup({
         abortSignal: abortController.signal,
@@ -495,9 +494,6 @@ export class DictationSessionController {
           'llm',
           'batch cleanup replacement skipped — transcript was edited during cleanup',
         );
-        this.dependencies.notice(
-          'Local Dictation: LLM transform skipped — you edited the transcript during cleanup. Raw text kept.',
-        );
         return;
       }
 
@@ -513,9 +509,6 @@ export class DictationSessionController {
         'llm',
         `batch cleanup failed; raw transcript kept: ${formatErrorMessage(error)}`,
         error,
-      );
-      this.dependencies.notice(
-        `Local Dictation: LLM transform failed — raw transcript kept. (${formatErrorMessage(error)})`,
       );
     } finally {
       session.clearSessionProcessingMark();
@@ -716,7 +709,7 @@ export class DictationSessionController {
       );
     }
     this.logDroppedHallucinations(event);
-    this.maybeNotifyLlmStageFailure(event);
+    this.maybeLogLlmStageFailure(event);
 
     const text = event.text.trim();
 
@@ -747,8 +740,8 @@ export class DictationSessionController {
     }
   }
 
-  private maybeNotifyLlmStageFailure(event: TranscriptReadyEvent): void {
-    if (this.llmFailureNotifiedForSessionId === event.sessionId) {
+  private maybeLogLlmStageFailure(event: TranscriptReadyEvent): void {
+    if (this.llmFailureLoggedForSessionId === event.sessionId) {
       return;
     }
     const failed = event.stageResults.find(
@@ -757,13 +750,10 @@ export class DictationSessionController {
     if (failed === undefined || failed.status.kind !== 'failed') {
       return;
     }
-    this.llmFailureNotifiedForSessionId = event.sessionId;
+    this.llmFailureLoggedForSessionId = event.sessionId;
     this.dependencies.logger?.warn(
       'llm',
       `per-utterance LLM transform failed: ${failed.status.error}`,
-    );
-    this.dependencies.notice(
-      'Local Dictation: LLM transform failed — raw transcript kept. Check Ollama and the selected model.',
     );
   }
 
