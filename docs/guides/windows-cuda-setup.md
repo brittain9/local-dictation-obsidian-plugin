@@ -71,8 +71,8 @@ npm run build:sidecar:cuda:windows:release
 
 Artifacts:
 
-- CPU build: `native\target\{debug|release}\local-transcript-sidecar.exe`
-- CUDA build: `native\target-cuda\{debug|release}\local-transcript-sidecar.exe`
+- CPU build: `native\target\{debug|release}\local-dictation-sidecar.exe`
+- CUDA build: `native\target-cuda\{debug|release}\local-dictation-sidecar.exe`
 - ONNX Runtime CUDA providers: `onnxruntime_providers_shared.dll`, `onnxruntime_providers_cuda.dll`
 
 Keep the provider DLLs next to the CUDA executable. They are part of the sidecar build output.
@@ -100,7 +100,7 @@ The Cohere decoder still runs on CPU by design. That constraint comes from ONNX 
 
 The sidecar could not load the CUDA runtime or could not see a CUDA device. Check:
 
-- the CUDA release archive's runtime DLLs are still next to `local-transcript-sidecar.exe`
+- the CUDA release archive's runtime DLLs are still next to `local-dictation-sidecar.exe`
 - for source builds, `where.exe cudart64_12.dll`
 - `nvidia-smi`
 - that the plugin is pointed at the CUDA sidecar, not the default CPU dev build

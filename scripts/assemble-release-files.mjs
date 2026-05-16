@@ -1,19 +1,26 @@
 #!/usr/bin/env node
-// Stage the release directory: copy plugin bundle files into dist/release,
-// validate the exact set of sidecar archives, and emit a deterministic
-// checksums.txt. Replaces the inline shell block in release.yml's publish job
-// so missing/extra/empty sidecar artifacts fail the release before upload
-// instead of silently shipping a partial set.
+// Stage two separate release directories so the publish job can create two
+// GitHub Releases from the same workflow run:
+//   - dist/release/plugin/   -> Obsidian-facing release tagged <version>,
+//                               contains only main.js, manifest.json, styles.css.
+//   - dist/release/sidecar/  -> sidecar release tagged sidecar-<version>,
+//                               contains the validated sidecar archives plus
+//                               a deterministic checksums.txt.
+// This split exists because Obsidian's community-plugin review rejects any
+// non-standard assets on the release matching `manifest.version`. The two
+// directories are produced from the same commit so the version mapping
+// remains 1:1.
 //
 // CLI: node scripts/assemble-release-files.mjs
 // Inputs (paths relative to cwd):
 //   dist/plugin-bundle/{main.js, manifest.json, styles.css}
-//   dist/release/<each EXPECTED_SIDECAR_ARCHIVES file>
+//   dist/sidecar-archives/<each EXPECTED_SIDECAR_ARCHIVES file>
 // Output:
-//   dist/release/{main.js, manifest.json, styles.css, checksums.txt}
+//   dist/release/plugin/{main.js, manifest.json, styles.css}
+//   dist/release/sidecar/{<archives>, checksums.txt}
 
 import { createHash } from 'node:crypto';
-import { copyFile, readdir, readFile, stat, writeFile } from 'node:fs/promises';
+import { copyFile, mkdir, readdir, readFile, stat, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import process from 'node:process';
 
@@ -129,15 +136,27 @@ async function listArchiveCandidates(releaseDir) {
   return candidates;
 }
 
-async function main() {
-  const pluginBundleDir = join('dist', 'plugin-bundle');
-  const releaseDir = join('dist', 'release');
+/**
+ * Assemble the partitioned release directories under `<rootDir>/dist/release/`.
+ * `rootDir` defaults to the current working directory so the script behaves
+ * the same way under CI; tests pass a temp directory to exercise the layout.
+ *
+ * @param {string} rootDir
+ */
+export async function assembleReleaseFiles(rootDir = '.') {
+  const pluginBundleDir = join(rootDir, 'dist', 'plugin-bundle');
+  const sidecarArchivesDir = join(rootDir, 'dist', 'sidecar-archives');
+  const pluginReleaseDir = join(rootDir, 'dist', 'release', 'plugin');
+  const sidecarReleaseDir = join(rootDir, 'dist', 'release', 'sidecar');
+
+  await mkdir(pluginReleaseDir, { recursive: true });
+  await mkdir(sidecarReleaseDir, { recursive: true });
 
   for (const file of PLUGIN_FILES) {
-    await copyFile(join(pluginBundleDir, file), join(releaseDir, file));
+    await copyFile(join(pluginBundleDir, file), join(pluginReleaseDir, file));
   }
 
-  const candidates = await listArchiveCandidates(releaseDir);
+  const candidates = await listArchiveCandidates(sidecarArchivesDir);
   const errors = validateSidecarArchives(candidates);
   if (errors.length > 0) {
     for (const message of errors) {
@@ -148,15 +167,15 @@ async function main() {
 
   const archiveContents = new Map();
   for (const expected of EXPECTED_SIDECAR_ARCHIVES) {
-    archiveContents.set(expected, await readFile(join(releaseDir, expected)));
+    const archive = await readFile(join(sidecarArchivesDir, expected));
+    archiveContents.set(expected, archive);
+    await copyFile(join(sidecarArchivesDir, expected), join(sidecarReleaseDir, expected));
   }
 
   const body = buildChecksumsFile(archiveContents);
-  await writeFile(join(releaseDir, 'checksums.txt'), body);
+  await writeFile(join(sidecarReleaseDir, 'checksums.txt'), body);
 
-  console.log(
-    `[assemble-release-files] wrote ${PLUGIN_FILES.length} plugin files and checksums for ${EXPECTED_SIDECAR_ARCHIVES.length} sidecar archives to ${releaseDir}`,
-  );
+  return { pluginReleaseDir, sidecarReleaseDir };
 }
 
 const invokedDirectly =
@@ -164,8 +183,14 @@ const invokedDirectly =
   import.meta.url.endsWith(process.argv[1] ?? '');
 
 if (invokedDirectly) {
-  main().catch((error) => {
-    console.error(error);
-    process.exitCode = 1;
-  });
+  assembleReleaseFiles()
+    .then(({ pluginReleaseDir, sidecarReleaseDir }) => {
+      console.log(
+        `[assemble-release-files] wrote ${PLUGIN_FILES.length} plugin files to ${pluginReleaseDir} and ${EXPECTED_SIDECAR_ARCHIVES.length} sidecar archives + checksums to ${sidecarReleaseDir}`,
+      );
+    })
+    .catch((error) => {
+      console.error(error);
+      process.exitCode = 1;
+    });
 }

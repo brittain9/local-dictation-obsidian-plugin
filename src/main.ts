@@ -29,7 +29,7 @@ import { SidecarInstallManager } from './sidecar/sidecar-install-manager';
 import { resolveSidecarExecutablePath, SidecarNotInstalledError } from './sidecar/sidecar-paths';
 import type { SidecarLaunchSpec } from './sidecar/sidecar-process';
 import { DictationRibbonController } from './ui/dictation-ribbon';
-import { LOCAL_TRANSCRIPT_VIEW_TYPE, LocalTranscriptView } from './ui/local-transcript-view';
+import { LOCAL_DICTATION_VIEW_TYPE, LocalDictationView } from './ui/local-dictation-view';
 
 export default class LocalSttPlugin extends Plugin {
   private audioCaptureStream: AudioCaptureStream | null = null;
@@ -71,9 +71,9 @@ export default class LocalSttPlugin extends Plugin {
       },
     });
     this.registerView(
-      LOCAL_TRANSCRIPT_VIEW_TYPE,
+      LOCAL_DICTATION_VIEW_TYPE,
       (leaf) =>
-        new LocalTranscriptView(leaf, {
+        new LocalDictationView(leaf, {
           getSettings: () => this.settings,
           logger: this.logger,
           notice: (message) => {
@@ -163,7 +163,7 @@ export default class LocalSttPlugin extends Plugin {
   }
 
   private async runPostLayoutStartup(): Promise<void> {
-    await this.bootstrapLocalTranscriptSidebar();
+    await this.bootstrapLocalDictationSidebar();
 
     try {
       await this.checkSidecarHealth({ showNotice: false });
@@ -179,19 +179,19 @@ export default class LocalSttPlugin extends Plugin {
     }
   }
 
-  private async ensureLocalTranscriptSidebar(): Promise<void> {
-    if (this.app.workspace.getLeavesOfType(LOCAL_TRANSCRIPT_VIEW_TYPE).length > 0) {
+  private async ensureLocalDictationSidebar(): Promise<void> {
+    if (this.app.workspace.getLeavesOfType(LOCAL_DICTATION_VIEW_TYPE).length > 0) {
       return;
     }
 
     const leaf = this.app.workspace.getLeftLeaf(false);
     await leaf?.setViewState({
       active: false,
-      type: LOCAL_TRANSCRIPT_VIEW_TYPE,
+      type: LOCAL_DICTATION_VIEW_TYPE,
     });
   }
 
-  private async bootstrapLocalTranscriptSidebar(): Promise<void> {
+  private async bootstrapLocalDictationSidebar(): Promise<void> {
     if (!this.settings.llmFeaturesEnabled) {
       return;
     }
@@ -199,22 +199,22 @@ export default class LocalSttPlugin extends Plugin {
       return;
     }
 
-    await this.ensureLocalTranscriptSidebar();
+    await this.ensureLocalDictationSidebar();
     await this.updateSettings({
       ...this.settings,
       localTranscriptSidebarBootstrapped: true,
     });
   }
 
-  private async syncLocalTranscriptSidebar(): Promise<void> {
+  private async syncLocalDictationSidebar(): Promise<void> {
     if (!this.settings.llmFeaturesEnabled) {
-      for (const leaf of this.app.workspace.getLeavesOfType(LOCAL_TRANSCRIPT_VIEW_TYPE)) {
+      for (const leaf of this.app.workspace.getLeavesOfType(LOCAL_DICTATION_VIEW_TYPE)) {
         leaf.detach();
       }
       return;
     }
 
-    await this.ensureLocalTranscriptSidebar();
+    await this.ensureLocalDictationSidebar();
   }
 
   private async openFirstRunSetup(): Promise<void> {
@@ -325,7 +325,7 @@ export default class LocalSttPlugin extends Plugin {
     this.settings = resolvePluginSettings(nextSettings);
     await this.saveData(this.settings);
     if (previousLlmFeaturesEnabled !== this.settings.llmFeaturesEnabled) {
-      await this.syncLocalTranscriptSidebar();
+      await this.syncLocalDictationSidebar();
     }
   }
 

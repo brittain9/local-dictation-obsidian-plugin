@@ -8,7 +8,7 @@ usage() {
 Usage: bash scripts/build-cuda.sh [OPTIONS]
 
 Build the CUDA-enabled native sidecar (Whisper+CUDA, Cohere+CUDA).
-Output: native/target-cuda/{debug|release}/local-transcript-sidecar
+Output: native/target-cuda/{debug|release}/local-dictation-sidecar
 
 Options:
   --release   Build release binary instead of debug.
@@ -172,7 +172,7 @@ printf 'cargo %q ' "${args[@]}"
 printf '\n'
 cargo "${args[@]}"
 
-binary="$target_dir/$profile/local-transcript-sidecar"
+binary="$target_dir/$profile/local-dictation-sidecar"
 [[ -f "$binary" ]] || die "build completed but binary not found at $binary"
 
 while IFS= read -r provider; do

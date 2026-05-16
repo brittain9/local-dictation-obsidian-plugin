@@ -1,7 +1,11 @@
 import { createHash } from 'node:crypto';
-import { describe, expect, it } from 'vitest';
+import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { afterEach, describe, expect, it } from 'vitest';
 
 import {
+  assembleReleaseFiles,
   buildChecksumsFile,
   EXPECTED_SIDECAR_ARCHIVES,
   validateSidecarArchives,
@@ -89,5 +93,68 @@ describe('buildChecksumsFile', () => {
     }
     contents.set('sidecar-bogus.zip', Buffer.from('x', 'utf8'));
     expect(() => buildChecksumsFile(contents)).toThrow(/unexpected archive/);
+  });
+});
+
+describe('assembleReleaseFiles', () => {
+  const tempDirectories: string[] = [];
+
+  afterEach(async () => {
+    await Promise.all(
+      tempDirectories.splice(0).map((path) => rm(path, { force: true, recursive: true })),
+    );
+  });
+
+  async function createTempRoot(): Promise<string> {
+    const path = await mkdtemp(join(tmpdir(), 'assemble-release-'));
+    tempDirectories.push(path);
+    return path;
+  }
+
+  async function seedInputs(rootDir: string): Promise<void> {
+    const pluginBundleDir = join(rootDir, 'dist', 'plugin-bundle');
+    const sidecarArchivesDir = join(rootDir, 'dist', 'sidecar-archives');
+    await mkdir(pluginBundleDir, { recursive: true });
+    await mkdir(sidecarArchivesDir, { recursive: true });
+
+    for (const file of ['main.js', 'manifest.json', 'styles.css']) {
+      await writeFile(join(pluginBundleDir, file), `body-of-${file}`);
+    }
+
+    for (const archive of EXPECTED_SIDECAR_ARCHIVES) {
+      await writeFile(join(sidecarArchivesDir, archive), `archive-${archive}`);
+    }
+  }
+
+  it('partitions outputs into dist/release/plugin and dist/release/sidecar', async () => {
+    const rootDir = await createTempRoot();
+    await seedInputs(rootDir);
+
+    const result = await assembleReleaseFiles(rootDir);
+
+    expect(result.pluginReleaseDir).toBe(join(rootDir, 'dist', 'release', 'plugin'));
+    expect(result.sidecarReleaseDir).toBe(join(rootDir, 'dist', 'release', 'sidecar'));
+
+    const pluginEntries = (await readdir(result.pluginReleaseDir)).sort();
+    expect(pluginEntries).toEqual(['main.js', 'manifest.json', 'styles.css']);
+
+    const sidecarEntries = (await readdir(result.sidecarReleaseDir)).sort();
+    expect(sidecarEntries).toEqual([...EXPECTED_SIDECAR_ARCHIVES, 'checksums.txt'].sort());
+
+    const checksums = await readFile(join(result.sidecarReleaseDir, 'checksums.txt'), 'utf8');
+    for (const archive of EXPECTED_SIDECAR_ARCHIVES) {
+      const digest = createHash('sha256').update(`archive-${archive}`).digest('hex');
+      expect(checksums).toContain(`${digest}  ${archive}`);
+    }
+  });
+
+  it('fails fast when the sidecar archive set is incomplete', async () => {
+    const rootDir = await createTempRoot();
+    await seedInputs(rootDir);
+    await rm(join(rootDir, 'dist', 'sidecar-archives', 'sidecar-macos-arm64.tar.gz'));
+
+    await expect(assembleReleaseFiles(rootDir)).rejects.toThrow(
+      /release archive validation failed/,
+    );
   });
 });

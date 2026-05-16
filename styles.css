@@ -581,11 +581,11 @@
 
 /* --- LLM sidebar Advanced disclosure ------------------------------ */
 
-.local-transcript-advanced {
+.local-dictation-advanced {
   margin-top: 1em;
 }
 
-.local-transcript-advanced > summary {
+.local-dictation-advanced > summary {
   cursor: pointer;
   padding: 0.25em 0;
   margin-bottom: 0.4em;

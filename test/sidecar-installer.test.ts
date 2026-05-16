@@ -190,15 +190,15 @@ describe('installSidecar', () => {
   it('downloads, verifies, extracts, and writes install.json last', async () => {
     const pluginDirectory = await createTempDirectory();
     const archive = buildTarGz([
-      { content: Buffer.from('#!/bin/bash\n'), name: 'local-transcript-sidecar' },
+      { content: Buffer.from('#!/bin/bash\n'), name: 'local-dictation-sidecar' },
     ]);
     const archiveSha256 = sha256Hex(archive);
     const assetName = 'sidecar-linux-x86_64-cpu.tar.gz';
     const checksumsText = `${archiveSha256}  ${assetName}\n`;
 
     stubHttps({
-      [`https://releases.test/2026.4.21/${assetName}`]: archive,
-      'https://releases.test/2026.4.21/checksums.txt': Buffer.from(checksumsText),
+      [`https://releases.test/sidecar-2026.4.21/${assetName}`]: archive,
+      'https://releases.test/sidecar-2026.4.21/checksums.txt': Buffer.from(checksumsText),
     });
 
     const progressEvents: Array<{ phase: string; bytes: number; total: number | null }> = [];
@@ -223,7 +223,7 @@ describe('installSidecar', () => {
     expect(result.manifest.version).toBe('2026.4.21');
 
     const installedBinary = await readFile(
-      join(result.variantDirectory, 'local-transcript-sidecar'),
+      join(result.variantDirectory, 'local-dictation-sidecar'),
     );
     expect(installedBinary.toString('utf8')).toBe('#!/bin/bash\n');
 
@@ -240,18 +240,18 @@ describe('installSidecar', () => {
     const pluginDirectory = await createTempDirectory();
     const variantDir = variantDirectoryPath(pluginDirectory, 'cpu');
     await mkdir(variantDir, { recursive: true });
-    await writeFile(join(variantDir, 'local-transcript-sidecar'), 'old-binary');
+    await writeFile(join(variantDir, 'local-dictation-sidecar'), 'old-binary');
 
     const archive = buildTarGz([
-      { content: Buffer.from('new-binary'), name: 'local-transcript-sidecar' },
+      { content: Buffer.from('new-binary'), name: 'local-dictation-sidecar' },
     ]);
     const archiveSha256 = sha256Hex(archive);
     const assetName = 'sidecar-linux-x86_64-cpu.tar.gz';
     const checksumsText = `${archiveSha256}  ${assetName}\n`;
 
     stubHttps({
-      [`https://releases.test/2026.4.21/${assetName}`]: archive,
-      'https://releases.test/2026.4.21/checksums.txt': Buffer.from(checksumsText),
+      [`https://releases.test/sidecar-2026.4.21/${assetName}`]: archive,
+      'https://releases.test/sidecar-2026.4.21/checksums.txt': Buffer.from(checksumsText),
     });
 
     await expect(
@@ -266,7 +266,7 @@ describe('installSidecar', () => {
       }),
     ).rejects.toThrow(/cannot stop running sidecar/);
 
-    await expect(readFile(join(variantDir, 'local-transcript-sidecar'), 'utf8')).resolves.toBe(
+    await expect(readFile(join(variantDir, 'local-dictation-sidecar'), 'utf8')).resolves.toBe(
       'old-binary',
     );
   });
@@ -274,14 +274,14 @@ describe('installSidecar', () => {
   it('fails and leaves no manifest when the checksum does not match', async () => {
     const pluginDirectory = await createTempDirectory();
     const archive = buildTarGz([
-      { content: Buffer.from('binary'), name: 'local-transcript-sidecar' },
+      { content: Buffer.from('binary'), name: 'local-dictation-sidecar' },
     ]);
     const assetName = 'sidecar-linux-x86_64-cpu.tar.gz';
     const checksumsText = `${'0'.repeat(64)}  ${assetName}\n`;
 
     stubHttps({
-      [`https://releases.test/2026.4.21/${assetName}`]: archive,
-      'https://releases.test/2026.4.21/checksums.txt': Buffer.from(checksumsText),
+      [`https://releases.test/sidecar-2026.4.21/${assetName}`]: archive,
+      'https://releases.test/sidecar-2026.4.21/checksums.txt': Buffer.from(checksumsText),
     });
 
     await expect(
@@ -300,15 +300,15 @@ describe('installSidecar', () => {
   it('rejects and leaves no manifest when the archive write stream fails', async () => {
     const pluginDirectory = await createTempDirectory();
     const archive = buildTarGz([
-      { content: Buffer.from('binary'), name: 'local-transcript-sidecar' },
+      { content: Buffer.from('binary'), name: 'local-dictation-sidecar' },
     ]);
     const archiveSha256 = sha256Hex(archive);
     const assetName = 'sidecar-linux-x86_64-cpu.tar.gz';
     const checksumsText = `${archiveSha256}  ${assetName}\n`;
 
     stubHttps({
-      [`https://releases.test/2026.4.21/${assetName}`]: archive,
-      'https://releases.test/2026.4.21/checksums.txt': Buffer.from(checksumsText),
+      [`https://releases.test/sidecar-2026.4.21/${assetName}`]: archive,
+      'https://releases.test/sidecar-2026.4.21/checksums.txt': Buffer.from(checksumsText),
     });
     fsMockState.nextWriteStreamError = new Error('disk full');
 
@@ -333,8 +333,8 @@ describe('installSidecar', () => {
     const checksumsText = `${archiveSha256}  ${assetName}\n`;
 
     stubHttps({
-      [`https://releases.test/2026.4.21/${assetName}`]: archive,
-      'https://releases.test/2026.4.21/checksums.txt': Buffer.from(checksumsText),
+      [`https://releases.test/sidecar-2026.4.21/${assetName}`]: archive,
+      'https://releases.test/sidecar-2026.4.21/checksums.txt': Buffer.from(checksumsText),
     });
 
     await expect(
@@ -366,19 +366,19 @@ describe('installSidecar', () => {
   it('follows a single HTTP redirect to the final asset URL', async () => {
     const pluginDirectory = await createTempDirectory();
     const archive = buildTarGz([
-      { content: Buffer.from('redirected-binary'), name: 'local-transcript-sidecar' },
+      { content: Buffer.from('redirected-binary'), name: 'local-dictation-sidecar' },
     ]);
     const archiveSha256 = sha256Hex(archive);
     const assetName = 'sidecar-linux-x86_64-cpu.tar.gz';
     const checksumsText = `${archiveSha256}  ${assetName}\n`;
 
     stubHttps({
-      'https://releases.test/2026.4.21/checksums.txt': {
+      'https://releases.test/sidecar-2026.4.21/checksums.txt': {
         headers: { location: 'https://cdn.test/checksums.txt' },
         statusCode: 302,
       },
       'https://cdn.test/checksums.txt': Buffer.from(checksumsText),
-      [`https://releases.test/2026.4.21/${assetName}`]: {
+      [`https://releases.test/sidecar-2026.4.21/${assetName}`]: {
         headers: { location: `/cdn/${assetName}` },
         statusCode: 301,
       },
@@ -393,7 +393,7 @@ describe('installSidecar', () => {
     });
 
     const installedBinary = await readFile(
-      join(result.variantDirectory, 'local-transcript-sidecar'),
+      join(result.variantDirectory, 'local-dictation-sidecar'),
     );
     expect(installedBinary.toString('utf8')).toBe('redirected-binary');
   });
@@ -403,7 +403,7 @@ describe('installSidecar', () => {
     const assetName = 'sidecar-linux-x86_64-cpu.tar.gz';
 
     stubHttps({
-      'https://releases.test/2026.4.21/checksums.txt': {
+      'https://releases.test/sidecar-2026.4.21/checksums.txt': {
         headers: { location: 'https://cdn-1.test/checksums.txt' },
         statusCode: 302,
       },
@@ -411,7 +411,7 @@ describe('installSidecar', () => {
         headers: { location: 'https://cdn-2.test/checksums.txt' },
         statusCode: 302,
       },
-      [`https://releases.test/2026.4.21/${assetName}`]: Buffer.alloc(0),
+      [`https://releases.test/sidecar-2026.4.21/${assetName}`]: Buffer.alloc(0),
     });
 
     await expect(
@@ -434,8 +434,8 @@ describe('installSidecar', () => {
     const checksumsText = `${archiveSha256}  ${assetName}\n`;
 
     stubHttps({
-      [`https://releases.test/2026.4.21/${assetName}`]: archive,
-      'https://releases.test/2026.4.21/checksums.txt': Buffer.from(checksumsText),
+      [`https://releases.test/sidecar-2026.4.21/${assetName}`]: archive,
+      'https://releases.test/sidecar-2026.4.21/checksums.txt': Buffer.from(checksumsText),
     });
 
     await expect(
@@ -454,7 +454,7 @@ describe('uninstallSidecarVariant', () => {
     const pluginDirectory = await createTempDirectory();
     const variantDir = variantDirectoryPath(pluginDirectory, 'cuda');
     await mkdir(variantDir, { recursive: true });
-    await writeFile(join(variantDir, 'local-transcript-sidecar'), 'binary');
+    await writeFile(join(variantDir, 'local-dictation-sidecar'), 'binary');
 
     await uninstallSidecarVariant(pluginDirectory, 'cuda');
 

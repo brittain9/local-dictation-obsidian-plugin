@@ -8,7 +8,7 @@
 
 use std::path::Path;
 
-use local_transcript_sidecar::engine::{
+use local_dictation_sidecar::engine::{
     AcceleratorId, EngineRegistry, ModelFamilyId, RuntimeId, missing_adapter_error,
 };
 

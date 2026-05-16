@@ -44,7 +44,7 @@ The community-plugin package contains only Obsidian's three plugin files:
 - `manifest.json`
 - `styles.css`
 
-After those files are installed, open `Settings -> Local Dictation` and install the sidecar from the plugin settings. The plugin downloads the sidecar archive from the GitHub Release matching its own `manifest.version`, verifies it, and stores it under the plugin's `bin/` directory. Then click `Manage models`, install a model, open a note, and start dictation from the ribbon button or `Local Dictation: Start dictation session`.
+After those files are installed, open `Settings -> Local Dictation` and install the sidecar from the plugin settings. The plugin downloads the sidecar archive from the `sidecar-<version>` GitHub Release that matches its own `manifest.version`, verifies it, and stores it under the plugin's `bin/` directory. Then click `Manage models`, install a model, open a note, and start dictation from the ribbon button or `Local Dictation: Start dictation session`.
 
 The sidecar and model downloads are separate on purpose: Obsidian installs the plugin UI, the plugin installs the native sidecar, and the sidecar manages model downloads. Transcription runs locally after setup.
 
@@ -61,6 +61,16 @@ styles.css
 Restart Obsidian or reload plugins, enable `Local Dictation`, then use the settings page to download the sidecar and models.
 
 Do not mix plugin files from one version with sidecar assets from another version. Sidecar downloads are version-locked to `manifest.version`, not to the latest GitHub Release.
+
+## Privacy & system access
+
+Local Dictation runs transcription on your own machine. To do that, the plugin reaches beyond Obsidian's vault API in two specific ways. Both are surfaced by Obsidian's community-plugin review as `fs` and `child_process` warnings — this section is the audit trail for what they cover.
+
+- **Filesystem (`fs`)** — used to install the native sidecar into the plugin's `bin/` directory, to manage Whisper and Silero model files cached outside the vault, and to write transient audio dumps when transcription fails and you have diagnostics enabled. No vault content is read or written through `fs`; that goes through Obsidian's editor API.
+- **Process execution (`child_process`)** — used to spawn the local Rust sidecar (`local-dictation-sidecar`) and stream PCM audio to it over stdio. The command path is the installed binary; no shell is invoked and no part of the command is user-supplied.
+- **Network** — used only to download the sidecar archive once from this repository's GitHub Releases and to fetch model files from their official sources on demand. There is no telemetry, no analytics, no account, and no background traffic after setup.
+
+The source of truth for these accesses is [`src/sidecar/sidecar-installer.ts`](src/sidecar/sidecar-installer.ts) and the IPC layer in [`src/sidecar/`](src/sidecar/).
 
 ## Development
 

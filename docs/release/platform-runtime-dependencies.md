@@ -145,7 +145,7 @@ The `onnx_runtime` probe is stronger — it catches missing userspace libraries,
 
 ## Current CI Release Artifacts
 
-`release.yml` runs on a date-version tag push matching `manifest.version` exactly (for example, `2026.4.25`) and on `workflow_dispatch` for dry-runs. Tag-triggered runs publish a GitHub Release; `workflow_dispatch` uploads an Actions artifact `release-<version>` instead.
+`release.yml` runs on a date-version tag push matching `manifest.version` exactly (for example, `2026.4.25`) and on `workflow_dispatch` for dry-runs. Tag-triggered runs publish a plugin GitHub Release tagged `<version>` and a companion sidecar release tagged `sidecar-<version>`; `workflow_dispatch` uploads Actions artifacts named `release-<version>-plugin` and `release-<version>-sidecar` instead.
 
 | Artifact | Runner | Build command |
 |---|---|---|
@@ -157,7 +157,7 @@ The `onnx_runtime` probe is stronger — it catches missing userspace libraries,
 
 All release jobs set `GGML_NATIVE=OFF` (workflow-level) to avoid inheriting runner CPU SIMD. CUDA release jobs additionally set `CMAKE_CUDA_ARCHITECTURES=75-virtual` to ship one forward-compatible Turing PTX target. Each CUDA archive is one GPU archive per OS and includes both Whisper CUDA and Cohere CUDA capability.
 
-Publishing is gated on `npm run check:frontend` (in the `plugin-bundle` job), `npm run check:rust` (in the `native-quality` job), every release sidecar build, exact-set validation of the five sidecar archives, and deterministic `checksums.txt` generation in `scripts/assemble-release-files.mjs`. A missing, empty, duplicated, or unexpected archive fails before upload or release publish.
+Publishing is gated on `npm run check:frontend` (in the `plugin-bundle` job), `npm run check:rust` (in the `native-quality` job), every release sidecar build, exact-set validation of the five sidecar archives, and deterministic `checksums.txt` generation in `scripts/assemble-release-files.mjs`. A missing, empty, duplicated, or unexpected archive fails before upload or release publish, and the plugin release is assembled separately so it contains only `main.js`, `manifest.json`, and `styles.css`.
 
 ## Redistribution Considerations
 

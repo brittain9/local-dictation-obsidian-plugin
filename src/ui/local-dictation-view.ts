@@ -32,9 +32,9 @@ import type { PluginLogger } from '../shared/plugin-logger';
 import { ConfirmModal } from './confirm-modal';
 import { SaveStyleModal } from './save-style-modal';
 
-export const LOCAL_TRANSCRIPT_VIEW_TYPE = 'local-transcript-sidebar';
-const LOCAL_TRANSCRIPT_VIEW_TITLE = 'Local Transcript';
-const LOCAL_TRANSCRIPT_VIEW_ICON = 'audio-lines';
+export const LOCAL_DICTATION_VIEW_TYPE = 'local-dictation-sidebar';
+const LOCAL_DICTATION_VIEW_TITLE = 'Local Dictation';
+const LOCAL_DICTATION_VIEW_ICON = 'audio-lines';
 const HEADING_TOOLTIP =
   'Uses a local Ollama model to transform the dictated transcript — cleaning, rewriting, summarizing, reformatting, or running custom prompts. Transcription stays local.';
 const STYLE_PICKER_TOOLTIP =
@@ -48,7 +48,7 @@ const CLEANUP_MODE_OPTIONS: ReadonlyArray<{ label: string; value: LlmPresetMode 
   { label: 'All at once on stop', value: 'batch' },
 ];
 
-interface LocalTranscriptViewDependencies {
+interface LocalDictationViewDependencies {
   getSettings: () => PluginSettings;
   logger?: PluginLogger | undefined;
   notice?: (message: string) => void;
@@ -58,7 +58,7 @@ interface LocalTranscriptViewDependencies {
 
 const PROMPT_SAVE_DEBOUNCE_MS = 400;
 
-export class LocalTranscriptView extends ItemView {
+export class LocalDictationView extends ItemView {
   private advancedOpen = false;
   private focusedInput: HTMLElement | null = null;
   private models: OllamaModelOption[] = [];
@@ -70,21 +70,21 @@ export class LocalTranscriptView extends ItemView {
 
   constructor(
     leaf: WorkspaceLeaf,
-    private readonly dependencies: LocalTranscriptViewDependencies,
+    private readonly dependencies: LocalDictationViewDependencies,
   ) {
     super(leaf);
   }
 
   override getViewType(): string {
-    return LOCAL_TRANSCRIPT_VIEW_TYPE;
+    return LOCAL_DICTATION_VIEW_TYPE;
   }
 
   override getDisplayText(): string {
-    return LOCAL_TRANSCRIPT_VIEW_TITLE;
+    return LOCAL_DICTATION_VIEW_TITLE;
   }
 
   override getIcon(): string {
-    return LOCAL_TRANSCRIPT_VIEW_ICON;
+    return LOCAL_DICTATION_VIEW_ICON;
   }
 
   override async onOpen(): Promise<void> {
@@ -105,7 +105,7 @@ export class LocalTranscriptView extends ItemView {
     this.focusedInput = null;
     this.promptBlurRenderPending = false;
     contentEl.empty();
-    contentEl.addClass('local-transcript-sidebar');
+    contentEl.addClass('local-dictation-sidebar');
 
     if (!settings.llmFeaturesEnabled) {
       return;
@@ -127,7 +127,7 @@ export class LocalTranscriptView extends ItemView {
     this.renderStylePicker(cleanupGroup, settings);
     this.renderModelPicker(cleanupGroup, settings);
 
-    const advanced = contentEl.createEl('details', { cls: 'local-transcript-advanced' });
+    const advanced = contentEl.createEl('details', { cls: 'local-dictation-advanced' });
     advanced.createEl('summary', { text: 'Advanced' });
     advanced.open = this.advancedOpen;
     advanced.addEventListener('toggle', () => {
@@ -327,7 +327,7 @@ export class LocalTranscriptView extends ItemView {
 
     if (selectedModel.length === 0) {
       parent.createEl('p', {
-        cls: 'local-transcript-muted',
+        cls: 'local-dictation-muted',
         text: 'Pick an Ollama model to enable LLM transform. Until then, raw Whisper text is inserted directly.',
       });
     }
@@ -470,7 +470,7 @@ export class LocalTranscriptView extends ItemView {
 
     if (Math.ceil(settings.llmPostprocessTotalContextCap / 4) >= 4_000) {
       items.createEl('p', {
-        cls: 'local-transcript-muted',
+        cls: 'local-dictation-muted',
         text: 'Large context windows can slow local models and reduce LLM transform quality.',
       });
     }
@@ -540,7 +540,7 @@ export class LocalTranscriptView extends ItemView {
 
     if (settings.timestampsEnabled) {
       items.createEl('p', {
-        cls: 'local-transcript-muted',
+        cls: 'local-dictation-muted',
         text: 'Per-utterance preserves timestamps. Batch may rewrite or drop them — your prompt controls what happens.',
       });
     }
@@ -724,7 +724,7 @@ export class LocalTranscriptView extends ItemView {
       this.ollamaStatus = 'Ollama is unavailable.';
       this.dependencies.logger?.warn('llm', 'Ollama refresh failed', error);
       if (options.silent !== true) {
-        this.notice('Local Transcript: Ollama is unavailable.');
+        this.notice('Local Dictation: Ollama is unavailable.');
       }
       this.render();
     }

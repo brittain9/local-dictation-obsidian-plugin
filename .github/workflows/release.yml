@@ -35,6 +35,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.version.outputs.value }}
+      notes_path: ${{ steps.notes.outputs.path }}
 
     steps:
       - name: Checkout
@@ -53,8 +54,16 @@ jobs:
         if: github.event_name == 'push'
         run: node scripts/read-release-version.mjs --tag "${GITHUB_REF_NAME}"
 
+      - id: notes
+        name: Validate release notes
+        run: echo "path=$(node scripts/validate-release-notes.mjs --version '${{ steps.version.outputs.value }}')" >> "$GITHUB_OUTPUT"
+
   plugin-bundle:
     needs: metadata
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
     runs-on: ubuntu-latest
 
     steps:
@@ -73,6 +82,15 @@ jobs:
 
       - name: Run frontend quality gates
         run: npm run check:frontend
+
+      - name: Attest build provenance
+        if: github.event_name == 'push'
+        uses: actions/attest-build-provenance@v4
+        with:
+          subject-path: |
+            main.js
+            manifest.json
+            styles.css
 
       - name: Upload plugin bundle
         uses: actions/upload-artifact@v7
@@ -136,7 +154,7 @@ jobs:
           - runner: macos-15
             asset_name: sidecar-macos-arm64
             archive_name: sidecar-macos-arm64.tar.gz
-            binary_path: native/target/release/local-transcript-sidecar
+            binary_path: native/target/release/local-dictation-sidecar
             build_command: npm run build:sidecar:release
             cache_workspaces: native -> target
             cuda: false
@@ -144,7 +162,7 @@ jobs:
           - runner: ubuntu-latest
             asset_name: sidecar-linux-x86_64-cpu
             archive_name: sidecar-linux-x86_64-cpu.tar.gz
-            binary_path: native/target/release/local-transcript-sidecar
+            binary_path: native/target/release/local-dictation-sidecar
             build_command: npm run build:sidecar:release
             cache_workspaces: native -> target
             cuda: false
@@ -152,7 +170,7 @@ jobs:
           - runner: ubuntu-latest
             asset_name: sidecar-linux-x86_64-cuda
             archive_name: sidecar-linux-x86_64-cuda.tar.gz
-            binary_path: native/target-cuda/release/local-transcript-sidecar
+            binary_path: native/target-cuda/release/local-dictation-sidecar
             build_command: npm run build:sidecar:cuda:release
             cache_workspaces: native -> target-cuda
             cuda: true
@@ -237,14 +255,14 @@ jobs:
         include:
           - asset_name: sidecar-windows-x86_64-cpu
             archive_name: sidecar-windows-x86_64-cpu.tar.gz
-            binary_path: native/target/release/local-transcript-sidecar.exe
+            binary_path: native/target/release/local-dictation-sidecar.exe
             build_command: npm run build:sidecar:release
             cache_workspaces: native -> target
             cuda: false
             cuda_architectures: ''
           - asset_name: sidecar-windows-x86_64-cuda
             archive_name: sidecar-windows-x86_64-cuda.tar.gz
-            binary_path: native/target-cuda/release/local-transcript-sidecar.exe
+            binary_path: native/target-cuda/release/local-dictation-sidecar.exe
             build_command: npm run build:sidecar:cuda:windows:release
             cache_workspaces: native -> target-cuda
             cuda: true
@@ -340,31 +358,56 @@ jobs:
         uses: actions/download-artifact@v8
         with:
           pattern: sidecar-*
-          path: dist/release
+          path: dist/sidecar-archives
           merge-multiple: true
 
       - name: Assemble release files
         run: node scripts/assemble-release-files.mjs
 
-      - name: Upload dry-run bundle
+      - name: Upload dry-run plugin bundle
         if: github.event_name == 'workflow_dispatch'
         uses: actions/upload-artifact@v7
         with:
-          name: release-${{ needs.metadata.outputs.version }}
-          path: dist/release/*
+          name: release-${{ needs.metadata.outputs.version }}-plugin
+          path: dist/release/plugin/*
 
-      - name: Create draft release
+      - name: Upload dry-run sidecar bundle
+        if: github.event_name == 'workflow_dispatch'
+        uses: actions/upload-artifact@v7
+        with:
+          name: release-${{ needs.metadata.outputs.version }}-sidecar
+          path: dist/release/sidecar/*
+
+      # The Obsidian community-plugins reviewer inspects the release whose tag
+      # equals manifest.version. It MUST contain exactly main.js,
+      # manifest.json, and styles.css. The sidecar binaries live on a parallel
+      # `sidecar-<version>` tag created from the same commit.
+      - name: Create draft plugin release
         if: github.event_name == 'push'
         uses: softprops/action-gh-release@v3
         with:
-          files: dist/release/*
+          files: dist/release/plugin/*
           name: ${{ needs.metadata.outputs.version }}
           tag_name: ${{ needs.metadata.outputs.version }}
+          body_path: ${{ needs.metadata.outputs.notes_path }}
           draft: true
 
-      - name: Publish release
+      - name: Create draft sidecar release
+        if: github.event_name == 'push'
+        uses: softprops/action-gh-release@v3
+        with:
+          files: dist/release/sidecar/*
+          name: sidecar-${{ needs.metadata.outputs.version }}
+          tag_name: sidecar-${{ needs.metadata.outputs.version }}
+          body_path: ${{ needs.metadata.outputs.notes_path }}
+          draft: true
+
+      - name: Publish releases
         if: github.event_name == 'push'
         env:
           GH_TOKEN: ${{ github.token }}
-          TAG: ${{ needs.metadata.outputs.version }}
-        run: gh release edit "$TAG" --draft=false --repo "$GITHUB_REPOSITORY"
+          PLUGIN_TAG: ${{ needs.metadata.outputs.version }}
+          SIDECAR_TAG: sidecar-${{ needs.metadata.outputs.version }}
+        run: |
+          gh release edit "$PLUGIN_TAG" --draft=false --repo "$GITHUB_REPOSITORY"
+          gh release edit "$SIDECAR_TAG" --draft=false --repo "$GITHUB_REPOSITORY"

@@ -7,7 +7,7 @@ import { listCudaArtifacts } from './lib/cuda-artifacts.mjs';
 
 const PLUGIN_ID = 'local-dictation';
 const PLUGIN_FILES = ['manifest.json', 'main.js', 'styles.css'];
-const SIDECAR_BASENAME = 'local-transcript-sidecar';
+const SIDECAR_BASENAME = 'local-dictation-sidecar';
 const SIDECAR_SUFFIX = process.platform === 'win32' ? '.exe' : '';
 const SIDECAR_EXECUTABLE = `${SIDECAR_BASENAME}${SIDECAR_SUFFIX}`;
 

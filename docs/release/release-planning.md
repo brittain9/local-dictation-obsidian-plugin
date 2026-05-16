@@ -10,29 +10,32 @@ The Obsidian community-plugin store delivers only:
 - `manifest.json`
 - `styles.css`
 
-The native sidecar, provider libraries, CUDA runtime libraries, and bundled model catalog are installed by the plugin from the GitHub Release matching `manifest.version`. Sidecar archives are version-locked to the plugin version and verified with the release's `checksums.txt`.
+The native sidecar, provider libraries, CUDA runtime libraries, and bundled model catalog are installed by the plugin from the companion GitHub Release tagged `sidecar-<manifest.version>`. Sidecar archives are version-locked to the plugin version and verified with that release's `checksums.txt`.
 
 ## Release Artifacts
 
-Single source of truth: a GitHub Release per `manifest.version`, tagged exactly `<manifest.version>` with no leading `v` (for example, `2026.4.25`).
+Single source of truth: two GitHub Releases per `manifest.version`, created from the same workflow run and commit:
+
+- Plugin release: tagged exactly `<manifest.version>` with no leading `v` (for example, `2026.4.25`), containing only Obsidian plugin files.
+- Sidecar release: tagged `sidecar-<manifest.version>`, containing native sidecar archives and `checksums.txt`.
 
 | Asset | Host | Contents |
 |---|---|---|
-| `sidecar-macos-arm64.tar.gz` | macOS arm64 | `local-transcript-sidecar` with Whisper Metal + Cohere CPU |
-| `sidecar-linux-x86_64-cpu.tar.gz` | Linux x86_64 | `local-transcript-sidecar` CPU binary |
-| `sidecar-linux-x86_64-cuda.tar.gz` | Linux x86_64 | `local-transcript-sidecar` CUDA binary + ONNX Runtime CUDA provider libraries + bundled CUDA runtime libraries |
-| `sidecar-windows-x86_64-cpu.tar.gz` | Windows x86_64 | `local-transcript-sidecar.exe` CPU binary |
-| `sidecar-windows-x86_64-cuda.tar.gz` | Windows x86_64 | `local-transcript-sidecar.exe` CUDA binary + ONNX Runtime CUDA provider libraries + bundled CUDA runtime libraries |
-| `checksums.txt` | - | SHA-256 of every sidecar archive, exactly five lines, sorted |
-| `main.js`, `manifest.json`, `styles.css` | - | Plugin files for manual release install and Obsidian community-plugin ingestion |
+| `main.js`, `manifest.json`, `styles.css` | plugin release | Plugin files for manual release install and Obsidian community-plugin ingestion |
+| `sidecar-macos-arm64.tar.gz` | macOS arm64 | `local-dictation-sidecar` with Whisper Metal + Cohere CPU |
+| `sidecar-linux-x86_64-cpu.tar.gz` | Linux x86_64 | `local-dictation-sidecar` CPU binary |
+| `sidecar-linux-x86_64-cuda.tar.gz` | Linux x86_64 | `local-dictation-sidecar` CUDA binary + ONNX Runtime CUDA provider libraries + bundled CUDA runtime libraries |
+| `sidecar-windows-x86_64-cpu.tar.gz` | Windows x86_64 | `local-dictation-sidecar.exe` CPU binary |
+| `sidecar-windows-x86_64-cuda.tar.gz` | Windows x86_64 | `local-dictation-sidecar.exe` CUDA binary + ONNX Runtime CUDA provider libraries + bundled CUDA runtime libraries |
+| `checksums.txt` | sidecar release | SHA-256 of every sidecar archive, exactly five lines, sorted |
 
-Release archive names stay `sidecar-<platform>-<arch>-<flavor>.<ext>` even though the executable inside them is named `local-transcript-sidecar`.
+Release archive names stay `sidecar-<platform>-<arch>-<flavor>.<ext>` even though the executable inside them is named `local-dictation-sidecar`.
 
 Deferred: macOS x86_64, Linux arm64, Windows arm64. Add a runner only if real user demand appears.
 
 ## Versioning And Install Layout
 
-The sidecar git tag equals `manifest.version`. The sidecar reports its own version via `system_info`; the plugin compares `system_info.sidecarVersion` against `manifest.version` and offers to install the matching sidecar when they differ.
+The sidecar release tag is `sidecar-<manifest.version>`. The sidecar binary reports its own version via `system_info`; the plugin compares `system_info.sidecarVersion` against `manifest.version` and offers to install the matching sidecar when they differ.
 
 The installer fetches `checksums.txt` at runtime alongside the selected sidecar archive and verifies the downloaded archive's SHA-256 before unpacking. Checksums are not embedded into `main.js`; the release manifest remains authoritative.
 
@@ -75,7 +78,7 @@ Long-term Developer ID signing and notarization sketch, kept for when the projec
       -P "$APPLE_CERTIFICATE_PASSWORD" -T /usr/bin/codesign
     security set-key-partition-list -S apple-tool:,apple: -s -k "" build.keychain
     codesign --force --options runtime \
-      --sign "Developer ID Application: Name (TEAMID)" native/target/release/local-transcript-sidecar
+      --sign "Developer ID Application: Name (TEAMID)" native/target/release/local-dictation-sidecar
 
 - name: Notarize macOS binary
   run: |
@@ -87,7 +90,7 @@ Long-term Developer ID signing and notarization sketch, kept for when the projec
 ## Current CI And Release Workflow
 
 - `.github/workflows/ci.yml`: split into `frontend-quality` (Linux only, runs `npm run check:frontend`) and `sidecar-quality` (Linux/Windows/macOS-15, runs `npm run build:sidecar` then `npm run check:rust`). Shared setup lives in composite actions under `.github/actions/setup-node-npm` and `.github/actions/setup-sidecar-rust`.
-- `.github/workflows/release.yml`: triggered by a date-version tag push matching `manifest.version` exactly and by `workflow_dispatch` for dry-runs. Tag-triggered runs publish a GitHub Release with the five sidecar archives, the three plugin files, and `checksums.txt`. Dry-runs upload an Actions artifact `release-<version>`.
+- `.github/workflows/release.yml`: triggered by a date-version tag push matching `manifest.version` exactly and by `workflow_dispatch` for dry-runs. Tag-triggered runs publish the plugin release and companion sidecar release. Dry-runs upload `release-<version>-plugin` and `release-<version>-sidecar` Actions artifacts.
 
 Release gating:
 
@@ -95,20 +98,19 @@ Release gating:
 2. `plugin-bundle` runs `npm run check:frontend` and uploads `main.js`, `manifest.json`, and `styles.css`.
 3. `native-quality` runs `npm run check:rust` against a fresh sidecar build.
 4. `build-sidecar-posix` and `build-sidecar-windows` produce signed-and-attested sidecar archives.
-5. `publish` runs `node scripts/assemble-release-files.mjs`, rejecting missing, empty, duplicated, or unexpected sidecar archives and generating deterministic `checksums.txt`.
+5. `publish` runs `node scripts/assemble-release-files.mjs`, partitioning plugin files from sidecar archives, rejecting missing, empty, duplicated, or unexpected sidecar archives, and generating deterministic `checksums.txt`.
 
 Top-level `release.yml` permissions are `contents: read`; only `publish` carries `contents: write`. CI workflow permissions remain `contents: read`.
 
 ## Remaining Work
 
 - End-to-end install verification on macOS, Linux native, Linux Flatpak, and Windows.
-- User-visible disclosure in README for what gets downloaded, from where, how large it is, where it is stored, and how to remove it.
 - Graceful offline/proxy failure behavior review.
 - Manual "install sidecar from local file" fallback in settings for air-gapped and corporate-proxy users.
 - BRAT beta with real users, at minimum one per OS.
 - Submit to `obsidianmd/obsidian-releases` after the install flow is verified.
 
-Common rejection reasons to pre-empt: `id`/`name` containing "obsidian" or "plugin", missing LICENSE, and leading-`v` tag names. This project uses date-version tags matching `<manifest.version>` exactly and the sidecar binaries ship on the same release.
+Common rejection reasons to pre-empt: `id`/`name` containing "obsidian" or "plugin", missing LICENSE, leading-`v` tag names, and non-standard assets on the Obsidian-facing plugin release. This project uses date-version tags matching `<manifest.version>` exactly and ships sidecar binaries only on the companion `sidecar-<version>` release.
 
 ## References
 

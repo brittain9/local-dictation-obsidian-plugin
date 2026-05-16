@@ -80,8 +80,8 @@ bash scripts/build-cuda.sh --release
 
 Artifacts:
 
-- CPU build: `native/target/{debug|release}/local-transcript-sidecar`
-- CUDA build: `native/target-cuda/{debug|release}/local-transcript-sidecar`
+- CPU build: `native/target/{debug|release}/local-dictation-sidecar`
+- CUDA build: `native/target-cuda/{debug|release}/local-dictation-sidecar`
 
 ## Step 3: Apply Flatpak Overrides
 
@@ -120,7 +120,7 @@ For a stricter check, run `ldd` with the same library path you plan to paste int
 ```sh
 flatpak run --command=sh md.obsidian.Obsidian -c '
   export LD_LIBRARY_PATH=/run/host/usr/local/cuda-12.9/targets/x86_64-linux/lib:/run/host/usr/local/cuda-12.9/lib64:/run/host/usr/lib64
-  ldd /absolute/path/to/native/target-cuda/debug/local-transcript-sidecar | grep -E "cuda|cudnn|cublas|not found"
+  ldd /absolute/path/to/native/target-cuda/debug/local-dictation-sidecar | grep -E "cuda|cudnn|cublas|not found"
 '
 ```
 
