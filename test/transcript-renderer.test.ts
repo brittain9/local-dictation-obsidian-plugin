@@ -1,15 +1,33 @@
 import { describe, expect, it } from 'vitest';
 
 import {
-  formatSessionTimestamp,
+  formatLandmark,
+  formatSessionHeader,
   isMeaningfulPause,
   SMART_PARAGRAPH_PAUSE_MS,
-  TIMESTAMP_LANDMARK_INTERVAL_MS,
   type TranscriptAppendInput,
   TranscriptRenderer,
+  type TranscriptTimestampRenderOptions,
 } from '../src/transcript/renderer';
 
-describe('formatSessionTimestamp', () => {
+const DEFAULT_SESSION_START = new Date(2026, 4, 16, 14, 32).getTime();
+const DEFAULT_SPARSE_INTERVAL_MS = 30_000;
+
+function timestamps(
+  overrides: Partial<TranscriptTimestampRenderOptions> = {},
+): TranscriptTimestampRenderOptions {
+  return {
+    clock: 'elapsed',
+    density: 'sparse',
+    enabled: false,
+    header: true,
+    sessionStartUnixMs: DEFAULT_SESSION_START,
+    sparseIntervalMs: DEFAULT_SPARSE_INTERVAL_MS,
+    ...overrides,
+  };
+}
+
+describe('formatLandmark', () => {
   it.each([
     [0, '(0:00)'],
     [999, '(0:00)'],
@@ -18,7 +36,17 @@ describe('formatSessionTimestamp', () => {
     [3_600_000, '(1:00:00)'],
     [3_723_000, '(1:02:03)'],
   ])('formats %i ms as %s', (elapsedMs, expected) => {
-    expect(formatSessionTimestamp(elapsedMs)).toBe(expected);
+    expect(formatLandmark(elapsedMs, DEFAULT_SESSION_START, 'elapsed')).toBe(expected);
+  });
+
+  it('formats wall-clock landmarks without seconds', () => {
+    expect(formatLandmark(65_000, DEFAULT_SESSION_START, 'wallclock')).toBe('(14:33)');
+  });
+});
+
+describe('formatSessionHeader', () => {
+  it('formats the local session start date and time', () => {
+    expect(formatSessionHeader(DEFAULT_SESSION_START)).toBe('[2026-05-16 14:32]');
   });
 });
 
@@ -33,7 +61,7 @@ describe('isMeaningfulPause', () => {
 describe('TranscriptRenderer', () => {
   it('renders the first timestamp and then suppresses short-interval timestamps', () => {
     const renderer = new TranscriptRenderer({
-      showTimestamps: true,
+      timestamps: timestamps({ enabled: true, header: false }),
       transcriptFormatting: 'space',
     });
 
@@ -52,9 +80,9 @@ describe('TranscriptRenderer', () => {
     expect(second.projectedText).toBe(' second');
   });
 
-  it('emits a timestamp at the next utterance boundary after the landmark interval', () => {
+  it('emits a timestamp at the next utterance boundary after the sparse interval', () => {
     const renderer = new TranscriptRenderer({
-      showTimestamps: true,
+      timestamps: timestamps({ enabled: true, header: false }),
       transcriptFormatting: 'space',
     });
 
@@ -64,7 +92,7 @@ describe('TranscriptRenderer', () => {
       {
         pauseMsBeforeUtterance: 250,
         text: 'later',
-        utteranceStartMsInSession: TIMESTAMP_LANDMARK_INTERVAL_MS,
+        utteranceStartMsInSession: DEFAULT_SPARSE_INTERVAL_MS,
       },
       't',
     );
@@ -72,9 +100,9 @@ describe('TranscriptRenderer', () => {
     expect(second.projectedText).toBe(' (0:30) later');
   });
 
-  it('emits one timestamp when a long pause and landmark interval co-occur', () => {
+  it('emits one timestamp when a long pause and sparse interval co-occur', () => {
     const renderer = new TranscriptRenderer({
-      showTimestamps: true,
+      timestamps: timestamps({ enabled: true, header: false }),
       transcriptFormatting: 'new_paragraph',
     });
 
@@ -82,7 +110,7 @@ describe('TranscriptRenderer', () => {
     const second = planAndCommit(renderer, {
       pauseMsBeforeUtterance: SMART_PARAGRAPH_PAUSE_MS,
       text: 'later',
-      utteranceStartMsInSession: TIMESTAMP_LANDMARK_INTERVAL_MS,
+      utteranceStartMsInSession: DEFAULT_SPARSE_INTERVAL_MS,
     });
 
     expect(second.projectedText).toBe('\n\n(0:30) later');
@@ -94,7 +122,7 @@ describe('TranscriptRenderer', () => {
     ['new_line', '\nsecond'],
     ['new_paragraph', '\n\nsecond'],
   ] as const)('renders %s formatting as a prefix', (transcriptFormatting, expectedSecond) => {
-    const renderer = new TranscriptRenderer({ showTimestamps: false, transcriptFormatting });
+    const renderer = new TranscriptRenderer({ timestamps: timestamps(), transcriptFormatting });
 
     expect(planAndCommit(renderer, { text: 'first' }).projectedText).toBe('first');
     expect(planAndCommit(renderer, { text: 'second' }, 't').projectedText).toBe(expectedSecond);
@@ -102,7 +130,7 @@ describe('TranscriptRenderer', () => {
 
   it('normalizes existing whitespace and newline tails', () => {
     const renderer = new TranscriptRenderer({
-      showTimestamps: false,
+      timestamps: timestamps(),
       transcriptFormatting: 'new_paragraph',
     });
 
@@ -114,7 +142,7 @@ describe('TranscriptRenderer', () => {
 
   it('uses the meaningful pause threshold for smart paragraphs', () => {
     const renderer = new TranscriptRenderer({
-      showTimestamps: false,
+      timestamps: timestamps(),
       transcriptFormatting: 'smart',
     });
 
@@ -139,7 +167,7 @@ describe('TranscriptRenderer', () => {
 
   it('treats null pause as continuation while still allowing interval timestamps', () => {
     const renderer = new TranscriptRenderer({
-      showTimestamps: true,
+      timestamps: timestamps({ enabled: true, header: false }),
       transcriptFormatting: 'smart',
     });
 
@@ -155,6 +183,75 @@ describe('TranscriptRenderer', () => {
     );
 
     expect(split.projectedText).toBe(' (0:30) split');
+  });
+
+  it('renders the session header once before the first landmark', () => {
+    const renderer = new TranscriptRenderer({
+      timestamps: timestamps({ enabled: true, header: true }),
+      transcriptFormatting: 'space',
+    });
+
+    const first = planAndCommit(renderer, { text: 'first', utteranceStartMsInSession: 0 });
+    const second = planAndCommit(
+      renderer,
+      { text: 'second', utteranceStartMsInSession: 30_000 },
+      't',
+    );
+
+    expect(first.projectedText).toBe('[2026-05-16 14:32]\n(0:00) first');
+    expect(first.replacementPrefix).toBe('');
+    expect(second.projectedText).toBe(' (0:30) second');
+  });
+
+  it('emits a landmark for every utterance when density is every utterance', () => {
+    const renderer = new TranscriptRenderer({
+      timestamps: timestamps({ density: 'every_utterance', enabled: true, header: false }),
+      transcriptFormatting: 'space',
+    });
+
+    planAndCommit(renderer, { text: 'first', utteranceStartMsInSession: 0 });
+    const second = planAndCommit(
+      renderer,
+      {
+        text: 'second',
+        utteranceStartMsInSession: 1_000,
+      },
+      't',
+    );
+
+    expect(second.projectedText).toBe(' (0:01) second');
+  });
+
+  it('uses the configured sparse interval', () => {
+    const renderer = new TranscriptRenderer({
+      timestamps: timestamps({
+        enabled: true,
+        header: false,
+        sparseIntervalMs: 10_000,
+      }),
+      transcriptFormatting: 'space',
+    });
+
+    planAndCommit(renderer, { text: 'first', utteranceStartMsInSession: 0 });
+    expect(
+      planAndCommit(renderer, { text: 'soon', utteranceStartMsInSession: 9_999 }, 't')
+        .projectedText,
+    ).toBe(' soon');
+    expect(
+      planAndCommit(renderer, { text: 'threshold', utteranceStartMsInSession: 10_000 }, 't')
+        .projectedText,
+    ).toBe(' (0:10) threshold');
+  });
+
+  it('uses wall-clock inline landmarks', () => {
+    const renderer = new TranscriptRenderer({
+      timestamps: timestamps({ clock: 'wallclock', enabled: true, header: false }),
+      transcriptFormatting: 'space',
+    });
+
+    const first = planAndCommit(renderer, { text: 'first', utteranceStartMsInSession: 60_000 });
+
+    expect(first.projectedText).toBe('(14:33) first');
   });
 });
 

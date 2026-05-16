@@ -63,8 +63,8 @@ interface ActiveSessionSnapshot {
   modelSelection: NonNullable<PluginSettings['selectedModel']>;
   modelStorePathOverride: string;
   sessionStartUnixMs: number;
-  showTimestamps: PluginSettings['showTimestamps'];
   speakingStyle: PluginSettings['speakingStyle'];
+  timestamps: TranscriptRenderOptions['timestamps'];
   transcriptFormatting: PluginSettings['transcriptFormatting'];
   useNoteAsContext: PluginSettings['useNoteAsContext'];
 }
@@ -194,6 +194,7 @@ export class DictationSessionController {
     const settings = this.dependencies.getSettings();
     const selectedModel = this.requireSelectedModel(settings);
     const effectiveGeneration = resolveActiveGenerationDefaults(settings);
+    const sessionStartUnixMs = Date.now();
     const snapshot: ActiveSessionSnapshot = {
       accelerationPreference: settings.accelerationPreference,
       dictationAnchor: settings.dictationAnchor,
@@ -208,9 +209,16 @@ export class DictationSessionController {
       llmPostprocessTemperature: effectiveGeneration.temperature,
       modelSelection: selectedModel,
       modelStorePathOverride: settings.modelStorePathOverride,
-      sessionStartUnixMs: Date.now(),
-      showTimestamps: settings.showTimestamps,
+      sessionStartUnixMs,
       speakingStyle: settings.speakingStyle,
+      timestamps: {
+        clock: settings.timestampClock,
+        density: settings.timestampDensity,
+        enabled: settings.timestampsEnabled,
+        header: settings.timestampSessionHeader,
+        sessionStartUnixMs,
+        sparseIntervalMs: settings.timestampSparseIntervalMs,
+      },
       transcriptFormatting: settings.transcriptFormatting,
       useNoteAsContext: settings.useNoteAsContext,
     };
@@ -231,7 +239,7 @@ export class DictationSessionController {
           anchor: snapshot.dictationAnchor,
         },
         rendererOptions: {
-          showTimestamps: snapshot.showTimestamps,
+          timestamps: snapshot.timestamps,
           transcriptFormatting: snapshot.transcriptFormatting,
         },
         sessionId,
@@ -846,7 +854,6 @@ function resolveLlmPostprocessSnapshot(settings: PluginSettings): LlmPostprocess
   if (
     !settings.llmFeaturesEnabled ||
     settings.llmPostprocessMode !== 'per_utterance' ||
-    settings.showTimestamps ||
     model.length === 0
   ) {
     return null;

@@ -69,8 +69,12 @@ describe('resolvePluginSettings', () => {
         sidecarPathOverride: ' /tmp/sidecar ',
         sidecarRequestTimeoutSeconds: 12,
         sidecarStartupTimeoutSeconds: 6,
-        showTimestamps: true,
         speakingStyle: 'patient',
+        timestampClock: 'wallclock',
+        timestampDensity: 'every_utterance',
+        timestampsEnabled: true,
+        timestampSessionHeader: false,
+        timestampSparseIntervalMs: 60_000,
         transcriptFormatting: 'new_paragraph',
         useNoteAsContext: false,
       }),
@@ -102,8 +106,12 @@ describe('resolvePluginSettings', () => {
       sidecarPathOverride: '/tmp/sidecar',
       sidecarRequestTimeoutSeconds: 12,
       sidecarStartupTimeoutSeconds: 6,
-      showTimestamps: true,
       speakingStyle: 'patient',
+      timestampClock: 'wallclock',
+      timestampDensity: 'every_utterance',
+      timestampsEnabled: true,
+      timestampSessionHeader: false,
+      timestampSparseIntervalMs: 60_000,
       transcriptFormatting: 'new_paragraph',
       useNoteAsContext: false,
     });
@@ -167,7 +175,11 @@ describe('resolvePluginSettings', () => {
         sidecarPathOverride: 12,
         sidecarRequestTimeoutSeconds: -1,
         sidecarStartupTimeoutSeconds: 'fast',
-        showTimestamps: 'yes',
+        timestampClock: 'date',
+        timestampDensity: 'always',
+        timestampsEnabled: 'yes',
+        timestampSessionHeader: 'yes',
+        timestampSparseIntervalMs: 'soon',
         transcriptFormatting: 'tab',
         useNoteAsContext: 'yes',
       }),
@@ -204,6 +216,15 @@ describe('resolvePluginSettings', () => {
       llmPostprocessTemperature: 2,
       llmPostprocessTotalContextCap: 30_000,
     });
+  });
+
+  it('clamps timestamp sparse interval at the settings boundary', () => {
+    expect(resolvePluginSettings({ timestampSparseIntervalMs: 1 }).timestampSparseIntervalMs).toBe(
+      10_000,
+    );
+    expect(
+      resolvePluginSettings({ timestampSparseIntervalMs: 999_999 }).timestampSparseIntervalMs,
+    ).toBe(600_000);
   });
 
   it('infers active style refs from the current prompt', () => {

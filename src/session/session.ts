@@ -86,6 +86,7 @@ interface NoteSurfaceLike {
 interface RawSessionEntry {
   projectedPrefix: string;
   rawText: string;
+  replacementPrefix: string;
   utteranceId: UtteranceId;
 }
 
@@ -340,6 +341,7 @@ export class Session {
       emittedTimestamp: null,
       insertedText: callout,
       projectedText: `${boundary}${callout}`,
+      replacementPrefix: boundary,
       textEndOffset: boundary.length + callout.length,
       textStartOffset: boundary.length,
     };
@@ -487,6 +489,7 @@ export class Session {
     this.rawSessionEntries.push({
       projectedPrefix: projection.projectedText.slice(0, projection.textStartOffset),
       rawText: revision.text,
+      replacementPrefix: projection.replacementPrefix,
       utteranceId: revision.utteranceId,
     });
   }
@@ -535,7 +538,7 @@ export class Session {
     showRawBelow: boolean,
     rawTextForCallout?: string,
   ): string {
-    const firstPrefix = this.rawSessionEntries[0]?.projectedPrefix ?? '';
+    const firstPrefix = this.rawSessionEntries[0]?.replacementPrefix ?? '';
     const trimmed = cleanText.trim();
     if (!showRawBelow) {
       return `${firstPrefix}${trimmed}`;

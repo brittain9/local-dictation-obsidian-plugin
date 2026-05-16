@@ -538,10 +538,10 @@ export class LocalTranscriptView extends ItemView {
   private renderDiagnosticsSection(parent: HTMLElement, settings: PluginSettings): void {
     const items = createSettingGroup(parent, 'Diagnostics');
 
-    if (settings.showTimestamps && settings.llmPostprocessMode !== 'off') {
+    if (settings.timestampsEnabled) {
       items.createEl('p', {
         cls: 'local-transcript-muted',
-        text: 'Timestamps are on, so LLM transform is paused. Turn off Show timestamps in Settings to re-enable.',
+        text: 'Per-utterance preserves timestamps. Batch may rewrite or drop them - your prompt controls what happens.',
       });
     }
 

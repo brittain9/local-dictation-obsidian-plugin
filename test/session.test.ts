@@ -14,8 +14,33 @@ import { Session } from '../src/session/session';
 import type {
   TranscriptInsertProjection,
   TranscriptRenderOptions,
+  TranscriptTimestampRenderOptions,
 } from '../src/transcript/renderer';
 import { transcript } from './fixtures/transcript';
+
+const SESSION_START = new Date(2026, 4, 16, 14, 32).getTime();
+
+function timestamps(
+  overrides: Partial<TranscriptTimestampRenderOptions> = {},
+): TranscriptTimestampRenderOptions {
+  return {
+    clock: 'elapsed',
+    density: 'sparse',
+    enabled: false,
+    header: true,
+    sessionStartUnixMs: SESSION_START,
+    sparseIntervalMs: 30_000,
+    ...overrides,
+  };
+}
+
+function renderOptions(overrides: Partial<TranscriptRenderOptions> = {}): TranscriptRenderOptions {
+  return {
+    timestamps: timestamps(),
+    transcriptFormatting: 'space',
+    ...overrides,
+  };
+}
 
 class FakeSurface {
   public readonly appendCalls: Array<{
@@ -214,7 +239,9 @@ describe('Session', () => {
 
   it('commits renderer timestamp state only after a successful append', () => {
     const { session, surface } = createSessionHarness({
-      rendererOptions: { showTimestamps: true, transcriptFormatting: 'space' },
+      rendererOptions: renderOptions({
+        timestamps: timestamps({ enabled: true, header: false }),
+      }),
     });
 
     surface.nextAppendResult = {
@@ -388,6 +415,21 @@ describe('Session', () => {
     expect(surface.documentText).toBe('Existing Cleaned words.');
   });
 
+  it('does not force timestamps into batch-cleaned output', () => {
+    const { session, surface } = createSessionHarness({
+      rendererOptions: renderOptions({
+        timestamps: timestamps({ enabled: true, header: true }),
+      }),
+    });
+
+    session.acceptTranscript(transcript({ text: 'raw words', utteranceId: 'u1' }));
+
+    expect(surface.documentText).toBe('[2026-05-16 14:32]\n(0:00) raw words');
+    expect(session.readCurrentSessionText()).toBe('[2026-05-16 14:32]\n(0:00) raw words');
+    expect(session.replaceSessionRangeWithCleaned('Cleaned words.')).toBe(true);
+    expect(surface.documentText).toBe('Cleaned words.');
+  });
+
   it('marks the session range as processing and clears the mark on demand', () => {
     const { session, surface } = createSessionHarness();
 
@@ -442,10 +484,7 @@ function createSessionHarness(options: { rendererOptions?: TranscriptRenderOptio
     lockedFile,
     noteSurfaceFactory: () => surface,
     placement,
-    rendererOptions: options.rendererOptions ?? {
-      showTimestamps: false,
-      transcriptFormatting: 'space',
-    },
+    rendererOptions: options.rendererOptions ?? renderOptions(),
     sessionId: 'session-1',
     view: {} as EditorView,
   });
