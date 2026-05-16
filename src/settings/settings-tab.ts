@@ -321,7 +321,9 @@ export class LocalSttSettingTab extends PluginSettingTab {
     subRow(
       new Setting(parent)
         .setName('Density')
-        .setDesc('Sparse: landmarks at long pauses or fixed intervals. Every phrase: one per phrase.')
+        .setDesc(
+          'Sparse: landmarks at long pauses or fixed intervals. Every phrase: one per phrase.',
+        )
         .addDropdown((dropdown) => {
           for (const option of TIMESTAMP_DENSITY_OPTIONS) {
             dropdown.addOption(option.value, option.label);
