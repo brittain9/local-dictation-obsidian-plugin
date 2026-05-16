@@ -1,12 +1,24 @@
 import type { UtteranceId } from '../session/session-journal';
-import type { TranscriptFormattingMode } from '../settings/plugin-settings';
+import type {
+  TimestampClock,
+  TimestampDensity,
+  TranscriptFormattingMode,
+} from '../settings/plugin-settings';
 
 export const SMART_PARAGRAPH_PAUSE_MS = 3000;
-export const TIMESTAMP_LANDMARK_INTERVAL_MS = 30_000;
 
 export interface TranscriptRenderOptions {
-  readonly showTimestamps: boolean;
+  readonly timestamps: TranscriptTimestampRenderOptions;
   readonly transcriptFormatting: TranscriptFormattingMode;
+}
+
+export interface TranscriptTimestampRenderOptions {
+  readonly clock: TimestampClock;
+  readonly density: TimestampDensity;
+  readonly enabled: boolean;
+  readonly header: boolean;
+  readonly sessionStartUnixMs: number;
+  readonly sparseIntervalMs: number;
 }
 
 export interface TranscriptAppendInput {
@@ -29,6 +41,7 @@ export interface TranscriptInsertProjection {
   readonly emittedTimestamp: EmittedTimestamp | null;
   readonly insertedText: string;
   readonly projectedText: string;
+  readonly replacementPrefix: string;
   readonly textEndOffset: number;
   readonly textStartOffset: number;
 }
@@ -44,20 +57,29 @@ export class TranscriptRenderer {
     context: TranscriptRenderContext,
   ): TranscriptInsertProjection {
     const boundary = this.formatBoundary(input, context);
+    const sessionHeader = this.shouldEmitSessionHeader()
+      ? `${formatSessionHeader(this.options.timestamps.sessionStartUnixMs)}\n`
+      : '';
     const emittedTimestamp = this.shouldEmitTimestamp(input)
       ? {
           elapsedMs: input.utteranceStartMsInSession,
-          text: formatSessionTimestamp(input.utteranceStartMsInSession),
+          text: formatLandmark(
+            input.utteranceStartMsInSession,
+            this.options.timestamps.sessionStartUnixMs,
+            this.options.timestamps.clock,
+          ),
         }
       : null;
     const timestampPrefix = emittedTimestamp === null ? '' : `${emittedTimestamp.text} `;
-    const textStartOffset = boundary.length + timestampPrefix.length;
-    const projectedText = `${boundary}${timestampPrefix}${input.text}`;
+    const prefix = `${boundary}${sessionHeader}${timestampPrefix}`;
+    const textStartOffset = prefix.length;
+    const projectedText = `${prefix}${input.text}`;
 
     return {
       emittedTimestamp,
       insertedText: input.text,
       projectedText,
+      replacementPrefix: boundary,
       textEndOffset: textStartOffset + input.text.length,
       textStartOffset,
     };
@@ -97,8 +119,12 @@ export class TranscriptRenderer {
   }
 
   private shouldEmitTimestamp(input: TranscriptAppendInput): boolean {
-    if (!this.options.showTimestamps) {
+    if (!this.options.timestamps.enabled) {
       return false;
+    }
+
+    if (this.options.timestamps.density === 'every_utterance') {
+      return true;
     }
 
     if (this.lastTimestampMsInSession === null) {
@@ -106,9 +132,14 @@ export class TranscriptRenderer {
     }
 
     return (
-      isMeaningfulPause(input.pauseMsBeforeUtterance) ||
       input.utteranceStartMsInSession - this.lastTimestampMsInSession >=
-        TIMESTAMP_LANDMARK_INTERVAL_MS
+      this.options.timestamps.sparseIntervalMs
+    );
+  }
+
+  private shouldEmitSessionHeader(): boolean {
+    return (
+      !this.hasRenderedText && this.options.timestamps.enabled && this.options.timestamps.header
     );
   }
 }
@@ -117,7 +148,16 @@ export function isMeaningfulPause(pauseMsBeforeUtterance: number | null): boolea
   return pauseMsBeforeUtterance !== null && pauseMsBeforeUtterance >= SMART_PARAGRAPH_PAUSE_MS;
 }
 
-export function formatSessionTimestamp(elapsedMs: number): string {
+export function formatLandmark(
+  elapsedMs: number,
+  sessionStartUnixMs: number,
+  clock: TimestampClock,
+): string {
+  if (clock === 'wallclock') {
+    const date = new Date(sessionStartUnixMs + elapsedMs);
+    return `(${padTwo(date.getHours())}:${padTwo(date.getMinutes())})`;
+  }
+
   const totalSeconds = Math.floor(elapsedMs / 1000);
   const seconds = totalSeconds % 60;
   const totalMinutes = Math.floor(totalSeconds / 60);
@@ -129,6 +169,14 @@ export function formatSessionTimestamp(elapsedMs: number): string {
   }
 
   return `(${totalMinutes}:${padTwo(seconds)})`;
+}
+
+export function formatSessionHeader(sessionStartUnixMs: number): string {
+  const date = new Date(sessionStartUnixMs);
+
+  return `[${date.getFullYear()}-${padTwo(date.getMonth() + 1)}-${padTwo(date.getDate())} ${padTwo(
+    date.getHours(),
+  )}:${padTwo(date.getMinutes())}]`;
 }
 
 function padTwo(value: number): string {

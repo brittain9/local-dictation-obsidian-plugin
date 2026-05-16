@@ -215,7 +215,6 @@ describe('DictationSessionController', () => {
           llmPostprocessShowRawBelow: true,
           llmPostprocessPrompt: 'Clean it.',
           selectedModel: createExternalModelSelection(),
-          showTimestamps: false,
         }),
       sidecarConnection,
     });
@@ -256,7 +255,6 @@ describe('DictationSessionController', () => {
             },
           ],
           selectedModel: createExternalModelSelection(),
-          showTimestamps: false,
         }),
       sidecarConnection,
     });
@@ -310,7 +308,7 @@ describe('DictationSessionController', () => {
     expect(sidecarConnection.startSession.mock.calls[0]?.[0]).not.toHaveProperty('llmPostprocess');
   });
 
-  it('omits llmPostprocess from the session snapshot when timestamps are enabled', async () => {
+  it('includes per-utterance llmPostprocess when timestamps are enabled', async () => {
     const sidecarConnection = new FakeSidecarConnection();
     const controller = createController({
       getSettings: () =>
@@ -319,14 +317,18 @@ describe('DictationSessionController', () => {
           llmPostprocessMode: 'per_utterance',
           llmPostprocessModel: 'llama3.2:latest',
           selectedModel: createExternalModelSelection(),
-          showTimestamps: true,
+          timestampsEnabled: true,
         }),
       sidecarConnection,
     });
 
     await controller.startDictation();
 
-    expect(sidecarConnection.startSession.mock.calls[0]?.[0]).not.toHaveProperty('llmPostprocess');
+    expect(sidecarConnection.startSession.mock.calls[0]?.[0]).toMatchObject({
+      llmPostprocess: {
+        model: 'llama3.2:latest',
+      },
+    });
   });
 
   it('recovers from capture startup failures without staying busy', async () => {
@@ -581,7 +583,11 @@ describe('DictationSessionController', () => {
         createSettings({
           dictationAnchor: 'end_of_note',
           selectedModel: createExternalModelSelection(),
-          showTimestamps: true,
+          timestampClock: 'wallclock',
+          timestampDensity: 'every_utterance',
+          timestampsEnabled: true,
+          timestampSessionHeader: false,
+          timestampSparseIntervalMs: 60_000,
           transcriptFormatting: 'new_paragraph',
         }),
       sidecarConnection,
@@ -591,7 +597,17 @@ describe('DictationSessionController', () => {
 
     expect(createdSessions.map((entry) => entry.placement)).toEqual([{ anchor: 'end_of_note' }]);
     expect(createdSessions.map((entry) => entry.rendererOptions)).toEqual([
-      { showTimestamps: true, transcriptFormatting: 'new_paragraph' },
+      {
+        timestamps: {
+          clock: 'wallclock',
+          density: 'every_utterance',
+          enabled: true,
+          header: false,
+          sessionStartUnixMs: expect.any(Number),
+          sparseIntervalMs: 60_000,
+        },
+        transcriptFormatting: 'new_paragraph',
+      },
     ]);
   });
 
@@ -1035,7 +1051,7 @@ describe('DictationSessionController', () => {
     await vi.waitFor(() => {
       expect(logger.warn).toHaveBeenCalledWith(
         'llm',
-        'batch cleanup replacement skipped — transcript was edited during cleanup',
+        'batch cleanup replacement skipped — session range no longer available',
       );
     });
     expect(notice).not.toHaveBeenCalled();

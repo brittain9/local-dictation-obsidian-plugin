@@ -30,6 +30,18 @@ export const TRANSCRIPT_FORMATTING_MODES = ['smart', 'space', 'new_line', 'new_p
 
 export type TranscriptFormattingMode = (typeof TRANSCRIPT_FORMATTING_MODES)[number];
 
+export const TIMESTAMP_CLOCKS = ['elapsed', 'wallclock'] as const;
+
+export type TimestampClock = (typeof TIMESTAMP_CLOCKS)[number];
+
+export const TIMESTAMP_DENSITIES = ['sparse', 'every_utterance'] as const;
+
+export type TimestampDensity = (typeof TIMESTAMP_DENSITIES)[number];
+
+export const DEFAULT_TIMESTAMP_SPARSE_INTERVAL_MS = 30_000;
+export const MIN_TIMESTAMP_SPARSE_INTERVAL_MS = 10_000;
+export const MAX_TIMESTAMP_SPARSE_INTERVAL_MS = 600_000;
+
 export const SPEAKING_STYLES = [
   'responsive',
   'balanced',
@@ -86,8 +98,12 @@ export interface PluginSettings {
   sidecarPathOverride: string;
   sidecarRequestTimeoutSeconds: number;
   sidecarStartupTimeoutSeconds: number;
-  showTimestamps: boolean;
   speakingStyle: SpeakingStyle;
+  timestampClock: TimestampClock;
+  timestampDensity: TimestampDensity;
+  timestampsEnabled: boolean;
+  timestampSessionHeader: boolean;
+  timestampSparseIntervalMs: number;
   transcriptFormatting: TranscriptFormattingMode;
   useNoteAsContext: boolean;
 }
@@ -116,8 +132,12 @@ export const DEFAULT_PLUGIN_SETTINGS: PluginSettings = {
   sidecarPathOverride: '',
   sidecarRequestTimeoutSeconds: 300,
   sidecarStartupTimeoutSeconds: 4,
-  showTimestamps: false,
   speakingStyle: 'balanced',
+  timestampClock: 'elapsed',
+  timestampDensity: 'sparse',
+  timestampsEnabled: false,
+  timestampSessionHeader: true,
+  timestampSparseIntervalMs: DEFAULT_TIMESTAMP_SPARSE_INTERVAL_MS,
   transcriptFormatting: 'smart',
   useNoteAsContext: true,
 };
@@ -207,10 +227,29 @@ export function resolvePluginSettings(data: unknown): PluginSettings {
       raw.sidecarStartupTimeoutSeconds,
       DEFAULT_PLUGIN_SETTINGS.sidecarStartupTimeoutSeconds,
     ),
-    showTimestamps: readBoolean(raw.showTimestamps, DEFAULT_PLUGIN_SETTINGS.showTimestamps),
     speakingStyle: isSpeakingStyle(raw.speakingStyle)
       ? raw.speakingStyle
       : DEFAULT_PLUGIN_SETTINGS.speakingStyle,
+    timestampClock: isTimestampClock(raw.timestampClock)
+      ? raw.timestampClock
+      : DEFAULT_PLUGIN_SETTINGS.timestampClock,
+    timestampDensity: isTimestampDensity(raw.timestampDensity)
+      ? raw.timestampDensity
+      : DEFAULT_PLUGIN_SETTINGS.timestampDensity,
+    timestampsEnabled: readBoolean(
+      raw.timestampsEnabled,
+      DEFAULT_PLUGIN_SETTINGS.timestampsEnabled,
+    ),
+    timestampSessionHeader: readBoolean(
+      raw.timestampSessionHeader,
+      DEFAULT_PLUGIN_SETTINGS.timestampSessionHeader,
+    ),
+    timestampSparseIntervalMs: readClampedInteger(
+      raw.timestampSparseIntervalMs,
+      DEFAULT_PLUGIN_SETTINGS.timestampSparseIntervalMs,
+      MIN_TIMESTAMP_SPARSE_INTERVAL_MS,
+      MAX_TIMESTAMP_SPARSE_INTERVAL_MS,
+    ),
     transcriptFormatting: isTranscriptFormattingMode(raw.transcriptFormatting)
       ? raw.transcriptFormatting
       : DEFAULT_PLUGIN_SETTINGS.transcriptFormatting,
@@ -371,6 +410,14 @@ export function isTranscriptFormattingMode(value: unknown): value is TranscriptF
   return (
     typeof value === 'string' && (TRANSCRIPT_FORMATTING_MODES as readonly string[]).includes(value)
   );
+}
+
+export function isTimestampClock(value: unknown): value is TimestampClock {
+  return typeof value === 'string' && (TIMESTAMP_CLOCKS as readonly string[]).includes(value);
+}
+
+export function isTimestampDensity(value: unknown): value is TimestampDensity {
+  return typeof value === 'string' && (TIMESTAMP_DENSITIES as readonly string[]).includes(value);
 }
 
 export function isListeningMode(value: unknown): value is ListeningMode {

@@ -38,7 +38,7 @@ export function addEnumSetting<K extends keyof PluginSettings>(
     options: ReadonlyArray<DropdownOption<PluginSettings[K] & string>>;
     isValid: (value: unknown) => value is PluginSettings[K];
   },
-): void {
+): Setting {
   const setting = new Setting(parent).setName(spec.name).setDesc(spec.desc);
   setting.addDropdown((dropdown) => {
     for (const option of spec.options) {
@@ -51,13 +51,14 @@ export function addEnumSetting<K extends keyof PluginSettings>(
     });
   });
   appendInfoTooltip(setting, spec.tooltip);
+  return setting;
 }
 
 export function addToggleSetting<K extends SettingsKeyOf<boolean>>(
   parent: HTMLElement,
   access: SettingAccess,
   spec: SettingSpec & { key: K },
-): void {
+): Setting {
   const setting = new Setting(parent).setName(spec.name).setDesc(spec.desc);
   setting.addToggle((toggle) => {
     toggle.setValue(access.getSettings()[spec.key] as boolean);
@@ -66,6 +67,7 @@ export function addToggleSetting<K extends SettingsKeyOf<boolean>>(
     });
   });
   appendInfoTooltip(setting, spec.tooltip);
+  return setting;
 }
 
 export function addTextSetting<K extends SettingsKeyOf<string>>(

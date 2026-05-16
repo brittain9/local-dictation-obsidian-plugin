@@ -22,8 +22,14 @@ import {
   isDictationAnchor,
   isListeningMode,
   isSpeakingStyle,
+  isTimestampClock,
+  isTimestampDensity,
   isTranscriptFormattingMode,
+  MAX_TIMESTAMP_SPARSE_INTERVAL_MS,
+  MIN_TIMESTAMP_SPARSE_INTERVAL_MS,
   type PluginSettings,
+  type TimestampClock,
+  type TimestampDensity,
   type TranscriptFormattingMode,
 } from './plugin-settings';
 import {
@@ -76,6 +82,16 @@ const SPEAKING_STYLE_OPTIONS: ReadonlyArray<DropdownOption<SpeakingStyle>> = [
   { label: 'Responsive', value: 'responsive' },
   { label: 'Balanced', value: 'balanced' },
   { label: 'Patient', value: 'patient' },
+];
+
+const TIMESTAMP_CLOCK_OPTIONS: ReadonlyArray<DropdownOption<TimestampClock>> = [
+  { label: 'Elapsed', value: 'elapsed' },
+  { label: 'Wall clock', value: 'wallclock' },
+];
+
+const TIMESTAMP_DENSITY_OPTIONS: ReadonlyArray<DropdownOption<TimestampDensity>> = [
+  { label: 'Sparse', value: 'sparse' },
+  { label: 'Every phrase', value: 'every_utterance' },
 ];
 
 export class LocalSttSettingTab extends PluginSettingTab {
@@ -182,13 +198,8 @@ export class LocalSttSettingTab extends PluginSettingTab {
       isValid: isTranscriptFormattingMode,
     });
 
-    addToggleSetting(transcriptionCard, this.access, {
-      name: 'Show timestamps',
-      desc: 'Sparse elapsed-session timestamps.',
-      tooltip:
-        'Add sparse elapsed-session timestamps at speech-segment boundaries from the voice-activity detector (VAD).',
-      key: 'showTimestamps',
-    });
+    const timestampsCard = createSettingGroup(containerEl, 'Timestamps');
+    this.renderTimestampSettings(timestampsCard, settings);
 
     // --- Engine options ---
     // Built inline (rather than via createSettingGroup) so renderEngineOptions
@@ -262,6 +273,68 @@ export class LocalSttSettingTab extends PluginSettingTab {
     this.disposeMissingSidecarBanner?.();
     this.disposeMissingSidecarBanner = null;
     this.missingSidecarProgressEl = null;
+  }
+
+  private renderTimestampSettings(parent: HTMLElement, settings: PluginSettings): void {
+    const enableSetting = new Setting(parent)
+      .setName('Use timestamps')
+      .setDesc('Stamp phrase boundaries with the time they were spoken.')
+      .addToggle((toggle) => {
+        toggle.setValue(settings.timestampsEnabled);
+        toggle.onChange(async (value) => {
+          await this.access.persistOne('timestampsEnabled', value);
+          this.display();
+        });
+      });
+    appendInfoTooltip(
+      enableSetting,
+      'Inserts a boundary timestamp at each phrase break (when the voice-activity detector decides one phrase has ended and another begins), plus an optional session header at the top. A long session reads like a timed log.',
+    );
+
+    if (!settings.timestampsEnabled) return;
+
+    addToggleSetting(parent, this.access, {
+      name: 'Session header',
+      desc: 'Emit [YYYY-MM-DD HH:MM] before the first phrase.',
+      key: 'timestampSessionHeader',
+    });
+
+    addEnumSetting(parent, this.access, {
+      name: 'Reference clock',
+      desc: 'Elapsed since session start, or wall-clock time.',
+      key: 'timestampClock',
+      options: TIMESTAMP_CLOCK_OPTIONS,
+      isValid: isTimestampClock,
+    });
+
+    addEnumSetting(parent, this.access, {
+      name: 'Density',
+      desc: 'Sparse: landmarks at fixed intervals. Every phrase: one per phrase.',
+      key: 'timestampDensity',
+      options: TIMESTAMP_DENSITY_OPTIONS,
+      isValid: isTimestampDensity,
+      tooltip:
+        'Sparse keeps the transcript clean by emitting one landmark per interval. Every phrase stamps every utterance — useful for meeting notes or precise references.',
+    });
+
+    const minSeconds = MIN_TIMESTAMP_SPARSE_INTERVAL_MS / 1000;
+    const maxSeconds = MAX_TIMESTAMP_SPARSE_INTERVAL_MS / 1000;
+    new Setting(parent)
+      .setName('Sparse interval')
+      .setDesc(`Seconds between sparse landmarks (${minSeconds}-${maxSeconds}).`)
+      .addText((text) => {
+        text.inputEl.type = 'number';
+        text.inputEl.min = String(minSeconds);
+        text.inputEl.max = String(maxSeconds);
+        text.inputEl.step = '1';
+        text.setValue(String(Math.round(settings.timestampSparseIntervalMs / 1000)));
+        text.onChange(async (value) => {
+          const parsed = Number.parseInt(value, 10);
+          if (!Number.isInteger(parsed)) return;
+          const clamped = Math.min(maxSeconds, Math.max(minSeconds, parsed));
+          await this.access.persistOne('timestampSparseIntervalMs', clamped * 1000);
+        });
+      });
   }
 
   private buildModelInfoCallback(

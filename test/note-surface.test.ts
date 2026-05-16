@@ -13,7 +13,35 @@ import {
 } from '../src/editor/dictation-anchor-extension';
 import { NoteSurface } from '../src/editor/note-surface';
 import type { DictationAnchor } from '../src/settings/plugin-settings';
-import { TranscriptRenderer, type TranscriptRenderOptions } from '../src/transcript/renderer';
+import {
+  TranscriptRenderer,
+  type TranscriptRenderOptions,
+  type TranscriptTimestampRenderOptions,
+} from '../src/transcript/renderer';
+
+const SESSION_START = new Date(2026, 4, 16, 14, 32).getTime();
+
+function timestamps(
+  overrides: Partial<TranscriptTimestampRenderOptions> = {},
+): TranscriptTimestampRenderOptions {
+  return {
+    clock: 'elapsed',
+    density: 'sparse',
+    enabled: false,
+    header: true,
+    sessionStartUnixMs: SESSION_START,
+    sparseIntervalMs: 30_000,
+    ...overrides,
+  };
+}
+
+function renderOptions(overrides: Partial<TranscriptRenderOptions> = {}): TranscriptRenderOptions {
+  return {
+    timestamps: timestamps(),
+    transcriptFormatting: 'space',
+    ...overrides,
+  };
+}
 
 class FakeEditorView {
   public state: EditorState;
@@ -64,7 +92,7 @@ function append(
   surface: NoteSurface,
   utteranceId: string,
   text: string,
-  options: TranscriptRenderOptions = { showTimestamps: false, transcriptFormatting: 'space' },
+  options: TranscriptRenderOptions = renderOptions(),
   input: { pauseMsBeforeUtterance?: number | null; utteranceStartMsInSession?: number } = {},
 ): ReturnType<NoteSurface['appendProjection']> {
   return appendWithRenderer(surface, new TranscriptRenderer(options), utteranceId, text, input);
@@ -133,7 +161,7 @@ describe('NoteSurface', () => {
   it('inserts paragraph boundaries as prefixes without dangling trailing separators', () => {
     const { surface, view } = createSurface();
     const renderer = new TranscriptRenderer({
-      showTimestamps: false,
+      timestamps: timestamps(),
       transcriptFormatting: 'new_paragraph',
     });
 
@@ -146,7 +174,7 @@ describe('NoteSurface', () => {
   it('stores timestamp and boundary prefixes inside the span while replacing only utterance text', () => {
     const { surface, view } = createSurface();
     const renderer = new TranscriptRenderer({
-      showTimestamps: true,
+      timestamps: timestamps({ enabled: true, header: false }),
       transcriptFormatting: 'new_paragraph',
     });
 
@@ -162,12 +190,29 @@ describe('NoteSurface', () => {
     expect(doc(view)).toBe('(0:00) first\n\n(1:10) SECOND');
   });
 
+  it('renders the session header with inline landmarks', () => {
+    const { surface, view } = createSurface();
+    const renderer = new TranscriptRenderer({
+      timestamps: timestamps({ enabled: true, header: true }),
+      transcriptFormatting: 'space',
+    });
+
+    expect(appendWithRenderer(surface, renderer, 'u1', 'first').kind).toBe('appended');
+    expect(
+      appendWithRenderer(surface, renderer, 'u2', 'second', {
+        utteranceStartMsInSession: 30_000,
+      }).kind,
+    ).toBe('appended');
+
+    expect(doc(view)).toBe('[2026-05-16 14:32]\n(0:00) first (0:30) second');
+  });
+
   it('latches replacements when a user edits the timestamp prefix', () => {
     const { surface, view } = createSurface();
 
     expect(
       append(surface, 'u1', 'first', {
-        showTimestamps: true,
+        timestamps: timestamps({ enabled: true, header: false }),
         transcriptFormatting: 'space',
       }).kind,
     ).toBe('appended');
