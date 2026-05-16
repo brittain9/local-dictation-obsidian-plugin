@@ -1051,7 +1051,7 @@ describe('DictationSessionController', () => {
     await vi.waitFor(() => {
       expect(logger.warn).toHaveBeenCalledWith(
         'llm',
-        'batch cleanup replacement skipped — transcript was edited during cleanup',
+        'batch cleanup replacement skipped — session range no longer available',
       );
     });
     expect(notice).not.toHaveBeenCalled();

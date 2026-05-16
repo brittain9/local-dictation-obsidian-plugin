@@ -84,7 +84,6 @@ interface NoteSurfaceLike {
 }
 
 interface RawSessionEntry {
-  projectedPrefix: string;
   rawText: string;
   replacementPrefix: string;
   utteranceId: UtteranceId;
@@ -212,11 +211,6 @@ export class Session {
 
     const range = this.resolveSessionRange();
     if (range === null) {
-      return false;
-    }
-
-    const expectedText = this.expectedSessionText();
-    if (this.surface.readRange(range) !== expectedText) {
       return false;
     }
 
@@ -487,7 +481,6 @@ export class Session {
 
     this.rawSessionEntryIndexByUtterance.set(revision.utteranceId, this.rawSessionEntries.length);
     this.rawSessionEntries.push({
-      projectedPrefix: projection.projectedText.slice(0, projection.textStartOffset),
       rawText: revision.text,
       replacementPrefix: projection.replacementPrefix,
       utteranceId: revision.utteranceId,
@@ -525,12 +518,6 @@ export class Session {
     }
 
     return { from: first.start, to: last.end };
-  }
-
-  private expectedSessionText(): string {
-    return this.rawSessionEntries
-      .map((entry) => `${entry.projectedPrefix}${entry.rawText}`)
-      .join('');
   }
 
   private buildCleanedReplacement(

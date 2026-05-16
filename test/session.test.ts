@@ -350,32 +350,17 @@ describe('Session', () => {
     expect(surface.documentText).toBe('Hello world.');
   });
 
-  it('replaceSessionRangeWithCleaned returns false when the session range diverges', () => {
+  it('replaceSessionRangeWithCleaned force-replaces the tracked range even if its text diverged', () => {
     const { session, surface } = createSessionHarness();
 
     session.acceptTranscript(transcript({ text: 'raw words', utteranceId: 'u1' }));
-    surface.documentText = 'edited raw words';
+    surface.documentText = 'raw words tail';
 
-    expect(session.replaceSessionRangeWithCleaned('Cleaned words.')).toBe(false);
-    expect(surface.rewriteCalls).toHaveLength(0);
-    expect(surface.documentText).toBe('edited raw words');
-  });
-
-  it('skips batch replace when the session range has been edited', () => {
-    const { session, surface } = createSessionHarness();
-
-    session.acceptTranscript(transcript({ text: 'raw words', utteranceId: 'u1' }));
-    surface.documentText = 'new words';
-
-    expect(session.readCurrentSessionText()).toBe('new words');
-    expect(
-      session.replaceSessionRangeWithCleaned('Cleaned words.', {
-        rawTextForCallout: 'new words',
-        showRawBelow: true,
-      }),
-    ).toBe(false);
-    expect(surface.rewriteCalls).toHaveLength(0);
-    expect(surface.documentText).toBe('new words');
+    expect(session.replaceSessionRangeWithCleaned('Cleaned words.')).toBe(true);
+    expect(surface.rewriteCalls).toEqual([
+      { newText: 'Cleaned words.', range: { from: 0, to: 'raw words'.length } },
+    ]);
+    expect(surface.documentText).toBe('Cleaned words. tail');
   });
 
   it('appends the raw callout below the cleaned text when showRawBelow is set', () => {

@@ -502,7 +502,7 @@ export class DictationSessionController {
       if (!replaced) {
         this.dependencies.logger?.warn(
           'llm',
-          'batch cleanup replacement skipped — transcript was edited during cleanup',
+          'batch cleanup replacement skipped — session range no longer available',
         );
         return;
       }

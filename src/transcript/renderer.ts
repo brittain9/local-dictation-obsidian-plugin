@@ -132,9 +132,8 @@ export class TranscriptRenderer {
     }
 
     return (
-      isMeaningfulPause(input.pauseMsBeforeUtterance) ||
       input.utteranceStartMsInSession - this.lastTimestampMsInSession >=
-        this.options.timestamps.sparseIntervalMs
+      this.options.timestamps.sparseIntervalMs
     );
   }
 
