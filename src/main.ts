@@ -87,7 +87,7 @@ export default class LocalSttPlugin extends Plugin {
     );
 
     const ribbonElement = this.addRibbonIcon('mic', 'Local Dictation: Click to start', () => {
-      this.requireDictationController().handleRibbonClick();
+      void this.requireDictationController().toggleDictation();
     });
     this.ribbonController = new DictationRibbonController(ribbonElement);
     this.dictationController = new DictationSessionController({
@@ -146,6 +146,7 @@ export default class LocalSttPlugin extends Plugin {
       restartSidecar: async () => this.restartSidecar(),
       startDictation: async () => this.requireDictationController().startDictation(),
       stopDictation: async () => this.requireDictationController().stopDictation(),
+      toggleDictation: async () => this.requireDictationController().toggleDictation(),
     });
 
     this.app.workspace.onLayoutReady(() => {

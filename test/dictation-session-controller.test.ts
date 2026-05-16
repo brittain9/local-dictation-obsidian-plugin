@@ -1234,7 +1234,72 @@ describe('DictationSessionController', () => {
     expect(controller.isBusy()).toBe(false);
   });
 
-  it('persists error state after cancel cleanup fails until ribbon click acknowledges', async () => {
+  it('toggles from idle to an active dictation session', async () => {
+    const captureStream = new FakeCaptureStream();
+    const sidecarConnection = new FakeSidecarConnection();
+    const controller = createController({
+      captureStream,
+      getSettings: () => createSettings({ selectedModel: createExternalModelSelection() }),
+      sidecarConnection,
+    });
+
+    await controller.toggleDictation();
+
+    expect(captureStream.start).toHaveBeenCalledTimes(1);
+    expect(sidecarConnection.startSession).toHaveBeenCalledTimes(1);
+    expect(controller.getState()).toBe('listening');
+  });
+
+  it('toggles an active dictation session to graceful stop', async () => {
+    const captureStream = new FakeCaptureStream();
+    const sidecarConnection = new FakeSidecarConnection();
+    const controller = createController({
+      captureStream,
+      getSettings: () => createSettings({ selectedModel: createExternalModelSelection() }),
+      sidecarConnection,
+    });
+
+    await controller.startDictation();
+    await controller.toggleDictation();
+
+    expect(captureStream.stop).toHaveBeenCalledTimes(1);
+    expect(sidecarConnection.stopSession).toHaveBeenCalledTimes(1);
+    expect(sidecarConnection.cancelSession).not.toHaveBeenCalled();
+    expect(controller.getState()).toBe('idle');
+  });
+
+  it('ignores a rapid second toggle while a start is still in flight', async () => {
+    const captureStream = new FakeCaptureStream();
+    const sidecarConnection = new FakeSidecarConnection();
+    let releaseEnsureStarted: () => void = () => {
+      throw new Error('Expected ensureStarted resolver to be captured.');
+    };
+    sidecarConnection.ensureStarted.mockImplementationOnce(
+      async () =>
+        await new Promise<void>((resolve) => {
+          releaseEnsureStarted = resolve;
+        }),
+    );
+    const controller = createController({
+      captureStream,
+      getSettings: () => createSettings({ selectedModel: createExternalModelSelection() }),
+      sidecarConnection,
+    });
+
+    const firstToggle = controller.toggleDictation();
+    expect(controller.getState()).toBe('starting');
+
+    await controller.toggleDictation();
+
+    releaseEnsureStarted();
+    await firstToggle;
+
+    expect(captureStream.start).toHaveBeenCalledTimes(1);
+    expect(sidecarConnection.startSession).toHaveBeenCalledTimes(1);
+    expect(controller.getState()).toBe('listening');
+  });
+
+  it('toggles an inactive error state back to idle without restarting', async () => {
     const captureStream = new FakeCaptureStream();
     const sidecarConnection = new FakeSidecarConnection();
     sidecarConnection.cancelSession.mockImplementationOnce(async () => {
@@ -1247,7 +1312,6 @@ describe('DictationSessionController', () => {
     });
 
     await controller.startDictation();
-
     sidecarConnection.emit({
       code: 'session_failed',
       message: 'The engine crashed.',
@@ -1261,8 +1325,10 @@ describe('DictationSessionController', () => {
       expect(controller.isBusy()).toBe(false);
     });
 
-    controller.handleRibbonClick();
+    await controller.toggleDictation();
+
     expect(controller.getState()).toBe('idle');
+    expect(sidecarConnection.startSession).toHaveBeenCalledTimes(1);
   });
 
   it('cancels an errored session only once when duplicate errors arrive', async () => {

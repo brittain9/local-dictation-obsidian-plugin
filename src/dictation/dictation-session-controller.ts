@@ -167,8 +167,22 @@ export class DictationSessionController {
     this.applyUiState('idle');
   }
 
-  handleRibbonClick(): void {
-    void this.toggleDictation();
+  async toggleDictation(): Promise<void> {
+    if (this.state === 'error' && this.sessionId === null) {
+      this.applyUiState('idle');
+      return;
+    }
+
+    if (this.state === 'starting' || this.abortingSessionId !== null) {
+      return;
+    }
+
+    if (this.sessionId !== null) {
+      await this.stopDictation();
+      return;
+    }
+
+    await this.startDictation();
   }
 
   async startDictation(): Promise<void> {
@@ -178,12 +192,15 @@ export class DictationSessionController {
     }
 
     this.abortBatchCleanup();
+    // Synchronous so the ribbon flips before any await and toggleDictation's state gate works.
+    this.applyUiState('starting');
 
     try {
       await this.dependencies.sidecarConnection.ensureStarted();
     } catch (error) {
       if (error instanceof SidecarNotInstalledError) {
         this.dependencies.logger?.debug('sidecar', 'sidecar not installed — prompting install');
+        this.applyUiState('idle');
         this.dependencies.onSidecarMissing?.();
         return;
       }
@@ -192,7 +209,13 @@ export class DictationSessionController {
     }
 
     const settings = this.dependencies.getSettings();
-    const selectedModel = this.requireSelectedModel(settings);
+    let selectedModel: NonNullable<PluginSettings['selectedModel']>;
+    try {
+      selectedModel = this.requireSelectedModel(settings);
+    } catch (error) {
+      this.handleError('Failed to start the dictation session', error);
+      return;
+    }
     const effectiveGeneration = resolveActiveGenerationDefaults(settings);
     const sessionStartUnixMs = Date.now();
     const snapshot: ActiveSessionSnapshot = {
@@ -252,7 +275,6 @@ export class DictationSessionController {
     this.sessionId = sessionId;
     this.session = session;
     this.sessionSnapshot = snapshot;
-    this.applyUiState('starting');
     this.dependencies.logger?.debug('session', `starting dictation session ${sessionId}`);
 
     let frameForwardAborted = false;
@@ -325,20 +347,6 @@ export class DictationSessionController {
       await this.cleanupLocalSession();
       this.handleError('Failed to stop the dictation session', error);
     }
-  }
-
-  private async toggleDictation(): Promise<void> {
-    if (this.state === 'error' && this.sessionId === null) {
-      this.applyUiState('idle');
-      return;
-    }
-
-    if (this.sessionId !== null) {
-      await this.stopDictation();
-      return;
-    }
-
-    await this.startDictation();
   }
 
   private applyUiState(state: DictationControllerState): void {

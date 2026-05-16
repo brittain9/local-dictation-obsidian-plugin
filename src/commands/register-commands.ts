@@ -3,6 +3,7 @@ import type { Plugin } from 'obsidian';
 const START_DICTATION_COMMAND_ID = 'start-dictation-session';
 const STOP_DICTATION_COMMAND_ID = 'stop-dictation-session';
 const CANCEL_DICTATION_COMMAND_ID = 'cancel-dictation-session';
+const TOGGLE_DICTATION_COMMAND_ID = 'toggle-dictation-session';
 
 interface CommandDependencies {
   cancelDictation: () => Promise<void>;
@@ -11,9 +12,18 @@ interface CommandDependencies {
   restartSidecar: () => Promise<void>;
   startDictation: () => Promise<void>;
   stopDictation: () => Promise<void>;
+  toggleDictation: () => Promise<void>;
 }
 
 export function registerCommands(dependencies: CommandDependencies): void {
+  dependencies.plugin.addCommand({
+    id: TOGGLE_DICTATION_COMMAND_ID,
+    name: 'Toggle Dictation Session',
+    callback: async () => {
+      await dependencies.toggleDictation();
+    },
+  });
+
   dependencies.plugin.addCommand({
     id: START_DICTATION_COMMAND_ID,
     name: 'Start Dictation Session',

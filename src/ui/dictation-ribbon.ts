@@ -25,11 +25,17 @@ export class DictationRibbonController {
   }
 
   setState(state: DictationControllerState): void {
+    if (this.state === state) {
+      return;
+    }
     this.state = state;
     this.render();
   }
 
   setQueueTier(tier: QueueBackpressureTier): void {
+    if (this.queueTier === tier) {
+      return;
+    }
     this.queueTier = tier;
     this.render();
   }
