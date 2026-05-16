@@ -1,4 +1,10 @@
-import { type EditorState, type Extension, StateEffect, StateField } from '@codemirror/state';
+import {
+  Annotation,
+  EditorState,
+  type Extension,
+  StateEffect,
+  StateField,
+} from '@codemirror/state';
 import { Decoration, type DecorationSet, EditorView } from '@codemirror/view';
 
 export interface SessionProcessingRange {
@@ -7,6 +13,10 @@ export interface SessionProcessingRange {
 }
 
 export const setSessionProcessingEffect = StateEffect.define<SessionProcessingRange | null>();
+
+// Internal dispatches (e.g. rewriteRegion) tag transactions with this so the
+// processing-range lock lets them through while still blocking user edits.
+export const bypassSessionProcessingLock = Annotation.define<true>();
 
 export const sessionProcessingStateField = StateField.define<SessionProcessingRange | null>({
   create: () => null,
@@ -57,6 +67,17 @@ function decorationsFor(state: EditorState): DecorationSet {
   return Decoration.set([PROCESSING_DECORATION.range(range.from, range.to)]);
 }
 
+const processingRangeLock = EditorState.changeFilter.of((tr) => {
+  if (tr.annotation(bypassSessionProcessingLock) === true) {
+    return true;
+  }
+  const range = tr.startState.field(sessionProcessingStateField, false);
+  if (range === undefined || range === null) {
+    return true;
+  }
+  return [range.from, range.to];
+});
+
 export function sessionProcessingExtension(): Extension {
-  return [sessionProcessingStateField, sessionProcessingDecorationsField];
+  return [sessionProcessingStateField, sessionProcessingDecorationsField, processingRangeLock];
 }

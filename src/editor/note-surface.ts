@@ -13,6 +13,7 @@ import {
   setAnchorModeEffect,
 } from './dictation-anchor-extension';
 import {
+  bypassSessionProcessingLock,
   type SessionProcessingRange,
   setSessionProcessingEffect,
 } from './session-processing-extension';
@@ -288,6 +289,7 @@ export class NoteSurface {
 
     const end = range.from + newText.length;
     this.view.dispatch({
+      annotations: bypassSessionProcessingLock.of(true),
       changes: { from: range.from, to: range.to, insert: newText },
       effects: [setAnchorEffect.of(end), EditorView.scrollIntoView(end, { y: 'nearest' })],
       selection: { anchor: end },
