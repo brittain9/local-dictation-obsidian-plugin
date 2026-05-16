@@ -541,7 +541,7 @@ export class LocalTranscriptView extends ItemView {
     if (settings.timestampsEnabled) {
       items.createEl('p', {
         cls: 'local-transcript-muted',
-        text: 'Per-utterance preserves timestamps. Batch may rewrite or drop them - your prompt controls what happens.',
+        text: 'Per-utterance preserves timestamps. Batch may rewrite or drop them — your prompt controls what happens.',
       });
     }
 

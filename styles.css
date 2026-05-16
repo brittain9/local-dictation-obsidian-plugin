@@ -118,12 +118,6 @@
   width: 100%;
 }
 
-/* --- Settings rows ------------------------------------------------ */
-
-.local-stt-setting-subrow {
-  padding-left: var(--size-4-4);
-}
-
 /* --- Install progress --------------------------------------------- */
 
 .local-stt-install-progress {
