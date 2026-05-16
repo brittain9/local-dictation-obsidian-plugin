@@ -44,7 +44,7 @@ The community-plugin package contains only Obsidian's three plugin files:
 - `manifest.json`
 - `styles.css`
 
-After those files are installed, open `Settings -> Local Dictation` and install the sidecar from the plugin settings. The plugin downloads the sidecar archive from the GitHub Release matching its own `manifest.version`, verifies it, and stores it under the plugin's `bin/` directory. Then click `Manage models`, install a model, open a note, and start dictation from the ribbon button or `Local Dictation: Start Dictation Session`.
+After those files are installed, open `Settings -> Local Dictation` and install the sidecar from the plugin settings. The plugin downloads the sidecar archive from the GitHub Release matching its own `manifest.version`, verifies it, and stores it under the plugin's `bin/` directory. Then click `Manage models`, install a model, open a note, and start dictation from the ribbon button or `Local Dictation: Start dictation session`.
 
 The sidecar and model downloads are separate on purpose: Obsidian installs the plugin UI, the plugin installs the native sidecar, and the sidecar manages model downloads. Transcription runs locally after setup.
 

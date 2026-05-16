@@ -18,7 +18,7 @@ interface CommandDependencies {
 export function registerCommands(dependencies: CommandDependencies): void {
   dependencies.plugin.addCommand({
     id: TOGGLE_DICTATION_COMMAND_ID,
-    name: 'Toggle Dictation Session',
+    name: 'Toggle dictation session',
     callback: async () => {
       await dependencies.toggleDictation();
     },
@@ -26,7 +26,7 @@ export function registerCommands(dependencies: CommandDependencies): void {
 
   dependencies.plugin.addCommand({
     id: START_DICTATION_COMMAND_ID,
-    name: 'Start Dictation Session',
+    name: 'Start dictation session',
     callback: async () => {
       await dependencies.startDictation();
     },
@@ -34,7 +34,7 @@ export function registerCommands(dependencies: CommandDependencies): void {
 
   dependencies.plugin.addCommand({
     id: STOP_DICTATION_COMMAND_ID,
-    name: 'Stop Dictation Session',
+    name: 'Stop dictation session',
     callback: async () => {
       await dependencies.stopDictation();
     },
@@ -42,7 +42,7 @@ export function registerCommands(dependencies: CommandDependencies): void {
 
   dependencies.plugin.addCommand({
     id: CANCEL_DICTATION_COMMAND_ID,
-    name: 'Cancel Dictation Session',
+    name: 'Cancel dictation session',
     callback: async () => {
       await dependencies.cancelDictation();
     },
@@ -50,7 +50,7 @@ export function registerCommands(dependencies: CommandDependencies): void {
 
   dependencies.plugin.addCommand({
     id: 'check-sidecar-health',
-    name: 'Check Sidecar Health',
+    name: 'Check sidecar health',
     callback: async () => {
       await dependencies.checkSidecarHealth();
     },
@@ -58,7 +58,7 @@ export function registerCommands(dependencies: CommandDependencies): void {
 
   dependencies.plugin.addCommand({
     id: 'restart-sidecar',
-    name: 'Restart Sidecar',
+    name: 'Restart sidecar',
     callback: async () => {
       await dependencies.restartSidecar();
     },

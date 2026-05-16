@@ -131,7 +131,7 @@ flatpak run --command=sh md.obsidian.Obsidian -c '
 3. For Flatpak, set `Sidecar path override` to the CUDA sidecar binary path when the automatic plugin-local or dev-build discovery path is not visible inside the sandbox.
 4. Set `CUDA library path` to the colon-separated `/run/host/...` value you built earlier.
 5. Under `Engine options`, leave `GPU acceleration` on `Use when available` unless you intentionally want CPU only.
-6. Run `Local Dictation: Check Sidecar Health`.
+6. Run `Local Dictation: Check sidecar health`.
 
 The settings page now shows the effective backend per engine:
 

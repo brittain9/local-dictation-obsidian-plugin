@@ -85,7 +85,7 @@ Under `Engine options`, leave `GPU acceleration` on `Use when available` unless 
 
 ## Step 5: Run And Verify
 
-1. Run `Local Dictation: Check Sidecar Health`.
+1. Run `Local Dictation: Check sidecar health`.
 2. Open `Settings -> Local Dictation`.
 3. Confirm the acceleration card reports:
 

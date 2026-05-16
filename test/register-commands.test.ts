@@ -29,12 +29,12 @@ describe('registerCommands', () => {
     registerCommands(dependencies);
 
     expect(commands.map((command) => [command.id, command.name])).toEqual([
-      ['toggle-dictation-session', 'Toggle Dictation Session'],
-      ['start-dictation-session', 'Start Dictation Session'],
-      ['stop-dictation-session', 'Stop Dictation Session'],
-      ['cancel-dictation-session', 'Cancel Dictation Session'],
-      ['check-sidecar-health', 'Check Sidecar Health'],
-      ['restart-sidecar', 'Restart Sidecar'],
+      ['toggle-dictation-session', 'Toggle dictation session'],
+      ['start-dictation-session', 'Start dictation session'],
+      ['stop-dictation-session', 'Stop dictation session'],
+      ['cancel-dictation-session', 'Cancel dictation session'],
+      ['check-sidecar-health', 'Check sidecar health'],
+      ['restart-sidecar', 'Restart sidecar'],
     ]);
 
     await commands[0]?.callback();

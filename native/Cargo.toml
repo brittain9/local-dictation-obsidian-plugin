@@ -1,6 +1,6 @@
 [package]
 name = "local-transcript-sidecar"
-version = "2026.5.15"
+version = "2026.5.16"
 edition = "2024"
 license = "MIT"
 rust-version = "1.94.1"
