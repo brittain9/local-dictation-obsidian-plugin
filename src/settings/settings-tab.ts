@@ -2,7 +2,6 @@ import type { App, Plugin } from 'obsidian';
 import { Platform, PluginSettingTab, Setting } from 'obsidian';
 
 import { resolveEngineCapabilities } from '../models/capability-view';
-import { ManageModelsModal } from '../models/manage-models-modal';
 import type { ModelInstallManager } from '../models/model-install-manager';
 import { updateInstallProgressElement } from '../models/model-install-progress';
 import { ExternalModelFileModal, ModelDetailsModal } from '../models/model-management-modals';
@@ -51,6 +50,7 @@ interface SettingsTabDependencies {
   isDictationBusy: () => boolean;
   logger?: PluginLogger | undefined;
   modelInstallManager: ModelInstallManager;
+  openModelPicker: (options?: { onChanged?: () => void }) => Promise<void>;
   openSetupWizard: () => Promise<void>;
   pluginVersion: string;
   resolvePluginDirectory: () => Promise<string>;
@@ -135,12 +135,11 @@ export class LocalSttSettingTab extends PluginSettingTab {
     const manager = this.dependencies.modelInstallManager;
     this.disposeModelSection = renderModelSection(modelSection, manager, {
       onManageModels: () => {
-        new ManageModelsModal(this.app, {
-          manager,
+        void this.dependencies.openModelPicker({
           onChanged: () => {
             this.display();
           },
-        }).open();
+        });
       },
       onExternalFile: () => {
         const selectedModel = this.dependencies.getSettings().selectedModel;

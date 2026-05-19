@@ -841,7 +841,6 @@ export class DictationSessionController {
       }
     }
   }
-
 }
 
 function createSessionId(): string {

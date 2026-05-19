@@ -107,7 +107,7 @@ export default class LocalSttPlugin extends Plugin {
       },
       ollamaClient,
       onModelMissing: () => {
-        this.openModelPicker();
+        void this.openModelPicker();
       },
       onSidecarMissing: () => {
         void this.openSetupWizard();
@@ -127,6 +127,7 @@ export default class LocalSttPlugin extends Plugin {
         isDictationBusy: () => this.dictationController?.isBusy() ?? false,
         logger: this.logger,
         modelInstallManager: this.requireModelInstallManager(),
+        openModelPicker: (options) => this.openModelPicker(options),
         openSetupWizard: () => this.openSetupWizard(),
         pluginVersion: this.manifest.version,
         resolvePluginDirectory: () => this.resolvePluginDirectoryPath(),
@@ -234,17 +235,7 @@ export default class LocalSttPlugin extends Plugin {
     const modal = new SetupWizardModal({
       app: this.app,
       hasSelectedModel: () => this.settings.selectedModel !== null,
-      isSidecarInstalled: async () => {
-        try {
-          await this.resolveSidecarExecutablePath();
-          return true;
-        } catch (error) {
-          if (error instanceof SidecarNotInstalledError) {
-            return false;
-          }
-          throw error;
-        }
-      },
+      isSidecarInstalled: () => this.isSidecarInstalled(),
       logger: this.logger,
       modelInstallManager: this.requireModelInstallManager(),
       onCompleted: async () => {
@@ -270,14 +261,30 @@ export default class LocalSttPlugin extends Plugin {
     modal.open();
   }
 
-  private openModelPicker(): void {
+  async openModelPicker(options: { onChanged?: () => void } = {}): Promise<void> {
+    if (!(await this.isSidecarInstalled())) {
+      await this.openSetupWizard();
+      return;
+    }
     new ManageModelsModal(this.app, {
       manager: this.requireModelInstallManager(),
-      onChanged: () => {
-        // Selection or install state changed; nothing more to do here —
-        // ModelInstallManager handles auto-select-on-install.
+      onChanged: options.onChanged ?? (() => {}),
+      onRunSetup: () => {
+        void this.openSetupWizard();
       },
     }).open();
+  }
+
+  private async isSidecarInstalled(): Promise<boolean> {
+    try {
+      await this.resolveSidecarExecutablePath();
+      return true;
+    } catch (error) {
+      if (error instanceof SidecarNotInstalledError) {
+        return false;
+      }
+      throw error;
+    }
   }
 
   override async onunload(): Promise<void> {

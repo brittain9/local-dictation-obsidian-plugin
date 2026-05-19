@@ -188,6 +188,48 @@
   padding: 24px 0;
 }
 
+.local-stt-empty-panel {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  padding: 32px 16px;
+  text-align: center;
+}
+
+.local-stt-empty-panel__icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-muted);
+}
+
+.local-stt-empty-panel__icon svg {
+  width: 40px;
+  height: 40px;
+}
+
+.local-stt-empty-panel h3 {
+  margin: 0;
+}
+
+.local-stt-empty-panel p {
+  margin: 0;
+  max-width: 36em;
+  color: var(--text-muted);
+}
+
+.local-stt-empty-panel__detail {
+  font-size: var(--font-ui-small);
+  color: var(--text-faint);
+}
+
+.local-stt-empty-panel__actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 4px;
+}
+
 /* --- Details grid (dt/dd pairs) ----------------------------------- */
 
 .local-stt-details-grid {
