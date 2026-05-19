@@ -9,6 +9,7 @@ import { dictationAnchorExtension } from './editor/dictation-anchor-extension';
 import { noteSurfaceUpdateListenerExtension } from './editor/note-surface';
 import { sessionProcessingExtension } from './editor/session-processing-extension';
 import { createOllamaClient } from './llm/ollama-client';
+import { ManageModelsModal } from './models/manage-models-modal';
 import { ModelInstallManager } from './models/model-install-manager';
 import { Session } from './session/session';
 import { logAccelerationFallbacks } from './settings/acceleration-info';
@@ -18,7 +19,6 @@ import {
   resolvePluginSettings,
 } from './settings/plugin-settings';
 import { LocalSttSettingTab } from './settings/settings-tab';
-import { ManageModelsModal } from './models/manage-models-modal';
 import { SetupWizardModal } from './setup/setup-wizard-modal';
 import { formatErrorMessage } from './shared/format-utils';
 import { createPluginLogger, type PluginLogger } from './shared/plugin-logger';

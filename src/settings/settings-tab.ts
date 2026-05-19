@@ -1,11 +1,12 @@
 import type { App, Plugin } from 'obsidian';
-import { Platform, PluginSettingTab, Setting } from 'obsidian';
+import { Notice, Platform, PluginSettingTab, Setting } from 'obsidian';
 
 import { resolveEngineCapabilities } from '../models/capability-view';
 import type { ModelInstallManager } from '../models/model-install-manager';
 import { updateInstallProgressElement } from '../models/model-install-progress';
 import { ExternalModelFileModal, ModelDetailsModal } from '../models/model-management-modals';
 import { matchesModelTriple } from '../models/model-management-types';
+import { formatErrorMessage } from '../shared/format-utils';
 import type { PluginLogger } from '../shared/plugin-logger';
 import type { SpeakingStyle } from '../sidecar/protocol';
 import type { SidecarConnection } from '../sidecar/sidecar-connection';
@@ -391,9 +392,7 @@ export class LocalSttSettingTab extends PluginSettingTab {
         : (state.compiledRuntimes.find((r) => r.runtimeId === sel.runtimeId) ?? null);
 
     containerEl.empty();
-    heading.setName(
-      selectedAdapter === null ? 'Engine' : `${selectedAdapter.displayName} engine`,
-    );
+    heading.setName(selectedAdapter === null ? 'Engine' : `${selectedAdapter.displayName} engine`);
 
     let rendered = 0;
 
@@ -410,7 +409,18 @@ export class LocalSttSettingTab extends PluginSettingTab {
         .addToggle((toggle) => {
           toggle.setValue(settings.accelerationPreference === 'auto');
           toggle.onChange(async (value) => {
+            if (this.dependencies.isDictationBusy()) {
+              new Notice('Cannot change hardware acceleration while dictating.');
+              toggle.setValue(!value);
+              return;
+            }
             await this.access.persistOne('accelerationPreference', value ? 'auto' : 'cpu_only');
+            try {
+              await this.dependencies.restartSidecar();
+              new Notice(value ? 'Hardware acceleration on.' : 'Hardware acceleration off.');
+            } catch (error) {
+              new Notice(`Failed to apply hardware acceleration: ${formatErrorMessage(error)}`);
+            }
           });
         });
       rendered += 1;
@@ -471,7 +481,9 @@ export class LocalSttSettingTab extends PluginSettingTab {
 
       const setting = new Setting(items)
         .setName('Set up Local Dictation')
-        .setDesc("Local Dictation isn't ready yet. Run the setup wizard to install the speech engine and a model.");
+        .setDesc(
+          "Local Dictation isn't ready yet. Run the setup wizard to install the speech engine and a model.",
+        );
       setting.addButton((button) => {
         button
           .setCta()

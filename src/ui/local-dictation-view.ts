@@ -300,7 +300,7 @@ export class LocalDictationView extends ItemView {
     const hasSelectedModel =
       selectedModel.length > 0 && this.models.some((model) => model.id === selectedModel);
 
-    const setting = new Setting(parent)
+    new Setting(parent)
       .setName('Ollama model')
       .setDesc('Pick a local Ollama chat model.')
       .addDropdown((dropdown) => {

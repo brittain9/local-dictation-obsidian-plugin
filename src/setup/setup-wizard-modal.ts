@@ -1,13 +1,12 @@
 import type { App } from 'obsidian';
 import { Modal, Notice, Platform, setIcon } from 'obsidian';
-
-import type { ModelInstallManager } from '../models/model-install-manager';
 import { ManageModelsModal } from '../models/manage-models-modal';
+import type { ModelInstallManager } from '../models/model-install-manager';
 import type { PluginLogger } from '../shared/plugin-logger';
 import type { SidecarConnection } from '../sidecar/sidecar-connection';
 import type { SidecarInstallManager } from '../sidecar/sidecar-install-manager';
-import { SidecarInstallModal } from './sidecar-install-modal';
 import { getInstallCopy } from './sidecar-install-copy';
+import { SidecarInstallModal } from './sidecar-install-modal';
 
 interface WizardDependencies {
   app: App;
@@ -285,16 +284,20 @@ export class SetupWizardModal extends Modal {
   // ---------------- Navigation ----------------
   private goNext(): void {
     const idx = STEP_ORDER.indexOf(this.currentStep);
-    if (idx >= 0 && idx < STEP_ORDER.length - 1) {
-      this.currentStep = STEP_ORDER[idx + 1]!;
+    if (idx < 0) return;
+    const next = STEP_ORDER[idx + 1];
+    if (next !== undefined) {
+      this.currentStep = next;
       this.render();
     }
   }
 
   private goBack(): void {
     const idx = STEP_ORDER.indexOf(this.currentStep);
-    if (idx > 0) {
-      this.currentStep = STEP_ORDER[idx - 1]!;
+    if (idx <= 0) return;
+    const prev = STEP_ORDER[idx - 1];
+    if (prev !== undefined) {
+      this.currentStep = prev;
       this.render();
     }
   }
