@@ -6,6 +6,4 @@ export function validateSidecarArchives(
 
 export function buildChecksumsFile(archiveContents: ReadonlyMap<string, Buffer>): string;
 
-export function assembleReleaseFiles(
-  rootDir?: string,
-): Promise<{ pluginReleaseDir: string; sidecarReleaseDir: string }>;
+export function assembleReleaseFiles(rootDir?: string): Promise<{ releaseDir: string }>;

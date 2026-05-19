@@ -126,14 +126,8 @@ export async function installSidecar(
 ): Promise<InstallSidecarResult> {
   const assetName = detectPlatformAssetForCurrentEnv(options.variant);
   const releaseBaseUrl = (options.releaseBaseUrl ?? DEFAULT_RELEASE_BASE_URL).replace(/\/$/, '');
-  // Sidecar archives ship under a `sidecar-<version>` tag rather than the
-  // plugin version tag, because Obsidian's community-plugins reviewer rejects
-  // any non-Obsidian assets on the release matching `manifest.version`. The
-  // release workflow creates both tags from the same commit, so the version
-  // mapping stays 1:1.
-  const sidecarReleaseTag = `sidecar-${options.version}`;
-  const archiveUrl = `${releaseBaseUrl}/${sidecarReleaseTag}/${assetName}`;
-  const checksumsUrl = `${releaseBaseUrl}/${sidecarReleaseTag}/checksums.txt`;
+  const archiveUrl = `${releaseBaseUrl}/${options.version}/${assetName}`;
+  const checksumsUrl = `${releaseBaseUrl}/${options.version}/checksums.txt`;
 
   const binDirectory = join(options.pluginDirectory, 'bin');
   const stagingDirectory = join(binDirectory, `.${options.variant}-staging`);

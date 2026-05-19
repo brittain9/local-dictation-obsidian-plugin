@@ -1,6 +1,6 @@
 {
   "name": "local-dictation",
-  "version": "2026.5.16",
+  "version": "2026.5.19",
   "description": "Dictate notes privately on-device with Whisper, Cohere Transcribe, Silero VAD, and optional Ollama LLM cleanup.",
   "private": true,
   "license": "MIT",
