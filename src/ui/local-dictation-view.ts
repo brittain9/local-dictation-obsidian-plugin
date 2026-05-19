@@ -62,6 +62,7 @@ export class LocalDictationView extends ItemView {
   private advancedOpen = false;
   private focusedInput: HTMLElement | null = null;
   private models: OllamaModelOption[] = [];
+  private narrowObserver: ResizeObserver | null = null;
   private ollamaStatus = 'Ollama status unknown.';
   private lastEnabledMode: LlmPresetMode = DEFAULT_ENABLED_CLEANUP_MODE;
   private promptBlurRenderPending = false;
@@ -89,13 +90,29 @@ export class LocalDictationView extends ItemView {
 
   override async onOpen(): Promise<void> {
     this.render();
+    this.attachWidthObserver();
     if (this.dependencies.getSettings().llmFeaturesEnabled) {
       void this.refreshModels({ silent: true });
     }
   }
 
   override async onClose(): Promise<void> {
+    this.narrowObserver?.disconnect();
+    this.narrowObserver = null;
     await this.flushPendingPromptSave();
+  }
+
+  private attachWidthObserver(): void {
+    if (this.narrowObserver !== null) return;
+    const target = this.contentEl;
+    if (typeof ResizeObserver === 'undefined') return;
+    this.narrowObserver = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        const width = entry.contentRect.width;
+        target.toggleClass('local-dictation-sidebar--narrow', width > 0 && width < 360);
+      }
+    });
+    this.narrowObserver.observe(target);
   }
 
   private render(): void {
@@ -145,7 +162,7 @@ export class LocalDictationView extends ItemView {
     const enabled = settings.llmPostprocessMode !== 'off';
     new Setting(parent)
       .setName('Transform')
-      .setDesc(enabled ? 'LLM transform is on.' : 'Raw Whisper text is inserted directly.')
+      .setDesc(enabled ? '' : 'Raw Whisper text is inserted directly.')
       .addToggle((toggle) => {
         toggle.setValue(enabled);
         toggle.onChange(async (value) => {
@@ -181,9 +198,9 @@ export class LocalDictationView extends ItemView {
       return;
     }
 
-    const setting = new Setting(parent)
+    new Setting(parent)
       .setName('Mode')
-      .setDesc('Choose when the LLM transform runs.')
+      .setDesc('Run after each phrase, or all at once when you stop.')
       .addDropdown((dropdown) => {
         for (const option of CLEANUP_MODE_OPTIONS) {
           dropdown.addOption(option.value, option.label);
@@ -197,11 +214,6 @@ export class LocalDictationView extends ItemView {
           await this.saveField('llmPostprocessMode', value);
         });
       });
-
-    appendInfoTooltip(
-      setting,
-      'When the LLM transform runs. "After each phrase" (per-utterance) — every spoken phrase is sent to the model as soon as Whisper finishes transcribing it, and the transformed version replaces the raw text in-line. Best for prompts that operate on one phrase at a time (filler cleanup, punctuation). "All at once on stop" (batch) — raw Whisper text is inserted while you talk, then on stop the whole session is sent to the model and replaced with the transformed result. Required for prompts that need the full context (summary, reformatting, markdown structure, brain-dump organization).',
-    );
   }
 
   private renderStylePicker(parent: HTMLElement, settings: PluginSettings): void {
@@ -214,7 +226,7 @@ export class LocalDictationView extends ItemView {
     const activeRef = activeOption?.ref ?? CUSTOM_STYLE_VALUE;
 
     const description = isCustom
-      ? 'Custom - current prompt does not match any saved preset.'
+      ? 'Custom — prompt does not match a saved preset.'
       : `${activeOption.description}${describeMode(activeOption.mode)}`;
 
     const setting = new Setting(parent)
@@ -289,8 +301,8 @@ export class LocalDictationView extends ItemView {
       selectedModel.length > 0 && this.models.some((model) => model.id === selectedModel);
 
     const setting = new Setting(parent)
-      .setName('Model')
-      .setDesc('The Ollama model used to clean transcripts.')
+      .setName('Ollama model')
+      .setDesc('Pick a local Ollama chat model.')
       .addDropdown((dropdown) => {
         dropdown.addOption('', 'Select a model');
         if (selectedModel.length > 0 && !hasSelectedModel) {
@@ -320,15 +332,10 @@ export class LocalDictationView extends ItemView {
         button.extraSettingsEl.setAttribute('aria-label', 'Refresh Ollama models');
       });
 
-    appendInfoTooltip(
-      setting,
-      'Refresh re-queries Ollama for installed chat models. Smaller models are faster but less reliable.',
-    );
-
     if (selectedModel.length === 0) {
       parent.createEl('p', {
         cls: 'local-dictation-muted',
-        text: 'Pick an Ollama model to enable LLM transform. Until then, raw Whisper text is inserted directly.',
+        text: 'Pick an Ollama model above to enable the transform.',
       });
     }
   }
@@ -477,15 +484,11 @@ export class LocalDictationView extends ItemView {
   }
 
   private renderCustomizeStyleSection(parent: HTMLElement, settings: PluginSettings): void {
-    const items = createSettingGroup(
-      parent,
-      'Prompt',
-      'Edit the prompt for the current preset. Any change switches the preset picker to Custom.',
-    );
+    const items = createSettingGroup(parent, 'Prompt');
     this.addTextAreaSetting(
       items,
       'Prompt',
-      'LLM transform instructions',
+      'System prompt sent to the model.',
       settings.llmPostprocessPrompt,
       10,
       (value) => {
@@ -507,7 +510,7 @@ export class LocalDictationView extends ItemView {
       'Min words',
       override !== null
         ? `Set by preset "${override.label}". Delete and re-save the preset to change.`
-        : 'Skip below N words',
+        : 'Skip the transform under N words.',
       override?.value ?? settings.llmPostprocessSkipMinWords,
       (value) => this.saveField('llmPostprocessSkipMinWords', value, { rerender: false }),
       'Skip the LLM transform when the utterance has fewer words than this.',
@@ -516,11 +519,7 @@ export class LocalDictationView extends ItemView {
   }
 
   private renderGenerationSection(parent: HTMLElement, settings: PluginSettings): void {
-    const items = createSettingGroup(
-      parent,
-      'Generation',
-      'Ollama sampling parameters controlling output randomness.',
-    );
+    const items = createSettingGroup(parent, 'Generation');
     const override = activePresetOverride(settings, 'temperature');
     this.addNumberSetting(
       items,
@@ -545,19 +544,15 @@ export class LocalDictationView extends ItemView {
       });
     }
 
-    const showRawSetting = new Setting(items)
+    new Setting(items)
       .setName('Show raw beneath LLM output')
-      .setDesc('Keep the original Whisper transcript visible in a collapsible callout.')
+      .setDesc('Keep the Whisper transcript in a collapsible callout under each result.')
       .addToggle((toggle) => {
         toggle.setValue(settings.llmPostprocessShowRawBelow);
         toggle.onChange(async (value) => {
           await this.saveField('llmPostprocessShowRawBelow', value, { rerender: false });
         });
       });
-    appendInfoTooltip(
-      showRawSetting,
-      'Inserts the raw Whisper text below the transformed text inside a collapsible "raw" callout. After each phrase: a small raw callout is appended under every transformed phrase. All at once on stop: one combined raw callout is appended below the transformed session text. Useful while iterating on an LLM transform prompt so you can compare the model output against what was actually said.',
-    );
 
     new Setting(items).setName('Ollama status').setDesc(this.ollamaStatus);
 
@@ -716,12 +711,12 @@ export class LocalDictationView extends ItemView {
       this.models = await this.dependencies.ollamaClient.listOllamaModels();
       this.ollamaStatus =
         this.models.length === 0
-          ? 'Ollama is running. No chat models found.'
-          : 'Ollama is running.';
+          ? 'Running, but no chat models installed.'
+          : `Ready (${this.models.length} chat model${this.models.length === 1 ? '' : 's'}).`;
       this.render();
     } catch (error) {
       this.models = [];
-      this.ollamaStatus = 'Ollama is unavailable.';
+      this.ollamaStatus = 'Not running.';
       this.dependencies.logger?.warn('llm', 'Ollama refresh failed', error);
       if (options.silent !== true) {
         this.notice('Local Dictation: Ollama is unavailable.');

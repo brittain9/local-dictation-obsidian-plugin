@@ -95,6 +95,7 @@ export interface PluginSettings {
   localTranscriptSidebarBootstrapped: boolean;
   modelStorePathOverride: string;
   selectedModel: SelectedModel | null;
+  setupCompletedAt: string | null;
   sidecarPathOverride: string;
   sidecarRequestTimeoutSeconds: number;
   sidecarStartupTimeoutSeconds: number;
@@ -129,6 +130,7 @@ export const DEFAULT_PLUGIN_SETTINGS: PluginSettings = {
   localTranscriptSidebarBootstrapped: false,
   modelStorePathOverride: '',
   selectedModel: null,
+  setupCompletedAt: null,
   sidecarPathOverride: '',
   sidecarRequestTimeoutSeconds: 300,
   sidecarStartupTimeoutSeconds: 4,
@@ -215,6 +217,7 @@ export function resolvePluginSettings(data: unknown): PluginSettings {
       DEFAULT_PLUGIN_SETTINGS.modelStorePathOverride,
     ),
     selectedModel: readSelectedModel(raw.selectedModel),
+    setupCompletedAt: typeof raw.setupCompletedAt === 'string' ? raw.setupCompletedAt : null,
     sidecarPathOverride: readString(
       raw.sidecarPathOverride,
       DEFAULT_PLUGIN_SETTINGS.sidecarPathOverride,

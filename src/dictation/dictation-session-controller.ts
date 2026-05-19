@@ -84,6 +84,7 @@ interface DictationSessionControllerDependencies {
   logger?: PluginLogger;
   notice: (message: string) => void;
   ollamaClient: Pick<OllamaClient, 'cleanup'>;
+  onModelMissing?: () => void;
   onSidecarMissing?: () => void;
   setRibbonQueueTier: (tier: QueueBackpressureTier) => void;
   setRibbonState: (state: DictationControllerState) => void;
@@ -209,13 +210,13 @@ export class DictationSessionController {
     }
 
     const settings = this.dependencies.getSettings();
-    let selectedModel: NonNullable<PluginSettings['selectedModel']>;
-    try {
-      selectedModel = this.requireSelectedModel(settings);
-    } catch (error) {
-      this.handleError('Failed to start the dictation session', error);
+    if (settings.selectedModel === null) {
+      this.dependencies.logger?.debug('session', 'no model selected — prompting model picker');
+      this.applyUiState('idle');
+      this.dependencies.onModelMissing?.();
       return;
     }
+    const selectedModel = settings.selectedModel;
     const effectiveGeneration = resolveActiveGenerationDefaults(settings);
     const sessionStartUnixMs = Date.now();
     const snapshot: ActiveSessionSnapshot = {
@@ -841,15 +842,6 @@ export class DictationSessionController {
     }
   }
 
-  private requireSelectedModel(
-    settings: PluginSettings,
-  ): NonNullable<PluginSettings['selectedModel']> {
-    if (settings.selectedModel !== null) {
-      return settings.selectedModel;
-    }
-
-    throw new Error('Select a Local Dictation model before starting dictation.');
-  }
 }
 
 function createSessionId(): string {

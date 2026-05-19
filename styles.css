@@ -579,6 +579,40 @@
   }
 }
 
+/* --- LLM sidebar narrow-width --------------------------------------
+   When the sidebar is dragged narrow, stack setting rows vertically so
+   labels and controls don't get squeezed onto a single short line. */
+
+.local-dictation-sidebar--narrow .setting-item {
+  flex-direction: column;
+  align-items: stretch;
+}
+
+.local-dictation-sidebar--narrow .setting-item-info {
+  margin-right: 0;
+  margin-bottom: 6px;
+}
+
+.local-dictation-sidebar--narrow .setting-item-control {
+  justify-content: flex-start;
+  flex-wrap: wrap;
+}
+
+.local-dictation-sidebar--narrow .setting-item-control select,
+.local-dictation-sidebar--narrow .setting-item-control input[type="text"],
+.local-dictation-sidebar--narrow .setting-item-control input[type="number"] {
+  width: 100%;
+  min-width: 0;
+}
+
+/* Truncate preset description to one line; full text in title attr on hover. */
+.local-dictation-sidebar .setting-item-description {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
 /* --- LLM sidebar Advanced disclosure ------------------------------ */
 
 .local-dictation-advanced {
@@ -595,4 +629,110 @@
 
 .local-stt-hidden {
   display: none;
+}
+
+.local-stt-version-chip {
+  margin-left: 0.55em;
+  color: var(--text-muted);
+  font-size: 0.82em;
+  font-weight: normal;
+  font-variant-numeric: tabular-nums;
+}
+
+/* --- Setup wizard ------------------------------------------------- */
+
+.local-stt-setup-wizard {
+  width: min(560px, 92vw);
+}
+
+.local-stt-wizard-progress {
+  display: flex;
+  gap: 8px;
+  justify-content: center;
+  margin: 4px 0 18px;
+}
+
+.local-stt-wizard-progress__dot {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 999px;
+  background: var(--background-modifier-border, rgba(128, 128, 128, 0.18));
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+  font-weight: 600;
+}
+
+.local-stt-wizard-progress__dot.is-active {
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+}
+
+.local-stt-wizard-progress__dot.is-complete {
+  background: var(--background-modifier-success, rgba(0, 160, 0, 0.18));
+  color: var(--text-success, var(--text-normal));
+}
+
+.local-stt-wizard-step {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.local-stt-wizard-step__title {
+  margin: 0 0 4px;
+  font-size: var(--font-ui-large, 1.1em);
+}
+
+.local-stt-wizard-step__muted {
+  color: var(--text-muted);
+  font-size: var(--font-ui-small);
+  margin: 0;
+}
+
+.local-stt-wizard-card {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 10px 14px;
+  padding: 12px 14px;
+  margin-top: 8px;
+  border: 1px solid var(--background-modifier-border, rgba(128, 128, 128, 0.18));
+  border-radius: var(--radius-m, 8px);
+  background: var(--background-secondary-alt, rgba(128, 128, 128, 0.05));
+}
+
+.local-stt-wizard-card__icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  color: var(--interactive-accent);
+}
+
+.local-stt-wizard-card__text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.local-stt-wizard-card__text p {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: var(--font-ui-small);
+}
+
+.local-stt-wizard-card > button {
+  grid-column: 1 / -1;
+  justify-self: start;
+  margin-top: 4px;
+}
+
+.local-stt-wizard-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  margin-top: 18px;
 }

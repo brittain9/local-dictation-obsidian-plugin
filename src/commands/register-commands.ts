@@ -18,7 +18,7 @@ interface CommandDependencies {
 export function registerCommands(dependencies: CommandDependencies): void {
   dependencies.plugin.addCommand({
     id: TOGGLE_DICTATION_COMMAND_ID,
-    name: 'Toggle dictation session',
+    name: 'Toggle dictation',
     callback: async () => {
       await dependencies.toggleDictation();
     },
@@ -26,7 +26,7 @@ export function registerCommands(dependencies: CommandDependencies): void {
 
   dependencies.plugin.addCommand({
     id: START_DICTATION_COMMAND_ID,
-    name: 'Start dictation session',
+    name: 'Start dictation',
     callback: async () => {
       await dependencies.startDictation();
     },
@@ -34,7 +34,7 @@ export function registerCommands(dependencies: CommandDependencies): void {
 
   dependencies.plugin.addCommand({
     id: STOP_DICTATION_COMMAND_ID,
-    name: 'Stop dictation session',
+    name: 'Stop dictation',
     callback: async () => {
       await dependencies.stopDictation();
     },
@@ -42,7 +42,7 @@ export function registerCommands(dependencies: CommandDependencies): void {
 
   dependencies.plugin.addCommand({
     id: CANCEL_DICTATION_COMMAND_ID,
-    name: 'Cancel dictation session',
+    name: 'Cancel dictation',
     callback: async () => {
       await dependencies.cancelDictation();
     },
