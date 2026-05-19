@@ -8,9 +8,7 @@ use crate::transcription::{SegmentDiagnostics, Transcript};
 const VERSION: u32 = 1;
 
 // Strong corroborators — any one drops a SOFT phrase on a final revision and is
-// the only path that drops a Normal-classified segment as silence. Tuned
-// against PLANS.md "Runtime Signals" / "Classification Rules" — change these
-// in lockstep with the plan.
+// the only path that drops a Normal-classified segment as silence.
 const STRONG_NO_SPEECH_PROB: f32 = 0.60;
 const STRONG_AVG_LOGPROB: f32 = -1.00;
 const STRONG_VAD_VOICED_FRACTION: f32 = 0.10;

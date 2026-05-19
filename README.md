@@ -72,92 +72,9 @@ Local Dictation runs transcription on your own machine. To do that, the plugin r
 
 The source of truth for these accesses is [`src/sidecar/sidecar-installer.ts`](src/sidecar/sidecar-installer.ts) and the IPC layer in [`src/sidecar/`](src/sidecar/).
 
-## Development
+## Contributing
 
-### Prerequisites
-
-- Node.js `24.14.1`, npm `11.12.1`
-- TypeScript `6.0.2`
-- Rust `1.94.1`
-- CMake and a platform C/C++ toolchain for native sidecar builds
-- CUDA Toolkit `12.9` with `nvcc` for Linux/Windows CUDA sidecar builds only
-- cuDNN `9.x` runtime libraries for local Cohere CUDA verification only
-
-Versions are pinned in `package.json` (`engines`, `packageManager`) and `rust-toolchain.toml`. If you use [mise](https://mise.jdx.dev), `mise install` will set up the Node and Rust toolchains automatically.
-
-The CUDA Toolkit is a build-from-source dependency. Published Linux/Windows CUDA sidecar archives bundle the CUDA runtime libraries needed by Whisper CUDA; release users need only a Turing-or-newer NVIDIA GPU and a compatible NVIDIA driver. Cohere CUDA additionally needs cuDNN `9.x` runtime libraries installed until cuDNN redistribution is reviewed.
-
-### Project Structure
-
-The plugin has two runtime boundaries: a TypeScript Obsidian plugin in `src/` and a Rust native sidecar in `native/`. See [CONTRIBUTING.md](CONTRIBUTING.md) for architecture details.
-
-### Setup
-
-Install dependencies:
-
-```sh
-npm install
-```
-
-For fast frontend iteration, symlink or clone this repo into `<vault>/.obsidian/plugins/local-dictation`, run watch mode, and reload Obsidian after rebuilds:
-
-```sh
-npm run build:sidecar
-npm run dev
-```
-
-For release-style local testing without cutting a GitHub Release, build the output and copy it into a test vault:
-
-```sh
-npm run build:frontend
-npm run build:sidecar
-npm run install:dev -- --vault ~/Documents/test-vault-stt --sidecars --enable
-```
-
-This installs the built `main.js`, `manifest.json`, and `styles.css` into the vault. With `--sidecars`, it also copies locally built sidecars into the plugin-local `bin/cpu` and `bin/cuda` layout. That lets you test the installed-plugin path without publishing a GitHub Release first.
-
-For Linux CUDA testing:
-
-```sh
-npm run build:frontend
-npm run build:sidecar
-npm run build:sidecar:cuda
-npm run install:dev -- --vault ~/Documents/test-vault-stt --sidecars --enable
-```
-
-For macOS testing, `npm run build:sidecar` builds the Metal-capable sidecar automatically.
-
-### Scripts
-
-**Build:**
-```sh
-npm run build            # build sidecar + bundle plugin
-npm run build:frontend   # bundle plugin only (skip sidecar rebuild)
-npm run build:sidecar    # build sidecar only
-npm run build:sidecar:cuda            # Linux CUDA sidecar
-npm run build:sidecar:cuda:windows    # Windows CUDA sidecar
-npm run dev              # watch mode for plugin
-npm run install:dev -- --vault <vault> --sidecars --enable
-```
-
-**Test and check:**
-```sh
-npm run test             # TypeScript unit tests
-npm run typecheck        # type checking
-npm run lint             # Biome linting
-npm run check            # full quality gate (TS + Rust)
-```
-
-`npm run check` is the gate that must pass before a PR.
-
-**Format:**
-```sh
-npm run format           # auto-format with Biome
-```
-
-### Contributing
-
-See [CONTRIBUTING.md](CONTRIBUTING.md) for branching conventions, PR workflow, and architecture overview.
+See [CONTRIBUTING.md](CONTRIBUTING.md) for prerequisites, setup, scripts, branching conventions, PR workflow, and architecture overview.
 
 ## License
 

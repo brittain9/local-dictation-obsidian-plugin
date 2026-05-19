@@ -19,4 +19,6 @@ data.json
 .vscode/
 .worktrees/
 .claude/
+AGENTS.md
+CLAUDE.md
 PLANS.md

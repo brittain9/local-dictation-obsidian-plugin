@@ -4,8 +4,6 @@
     "includes": [
       "**",
       "!.claude",
-      "!AGENTS.md",
-      "!PLANS.md",
       "!assets",
       "!data.json",
       "!main.js",
