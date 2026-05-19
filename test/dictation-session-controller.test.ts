@@ -887,6 +887,7 @@ describe('DictationSessionController', () => {
           llmPostprocessPrompt: 'Clean the session.',
           llmPostprocessShowRawBelow: true,
           selectedModel: createExternalModelSelection(),
+          useLlmNoteContext: true,
         }),
       ollamaClient,
       sidecarConnection,
@@ -921,6 +922,76 @@ describe('DictationSessionController', () => {
     expect(session.clearSessionProcessingMark.mock.invocationCallOrder[0] ?? 0).toBeGreaterThan(
       ollamaClient.cleanup.mock.invocationCallOrder[0] ?? Number.POSITIVE_INFINITY,
     );
+  });
+
+  it('omits note context from the batch cleanup message when useLlmNoteContext is off', async () => {
+    const ollamaClient = new FakeOllamaClient();
+    const session = new FakeSession();
+    session.currentSessionText = 'dictated text';
+    session.readNoteText.mockReturnValue({ text: 'note context', truncated: false });
+    const sidecarConnection = new FakeSidecarConnection();
+    const controller = createController({
+      createSession: () => session,
+      getSettings: () =>
+        createSettings({
+          llmFeaturesEnabled: true,
+          llmPostprocessMode: 'batch',
+          llmPostprocessModel: 'llama3.2:latest',
+          llmPostprocessPrompt: 'Clean the session.',
+          selectedModel: createExternalModelSelection(),
+          useLlmNoteContext: false,
+        }),
+      ollamaClient,
+      sidecarConnection,
+    });
+
+    await controller.startDictation();
+    await controller.stopDictation();
+
+    await vi.waitFor(() => {
+      expect(ollamaClient.cleanup).toHaveBeenCalledTimes(1);
+    });
+    expect(session.readNoteText).not.toHaveBeenCalled();
+    expect(ollamaClient.cleanup.mock.calls[0]?.[0].userMessage).toContain(
+      '<note_context>\n\n</note_context>',
+    );
+  });
+
+  it('omits the note_text source from the per-utterance context window when useLlmNoteContext is off', async () => {
+    const session = new FakeSession();
+    session.readNoteText.mockReturnValue({ text: 'should be ignored', truncated: false });
+    session.readPriorUtterances.mockReturnValue([{ text: 'earlier line', truncated: false }]);
+    const sidecarConnection = new FakeSidecarConnection();
+    const controller = createController({
+      createSession: () => session,
+      getSettings: () =>
+        createSettings({
+          llmFeaturesEnabled: true,
+          llmPostprocessMode: 'per_utterance',
+          llmPostprocessModel: 'llama3.2:latest',
+          selectedModel: createExternalModelSelection(),
+          useLlmNoteContext: false,
+          useNoteAsContext: false,
+        }),
+      sidecarConnection,
+    });
+
+    await controller.startDictation();
+    const sessionId = sidecarConnection.lastSessionId ?? 'session-1';
+
+    sidecarConnection.emit({
+      budgetChars: 384,
+      correlationId: 'corr-llm-off',
+      sessionId,
+      type: 'context_request',
+      utteranceId: 'utt-llm-off',
+    });
+
+    expect(session.readNoteText).not.toHaveBeenCalled();
+    const response = sidecarConnection.sendContextResponse.mock.calls[0]?.[1] as ContextWindow;
+    expect(response).not.toBeNull();
+    expect(response.sources.some((source) => source.kind === 'note_text')).toBe(false);
+    expect(response.sources.some((source) => source.kind === 'prior_utterance')).toBe(true);
   });
 
   it('logs a missing Ollama model instead of showing a cleanup notice', async () => {

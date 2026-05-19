@@ -444,16 +444,31 @@ export class LocalDictationView extends ItemView {
     const items = createSettingGroup(
       parent,
       'Context',
-      'Bounded slice of recent note text and prior utterances fed to the model so the LLM transform matches existing style and terminology.',
+      'Bounded slice of the open note and recent utterances fed to the model to keep style and terminology consistent.',
     );
-    this.addNumberSetting(
-      items,
-      'Note context chars',
-      'Chars of note text',
-      settings.llmPostprocessNoteContextChars,
-      (value) => this.saveField('llmPostprocessNoteContextChars', value, { rerender: false }),
-      'Characters of surrounding note text fed to the model as context.',
-    );
+
+    new Setting(items)
+      .setName('Use note as LLM context')
+      .setDesc(
+        'Include text from the open note above the cursor in the LLM prompt. Off keeps dictation context-isolated.',
+      )
+      .addToggle((toggle) => {
+        toggle.setValue(settings.useLlmNoteContext);
+        toggle.onChange(async (value) => {
+          await this.saveField('useLlmNoteContext', value);
+        });
+      });
+
+    if (settings.useLlmNoteContext) {
+      this.addNumberSetting(
+        items,
+        'Note context chars',
+        'Chars of note text',
+        settings.llmPostprocessNoteContextChars,
+        (value) => this.saveField('llmPostprocessNoteContextChars', value, { rerender: false }),
+        'Characters of surrounding note text fed to the model as context.',
+      );
+    }
 
     if (settings.llmPostprocessMode !== 'batch') {
       this.addNumberSetting(

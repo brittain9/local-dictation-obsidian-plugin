@@ -106,6 +106,7 @@ export interface PluginSettings {
   timestampSessionHeader: boolean;
   timestampSparseIntervalMs: number;
   transcriptFormatting: TranscriptFormattingMode;
+  useLlmNoteContext: boolean;
   useNoteAsContext: boolean;
 }
 
@@ -141,6 +142,7 @@ export const DEFAULT_PLUGIN_SETTINGS: PluginSettings = {
   timestampSessionHeader: true,
   timestampSparseIntervalMs: DEFAULT_TIMESTAMP_SPARSE_INTERVAL_MS,
   transcriptFormatting: 'smart',
+  useLlmNoteContext: false,
   useNoteAsContext: true,
 };
 
@@ -256,6 +258,10 @@ export function resolvePluginSettings(data: unknown): PluginSettings {
     transcriptFormatting: isTranscriptFormattingMode(raw.transcriptFormatting)
       ? raw.transcriptFormatting
       : DEFAULT_PLUGIN_SETTINGS.transcriptFormatting,
+    useLlmNoteContext: readBoolean(
+      raw.useLlmNoteContext,
+      DEFAULT_PLUGIN_SETTINGS.useLlmNoteContext,
+    ),
     useNoteAsContext: readBoolean(raw.useNoteAsContext, DEFAULT_PLUGIN_SETTINGS.useNoteAsContext),
   };
 }
@@ -271,6 +277,7 @@ export function resetLlmPostprocessDefaults(settings: PluginSettings): PluginSet
     llmPostprocessSkipMinWords: DEFAULT_PLUGIN_SETTINGS.llmPostprocessSkipMinWords,
     llmPostprocessTemperature: DEFAULT_PLUGIN_SETTINGS.llmPostprocessTemperature,
     llmPostprocessTotalContextCap: DEFAULT_PLUGIN_SETTINGS.llmPostprocessTotalContextCap,
+    useLlmNoteContext: DEFAULT_PLUGIN_SETTINGS.useLlmNoteContext,
   };
 }
 

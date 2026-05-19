@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 
 import type { AudioCaptureStream } from '../audio/audio-capture-stream';
 import type { NotePlacementOptions } from '../editor/note-surface';
+import { resolveLlmNoteContextBudget } from '../llm/note-context';
 import { OLLAMA_KEEP_ALIVE, type OllamaClient } from '../llm/ollama-client';
 import { type LlmPostprocessMode, resolveStyleOption } from '../llm/presets';
 import { formatBatchUserMessage } from '../llm/templates';
@@ -227,7 +228,7 @@ export class DictationSessionController {
       llmPostprocess: resolveLlmPostprocessSnapshot(settings),
       llmPostprocessMode: settings.llmPostprocessMode,
       llmPostprocessModel: settings.llmPostprocessModel,
-      llmPostprocessNoteContextChars: settings.llmPostprocessNoteContextChars,
+      llmPostprocessNoteContextChars: resolveLlmNoteContextBudget(settings),
       llmPostprocessPrompt: settings.llmPostprocessPrompt,
       llmPostprocessShowRawBelow: settings.llmPostprocessShowRawBelow,
       llmPostprocessTemperature: effectiveGeneration.temperature,
@@ -863,7 +864,7 @@ function resolveLlmPostprocessSnapshot(settings: PluginSettings): LlmPostprocess
   return {
     keepAlive: OLLAMA_KEEP_ALIVE,
     model,
-    noteContextChars: settings.llmPostprocessNoteContextChars,
+    noteContextChars: resolveLlmNoteContextBudget(settings),
     priorUtterancesN: settings.llmPostprocessPriorUtterancesN,
     prompt: settings.llmPostprocessPrompt,
     showRawBelow: settings.llmPostprocessShowRawBelow,

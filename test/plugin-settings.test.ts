@@ -227,6 +227,20 @@ describe('resolvePluginSettings', () => {
     ).toBe(600_000);
   });
 
+  it('defaults useLlmNoteContext to false', () => {
+    expect(DEFAULT_PLUGIN_SETTINGS.useLlmNoteContext).toBe(false);
+    expect(resolvePluginSettings({}).useLlmNoteContext).toBe(false);
+  });
+
+  it('accepts useLlmNoteContext when persisted as a boolean', () => {
+    expect(resolvePluginSettings({ useLlmNoteContext: true }).useLlmNoteContext).toBe(true);
+    expect(resolvePluginSettings({ useLlmNoteContext: false }).useLlmNoteContext).toBe(false);
+  });
+
+  it('falls back to the default when useLlmNoteContext is not a boolean', () => {
+    expect(resolvePluginSettings({ useLlmNoteContext: 'yes' }).useLlmNoteContext).toBe(false);
+  });
+
   it('infers active style refs from the current prompt', () => {
     expect(resolvePluginSettings({}).llmPostprocessActivePresetRef).toBe('builtin:clean-up');
     expect(
