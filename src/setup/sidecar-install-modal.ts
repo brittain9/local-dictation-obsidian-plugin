@@ -153,12 +153,6 @@ export class SidecarInstallModal extends Modal {
     });
 
     const buttons = this.contentEl.createDiv({ cls: 'local-stt-sidecar-install__buttons' });
-    buttons.createEl('button', { text: 'Copy error' }).addEventListener('click', () => {
-      void navigator.clipboard?.writeText(errorMessage).then(
-        () => new Notice('Error message copied to clipboard.'),
-        () => new Notice('Could not copy to clipboard.'),
-      );
-    });
     buttons
       .createEl('button', {
         cls: 'mod-cta',
