@@ -219,15 +219,18 @@ export class DictationSessionController {
     const selectedModel = settings.selectedModel;
     const effectiveGeneration = resolveActiveGenerationDefaults(settings);
     const sessionStartUnixMs = Date.now();
+    const noteContextChars = settings.useLlmNoteContext
+      ? settings.llmPostprocessNoteContextChars
+      : 0;
     const snapshot: ActiveSessionSnapshot = {
       accelerationPreference: settings.accelerationPreference,
       dictationAnchor: settings.dictationAnchor,
       listeningMode: settings.listeningMode,
       llmFeaturesEnabled: settings.llmFeaturesEnabled,
-      llmPostprocess: resolveLlmPostprocessSnapshot(settings),
+      llmPostprocess: resolveLlmPostprocessSnapshot(settings, noteContextChars),
       llmPostprocessMode: settings.llmPostprocessMode,
       llmPostprocessModel: settings.llmPostprocessModel,
-      llmPostprocessNoteContextChars: resolveLlmNoteContextBudget(settings),
+      llmPostprocessNoteContextChars: noteContextChars,
       llmPostprocessPrompt: settings.llmPostprocessPrompt,
       llmPostprocessShowRawBelow: settings.llmPostprocessShowRawBelow,
       llmPostprocessTemperature: effectiveGeneration.temperature,
@@ -847,7 +850,10 @@ function createSessionId(): string {
   return `session-${randomUUID()}`;
 }
 
-function resolveLlmPostprocessSnapshot(settings: PluginSettings): LlmPostprocessConfig | null {
+function resolveLlmPostprocessSnapshot(
+  settings: PluginSettings,
+  noteContextChars: number,
+): LlmPostprocessConfig | null {
   const model = settings.llmPostprocessModel.trim();
 
   if (
@@ -863,7 +869,7 @@ function resolveLlmPostprocessSnapshot(settings: PluginSettings): LlmPostprocess
   return {
     keepAlive: OLLAMA_KEEP_ALIVE,
     model,
-    noteContextChars: resolveLlmNoteContextBudget(settings),
+    noteContextChars,
     priorUtterancesN: settings.llmPostprocessPriorUtterancesN,
     prompt: settings.llmPostprocessPrompt,
     showRawBelow: settings.llmPostprocessShowRawBelow,
@@ -871,10 +877,6 @@ function resolveLlmPostprocessSnapshot(settings: PluginSettings): LlmPostprocess
     temperature,
     totalContextCap: settings.llmPostprocessTotalContextCap,
   };
-}
-
-function resolveLlmNoteContextBudget(settings: PluginSettings): number {
-  return settings.useLlmNoteContext ? settings.llmPostprocessNoteContextChars : 0;
 }
 
 function resolveActiveGenerationDefaults(settings: PluginSettings): {

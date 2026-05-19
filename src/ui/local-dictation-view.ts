@@ -92,14 +92,9 @@ export class LocalDictationView extends ItemView {
   override async onOpen(): Promise<void> {
     this.render();
     this.attachWidthObserver();
-    if (this.dependencies.getSettings().llmFeaturesEnabled) {
-      void this.refreshModels({ silent: true });
-    }
+    this.maybeRefreshModels();
     this.registerDomEvent(this.contentEl.win, 'focus', () => {
-      const settings = this.dependencies.getSettings();
-      if (!settings.llmFeaturesEnabled) return;
-      if (settings.llmPostprocessMode === 'off') return;
-      void this.refreshModels({ silent: true });
+      this.maybeRefreshModels();
     });
   }
 
@@ -179,9 +174,7 @@ export class LocalDictationView extends ItemView {
           }
           const nextMode = value ? this.resolveModeOnEnable(current) : 'off';
           await this.saveField('llmPostprocessMode', nextMode);
-          if (value) {
-            void this.refreshModels({ silent: true });
-          }
+          this.maybeRefreshModels();
         });
       });
   }
@@ -731,6 +724,13 @@ export class LocalDictationView extends ItemView {
     }, 0);
   }
 
+  private maybeRefreshModels(): void {
+    const settings = this.dependencies.getSettings();
+    if (!settings.llmFeaturesEnabled) return;
+    if (settings.llmPostprocessMode === 'off') return;
+    void this.refreshModels({ silent: true });
+  }
+
   private async refreshModels(options: { silent?: boolean } = {}): Promise<void> {
     if (this.modelsRefreshInFlight) return;
     this.modelsRefreshInFlight = true;
@@ -762,8 +762,7 @@ export class LocalDictationView extends ItemView {
     this.scheduleRender();
   }
 
-  // Render now if no input is focused; otherwise wait until inputs blur so we
-  // don't wipe the user's in-progress text/cursor mid-edit.
+  // Deferring while an input is focused avoids clobbering in-progress text and cursor on re-render.
   private scheduleRender(): void {
     if (this.focusedInput?.isConnected) {
       this.promptBlurRenderPending = true;
