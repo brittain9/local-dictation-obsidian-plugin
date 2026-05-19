@@ -73,14 +73,25 @@ export class SidecarConnection {
   private readonly frameParser = new FramedMessageParser(parseEventFrame);
   private readonly pendingWaiters = new Set<PendingEventWaiter>();
   private readonly process: SidecarProcessLike;
+  // Set true whenever the plugin itself initiates a stop (shutdown/restart),
+  // so the onExit handler can distinguish clean swaps from real crashes.
+  private expectedStop = false;
 
   constructor(private readonly options: SidecarConnectionOptions) {
     const handlers = {
       onExit: (code: number | null, signal: NodeJS.Signals | null) => {
-        this.options.logger?.warn(
-          'sidecar',
-          `sidecar process exited (code: ${String(code)}, signal: ${String(signal)})`,
-        );
+        if (this.expectedStop) {
+          this.options.logger?.debug(
+            'sidecar',
+            `sidecar stopped (code: ${String(code)}, signal: ${String(signal)})`,
+          );
+        } else {
+          this.options.logger?.warn(
+            'sidecar',
+            `sidecar process exited unexpectedly (code: ${String(code)}, signal: ${String(signal)})`,
+          );
+        }
+        this.expectedStop = false;
         this.frameParser.reset();
         this.rejectPendingWaiters(
           new Error(
@@ -269,6 +280,7 @@ export class SidecarConnection {
       return;
     }
 
+    this.expectedStop = true;
     try {
       this.process.write(encodeJsonFrame(createShutdownCommand()));
     } finally {

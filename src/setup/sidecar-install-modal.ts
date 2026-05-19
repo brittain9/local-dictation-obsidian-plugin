@@ -106,9 +106,14 @@ export class SidecarInstallModal extends Modal {
 
     this.contentEl.createEl('p', { text: this.options.copy.bodyText });
 
-    const details = this.contentEl.createEl('ul', { cls: 'local-stt-sidecar-install__details' });
-    details.createEl('li', { text: `Archive: ${asset}` });
-    details.createEl('li', { text: `Release: ${this.options.version}` });
+    const details = this.contentEl.createEl('dl', { cls: 'local-stt-details-grid' });
+    const appendRow = (label: string, value: string): void => {
+      details.createEl('dt', { text: label });
+      details.createEl('dd', { text: value });
+    };
+    appendRow('Download', asset);
+    appendRow('Version', this.options.version);
+    appendRow('Privacy', 'Runs locally — audio never leaves your device.');
 
     const buttons = this.contentEl.createDiv({ cls: 'local-stt-sidecar-install__buttons' });
     buttons.createEl('button', { text: 'Later' }).addEventListener('click', () => {
@@ -148,6 +153,12 @@ export class SidecarInstallModal extends Modal {
     });
 
     const buttons = this.contentEl.createDiv({ cls: 'local-stt-sidecar-install__buttons' });
+    buttons.createEl('button', { text: 'Copy error' }).addEventListener('click', () => {
+      void navigator.clipboard?.writeText(errorMessage).then(
+        () => new Notice('Error message copied to clipboard.'),
+        () => new Notice('Could not copy to clipboard.'),
+      );
+    });
     buttons
       .createEl('button', {
         cls: 'mod-cta',

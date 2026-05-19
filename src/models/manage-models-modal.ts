@@ -1,5 +1,5 @@
 import type { App } from 'obsidian';
-import { Modal, Notice, Setting } from 'obsidian';
+import { Modal, Notice, Setting, setIcon } from 'obsidian';
 
 import { formatBytes, formatErrorMessage } from '../shared/format-utils';
 import { resolveEngineCapabilities } from './capability-view';
@@ -26,6 +26,7 @@ import { deriveModelRowStates, type ModelRowState } from './model-row-state';
 interface ManageModelsModalDependencies {
   manager: ModelInstallManager;
   onChanged: () => void;
+  onRunSetup?: () => void;
 }
 
 interface AdapterTabKey {
@@ -60,19 +61,53 @@ export class ManageModelsModal extends Modal {
   override onOpen(): void {
     this.modalEl.addClass('local-stt-manage-models');
     this.titleEl.setText('Manage models');
-    this.contentEl.empty();
-
-    // Tab bar (no search)
-    const toolbar = this.contentEl.createDiv({ cls: 'local-stt-toolbar' });
-    this.tabBarEl = toolbar.createDiv({ cls: 'local-stt-tab-bar' });
-
-    this.listContainer = this.contentEl.createDiv({ cls: 'local-stt-model-list' });
-
-    this.renderTabs();
-    this.renderModelList();
+    this.renderContent();
 
     this.releaseSubscription = this.deps.manager.subscribe(() => {
       this.handleStateChange();
+    });
+  }
+
+  private renderContent(): void {
+    this.contentEl.empty();
+    this.progressElements.clear();
+    this.tabBarEl = null;
+    this.listContainer = null;
+    this.tabButtons.clear();
+
+    const state = this.deps.manager.getState();
+    if (state.loadStatus === 'error' && this.deps.onRunSetup !== undefined) {
+      this.renderLoadErrorPanel(state.loadError);
+      return;
+    }
+
+    const toolbar = this.contentEl.createDiv({ cls: 'local-stt-toolbar' });
+    this.tabBarEl = toolbar.createDiv({ cls: 'local-stt-tab-bar' });
+    this.listContainer = this.contentEl.createDiv({ cls: 'local-stt-model-list' });
+    this.renderTabs();
+    this.renderModelList();
+  }
+
+  private renderLoadErrorPanel(loadError: string | null): void {
+    const panel = this.contentEl.createDiv({ cls: 'local-stt-empty-panel' });
+    const iconWrap = panel.createDiv({ cls: 'local-stt-empty-panel__icon' });
+    setIcon(iconWrap, 'download-cloud');
+    panel.createEl('h3', { text: "Couldn't load models" });
+    panel.createEl('p', {
+      text: 'The speech engine may not be installed or may not be responding. Re-run setup to reinstall it, or try again.',
+    });
+    if (loadError !== null && loadError.length > 0) {
+      panel.createEl('p', { cls: 'local-stt-empty-panel__detail', text: loadError });
+    }
+    const actions = panel.createDiv({ cls: 'local-stt-empty-panel__actions' });
+    actions
+      .createEl('button', { cls: 'mod-cta', text: 'Run setup' })
+      .addEventListener('click', () => {
+        this.close();
+        this.deps.onRunSetup?.();
+      });
+    actions.createEl('button', { text: 'Try again' }).addEventListener('click', () => {
+      void this.deps.manager.init();
     });
   }
 
@@ -351,6 +386,18 @@ export class ManageModelsModal extends Modal {
 
   private handleStateChange(): void {
     const state = this.deps.manager.getState();
+
+    // If we're currently in the sidecar-required panel (listContainer === null)
+    // or the state has just transitioned into error mode, do a full re-render
+    // so the layout matches the load status.
+    if (
+      this.listContainer === null ||
+      (state.loadStatus === 'error' && this.deps.onRunSetup !== undefined)
+    ) {
+      this.renderContent();
+      return;
+    }
+
     const { activeInstall } = state;
 
     // Fast path: if an install is active for a visible row, try in-place

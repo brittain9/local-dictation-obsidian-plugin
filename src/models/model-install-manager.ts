@@ -528,14 +528,19 @@ export class ModelInstallManager {
     // On completed installs, refresh the installed models list so the UI
     // reflects the new model without requiring a restart.
     if (event.state === 'completed') {
-      void this.refreshAfterInstall();
+      void this.refreshAfterInstall({
+        familyId: event.familyId,
+        kind: 'catalog_model',
+        modelId: event.modelId,
+        runtimeId: event.runtimeId,
+      });
       return;
     }
 
     this.notify();
   }
 
-  private async refreshAfterInstall(): Promise<void> {
+  private async refreshAfterInstall(completed?: CatalogModelSelection): Promise<void> {
     try {
       const overridePayload = createModelStoreOverridePayload(
         this.deps.getSettings().modelStorePathOverride,
@@ -550,6 +555,20 @@ export class ModelInstallManager {
         `failed to refresh installed models after install: ${error instanceof Error ? error.message : String(error)}`,
       );
     }
+
+    // Auto-select on install when nothing is currently selected — new users
+    // shouldn't have to figure out a second "Use" click after installing.
+    if (completed !== undefined && this.deps.getSettings().selectedModel === null) {
+      try {
+        await this.select(completed);
+      } catch (error) {
+        this.deps.logger?.warn(
+          'model',
+          `auto-select after install failed: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
+    }
+
     this.notify();
   }
 

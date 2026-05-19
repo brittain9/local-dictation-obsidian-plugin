@@ -1,12 +1,12 @@
 import type { App, Plugin } from 'obsidian';
-import { Platform, PluginSettingTab, Setting } from 'obsidian';
+import { Notice, Platform, PluginSettingTab, Setting } from 'obsidian';
 
 import { resolveEngineCapabilities } from '../models/capability-view';
-import { ManageModelsModal } from '../models/manage-models-modal';
 import type { ModelInstallManager } from '../models/model-install-manager';
 import { updateInstallProgressElement } from '../models/model-install-progress';
 import { ExternalModelFileModal, ModelDetailsModal } from '../models/model-management-modals';
 import { matchesModelTriple } from '../models/model-management-types';
+import { formatErrorMessage } from '../shared/format-utils';
 import type { PluginLogger } from '../shared/plugin-logger';
 import type { SpeakingStyle } from '../sidecar/protocol';
 import type { SidecarConnection } from '../sidecar/sidecar-connection';
@@ -36,13 +36,11 @@ import {
   addEnumSetting,
   addTextSetting,
   addToggleSetting,
-  appendInfoTooltip,
   createSettingGroup,
   type DropdownOption,
   type SettingAccess,
 } from './setting-helpers';
 import {
-  openSidecarInstallModal,
   resolvePluginDirectorySafe,
   type SidecarInstallActionDeps,
   SidecarSettingsSection,
@@ -53,6 +51,8 @@ interface SettingsTabDependencies {
   isDictationBusy: () => boolean;
   logger?: PluginLogger | undefined;
   modelInstallManager: ModelInstallManager;
+  openModelPicker: (options?: { onChanged?: () => void }) => Promise<void>;
+  openSetupWizard: () => Promise<void>;
   pluginVersion: string;
   resolvePluginDirectory: () => Promise<string>;
   restartSidecar: () => Promise<void>;
@@ -136,12 +136,11 @@ export class LocalSttSettingTab extends PluginSettingTab {
     const manager = this.dependencies.modelInstallManager;
     this.disposeModelSection = renderModelSection(modelSection, manager, {
       onManageModels: () => {
-        new ManageModelsModal(this.app, {
-          manager,
+        void this.dependencies.openModelPicker({
           onChanged: () => {
             this.display();
           },
-        }).open();
+        });
       },
       onExternalFile: () => {
         const selectedModel = this.dependencies.getSettings().selectedModel;
@@ -164,7 +163,7 @@ export class LocalSttSettingTab extends PluginSettingTab {
 
     addEnumSetting(transcriptionCard, this.access, {
       name: 'Listening mode',
-      desc: 'Continuous or single-phrase capture.',
+      desc: 'Continuous, or stop after one sentence.',
       key: 'listeningMode',
       options: LISTENING_MODE_OPTIONS,
       isValid: isListeningMode,
@@ -172,9 +171,9 @@ export class LocalSttSettingTab extends PluginSettingTab {
 
     addEnumSetting(transcriptionCard, this.access, {
       name: 'Speaking style',
-      desc: 'Pause detection speed.',
+      desc: "How quickly the engine decides you've stopped speaking.",
       tooltip:
-        "How quickly the engine decides you've stopped speaking. Responsive — ends quickly. Balanced — standard detection (default). Patient — waits longer through pauses.",
+        'Responsive ends quickly. Balanced uses standard detection (default). Patient waits longer through pauses.',
       key: 'speakingStyle',
       options: SPEAKING_STYLE_OPTIONS,
       isValid: isSpeakingStyle,
@@ -190,9 +189,8 @@ export class LocalSttSettingTab extends PluginSettingTab {
 
     addEnumSetting(transcriptionCard, this.access, {
       name: 'Transcript formatting',
-      desc: 'How speech is joined.',
-      tooltip:
-        'How dictated speech is joined within one session. Smart paragraphs use longer pauses as paragraph breaks.',
+      desc: 'How phrases are joined together.',
+      tooltip: 'Smart paragraphs use longer pauses as paragraph breaks.',
       key: 'transcriptFormatting',
       options: TRANSCRIPT_FORMATTING_OPTIONS,
       isValid: isTranscriptFormattingMode,
@@ -206,7 +204,7 @@ export class LocalSttSettingTab extends PluginSettingTab {
     // can hide the whole card when no rows apply (e.g. macOS + a model with
     // no initial-prompt support).
     const engineGroup = containerEl.createDiv({ cls: 'setting-group' });
-    const engineHeading = new Setting(engineGroup).setName('Engine options').setHeading();
+    const engineHeading = new Setting(engineGroup).setName('Engine').setHeading();
     const engineSection = engineGroup.createDiv({ cls: 'setting-items' });
     const renderEngine = (): void => {
       this.renderEngineOptions(engineGroup, engineHeading, engineSection);
@@ -229,16 +227,14 @@ export class LocalSttSettingTab extends PluginSettingTab {
 
     addTextSetting(advancedSection, this.access, {
       name: 'Model store folder override',
-      desc: 'Custom managed-model folder.',
-      tooltip:
-        'Optional absolute folder path for managed downloads. Leave blank to use the shared default model store.',
+      desc: 'Custom folder for managed model downloads.',
       key: 'modelStorePathOverride',
       placeholder: 'Use the shared default model store',
     });
 
     const disableLlmSetting = new Setting(advancedSection)
       .setName('Disable LLM features')
-      .setDesc('Turn off the Ollama LLM transform and remove the LLM transformation sidebar.');
+      .setDesc('Hide the LLM transformation sidebar.');
     disableLlmSetting.addToggle((toggle) => {
       toggle.setValue(!this.dependencies.getSettings().llmFeaturesEnabled);
       toggle.onChange(async (value) => {
@@ -247,9 +243,18 @@ export class LocalSttSettingTab extends PluginSettingTab {
       });
     });
 
+    new Setting(advancedSection)
+      .setName('Run setup')
+      .setDesc('Re-run the first-time setup wizard.')
+      .addButton((button) => {
+        button.setButtonText('Run setup').onClick(() => {
+          void this.dependencies.openSetupWizard();
+        });
+      });
+
     const developerModeSetting = new Setting(advancedSection)
       .setName('Developer mode')
-      .setDesc('Verbose console diagnostics.');
+      .setDesc('Show verbose diagnostics and developer-only settings.');
     developerModeSetting.addToggle((toggle) => {
       toggle.setValue(this.dependencies.getSettings().developerMode);
       toggle.onChange(async (value) => {
@@ -276,9 +281,9 @@ export class LocalSttSettingTab extends PluginSettingTab {
   }
 
   private renderTimestampSettings(parent: HTMLElement, settings: PluginSettings): void {
-    const enableSetting = new Setting(parent)
+    new Setting(parent)
       .setName('Use timestamps')
-      .setDesc('Stamp phrase boundaries with the time they were spoken.')
+      .setDesc('Stamp each phrase with the time it was spoken.')
       .addToggle((toggle) => {
         toggle.setValue(settings.timestampsEnabled);
         toggle.onChange(async (value) => {
@@ -286,22 +291,18 @@ export class LocalSttSettingTab extends PluginSettingTab {
           this.display();
         });
       });
-    appendInfoTooltip(
-      enableSetting,
-      'Inserts a boundary timestamp at each phrase break (when the voice-activity detector decides one phrase has ended and another begins), plus an optional session header at the top. A long session reads like a timed log.',
-    );
 
     if (!settings.timestampsEnabled) return;
 
     addToggleSetting(parent, this.access, {
       name: 'Session header',
-      desc: 'Emit [YYYY-MM-DD HH:MM] before the first phrase.',
+      desc: 'Insert [YYYY-MM-DD HH:MM] at the top of the session.',
       key: 'timestampSessionHeader',
     });
 
     addEnumSetting(parent, this.access, {
       name: 'Reference clock',
-      desc: 'Elapsed since session start, or wall-clock time.',
+      desc: 'Elapsed time, or wall-clock time.',
       key: 'timestampClock',
       options: TIMESTAMP_CLOCK_OPTIONS,
       isValid: isTimestampClock,
@@ -309,19 +310,17 @@ export class LocalSttSettingTab extends PluginSettingTab {
 
     addEnumSetting(parent, this.access, {
       name: 'Density',
-      desc: 'Sparse: landmarks at fixed intervals. Every phrase: one per phrase.',
+      desc: 'Stamp every phrase, or at fixed intervals.',
       key: 'timestampDensity',
       options: TIMESTAMP_DENSITY_OPTIONS,
       isValid: isTimestampDensity,
-      tooltip:
-        'Sparse keeps the transcript clean by emitting one landmark per interval. Every phrase stamps every utterance — useful for meeting notes or precise references.',
     });
 
     const minSeconds = MIN_TIMESTAMP_SPARSE_INTERVAL_MS / 1000;
     const maxSeconds = MAX_TIMESTAMP_SPARSE_INTERVAL_MS / 1000;
     new Setting(parent)
       .setName('Sparse interval')
-      .setDesc(`Seconds between sparse landmarks (${minSeconds}-${maxSeconds}).`)
+      .setDesc(`Seconds between landmarks (${minSeconds}-${maxSeconds}).`)
       .addText((text) => {
         text.inputEl.type = 'number';
         text.inputEl.min = String(minSeconds);
@@ -393,9 +392,7 @@ export class LocalSttSettingTab extends PluginSettingTab {
         : (state.compiledRuntimes.find((r) => r.runtimeId === sel.runtimeId) ?? null);
 
     containerEl.empty();
-    heading.setName(
-      selectedAdapter === null ? 'Engine options' : `${selectedAdapter.displayName} engine`,
-    );
+    heading.setName(selectedAdapter === null ? 'Engine' : `${selectedAdapter.displayName} engine`);
 
     let rendered = 0;
 
@@ -406,19 +403,26 @@ export class LocalSttSettingTab extends PluginSettingTab {
     if (!Platform.isMacOS && hasNonCpuAccelerator) {
       // accelerationPreference is a string enum mapped onto a boolean toggle, so
       // the addEnumSetting / addToggleSetting helpers don't fit.
-      const accelSetting = new Setting(containerEl)
+      new Setting(containerEl)
         .setName('Hardware acceleration')
-        .setDesc('GPU when available.');
-      accelSetting.addToggle((toggle) => {
-        toggle.setValue(settings.accelerationPreference === 'auto');
-        toggle.onChange(async (value) => {
-          await this.access.persistOne('accelerationPreference', value ? 'auto' : 'cpu_only');
+        .setDesc('Run inference on the GPU when available.')
+        .addToggle((toggle) => {
+          toggle.setValue(settings.accelerationPreference === 'auto');
+          toggle.onChange(async (value) => {
+            if (this.dependencies.isDictationBusy()) {
+              new Notice('Cannot change hardware acceleration while dictating.');
+              toggle.setValue(!value);
+              return;
+            }
+            await this.access.persistOne('accelerationPreference', value ? 'auto' : 'cpu_only');
+            try {
+              await this.dependencies.restartSidecar();
+              new Notice(value ? 'Hardware acceleration on.' : 'Hardware acceleration off.');
+            } catch (error) {
+              new Notice(`Failed to apply hardware acceleration: ${formatErrorMessage(error)}`);
+            }
+          });
         });
-      });
-      appendInfoTooltip(
-        accelSetting,
-        'Run inference on the GPU when supported. Disable to force CPU on every engine.',
-      );
       rendered += 1;
     }
 
@@ -426,9 +430,9 @@ export class LocalSttSettingTab extends PluginSettingTab {
     if (caps.status === 'ready' && caps.capabilities.family.supportsInitialPrompt) {
       addToggleSetting(containerEl, this.access, {
         name: 'Use note as context',
-        desc: 'Glossary prompt for supported engines.',
+        desc: 'Send distinctive terms from the open note to help spelling.',
         tooltip:
-          'Send a glossary of distinctive terms from the note as the engine’s prompt. Helps spell proper nouns and technical terms. Only used by engines that support initial prompts.',
+          'Sends a glossary of proper nouns and technical terms as the engine’s initial prompt. Only used by engines that support initial prompts.',
         key: 'useNoteAsContext',
       });
       rendered += 1;
@@ -476,20 +480,16 @@ export class LocalSttSettingTab extends PluginSettingTab {
       }
 
       const setting = new Setting(items)
-        .setName('Sidecar required')
+        .setName('Set up Local Dictation')
         .setDesc(
-          'Local Dictation needs the speech-to-text sidecar to work. Install it to enable dictation.',
+          "Local Dictation isn't ready yet. Run the setup wizard to install the speech engine and a model.",
         );
       setting.addButton((button) => {
         button
           .setCta()
-          .setButtonText('Install sidecar')
+          .setButtonText('Run setup')
           .onClick(() => {
-            openSidecarInstallModal(this.buildSidecarInstallActionDeps(), {
-              intent: 'install',
-              pluginDirectory,
-              variant: 'cpu',
-            });
+            void this.dependencies.openSetupWizard();
           });
       });
     };

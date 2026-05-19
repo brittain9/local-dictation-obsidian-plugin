@@ -9,6 +9,7 @@ import { dictationAnchorExtension } from './editor/dictation-anchor-extension';
 import { noteSurfaceUpdateListenerExtension } from './editor/note-surface';
 import { sessionProcessingExtension } from './editor/session-processing-extension';
 import { createOllamaClient } from './llm/ollama-client';
+import { ManageModelsModal } from './models/manage-models-modal';
 import { ModelInstallManager } from './models/model-install-manager';
 import { Session } from './session/session';
 import { logAccelerationFallbacks } from './settings/acceleration-info';
@@ -18,8 +19,7 @@ import {
   resolvePluginSettings,
 } from './settings/plugin-settings';
 import { LocalSttSettingTab } from './settings/settings-tab';
-import { getInstallCopy } from './setup/sidecar-install-copy';
-import { SidecarInstallModal } from './setup/sidecar-install-modal';
+import { SetupWizardModal } from './setup/setup-wizard-modal';
 import { formatErrorMessage } from './shared/format-utils';
 import { createPluginLogger, type PluginLogger } from './shared/plugin-logger';
 import { assertSidecarExecutableIsFresh } from './sidecar/sidecar-build-state';
@@ -86,7 +86,7 @@ export default class LocalSttPlugin extends Plugin {
         }),
     );
 
-    const ribbonElement = this.addRibbonIcon('mic', 'Local Dictation: Click to start', () => {
+    const ribbonElement = this.addRibbonIcon('mic', 'Local Dictation — start dictation', () => {
       void this.requireDictationController().toggleDictation();
     });
     this.ribbonController = new DictationRibbonController(ribbonElement);
@@ -106,8 +106,11 @@ export default class LocalSttPlugin extends Plugin {
         new Notice(message);
       },
       ollamaClient,
+      onModelMissing: () => {
+        void this.openModelPicker();
+      },
       onSidecarMissing: () => {
-        void this.openFirstRunSetup();
+        void this.openSetupWizard();
       },
       setRibbonState: (state) => {
         this.ribbonController?.setState(state);
@@ -124,6 +127,8 @@ export default class LocalSttPlugin extends Plugin {
         isDictationBusy: () => this.dictationController?.isBusy() ?? false,
         logger: this.logger,
         modelInstallManager: this.requireModelInstallManager(),
+        openModelPicker: (options) => this.openModelPicker(options),
+        openSetupWizard: () => this.openSetupWizard(),
         pluginVersion: this.manifest.version,
         resolvePluginDirectory: () => this.resolvePluginDirectoryPath(),
         restartSidecar: async () => {
@@ -172,7 +177,7 @@ export default class LocalSttPlugin extends Plugin {
     } catch (error) {
       if (error instanceof SidecarNotInstalledError) {
         this.logger.debug('sidecar', 'sidecar not installed on startup');
-        await this.openFirstRunSetup();
+        await this.openSetupWizard();
         return;
       }
       this.logger.error('sidecar', 'initial startup check failed', error);
@@ -217,24 +222,31 @@ export default class LocalSttPlugin extends Plugin {
     await this.ensureLocalDictationSidebar();
   }
 
-  private async openFirstRunSetup(): Promise<void> {
+  async openSetupWizard(): Promise<void> {
     let pluginDirectory: string;
 
     try {
       pluginDirectory = await this.resolvePluginDirectoryPath();
     } catch (error) {
-      this.logger.error(
-        'installer',
-        'unable to resolve plugin directory for first-run setup',
-        error,
-      );
+      this.logger.error('installer', 'unable to resolve plugin directory for setup wizard', error);
       return;
     }
 
-    new SidecarInstallModal(this.app, {
-      copy: getInstallCopy('cpu', 'first-run'),
-      manager: this.requireSidecarInstallManager(),
-      onInstalled: async () => {
+    const modal = new SetupWizardModal({
+      app: this.app,
+      hasSelectedModel: () => this.settings.selectedModel !== null,
+      isSidecarInstalled: () => this.isSidecarInstalled(),
+      logger: this.logger,
+      modelInstallManager: this.requireModelInstallManager(),
+      onCompleted: async () => {
+        await this.updateSettings({
+          ...this.settings,
+          setupCompletedAt: new Date().toISOString(),
+        });
+      },
+      pluginDirectory,
+      pluginVersion: this.manifest.version,
+      postSidecarInstalled: async () => {
         await this.requireSidecarConnection().restart(
           this.settings.sidecarStartupTimeoutSeconds * 1000,
         );
@@ -242,10 +254,37 @@ export default class LocalSttPlugin extends Plugin {
         logAccelerationFallbacks(systemInfo, this.settings.accelerationPreference, this.logger);
         await this.requireModelInstallManager().init();
       },
-      pluginDirectory,
-      variant: 'cpu',
-      version: this.manifest.version,
+      sidecarConnection: this.requireSidecarConnection(),
+      sidecarInstallManager: this.requireSidecarInstallManager(),
+      sidecarStartupTimeoutMs: this.settings.sidecarStartupTimeoutSeconds * 1000,
+    });
+    modal.open();
+  }
+
+  async openModelPicker(options: { onChanged?: () => void } = {}): Promise<void> {
+    if (!(await this.isSidecarInstalled())) {
+      await this.openSetupWizard();
+      return;
+    }
+    new ManageModelsModal(this.app, {
+      manager: this.requireModelInstallManager(),
+      onChanged: options.onChanged ?? (() => {}),
+      onRunSetup: () => {
+        void this.openSetupWizard();
+      },
     }).open();
+  }
+
+  private async isSidecarInstalled(): Promise<boolean> {
+    try {
+      await this.resolveSidecarExecutablePath();
+      return true;
+    } catch (error) {
+      if (error instanceof SidecarNotInstalledError) {
+        return false;
+      }
+      throw error;
+    }
   }
 
   override async onunload(): Promise<void> {

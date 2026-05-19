@@ -22,12 +22,7 @@ import {
 } from '../sidecar/sidecar-installer';
 import { SidecarNotInstalledError } from '../sidecar/sidecar-paths';
 import { renderActiveInstallCard } from './install-progress-row';
-import {
-  addPositiveIntSetting,
-  addTextSetting,
-  appendInfoTooltip,
-  type SettingAccess,
-} from './setting-helpers';
+import { addPositiveIntSetting, addTextSetting, type SettingAccess } from './setting-helpers';
 
 export interface SidecarInstallActionDeps {
   app: App;
@@ -116,7 +111,6 @@ export class SidecarSettingsSection {
         manifest: cpuManifest,
         name: 'Sidecar',
         pluginDirectory,
-        tooltipExtra: 'Includes Metal acceleration on Apple Silicon and Intel Macs.',
         variant: 'cpu',
       });
       if (activeInstall !== null) renderActiveCard(activeInstall);
@@ -141,9 +135,7 @@ export class SidecarSettingsSection {
     if (Platform.isLinux) {
       addTextSetting(this.container, this.deps.access, {
         name: 'CUDA library path',
-        desc: 'Sidecar-only CUDA search path.',
-        tooltip:
-          'Optional colon-separated library search path for the sidecar process only. Use this for Flatpak or custom CUDA installs without changing Obsidian’s global environment.',
+        desc: 'Optional library search path for the sidecar (Flatpak, custom CUDA installs).',
         key: 'cudaLibraryPath',
         placeholder: '/run/host/usr/local/cuda-12.9/targets/x86_64-linux/lib:/run/host/usr/lib64',
       });
@@ -152,27 +144,28 @@ export class SidecarSettingsSection {
     if (this.deps.access.getSettings().developerMode) {
       addTextSetting(this.container, this.deps.access, {
         name: 'Sidecar path override',
-        desc: 'Custom sidecar executable.',
-        tooltip: 'Optional absolute path to an installed or dev sidecar executable file.',
+        desc: 'Custom sidecar executable path.',
         key: 'sidecarPathOverride',
         placeholder: 'Auto-detect from bin/cpu, bin/cuda, or native/target debug builds',
       });
 
       addPositiveIntSetting(this.container, this.deps.access, {
         name: 'Startup timeout (s)',
-        desc: 'Startup health-check limit.',
-        tooltip: 'Maximum time allowed for the startup health handshake.',
+        desc: 'Seconds allowed for the startup handshake.',
         key: 'sidecarStartupTimeoutSeconds',
       });
 
       addPositiveIntSetting(this.container, this.deps.access, {
         name: 'Request timeout (s)',
-        desc: 'Sidecar request limit.',
-        tooltip:
-          'Maximum time allowed for start, stop, cancel, health, and model-management requests before failing them.',
+        desc: 'Seconds allowed for sidecar requests.',
         key: 'sidecarRequestTimeoutSeconds',
       });
     }
+
+    // Sentinel keeps Obsidian's `.setting-item:last-child` padding-stripping
+    // rule from matching the last sidecar row, so its spacing stays consistent
+    // with the rows that follow this wrapper in the Advanced section.
+    this.container.createSpan({ attr: { 'aria-hidden': 'true', style: 'display: none;' } });
   }
 
   private handleStateChange(): void {
@@ -191,10 +184,10 @@ export class SidecarSettingsSection {
     manifest: InstallManifest | null;
     name: string;
     pluginDirectory: string;
-    tooltipExtra?: string;
     variant: SidecarInstallVariant;
   }): void {
     const setting = new Setting(this.container).setName(opts.name).setDesc(opts.desc);
+    appendVersionChip(setting, opts.manifest);
     addInstallButtons(setting, opts.manifest !== null, {
       onInstall: () => {
         openSidecarInstallModal(this.deps, {
@@ -214,7 +207,6 @@ export class SidecarSettingsSection {
         void uninstallSidecarVariantWithUx(this.deps, opts.pluginDirectory, opts.variant);
       },
     });
-    appendInfoTooltip(setting, formatSidecarTooltip(opts.manifest, opts.tooltipExtra));
   }
 
   private renderGpuRow(
@@ -227,7 +219,8 @@ export class SidecarSettingsSection {
 
     const setting = new Setting(this.container)
       .setName('GPU sidecar')
-      .setDesc(isInstalled ? 'NVIDIA CUDA acceleration.' : driverReason.label);
+      .setDesc(isInstalled ? 'CUDA acceleration active.' : driverReason.label);
+    appendVersionChip(setting, manifest);
 
     addInstallButtons(setting, isInstalled, {
       installCta: driverStatus === 'present',
@@ -256,13 +249,6 @@ export class SidecarSettingsSection {
         });
       });
     }
-
-    appendInfoTooltip(
-      setting,
-      isInstalled
-        ? formatSidecarTooltip(manifest, 'NVIDIA CUDA backend.')
-        : formatSidecarTooltip(null, driverReason.tooltip),
-    );
   }
 
   private openCudaInstallModal(pluginDirectory: string): void {
@@ -407,27 +393,30 @@ function addInstallButtons(
   });
 }
 
-function formatSidecarTooltip(manifest: InstallManifest | null, extra?: string): string {
-  const base = manifest === null ? 'Not installed.' : `Installed: ${manifest.version}.`;
-  return extra === undefined ? base : `${base} ${extra}`;
+function appendVersionChip(setting: Setting, manifest: InstallManifest | null): void {
+  if (manifest === null) return;
+  setting.nameEl.createSpan({
+    cls: 'local-stt-version-chip',
+    text: `v${manifest.version}`,
+  });
 }
 
 function describeDriverStatus(status: NvidiaDriverStatus): { label: string; tooltip: string } {
   switch (status) {
     case 'present':
       return {
-        label: 'NVIDIA driver detected.',
+        label: 'NVIDIA GPU detected — faster transcription.',
         tooltip: 'Downloads the CUDA sidecar archive from GitHub releases.',
       };
     case 'absent':
       return {
-        label: 'No NVIDIA driver detected.',
+        label: 'Requires an NVIDIA GPU. Install anyway if you know yours is supported.',
         tooltip:
           'nvidia-smi was not found on PATH. Use "Install anyway" if you are certain your system supports CUDA.',
       };
     case 'unknown':
       return {
-        label: 'NVIDIA driver status unknown.',
+        label: "Couldn't probe for NVIDIA — install only if you're sure.",
         tooltip:
           'Unable to probe for an NVIDIA driver. Proceed only if you know your GPU supports CUDA.',
       };
