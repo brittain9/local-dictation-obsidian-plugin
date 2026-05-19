@@ -110,17 +110,23 @@ export class Session {
       sessionId: string;
     },
   ): Session {
-    const target = resolveActiveEditorTarget(app);
+    const active = resolveActiveEditorTarget(app);
+    const fallback = active === null ? resolveFallbackEditorTarget(app) : null;
+    const target = active ?? fallback;
 
     if (target === null) {
       throw new Error('No active Markdown editor is available.');
     }
 
+    // No cursor available — append to end of the open note rather than blocking on a popup.
+    const placement: NotePlacementOptions =
+      fallback !== null ? { ...options.placement, anchor: 'end_of_note' } : options.placement;
+
     return new Session({
       app,
       callbacks: options.callbacks,
       lockedFile: target.file,
-      placement: options.placement,
+      placement,
       rendererOptions: options.rendererOptions,
       sessionId: options.sessionId,
       view: target.view,
@@ -556,6 +562,25 @@ function resolveActiveEditorTarget(
   }
 
   return { file, view };
+}
+
+function resolveFallbackEditorTarget(
+  app: Pick<App, 'workspace'>,
+): { file: TFile; view: EditorView } | null {
+  const activeFile = app.workspace.getActiveFile();
+
+  if (activeFile === null) {
+    return null;
+  }
+
+  const leafView = findOpenMarkdownViewForFile(app, activeFile);
+  const view = leafView?.editor?.cm ?? null;
+
+  if (view === null) {
+    return null;
+  }
+
+  return { file: activeFile, view };
 }
 
 function findOpenMarkdownViewForFile(
