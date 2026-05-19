@@ -77,7 +77,7 @@ export class ManageModelsModal extends Modal {
 
     const state = this.deps.manager.getState();
     if (state.loadStatus === 'error' && this.deps.onRunSetup !== undefined) {
-      this.renderSidecarRequired(state.loadError);
+      this.renderLoadErrorPanel(state.loadError);
       return;
     }
 
@@ -88,13 +88,13 @@ export class ManageModelsModal extends Modal {
     this.renderModelList();
   }
 
-  private renderSidecarRequired(loadError: string | null): void {
+  private renderLoadErrorPanel(loadError: string | null): void {
     const panel = this.contentEl.createDiv({ cls: 'local-stt-empty-panel' });
     const iconWrap = panel.createDiv({ cls: 'local-stt-empty-panel__icon' });
     setIcon(iconWrap, 'download-cloud');
-    panel.createEl('h3', { text: 'Sidecar required to manage models' });
+    panel.createEl('h3', { text: "Couldn't load models" });
     panel.createEl('p', {
-      text: 'Local Dictation needs the native sidecar to download, verify, and run speech-to-text models.',
+      text: 'The speech engine may not be installed or may not be responding. Re-run setup to reinstall it, or try again.',
     });
     if (loadError !== null && loadError.length > 0) {
       panel.createEl('p', { cls: 'local-stt-empty-panel__detail', text: loadError });

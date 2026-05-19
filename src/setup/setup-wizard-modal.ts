@@ -10,7 +10,6 @@ import { SidecarInstallModal } from './sidecar-install-modal';
 
 interface WizardDependencies {
   app: App;
-  getInitialStep?: () => WizardStepId;
   hasSelectedModel: () => boolean;
   isSidecarInstalled: () => Promise<boolean>;
   logger?: PluginLogger;
@@ -43,10 +42,7 @@ export class SetupWizardModal extends Modal {
     this.sidecarReady = await this.deps.isSidecarInstalled();
     this.modelReady = this.deps.hasSelectedModel();
 
-    const initial = this.deps.getInitialStep?.();
-    if (initial !== undefined) {
-      this.currentStep = initial;
-    } else if (!this.sidecarReady) {
+    if (!this.sidecarReady) {
       this.currentStep = 'sidecar';
     } else if (!this.modelReady) {
       this.currentStep = 'model';
@@ -161,9 +157,8 @@ export class SetupWizardModal extends Modal {
   }
 
   private openSidecarInstall(): void {
-    const variant: 'cpu' | 'cuda' = 'cpu';
     const modal = new SidecarInstallModal(this.deps.app, {
-      copy: getInstallCopy(variant, 'first-run'),
+      copy: getInstallCopy('cpu', 'first-run'),
       manager: this.deps.sidecarInstallManager,
       onInstalled: async () => {
         await this.deps.postSidecarInstalled();
@@ -171,7 +166,7 @@ export class SetupWizardModal extends Modal {
         this.goNext();
       },
       pluginDirectory: this.deps.pluginDirectory,
-      variant,
+      variant: 'cpu',
       version: this.deps.pluginVersion,
     });
     modal.open();
