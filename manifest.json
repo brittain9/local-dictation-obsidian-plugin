@@ -1,7 +1,7 @@
 {
   "id": "local-dictation",
   "name": "Local Dictation",
-  "version": "2026.5.16",
+  "version": "2026.5.19",
   "minAppVersion": "1.8.7",
   "description": "Dictate notes privately on-device with Whisper, Cohere Transcribe, Silero VAD, and optional Ollama LLM cleanup.",
   "author": "Alexander Brittain",

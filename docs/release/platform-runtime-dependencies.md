@@ -145,7 +145,7 @@ The `onnx_runtime` probe is stronger — it catches missing userspace libraries,
 
 ## Current CI Release Artifacts
 
-`release.yml` runs on a date-version tag push matching `manifest.version` exactly (for example, `2026.4.25`) and on `workflow_dispatch` for dry-runs. Tag-triggered runs publish a plugin GitHub Release tagged `<version>` and a companion sidecar release tagged `sidecar-<version>`; `workflow_dispatch` uploads Actions artifacts named `release-<version>-plugin` and `release-<version>-sidecar` instead.
+`release.yml` runs on a date-version tag push matching `manifest.version` exactly (for example, `2026.5.19`) and on `workflow_dispatch` for dry-runs. Tag-triggered runs publish one GitHub Release tagged `<version>` with the plugin bundle and sidecar archives; `workflow_dispatch` uploads an Actions artifact named `release-<version>` instead.
 
 | Artifact | Runner | Build command |
 |---|---|---|

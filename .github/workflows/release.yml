@@ -358,56 +358,32 @@ jobs:
         uses: actions/download-artifact@v8
         with:
           pattern: sidecar-*
-          path: dist/sidecar-archives
+          path: dist/release
           merge-multiple: true
 
       - name: Assemble release files
         run: node scripts/assemble-release-files.mjs
 
-      - name: Upload dry-run plugin bundle
+      - name: Upload dry-run bundle
         if: github.event_name == 'workflow_dispatch'
         uses: actions/upload-artifact@v7
         with:
-          name: release-${{ needs.metadata.outputs.version }}-plugin
-          path: dist/release/plugin/*
+          name: release-${{ needs.metadata.outputs.version }}
+          path: dist/release/*
 
-      - name: Upload dry-run sidecar bundle
-        if: github.event_name == 'workflow_dispatch'
-        uses: actions/upload-artifact@v7
-        with:
-          name: release-${{ needs.metadata.outputs.version }}-sidecar
-          path: dist/release/sidecar/*
-
-      # The Obsidian community-plugins reviewer inspects the release whose tag
-      # equals manifest.version. It MUST contain exactly main.js,
-      # manifest.json, and styles.css. The sidecar binaries live on a parallel
-      # `sidecar-<version>` tag created from the same commit.
-      - name: Create draft plugin release
+      - name: Create draft release
         if: github.event_name == 'push'
         uses: softprops/action-gh-release@v3
         with:
-          files: dist/release/plugin/*
+          files: dist/release/*
           name: ${{ needs.metadata.outputs.version }}
           tag_name: ${{ needs.metadata.outputs.version }}
           body_path: ${{ needs.metadata.outputs.notes_path }}
           draft: true
 
-      - name: Create draft sidecar release
-        if: github.event_name == 'push'
-        uses: softprops/action-gh-release@v3
-        with:
-          files: dist/release/sidecar/*
-          name: sidecar-${{ needs.metadata.outputs.version }}
-          tag_name: sidecar-${{ needs.metadata.outputs.version }}
-          body_path: ${{ needs.metadata.outputs.notes_path }}
-          draft: true
-
-      - name: Publish releases
+      - name: Publish release
         if: github.event_name == 'push'
         env:
           GH_TOKEN: ${{ github.token }}
-          PLUGIN_TAG: ${{ needs.metadata.outputs.version }}
-          SIDECAR_TAG: sidecar-${{ needs.metadata.outputs.version }}
-        run: |
-          gh release edit "$PLUGIN_TAG" --draft=false --repo "$GITHUB_REPOSITORY"
-          gh release edit "$SIDECAR_TAG" --draft=false --repo "$GITHUB_REPOSITORY"
+          TAG: ${{ needs.metadata.outputs.version }}
+        run: gh release edit "$TAG" --draft=false --repo "$GITHUB_REPOSITORY"
