@@ -1,19 +1,16 @@
 # Local Dictation
 
-Run private, GPU-accelerated dictation directly in Obsidian with Whisper, Cohere Transcribe, Silero VAD, and optional LLM processing via Ollama.
+Private, on-device speech-to-text for Obsidian. Dictate notes with Whisper or Cohere Transcribe; clean up with a local Ollama model.
 
 ## Features
-- **Cross-platform design** — built for desktop Obsidian on macOS, Linux, and Windows.
-- **Cohere Transcribe support** — use a [Hugging Face Open ASR Leaderboard](https://huggingface.co/spaces/hf-audio/open_asr_leaderboard)-topping speech recognition model directly inside Obsidian.
-- **Whisper support** — choose a mature offline transcription model with a wide range of size and performance options.
-- **Silero v6 voice activity detection** — [enterprise-grade neural VAD](https://github.com/snakers4/silero-vad) for accurate, real-time speech boundary detection.
-- **Optional LLM processing via Ollama** — clean up dictated text with a local LLM when you want an extra pass.
+
+- **Cohere Transcribe** — a [Hugging Face Open ASR Leaderboard](https://huggingface.co/spaces/hf-audio/open_asr_leaderboard)-topping engine, running locally.
+- **Whisper** — mature offline transcription with a range of size/speed options.
+- **Silero v6 VAD** — [enterprise-grade neural voice activity detection](https://github.com/snakers4/silero-vad) for real-time speech boundary detection.
+- **Optional Ollama LLM cleanup** — polish dictated text with a local LLM.
 - **One-click model management** — browse, download, and remove models from inside the plugin.
-- **Hardware acceleration** — supports Metal on macOS and CUDA on Linux/Windows with Turing-or-newer NVIDIA GPUs.
-- **Obsidian-native experience** — integrates cleanly with the app through native settings, commands, and interface elements.
-- **English-first** — optimized for English; other languages supported where engines allow
-- **Privacy-first** — transcription happens locally, with no cloud processing, no telemetry, and no account required for model downloads.
-- **Offline after setup** — only model downloads require a network connection
+- **Hardware acceleration** — Metal on macOS, CUDA on Linux/Windows (Turing-or-newer NVIDIA GPUs).
+- **Private and offline** — transcription stays on-device. No cloud, no telemetry, no account. Only model downloads need a network.
 
 ## Platform Support
 
@@ -26,41 +23,15 @@ Run private, GPU-accelerated dictation directly in Obsidian with Whisper, Cohere
 
 ## Runtime Dependencies
 
-The CPU sidecar has no GPU runtime dependencies. On macOS, Whisper can use Metal through system frameworks; CUDA, cuDNN, and the CUDA Toolkit are not required.
+The CPU sidecar has no GPU runtime dependencies. macOS Whisper uses Metal through system frameworks automatically. Linux and Windows CUDA acceleration needs a Turing-or-newer NVIDIA GPU (RTX 20-series / GTX 16-series or newer) and a driver compatible with CUDA 12.9. Cohere CUDA additionally needs cuDNN 9 runtime libraries; without cuDNN, Cohere falls back to CPU.
 
-Linux and Windows CUDA acceleration requires an NVIDIA Turing-generation or newer GPU, meaning compute capability 7.5 or newer. In consumer GPU terms, that means RTX 20-series / GTX 16-series or newer. CUDA release archives bundle the CUDA runtime libraries used by Whisper CUDA, so release users do not need to install the CUDA Toolkit or `nvcc`.
-
-Use an NVIDIA driver compatible with CUDA 12.9. NVIDIA's CUDA 12.9 release notes list Linux driver 575.51.03+ and Windows driver 576.02+ as the toolkit release baseline. Cohere CUDA additionally requires cuDNN 9 runtime libraries; when cuDNN is not available, Cohere falls back to CPU with an explicit runtime status.
-
-For the full platform contract, see [Platform Runtime Dependencies](docs/release/platform-runtime-dependencies.md). NVIDIA references: [CUDA 12.9 release notes](https://docs.nvidia.com/cuda/archive/12.9.0/cuda-toolkit-release-notes/index.html) and [CUDA GPU compute capability](https://developer.nvidia.com/cuda-gpus).
+See [Platform Runtime Dependencies](docs/release/platform-runtime-dependencies.md) for the full contract.
 
 ## Quick Start
 
-### Users
-
-The community-plugin package contains only Obsidian's three plugin files:
-
-- `main.js`
-- `manifest.json`
-- `styles.css`
-
-After those files are installed, open `Settings -> Local Dictation` and install the sidecar from the plugin settings. The plugin downloads the sidecar archive from the `sidecar-<version>` GitHub Release that matches its own `manifest.version`, verifies it, and stores it under the plugin's `bin/` directory. Then click `Manage models`, install a model, open a note, and start dictation from the ribbon button or `Local Dictation: Start dictation session`.
+Install Local Dictation from Obsidian's Community Plugins. Open `Settings → Local Dictation` and install the sidecar from the plugin settings — the plugin downloads it from the matching GitHub Release, verifies it, and stores it under the plugin's `bin/` directory. Then click `Manage models`, install a model, open a note, and start dictation from the ribbon button or via the `Local Dictation: Start dictation session` command.
 
 The sidecar and model downloads are separate on purpose: Obsidian installs the plugin UI, the plugin installs the native sidecar, and the sidecar manages model downloads. Transcription runs locally after setup.
-
-### Manual Release Install
-
-For manual testing of a published release, download these files from the same GitHub Release tag and place them in `<vault>/.obsidian/plugins/local-dictation/`:
-
-```text
-main.js
-manifest.json
-styles.css
-```
-
-Restart Obsidian or reload plugins, enable `Local Dictation`, then use the settings page to download the sidecar and models.
-
-Do not mix plugin files from one version with sidecar assets from another version. Sidecar downloads are version-locked to `manifest.version`, not to the latest GitHub Release.
 
 ## Privacy & system access
 

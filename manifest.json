@@ -3,8 +3,9 @@
   "name": "Local Dictation",
   "version": "2026.5.19",
   "minAppVersion": "1.8.7",
-  "description": "Dictate notes privately on-device with Whisper, Cohere Transcribe, Silero VAD, and optional Ollama LLM cleanup.",
+  "description": "Private, on-device speech-to-text. Dictate notes with Whisper or Cohere Transcribe; clean up with a local Ollama model.",
   "author": "Alexander Brittain",
   "authorUrl": "https://github.com/brittain9",
+  "helpUrl": "https://github.com/brittain9/local-dictation-obsidian-plugin",
   "isDesktopOnly": true
 }
