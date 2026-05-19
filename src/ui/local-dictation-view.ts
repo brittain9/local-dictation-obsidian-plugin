@@ -62,6 +62,7 @@ export class LocalDictationView extends ItemView {
   private advancedOpen = false;
   private focusedInput: HTMLElement | null = null;
   private models: OllamaModelOption[] = [];
+  private modelsRefreshInFlight = false;
   private narrowObserver: ResizeObserver | null = null;
   private ollamaStatus = 'Ollama status unknown.';
   private lastEnabledMode: LlmPresetMode = DEFAULT_ENABLED_CLEANUP_MODE;
@@ -94,6 +95,12 @@ export class LocalDictationView extends ItemView {
     if (this.dependencies.getSettings().llmFeaturesEnabled) {
       void this.refreshModels({ silent: true });
     }
+    this.registerDomEvent(this.contentEl.win, 'focus', () => {
+      const settings = this.dependencies.getSettings();
+      if (!settings.llmFeaturesEnabled) return;
+      if (settings.llmPostprocessMode === 'off') return;
+      void this.refreshModels({ silent: true });
+    });
   }
 
   override async onClose(): Promise<void> {
@@ -172,6 +179,9 @@ export class LocalDictationView extends ItemView {
           }
           const nextMode = value ? this.resolveModeOnEnable(current) : 'off';
           await this.saveField('llmPostprocessMode', nextMode);
+          if (value) {
+            void this.refreshModels({ silent: true });
+          }
         });
       });
   }
@@ -722,22 +732,44 @@ export class LocalDictationView extends ItemView {
   }
 
   private async refreshModels(options: { silent?: boolean } = {}): Promise<void> {
+    if (this.modelsRefreshInFlight) return;
+    this.modelsRefreshInFlight = true;
+
+    let nextModels: OllamaModelOption[];
+    let nextStatus: string;
     try {
-      this.models = await this.dependencies.ollamaClient.listOllamaModels();
-      this.ollamaStatus =
-        this.models.length === 0
+      nextModels = await this.dependencies.ollamaClient.listOllamaModels();
+      nextStatus =
+        nextModels.length === 0
           ? 'Running, but no chat models installed.'
-          : `Ready (${this.models.length} chat model${this.models.length === 1 ? '' : 's'}).`;
-      this.render();
+          : `Ready (${nextModels.length} chat model${nextModels.length === 1 ? '' : 's'}).`;
     } catch (error) {
-      this.models = [];
-      this.ollamaStatus = 'Not running.';
+      nextModels = [];
+      nextStatus = 'Not running.';
       this.dependencies.logger?.warn('llm', 'Ollama refresh failed', error);
       if (options.silent !== true) {
         this.notice('Local Dictation: Ollama is unavailable.');
       }
-      this.render();
+    } finally {
+      this.modelsRefreshInFlight = false;
     }
+
+    if (this.ollamaStatus === nextStatus && modelsEqual(this.models, nextModels)) {
+      return;
+    }
+    this.models = nextModels;
+    this.ollamaStatus = nextStatus;
+    this.scheduleRender();
+  }
+
+  // Render now if no input is focused; otherwise wait until inputs blur so we
+  // don't wipe the user's in-progress text/cursor mid-edit.
+  private scheduleRender(): void {
+    if (this.focusedInput?.isConnected) {
+      this.promptBlurRenderPending = true;
+      return;
+    }
+    this.render();
   }
 
   private async saveField<TKey extends keyof PluginSettings>(
@@ -771,6 +803,14 @@ export class LocalDictationView extends ItemView {
     }
     new Notice(message);
   }
+}
+
+function modelsEqual(a: readonly OllamaModelOption[], b: readonly OllamaModelOption[]): boolean {
+  if (a.length !== b.length) return false;
+  return a.every((itemA, i) => {
+    const itemB = b[i];
+    return itemB !== undefined && itemA.id === itemB.id && itemA.displayName === itemB.displayName;
+  });
 }
 
 function activePresetOverride(
