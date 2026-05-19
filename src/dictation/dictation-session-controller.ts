@@ -2,7 +2,6 @@ import { randomUUID } from 'node:crypto';
 
 import type { AudioCaptureStream } from '../audio/audio-capture-stream';
 import type { NotePlacementOptions } from '../editor/note-surface';
-import { resolveLlmNoteContextBudget } from '../llm/note-context';
 import { OLLAMA_KEEP_ALIVE, type OllamaClient } from '../llm/ollama-client';
 import { type LlmPostprocessMode, resolveStyleOption } from '../llm/presets';
 import { formatBatchUserMessage } from '../llm/templates';
@@ -872,6 +871,10 @@ function resolveLlmPostprocessSnapshot(settings: PluginSettings): LlmPostprocess
     temperature,
     totalContextCap: settings.llmPostprocessTotalContextCap,
   };
+}
+
+function resolveLlmNoteContextBudget(settings: PluginSettings): number {
+  return settings.useLlmNoteContext ? settings.llmPostprocessNoteContextChars : 0;
 }
 
 function resolveActiveGenerationDefaults(settings: PluginSettings): {
