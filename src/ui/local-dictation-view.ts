@@ -62,6 +62,7 @@ export class LocalDictationView extends ItemView {
   private advancedOpen = false;
   private focusedInput: HTMLElement | null = null;
   private models: OllamaModelOption[] = [];
+  private modelsRefreshInFlight = false;
   private narrowObserver: ResizeObserver | null = null;
   private ollamaStatus = 'Ollama status unknown.';
   private lastEnabledMode: LlmPresetMode = DEFAULT_ENABLED_CLEANUP_MODE;
@@ -91,9 +92,10 @@ export class LocalDictationView extends ItemView {
   override async onOpen(): Promise<void> {
     this.render();
     this.attachWidthObserver();
-    if (this.dependencies.getSettings().llmFeaturesEnabled) {
-      void this.refreshModels({ silent: true });
-    }
+    this.maybeRefreshModels();
+    this.registerDomEvent(this.contentEl.win, 'focus', () => {
+      this.maybeRefreshModels();
+    });
   }
 
   override async onClose(): Promise<void> {
@@ -172,6 +174,7 @@ export class LocalDictationView extends ItemView {
           }
           const nextMode = value ? this.resolveModeOnEnable(current) : 'off';
           await this.saveField('llmPostprocessMode', nextMode);
+          this.maybeRefreshModels();
         });
       });
   }
@@ -444,16 +447,31 @@ export class LocalDictationView extends ItemView {
     const items = createSettingGroup(
       parent,
       'Context',
-      'Bounded slice of recent note text and prior utterances fed to the model so the LLM transform matches existing style and terminology.',
+      'Bounded slice of the open note and recent utterances fed to the model to keep style and terminology consistent.',
     );
-    this.addNumberSetting(
-      items,
-      'Note context chars',
-      'Chars of note text',
-      settings.llmPostprocessNoteContextChars,
-      (value) => this.saveField('llmPostprocessNoteContextChars', value, { rerender: false }),
-      'Characters of surrounding note text fed to the model as context.',
-    );
+
+    new Setting(items)
+      .setName('Use note as LLM context')
+      .setDesc(
+        'Include text from the open note above the cursor in the LLM prompt. Off keeps dictation context-isolated.',
+      )
+      .addToggle((toggle) => {
+        toggle.setValue(settings.useLlmNoteContext);
+        toggle.onChange(async (value) => {
+          await this.saveField('useLlmNoteContext', value);
+        });
+      });
+
+    if (settings.useLlmNoteContext) {
+      this.addNumberSetting(
+        items,
+        'Note context chars',
+        'Chars of note text',
+        settings.llmPostprocessNoteContextChars,
+        (value) => this.saveField('llmPostprocessNoteContextChars', value, { rerender: false }),
+        'Characters of surrounding note text fed to the model as context.',
+      );
+    }
 
     if (settings.llmPostprocessMode !== 'batch') {
       this.addNumberSetting(
@@ -706,23 +724,51 @@ export class LocalDictationView extends ItemView {
     }, 0);
   }
 
+  private maybeRefreshModels(): void {
+    const settings = this.dependencies.getSettings();
+    if (!settings.llmFeaturesEnabled) return;
+    if (settings.llmPostprocessMode === 'off') return;
+    void this.refreshModels({ silent: true });
+  }
+
   private async refreshModels(options: { silent?: boolean } = {}): Promise<void> {
+    if (this.modelsRefreshInFlight) return;
+    this.modelsRefreshInFlight = true;
+
+    let nextModels: OllamaModelOption[];
+    let nextStatus: string;
     try {
-      this.models = await this.dependencies.ollamaClient.listOllamaModels();
-      this.ollamaStatus =
-        this.models.length === 0
+      nextModels = await this.dependencies.ollamaClient.listOllamaModels();
+      nextStatus =
+        nextModels.length === 0
           ? 'Running, but no chat models installed.'
-          : `Ready (${this.models.length} chat model${this.models.length === 1 ? '' : 's'}).`;
-      this.render();
+          : `Ready (${nextModels.length} chat model${nextModels.length === 1 ? '' : 's'}).`;
     } catch (error) {
-      this.models = [];
-      this.ollamaStatus = 'Not running.';
+      nextModels = [];
+      nextStatus = 'Not running.';
       this.dependencies.logger?.warn('llm', 'Ollama refresh failed', error);
       if (options.silent !== true) {
         this.notice('Local Dictation: Ollama is unavailable.');
       }
-      this.render();
+    } finally {
+      this.modelsRefreshInFlight = false;
     }
+
+    if (this.ollamaStatus === nextStatus && modelsEqual(this.models, nextModels)) {
+      return;
+    }
+    this.models = nextModels;
+    this.ollamaStatus = nextStatus;
+    this.scheduleRender();
+  }
+
+  // Deferring while an input is focused avoids clobbering in-progress text and cursor on re-render.
+  private scheduleRender(): void {
+    if (this.focusedInput?.isConnected) {
+      this.promptBlurRenderPending = true;
+      return;
+    }
+    this.render();
   }
 
   private async saveField<TKey extends keyof PluginSettings>(
@@ -756,6 +802,14 @@ export class LocalDictationView extends ItemView {
     }
     new Notice(message);
   }
+}
+
+function modelsEqual(a: readonly OllamaModelOption[], b: readonly OllamaModelOption[]): boolean {
+  if (a.length !== b.length) return false;
+  return a.every((itemA, i) => {
+    const itemB = b[i];
+    return itemB !== undefined && itemA.id === itemB.id && itemA.displayName === itemB.displayName;
+  });
 }
 
 function activePresetOverride(
