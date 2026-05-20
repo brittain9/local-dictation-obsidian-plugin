@@ -444,7 +444,9 @@ export class NoteSurface {
     for (const span of this.spans.values()) {
       span.start = update.changes.mapPos(span.start, -1);
       span.textStart = update.changes.mapPos(span.textStart, -1);
-      span.textEnd = update.changes.mapPos(span.textEnd, 1);
+      // Text bias: insertions at textEnd land outside the span, so a sibling
+      // append at writingRegionTail() doesn't swallow the next utterance.
+      span.textEnd = update.changes.mapPos(span.textEnd, -1);
       span.end = update.changes.mapPos(span.end, 1);
     }
 
