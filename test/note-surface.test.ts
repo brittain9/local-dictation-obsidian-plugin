@@ -44,6 +44,7 @@ function renderOptions(overrides: Partial<TranscriptRenderOptions> = {}): Transc
 }
 
 class FakeEditorView {
+  public lastUpdate: ViewUpdate | null = null;
   public state: EditorState;
 
   constructor(doc: string, selectionHead: number, extensions: Extension = []) {
@@ -55,19 +56,27 @@ class FakeEditorView {
   }
 
   dispatch(spec: TransactionSpec): void {
-    this.state = this.state.update(spec).state;
+    const transaction = this.state.update(spec);
+    this.state = transaction.state;
+    this.lastUpdate = {
+      changes: transaction.changes,
+      docChanged: transaction.docChanged,
+      transactions: [transaction],
+      view: this,
+    } as unknown as ViewUpdate;
   }
 
   apply(spec: TransactionSpec): ViewUpdate {
     const transaction = this.state.update(spec);
     this.state = transaction.state;
 
-    return {
+    this.lastUpdate = {
       changes: transaction.changes,
       docChanged: transaction.docChanged,
       transactions: [transaction],
       view: this,
     } as unknown as ViewUpdate;
+    return this.lastUpdate;
   }
 }
 
@@ -128,6 +137,42 @@ function doc(view: FakeEditorView): string {
 }
 
 describe('NoteSurface', () => {
+  it('keeps same-cursor sessions ordered when the later session writes first', () => {
+    const view = new FakeEditorView('', 0);
+    const earlier = new NoteSurface(view as unknown as EditorView, { anchor: 'at_cursor' });
+    const later = new NoteSurface(view as unknown as EditorView, { anchor: 'at_cursor' });
+
+    expect(append(later, 'later', 'B').kind).toBe('appended');
+    if (view.lastUpdate === null) {
+      throw new Error('later append should produce an update');
+    }
+    earlier.observeTransaction(view.lastUpdate);
+
+    expect(append(earlier, 'earlier', 'A').kind).toBe('appended');
+    if (view.lastUpdate === null) {
+      throw new Error('earlier append should produce an update');
+    }
+    later.observeTransaction(view.lastUpdate);
+
+    expect(doc(view)).toBe('AB');
+  });
+
+  it('keeps same-cursor sessions ordered when the earlier session writes first', () => {
+    const view = new FakeEditorView('', 0);
+    const earlier = new NoteSurface(view as unknown as EditorView, { anchor: 'at_cursor' });
+    const later = new NoteSurface(view as unknown as EditorView, { anchor: 'at_cursor' });
+
+    expect(append(earlier, 'earlier', 'A').kind).toBe('appended');
+    if (view.lastUpdate === null) {
+      throw new Error('earlier append should produce an update');
+    }
+    later.observeTransaction(view.lastUpdate);
+
+    expect(append(later, 'later', 'B').kind).toBe('appended');
+
+    expect(doc(view)).toBe('A B');
+  });
+
   it('extends the writing-region tail past user text typed at the initial anchor before any utterance', () => {
     const { surface, view } = createSurface();
 

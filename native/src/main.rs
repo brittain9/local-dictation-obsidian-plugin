@@ -35,9 +35,9 @@ fn run_stdio(catalog: ModelCatalog, app_version: String) -> Result<()> {
         match input_rx.recv_timeout(Duration::from_millis(10)) {
             Ok(InputMessage::Frame(frame)) => {
                 let (control_flow, events) = match frame {
-                    IncomingFrame::Audio(frame_bytes) => (
+                    IncomingFrame::Audio(audio_frame) => (
                         ControlFlow::Continue,
-                        app_state.handle_audio_frame(frame_bytes),
+                        app_state.handle_audio_frame(audio_frame),
                     ),
                     IncomingFrame::Command(command) => app_state.handle_command(command),
                 };

@@ -4,7 +4,7 @@ import type { PluginLogger } from '../shared/plugin-logger';
 import { PCM_RECORDER_WORKLET_NAME } from './pcm-recorder-worklet-shared';
 import { PCM_RECORDER_WORKLET_SOURCE } from './pcm-recorder-worklet-source';
 
-type AudioFrameListener = (frameBytes: Uint8Array) => void;
+type AudioFrameListener = (sessionId: string, frameBytes: Uint8Array) => void;
 
 interface AudioCaptureStreamOptions {
   logger?: PluginLogger;
@@ -24,7 +24,7 @@ export class AudioCaptureStream {
     return this.mediaStream !== null;
   }
 
-  async start(frameListener: AudioFrameListener): Promise<void> {
+  async start(sessionId: string, frameListener: AudioFrameListener): Promise<void> {
     if (this.isCapturing()) {
       throw new Error('Audio capture is already active.');
     }
@@ -75,7 +75,7 @@ export class AudioCaptureStream {
           return;
         }
 
-        this.frameListener?.(frameBytes);
+        this.frameListener?.(sessionId, frameBytes);
       };
 
       sourceNode.connect(recorderNode);

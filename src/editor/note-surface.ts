@@ -1,5 +1,5 @@
 import type { Extension } from '@codemirror/state';
-import { Transaction } from '@codemirror/state';
+import { Annotation, Transaction } from '@codemirror/state';
 import { EditorView, type ViewUpdate } from '@codemirror/view';
 
 import type { UtteranceId } from '../session/session-journal';
@@ -99,23 +99,47 @@ export type RewriteResult =
       reason: RewriteDenialReason;
     };
 
-let activeNoteSurface: NoteSurface | null = null;
+const noteSurfaceInsertOrder = Annotation.define<number>();
+const noteSurfacesByView = new WeakMap<EditorView, Set<NoteSurface>>();
+let nextSurfaceOrder = 0;
 
-export function setActiveNoteSurface(surface: NoteSurface | null): void {
-  activeNoteSurface = surface;
+function registerNoteSurface(surface: NoteSurface): void {
+  const existing = noteSurfacesByView.get(surface.view);
+  if (existing !== undefined) {
+    existing.add(surface);
+    return;
+  }
+
+  noteSurfacesByView.set(surface.view, new Set([surface]));
+}
+
+function unregisterNoteSurface(surface: NoteSurface): void {
+  const surfaces = noteSurfacesByView.get(surface.view);
+  if (surfaces === undefined) {
+    return;
+  }
+
+  surfaces.delete(surface);
 }
 
 export function noteSurfaceUpdateListenerExtension(): Extension {
   return EditorView.updateListener.of((update) => {
-    if (activeNoteSurface !== null && update.view === activeNoteSurface.view) {
-      activeNoteSurface.observeTransaction(update);
+    const surfaces = noteSurfacesByView.get(update.view);
+    if (surfaces === undefined) {
+      return;
+    }
+
+    for (const surface of [...surfaces]) {
+      surface.observeTransaction(update);
     }
   });
 }
 
 export class NoteSurface {
+  private readonly createdAt = nextSurfaceOrder;
   private disposed = false;
   private initialAnchorPos: number;
+  private readonly initialBoundaryPos: number;
   private pendingInitialPrefix = '';
   private readonly spans = new Map<UtteranceId, ProjectedSpan>();
 
@@ -123,10 +147,12 @@ export class NoteSurface {
     readonly view: EditorView,
     private readonly placement: NotePlacementOptions,
   ) {
+    nextSurfaceOrder += 1;
     this.initialAnchorPos = this.computePinPosition();
     this.insertInitialPrefix();
+    this.initialBoundaryPos = this.initialAnchorPos;
     this.view.dispatch({ effects: setAnchorEffect.of(this.initialAnchorPos) });
-    setActiveNoteSurface(this);
+    registerNoteSurface(this);
   }
 
   observeTransaction(update: ViewUpdate): void {
@@ -179,6 +205,7 @@ export class NoteSurface {
     const to = from + projection.projectedText.length;
 
     this.view.dispatch({
+      annotations: noteSurfaceInsertOrder.of(this.createdAt),
       changes: { from, insert: projection.projectedText },
       effects: [setAnchorEffect.of(to), EditorView.scrollIntoView(to, { y: 'nearest' })],
     });
@@ -359,10 +386,7 @@ export class NoteSurface {
       effects: [clearAnchorEffect.of(null), setSessionProcessingEffect.of(null)],
     });
     this.disposed = true;
-
-    if (activeNoteSurface === this) {
-      setActiveNoteSurface(null);
-    }
+    unregisterNoteSurface(this);
   }
 
   getSpan(utteranceId: UtteranceId): ProjectedSpan | undefined {
@@ -425,7 +449,27 @@ export class NoteSurface {
   }
 
   private writingRegionTail(): number {
-    return Math.max(this.initialAnchorPos, ...[...this.spans.values()].map((span) => span.end));
+    let tail = Math.max(this.initialAnchorPos, ...[...this.spans.values()].map((span) => span.end));
+    const siblingSurfaces = noteSurfacesByView.get(this.view);
+
+    if (siblingSurfaces === undefined) {
+      return tail;
+    }
+
+    for (const surface of siblingSurfaces) {
+      if (
+        surface === this ||
+        surface.disposed ||
+        surface.initialBoundaryPos !== this.initialBoundaryPos ||
+        surface.createdAt >= this.createdAt
+      ) {
+        continue;
+      }
+
+      tail = Math.max(tail, surface.writingRegionTail());
+    }
+
+    return tail;
   }
 
   private lastSpan(): ProjectedSpan | null {
@@ -441,9 +485,15 @@ export class NoteSurface {
   }
 
   private mapSpans(update: ViewUpdate): void {
+    const insertOrder = update.transactions
+      .map((transaction) => transaction.annotation(noteSurfaceInsertOrder))
+      .find((order) => order !== undefined);
+    const spanStartBias = insertOrder !== undefined && insertOrder < this.createdAt ? 1 : -1;
+    const initialAnchorBias = insertOrder !== undefined && insertOrder > this.createdAt ? -1 : 1;
+
     for (const span of this.spans.values()) {
-      span.start = update.changes.mapPos(span.start, -1);
-      span.textStart = update.changes.mapPos(span.textStart, -1);
+      span.start = update.changes.mapPos(span.start, spanStartBias);
+      span.textStart = update.changes.mapPos(span.textStart, spanStartBias);
       // Text bias: insertions at textEnd land outside the span, so a sibling
       // append at writingRegionTail() doesn't swallow the next utterance.
       span.textEnd = update.changes.mapPos(span.textEnd, -1);
@@ -451,7 +501,7 @@ export class NoteSurface {
     }
 
     // Tail bias: insertions at the initial anchor extend the writing region.
-    this.initialAnchorPos = update.changes.mapPos(this.initialAnchorPos, 1);
+    this.initialAnchorPos = update.changes.mapPos(this.initialAnchorPos, initialAnchorBias);
   }
 
   private latchedReason(span: ProjectedSpan): ReplaceDenialReason {

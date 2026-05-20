@@ -19,6 +19,7 @@ const JSON_FRAME_KIND: u8 = 0x01;
 const AUDIO_FRAME_KIND: u8 = 0x02;
 const FRAME_HEADER_LENGTH: usize = 5;
 const MAX_FRAME_PAYLOAD: usize = 16 * 1024 * 1024;
+const SESSION_ID_BYTES: usize = 16;
 
 pub const PCM_SAMPLE_RATE_HZ: usize = 16_000;
 pub const PCM_CHANNEL_COUNT: usize = 1;
@@ -101,7 +102,6 @@ pub enum SessionState {
 pub enum SessionStopReason {
     QueueOverload,
     SentenceComplete,
-    SessionReplaced,
     Timeout,
     UserCancel,
     UserStop,
@@ -329,8 +329,18 @@ pub enum Command {
     CancelModelInstall {
         install_id: String,
     },
-    StopSession,
-    CancelSession,
+    StopSession {
+        session_id: String,
+    },
+    CancelSession {
+        session_id: String,
+    },
+    RunBatchCleanup {
+        session_id: String,
+        transcript_text: String,
+        config: LlmPostprocessConfig,
+        note_context: Option<String>,
+    },
     Shutdown,
 }
 
@@ -464,6 +474,12 @@ pub enum Event {
         reason: SessionStopReason,
         session_id: String,
     },
+    BatchCleanupReady {
+        session_id: String,
+        clean_text: String,
+        raw_text: String,
+        stage_results: Vec<StageOutcome>,
+    },
     Error {
         code: String,
         #[serde(skip_serializing_if = "Option::is_none")]
@@ -476,8 +492,14 @@ pub enum Event {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum IncomingFrame {
-    Audio(Vec<u8>),
+    Audio(AudioFrame),
     Command(Command),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AudioFrame {
+    pub frame_bytes: Vec<u8>,
+    pub session_id: String,
 }
 
 impl CommandEnvelope {
@@ -519,9 +541,49 @@ pub fn read_frame<R: Read>(reader: &mut R) -> Result<Option<IncomingFrame>> {
         JSON_FRAME_KIND => Ok(Some(IncomingFrame::Command(CommandEnvelope::parse_json(
             &payload,
         )?))),
-        AUDIO_FRAME_KIND => Ok(Some(IncomingFrame::Audio(payload))),
+        AUDIO_FRAME_KIND => Ok(Some(IncomingFrame::Audio(decode_audio_frame_envelope(
+            &payload,
+        )?))),
         _ => Err(anyhow!("unsupported frame kind {frame_kind}")),
     }
+}
+
+pub fn encode_audio_frame_envelope(session_id: &str, frame_bytes: &[u8]) -> Result<Vec<u8>> {
+    ensure!(
+        frame_bytes.len() == PCM_BYTES_PER_FRAME,
+        "audio frames must be {PCM_BYTES_PER_FRAME} bytes, received {}",
+        frame_bytes.len()
+    );
+    let uuid = Uuid::parse_str(session_id).context("session id must be a UUID string")?;
+    ensure!(
+        uuid.get_version_num() == 4,
+        "session id must be a UUID v4 string"
+    );
+
+    let mut envelope = Vec::with_capacity(SESSION_ID_BYTES + frame_bytes.len());
+    envelope.extend_from_slice(uuid.as_bytes());
+    envelope.extend_from_slice(frame_bytes);
+    Ok(envelope)
+}
+
+pub fn decode_audio_frame_envelope(payload: &[u8]) -> Result<AudioFrame> {
+    ensure!(
+        payload.len() == SESSION_ID_BYTES + PCM_BYTES_PER_FRAME,
+        "audio frame envelopes must be {} bytes, received {}",
+        SESSION_ID_BYTES + PCM_BYTES_PER_FRAME,
+        payload.len()
+    );
+    let session_id = Uuid::from_slice(&payload[..SESSION_ID_BYTES])
+        .context("audio frame session id bytes must be a UUID")?;
+    ensure!(
+        session_id.get_version_num() == 4,
+        "audio frame session id must be UUID v4"
+    );
+
+    Ok(AudioFrame {
+        frame_bytes: payload[SESSION_ID_BYTES..].to_vec(),
+        session_id: session_id.to_string(),
+    })
 }
 
 pub fn write_event_frame<W: Write>(writer: &mut W, event: &Event) -> Result<()> {
@@ -581,10 +643,11 @@ fn read_exact_or_eof<R: Read>(reader: &mut R, buffer: &mut [u8]) -> Result<usize
 #[cfg(test)]
 mod tests {
     use super::{
-        AUDIO_FRAME_KIND, AccelerationPreference, Command, Event, EventEnvelope,
+        AUDIO_FRAME_KIND, AccelerationPreference, AudioFrame, Command, Event, EventEnvelope,
         FRAME_HEADER_LENGTH, IncomingFrame, JSON_FRAME_KIND, ListeningMode, MAX_FRAME_PAYLOAD,
         PCM_BYTES_PER_FRAME, QueueBackpressureTier, SelectedModel, SessionStopReason,
-        SpeakingStyle, StageId, read_frame, write_event_frame, write_frame,
+        SpeakingStyle, StageId, encode_audio_frame_envelope, read_frame, write_event_frame,
+        write_frame,
     };
     use crate::engine::capabilities::{ModelFamilyId, RuntimeId};
     use uuid::Uuid;
@@ -743,14 +806,23 @@ mod tests {
     #[test]
     fn audio_frame_round_trip_preserves_payload() {
         let payload = vec![7_u8; PCM_BYTES_PER_FRAME];
+        let session_id = "123e4567-e89b-42d3-a456-426614174000";
+        let envelope =
+            encode_audio_frame_envelope(session_id, &payload).expect("envelope should encode");
         let mut framed = Vec::new();
-        write_frame(&mut framed, AUDIO_FRAME_KIND, &payload).expect("frame should write");
+        write_frame(&mut framed, AUDIO_FRAME_KIND, &envelope).expect("frame should write");
 
         let parsed = read_frame(&mut framed.as_slice())
             .expect("frame should parse")
             .expect("frame should exist");
 
-        assert_eq!(parsed, IncomingFrame::Audio(payload));
+        assert_eq!(
+            parsed,
+            IncomingFrame::Audio(AudioFrame {
+                frame_bytes: payload,
+                session_id: session_id.to_string(),
+            })
+        );
     }
 
     #[test]

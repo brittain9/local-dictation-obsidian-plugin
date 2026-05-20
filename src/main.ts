@@ -105,7 +105,6 @@ export default class LocalSttPlugin extends Plugin {
       notice: (message) => {
         new Notice(message);
       },
-      ollamaClient,
       onModelMissing: () => {
         void this.openModelPicker();
       },

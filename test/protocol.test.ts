@@ -3,20 +3,29 @@ import { describe, expect, it } from 'vitest';
 import { PCM_BYTES_PER_FRAME } from '../src/shared/pcm-format';
 import {
   AUDIO_FRAME_KIND,
+  bytesToSessionId,
   type ContextWindow,
+  createCancelSessionCommand,
   createContextResponseCommand,
   createGetSystemInfoCommand,
   createHealthCommand,
+  createRunBatchCleanupCommand,
   createStartSessionCommand,
+  createStopSessionCommand,
+  decodeAudioFrameEnvelope,
   encodeAudioFrame,
   encodeJsonFrame,
   FRAME_HEADER_LENGTH,
   FramedMessageParser,
   JSON_FRAME_KIND,
   parseEventFrame,
+  SESSION_ID_BYTES,
+  sessionIdToBytes,
 } from '../src/sidecar/protocol';
 
 describe('sidecar protocol', () => {
+  const SESSION_ID = '123e4567-e89b-42d3-a456-426614174000';
+
   it('serializes JSON commands with the framed header', () => {
     const frame = encodeJsonFrame(createHealthCommand());
 
@@ -28,10 +37,21 @@ describe('sidecar protocol', () => {
 
   it('serializes audio frames with the expected byte size', () => {
     const payload = new Uint8Array(PCM_BYTES_PER_FRAME).fill(7);
-    const frame = encodeAudioFrame(payload);
+    const frame = encodeAudioFrame(SESSION_ID, payload);
 
     expect(frame[0]).toBe(AUDIO_FRAME_KIND);
-    expect(frame.byteLength).toBe(5 + PCM_BYTES_PER_FRAME);
+    expect(frame.byteLength).toBe(5 + SESSION_ID_BYTES + PCM_BYTES_PER_FRAME);
+    expect(decodeAudioFrameEnvelope(frame.slice(FRAME_HEADER_LENGTH))).toEqual({
+      frameBytes: payload,
+      sessionId: SESSION_ID,
+    });
+  });
+
+  it('round-trips UUID session ids through raw bytes', () => {
+    expect(bytesToSessionId(sessionIdToBytes(SESSION_ID))).toBe(SESSION_ID);
+    expect(() => sessionIdToBytes('session-not-a-uuid')).toThrow(
+      'Session id must be a UUID v4 string',
+    );
   });
 
   it('serializes start_session command with accelerationPreference', () => {
@@ -97,6 +117,43 @@ describe('sidecar protocol', () => {
         totalContextCap: 7000,
       },
       type: 'start_session',
+    });
+  });
+
+  it('serializes session-addressed stop, cancel, and batch cleanup commands', () => {
+    expect(readPayload(encodeJsonFrame(createStopSessionCommand(SESSION_ID)))).toEqual({
+      sessionId: SESSION_ID,
+      type: 'stop_session',
+    });
+    expect(readPayload(encodeJsonFrame(createCancelSessionCommand(SESSION_ID)))).toEqual({
+      sessionId: SESSION_ID,
+      type: 'cancel_session',
+    });
+    expect(
+      readPayload(
+        encodeJsonFrame(
+          createRunBatchCleanupCommand({
+            config: {
+              keepAlive: '30m',
+              model: 'llama3.2:latest',
+              noteContextChars: 100,
+              priorUtterancesN: 0,
+              prompt: 'Clean it.',
+              showRawBelow: false,
+              skipMinWords: 0,
+              temperature: 0.2,
+              totalContextCap: 100,
+            },
+            noteContext: null,
+            sessionId: SESSION_ID,
+            transcriptText: 'raw',
+          }),
+        ),
+      ),
+    ).toMatchObject({
+      sessionId: SESSION_ID,
+      transcriptText: 'raw',
+      type: 'run_batch_cleanup',
     });
   });
 
@@ -266,7 +323,7 @@ describe('sidecar protocol', () => {
   });
 
   it('rejects wrong-size payload in encodeAudioFrame', () => {
-    expect(() => encodeAudioFrame(new Uint8Array(1))).toThrow(
+    expect(() => encodeAudioFrame(SESSION_ID, new Uint8Array(1))).toThrow(
       `Audio frames must be ${PCM_BYTES_PER_FRAME} bytes, received 1.`,
     );
   });
@@ -597,7 +654,7 @@ describe('sidecar protocol', () => {
       utteranceId: 'utt-1',
       warnings: [],
     });
-    const audioFrame = encodeAudioFrame(new Uint8Array(PCM_BYTES_PER_FRAME).fill(3));
+    const audioFrame = encodeAudioFrame(SESSION_ID, new Uint8Array(PCM_BYTES_PER_FRAME).fill(3));
     const combined = new Uint8Array(transcriptFrame.byteLength + audioFrame.byteLength);
 
     combined.set(transcriptFrame, 0);
@@ -630,7 +687,11 @@ describe('sidecar protocol', () => {
       },
       kind: JSON_FRAME_KIND,
     });
-    expect(frames[1]?.kind).toBe(AUDIO_FRAME_KIND);
+    expect(frames[1]).toEqual({
+      frameBytes: new Uint8Array(PCM_BYTES_PER_FRAME).fill(3),
+      kind: AUDIO_FRAME_KIND,
+      sessionId: SESSION_ID,
+    });
   });
 });
 

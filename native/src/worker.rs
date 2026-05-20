@@ -1,3 +1,4 @@
+use std::collections::{HashMap, HashSet};
 use std::panic::{self, AssertUnwindSafe};
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -9,6 +10,7 @@ use tokio::runtime::{Builder, Runtime};
 use tokio::sync::watch;
 use uuid::Uuid;
 
+use crate::audio_metadata::VoiceActivityEvidence;
 use crate::engine::capabilities::{
     ModelFamilyCapabilities, ModelFamilyId, RequestWarning, RuntimeId,
 };
@@ -16,11 +18,13 @@ use crate::engine::registry::{EngineRegistry, apply_capability_gates, missing_ad
 use crate::engine::traits::LoadedModel;
 use crate::panic_util::format_panic_message;
 use crate::protocol::{
-    ContextWindow, EngineStagePayload, LlmPostprocessConfig, StageId, StageOutcome, StageStatus,
+    ContextWindow, ContextWindowSource, EngineStagePayload, LlmPostprocessConfig, StageId,
+    StageOutcome, StageStatus, TimestampGranularity, TimestampSource, TranscriptSegment,
 };
 use crate::session::FinalizedUtterance;
 use crate::stages::{
-    StageContext, StageEnablement, StageProcessor, post_engine_processors, run_post_engine,
+    StageContext, StageEnablement, StageProcessor, llm_postprocess_processor,
+    post_engine_processors, run_post_engine,
 };
 use crate::transcription::{
     EngineTranscriptOutput, GpuConfig, Transcript, TranscriptionError, TranscriptionRequest,
@@ -46,6 +50,12 @@ pub enum WorkerCommand {
     EndSession {
         session_id: String,
     },
+    RunBatchCleanup {
+        config: LlmPostprocessConfig,
+        note_context: Option<String>,
+        session_id: String,
+        transcript_text: String,
+    },
     Shutdown,
     TranscribeUtterance {
         context: Option<ContextWindow>,
@@ -57,6 +67,12 @@ pub enum WorkerCommand {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum WorkerEvent {
+    BatchCleanupReady {
+        clean_text: String,
+        raw_text: String,
+        session_id: String,
+        stage_results: Vec<StageOutcome>,
+    },
     SessionError {
         code: String,
         details: Option<String>,
@@ -109,7 +125,7 @@ impl TranscriptionWorker {
     }
 }
 
-struct ActiveSession {
+struct WorkerSession {
     metadata: SessionMetadata,
     loaded_model: Box<dyn LoadedModel>,
     processors: Vec<Box<dyn StageProcessor>>,
@@ -130,7 +146,8 @@ fn worker_main(
     event_tx: Sender<WorkerEvent>,
     registry: Arc<EngineRegistry>,
 ) {
-    let mut active: Option<ActiveSession> = None;
+    let mut sessions: HashMap<String, WorkerSession> = HashMap::new();
+    let mut ended_sessions: HashSet<String> = HashSet::new();
     let tokio_runtime = Builder::new_current_thread()
         .enable_all()
         .build()
@@ -139,17 +156,21 @@ fn worker_main(
     while let Ok(command) = command_rx.recv() {
         match command {
             WorkerCommand::BeginSession(metadata) => {
+                ended_sessions.remove(&metadata.session_id);
                 let load_result = panic::catch_unwind(AssertUnwindSafe(|| {
                     load_model_for_session(registry.as_ref(), &metadata)
                 }));
 
                 match load_result {
                     Ok(Ok(loaded_model)) => {
-                        active = Some(ActiveSession {
-                            metadata,
-                            loaded_model,
-                            processors: post_engine_processors(),
-                        });
+                        sessions.insert(
+                            metadata.session_id.clone(),
+                            WorkerSession {
+                                metadata,
+                                loaded_model,
+                                processors: post_engine_processors(),
+                            },
+                        );
                     }
                     Ok(Err(error)) => {
                         let _ = event_tx.send(WorkerEvent::SessionError {
@@ -159,7 +180,6 @@ fn worker_main(
                             session_id: metadata.session_id,
                             utterance_id: None,
                         });
-                        active = None;
                     }
                     Err(payload) => {
                         let message = format_panic_message(
@@ -173,17 +193,46 @@ fn worker_main(
                             session_id: metadata.session_id,
                             utterance_id: None,
                         });
-                        active = None;
                     }
                 }
             }
             WorkerCommand::EndSession { session_id } => {
-                if active
-                    .as_ref()
-                    .map(|session| session.metadata.session_id == session_id)
-                    .unwrap_or(false)
-                {
-                    active = None;
+                ended_sessions.insert(session_id.clone());
+                sessions.remove(&session_id);
+            }
+            WorkerCommand::RunBatchCleanup {
+                config,
+                note_context,
+                session_id,
+                transcript_text,
+            } => {
+                let result = panic::catch_unwind(AssertUnwindSafe(|| {
+                    run_batch_cleanup(
+                        &tokio_runtime,
+                        session_id.clone(),
+                        transcript_text,
+                        config,
+                        note_context,
+                    )
+                }));
+
+                match result {
+                    Ok(event) => {
+                        let _ = event_tx.send(event);
+                    }
+                    Err(payload) => {
+                        let message = format_panic_message(
+                            payload.as_ref(),
+                            "Worker thread panicked during batch cleanup",
+                        );
+                        let _ = event_tx.send(WorkerEvent::SessionError {
+                            code: "worker_panic".to_string(),
+                            details: None,
+                            message,
+                            session_id,
+                            utterance_id: None,
+                        });
+                    }
                 }
             }
             WorkerCommand::Shutdown => break,
@@ -193,13 +242,13 @@ fn worker_main(
                 utterance,
                 utterance_id,
             } => {
-                let Some(session) = active.as_mut() else {
-                    continue;
-                };
-
-                if session.metadata.session_id != session_id {
+                if ended_sessions.contains(&session_id) {
                     continue;
                 }
+
+                let Some(session) = sessions.get_mut(&session_id) else {
+                    continue;
+                };
 
                 let utterance_duration_ms = utterance.duration_ms();
                 let utterance_end_ms_in_session = utterance.utterance_end_ms_in_session();
@@ -362,6 +411,92 @@ fn assemble_transcript(input: TranscriptAssembly<'_>) -> Transcript {
     run_post_engine(&mut transcript, input.processors, &ctx);
 
     transcript
+}
+
+fn run_batch_cleanup(
+    tokio_runtime: &Runtime,
+    session_id: String,
+    transcript_text: String,
+    config: LlmPostprocessConfig,
+    note_context: Option<String>,
+) -> WorkerEvent {
+    let trimmed_input = transcript_text.trim().to_string();
+    let utterance_duration_ms = 1_000;
+    let context = note_context
+        .filter(|text| !text.trim().is_empty())
+        .map(|text| ContextWindow {
+            budget_chars: text.chars().count().min(u32::MAX as usize) as u32,
+            sources: vec![ContextWindowSource::NoteText {
+                text: text.clone(),
+                truncated: false,
+            }],
+            text,
+            truncated: false,
+        });
+    let voice_activity = VoiceActivityEvidence {
+        audio_start_ms: 0,
+        audio_end_ms: utterance_duration_ms,
+        speech_start_ms: 0,
+        speech_end_ms: utterance_duration_ms,
+        voiced_ms: utterance_duration_ms,
+        unvoiced_ms: 0,
+        mean_probability: 1.0,
+        max_probability: 1.0,
+    };
+    let (_cancel_tx, cancel_rx) = watch::channel(false);
+    let processors = vec![llm_postprocess_processor()];
+    let mut transcript = Transcript {
+        revision: 0,
+        segments: vec![TranscriptSegment {
+            end_ms: utterance_duration_ms,
+            start_ms: 0,
+            text: trimmed_input.clone(),
+            timestamp_granularity: TimestampGranularity::Utterance,
+            timestamp_source: TimestampSource::None,
+        }],
+        stage_history: Vec::new(),
+        utterance_id: Uuid::new_v4(),
+    };
+    let family_capabilities = ModelFamilyCapabilities::unknown();
+    let stage_enablement = StageEnablement::default();
+    let ctx = StageContext {
+        cancel_rx: &cancel_rx,
+        context: context.as_ref(),
+        family_capabilities: &family_capabilities,
+        is_final: true,
+        llm_postprocess: Some(&config),
+        pause_ms_before_utterance: None,
+        segment_diagnostics: &[],
+        stage_enabled: &stage_enablement,
+        tokio_runtime,
+        vad_probabilities: &[],
+        voice_activity: &voice_activity,
+    };
+
+    run_post_engine(&mut transcript, &processors, &ctx);
+
+    let last_stage = transcript.stage_history.last();
+    if !matches!(last_stage.map(|stage| &stage.status), Some(StageStatus::Ok)) {
+        let error = match last_stage.map(|stage| &stage.status) {
+            Some(StageStatus::Failed { error }) => error.clone(),
+            Some(StageStatus::Skipped { reason }) => format!("batch cleanup skipped: {reason}"),
+            Some(StageStatus::Ok) | None => "batch cleanup did not produce a result".to_string(),
+        };
+        return WorkerEvent::SessionError {
+            code: "batch_cleanup_failed".to_string(),
+            details: Some(error.clone()),
+            message: "Batch LLM cleanup failed; raw transcript was kept.".to_string(),
+            session_id,
+            utterance_id: None,
+        };
+    }
+
+    WorkerEvent::BatchCleanupReady {
+        clean_text: transcript.joined_text(),
+        raw_text: trimmed_input,
+        session_id,
+        stage_results: transcript.stage_history,
+    }
 }
 
 #[cfg(test)]
