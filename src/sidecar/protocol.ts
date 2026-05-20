@@ -38,6 +38,7 @@ import { isRecord } from '../shared/type-guards';
 export const JSON_FRAME_KIND = 0x01;
 export const AUDIO_FRAME_KIND = 0x02;
 export const FRAME_HEADER_LENGTH = 5;
+export const SESSION_ID_BYTES = 16;
 
 export type AccelerationPreference = 'auto' | 'cpu_only';
 export type SpeakingStyle = 'responsive' | 'balanced' | 'patient';
@@ -58,7 +59,6 @@ export type SessionState = (typeof SESSION_STATES)[number];
 export const SESSION_STOP_REASONS = [
   'queue_overload',
   'sentence_complete',
-  'session_replaced',
   'timeout',
   'user_cancel',
   'user_stop',
@@ -193,9 +193,20 @@ export interface CancelModelInstallCommand extends EnvelopeBase<'cancel_model_in
   installId: string;
 }
 
-export interface StopSessionCommand extends EnvelopeBase<'stop_session'> {}
+export interface StopSessionCommand extends EnvelopeBase<'stop_session'> {
+  sessionId: string;
+}
 
-export interface CancelSessionCommand extends EnvelopeBase<'cancel_session'> {}
+export interface CancelSessionCommand extends EnvelopeBase<'cancel_session'> {
+  sessionId: string;
+}
+
+export interface RunBatchCleanupCommand extends EnvelopeBase<'run_batch_cleanup'> {
+  config: LlmPostprocessConfig;
+  noteContext: string | null;
+  sessionId: string;
+  transcriptText: string;
+}
 
 export interface ShutdownCommand extends EnvelopeBase<'shutdown'> {}
 
@@ -213,6 +224,7 @@ export type SidecarCommand =
   | ListModelCatalogCommand
   | ProbeModelSelectionCommand
   | RemoveModelCommand
+  | RunBatchCleanupCommand
   | ShutdownCommand
   | StartSessionCommand
   | StopSessionCommand;
@@ -301,6 +313,13 @@ export interface SessionStoppedEvent extends EnvelopeBase<'session_stopped'> {
   sessionId: string;
 }
 
+export interface BatchCleanupReadyEvent extends EnvelopeBase<'batch_cleanup_ready'> {
+  cleanText: string;
+  rawText: string;
+  sessionId: string;
+  stageResults: StageOutcome[];
+}
+
 export interface ErrorEvent extends EnvelopeBase<'error'> {
   code: string;
   details?: string;
@@ -309,6 +328,7 @@ export interface ErrorEvent extends EnvelopeBase<'error'> {
 }
 
 export type SidecarEvent =
+  | BatchCleanupReadyEvent
   | ContextRequestEvent
   | ErrorEvent
   | HealthOkEvent
@@ -397,12 +417,27 @@ export function createCancelModelInstallCommand(installId: string): CancelModelI
   };
 }
 
-export function createStopSessionCommand(): StopSessionCommand {
-  return createEnvelope('stop_session');
+export function createStopSessionCommand(sessionId: string): StopSessionCommand {
+  return {
+    ...createEnvelope('stop_session'),
+    sessionId,
+  };
 }
 
-export function createCancelSessionCommand(): CancelSessionCommand {
-  return createEnvelope('cancel_session');
+export function createCancelSessionCommand(sessionId: string): CancelSessionCommand {
+  return {
+    ...createEnvelope('cancel_session'),
+    sessionId,
+  };
+}
+
+export function createRunBatchCleanupCommand(
+  payload: Omit<RunBatchCleanupCommand, 'type'>,
+): RunBatchCleanupCommand {
+  return {
+    ...createEnvelope('run_batch_cleanup'),
+    ...payload,
+  };
 }
 
 export function createShutdownCommand(): ShutdownCommand {
@@ -424,14 +459,47 @@ export function encodeJsonFrame(envelope: SidecarCommand | SidecarEvent): Uint8A
   return encodeFrame(JSON_FRAME_KIND, textEncoder.encode(JSON.stringify(envelope)));
 }
 
-export function encodeAudioFrame(frameBytes: Uint8Array): Uint8Array {
+export function encodeAudioFrame(sessionId: string, frameBytes: Uint8Array): Uint8Array {
   if (frameBytes.byteLength !== PCM_BYTES_PER_FRAME) {
     throw new Error(
       `Audio frames must be ${PCM_BYTES_PER_FRAME} bytes, received ${frameBytes.byteLength}.`,
     );
   }
 
-  return encodeFrame(AUDIO_FRAME_KIND, frameBytes);
+  const envelope = new Uint8Array(SESSION_ID_BYTES + frameBytes.byteLength);
+  envelope.set(sessionIdToBytes(sessionId), 0);
+  envelope.set(frameBytes, SESSION_ID_BYTES);
+
+  return encodeFrame(AUDIO_FRAME_KIND, envelope);
+}
+
+export function sessionIdToBytes(sessionId: string): Uint8Array {
+  return Buffer.from(normalizeSessionId(sessionId), 'hex');
+}
+
+export function bytesToSessionId(bytes: Uint8Array): string {
+  if (bytes.byteLength !== SESSION_ID_BYTES) {
+    throw new Error(`Session ids must be ${SESSION_ID_BYTES} bytes, received ${bytes.byteLength}.`);
+  }
+
+  const hex = Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength).toString('hex');
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+}
+
+export function decodeAudioFrameEnvelope(payload: Uint8Array): {
+  frameBytes: Uint8Array;
+  sessionId: string;
+} {
+  if (payload.byteLength !== SESSION_ID_BYTES + PCM_BYTES_PER_FRAME) {
+    throw new Error(
+      `Audio frame envelopes must be ${SESSION_ID_BYTES + PCM_BYTES_PER_FRAME} bytes, received ${payload.byteLength}.`,
+    );
+  }
+
+  return {
+    frameBytes: payload.slice(SESSION_ID_BYTES),
+    sessionId: bytesToSessionId(payload.slice(0, SESSION_ID_BYTES)),
+  };
 }
 
 export interface JsonFrame<TEnvelope> {
@@ -440,8 +508,9 @@ export interface JsonFrame<TEnvelope> {
 }
 
 export interface AudioFrame {
+  frameBytes: Uint8Array<ArrayBufferLike>;
   kind: typeof AUDIO_FRAME_KIND;
-  payload: Uint8Array<ArrayBufferLike>;
+  sessionId: string;
 }
 
 export type ParsedFrame<TEnvelope> = AudioFrame | JsonFrame<TEnvelope>;
@@ -483,9 +552,11 @@ export class FramedMessageParser<TEnvelope> {
           kind,
         });
       } else if (kind === AUDIO_FRAME_KIND) {
+        const { frameBytes, sessionId } = decodeAudioFrameEnvelope(payload);
         frames.push({
+          frameBytes,
           kind,
-          payload,
+          sessionId,
         });
       } else {
         throw new Error(`Unsupported sidecar frame kind: ${kind}`);
@@ -664,6 +735,15 @@ export function parseEventFrame(jsonText: string): SidecarEvent {
         utteranceId: readString(parsedValue.utteranceId, 'event.utteranceId'),
       };
 
+    case 'batch_cleanup_ready':
+      return {
+        cleanText: readString(parsedValue.cleanText, 'event.cleanText'),
+        rawText: readString(parsedValue.rawText, 'event.rawText'),
+        sessionId: readString(parsedValue.sessionId, 'event.sessionId'),
+        stageResults: readStageOutcomes(parsedValue.stageResults),
+        type,
+      };
+
     case 'warning':
       return createWarningEvent(parsedValue);
 
@@ -715,6 +795,17 @@ function readUint32LE(bytes: Uint8Array, offset: number): number {
   }
 
   return new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength).getUint32(offset, true);
+}
+
+function normalizeSessionId(sessionId: string): string {
+  const normalized = sessionId.toLowerCase();
+  const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u;
+
+  if (!uuidPattern.test(normalized)) {
+    throw new Error(`Session id must be a UUID v4 string: ${sessionId}`);
+  }
+
+  return normalized.replaceAll('-', '');
 }
 
 function readString(value: unknown, fieldName: string): string {

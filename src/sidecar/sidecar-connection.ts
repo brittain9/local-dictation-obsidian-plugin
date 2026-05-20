@@ -14,6 +14,7 @@ import {
   createListModelCatalogCommand,
   createProbeModelSelectionCommand,
   createRemoveModelCommand,
+  createRunBatchCleanupCommand,
   createShutdownCommand,
   createStartSessionCommand,
   createStopSessionCommand,
@@ -41,6 +42,20 @@ import { createSidecarStderrLogEntry } from './sidecar-logging';
 import { type ResolveSidecarLaunchSpec, SidecarProcess } from './sidecar-process';
 
 type SidecarEventListener = (event: SidecarEvent) => void;
+
+export class SidecarError extends Error {
+  readonly code: string;
+  readonly details: string | undefined;
+  readonly sessionId: string | undefined;
+
+  constructor(event: ErrorEvent) {
+    super(event.details ? `${event.message} (${event.details})` : event.message);
+    this.name = 'SidecarError';
+    this.code = event.code;
+    this.details = event.details;
+    this.sessionId = event.sessionId;
+  }
+}
 
 interface PendingEventWaiter {
   description: string;
@@ -241,12 +256,12 @@ export class SidecarConnection {
     );
   }
 
-  async stopSession(
+  async cancelSession(
     sessionId: string,
     timeoutMs = this.options.getRequestTimeoutMs(),
   ): Promise<SessionStoppedEvent> {
     return this.sendCommandAndWait(
-      createStopSessionCommand(),
+      createCancelSessionCommand(sessionId),
       (event): event is SessionStoppedEvent =>
         event.type === 'session_stopped' && event.sessionId === sessionId,
       `session_stopped:${sessionId}`,
@@ -255,18 +270,20 @@ export class SidecarConnection {
     );
   }
 
-  async cancelSession(
-    sessionId: string,
-    timeoutMs = this.options.getRequestTimeoutMs(),
-  ): Promise<SessionStoppedEvent> {
-    return this.sendCommandAndWait(
-      createCancelSessionCommand(),
-      (event): event is SessionStoppedEvent =>
-        event.type === 'session_stopped' && event.sessionId === sessionId,
-      `session_stopped:${sessionId}`,
-      timeoutMs,
-      (event) => event.sessionId === undefined || event.sessionId === sessionId,
-    );
+  requestStopSession(sessionId: string): void {
+    if (!this.process.isRunning()) {
+      return;
+    }
+
+    this.process.write(encodeJsonFrame(createStopSessionCommand(sessionId)));
+  }
+
+  requestBatchCleanup(payload: Parameters<typeof createRunBatchCleanupCommand>[0]): void {
+    if (!this.process.isRunning()) {
+      return;
+    }
+
+    this.process.write(encodeJsonFrame(createRunBatchCleanupCommand(payload)));
   }
 
   async restart(startupTimeoutMs = this.options.getRequestTimeoutMs()): Promise<HealthOkEvent> {
@@ -288,8 +305,8 @@ export class SidecarConnection {
     }
   }
 
-  sendAudioFrame(frameBytes: Uint8Array): void {
-    this.process.write(encodeAudioFrame(frameBytes));
+  sendAudioFrame(sessionId: string, frameBytes: Uint8Array): void {
+    this.process.write(encodeAudioFrame(sessionId, frameBytes));
   }
 
   sendContextResponse(correlationId: string, context: ContextWindow | null): void {
@@ -431,7 +448,7 @@ export class SidecarConnection {
       if (event.type === 'error' && waiter.rejectOnError(event)) {
         globalThis.clearTimeout(waiter.timeoutHandle);
         this.pendingWaiters.delete(waiter);
-        waiter.reject(new Error(`${event.message}${event.details ? ` (${event.details})` : ''}`));
+        waiter.reject(new SidecarError(event));
       }
     }
   }
@@ -451,6 +468,7 @@ function shouldLogProtocolEvent(event: SidecarEvent): boolean {
     case 'session_started':
     case 'session_state_changed':
     case 'session_stopped':
+    case 'batch_cleanup_ready':
     case 'transcript_ready':
     case 'warning':
       return true;
@@ -471,6 +489,8 @@ function summarizeProtocolEvent(event: SidecarEvent): string {
       return `event: session_state_changed (${event.sessionId}, ${event.state})`;
     case 'session_stopped':
       return `event: session_stopped (${event.sessionId}, ${event.reason})`;
+    case 'batch_cleanup_ready':
+      return `event: batch_cleanup_ready (${event.sessionId}, ${event.cleanText.length} chars)`;
     case 'transcript_ready':
       return `event: transcript_ready (${event.sessionId}, ${event.text.length} chars)`;
     case 'warning':

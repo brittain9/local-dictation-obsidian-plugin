@@ -77,8 +77,12 @@ pub trait StageProcessor: Send + Sync {
 pub fn post_engine_processors() -> Vec<Box<dyn StageProcessor>> {
     vec![
         Box::new(hallucination_filter::HallucinationFilterStage),
-        Box::new(llm_postprocess::LlmPostprocessStage::new()),
+        llm_postprocess_processor(),
     ]
+}
+
+pub fn llm_postprocess_processor() -> Box<dyn StageProcessor> {
+    Box::new(llm_postprocess::LlmPostprocessStage::new())
 }
 
 pub fn run_post_engine(

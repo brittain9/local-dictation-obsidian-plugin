@@ -63,7 +63,10 @@ async function installSidecarVariant(options) {
   const executablePath = join(options.sourceDirectory, SIDECAR_EXECUTABLE);
 
   if (!(await fileExists(executablePath))) {
-    if (options.optional) return;
+    if (options.optional) {
+      await rm(options.destination, { force: true, recursive: true });
+      return;
+    }
     throw new Error(
       `Missing ${options.variant} sidecar at ${executablePath}. Build it before using --sidecars.`,
     );

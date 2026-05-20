@@ -2,9 +2,8 @@ import { randomUUID } from 'node:crypto';
 
 import type { AudioCaptureStream } from '../audio/audio-capture-stream';
 import type { NotePlacementOptions } from '../editor/note-surface';
-import { OLLAMA_KEEP_ALIVE, type OllamaClient } from '../llm/ollama-client';
+import { OLLAMA_KEEP_ALIVE } from '../llm/ollama-client';
 import { type LlmPostprocessMode, resolveStyleOption } from '../llm/presets';
-import { formatBatchUserMessage } from '../llm/templates';
 import type { Session } from '../session/session';
 import type { StageId } from '../session/session-journal';
 import type { PluginSettings } from '../settings/plugin-settings';
@@ -12,6 +11,7 @@ import { formatErrorMessage } from '../shared/format-utils';
 import type { PluginLogger } from '../shared/plugin-logger';
 import { truncateLeadingText } from '../shared/text-truncation';
 import type {
+  BatchCleanupReadyEvent,
   ContextRequestEvent,
   ContextWindow,
   ContextWindowSource,
@@ -21,7 +21,7 @@ import type {
   SidecarEvent,
   TranscriptReadyEvent,
 } from '../sidecar/protocol';
-import type { SidecarConnection } from '../sidecar/sidecar-connection';
+import { type SidecarConnection, SidecarError } from '../sidecar/sidecar-connection';
 import { SidecarNotInstalledError } from '../sidecar/sidecar-paths';
 import type { TranscriptRenderOptions } from '../transcript/renderer';
 
@@ -30,8 +30,6 @@ export type DictationControllerState =
   | 'starting'
   | 'listening'
   | 'speech_detected'
-  | 'speech_ending'
-  | 'transcribing'
   | 'error';
 
 type ControllerSession = Pick<
@@ -69,6 +67,16 @@ interface ActiveSessionSnapshot {
   useNoteAsContext: PluginSettings['useNoteAsContext'];
 }
 
+type SessionPhase = 'starting' | 'active' | 'stopping' | 'cancelling' | 'stopped';
+
+interface ManagedSession {
+  anchorTimerId: ReturnType<typeof setTimeout> | null;
+  llmFailureLogged: boolean;
+  phase: SessionPhase;
+  session: ControllerSession;
+  snapshot: ActiveSessionSnapshot;
+}
+
 interface DictationSessionControllerDependencies {
   captureStream: Pick<AudioCaptureStream, 'isCapturing' | 'start' | 'stop'>;
   createSession: (options: {
@@ -83,7 +91,6 @@ interface DictationSessionControllerDependencies {
   getSettings: () => PluginSettings;
   logger?: PluginLogger;
   notice: (message: string) => void;
-  ollamaClient: Pick<OllamaClient, 'cleanup'>;
   onModelMissing?: () => void;
   onSidecarMissing?: () => void;
   setRibbonQueueTier: (tier: QueueBackpressureTier) => void;
@@ -92,27 +99,22 @@ interface DictationSessionControllerDependencies {
     SidecarConnection,
     | 'cancelSession'
     | 'ensureStarted'
+    | 'requestBatchCleanup'
+    | 'requestStopSession'
     | 'sendAudioFrame'
     | 'sendContextResponse'
     | 'startSession'
-    | 'stopSession'
     | 'subscribe'
   >;
 }
 
 const ANCHOR_VISIBLE_DELAY_MS = 2500;
+const MAX_CONTROLLER_SESSIONS = 5;
 
 export class DictationSessionController {
-  private abortingSessionId: string | null = null;
-  private anchorTimerId: ReturnType<typeof setTimeout> | null = null;
-  private batchCleanupAbortController: AbortController | null = null;
-  private llmFailureLoggedForSessionId: string | null = null;
-  private pendingStartSessionId: string | null = null;
-  private queueTier: QueueBackpressureTier = 'normal';
+  private activeSessionId: string | null = null;
   private readonly releaseSidecarSubscription: () => void;
-  private session: ControllerSession | null = null;
-  private sessionId: string | null = null;
-  private sessionSnapshot: ActiveSessionSnapshot | null = null;
+  private readonly sessions = new Map<string, ManagedSession>();
   private state: DictationControllerState = 'idle';
 
   constructor(private readonly dependencies: DictationSessionControllerDependencies) {
@@ -127,59 +129,48 @@ export class DictationSessionController {
   }
 
   isBusy(): boolean {
-    return this.sessionId !== null || this.state === 'starting' || this.abortingSessionId !== null;
+    return this.activeSessionId !== null || this.sessions.size > 0 || this.state === 'starting';
   }
 
   async cancelDictation(): Promise<void> {
-    if (this.sessionId === null) {
-      if (this.batchCleanupAbortController !== null) {
-        this.abortBatchCleanup();
-        return;
-      }
+    const sessionId = this.activeSessionId ?? this.latestSessionId();
 
+    if (sessionId === null) {
       this.dependencies.notice('Dictation is not currently active.');
       return;
     }
 
-    try {
-      await this.dependencies.sidecarConnection.cancelSession(this.sessionId);
-    } catch (error) {
-      await this.cleanupLocalSession();
-      this.handleError('Failed to cancel the dictation session', error);
-    }
+    await this.cancelSession(sessionId);
   }
 
   async dispose(): Promise<void> {
-    this.abortBatchCleanup();
-    const activeSessionId = this.sessionId;
-    if (activeSessionId !== null) {
-      try {
-        await this.dependencies.sidecarConnection.stopSession(activeSessionId, 500);
-      } catch (error) {
-        this.dependencies.logger?.warn(
-          'session',
-          'timed out stopping dictation during unload',
-          error,
-        );
-      }
+    if (this.dependencies.captureStream.isCapturing()) {
+      await this.dependencies.captureStream.stop();
     }
+
+    const sessionIds = [...this.sessions.keys()];
+    await Promise.allSettled(sessionIds.map((sessionId) => this.cancelSession(sessionId)));
     this.releaseSidecarSubscription();
-    await this.cleanupLocalSession();
+    for (const sessionId of [...this.sessions.keys()]) {
+      this.disposeLocalSession(sessionId);
+    }
+    this.activeSessionId = null;
+    this.resetQueueTier();
     this.applyUiState('idle');
   }
 
   async toggleDictation(): Promise<void> {
-    if (this.state === 'error' && this.sessionId === null) {
+    if (this.state === 'error' && this.activeSessionId === null) {
       this.applyUiState('idle');
       return;
     }
 
-    if (this.state === 'starting' || this.abortingSessionId !== null) {
+    if (this.activeSessionId !== null) {
+      await this.stopDictation();
       return;
     }
 
-    if (this.sessionId !== null) {
-      await this.stopDictation();
+    if (this.sessions.size >= MAX_CONTROLLER_SESSIONS) {
       return;
     }
 
@@ -187,20 +178,17 @@ export class DictationSessionController {
   }
 
   async startDictation(): Promise<void> {
-    if (this.sessionId !== null) {
-      this.dependencies.notice('Dictation is already active.');
+    if (this.activeSessionId !== null || this.sessions.size >= MAX_CONTROLLER_SESSIONS) {
       return;
     }
 
-    this.abortBatchCleanup();
-    // Synchronous so the ribbon flips before any await and toggleDictation's state gate works.
     this.applyUiState('starting');
 
     try {
       await this.dependencies.sidecarConnection.ensureStarted();
     } catch (error) {
       if (error instanceof SidecarNotInstalledError) {
-        this.dependencies.logger?.debug('sidecar', 'sidecar not installed — prompting install');
+        this.dependencies.logger?.debug('sidecar', 'sidecar not installed; prompting install');
         this.applyUiState('idle');
         this.dependencies.onSidecarMissing?.();
         return;
@@ -211,60 +199,27 @@ export class DictationSessionController {
 
     const settings = this.dependencies.getSettings();
     if (settings.selectedModel === null) {
-      this.dependencies.logger?.debug('session', 'no model selected — prompting model picker');
+      this.dependencies.logger?.debug('session', 'no model selected; prompting model picker');
       this.applyUiState('idle');
       this.dependencies.onModelMissing?.();
       return;
     }
-    const selectedModel = settings.selectedModel;
-    const effectiveGeneration = resolveActiveGenerationDefaults(settings);
-    const sessionStartUnixMs = Date.now();
-    const noteContextChars = settings.useLlmNoteContext
-      ? settings.llmPostprocessNoteContextChars
-      : 0;
-    const snapshot: ActiveSessionSnapshot = {
-      accelerationPreference: settings.accelerationPreference,
-      dictationAnchor: settings.dictationAnchor,
-      listeningMode: settings.listeningMode,
-      llmFeaturesEnabled: settings.llmFeaturesEnabled,
-      llmPostprocess: resolveLlmPostprocessSnapshot(settings, noteContextChars),
-      llmPostprocessMode: settings.llmPostprocessMode,
-      llmPostprocessModel: settings.llmPostprocessModel,
-      llmPostprocessNoteContextChars: noteContextChars,
-      llmPostprocessPrompt: settings.llmPostprocessPrompt,
-      llmPostprocessShowRawBelow: settings.llmPostprocessShowRawBelow,
-      llmPostprocessTemperature: effectiveGeneration.temperature,
-      modelSelection: selectedModel,
-      modelStorePathOverride: settings.modelStorePathOverride,
-      sessionStartUnixMs,
-      speakingStyle: settings.speakingStyle,
-      timestamps: {
-        clock: settings.timestampClock,
-        density: settings.timestampDensity,
-        enabled: settings.timestampsEnabled,
-        header: settings.timestampSessionHeader,
-        sessionStartUnixMs,
-        sparseIntervalMs: settings.timestampSparseIntervalMs,
-      },
-      transcriptFormatting: settings.transcriptFormatting,
-      useNoteAsContext: settings.useNoteAsContext,
-    };
+
     const sessionId = createSessionId();
+    const snapshot = createSessionSnapshot(settings, settings.selectedModel);
     let session: ControllerSession;
 
     try {
       session = this.dependencies.createSession({
         callbacks: {
           onLockedNoteClosed: () => {
-            this.handleLockedNoteClosed(sessionId);
+            this.cancelOnLockedNoteEvent(sessionId, 'closed');
           },
           onLockedNoteDeleted: () => {
-            this.handleLockedNoteDeleted(sessionId);
+            this.cancelOnLockedNoteEvent(sessionId, 'deleted');
           },
         },
-        placement: {
-          anchor: snapshot.dictationAnchor,
-        },
+        placement: { anchor: snapshot.dictationAnchor },
         rendererOptions: {
           timestamps: snapshot.timestamps,
           transcriptFormatting: snapshot.transcriptFormatting,
@@ -276,80 +231,143 @@ export class DictationSessionController {
       return;
     }
 
-    this.sessionId = sessionId;
-    this.session = session;
-    this.sessionSnapshot = snapshot;
+    const entry: ManagedSession = {
+      anchorTimerId: null,
+      llmFailureLogged: false,
+      phase: 'starting',
+      session,
+      snapshot,
+    };
+    this.sessions.set(sessionId, entry);
+    this.activeSessionId = sessionId;
     this.dependencies.logger?.debug('session', `starting dictation session ${sessionId}`);
 
-    let frameForwardAborted = false;
-
     try {
-      await this.dependencies.captureStream.start((frameBytes) => {
-        if (frameForwardAborted || this.sessionId !== sessionId) {
+      await this.dependencies.sidecarConnection.startSession({
+        accelerationPreference: snapshot.accelerationPreference,
+        language: 'en',
+        ...(snapshot.llmPostprocess !== null ? { llmPostprocess: snapshot.llmPostprocess } : {}),
+        mode: snapshot.listeningMode,
+        modelSelection: snapshot.modelSelection,
+        sessionStartUnixMs: snapshot.sessionStartUnixMs,
+        sessionId,
+        speakingStyle: snapshot.speakingStyle,
+        ...(snapshot.modelStorePathOverride.length > 0
+          ? { modelStorePathOverride: snapshot.modelStorePathOverride }
+          : {}),
+      });
+
+      if (entry.phase !== 'starting' || this.activeSessionId !== sessionId) {
+        return;
+      }
+      entry.phase = 'active';
+
+      await this.dependencies.captureStream.start(sessionId, (frameSessionId, frameBytes) => {
+        if (this.activeSessionId !== frameSessionId) {
+          return;
+        }
+
+        const activeEntry = this.sessions.get(frameSessionId);
+        if (activeEntry === undefined || activeEntry.phase !== 'active') {
           return;
         }
 
         try {
-          this.dependencies.sidecarConnection.sendAudioFrame(frameBytes);
+          this.dependencies.sidecarConnection.sendAudioFrame(frameSessionId, frameBytes);
         } catch (error) {
-          frameForwardAborted = true;
           this.dependencies.logger?.warn(
             'session',
             'stopping audio capture: sidecar rejected an audio frame',
             error,
           );
-          void this.dependencies.captureStream.stop();
+          void this.cancelSession(frameSessionId);
         }
       });
-      this.pendingStartSessionId = sessionId;
-      try {
-        await this.dependencies.sidecarConnection.startSession({
-          accelerationPreference: snapshot.accelerationPreference,
-          language: 'en',
-          ...(snapshot.llmPostprocess !== null ? { llmPostprocess: snapshot.llmPostprocess } : {}),
-          mode: snapshot.listeningMode,
-          modelSelection: snapshot.modelSelection,
-          sessionStartUnixMs: snapshot.sessionStartUnixMs,
-          sessionId,
-          speakingStyle: snapshot.speakingStyle,
-          ...(snapshot.modelStorePathOverride.length > 0
-            ? { modelStorePathOverride: snapshot.modelStorePathOverride }
-            : {}),
-        });
-      } finally {
-        if (this.pendingStartSessionId === sessionId) {
-          this.pendingStartSessionId = null;
-        }
+
+      if (this.activeSessionId === sessionId) {
+        this.applyUiState('listening');
+      } else if (this.dependencies.captureStream.isCapturing()) {
+        await this.dependencies.captureStream.stop();
       }
     } catch (error) {
-      await this.cleanupLocalSession();
-      if (error instanceof SidecarNotInstalledError) {
-        this.dependencies.logger?.debug('sidecar', 'sidecar not installed — prompting install');
-        this.applyUiState('idle');
-        this.dependencies.onSidecarMissing?.();
-        return;
-      }
-      this.handleError('Failed to start the dictation session', error);
+      await this.cleanupFailedStart(sessionId, error);
     }
   }
 
   async stopDictation(): Promise<void> {
-    if (this.sessionId === null) {
+    const sessionId = this.activeSessionId;
+
+    if (sessionId === null) {
       this.dependencies.notice('Dictation is not currently active.');
       return;
     }
 
-    // Stop capture immediately so the mic turns off, but keep sessionId alive
-    // so transcript_ready events are still accepted while the sidecar drains.
-    if (this.dependencies.captureStream.isCapturing()) {
-      await this.dependencies.captureStream.stop();
+    const entry = this.sessions.get(sessionId);
+    if (entry !== undefined) {
+      entry.phase = 'stopping';
+      this.clearAnchorTimer(entry);
+      entry.session.setAnchorMode('hidden');
     }
 
+    await this.clearActiveSession(sessionId);
+
     try {
-      await this.dependencies.sidecarConnection.stopSession(this.sessionId);
+      this.dependencies.sidecarConnection.requestStopSession(sessionId);
     } catch (error) {
-      await this.cleanupLocalSession();
+      this.disposeLocalSession(sessionId);
       this.handleError('Failed to stop the dictation session', error);
+    }
+  }
+
+  private async cleanupFailedStart(sessionId: string, error: unknown): Promise<void> {
+    const entry = this.sessions.get(sessionId);
+    if (entry === undefined) {
+      if (this.activeSessionId === sessionId) {
+        this.activeSessionId = null;
+        this.applyUiState('idle');
+      }
+      return;
+    }
+
+    if (isCapacityExceededStartError(error)) {
+      this.dependencies.logger?.warn('sidecar', formatErrorMessage(error));
+      this.disposeLocalSession(sessionId);
+      return;
+    }
+
+    if (entry.phase === 'starting') {
+      this.disposeLocalSession(sessionId);
+    } else {
+      await this.cancelSession(sessionId);
+    }
+    this.handleError('Failed to start the dictation session', error);
+  }
+
+  private async cancelSession(sessionId: string): Promise<void> {
+    const entry = this.sessions.get(sessionId);
+    if (entry !== undefined) {
+      entry.phase = 'cancelling';
+    }
+
+    await this.clearActiveSession(sessionId);
+
+    try {
+      await this.dependencies.sidecarConnection.cancelSession(sessionId);
+    } catch (error) {
+      this.dependencies.logger?.warn('session', 'failed to cancel dictation cleanly', error);
+      this.disposeLocalSession(sessionId);
+    }
+  }
+
+  private async clearActiveSession(sessionId: string): Promise<void> {
+    if (this.activeSessionId !== sessionId) {
+      return;
+    }
+    this.activeSessionId = null;
+    this.applyUiState('idle');
+    this.resetQueueTier();
+    if (this.dependencies.captureStream.isCapturing()) {
+      await this.dependencies.captureStream.stop();
     }
   }
 
@@ -358,191 +376,55 @@ export class DictationSessionController {
     this.dependencies.setRibbonState(state);
   }
 
-  private async detachSession(): Promise<ControllerSession | null> {
-    this.abortingSessionId = null;
-    this.pendingStartSessionId = null;
-    this.sessionId = null;
-    this.sessionSnapshot = null;
-    this.llmFailureLoggedForSessionId = null;
-    const session = this.session;
-    this.session = null;
-    this.clearAnchorTimer();
-    this.resetQueueTier();
-
-    if (this.dependencies.captureStream.isCapturing()) {
-      await this.dependencies.captureStream.stop();
-    }
-
-    return session;
+  private latestSessionId(): string | null {
+    return [...this.sessions.keys()].at(-1) ?? null;
   }
 
-  private async cleanupLocalSession(): Promise<void> {
-    const session = await this.detachSession();
-    session?.dispose();
-  }
-
-  private applySessionStateToAnchor(state: SessionState): void {
-    if (!isAnchorVisibleSessionState(state)) {
-      this.clearAnchorTimer();
-      this.session?.setAnchorMode('hidden');
+  private disposeLocalSession(sessionId: string): void {
+    const entry = this.sessions.get(sessionId);
+    if (entry === undefined) {
       return;
     }
 
-    if (this.anchorTimerId !== null) {
+    this.clearAnchorTimer(entry);
+    entry.session.clearSessionProcessingMark();
+    entry.session.dispose();
+    this.sessions.delete(sessionId);
+
+    if (this.activeSessionId === sessionId) {
+      this.activeSessionId = null;
+      this.applyUiState('idle');
+      this.resetQueueTier();
+    }
+  }
+
+  private applySessionStateToAnchor(entry: ManagedSession, state: SessionState): void {
+    if (!isAnchorVisibleSessionState(state)) {
+      this.clearAnchorTimer(entry);
+      entry.session.setAnchorMode('hidden');
+      return;
+    }
+
+    if (entry.anchorTimerId !== null) {
       return;
     }
 
     const timerId = setTimeout(() => {
-      if (this.anchorTimerId !== timerId) {
+      if (entry.anchorTimerId !== timerId) {
         return;
       }
 
-      this.session?.setAnchorMode('visible');
+      entry.session.setAnchorMode('visible');
     }, ANCHOR_VISIBLE_DELAY_MS);
 
-    this.anchorTimerId = timerId;
+    entry.anchorTimerId = timerId;
   }
 
-  private clearAnchorTimer(): void {
-    if (this.anchorTimerId !== null) {
-      clearTimeout(this.anchorTimerId);
-      this.anchorTimerId = null;
+  private clearAnchorTimer(entry: ManagedSession): void {
+    if (entry.anchorTimerId !== null) {
+      clearTimeout(entry.anchorTimerId);
+      entry.anchorTimerId = null;
     }
-  }
-
-  private async handleErrorEvent(event: Extract<SidecarEvent, { type: 'error' }>): Promise<void> {
-    if (
-      this.pendingStartSessionId !== null &&
-      (event.sessionId === undefined || event.sessionId === this.pendingStartSessionId)
-    ) {
-      return;
-    }
-
-    if (
-      event.sessionId !== undefined &&
-      event.sessionId !== this.sessionId &&
-      event.sessionId !== this.abortingSessionId
-    ) {
-      return;
-    }
-
-    const detail = event.details ? `${event.message} (${event.details})` : event.message;
-    this.applyUiState('error');
-    this.dependencies.notice(`Local Dictation: ${detail}`);
-
-    if (event.sessionId !== undefined && event.sessionId === this.sessionId) {
-      void this.abortSessionAfterError(event.sessionId);
-    }
-  }
-
-  private async handleSessionStopped(
-    event: Extract<SidecarEvent, { type: 'session_stopped' }>,
-  ): Promise<void> {
-    if (event.sessionId !== this.sessionId && event.sessionId !== this.abortingSessionId) {
-      return;
-    }
-
-    this.dependencies.logger?.debug(
-      'session',
-      `session ${event.sessionId} stopped (reason: ${event.reason})`,
-    );
-    const snapshot = this.sessionSnapshot;
-    const session = await this.detachSession();
-    this.applyUiState('idle');
-
-    if (snapshot !== null && session !== null && shouldRunBatchCleanup(snapshot, event.reason)) {
-      await this.runBatchCleanup(snapshot, session);
-    }
-
-    session?.dispose();
-
-    if (event.reason === 'timeout') {
-      this.dependencies.notice(
-        'Local Dictation: one-sentence mode timed out before speech started.',
-      );
-    }
-  }
-
-  private async runBatchCleanup(
-    snapshot: ActiveSessionSnapshot,
-    session: ControllerSession,
-  ): Promise<void> {
-    const model = snapshot.llmPostprocessModel.trim();
-    const sessionTranscript = session.readCurrentSessionText();
-
-    if (model.length === 0) {
-      this.dependencies.logger?.debug('llm', 'batch cleanup skipped: no Ollama model selected');
-      return;
-    }
-
-    if (sessionTranscript.length === 0) {
-      this.dependencies.logger?.debug('llm', 'batch cleanup skipped: no transcript text');
-      return;
-    }
-
-    const abortController = new AbortController();
-    this.batchCleanupAbortController = abortController;
-
-    const noteContext =
-      snapshot.llmPostprocessNoteContextChars > 0
-        ? (session.readNoteText(snapshot.llmPostprocessNoteContextChars)?.text ?? '')
-        : '';
-    const userMessage = formatBatchUserMessage(noteContext, sessionTranscript);
-
-    try {
-      this.dependencies.logger?.debug('llm', 'batch cleanup started', {
-        chars: sessionTranscript.length,
-        model,
-      });
-      session.markSessionRangeAsProcessing();
-      const cleanText = await this.dependencies.ollamaClient.cleanup({
-        abortSignal: abortController.signal,
-        model,
-        prompt: snapshot.llmPostprocessPrompt,
-        temperature: snapshot.llmPostprocessTemperature,
-        userMessage,
-      });
-      if (cleanText.trim().length === 0) {
-        this.dependencies.logger?.debug('llm', 'batch cleanup returned empty text');
-        return;
-      }
-
-      const replaced = session.replaceSessionRangeWithCleaned(cleanText, {
-        rawTextForCallout: sessionTranscript,
-        showRawBelow: snapshot.llmPostprocessShowRawBelow,
-      });
-      if (!replaced) {
-        this.dependencies.logger?.warn(
-          'llm',
-          'batch cleanup replacement skipped — session range no longer available',
-        );
-        return;
-      }
-
-      this.dependencies.logger?.debug('llm', 'batch cleanup complete', {
-        chars: cleanText.trim().length,
-      });
-    } catch (error) {
-      if (abortController.signal.aborted) {
-        return;
-      }
-
-      this.dependencies.logger?.warn(
-        'llm',
-        `batch cleanup failed; raw transcript kept: ${formatErrorMessage(error)}`,
-        error,
-      );
-    } finally {
-      session.clearSessionProcessingMark();
-      if (this.batchCleanupAbortController === abortController) {
-        this.batchCleanupAbortController = null;
-      }
-    }
-  }
-
-  private abortBatchCleanup(): void {
-    this.batchCleanupAbortController?.abort();
-    this.batchCleanupAbortController = null;
   }
 
   private async handleSidecarEvent(event: SidecarEvent): Promise<void> {
@@ -555,10 +437,7 @@ export class DictationSessionController {
         return;
 
       case 'session_state_changed':
-        if (event.sessionId === this.sessionId) {
-          this.applyUiState(event.state);
-          this.applySessionStateToAnchor(event.state);
-        }
+        this.handleSessionStateChanged(event);
         return;
 
       case 'transcript_ready':
@@ -573,15 +452,16 @@ export class DictationSessionController {
         this.handleContextRequest(event);
         return;
 
+      case 'batch_cleanup_ready':
+        this.handleBatchCleanupReady(event);
+        return;
+
       case 'warning':
-        if (event.sessionId === undefined || event.sessionId === this.sessionId) {
-          const detail = event.details ? `${event.message} (${event.details})` : event.message;
-          this.dependencies.notice(`Local Dictation: ${detail}`);
-        }
+        this.dependencies.logger?.warn('sidecar', event.message, event.details);
         return;
 
       case 'session_stopped':
-        await this.handleSessionStopped(event);
+        this.handleSessionStopped(event);
         return;
 
       case 'error':
@@ -590,48 +470,54 @@ export class DictationSessionController {
     }
   }
 
+  private handleSessionStateChanged(
+    event: Extract<SidecarEvent, { type: 'session_state_changed' }>,
+  ): void {
+    const entry = this.sessions.get(event.sessionId);
+    if (entry === undefined) {
+      return;
+    }
+
+    this.applySessionStateToAnchor(entry, event.state);
+
+    if (
+      event.sessionId !== this.activeSessionId ||
+      entry.phase !== 'active' ||
+      !this.dependencies.captureStream.isCapturing()
+    ) {
+      return;
+    }
+
+    const nextState = toCaptureUiState(event.state);
+    if (nextState !== null) {
+      this.applyUiState(nextState);
+    }
+  }
+
   private handleQueueTierChange(
     event: Extract<SidecarEvent, { type: 'transcription_queue_changed' }>,
   ): void {
-    if (event.sessionId !== this.sessionId) {
+    const entry = this.sessions.get(event.sessionId);
+    if (entry === undefined) {
       return;
     }
 
-    const previousTier = this.queueTier;
-    if (previousTier === event.tier) {
-      return;
-    }
-    this.queueTier = event.tier;
-    this.dependencies.setRibbonQueueTier(event.tier);
-
-    // Only notify on upward entry into falling_behind. Recovering from
-    // `saturated` also passes through this tier, but the session is already
-    // shutting down and the "pause to let it catch up" guidance would be
-    // misleading on top of the saturation error.
-    const recoveringFromSaturation = previousTier === 'saturated';
-    if (
-      event.tier === 'falling_behind' &&
-      previousTier !== 'falling_behind' &&
-      !recoveringFromSaturation
-    ) {
-      this.dependencies.notice(
-        'Local Dictation: transcription is falling behind — pause to let it catch up.',
-      );
+    if (event.sessionId === this.activeSessionId) {
+      this.dependencies.setRibbonQueueTier(event.tier);
     }
   }
 
   private resetQueueTier(): void {
-    this.queueTier = 'normal';
     this.dependencies.setRibbonQueueTier('normal');
   }
 
   private handleContextRequest(event: ContextRequestEvent): void {
-    if (event.sessionId !== this.sessionId) {
+    const entry = this.sessions.get(event.sessionId);
+    if (entry === undefined) {
       return;
     }
 
-    const snapshot = this.sessionSnapshot;
-    const context = snapshot === null ? null : this.buildContextWindow(snapshot, event.budgetChars);
+    const context = this.buildContextWindow(entry, event.budgetChars);
 
     this.dependencies.logger?.debug(
       'session',
@@ -645,15 +531,12 @@ export class DictationSessionController {
     }
   }
 
-  private buildContextWindow(
-    snapshot: ActiveSessionSnapshot,
-    budgetChars: number,
-  ): ContextWindow | null {
+  private buildContextWindow(entry: ManagedSession, budgetChars: number): ContextWindow | null {
     const sources: ContextWindowSource[] = [];
     let promptText = '';
 
-    if (snapshot.useNoteAsContext) {
-      const glossary = this.session?.readNoteGlossary(Math.min(384, budgetChars)) ?? null;
+    if (entry.snapshot.useNoteAsContext) {
+      const glossary = entry.session.readNoteGlossary(Math.min(384, budgetChars));
       if (glossary !== null) {
         sources.push({
           kind: 'note_glossary',
@@ -664,30 +547,29 @@ export class DictationSessionController {
       }
     }
 
-    if (snapshot.llmPostprocess !== null) {
-      sources.push(...this.buildLlmContextSources(snapshot.llmPostprocess));
+    if (entry.snapshot.llmPostprocess !== null) {
+      sources.push(...this.buildLlmContextSources(entry, entry.snapshot.llmPostprocess));
     }
 
     if (sources.length === 0) {
       return null;
     }
 
-    const truncated = sources.some((source) => source.truncated);
-
     return {
       budgetChars,
       sources,
       text: promptText,
-      truncated,
+      truncated: sources.some((source) => source.truncated),
     };
   }
 
-  private buildLlmContextSources(config: LlmPostprocessConfig): ContextWindowSource[] {
+  private buildLlmContextSources(
+    entry: ManagedSession,
+    config: LlmPostprocessConfig,
+  ): ContextWindowSource[] {
     const sources: ContextWindowSource[] = [];
     const noteText =
-      config.noteContextChars > 0
-        ? (this.session?.readNoteText(config.noteContextChars) ?? null)
-        : null;
+      config.noteContextChars > 0 ? entry.session.readNoteText(config.noteContextChars) : null;
 
     if (noteText !== null) {
       sources.push({ kind: 'note_text', text: noteText.text, truncated: noteText.truncated });
@@ -697,10 +579,10 @@ export class DictationSessionController {
       config.priorUtterancesN > 0
         ? Math.max(1, Math.ceil(config.totalContextCap / config.priorUtterancesN))
         : 0;
-    for (const utterance of this.session?.readPriorUtterances(
+    for (const utterance of entry.session.readPriorUtterances(
       config.priorUtterancesN,
       priorUtteranceBudget,
-    ) ?? []) {
+    )) {
       sources.push({
         kind: 'prior_utterance',
         text: utterance.text,
@@ -712,7 +594,8 @@ export class DictationSessionController {
   }
 
   private async handleTranscriptReady(event: TranscriptReadyEvent): Promise<void> {
-    if (event.sessionId !== this.sessionId) {
+    const entry = this.sessions.get(event.sessionId);
+    if (entry === undefined) {
       return;
     }
 
@@ -721,9 +604,6 @@ export class DictationSessionController {
       `transcript received (${event.text.length} chars, ${event.processingDurationMs}ms processing)`,
     );
 
-    // Capability-gate warnings are intentionally dev-console only — users
-    // don't need to know the worker soft-dropped an unsupported field. Do not
-    // surface these via Notice.
     for (const warning of event.warnings) {
       this.dependencies.logger?.debug(
         'session',
@@ -731,18 +611,11 @@ export class DictationSessionController {
       );
     }
     this.logDroppedHallucinations(event);
-    this.maybeLogLlmStageFailure(event);
+    this.maybeLogLlmStageFailure(entry, event);
 
-    const text = event.text.trim();
-
-    const session = this.session;
-    if (session === null) {
-      return;
-    }
-
-    const result = session.acceptTranscript({
+    const result = entry.session.acceptTranscript({
       isFinal: event.isFinal,
-      llmPostprocessRawText: shouldAppendRawLlmPostprocessCallout(event, this.sessionSnapshot)
+      llmPostprocessRawText: shouldAppendRawLlmPostprocessCallout(event, entry.snapshot)
         ? event.llmPostprocessRawText
         : null,
       pauseMsBeforeUtterance: event.pauseMsBeforeUtterance,
@@ -750,20 +623,157 @@ export class DictationSessionController {
       segments: event.segments,
       sessionId: event.sessionId,
       stageResults: event.stageResults,
-      text,
+      text: event.text.trim(),
       utteranceEndMsInSession: event.utteranceEndMsInSession,
       utteranceId: event.utteranceId,
       utteranceIndex: event.utteranceIndex,
       utteranceStartMsInSession: event.utteranceStartMsInSession,
     });
+
     if (result.kind === 'rejected') {
       this.handleError('Failed to record the local transcript', new Error(result.reason));
-      void this.abortSessionAfterError(event.sessionId);
+      await this.cancelSession(event.sessionId);
     }
   }
 
-  private maybeLogLlmStageFailure(event: TranscriptReadyEvent): void {
-    if (this.llmFailureLoggedForSessionId === event.sessionId) {
+  private handleSessionStopped(event: Extract<SidecarEvent, { type: 'session_stopped' }>): void {
+    const entry = this.sessions.get(event.sessionId);
+    if (entry === undefined) {
+      return;
+    }
+
+    this.dependencies.logger?.debug(
+      'session',
+      `session ${event.sessionId} stopped (reason: ${event.reason})`,
+    );
+    entry.phase = 'stopped';
+
+    if (event.sessionId === this.activeSessionId) {
+      this.activeSessionId = null;
+      this.applyUiState('idle');
+      this.resetQueueTier();
+    }
+
+    if (shouldRunBatchCleanup(entry.snapshot, event.reason)) {
+      this.requestBatchCleanup(event.sessionId, entry);
+      return;
+    }
+
+    this.disposeLocalSession(event.sessionId);
+  }
+
+  private requestBatchCleanup(sessionId: string, entry: ManagedSession): void {
+    const config = resolveBatchLlmPostprocessConfig(entry.snapshot);
+    const transcriptText = entry.session.readCurrentSessionText();
+
+    if (config === null || transcriptText.length === 0) {
+      this.disposeLocalSession(sessionId);
+      return;
+    }
+
+    const noteContext =
+      entry.snapshot.llmPostprocessNoteContextChars > 0
+        ? (entry.session.readNoteText(entry.snapshot.llmPostprocessNoteContextChars)?.text ?? null)
+        : null;
+
+    entry.session.markSessionRangeAsProcessing();
+    try {
+      this.dependencies.sidecarConnection.requestBatchCleanup({
+        config,
+        noteContext,
+        sessionId,
+        transcriptText,
+      });
+    } catch (error) {
+      this.dependencies.logger?.warn(
+        'llm',
+        `batch cleanup request failed; raw transcript kept: ${formatErrorMessage(error)}`,
+        error,
+      );
+      entry.session.clearSessionProcessingMark();
+      this.disposeLocalSession(sessionId);
+    }
+  }
+
+  private handleBatchCleanupReady(event: BatchCleanupReadyEvent): void {
+    const entry = this.sessions.get(event.sessionId);
+    if (entry === undefined) {
+      return;
+    }
+
+    entry.session.clearSessionProcessingMark();
+
+    const cleanText = event.cleanText.trim();
+    if (cleanText.length === 0) {
+      this.dependencies.logger?.debug('llm', 'batch cleanup returned empty text');
+      this.disposeLocalSession(event.sessionId);
+      return;
+    }
+
+    const replaced = entry.session.replaceSessionRangeWithCleaned(cleanText, {
+      rawTextForCallout: event.rawText,
+      showRawBelow: entry.snapshot.llmPostprocessShowRawBelow,
+    });
+
+    if (!replaced) {
+      this.dependencies.logger?.warn(
+        'llm',
+        'batch cleanup replacement skipped; session range no longer available',
+      );
+    } else {
+      this.dependencies.logger?.debug('llm', 'batch cleanup complete', {
+        chars: cleanText.length,
+      });
+    }
+
+    this.disposeLocalSession(event.sessionId);
+  }
+
+  private async handleErrorEvent(event: Extract<SidecarEvent, { type: 'error' }>): Promise<void> {
+    if (event.code === 'session_capacity_exceeded' && event.sessionId !== undefined) {
+      this.dependencies.logger?.warn('sidecar', event.message, event.details);
+      await this.clearActiveSession(event.sessionId);
+      this.disposeLocalSession(event.sessionId);
+      return;
+    }
+
+    if (event.code === 'batch_cleanup_failed' && event.sessionId !== undefined) {
+      const entry = this.sessions.get(event.sessionId);
+      if (entry !== undefined) {
+        entry.session.clearSessionProcessingMark();
+        this.dependencies.logger?.warn(
+          'llm',
+          `batch cleanup failed; raw transcript kept: ${event.details ?? event.message}`,
+        );
+        this.disposeLocalSession(event.sessionId);
+      }
+      return;
+    }
+
+    const detail = event.details ? `${event.message} (${event.details})` : event.message;
+
+    if (event.sessionId === undefined) {
+      this.handleError('Local Dictation sidecar error', detail);
+      return;
+    }
+
+    const entry = this.sessions.get(event.sessionId);
+    if (entry === undefined) {
+      return;
+    }
+
+    if (event.sessionId === this.activeSessionId) {
+      this.applyUiState('error');
+      this.dependencies.notice(`Local Dictation: ${detail}`);
+    } else {
+      this.dependencies.logger?.warn('session', detail);
+    }
+
+    await this.cancelSession(event.sessionId);
+  }
+
+  private maybeLogLlmStageFailure(entry: ManagedSession, event: TranscriptReadyEvent): void {
+    if (entry.llmFailureLogged) {
       return;
     }
     const failed = event.stageResults.find(
@@ -772,7 +782,7 @@ export class DictationSessionController {
     if (failed === undefined || failed.status.kind !== 'failed') {
       return;
     }
-    this.llmFailureLoggedForSessionId = event.sessionId;
+    entry.llmFailureLogged = true;
     this.dependencies.logger?.warn(
       'llm',
       `per-utterance LLM transform failed: ${failed.status.error}`,
@@ -795,22 +805,13 @@ export class DictationSessionController {
     }
   }
 
-  private handleLockedNoteClosed(sessionId: string): void {
-    if (this.sessionId !== sessionId) {
+  private cancelOnLockedNoteEvent(sessionId: string, reason: 'closed' | 'deleted'): void {
+    if (!this.sessions.has(sessionId)) {
       return;
     }
 
-    this.dependencies.notice('Dictation stopped — locked note was closed');
-    void this.stopDictation();
-  }
-
-  private handleLockedNoteDeleted(sessionId: string): void {
-    if (this.sessionId !== sessionId) {
-      return;
-    }
-
-    this.dependencies.notice('Dictation cancelled — locked note was deleted');
-    void this.cancelDictation();
+    this.dependencies.logger?.warn('session', `locked note ${reason} for session ${sessionId}`);
+    void this.cancelSession(sessionId);
   }
 
   private handleError(message: string, error: unknown): void {
@@ -818,36 +819,51 @@ export class DictationSessionController {
     this.applyUiState('error');
     this.dependencies.notice(`${message}: ${formatErrorMessage(error)}`);
   }
-
-  private async abortSessionAfterError(sessionId: string): Promise<void> {
-    if (this.abortingSessionId === sessionId) {
-      return;
-    }
-
-    this.abortingSessionId = sessionId;
-
-    try {
-      await this.dependencies.sidecarConnection.cancelSession(sessionId);
-    } catch (error) {
-      this.dependencies.logger?.warn(
-        'session',
-        'failed to cancel an errored session cleanly',
-        error,
-      );
-
-      if (this.sessionId === sessionId) {
-        await this.cleanupLocalSession();
-      }
-    } finally {
-      if (this.abortingSessionId === sessionId) {
-        this.abortingSessionId = null;
-      }
-    }
-  }
 }
 
 function createSessionId(): string {
-  return `session-${randomUUID()}`;
+  return randomUUID();
+}
+
+function isCapacityExceededStartError(error: unknown): boolean {
+  return error instanceof SidecarError && error.code === 'session_capacity_exceeded';
+}
+
+function createSessionSnapshot(
+  settings: PluginSettings,
+  selectedModel: NonNullable<PluginSettings['selectedModel']>,
+): ActiveSessionSnapshot {
+  const effectiveGeneration = resolveActiveGenerationDefaults(settings);
+  const sessionStartUnixMs = Date.now();
+  const noteContextChars = settings.useLlmNoteContext ? settings.llmPostprocessNoteContextChars : 0;
+
+  return {
+    accelerationPreference: settings.accelerationPreference,
+    dictationAnchor: settings.dictationAnchor,
+    listeningMode: settings.listeningMode,
+    llmFeaturesEnabled: settings.llmFeaturesEnabled,
+    llmPostprocess: resolveLlmPostprocessSnapshot(settings, noteContextChars),
+    llmPostprocessMode: settings.llmPostprocessMode,
+    llmPostprocessModel: settings.llmPostprocessModel,
+    llmPostprocessNoteContextChars: noteContextChars,
+    llmPostprocessPrompt: settings.llmPostprocessPrompt,
+    llmPostprocessShowRawBelow: settings.llmPostprocessShowRawBelow,
+    llmPostprocessTemperature: effectiveGeneration.temperature,
+    modelSelection: selectedModel,
+    modelStorePathOverride: settings.modelStorePathOverride,
+    sessionStartUnixMs,
+    speakingStyle: settings.speakingStyle,
+    timestamps: {
+      clock: settings.timestampClock,
+      density: settings.timestampDensity,
+      enabled: settings.timestampsEnabled,
+      header: settings.timestampSessionHeader,
+      sessionStartUnixMs,
+      sparseIntervalMs: settings.timestampSparseIntervalMs,
+    },
+    transcriptFormatting: settings.transcriptFormatting,
+    useNoteAsContext: settings.useNoteAsContext,
+  };
 }
 
 function resolveLlmPostprocessSnapshot(
@@ -876,6 +892,32 @@ function resolveLlmPostprocessSnapshot(
     skipMinWords,
     temperature,
     totalContextCap: settings.llmPostprocessTotalContextCap,
+  };
+}
+
+function resolveBatchLlmPostprocessConfig(
+  snapshot: ActiveSessionSnapshot,
+): LlmPostprocessConfig | null {
+  const model = snapshot.llmPostprocessModel.trim();
+
+  if (
+    !snapshot.llmFeaturesEnabled ||
+    snapshot.llmPostprocessMode !== 'batch' ||
+    model.length === 0
+  ) {
+    return null;
+  }
+
+  return {
+    keepAlive: OLLAMA_KEEP_ALIVE,
+    model,
+    noteContextChars: snapshot.llmPostprocessNoteContextChars,
+    priorUtterancesN: 0,
+    prompt: snapshot.llmPostprocessPrompt,
+    showRawBelow: snapshot.llmPostprocessShowRawBelow,
+    skipMinWords: 0,
+    temperature: snapshot.llmPostprocessTemperature,
+    totalContextCap: snapshot.llmPostprocessNoteContextChars,
   };
 }
 
@@ -908,11 +950,25 @@ function isAnchorVisibleSessionState(state: SessionState): boolean {
   return state === 'speech_detected' || state === 'speech_ending' || state === 'transcribing';
 }
 
+function toCaptureUiState(state: SessionState): DictationControllerState | null {
+  switch (state) {
+    case 'speech_detected':
+    case 'speech_ending':
+      return 'speech_detected';
+    case 'listening':
+    case 'transcribing':
+    case 'idle':
+      return 'listening';
+    case 'error':
+      return 'error';
+  }
+}
+
 function shouldAppendRawLlmPostprocessCallout(
   event: TranscriptReadyEvent,
-  snapshot: ActiveSessionSnapshot | null,
+  snapshot: ActiveSessionSnapshot,
 ): boolean {
-  if (snapshot?.llmPostprocess?.showRawBelow !== true || event.llmPostprocessRawText === null) {
+  if (snapshot.llmPostprocess?.showRawBelow !== true || event.llmPostprocessRawText === null) {
     return false;
   }
 

@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -14,10 +15,10 @@ use crate::model_store::{
     scan_installed_models,
 };
 use crate::protocol::{
-    AccelerationPreference, Command, CompiledAdapterInfo, CompiledRuntimeInfo, ContextWindow,
-    Event, HealthStatus, ListeningMode, LlmPostprocessConfig, ModelInstallState, ModelProbeStatus,
-    QueueBackpressureTier, SelectedModel, SessionState, SessionStopReason, StageId,
-    system_info_string,
+    AccelerationPreference, AudioFrame, Command, CompiledAdapterInfo, CompiledRuntimeInfo,
+    ContextWindow, Event, HealthStatus, ListeningMode, LlmPostprocessConfig, ModelInstallState,
+    ModelProbeStatus, QueueBackpressureTier, SelectedModel, SessionState, SessionStopReason,
+    StageId, system_info_string,
 };
 use crate::session::{
     FinalizedUtterance, ListeningSession, SessionAction, SessionBaseState, SessionConfig,
@@ -39,6 +40,7 @@ const MAX_QUEUED_UTTERANCES: usize = 30;
 // 30-60 distinct terms.
 const CONTEXT_BUDGET_CHARS: u32 = 384;
 const CONTEXT_REQUEST_TIMEOUT: Duration = Duration::from_secs(2);
+const MAX_ACTIVE_SESSIONS: usize = 5;
 type SessionFactory = fn(SessionConfig) -> Result<ListeningSession, SessionInitError>;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -55,7 +57,7 @@ pub enum ControlFlow {
 /// any expired context-request dispatches before blocking on the next
 /// read.
 pub struct AppState {
-    active_session: Option<ActiveSession>,
+    active_sessions: HashMap<String, ActiveSession>,
     catalog: Arc<ModelCatalog>,
     install_manager: ModelInstallManager,
     registry: Arc<EngineRegistry>,
@@ -69,6 +71,7 @@ struct ActiveSession {
     context_budget_chars: u32,
     cancel_tx: watch::Sender<bool>,
     draining: bool,
+    drain_reason: Option<SessionStopReason>,
     last_reported_queue_tier: QueueBackpressureTier,
     last_reported_state: Option<SessionState>,
     overload_draining: bool,
@@ -126,7 +129,7 @@ impl AppState {
         };
 
         Self {
-            active_session: None,
+            active_sessions: HashMap::new(),
             catalog: Arc::new(catalog),
             install_manager: ModelInstallManager::new(model_probe),
             registry: Arc::clone(&registry),
@@ -162,46 +165,33 @@ impl AppState {
         events
     }
 
-    pub fn handle_audio_frame(&mut self, frame_bytes: Vec<u8>) -> Vec<Event> {
+    pub fn handle_audio_frame(&mut self, audio_frame: AudioFrame) -> Vec<Event> {
         let mut events = Vec::new();
-        if self
-            .active_session
-            .as_ref()
-            .is_some_and(|s| s.draining || s.overload_draining)
-        {
-            return events;
-        }
-
-        if self.active_session.is_none() {
-            events.push(Event::Warning {
-                code: "audio_without_active_session".to_string(),
-                details: None,
-                message: "Received audio without an active listening session.".to_string(),
-                session_id: None,
-            });
-            return events;
-        }
+        let session_id = audio_frame.session_id;
 
         let result = {
-            let active_session = self
-                .active_session
-                .as_mut()
-                .expect("active session should exist after early return");
+            let Some(active_session) = self.active_sessions.get_mut(&session_id) else {
+                return events;
+            };
+
+            if active_session.draining || active_session.overload_draining {
+                return events;
+            }
+
             active_session
                 .session
-                .ingest_audio_frame(&frame_bytes)
-                .map_err(|error| (active_session.session.config().session_id.clone(), error))
+                .ingest_audio_frame(&audio_frame.frame_bytes)
         };
 
         match result {
             Ok(actions) => {
                 for action in actions {
-                    self.handle_session_action(action, &mut events);
+                    self.handle_session_action(&session_id, action, &mut events);
                 }
 
-                self.emit_state_if_changed(&mut events);
+                self.emit_state_if_changed(&session_id, &mut events);
             }
-            Err((session_id, error)) => {
+            Err(error) => {
                 events.push(Event::Error {
                     code: error.code.to_string(),
                     details: error.details,
@@ -392,10 +382,26 @@ impl AppState {
                 speaking_style,
             } => {
                 let llm_postprocess = llm_postprocess.map(|boxed| *boxed);
-                if let Some(replaced_events) =
-                    self.finish_active_session(SessionStopReason::SessionReplaced)
-                {
-                    events.extend(replaced_events);
+                if self.active_sessions.len() >= MAX_ACTIVE_SESSIONS {
+                    events.push(Event::Error {
+                        code: "session_capacity_exceeded".to_string(),
+                        details: Some(format!("maximum active sessions: {MAX_ACTIVE_SESSIONS}")),
+                        message:
+                            "Local Dictation already has the maximum number of active sessions."
+                                .to_string(),
+                        session_id: Some(session_id),
+                    });
+                    return (ControlFlow::Continue, events);
+                }
+
+                if self.active_sessions.contains_key(&session_id) {
+                    events.push(Event::Error {
+                        code: "session_already_exists".to_string(),
+                        details: None,
+                        message: "A dictation session with this id already exists.".to_string(),
+                        session_id: Some(session_id),
+                    });
+                    return (ControlFlow::Continue, events);
                 }
 
                 match self.resolve_runtime_model_path(
@@ -468,30 +474,39 @@ impl AppState {
                             return (ControlFlow::Continue, events);
                         }
 
-                        self.active_session = Some(ActiveSession {
-                            cancel_tx,
-                            context_budget_chars,
-                            context_required,
-                            draining: false,
-                            last_reported_queue_tier: QueueBackpressureTier::Normal,
-                            last_reported_state: None,
-                            overload_draining: false,
-                            pending_context_requests: Vec::new(),
-                            queued_utterances: 0,
-                            session,
-                            transcription_active: false,
-                        });
+                        self.active_sessions.insert(
+                            session_id.clone(),
+                            ActiveSession {
+                                cancel_tx,
+                                context_budget_chars,
+                                context_required,
+                                draining: false,
+                                drain_reason: None,
+                                last_reported_queue_tier: QueueBackpressureTier::Normal,
+                                last_reported_state: None,
+                                overload_draining: false,
+                                pending_context_requests: Vec::new(),
+                                queued_utterances: 0,
+                                session,
+                                transcription_active: false,
+                            },
+                        );
 
-                        events.push(Event::SessionStarted { mode, session_id });
-                        self.emit_state_if_changed(&mut events);
+                        events.push(Event::SessionStarted {
+                            mode,
+                            session_id: session_id.clone(),
+                        });
+                        self.emit_state_if_changed(&session_id, &mut events);
                     }
                     Err(error_event) => events.push(*error_event),
                 }
 
                 (ControlFlow::Continue, events)
             }
-            Command::StopSession => {
-                if let Some(stop_events) = self.finish_active_session(SessionStopReason::UserStop) {
+            Command::StopSession { session_id } => {
+                if let Some(stop_events) =
+                    self.graceful_stop(&session_id, SessionStopReason::UserStop)
+                {
                     events.extend(stop_events);
                 } else {
                     events.push(Event::Warning {
@@ -499,14 +514,15 @@ impl AppState {
                         details: None,
                         message: "Stop session was requested without an active session."
                             .to_string(),
-                        session_id: None,
+                        session_id: Some(session_id),
                     });
                 }
 
                 (ControlFlow::Continue, events)
             }
-            Command::CancelSession => {
-                if let Some(stop_events) = self.finish_active_session(SessionStopReason::UserCancel)
+            Command::CancelSession { session_id } => {
+                if let Some(stop_events) =
+                    self.finish_session(&session_id, SessionStopReason::UserCancel)
                 {
                     events.extend(stop_events);
                 } else {
@@ -515,14 +531,40 @@ impl AppState {
                         details: None,
                         message: "Cancel session was requested without an active session."
                             .to_string(),
-                        session_id: None,
+                        session_id: Some(session_id),
+                    });
+                }
+
+                (ControlFlow::Continue, events)
+            }
+            Command::RunBatchCleanup {
+                session_id,
+                transcript_text,
+                config,
+                note_context,
+            } => {
+                if self
+                    .transcription_worker
+                    .send(WorkerCommand::RunBatchCleanup {
+                        config,
+                        note_context,
+                        session_id: session_id.clone(),
+                        transcript_text,
+                    })
+                    .is_err()
+                {
+                    events.push(Event::Error {
+                        code: "internal_error".to_string(),
+                        details: None,
+                        message: "Failed to queue batch cleanup.".to_string(),
+                        session_id: Some(session_id),
                     });
                 }
 
                 (ControlFlow::Continue, events)
             }
             Command::Shutdown => {
-                if let Some(active_session) = self.active_session.take() {
+                for (_, active_session) in self.active_sessions.drain() {
                     let _ = active_session.cancel_tx.send(true);
                 }
                 let _ = self.transcription_worker.send(WorkerCommand::Shutdown);
@@ -592,8 +634,8 @@ impl AppState {
         }
     }
 
-    fn emit_state_if_changed(&mut self, events: &mut Vec<Event>) {
-        let Some(active_session) = self.active_session.as_mut() else {
+    fn emit_state_if_changed(&mut self, session_id: &str, events: &mut Vec<Event>) {
+        let Some(active_session) = self.active_sessions.get_mut(session_id) else {
             return;
         };
         let next_state = derive_session_state(
@@ -611,12 +653,12 @@ impl AppState {
         }
     }
 
-    fn finish_active_session(&mut self, reason: SessionStopReason) -> Option<Vec<Event>> {
-        if reason == SessionStopReason::UserStop {
-            return self.graceful_stop();
-        }
-
-        let active_session = self.active_session.take()?;
+    fn finish_session(
+        &mut self,
+        session_id: &str,
+        reason: SessionStopReason,
+    ) -> Option<Vec<Event>> {
+        let active_session = self.active_sessions.remove(session_id)?;
         let _ = active_session.cancel_tx.send(true);
         let session_id = active_session.session.config().session_id.clone();
         let _ = self.transcription_worker.send(WorkerCommand::EndSession {
@@ -626,29 +668,26 @@ impl AppState {
         Some(vec![Event::SessionStopped { reason, session_id }])
     }
 
-    fn graceful_stop(&mut self) -> Option<Vec<Event>> {
-        let active_session = self.active_session.as_mut()?;
+    fn graceful_stop(&mut self, session_id: &str, reason: SessionStopReason) -> Option<Vec<Event>> {
+        let active_session = self.active_sessions.get_mut(session_id)?;
         let mut events = Vec::new();
 
         let final_utterance = active_session.session.maybe_finalize_utterance();
         active_session.session.clear_activity();
 
         if let Some(utterance) = final_utterance {
-            self.enqueue_utterance(utterance, &mut events);
+            self.enqueue_utterance(session_id, utterance, &mut events);
         }
 
-        let active_session = self.active_session.as_mut()?;
+        let active_session = self.active_sessions.get_mut(session_id)?;
         if !active_session.transcription_active {
             let _ = active_session.cancel_tx.send(true);
             let session_id = active_session.session.config().session_id.clone();
-            self.active_session.take()?;
+            self.active_sessions.remove(&session_id)?;
             let _ = self.transcription_worker.send(WorkerCommand::EndSession {
                 session_id: session_id.clone(),
             });
-            events.push(Event::SessionStopped {
-                reason: SessionStopReason::UserStop,
-                session_id,
-            });
+            events.push(Event::SessionStopped { reason, session_id });
             return Some(events);
         }
 
@@ -658,14 +697,15 @@ impl AppState {
         // completion with stages intact. maybe_complete_drain emits the final
         // cancel as teardown.
         active_session.draining = true;
-        self.emit_state_if_changed(&mut events);
+        active_session.drain_reason = Some(reason);
+        self.emit_state_if_changed(session_id, &mut events);
         Some(events)
     }
 
     /// If the session is draining and no transcription work remains, tear it
     /// down and emit `SessionStopped`. Returns `true` when the drain completed.
     fn maybe_complete_drain(&mut self, session_id: &str, events: &mut Vec<Event>) -> bool {
-        let Some(active_session) = self.active_session.as_ref() else {
+        let Some(active_session) = self.active_sessions.get(session_id) else {
             return false;
         };
 
@@ -681,10 +721,12 @@ impl AppState {
         let reason = if overload_draining {
             SessionStopReason::QueueOverload
         } else {
-            SessionStopReason::UserStop
+            active_session
+                .drain_reason
+                .unwrap_or(SessionStopReason::UserStop)
         };
 
-        let Some(active_session) = self.active_session.take() else {
+        let Some(active_session) = self.active_sessions.remove(session_id) else {
             return false;
         };
         let _ = active_session.cancel_tx.send(true);
@@ -698,13 +740,18 @@ impl AppState {
         true
     }
 
-    fn handle_session_action(&mut self, action: SessionAction, events: &mut Vec<Event>) {
+    fn handle_session_action(
+        &mut self,
+        session_id: &str,
+        action: SessionAction,
+        events: &mut Vec<Event>,
+    ) {
         match action {
             SessionAction::FinalizeUtterance(utterance) => {
-                self.enqueue_utterance(utterance, events);
+                self.enqueue_utterance(session_id, utterance, events);
             }
             SessionAction::Stop(reason) => {
-                if let Some(stop_events) = self.finish_active_session(reason) {
+                if let Some(stop_events) = self.graceful_stop(session_id, reason) {
                     events.extend(stop_events);
                 }
             }
@@ -721,13 +768,9 @@ impl AppState {
                 utterance_id: _,
             } => {
                 {
-                    let Some(active_session) = self.active_session.as_mut() else {
+                    let Some(active_session) = self.active_sessions.get_mut(&session_id) else {
                         return;
                     };
-
-                    if active_session.session.config().session_id != session_id {
-                        return;
-                    }
 
                     advance_transcription_queue(active_session);
                     emit_queue_tier_if_changed(active_session, events);
@@ -744,7 +787,20 @@ impl AppState {
                     return;
                 }
 
-                self.emit_state_if_changed(events);
+                self.emit_state_if_changed(&session_id, events);
+            }
+            WorkerEvent::BatchCleanupReady {
+                clean_text,
+                raw_text,
+                session_id,
+                stage_results,
+            } => {
+                events.push(Event::BatchCleanupReady {
+                    clean_text,
+                    raw_text,
+                    session_id,
+                    stage_results,
+                });
             }
             WorkerEvent::TranscriptReady {
                 pause_ms_before_utterance,
@@ -758,13 +814,9 @@ impl AppState {
                 warnings,
             } => {
                 {
-                    let Some(active_session) = self.active_session.as_mut() else {
+                    let Some(active_session) = self.active_sessions.get_mut(&session_id) else {
                         return;
                     };
-
-                    if active_session.session.config().session_id != session_id {
-                        return;
-                    }
 
                     advance_transcription_queue(active_session);
                     emit_queue_tier_if_changed(active_session, events);
@@ -802,26 +854,31 @@ impl AppState {
                     return;
                 }
 
-                let should_stop = self.active_session.as_ref().is_some_and(|s| {
+                let should_stop = self.active_sessions.get(&session_id).is_some_and(|s| {
                     s.session.config().mode == ListeningMode::OneSentence && !s.overload_draining
                 });
 
                 if should_stop {
                     if let Some(stop_events) =
-                        self.finish_active_session(SessionStopReason::SentenceComplete)
+                        self.graceful_stop(&session_id, SessionStopReason::SentenceComplete)
                     {
                         events.extend(stop_events);
                     }
                     return;
                 }
 
-                self.emit_state_if_changed(events);
+                self.emit_state_if_changed(&session_id, events);
             }
         }
     }
 
-    fn enqueue_utterance(&mut self, utterance: FinalizedUtterance, events: &mut Vec<Event>) {
-        let Some(active_session) = self.active_session.as_mut() else {
+    fn enqueue_utterance(
+        &mut self,
+        session_id: &str,
+        utterance: FinalizedUtterance,
+        events: &mut Vec<Event>,
+    ) {
+        let Some(active_session) = self.active_sessions.get_mut(session_id) else {
             return;
         };
 
@@ -873,7 +930,7 @@ impl AppState {
             self.dispatch_pending(pending, None, events);
         }
 
-        if let Some(active_session) = self.active_session.as_mut() {
+        if let Some(active_session) = self.active_sessions.get_mut(&session_id) {
             emit_queue_tier_if_changed(active_session, events);
 
             if active_session.queued_utterances >= MAX_QUEUED_UTTERANCES
@@ -898,18 +955,23 @@ impl AppState {
         context: Option<ContextWindow>,
         events: &mut Vec<Event>,
     ) {
-        let Some(active_session) = self.active_session.as_mut() else {
-            return;
-        };
-
-        let Some(index) = active_session
-            .pending_context_requests
-            .iter()
-            .position(|pending| pending.correlation_id == correlation_id)
+        let Some((session_id, index)) =
+            self.active_sessions
+                .iter()
+                .find_map(|(session_id, active_session)| {
+                    active_session
+                        .pending_context_requests
+                        .iter()
+                        .position(|pending| pending.correlation_id == correlation_id)
+                        .map(|index| (session_id.clone(), index))
+                })
         else {
             return;
         };
 
+        let Some(active_session) = self.active_sessions.get_mut(&session_id) else {
+            return;
+        };
         let pending = active_session.pending_context_requests.remove(index);
         let context_budget_chars = active_session.context_budget_chars;
         let context = context.filter(|window| {
@@ -922,18 +984,15 @@ impl AppState {
 
     /// Dispatch any pending context requests whose deadline has elapsed.
     pub(crate) fn tick(&mut self) -> Vec<Event> {
-        let Some(active_session) = self.active_session.as_mut() else {
-            return Vec::new();
-        };
-        if active_session.pending_context_requests.is_empty() {
-            return Vec::new();
-        }
-
         let now = Instant::now();
-        let expired: Vec<PendingContextRequest> = active_session
-            .pending_context_requests
-            .extract_if(.., |pending| pending.deadline <= now)
-            .collect();
+        let mut expired = Vec::new();
+        for active_session in self.active_sessions.values_mut() {
+            expired.extend(
+                active_session
+                    .pending_context_requests
+                    .extract_if(.., |pending| pending.deadline <= now),
+            );
+        }
 
         let mut events = Vec::new();
         for pending in expired {
@@ -958,14 +1017,15 @@ impl AppState {
             });
 
         if send_result.is_err() {
+            let session_id = pending.session_id.clone();
             events.push(Event::Error {
                 code: "internal_error".to_string(),
                 details: None,
                 message: "Failed to queue audio for local transcription.".to_string(),
-                session_id: Some(pending.session_id),
+                session_id: Some(session_id.clone()),
             });
 
-            if let Some(active_session) = self.active_session.as_mut() {
+            if let Some(active_session) = self.active_sessions.get_mut(&session_id) {
                 advance_transcription_queue(active_session);
                 emit_queue_tier_if_changed(active_session, events);
             }
@@ -1704,17 +1764,45 @@ mod tests {
     }
 
     #[test]
-    fn replacing_a_session_emits_session_replaced_stop() {
+    fn starting_a_second_session_keeps_the_first_session_active() {
         let model_file_path = create_model_file();
         let mut app = test_app();
         let _ = app.handle_command(start_session_command("session-1", &model_file_path));
 
         let (_, events) = app.handle_command(start_session_command("session-2", &model_file_path));
 
-        assert!(events.contains(&Event::SessionStopped {
-            reason: SessionStopReason::SessionReplaced,
-            session_id: "session-1".to_string(),
+        assert!(events.contains(&Event::SessionStarted {
+            mode: ListeningMode::AlwaysOn,
+            session_id: "session-2".to_string(),
         }));
+        assert!(app.active_sessions.contains_key("session-1"));
+        assert!(app.active_sessions.contains_key("session-2"));
+    }
+
+    #[test]
+    fn start_session_enforces_five_session_capacity() {
+        let model_file_path = create_model_file();
+        let mut app = test_app();
+
+        for index in 0..5 {
+            let _ = app.handle_command(start_session_command(
+                &format!("session-{index}"),
+                &model_file_path,
+            ));
+        }
+
+        let (_, events) =
+            app.handle_command(start_session_command("session-overflow", &model_file_path));
+
+        assert!(matches!(
+            events.first(),
+            Some(Event::Error {
+                code,
+                session_id: Some(session_id),
+                ..
+            }) if code == "session_capacity_exceeded" && session_id == "session-overflow"
+        ));
+        assert!(!app.active_sessions.contains_key("session-overflow"));
     }
 
     #[test]
@@ -1723,7 +1811,9 @@ mod tests {
         let mut app = test_app();
         let _ = app.handle_command(start_session_command("session-1", &model_file_path));
 
-        let (_, events) = app.handle_command(Command::StopSession);
+        let (_, events) = app.handle_command(Command::StopSession {
+            session_id: "session-1".to_string(),
+        });
 
         assert_eq!(
             events,
@@ -1763,7 +1853,7 @@ mod tests {
         let _ = app.handle_command(start_session_command("session-1", &model_file_path));
 
         let mut events = Vec::new();
-        app.enqueue_utterance(fake_utterance(), &mut events);
+        app.enqueue_utterance("session-1", fake_utterance(), &mut events);
 
         assert_eq!(events.len(), 1, "expected exactly one ContextRequest event");
         let (correlation_id, utterance_id) = match &events[0] {
@@ -1781,8 +1871,8 @@ mod tests {
         };
 
         let active = app
-            .active_session
-            .as_ref()
+            .active_sessions
+            .get("session-1")
             .expect("active session should still be present after enqueue");
         assert_eq!(active.pending_context_requests.len(), 1);
         let pending = &active.pending_context_requests[0];
@@ -1805,10 +1895,13 @@ mod tests {
         let _ = app.handle_command(start_session_command("session-1", &model_file_path));
 
         let mut events = Vec::new();
-        app.enqueue_utterance(fake_utterance(), &mut events);
+        app.enqueue_utterance("session-1", fake_utterance(), &mut events);
 
         assert!(events.is_empty(), "no context_request should be emitted");
-        let active = app.active_session.as_ref().expect("active session");
+        let active = app
+            .active_sessions
+            .get("session-1")
+            .expect("active session");
         assert!(active.pending_context_requests.is_empty());
         assert!(active.transcription_active);
     }
@@ -1820,7 +1913,7 @@ mod tests {
         let _ = app.handle_command(start_session_command("session-1", &model_file_path));
 
         let mut events = Vec::new();
-        app.enqueue_utterance(fake_utterance(), &mut events);
+        app.enqueue_utterance("session-1", fake_utterance(), &mut events);
         let correlation_id = match &events[0] {
             Event::ContextRequest { correlation_id, .. } => *correlation_id,
             other => panic!("expected ContextRequest, got {other:?}"),
@@ -1841,7 +1934,10 @@ mod tests {
         });
 
         assert!(response_events.is_empty());
-        let active = app.active_session.as_ref().expect("active session");
+        let active = app
+            .active_sessions
+            .get("session-1")
+            .expect("active session");
         assert!(active.pending_context_requests.is_empty());
     }
 
@@ -1852,7 +1948,7 @@ mod tests {
         let _ = app.handle_command(start_session_command("session-1", &model_file_path));
 
         let mut events = Vec::new();
-        app.enqueue_utterance(fake_utterance(), &mut events);
+        app.enqueue_utterance("session-1", fake_utterance(), &mut events);
         let correlation_id = match &events[0] {
             Event::ContextRequest { correlation_id, .. } => *correlation_id,
             other => panic!("expected ContextRequest, got {other:?}"),
@@ -1877,7 +1973,10 @@ mod tests {
             response_events.is_empty(),
             "ContextResponse should dispatch silently on success: {response_events:?}"
         );
-        let active = app.active_session.as_ref().expect("active session");
+        let active = app
+            .active_sessions
+            .get("session-1")
+            .expect("active session");
         assert!(active.pending_context_requests.is_empty());
     }
 
@@ -1888,7 +1987,7 @@ mod tests {
         let _ = app.handle_command(start_session_command("session-1", &model_file_path));
 
         let mut events = Vec::new();
-        app.enqueue_utterance(fake_utterance(), &mut events);
+        app.enqueue_utterance("session-1", fake_utterance(), &mut events);
         let correlation_id = match &events[0] {
             Event::ContextRequest { correlation_id, .. } => *correlation_id,
             other => panic!("expected ContextRequest, got {other:?}"),
@@ -1901,7 +2000,10 @@ mod tests {
 
         assert_eq!(control_flow, ControlFlow::Continue);
         assert!(response_events.is_empty());
-        let active = app.active_session.as_ref().expect("active session");
+        let active = app
+            .active_sessions
+            .get("session-1")
+            .expect("active session");
         assert!(active.pending_context_requests.is_empty());
     }
 
@@ -1912,7 +2014,7 @@ mod tests {
         let _ = app.handle_command(start_session_command("session-1", &model_file_path));
 
         let mut events = Vec::new();
-        app.enqueue_utterance(fake_utterance(), &mut events);
+        app.enqueue_utterance("session-1", fake_utterance(), &mut events);
 
         let (control_flow, response_events) = app.handle_command(Command::ContextResponse {
             correlation_id: Uuid::new_v4(),
@@ -1921,7 +2023,10 @@ mod tests {
 
         assert_eq!(control_flow, ControlFlow::Continue);
         assert!(response_events.is_empty());
-        let active = app.active_session.as_ref().expect("active session");
+        let active = app
+            .active_sessions
+            .get("session-1")
+            .expect("active session");
         assert_eq!(active.pending_context_requests.len(), 1);
     }
 
@@ -1932,9 +2037,9 @@ mod tests {
         let _ = app.handle_command(start_session_command("session-1", &model_file_path));
 
         let mut events = Vec::new();
-        app.enqueue_utterance(fake_utterance(), &mut events);
+        app.enqueue_utterance("session-1", fake_utterance(), &mut events);
 
-        if let Some(active) = app.active_session.as_mut() {
+        if let Some(active) = app.active_sessions.get_mut("session-1") {
             for pending in active.pending_context_requests.iter_mut() {
                 pending.deadline = Instant::now() - Duration::from_millis(1);
             }
@@ -1945,7 +2050,10 @@ mod tests {
             tick_events.is_empty(),
             "tick should dispatch silently on the timeout path: {tick_events:?}"
         );
-        let active = app.active_session.as_ref().expect("active session");
+        let active = app
+            .active_sessions
+            .get("session-1")
+            .expect("active session");
         assert!(active.pending_context_requests.is_empty());
     }
 
@@ -1956,11 +2064,14 @@ mod tests {
         let _ = app.handle_command(start_session_command("session-1", &model_file_path));
 
         let mut events = Vec::new();
-        app.enqueue_utterance(fake_utterance(), &mut events);
+        app.enqueue_utterance("session-1", fake_utterance(), &mut events);
 
         let tick_events = app.tick();
         assert!(tick_events.is_empty());
-        let active = app.active_session.as_ref().expect("active session");
+        let active = app
+            .active_sessions
+            .get("session-1")
+            .expect("active session");
         assert_eq!(active.pending_context_requests.len(), 1);
     }
 
@@ -2015,7 +2126,7 @@ mod tests {
     fn enqueue_n_utterances(app: &mut AppState, n: usize) -> Vec<Event> {
         let mut events = Vec::new();
         for _ in 0..n {
-            app.enqueue_utterance(fake_utterance(), &mut events);
+            app.enqueue_utterance("session-1", fake_utterance(), &mut events);
         }
         events
     }
@@ -2036,7 +2147,10 @@ mod tests {
             0,
             "no tier events expected while remaining in normal: {events:?}"
         );
-        let active = app.active_session.as_ref().expect("active session");
+        let active = app
+            .active_sessions
+            .get("session-1")
+            .expect("active session");
         assert_eq!(active.queued_utterances, 2);
         assert!(active.transcription_active);
     }
@@ -2110,7 +2224,10 @@ mod tests {
             .count();
         assert_eq!(overload_errors, 1, "exactly one overload error expected");
 
-        let active = app.active_session.as_ref().expect("active session");
+        let active = app
+            .active_sessions
+            .get("session-1")
+            .expect("active session");
         assert!(active.overload_draining);
         assert_eq!(active.queued_utterances, 30);
         assert_eq!(
@@ -2129,13 +2246,16 @@ mod tests {
         let _ = enqueue_n_utterances(&mut app, 31);
 
         let mut events = Vec::new();
-        app.enqueue_utterance(fake_utterance(), &mut events);
+        app.enqueue_utterance("session-1", fake_utterance(), &mut events);
 
         assert!(events.iter().any(|event| matches!(
             event,
             Event::Warning { code, .. } if code == "utterance_dropped_during_overload_drain"
         )));
-        let active = app.active_session.as_ref().expect("active session");
+        let active = app
+            .active_sessions
+            .get("session-1")
+            .expect("active session");
         assert_eq!(
             active.queued_utterances, 30,
             "overflow utterance must not bump depth"
@@ -2151,7 +2271,9 @@ mod tests {
 
         let _ = enqueue_n_utterances(&mut app, 3);
 
-        let (_, events) = app.handle_command(Command::StopSession);
+        let (_, events) = app.handle_command(Command::StopSession {
+            session_id: "session-1".to_string(),
+        });
 
         assert!(
             !events
@@ -2160,8 +2282,8 @@ mod tests {
             "graceful stop must defer SessionStopped until the queue drains: {events:?}"
         );
         let active = app
-            .active_session
-            .as_ref()
+            .active_sessions
+            .get("session-1")
             .expect("session should still exist while draining");
         assert!(active.draining, "graceful_stop must set draining=true");
         assert!(active.transcription_active);
@@ -2175,7 +2297,9 @@ mod tests {
         let _ = app.handle_command(start_session_command("session-1", &model_file_path));
 
         let _ = enqueue_n_utterances(&mut app, 3);
-        let _ = app.handle_command(Command::StopSession);
+        let _ = app.handle_command(Command::StopSession {
+            session_id: "session-1".to_string(),
+        });
 
         let mut events = Vec::new();
         for _ in 0..3 {
@@ -2196,8 +2320,8 @@ mod tests {
             "drain must complete with UserStop, got: {stop:?}"
         );
         assert!(
-            app.active_session.is_none(),
-            "active_session must be cleared when drain completes"
+            !app.active_sessions.contains_key("session-1"),
+            "session must be cleared when drain completes"
         );
     }
 
@@ -2209,7 +2333,9 @@ mod tests {
 
         let _ = enqueue_n_utterances(&mut app, 3);
 
-        let (_, events) = app.handle_command(Command::CancelSession);
+        let (_, events) = app.handle_command(Command::CancelSession {
+            session_id: "session-1".to_string(),
+        });
 
         let stop = events
             .iter()
@@ -2225,7 +2351,7 @@ mod tests {
             "cancel must emit SessionStopped{{UserCancel}} immediately, got: {stop:?}"
         );
         assert!(
-            app.active_session.is_none(),
+            !app.active_sessions.contains_key("session-1"),
             "cancel must drop the active session and its pending context requests"
         );
     }
@@ -2257,8 +2383,8 @@ mod tests {
             "overload drain must complete with QueueOverload, got: {stop:?}"
         );
         assert!(
-            app.active_session.is_none(),
-            "active_session must be cleared after overload drain completes"
+            !app.active_sessions.contains_key("session-1"),
+            "session must be cleared after overload drain completes"
         );
     }
 
@@ -2303,14 +2429,16 @@ mod tests {
 
         let _ = enqueue_n_utterances(&mut app, 31);
         assert!(
-            app.active_session
-                .as_ref()
+            app.active_sessions
+                .get("session-1")
                 .map(|s| s.overload_draining)
                 .unwrap_or(false),
             "test setup must enter overload drain"
         );
 
-        let (_, events) = app.handle_command(Command::CancelSession);
+        let (_, events) = app.handle_command(Command::CancelSession {
+            session_id: "session-1".to_string(),
+        });
 
         let stop = events
             .iter()
@@ -2325,7 +2453,7 @@ mod tests {
             ),
             "cancel must win over the overload state machine, got: {stop:?}"
         );
-        assert!(app.active_session.is_none());
+        assert!(!app.active_sessions.contains_key("session-1"));
     }
 
     #[test]
@@ -2335,7 +2463,7 @@ mod tests {
         let _ = app.handle_command(start_session_command("session-1", &model_file_path));
 
         let mut enqueue_events = Vec::new();
-        app.enqueue_utterance(fake_utterance(), &mut enqueue_events);
+        app.enqueue_utterance("session-1", fake_utterance(), &mut enqueue_events);
 
         let mut events = Vec::new();
         app.handle_worker_event(
@@ -2364,9 +2492,11 @@ mod tests {
         let _ = app.handle_command(start_session_command("session-1", &model_file_path));
 
         let mut enqueue_events = Vec::new();
-        app.enqueue_utterance(fake_utterance(), &mut enqueue_events);
-        let _ = app.handle_command(Command::CancelSession);
-        assert!(app.active_session.is_none());
+        app.enqueue_utterance("session-1", fake_utterance(), &mut enqueue_events);
+        let _ = app.handle_command(Command::CancelSession {
+            session_id: "session-1".to_string(),
+        });
+        assert!(!app.active_sessions.contains_key("session-1"));
 
         let mut events = Vec::new();
         app.handle_worker_event(fake_worker_transcript_ready("session-1", None), &mut events);

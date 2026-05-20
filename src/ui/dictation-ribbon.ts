@@ -4,13 +4,7 @@ import type { DictationControllerState } from '../dictation/dictation-session-co
 import type { QueueBackpressureTier } from '../sidecar/protocol';
 
 type RibbonIcon = 'audio-lines' | 'loader' | 'mic' | 'mic-off';
-type RibbonVisualState =
-  | 'idle'
-  | 'starting'
-  | 'working'
-  | 'listening'
-  | 'speech_detected'
-  | 'error';
+type RibbonVisualState = 'idle' | 'starting' | 'listening' | 'speech_detected' | 'error';
 
 export class DictationRibbonController {
   private state: DictationControllerState = 'idle';
@@ -57,7 +51,7 @@ export class DictationRibbonController {
 
 function buildRibbonState(
   state: DictationControllerState,
-  queueTier: QueueBackpressureTier,
+  _queueTier: QueueBackpressureTier,
 ): {
   icon: RibbonIcon;
   label: string;
@@ -73,13 +67,7 @@ function buildRibbonState(
       return { icon: 'audio-lines', label: 'Local Dictation — listening' };
 
     case 'speech_detected':
-    case 'speech_ending':
       return { icon: 'audio-lines', label: 'Local Dictation — hearing speech' };
-
-    case 'transcribing':
-      return queueTier === 'catching_up'
-        ? { icon: 'loader', label: 'Local Dictation — catching up…' }
-        : { icon: 'loader', label: 'Local Dictation — transcribing…' };
 
     case 'error':
       return { icon: 'mic-off', label: 'Local Dictation — error' };
@@ -94,10 +82,7 @@ function toVisualState(state: DictationControllerState): RibbonVisualState {
       return 'starting';
     case 'listening':
       return 'listening';
-    case 'transcribing':
-      return 'working';
     case 'speech_detected':
-    case 'speech_ending':
       return 'speech_detected';
     case 'error':
       return 'error';
