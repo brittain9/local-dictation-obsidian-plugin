@@ -3,6 +3,7 @@ import { dirname, join } from 'node:path';
 import { FileSystemAdapter, Notice, Platform, Plugin } from 'obsidian';
 
 import { AudioCaptureStream } from './audio/audio-capture-stream';
+import { AudioVisualizerTap } from './audio/audio-visualizer-tap';
 import { registerCommands } from './commands/register-commands';
 import { DictationSessionController } from './dictation/dictation-session-controller';
 import { dictationAnchorExtension } from './editor/dictation-anchor-extension';
@@ -33,6 +34,7 @@ import { LOCAL_DICTATION_VIEW_TYPE, LocalDictationView } from './ui/local-dictat
 
 export default class LocalSttPlugin extends Plugin {
   private audioCaptureStream: AudioCaptureStream | null = null;
+  private audioVisualizerTap: AudioVisualizerTap | null = null;
   private dictationController: DictationSessionController | null = null;
   private logger: PluginLogger = createPluginLogger(() => this.settings.developerMode);
   private modelInstallManager: ModelInstallManager | null = null;
@@ -52,8 +54,10 @@ export default class LocalSttPlugin extends Plugin {
       logger: this.logger,
       resolveLaunchSpec: async () => this.resolveSidecarLaunchSpec(),
     });
+    this.audioVisualizerTap = new AudioVisualizerTap();
     this.audioCaptureStream = new AudioCaptureStream({
       logger: this.logger,
+      visualizer: this.audioVisualizerTap,
     });
     const ollamaClient = createOllamaClient();
     this.modelInstallManager = new ModelInstallManager({
@@ -90,6 +94,7 @@ export default class LocalSttPlugin extends Plugin {
       void this.requireDictationController().toggleDictation();
     });
     this.ribbonController = new DictationRibbonController(ribbonElement);
+    this.ribbonController.setVisualizer(this.audioVisualizerTap);
     this.dictationController = new DictationSessionController({
       captureStream: this.audioCaptureStream,
       createSession: ({ callbacks, placement, rendererOptions, sessionId }) =>

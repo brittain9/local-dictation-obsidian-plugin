@@ -1,6 +1,7 @@
 import { asError } from '../shared/error-utils';
 import { PCM_BYTES_PER_FRAME, PCM_CHANNEL_COUNT } from '../shared/pcm-format';
 import type { PluginLogger } from '../shared/plugin-logger';
+import type { AudioVisualizerAttachable } from './audio-visualizer-tap';
 import { PCM_RECORDER_WORKLET_NAME } from './pcm-recorder-worklet-shared';
 import { PCM_RECORDER_WORKLET_SOURCE } from './pcm-recorder-worklet-source';
 
@@ -8,6 +9,7 @@ type AudioFrameListener = (sessionId: string, frameBytes: Uint8Array) => void;
 
 interface AudioCaptureStreamOptions {
   logger?: PluginLogger;
+  visualizer?: AudioVisualizerAttachable;
 }
 
 export class AudioCaptureStream {
@@ -81,6 +83,7 @@ export class AudioCaptureStream {
       sourceNode.connect(recorderNode);
       recorderNode.connect(muteNode);
       muteNode.connect(audioContext.destination);
+      this.options.visualizer?.attach(audioContext, sourceNode);
 
       this.audioContext = audioContext;
       this.frameListener = frameListener;
@@ -91,6 +94,7 @@ export class AudioCaptureStream {
       this.options.logger?.debug('audio', 'capture started');
     } catch (error) {
       this.options.logger?.error('audio', 'failed to initialize streaming audio capture', error);
+      this.options.visualizer?.detach();
       await stopMediaStream(mediaStream);
 
       if (audioContext !== null) {
@@ -125,6 +129,7 @@ export class AudioCaptureStream {
     this.sourceNode = null;
 
     try {
+      this.options.visualizer?.detach();
       recorderNode?.disconnect();
       sourceNode?.disconnect();
       muteNode?.disconnect();
