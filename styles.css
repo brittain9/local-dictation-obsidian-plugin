@@ -318,7 +318,6 @@
   }
 }
 
-/* Three depth variants: edges stay tall, center moves most */
 @keyframes local-stt-shake {
   0%,
   100% {

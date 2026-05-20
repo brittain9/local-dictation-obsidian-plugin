@@ -9,35 +9,37 @@ type RibbonIcon = 'audio-lines' | 'loader' | 'mic' | 'mic-off';
 type RibbonVisualState = 'idle' | 'starting' | 'listening' | 'speech_detected' | 'error';
 
 /**
- * Per-bar scaleY envelope. Quiet speech shrinks bars toward the floor; loud
- * peaks overshoot above 1.0 (the static icon height), so the user sees a clear
- * "punch above neutral" instead of bars that only ever shrink.
- *
- * Center bars get the most overshoot — they're already the tallest in the icon,
- * so amplifying them reads as a coherent wave bouncing outward.
+ * Per-bar scaleY envelope as [floor, ceiling] tuples. Quiet speech shrinks bars
+ * toward the floor; loud peaks overshoot above 1.0 (the static icon height), so
+ * the user sees a clear "punch above neutral" instead of bars that only ever shrink.
+ * Center bars get the most overshoot — they're the tallest in the icon, so
+ * amplifying them reads as a coherent wave bouncing outward.
  */
-const BAR_FLOOR: readonly number[] = [0.35, 0.25, 0.15, 0.15, 0.25, 0.35];
-const BAR_CEILING: readonly number[] = [1.25, 1.35, 1.45, 1.45, 1.35, 1.25];
+const BAR_ENVELOPE: ReadonlyArray<readonly [floor: number, ceiling: number]> = [
+  [0.35, 1.25],
+  [0.25, 1.35],
+  [0.15, 1.45],
+  [0.15, 1.45],
+  [0.25, 1.35],
+  [0.35, 1.25],
+];
+if (BAR_ENVELOPE.length !== AudioVisualizerTap.BAND_COUNT) {
+  throw new Error('BAR_ENVELOPE length must match AudioVisualizerTap.BAND_COUNT.');
+}
 const REDUCED_MOTION_QUERY = '(prefers-reduced-motion: reduce)';
 
 export class DictationRibbonController {
   private bandReader: AudioBandReader | null = null;
   private rafId: number | null = null;
-  private readonly reducedMotion: MediaQueryList | null;
-  private readonly reducedMotionListener: (() => void) | null;
+  private readonly reducedMotion: MediaQueryList;
+  private readonly reducedMotionListener: () => void;
   private state: DictationControllerState = 'idle';
   private queueTier: QueueBackpressureTier = 'normal';
 
   constructor(private readonly element: HTMLElement) {
-    const reducedMotion = globalThis.matchMedia?.(REDUCED_MOTION_QUERY) ?? null;
-    this.reducedMotion = reducedMotion;
-    if (reducedMotion !== null) {
-      const listener = (): void => this.syncAnimation();
-      this.reducedMotionListener = listener;
-      reducedMotion.addEventListener('change', listener);
-    } else {
-      this.reducedMotionListener = null;
-    }
+    this.reducedMotion = matchMedia(REDUCED_MOTION_QUERY);
+    this.reducedMotionListener = (): void => this.syncAnimation();
+    this.reducedMotion.addEventListener('change', this.reducedMotionListener);
     this.render();
   }
 
@@ -69,9 +71,7 @@ export class DictationRibbonController {
 
   dispose(): void {
     this.stopAnimation();
-    if (this.reducedMotion !== null && this.reducedMotionListener !== null) {
-      this.reducedMotion.removeEventListener('change', this.reducedMotionListener);
-    }
+    this.reducedMotion.removeEventListener('change', this.reducedMotionListener);
     this.element.remove();
   }
 
@@ -87,10 +87,7 @@ export class DictationRibbonController {
 
   private syncAnimation(): void {
     const shouldRun =
-      this.state === 'speech_detected' &&
-      this.bandReader !== null &&
-      this.reducedMotion?.matches !== true &&
-      typeof globalThis.requestAnimationFrame === 'function';
+      this.state === 'speech_detected' && this.bandReader !== null && !this.reducedMotion.matches;
 
     if (shouldRun) {
       this.startAnimation();
@@ -105,35 +102,33 @@ export class DictationRibbonController {
     }
     const tick = (): void => {
       const bands = this.bandReader?.readBands();
-      if (bands !== null && bands !== undefined) {
+      if (bands) {
         this.applyBands(bands);
       }
-      this.rafId = globalThis.requestAnimationFrame(tick);
+      this.rafId = requestAnimationFrame(tick);
     };
-    this.rafId = globalThis.requestAnimationFrame(tick);
+    this.rafId = requestAnimationFrame(tick);
   }
 
   private stopAnimation(): void {
     if (this.rafId !== null) {
-      globalThis.cancelAnimationFrame(this.rafId);
+      cancelAnimationFrame(this.rafId);
       this.rafId = null;
     }
     this.resetBars();
   }
 
   private applyBands(bands: Readonly<Float32Array>): void {
-    const count = Math.min(bands.length, AudioVisualizerTap.BAND_COUNT, BAR_FLOOR.length);
-    for (let i = 0; i < count; i++) {
+    for (let i = 0; i < BAR_ENVELOPE.length; i++) {
+      const [floor, ceiling] = BAR_ENVELOPE[i] as readonly [number, number];
       const level = clamp01(bands[i] as number);
-      const floor = BAR_FLOOR[i] as number;
-      const ceiling = BAR_CEILING[i] as number;
       const scale = floor + (ceiling - floor) * level;
       this.element.style.setProperty(`--local-stt-bar-${i + 1}`, scale.toFixed(2));
     }
   }
 
   private resetBars(): void {
-    for (let i = 0; i < BAR_FLOOR.length; i++) {
+    for (let i = 0; i < BAR_ENVELOPE.length; i++) {
       this.element.style.removeProperty(`--local-stt-bar-${i + 1}`);
     }
   }

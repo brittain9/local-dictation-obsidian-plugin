@@ -60,7 +60,7 @@ export class AudioVisualizerTap implements AudioBandReader, AudioVisualizerAttac
     sourceNode.connect(analyser);
 
     this.analyser = analyser;
-    this.frequencyBuffer = new Uint8Array(new ArrayBuffer(analyser.frequencyBinCount));
+    this.frequencyBuffer = new Uint8Array(analyser.frequencyBinCount);
     this.bandRanges = computeBandRanges(audioContext.sampleRate, analyser.frequencyBinCount);
     this.smoothed.fill(0);
   }
