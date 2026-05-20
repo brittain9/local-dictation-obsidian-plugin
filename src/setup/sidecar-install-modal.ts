@@ -12,6 +12,7 @@ import {
   type SidecarInstallManager,
 } from '../sidecar/sidecar-install-manager';
 import {
+  DEFAULT_RELEASE_BASE_URL,
   detectPlatformAssetForCurrentEnv,
   type SidecarInstallVariant,
 } from '../sidecar/sidecar-installer';
@@ -111,9 +112,15 @@ export class SidecarInstallModal extends Modal {
       details.createEl('dt', { text: label });
       details.createEl('dd', { text: value });
     };
-    appendRow('Download', asset);
+    const releaseTagUrl = `${DEFAULT_RELEASE_BASE_URL.replace(/\/download$/, '/tag')}/${this.options.version}`;
+    details.createEl('dt', { text: 'Download' });
+    const downloadDd = details.createEl('dd');
+    downloadDd.createEl('a', {
+      text: asset,
+      href: releaseTagUrl,
+      attr: { rel: 'noopener noreferrer', target: '_blank' },
+    });
     appendRow('Version', this.options.version);
-    appendRow('Privacy', 'Runs locally — audio never leaves your device.');
 
     const buttons = this.contentEl.createDiv({ cls: 'local-stt-sidecar-install__buttons' });
     buttons.createEl('button', { text: 'Later' }).addEventListener('click', () => {

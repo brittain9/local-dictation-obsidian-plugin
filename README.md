@@ -18,18 +18,13 @@ Private, on-device speech-to-text for Obsidian. Dictate notes with Whisper or Co
 
 ## Platform Support
 
-| Platform | Support Status | Hardware Acceleration |
-|---|---|---|
-| macOS | Supported | Metal support for Whisper. |
-| Linux Native | Supported | CUDA support for Whisper and Cohere on Turing-or-newer NVIDIA GPUs. |
-| Linux Flatpak | Supported | CUDA supported on Turing-or-newer NVIDIA GPUs - [Flatpak GPU setup](docs/guides/linux-flatpak-gpu-setup.md). |
-| Windows | Supported | CUDA support for Whisper and Cohere on Turing-or-newer NVIDIA GPUs. [Windows CUDA setup](docs/guides/windows-cuda-setup.md). |
+| Platform | Hardware Acceleration |
+|---|---|
+| macOS | Metal for Whisper (automatic via system frameworks). |
+| Linux | CUDA for Whisper and Cohere on Turing-or-newer NVIDIA GPUs. Flatpak installs need a [GPU setup step](docs/guides/linux-flatpak-gpu-setup.md). |
+| Windows | CUDA for Whisper and Cohere on Turing-or-newer NVIDIA GPUs — see [Windows CUDA setup](docs/guides/windows-cuda-setup.md). |
 
-## Runtime Dependencies
-
-The CPU sidecar has no GPU runtime dependencies. macOS Whisper uses Metal through system frameworks automatically. Linux and Windows CUDA acceleration needs a Turing-or-newer NVIDIA GPU (RTX 20-series / GTX 16-series or newer) and a driver compatible with CUDA 12.9. Cohere CUDA additionally needs cuDNN 9 runtime libraries; without cuDNN, Cohere falls back to CPU.
-
-See [Platform Runtime Dependencies](docs/release/platform-runtime-dependencies.md) for the full contract.
+CPU works everywhere with no extra dependencies. CUDA acceleration requires an RTX 20-series / GTX 16-series or newer GPU with a driver compatible with CUDA 12.9; Cohere on CUDA also needs cuDNN 9 (falls back to CPU without it). Full details in [Platform Runtime Dependencies](docs/release/platform-runtime-dependencies.md).
 
 ## Quick Start
 
@@ -37,15 +32,17 @@ Install Local Dictation from Obsidian's Community Plugins. Open `Settings → Lo
 
 The sidecar and model downloads are separate on purpose: Obsidian installs the plugin UI, the plugin installs the native sidecar, and the sidecar manages model downloads. Transcription runs locally after setup.
 
-## Privacy & system access
+## Privacy
 
-Local Dictation runs transcription on your own machine. To do that, the plugin reaches beyond Obsidian's vault API in two specific ways. Both are surfaced by Obsidian's community-plugin review as `fs` and `child_process` warnings — this section is the audit trail for what they cover.
+Local Dictation is built to be private. Your audio and your notes never leave your machine. There is no account, no cloud service, no telemetry, and no background network traffic.
 
-- **Filesystem (`fs`)** — used to install the native sidecar into the plugin's `bin/` directory, to manage Whisper and Silero model files cached outside the vault, and to write transient audio dumps when transcription fails and you have diagnostics enabled. No vault content is read or written through `fs`; that goes through Obsidian's editor API.
-- **Process execution (`child_process`)** — used to spawn the local Rust sidecar (`local-dictation-sidecar`) and stream PCM audio to it over stdio. The command path is the installed binary; no shell is invoked and no part of the command is user-supplied.
-- **Network** — used only to download the sidecar archive once from this repository's GitHub Releases and to fetch model files from their official sources on demand. There is no telemetry, no analytics, no account, and no background traffic after setup.
+To make local transcription work, the plugin does a few things outside Obsidian's vault:
 
-The source of truth for these accesses is [`src/sidecar/sidecar-installer.ts`](src/sidecar/sidecar-installer.ts) and the IPC layer in [`src/sidecar/`](src/sidecar/).
+- **Installs a helper program.** A small native "sidecar" is downloaded once from this repository's GitHub Releases and stored inside the plugin's folder. The plugin runs this helper locally to do the actual transcription.
+- **Stores model files on disk.** Whisper and voice-activity models are cached outside your vault so they aren't duplicated per-vault. You can browse and remove them from the plugin's model manager.
+- **Uses the network only for downloads.** The sidecar archive and model files are fetched from their official sources on demand. Nothing else is sent anywhere.
+
+Your vault contents are only read and written through Obsidian's normal editor API — your notes or audio never leaves your machine.
 
 ## Contributing
 

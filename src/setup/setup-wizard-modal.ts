@@ -71,7 +71,8 @@ export class SetupWizardModal extends Modal {
 
   private render(): void {
     this.contentEl.empty();
-    this.titleEl.setText('Set up Local Dictation');
+    const isWelcome = this.currentStep === 'sidecar' && !this.sidecarReady;
+    this.titleEl.setText(isWelcome ? 'Welcome to Local Dictation' : 'Set up Local Dictation');
 
     this.renderProgress();
 
@@ -113,27 +114,35 @@ export class SetupWizardModal extends Modal {
   // ---------------- Step 1: Sidecar ----------------
   private renderSidecarStep(): void {
     const body = this.contentEl.createDiv({ cls: 'local-stt-wizard-step' });
-    body.createEl('h2', {
-      cls: 'local-stt-wizard-step__title',
-      text: this.sidecarReady ? 'Speech engine ready' : 'Install the speech engine',
-    });
 
     if (this.sidecarReady) {
+      body.createEl('h2', {
+        cls: 'local-stt-wizard-step__title',
+        text: 'Speech engine ready',
+      });
       body.createEl('p', {
         text: 'The local speech-to-text engine is installed and ready.',
       });
     } else {
       body.createEl('p', {
-        text: Platform.isMacOS
-          ? 'Local Dictation needs a one-time download of its speech-to-text engine. Transcription runs entirely on your Mac — audio never leaves your machine.'
-          : 'Local Dictation needs a one-time download of its speech-to-text engine. Transcription runs locally on your machine after this completes.',
+        text: 'Dictate notes hands-free, right inside Obsidian — fully on your machine. No account, no cloud, no telemetry.',
       });
+
+      body.createEl('p', { text: 'A quick 2-minute setup:' });
+      const steps = body.createEl('ol');
+      steps.createEl('li', { text: 'Download the speech engine' });
+      steps.createEl('li', { text: 'Pick a transcription model' });
+
       body.createEl('p', {
-        cls: 'local-stt-wizard-step__muted',
-        text: Platform.isMacOS
-          ? 'Includes Metal acceleration on Apple Silicon and Intel Macs.'
-          : 'CPU build first. You can install CUDA acceleration later in Settings → Advanced.',
+        text: 'Then hit the mic in the ribbon (or your own hotkey) and start talking.',
       });
+
+      if (!Platform.isMacOS) {
+        body.createEl('p', {
+          cls: 'local-stt-wizard-step__muted',
+          text: 'Starts with the CPU build. NVIDIA GPU? You can install the CUDA-accelerated build later from Settings.',
+        });
+      }
     }
 
     const actions = this.contentEl.createDiv({ cls: 'local-stt-wizard-actions' });
@@ -188,6 +197,12 @@ export class SetupWizardModal extends Modal {
       body.createEl('p', {
         text: 'Install a transcription model to enable dictation. You can install more later — smaller models are faster, larger models are more accurate.',
       });
+      if (!Platform.isMacOS) {
+        body.createEl('p', {
+          cls: 'local-stt-wizard-step__muted',
+          text: 'Larger models run much faster with GPU acceleration. If you have an NVIDIA GPU, you can install the CUDA-accelerated build later from Settings.',
+        });
+      }
     }
 
     const actions = this.contentEl.createDiv({ cls: 'local-stt-wizard-actions' });
@@ -229,7 +244,7 @@ export class SetupWizardModal extends Modal {
 
     const cardRibbon = body.createDiv({ cls: 'local-stt-wizard-card' });
     const ribbonIcon = cardRibbon.createSpan({ cls: 'local-stt-wizard-card__icon' });
-    setIcon(ribbonIcon, 'audio-lines');
+    setIcon(ribbonIcon, 'mic');
     const ribbonText = cardRibbon.createDiv({ cls: 'local-stt-wizard-card__text' });
     ribbonText.createEl('strong', { text: 'Use the ribbon mic' });
     ribbonText.createEl('p', {
@@ -241,9 +256,10 @@ export class SetupWizardModal extends Modal {
     setIcon(hotkeyIcon, 'keyboard');
     const hotkeyText = cardHotkey.createDiv({ cls: 'local-stt-wizard-card__text' });
     hotkeyText.createEl('strong', { text: 'Or bind a hotkey' });
-    hotkeyText.createEl('p', {
-      text: 'Set a keyboard shortcut to toggle dictation from anywhere in Obsidian.',
-    });
+    const hotkeyDesc = hotkeyText.createEl('p');
+    hotkeyDesc.appendText('Bind a shortcut to the ');
+    hotkeyDesc.createEl('strong', { text: 'Local Dictation: Toggle dictation' });
+    hotkeyDesc.appendText(' command to start and stop from anywhere in Obsidian.');
     const hotkeyBtn = cardHotkey.createEl('button', { text: 'Open hotkey settings' });
     hotkeyBtn.addEventListener('click', () => this.openHotkeySettings());
 
