@@ -6,7 +6,7 @@ Private, on-device speech-to-text for Obsidian. Dictate notes with Whisper or Co
 [![GitHub stars](https://img.shields.io/github/stars/brittain9/local-dictation-obsidian-plugin?style=flat-square)](https://github.com/brittain9/local-dictation-obsidian-plugin/stargazers)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=flat-square)](LICENSE)
 
-## Features
+## ✨ Features
 
 - **Cohere Transcribe** — a [Hugging Face Open ASR Leaderboard](https://huggingface.co/spaces/hf-audio/open_asr_leaderboard)-topping engine, running locally.
 - **Whisper** — mature offline transcription with a range of size/speed options.
@@ -16,7 +16,7 @@ Private, on-device speech-to-text for Obsidian. Dictate notes with Whisper or Co
 - **Hardware acceleration** — Metal on macOS, CUDA on Linux/Windows (Turing-or-newer NVIDIA GPUs).
 - **Private and offline** — transcription stays on-device. No cloud, no telemetry, no account. Only model downloads need a network.
 
-## Platform Support
+## 💻 Platform Support
 
 | Platform | Hardware Acceleration |
 |---|---|
@@ -26,28 +26,34 @@ Private, on-device speech-to-text for Obsidian. Dictate notes with Whisper or Co
 
 CPU works everywhere with no extra dependencies. CUDA acceleration requires an RTX 20-series / GTX 16-series or newer GPU with a driver compatible with CUDA 12.9; Cohere on CUDA also needs cuDNN 9 (falls back to CPU without it). Full details in [Platform Runtime Dependencies](docs/release/platform-runtime-dependencies.md).
 
-## Quick Start
+## 🚀 Quick Start
 
-Install Local Dictation from Obsidian's Community Plugins. Open `Settings → Local Dictation` and install the sidecar from the plugin settings — the plugin downloads it from the matching GitHub Release, verifies it, and stores it under the plugin's `bin/` directory. Then click `Manage models`, install a model, open a note, and start dictation from the ribbon button or via the `Local Dictation: Start dictation session` command.
+Install Local Dictation from Obsidian's Community Plugins. On first run, a **setup wizard** walks you through downloading the speech engine and picking a transcription model — that's the easiest path.
 
-The sidecar and model downloads are separate on purpose: Obsidian installs the plugin UI, the plugin installs the native sidecar, and the sidecar manages model downloads. Transcription runs locally after setup.
+If you'd rather do it manually, open `Settings → Local Dictation`: install the sidecar from the sidecar section, then click **Manage models** to download a model. Either way, once setup finishes you can dictate from the mic in the ribbon, or bind a hotkey to the `Local Dictation: Toggle dictation` command.
 
-## Privacy
+Where things live:
+
+- **Sidecar binary:** inside the plugin folder, under `.obsidian/plugins/local-dictation/bin/`.
+- **Models:** stored outside your vault, in your user data directory, so they aren't duplicated per-vault:
+  - Windows: `%LOCALAPPDATA%\obsidian-local-stt\models`
+  - macOS: `~/Library/Application Support/obsidian-local-stt/models`
+  - Linux: `~/.local/share/obsidian-local-stt/models`
+
+## 🔒 Privacy
 
 Local Dictation is built to be private. Your audio and your notes never leave your machine. There is no account, no cloud service, no telemetry, and no background network traffic.
 
-To make local transcription work, the plugin does a few things outside Obsidian's vault:
+To make local transcription work, the plugin does a few things:
 
 - **Installs a helper program.** A small native "sidecar" is downloaded once from this repository's GitHub Releases and stored inside the plugin's folder. The plugin runs this helper locally to do the actual transcription.
 - **Stores model files on disk.** Whisper and voice-activity models are cached outside your vault so they aren't duplicated per-vault. You can browse and remove them from the plugin's model manager.
 - **Uses the network only for downloads.** The sidecar archive and model files are fetched from their official sources on demand. Nothing else is sent anywhere.
 
-Your vault contents are only read and written through Obsidian's normal editor API — your notes or audio never leaves your machine.
-
-## Contributing
+## 🤝 Contributing
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for prerequisites, setup, scripts, branching conventions, PR workflow, and architecture overview.
 
-## License
+## 📄 License
 
 MIT. See [LICENSE](LICENSE).
