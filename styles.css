@@ -318,37 +318,6 @@
   }
 }
 
-/* Three depth variants: edges stay tall, center moves most */
-@keyframes local-stt-wave-shallow {
-  0%,
-  100% {
-    transform: scaleY(1);
-  }
-  50% {
-    transform: scaleY(0.65);
-  }
-}
-
-@keyframes local-stt-wave-mid {
-  0%,
-  100% {
-    transform: scaleY(1);
-  }
-  50% {
-    transform: scaleY(0.45);
-  }
-}
-
-@keyframes local-stt-wave-deep {
-  0%,
-  100% {
-    transform: scaleY(1);
-  }
-  50% {
-    transform: scaleY(0.3);
-  }
-}
-
 @keyframes local-stt-shake {
   0%,
   100% {
@@ -406,33 +375,53 @@
   animation-delay: 1.05s;
 }
 
-.side-dock-ribbon-action[data-local-stt-state="listening"] > svg {
-  opacity: 0.7;
+/* Crossfade the muted listening state into the vibrant speech state. */
+.side-dock-ribbon-action[data-local-stt-state="listening"] > svg,
+.side-dock-ribbon-action[data-local-stt-state="speech_detected"] > svg {
+  transition: opacity 450ms ease-out;
 }
 
-/* Unique durations per bar create pseudo-random phasing (pattern won't repeat for ~30s).
-   Edge bars use shallow depth (stay tall), center bars use deep (most movement). */
+.side-dock-ribbon-action[data-local-stt-state="listening"] > svg {
+  opacity: 0.45;
+}
+
+/* Live per-band FFT amplitude scales each bar via --local-stt-bar-N (1..6),
+   written by DictationRibbonController on every animation frame while VAD reports speech.
+   When state flips back to listening the variables are cleared (fallback = 1) and the
+   longer ease-out transition smooths the return to native, instead of snapping. */
+.side-dock-ribbon-action[data-local-stt-state="listening"] > svg > path,
 .side-dock-ribbon-action[data-local-stt-state="speech_detected"] > svg > path {
   transform-origin: center;
 }
-
+.side-dock-ribbon-action[data-local-stt-state="speech_detected"] > svg > path {
+  transition: transform 60ms linear;
+}
+.side-dock-ribbon-action[data-local-stt-state="listening"] > svg > path {
+  transition: transform 550ms ease-out;
+}
+.side-dock-ribbon-action[data-local-stt-state="listening"] > svg > path:nth-child(1),
 .side-dock-ribbon-action[data-local-stt-state="speech_detected"] > svg > path:nth-child(1) {
-  animation: local-stt-wave-shallow 0.7s ease-in-out infinite;
+  transform: scaleY(var(--local-stt-bar-1, 1));
 }
+.side-dock-ribbon-action[data-local-stt-state="listening"] > svg > path:nth-child(2),
 .side-dock-ribbon-action[data-local-stt-state="speech_detected"] > svg > path:nth-child(2) {
-  animation: local-stt-wave-mid 0.9s ease-in-out infinite;
+  transform: scaleY(var(--local-stt-bar-2, 1));
 }
+.side-dock-ribbon-action[data-local-stt-state="listening"] > svg > path:nth-child(3),
 .side-dock-ribbon-action[data-local-stt-state="speech_detected"] > svg > path:nth-child(3) {
-  animation: local-stt-wave-deep 0.6s ease-in-out infinite;
+  transform: scaleY(var(--local-stt-bar-3, 1));
 }
+.side-dock-ribbon-action[data-local-stt-state="listening"] > svg > path:nth-child(4),
 .side-dock-ribbon-action[data-local-stt-state="speech_detected"] > svg > path:nth-child(4) {
-  animation: local-stt-wave-deep 1.1s ease-in-out infinite;
+  transform: scaleY(var(--local-stt-bar-4, 1));
 }
+.side-dock-ribbon-action[data-local-stt-state="listening"] > svg > path:nth-child(5),
 .side-dock-ribbon-action[data-local-stt-state="speech_detected"] > svg > path:nth-child(5) {
-  animation: local-stt-wave-mid 0.8s ease-in-out infinite;
+  transform: scaleY(var(--local-stt-bar-5, 1));
 }
+.side-dock-ribbon-action[data-local-stt-state="listening"] > svg > path:nth-child(6),
 .side-dock-ribbon-action[data-local-stt-state="speech_detected"] > svg > path:nth-child(6) {
-  animation: local-stt-wave-shallow 0.75s ease-in-out infinite;
+  transform: scaleY(var(--local-stt-bar-6, 1));
 }
 
 .side-dock-ribbon-action[data-local-stt-state="error"] > svg {
