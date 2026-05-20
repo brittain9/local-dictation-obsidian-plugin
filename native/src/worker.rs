@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::panic::{self, AssertUnwindSafe};
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -147,7 +147,6 @@ fn worker_main(
     registry: Arc<EngineRegistry>,
 ) {
     let mut sessions: HashMap<String, WorkerSession> = HashMap::new();
-    let mut ended_sessions: HashSet<String> = HashSet::new();
     let tokio_runtime = Builder::new_current_thread()
         .enable_all()
         .build()
@@ -156,7 +155,6 @@ fn worker_main(
     while let Ok(command) = command_rx.recv() {
         match command {
             WorkerCommand::BeginSession(metadata) => {
-                ended_sessions.remove(&metadata.session_id);
                 let load_result = panic::catch_unwind(AssertUnwindSafe(|| {
                     load_model_for_session(registry.as_ref(), &metadata)
                 }));
@@ -197,7 +195,6 @@ fn worker_main(
                 }
             }
             WorkerCommand::EndSession { session_id } => {
-                ended_sessions.insert(session_id.clone());
                 sessions.remove(&session_id);
             }
             WorkerCommand::RunBatchCleanup {
@@ -242,10 +239,6 @@ fn worker_main(
                 utterance,
                 utterance_id,
             } => {
-                if ended_sessions.contains(&session_id) {
-                    continue;
-                }
-
                 let Some(session) = sessions.get_mut(&session_id) else {
                     continue;
                 };

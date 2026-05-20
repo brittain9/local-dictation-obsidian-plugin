@@ -43,6 +43,20 @@ import { type ResolveSidecarLaunchSpec, SidecarProcess } from './sidecar-process
 
 type SidecarEventListener = (event: SidecarEvent) => void;
 
+export class SidecarError extends Error {
+  readonly code: string;
+  readonly details: string | undefined;
+  readonly sessionId: string | undefined;
+
+  constructor(event: ErrorEvent) {
+    super(event.details ? `${event.message} (${event.details})` : event.message);
+    this.name = 'SidecarError';
+    this.code = event.code;
+    this.details = event.details;
+    this.sessionId = event.sessionId;
+  }
+}
+
 interface PendingEventWaiter {
   description: string;
   matches: (event: SidecarEvent) => boolean;
@@ -434,7 +448,7 @@ export class SidecarConnection {
       if (event.type === 'error' && waiter.rejectOnError(event)) {
         globalThis.clearTimeout(waiter.timeoutHandle);
         this.pendingWaiters.delete(waiter);
-        waiter.reject(new Error(`${event.message}${event.details ? ` (${event.details})` : ''}`));
+        waiter.reject(new SidecarError(event));
       }
     }
   }

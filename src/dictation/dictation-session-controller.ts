@@ -21,7 +21,7 @@ import type {
   SidecarEvent,
   TranscriptReadyEvent,
 } from '../sidecar/protocol';
-import type { SidecarConnection } from '../sidecar/sidecar-connection';
+import { type SidecarConnection, SidecarError } from '../sidecar/sidecar-connection';
 import { SidecarNotInstalledError } from '../sidecar/sidecar-paths';
 import type { TranscriptRenderOptions } from '../transcript/renderer';
 
@@ -67,14 +67,14 @@ interface ActiveSessionSnapshot {
   useNoteAsContext: PluginSettings['useNoteAsContext'];
 }
 
+type SessionPhase = 'starting' | 'active' | 'stopping' | 'cancelling' | 'stopped';
+
 interface ManagedSession {
   anchorTimerId: ReturnType<typeof setTimeout> | null;
-  draining: boolean;
   llmFailureLogged: boolean;
-  pendingStart: boolean;
+  phase: SessionPhase;
   session: ControllerSession;
   snapshot: ActiveSessionSnapshot;
-  startCancelled: boolean;
 }
 
 interface DictationSessionControllerDependencies {
@@ -213,10 +213,10 @@ export class DictationSessionController {
       session = this.dependencies.createSession({
         callbacks: {
           onLockedNoteClosed: () => {
-            this.handleLockedNoteClosed(sessionId);
+            this.cancelOnLockedNoteEvent(sessionId, 'closed');
           },
           onLockedNoteDeleted: () => {
-            this.handleLockedNoteDeleted(sessionId);
+            this.cancelOnLockedNoteEvent(sessionId, 'deleted');
           },
         },
         placement: { anchor: snapshot.dictationAnchor },
@@ -233,12 +233,10 @@ export class DictationSessionController {
 
     const entry: ManagedSession = {
       anchorTimerId: null,
-      draining: false,
       llmFailureLogged: false,
-      pendingStart: true,
+      phase: 'starting',
       session,
       snapshot,
-      startCancelled: false,
     };
     this.sessions.set(sessionId, entry);
     this.activeSessionId = sessionId;
@@ -258,11 +256,11 @@ export class DictationSessionController {
           ? { modelStorePathOverride: snapshot.modelStorePathOverride }
           : {}),
       });
-      entry.pendingStart = false;
 
-      if (entry.startCancelled || this.activeSessionId !== sessionId) {
+      if (entry.phase !== 'starting' || this.activeSessionId !== sessionId) {
         return;
       }
+      entry.phase = 'active';
 
       await this.dependencies.captureStream.start(sessionId, (frameSessionId, frameBytes) => {
         if (this.activeSessionId !== frameSessionId) {
@@ -270,7 +268,7 @@ export class DictationSessionController {
         }
 
         const activeEntry = this.sessions.get(frameSessionId);
-        if (activeEntry === undefined || activeEntry.draining || activeEntry.startCancelled) {
+        if (activeEntry === undefined || activeEntry.phase !== 'active') {
           return;
         }
 
@@ -305,20 +303,13 @@ export class DictationSessionController {
     }
 
     const entry = this.sessions.get(sessionId);
-    this.activeSessionId = null;
-    this.applyUiState('idle');
-    this.resetQueueTier();
-
     if (entry !== undefined) {
-      entry.draining = true;
-      entry.startCancelled = true;
+      entry.phase = 'stopping';
       this.clearAnchorTimer(entry);
       entry.session.setAnchorMode('hidden');
     }
 
-    if (this.dependencies.captureStream.isCapturing()) {
-      await this.dependencies.captureStream.stop();
-    }
+    await this.clearActiveSession(sessionId);
 
     try {
       this.dependencies.sidecarConnection.requestStopSession(sessionId);
@@ -329,15 +320,6 @@ export class DictationSessionController {
   }
 
   private async cleanupFailedStart(sessionId: string, error: unknown): Promise<void> {
-    if (error instanceof SidecarNotInstalledError) {
-      this.dependencies.logger?.debug('sidecar', 'sidecar not installed; prompting install');
-      this.disposeLocalSession(sessionId);
-      this.activeSessionId = null;
-      this.applyUiState('idle');
-      this.dependencies.onSidecarMissing?.();
-      return;
-    }
-
     const entry = this.sessions.get(sessionId);
     if (entry === undefined) {
       if (this.activeSessionId === sessionId) {
@@ -350,19 +332,11 @@ export class DictationSessionController {
     if (isCapacityExceededStartError(error)) {
       this.dependencies.logger?.warn('sidecar', formatErrorMessage(error));
       this.disposeLocalSession(sessionId);
-      if (this.activeSessionId === sessionId) {
-        this.activeSessionId = null;
-        this.applyUiState('idle');
-      }
       return;
     }
 
-    if (entry.pendingStart) {
+    if (entry.phase === 'starting') {
       this.disposeLocalSession(sessionId);
-      if (this.activeSessionId === sessionId) {
-        this.activeSessionId = null;
-        this.applyUiState('idle');
-      }
     } else {
       await this.cancelSession(sessionId);
     }
@@ -372,23 +346,28 @@ export class DictationSessionController {
   private async cancelSession(sessionId: string): Promise<void> {
     const entry = this.sessions.get(sessionId);
     if (entry !== undefined) {
-      entry.startCancelled = true;
+      entry.phase = 'cancelling';
     }
 
-    if (this.activeSessionId === sessionId) {
-      this.activeSessionId = null;
-      this.applyUiState('idle');
-      this.resetQueueTier();
-      if (this.dependencies.captureStream.isCapturing()) {
-        await this.dependencies.captureStream.stop();
-      }
-    }
+    await this.clearActiveSession(sessionId);
 
     try {
       await this.dependencies.sidecarConnection.cancelSession(sessionId);
     } catch (error) {
       this.dependencies.logger?.warn('session', 'failed to cancel dictation cleanly', error);
       this.disposeLocalSession(sessionId);
+    }
+  }
+
+  private async clearActiveSession(sessionId: string): Promise<void> {
+    if (this.activeSessionId !== sessionId) {
+      return;
+    }
+    this.activeSessionId = null;
+    this.applyUiState('idle');
+    this.resetQueueTier();
+    if (this.dependencies.captureStream.isCapturing()) {
+      await this.dependencies.captureStream.stop();
     }
   }
 
@@ -503,7 +482,7 @@ export class DictationSessionController {
 
     if (
       event.sessionId !== this.activeSessionId ||
-      entry.pendingStart ||
+      entry.phase !== 'active' ||
       !this.dependencies.captureStream.isCapturing()
     ) {
       return;
@@ -667,8 +646,7 @@ export class DictationSessionController {
       'session',
       `session ${event.sessionId} stopped (reason: ${event.reason})`,
     );
-    entry.draining = false;
-    entry.pendingStart = false;
+    entry.phase = 'stopped';
 
     if (event.sessionId === this.activeSessionId) {
       this.activeSessionId = null;
@@ -754,7 +732,7 @@ export class DictationSessionController {
   private async handleErrorEvent(event: Extract<SidecarEvent, { type: 'error' }>): Promise<void> {
     if (event.code === 'session_capacity_exceeded' && event.sessionId !== undefined) {
       this.dependencies.logger?.warn('sidecar', event.message, event.details);
-      await this.stopCaptureIfActive(event.sessionId);
+      await this.clearActiveSession(event.sessionId);
       this.disposeLocalSession(event.sessionId);
       return;
     }
@@ -794,20 +772,6 @@ export class DictationSessionController {
     await this.cancelSession(event.sessionId);
   }
 
-  private async stopCaptureIfActive(sessionId: string): Promise<void> {
-    if (this.activeSessionId !== sessionId) {
-      return;
-    }
-
-    this.activeSessionId = null;
-    this.applyUiState('idle');
-    this.resetQueueTier();
-
-    if (this.dependencies.captureStream.isCapturing()) {
-      await this.dependencies.captureStream.stop();
-    }
-  }
-
   private maybeLogLlmStageFailure(entry: ManagedSession, event: TranscriptReadyEvent): void {
     if (entry.llmFailureLogged) {
       return;
@@ -841,23 +805,12 @@ export class DictationSessionController {
     }
   }
 
-  private handleLockedNoteClosed(sessionId: string): void {
-    const entry = this.sessions.get(sessionId);
-    if (entry === undefined) {
+  private cancelOnLockedNoteEvent(sessionId: string, reason: 'closed' | 'deleted'): void {
+    if (!this.sessions.has(sessionId)) {
       return;
     }
 
-    this.dependencies.logger?.warn('session', `locked note closed for session ${sessionId}`);
-    void this.cancelSession(sessionId);
-  }
-
-  private handleLockedNoteDeleted(sessionId: string): void {
-    const entry = this.sessions.get(sessionId);
-    if (entry === undefined) {
-      return;
-    }
-
-    this.dependencies.logger?.warn('session', `locked note deleted for session ${sessionId}`);
+    this.dependencies.logger?.warn('session', `locked note ${reason} for session ${sessionId}`);
     void this.cancelSession(sessionId);
   }
 
@@ -873,7 +826,7 @@ function createSessionId(): string {
 }
 
 function isCapacityExceededStartError(error: unknown): boolean {
-  return /maximum number of active sessions|capacity/i.test(formatErrorMessage(error));
+  return error instanceof SidecarError && error.code === 'session_capacity_exceeded';
 }
 
 function createSessionSnapshot(

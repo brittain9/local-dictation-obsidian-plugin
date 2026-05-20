@@ -181,7 +181,6 @@ impl AppState {
             active_session
                 .session
                 .ingest_audio_frame(&audio_frame.frame_bytes)
-                .map_err(|error| (active_session.session.config().session_id.clone(), error))
         };
 
         match result {
@@ -192,7 +191,7 @@ impl AppState {
 
                 self.emit_state_if_changed(&session_id, &mut events);
             }
-            Err((session_id, error)) => {
+            Err(error) => {
                 events.push(Event::Error {
                     code: error.code.to_string(),
                     details: error.details,
@@ -493,12 +492,11 @@ impl AppState {
                             },
                         );
 
-                        events.push(Event::SessionStarted { mode, session_id });
-                        let emitted_session_id = match events.last() {
-                            Some(Event::SessionStarted { session_id, .. }) => session_id.clone(),
-                            _ => unreachable!("session_started was just pushed"),
-                        };
-                        self.emit_state_if_changed(&emitted_session_id, &mut events);
+                        events.push(Event::SessionStarted {
+                            mode,
+                            session_id: session_id.clone(),
+                        });
+                        self.emit_state_if_changed(&session_id, &mut events);
                     }
                     Err(error_event) => events.push(*error_event),
                 }

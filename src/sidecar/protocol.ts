@@ -474,16 +474,7 @@ export function encodeAudioFrame(sessionId: string, frameBytes: Uint8Array): Uin
 }
 
 export function sessionIdToBytes(sessionId: string): Uint8Array {
-  const normalized = normalizeSessionId(sessionId);
-  const bytes = new Uint8Array(SESSION_ID_BYTES);
-  let byteOffset = 0;
-
-  for (let index = 0; index < normalized.length; index += 2) {
-    bytes[byteOffset] = Number.parseInt(normalized.slice(index, index + 2), 16);
-    byteOffset += 1;
-  }
-
-  return bytes;
+  return Buffer.from(normalizeSessionId(sessionId), 'hex');
 }
 
 export function bytesToSessionId(bytes: Uint8Array): string {
@@ -491,7 +482,7 @@ export function bytesToSessionId(bytes: Uint8Array): string {
     throw new Error(`Session ids must be ${SESSION_ID_BYTES} bytes, received ${bytes.byteLength}.`);
   }
 
-  const hex = [...bytes].map((byte) => byte.toString(16).padStart(2, '0')).join('');
+  const hex = Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength).toString('hex');
   return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
 }
 
