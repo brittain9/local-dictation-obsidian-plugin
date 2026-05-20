@@ -8,7 +8,16 @@ import type { QueueBackpressureTier } from '../sidecar/protocol';
 type RibbonIcon = 'audio-lines' | 'loader' | 'mic' | 'mic-off';
 type RibbonVisualState = 'idle' | 'starting' | 'listening' | 'speech_detected' | 'error';
 
-const BAR_MIN_SCALE: readonly number[] = [0.65, 0.45, 0.3, 0.3, 0.45, 0.65];
+/**
+ * Per-bar scaleY envelope. Quiet speech shrinks bars toward the floor; loud
+ * peaks overshoot above 1.0 (the static icon height), so the user sees a clear
+ * "punch above neutral" instead of bars that only ever shrink.
+ *
+ * Center bars get the most overshoot — they're already the tallest in the icon,
+ * so amplifying them reads as a coherent wave bouncing outward.
+ */
+const BAR_FLOOR: readonly number[] = [0.35, 0.25, 0.15, 0.15, 0.25, 0.35];
+const BAR_CEILING: readonly number[] = [1.25, 1.35, 1.45, 1.45, 1.35, 1.25];
 const REDUCED_MOTION_QUERY = '(prefers-reduced-motion: reduce)';
 
 export class DictationRibbonController {
@@ -113,17 +122,18 @@ export class DictationRibbonController {
   }
 
   private applyBands(bands: Readonly<Float32Array>): void {
-    const count = Math.min(bands.length, AudioVisualizerTap.BAND_COUNT, BAR_MIN_SCALE.length);
+    const count = Math.min(bands.length, AudioVisualizerTap.BAND_COUNT, BAR_FLOOR.length);
     for (let i = 0; i < count; i++) {
       const level = clamp01(bands[i] as number);
-      const min = BAR_MIN_SCALE[i] as number;
-      const scale = min + (1 - min) * level;
-      this.element.style.setProperty(`--local-stt-bar-${i + 1}`, scale.toFixed(3));
+      const floor = BAR_FLOOR[i] as number;
+      const ceiling = BAR_CEILING[i] as number;
+      const scale = floor + (ceiling - floor) * level;
+      this.element.style.setProperty(`--local-stt-bar-${i + 1}`, scale.toFixed(2));
     }
   }
 
   private resetBars(): void {
-    for (let i = 0; i < BAR_MIN_SCALE.length; i++) {
+    for (let i = 0; i < BAR_FLOOR.length; i++) {
       this.element.style.removeProperty(`--local-stt-bar-${i + 1}`);
     }
   }

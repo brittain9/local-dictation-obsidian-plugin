@@ -376,8 +376,21 @@
   animation-delay: 1.05s;
 }
 
+/* Crossfade between the muted listening state and the vibrant speech state.
+   Color uses currentColor on Lucide paths, so the accent shift flows through. */
+.side-dock-ribbon-action[data-local-stt-state="listening"] > svg,
+.side-dock-ribbon-action[data-local-stt-state="speech_detected"] > svg {
+  transition:
+    opacity 200ms ease-out,
+    color 200ms ease-out;
+}
+
 .side-dock-ribbon-action[data-local-stt-state="listening"] > svg {
-  opacity: 0.7;
+  opacity: 0.45;
+}
+
+.side-dock-ribbon-action[data-local-stt-state="speech_detected"] > svg {
+  color: var(--interactive-accent);
 }
 
 /* Live per-band FFT amplitude scales each bar via --local-stt-bar-N (1..6),

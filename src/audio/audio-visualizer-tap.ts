@@ -9,8 +9,23 @@
 const BAND_COUNT = 6;
 const FFT_SIZE = 512;
 const BAND_EDGES_HZ: readonly number[] = [80, 200, 500, 1000, 2000, 4000, 8000];
-const ATTACK = 0.6;
-const RELEASE = 0.15;
+
+/**
+ * dB window calibrated for speech. Defaults (-100, -30) leave normal speech
+ * (-50 to -25 dB) compressed into the bottom third of the byte range. The
+ * tighter (-85, -10) window stretches speech across the full 0-255 output.
+ * Matches MDN's Voice-change-O-matic visualization reference.
+ */
+const MIN_DECIBELS = -85;
+const MAX_DECIBELS = -10;
+
+/**
+ * PPM-style asymmetric smoothing: snap to peaks, decay slowly. The classic
+ * broadcast PPM uses 1.7 ms attack / 650 ms release; at 60 fps these map to
+ * coefficients ~1.0 and ~0.025. We trade a hair of snap for jitter resistance.
+ */
+const ATTACK = 0.95;
+const RELEASE = 0.06;
 
 export interface AudioBandReader {
   /** Returns smoothed band levels in [0, 1], length {@link BAND_COUNT}, or null when detached. */
@@ -40,6 +55,8 @@ export class AudioVisualizerTap implements AudioBandReader, AudioVisualizerAttac
     const analyser = audioContext.createAnalyser();
     analyser.fftSize = FFT_SIZE;
     analyser.smoothingTimeConstant = 0;
+    analyser.minDecibels = MIN_DECIBELS;
+    analyser.maxDecibels = MAX_DECIBELS;
     sourceNode.connect(analyser);
 
     this.analyser = analyser;
@@ -74,7 +91,9 @@ export class AudioVisualizerTap implements AudioBandReader, AudioVisualizerAttac
 
     for (let band = 0; band < BAND_COUNT; band++) {
       const range = this.bandRanges[band] as BandRange;
-      const raw = meanNormalized(buffer, range[0], range[1]);
+      // sqrt is a standard perceptual-loudness approximation: lifts moderate
+      // sounds visually without making peaks look saturated.
+      const raw = Math.sqrt(meanNormalized(buffer, range[0], range[1]));
       const previous = this.smoothed[band] as number;
       const coefficient = raw > previous ? ATTACK : RELEASE;
       this.smoothed[band] = previous + (raw - previous) * coefficient;
