@@ -356,6 +356,19 @@ describe('NoteSurface', () => {
     expect(surface.replaceAnchor('u2', 'SECOND', 'second').kind).toBe('replaced');
   });
 
+  it('rewrites a multi-utterance region without latching as span_mismatch', () => {
+    const { surface, view } = createSurface();
+
+    expect(append(surface, 'u1', 'first').kind).toBe('appended');
+    expect(append(surface, 'u2', 'second').kind).toBe('appended');
+
+    expect(surface.rewriteRegion({ from: 0, to: doc(view).length }, 'Cleaned.', [])).toEqual({
+      kind: 'rewritten',
+      range: { from: 0, to: 'first second'.length },
+    });
+    expect(doc(view)).toBe('Cleaned.');
+  });
+
   it('rewrites a changed region when the contained spans are allowed', () => {
     const { surface, view } = createSurface();
 
