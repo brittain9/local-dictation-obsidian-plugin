@@ -7,25 +7,12 @@ import {
   SMART_PARAGRAPH_PAUSE_MS,
   type TranscriptAppendInput,
   TranscriptRenderer,
-  type TranscriptTimestampRenderOptions,
 } from '../src/transcript/renderer';
-
-const DEFAULT_SESSION_START = new Date(2026, 4, 16, 14, 32).getTime();
-const DEFAULT_SPARSE_INTERVAL_MS = 30_000;
-
-function timestamps(
-  overrides: Partial<TranscriptTimestampRenderOptions> = {},
-): TranscriptTimestampRenderOptions {
-  return {
-    clock: 'elapsed',
-    density: 'sparse',
-    enabled: false,
-    header: true,
-    sessionStartUnixMs: DEFAULT_SESSION_START,
-    sparseIntervalMs: DEFAULT_SPARSE_INTERVAL_MS,
-    ...overrides,
-  };
-}
+import {
+  DEFAULT_SESSION_START_MS,
+  DEFAULT_SPARSE_INTERVAL_MS,
+  timestamps,
+} from './helpers/render-options';
 
 describe('formatLandmark', () => {
   it.each([
@@ -36,17 +23,17 @@ describe('formatLandmark', () => {
     [3_600_000, '(1:00:00)'],
     [3_723_000, '(1:02:03)'],
   ])('formats %i ms as %s', (elapsedMs, expected) => {
-    expect(formatLandmark(elapsedMs, DEFAULT_SESSION_START, 'elapsed')).toBe(expected);
+    expect(formatLandmark(elapsedMs, DEFAULT_SESSION_START_MS, 'elapsed')).toBe(expected);
   });
 
   it('formats wall-clock landmarks without seconds', () => {
-    expect(formatLandmark(65_000, DEFAULT_SESSION_START, 'wallclock')).toBe('(14:33)');
+    expect(formatLandmark(65_000, DEFAULT_SESSION_START_MS, 'wallclock')).toBe('(14:33)');
   });
 });
 
 describe('formatSessionHeader', () => {
   it('formats the local session start date and time', () => {
-    expect(formatSessionHeader(DEFAULT_SESSION_START)).toBe('[2026-05-16 14:32]');
+    expect(formatSessionHeader(DEFAULT_SESSION_START_MS)).toBe('[2026-05-16 14:32]');
   });
 });
 

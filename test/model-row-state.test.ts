@@ -70,7 +70,15 @@ function buildState(overrides?: Partial<ModelManagerState>): ModelManagerState {
   };
 }
 
-/** Retrieve a row by modelId, throwing if not found so tests fail clearly. */
+function selectionFor(modelId: string): SelectedModel {
+  return {
+    familyId: 'whisper',
+    kind: 'catalog_model',
+    modelId,
+    runtimeId: 'whisper_cpp',
+  };
+}
+
 function getRow(rows: ModelRowState[], modelId: string): ModelRowState {
   const row = rows.find((r) => r.model.modelId === modelId);
 
@@ -82,11 +90,11 @@ function getRow(rows: ModelRowState[], modelId: string): ModelRowState {
 }
 
 // ---------------------------------------------------------------------------
-// deriveModelRowStates — action rules
+// deriveModelRowStates
 // ---------------------------------------------------------------------------
 
 describe('deriveModelRowStates', () => {
-  it('sorts rows smallest to largest by total artifact size', () => {
+  it('sorts rows ascending by total artifact size', () => {
     const rows = deriveModelRowStates(buildState());
 
     expect(rows.map((r) => r.model.modelId)).toEqual([
@@ -95,267 +103,216 @@ describe('deriveModelRowStates', () => {
     ]);
   });
 
-  describe('action rules — not installed, no active install', () => {
-    it('allows install and details', () => {
-      const rows = deriveModelRowStates(buildState());
-      const row = getRow(rows, 'whisper_large_v3_turbo_q8_0');
+  describe('per-row allowed actions', () => {
+    it('idle, not installed → [install, details]', () => {
+      const row = getRow(deriveModelRowStates(buildState()), 'whisper_large_v3_turbo_q8_0');
 
-      expect(row.installed).toBe(false);
-      expect(row.isInstalling).toBe(false);
-      expect(row.isCanceling).toBe(false);
+      expect(row).toMatchObject({ installed: false, isInstalling: false, isCanceling: false });
       expect(row.allowedActions).toEqual(['install', 'details']);
     });
-  });
 
-  describe('action rules — not installed, different model installing', () => {
-    it('allows details only (install blocked)', () => {
-      const activeInstall = sampleActiveInstall();
-      // Large model is installing; small model is not installed.
-      const rows = deriveModelRowStates(buildState({ activeInstall }));
+    it('different model installing, this one not installed → [details] (install blocked)', () => {
+      const rows = deriveModelRowStates(buildState({ activeInstall: sampleActiveInstall() }));
       const smallRow = getRow(rows, 'whisper_small_en_q5_1');
 
-      expect(smallRow.installed).toBe(false);
-      expect(smallRow.isInstalling).toBe(false);
+      expect(smallRow).toMatchObject({ installed: false, isInstalling: false });
       expect(smallRow.allowedActions).toEqual(['details']);
     });
-  });
 
-  describe('action rules — currently installing', () => {
-    it('allows cancel and details', () => {
-      const activeInstall = sampleActiveInstall('installing');
-      const rows = deriveModelRowStates(buildState({ activeInstall }));
-      const row = getRow(rows, 'whisper_large_v3_turbo_q8_0');
-
-      expect(row.isInstalling).toBe(true);
-      expect(row.isCanceling).toBe(false);
-      expect(row.allowedActions).toEqual(['cancel', 'details']);
-    });
-  });
-
-  describe('action rules — currently canceling', () => {
-    it('allows details only', () => {
-      const activeInstall = sampleActiveInstall('canceling');
-      const rows = deriveModelRowStates(buildState({ activeInstall }));
-      const row = getRow(rows, 'whisper_large_v3_turbo_q8_0');
-
-      expect(row.isInstalling).toBe(false);
-      expect(row.isCanceling).toBe(true);
-      expect(row.allowedActions).toEqual(['details']);
-    });
-  });
-
-  describe('action rules — cancelStuck', () => {
-    it('allows details only', () => {
-      const activeInstall = sampleActiveInstall('cancelStuck');
-      const rows = deriveModelRowStates(buildState({ activeInstall }));
-      const row = getRow(rows, 'whisper_large_v3_turbo_q8_0');
-
-      expect(row.isCanceling).toBe(true);
-      expect(row.allowedActions).toEqual(['details']);
-    });
-  });
-
-  describe('action rules — installed, not selected', () => {
-    it('allows use, remove, and details', () => {
-      const rows = deriveModelRowStates(buildState({ installedModels: [sampleInstalledModel()] }));
-      const row = getRow(rows, 'whisper_large_v3_turbo_q8_0');
-
-      expect(row.installed).toBe(true);
-      expect(row.isSelected).toBe(false);
-      expect(row.allowedActions).toEqual(['use', 'remove', 'details']);
-    });
-  });
-
-  describe('action rules — installed, selected', () => {
-    it('allows selected (disabled) and details', () => {
-      const selectedModel: SelectedModel = {
-        familyId: 'whisper',
-        kind: 'catalog_model',
-        modelId: 'whisper_large_v3_turbo_q8_0',
-        runtimeId: 'whisper_cpp',
-      };
+    it('this row currently installing → [cancel, details]', () => {
       const rows = deriveModelRowStates(
-        buildState({ installedModels: [sampleInstalledModel()], selectedModel }),
+        buildState({ activeInstall: sampleActiveInstall('installing') }),
       );
       const row = getRow(rows, 'whisper_large_v3_turbo_q8_0');
 
-      expect(row.installed).toBe(true);
-      expect(row.isSelected).toBe(true);
+      expect(row).toMatchObject({ isInstalling: true, isCanceling: false });
+      expect(row.allowedActions).toEqual(['cancel', 'details']);
+    });
+
+    it.each([
+      'canceling',
+      'cancelStuck',
+    ] as const)('this row in phase %s → [details] only', (phase) => {
+      const rows = deriveModelRowStates(buildState({ activeInstall: sampleActiveInstall(phase) }));
+      const row = getRow(rows, 'whisper_large_v3_turbo_q8_0');
+
+      expect(row).toMatchObject({ isInstalling: false, isCanceling: true });
+      expect(row.allowedActions).toEqual(['details']);
+    });
+
+    it('installed, not selected → [use, remove, details]', () => {
+      const rows = deriveModelRowStates(buildState({ installedModels: [sampleInstalledModel()] }));
+      const row = getRow(rows, 'whisper_large_v3_turbo_q8_0');
+
+      expect(row).toMatchObject({ installed: true, isSelected: false });
+      expect(row.allowedActions).toEqual(['use', 'remove', 'details']);
+    });
+
+    it('installed and selected → [selected, details] (selected is disabled)', () => {
+      const rows = deriveModelRowStates(
+        buildState({
+          installedModels: [sampleInstalledModel()],
+          selectedModel: selectionFor('whisper_large_v3_turbo_q8_0'),
+        }),
+      );
+      const row = getRow(rows, 'whisper_large_v3_turbo_q8_0');
+
+      expect(row).toMatchObject({ installed: true, isSelected: true });
       expect(row.allowedActions).toEqual(['selected', 'details']);
     });
   });
 
-  describe('active install effects on other rows', () => {
-    it('use remains allowed on installed non-selected model during another install', () => {
-      const activeInstall = sampleActiveInstall('installing');
+  describe('cross-row effects of an active install', () => {
+    it('other installed rows keep [use, remove] available', () => {
       const rows = deriveModelRowStates(
         buildState({
-          activeInstall,
+          activeInstall: sampleActiveInstall('installing'),
           installedModels: [sampleInstalledModel('whisper_small_en_q5_1')],
         }),
       );
       const smallRow = getRow(rows, 'whisper_small_en_q5_1');
 
-      expect(smallRow.installed).toBe(true);
-      expect(smallRow.isSelected).toBe(false);
-      expect(smallRow.allowedActions).toContain('use');
-      expect(smallRow.allowedActions).toContain('remove');
+      expect(smallRow.allowedActions).toEqual(expect.arrayContaining(['use', 'remove']));
     });
 
-    it('selected action remains allowed on currently selected model during another install', () => {
-      const selectedModel: SelectedModel = {
-        familyId: 'whisper',
-        kind: 'catalog_model',
-        modelId: 'whisper_small_en_q5_1',
-        runtimeId: 'whisper_cpp',
-      };
-      const activeInstall = sampleActiveInstall('installing');
+    it('the currently selected row keeps [selected] available even mid-install', () => {
       const rows = deriveModelRowStates(
         buildState({
-          activeInstall,
+          activeInstall: sampleActiveInstall('installing'),
           installedModels: [sampleInstalledModel('whisper_small_en_q5_1')],
-          selectedModel,
+          selectedModel: selectionFor('whisper_small_en_q5_1'),
         }),
       );
       const smallRow = getRow(rows, 'whisper_small_en_q5_1');
 
-      expect(smallRow.isSelected).toBe(true);
+      expect(smallRow).toMatchObject({ isSelected: true });
       expect(smallRow.allowedActions).toContain('selected');
     });
 
-    it('cancel is only allowed on the actively installing model', () => {
-      const activeInstall = sampleActiveInstall('installing');
+    it('cancel is only available on the actively installing row', () => {
       const rows = deriveModelRowStates(
         buildState({
-          activeInstall,
+          activeInstall: sampleActiveInstall('installing'),
           installedModels: [sampleInstalledModel('whisper_small_en_q5_1')],
         }),
       );
-      const largeRow = getRow(rows, 'whisper_large_v3_turbo_q8_0');
-      const smallRow = getRow(rows, 'whisper_small_en_q5_1');
 
-      expect(largeRow.allowedActions).toContain('cancel');
-      expect(smallRow.allowedActions).not.toContain('cancel');
+      expect(getRow(rows, 'whisper_large_v3_turbo_q8_0').allowedActions).toContain('cancel');
+      expect(getRow(rows, 'whisper_small_en_q5_1').allowedActions).not.toContain('cancel');
     });
 
-    it('install is blocked on all models when any install is active', () => {
-      const activeInstall = sampleActiveInstall('installing');
-      const rows = deriveModelRowStates(buildState({ activeInstall }));
+    it('install is blocked on all rows when any install is active', () => {
+      const rows = deriveModelRowStates(
+        buildState({ activeInstall: sampleActiveInstall('installing') }),
+      );
 
       for (const row of rows) {
         expect(row.allowedActions).not.toContain('install');
       }
     });
 
-    it('remove is blocked on the actively installing model', () => {
-      const activeInstall = sampleActiveInstall('installing');
+    it('remove is blocked on the actively installing row', () => {
       const rows = deriveModelRowStates(
         buildState({
-          activeInstall,
+          activeInstall: sampleActiveInstall('installing'),
           installedModels: [sampleInstalledModel('whisper_large_v3_turbo_q8_0')],
         }),
       );
-      const largeRow = getRow(rows, 'whisper_large_v3_turbo_q8_0');
+      const row = getRow(rows, 'whisper_large_v3_turbo_q8_0');
 
-      expect(largeRow.allowedActions).not.toContain('remove');
-      expect(largeRow.allowedActions).toContain('cancel');
+      expect(row.allowedActions).not.toContain('remove');
+      expect(row.allowedActions).toContain('cancel');
     });
   });
 });
 
 // ---------------------------------------------------------------------------
-// deriveCurrentModelDisplay — empty state
+// deriveCurrentModelDisplay
 // ---------------------------------------------------------------------------
 
 describe('deriveCurrentModelDisplay', () => {
-  describe('empty state — no selected model', () => {
-    it('returns the no-model-selected empty state', () => {
-      const display = deriveCurrentModelDisplay(buildState());
+  it('returns the empty-state display when no model is selected', () => {
+    const display = deriveCurrentModelDisplay(buildState());
 
-      expect(display.displayName).toBe('No model selected');
-      expect(display.engineLabel).toBe('');
-      expect(display.detail).toBe('Choose an installed model or validate an external file.');
-      expect(display.installedLabel).toBe('Not selected');
-      expect(display.sourceLabel).toBe('');
-      expect(display.sizeBytes).toBeNull();
-      expect(display.installLocation).toBeNull();
-      expect(display.resolvedPath).toBeNull();
+    expect(display).toMatchObject({
+      detail: 'Choose an installed model or validate an external file.',
+      displayName: 'No model selected',
+      engineLabel: '',
+      installLocation: null,
+      installedLabel: 'Not selected',
+      resolvedPath: null,
+      sizeBytes: null,
+      sourceLabel: '',
     });
   });
 
-  describe('catalog model — installed', () => {
-    it('returns installed model details from installed records', () => {
-      const selectedModel: SelectedModel = {
-        familyId: 'whisper',
-        kind: 'catalog_model',
-        modelId: 'whisper_large_v3_turbo_q8_0',
-        runtimeId: 'whisper_cpp',
-      };
-      const installed = sampleInstalledModel('whisper_large_v3_turbo_q8_0');
-      const display = deriveCurrentModelDisplay(
-        buildState({ selectedModel, installedModels: [installed] }),
-      );
+  it('hydrates from installed records when the selected catalog model is installed', () => {
+    const installed = sampleInstalledModel('whisper_large_v3_turbo_q8_0');
+    const display = deriveCurrentModelDisplay(
+      buildState({
+        selectedModel: selectionFor('whisper_large_v3_turbo_q8_0'),
+        installedModels: [installed],
+      }),
+    );
 
-      expect(display.displayName).toBe('Whisper Large V3 Turbo Q8_0');
-      expect(display.engineLabel).toBe('Whisper');
-      expect(display.installedLabel).toBe('Installed');
-      expect(display.sourceLabel).toBe('Managed download');
-      expect(display.sizeBytes).toBe(900);
-      expect(display.installLocation).toBe('/models/whisper_cpp/whisper_large_v3_turbo_q8_0');
-      expect(display.resolvedPath).toBe(
-        '/models/whisper_cpp/whisper_large_v3_turbo_q8_0/model.bin',
-      );
+    expect(display).toMatchObject({
+      displayName: 'Whisper Large V3 Turbo Q8_0',
+      engineLabel: 'Whisper',
+      installLocation: '/models/whisper_cpp/whisper_large_v3_turbo_q8_0',
+      installedLabel: 'Installed',
+      resolvedPath: '/models/whisper_cpp/whisper_large_v3_turbo_q8_0/model.bin',
+      sizeBytes: 900,
+      sourceLabel: 'Managed download',
     });
   });
 
-  describe('catalog model — not installed', () => {
-    it('shows not-installed label and falls back to catalog size', () => {
-      const selectedModel: SelectedModel = {
-        familyId: 'whisper',
-        kind: 'catalog_model',
-        modelId: 'whisper_small_en_q5_1',
-        runtimeId: 'whisper_cpp',
-      };
-      const display = deriveCurrentModelDisplay(buildState({ selectedModel, installedModels: [] }));
+  it('falls back to catalog size and clears install paths when a catalog model is not installed', () => {
+    const display = deriveCurrentModelDisplay(
+      buildState({
+        selectedModel: selectionFor('whisper_small_en_q5_1'),
+      }),
+    );
 
-      expect(display.displayName).toBe('Whisper Small English Q5_1');
-      expect(display.installedLabel).toBe('Not installed');
-      expect(display.sizeBytes).toBe(100);
-      expect(display.installLocation).toBeNull();
-      expect(display.resolvedPath).toBeNull();
-    });
-
-    it('falls back to modelId as displayName when catalog entry is absent', () => {
-      const selectedModel: SelectedModel = {
-        familyId: 'whisper',
-        kind: 'catalog_model',
-        modelId: 'unknown_model_xyz',
-        runtimeId: 'whisper_cpp',
-      };
-      const display = deriveCurrentModelDisplay(buildState({ selectedModel }));
-
-      expect(display.displayName).toBe('unknown_model_xyz');
-      expect(display.sizeBytes).toBeNull();
+    expect(display).toMatchObject({
+      displayName: 'Whisper Small English Q5_1',
+      installLocation: null,
+      installedLabel: 'Not installed',
+      resolvedPath: null,
+      sizeBytes: 100,
     });
   });
 
-  describe('external file model', () => {
-    it('uses basename as displayName and filePath as resolvedPath', () => {
-      const selectedModel: SelectedModel = {
-        familyId: 'whisper',
-        filePath: '/tmp/models/custom-model.bin',
-        kind: 'external_file',
-        runtimeId: 'whisper_cpp',
-      };
-      const display = deriveCurrentModelDisplay(buildState({ selectedModel }));
+  it('falls back to modelId for displayName when the catalog entry is missing', () => {
+    const display = deriveCurrentModelDisplay(
+      buildState({ selectedModel: selectionFor('unknown_model_xyz') }),
+    );
 
-      expect(display.displayName).toBe('custom-model.bin');
-      expect(display.engineLabel).toBe('Whisper');
-      expect(display.installedLabel).toBe('External file');
-      expect(display.sourceLabel).toBe('External file');
-      expect(display.sizeBytes).toBeNull();
-      expect(display.installLocation).toBeNull();
-      expect(display.resolvedPath).toBe('/tmp/models/custom-model.bin');
+    expect(display).toMatchObject({
+      displayName: 'unknown_model_xyz',
+      sizeBytes: null,
+    });
+  });
+
+  it('treats an external_file selection as its own source with the file basename', () => {
+    const display = deriveCurrentModelDisplay(
+      buildState({
+        selectedModel: {
+          familyId: 'whisper',
+          filePath: '/tmp/models/custom-model.bin',
+          kind: 'external_file',
+          runtimeId: 'whisper_cpp',
+        },
+      }),
+    );
+
+    expect(display).toMatchObject({
+      displayName: 'custom-model.bin',
+      engineLabel: 'Whisper',
+      installLocation: null,
+      installedLabel: 'External file',
+      resolvedPath: '/tmp/models/custom-model.bin',
+      sizeBytes: null,
+      sourceLabel: 'External file',
     });
   });
 });

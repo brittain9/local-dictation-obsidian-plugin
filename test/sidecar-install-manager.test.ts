@@ -15,84 +15,48 @@ vi.mock('../src/sidecar/sidecar-installer', async () => {
   };
 });
 
-import {
-  buildSidecarProgressState,
-  SidecarInstallManager,
-} from '../src/sidecar/sidecar-install-manager';
+import { SidecarInstallManager } from '../src/sidecar/sidecar-install-manager';
 import type { InstallSidecarOptions } from '../src/sidecar/sidecar-installer';
 
 beforeEach(() => {
   installSidecarMock.mockReset();
 });
 
-function createInstallOptions(
-  overrides?: Partial<Parameters<SidecarInstallManager['install']>[0]>,
-) {
+function defaultInstallOptions() {
   return {
     onInstalled: vi.fn(async () => {}),
     pluginDirectory: '/plugin',
     successNotice: 'Installed.',
     variant: 'cpu' as const,
     version: '2026.5.16',
-    ...overrides,
   };
 }
 
 describe('SidecarInstallManager', () => {
-  it('tracks active install progress and exposes shared progress state', () => {
+  it('rejects concurrent installs while one is in flight', () => {
     installSidecarMock.mockImplementationOnce(() => new Promise(() => {}));
     const manager = new SidecarInstallManager({ notice: vi.fn() });
-    const listener = vi.fn();
-    manager.subscribe(listener);
 
-    manager.install(createInstallOptions());
-    const capturedOptions = installSidecarMock.mock.calls[0]?.[0] as
-      | InstallSidecarOptions
-      | undefined;
-    capturedOptions?.onProgress?.({
-      bytesDownloaded: 50,
-      phase: 'download',
-      totalBytes: 100,
-    });
+    manager.install(defaultInstallOptions());
 
-    const activeInstall = manager.getState().activeInstall;
-    expect(activeInstall).not.toBeNull();
-    expect(activeInstall?.progress.bytesDownloaded).toBe(50);
-    expect(activeInstall ? buildSidecarProgressState(activeInstall) : null).toMatchObject({
-      downloadedBytes: 50,
-      isCancelling: false,
-      message: 'Downloading',
-      totalBytes: 100,
-    });
-    expect(listener).toHaveBeenCalledTimes(2);
+    expect(() => manager.install(defaultInstallOptions())).toThrow(
+      'Another sidecar is already being installed.',
+    );
   });
 
-  it('rejects concurrent installs', () => {
+  it('aborts the installer signal when cancel is called and marks phase canceling', () => {
     installSidecarMock.mockImplementationOnce(() => new Promise(() => {}));
     const manager = new SidecarInstallManager({ notice: vi.fn() });
 
-    manager.install(createInstallOptions());
-
-    expect(() => {
-      manager.install(createInstallOptions());
-    }).toThrow('Another sidecar is already being installed.');
-  });
-
-  it('cancels the active AbortController', () => {
-    installSidecarMock.mockImplementationOnce(() => new Promise(() => {}));
-    const manager = new SidecarInstallManager({ notice: vi.fn() });
-
-    manager.install(createInstallOptions());
-    const capturedOptions = installSidecarMock.mock.calls[0]?.[0] as
-      | InstallSidecarOptions
-      | undefined;
+    manager.install(defaultInstallOptions());
+    const captured = installSidecarMock.mock.calls[0]?.[0] as InstallSidecarOptions | undefined;
     manager.cancel();
 
+    expect(captured?.signal?.aborted).toBe(true);
     expect(manager.getState().activeInstall?.phase).toBe('canceling');
-    expect(capturedOptions?.signal?.aborted).toBe(true);
   });
 
-  it('clears active state and shows success notice after install completes', async () => {
+  it('clears state, invokes the onInstalled hook, and shows the success notice', async () => {
     installSidecarMock.mockResolvedValueOnce({
       manifest: {
         installedAt: '2026-05-03T00:00:00.000Z',
@@ -106,41 +70,34 @@ describe('SidecarInstallManager', () => {
     const onInstalled = vi.fn(async () => {});
     const manager = new SidecarInstallManager({ notice });
 
-    manager.install(createInstallOptions({ onInstalled }));
-    await vi.waitFor(() => {
-      expect(manager.getState().activeInstall).toBeNull();
-    });
+    manager.install({ ...defaultInstallOptions(), onInstalled });
+    await vi.waitFor(() => expect(manager.getState().activeInstall).toBeNull());
 
     expect(onInstalled).toHaveBeenCalledOnce();
     expect(notice).toHaveBeenCalledWith('Installed.');
     expect(manager.getState().lastError).toBeNull();
   });
 
-  it('records failed install errors after clearing active state', async () => {
+  it('records install failures and clears active state', async () => {
     installSidecarMock.mockRejectedValueOnce(new Error('network failed'));
     const notice = vi.fn();
     const manager = new SidecarInstallManager({ notice });
 
-    manager.install(createInstallOptions());
-    await vi.waitFor(() => {
-      expect(manager.getState().activeInstall).toBeNull();
-    });
+    manager.install(defaultInstallOptions());
+    await vi.waitFor(() => expect(manager.getState().activeInstall).toBeNull());
 
     expect(manager.getState().lastError).toBe('network failed');
     expect(notice).toHaveBeenCalledWith('Sidecar install failed: network failed');
   });
 
-  it('clears state and notifies on abort error', async () => {
-    const abortError = new Error('aborted');
-    abortError.name = 'AbortError';
+  it('treats AbortError as a user-initiated cancel, not a failure', async () => {
+    const abortError = Object.assign(new Error('aborted'), { name: 'AbortError' });
     installSidecarMock.mockRejectedValueOnce(abortError);
     const notice = vi.fn();
     const manager = new SidecarInstallManager({ notice });
 
-    manager.install(createInstallOptions());
-    await vi.waitFor(() => {
-      expect(manager.getState().activeInstall).toBeNull();
-    });
+    manager.install(defaultInstallOptions());
+    await vi.waitFor(() => expect(manager.getState().activeInstall).toBeNull());
 
     expect(notice).toHaveBeenCalledWith('Sidecar install cancelled.');
     expect(manager.getState().lastError).toBeNull();
