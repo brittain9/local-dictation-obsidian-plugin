@@ -14,33 +14,9 @@ import { Session } from '../src/session/session';
 import type {
   TranscriptInsertProjection,
   TranscriptRenderOptions,
-  TranscriptTimestampRenderOptions,
 } from '../src/transcript/renderer';
 import { transcript } from './fixtures/transcript';
-
-const SESSION_START = new Date(2026, 4, 16, 14, 32).getTime();
-
-function timestamps(
-  overrides: Partial<TranscriptTimestampRenderOptions> = {},
-): TranscriptTimestampRenderOptions {
-  return {
-    clock: 'elapsed',
-    density: 'sparse',
-    enabled: false,
-    header: true,
-    sessionStartUnixMs: SESSION_START,
-    sparseIntervalMs: 30_000,
-    ...overrides,
-  };
-}
-
-function renderOptions(overrides: Partial<TranscriptRenderOptions> = {}): TranscriptRenderOptions {
-  return {
-    timestamps: timestamps(),
-    transcriptFormatting: 'space',
-    ...overrides,
-  };
-}
+import { renderOptions, timestamps } from './helpers/render-options';
 
 class FakeSurface {
   public readonly appendCalls: Array<{

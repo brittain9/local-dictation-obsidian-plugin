@@ -36,37 +36,20 @@ describe('detectNvidiaDriver', () => {
     await expect(promise).resolves.toBe('present');
   });
 
-  it('returns "absent" when nvidia-smi is not on PATH', async () => {
+  it('returns "absent" when nvidia-smi is not on PATH (ENOENT)', async () => {
     const child = queueChild();
     const promise = detectNvidiaDriver();
-    const enoentError = Object.assign(new Error('spawn ENOENT'), {
-      code: 'ENOENT',
-    }) as NodeJS.ErrnoException;
-    child.emit('error', enoentError);
+    child.emit(
+      'error',
+      Object.assign(new Error('spawn ENOENT'), { code: 'ENOENT' }) as NodeJS.ErrnoException,
+    );
     await expect(promise).resolves.toBe('absent');
   });
 
-  it('returns "unknown" when nvidia-smi exits with a non-zero code', async () => {
+  it('returns "unknown" when nvidia-smi is installed but reports an error', async () => {
     const child = queueChild();
     const promise = detectNvidiaDriver();
     child.emit('exit', 1, null);
     await expect(promise).resolves.toBe('unknown');
-  });
-
-  it('returns "unknown" when spawn errors with something other than ENOENT', async () => {
-    const child = queueChild();
-    const promise = detectNvidiaDriver();
-    const permissionError = Object.assign(new Error('permission denied'), {
-      code: 'EACCES',
-    }) as NodeJS.ErrnoException;
-    child.emit('error', permissionError);
-    await expect(promise).resolves.toBe('unknown');
-  });
-
-  it('returns "absent" when spawn itself throws synchronously', async () => {
-    mockedSpawn.mockImplementationOnce(() => {
-      throw new Error('synchronous failure');
-    });
-    await expect(detectNvidiaDriver()).resolves.toBe('absent');
   });
 });

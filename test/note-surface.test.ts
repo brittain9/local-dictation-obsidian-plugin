@@ -13,35 +13,8 @@ import {
 } from '../src/editor/dictation-anchor-extension';
 import { NoteSurface } from '../src/editor/note-surface';
 import type { DictationAnchor } from '../src/settings/plugin-settings';
-import {
-  TranscriptRenderer,
-  type TranscriptRenderOptions,
-  type TranscriptTimestampRenderOptions,
-} from '../src/transcript/renderer';
-
-const SESSION_START = new Date(2026, 4, 16, 14, 32).getTime();
-
-function timestamps(
-  overrides: Partial<TranscriptTimestampRenderOptions> = {},
-): TranscriptTimestampRenderOptions {
-  return {
-    clock: 'elapsed',
-    density: 'sparse',
-    enabled: false,
-    header: true,
-    sessionStartUnixMs: SESSION_START,
-    sparseIntervalMs: 30_000,
-    ...overrides,
-  };
-}
-
-function renderOptions(overrides: Partial<TranscriptRenderOptions> = {}): TranscriptRenderOptions {
-  return {
-    timestamps: timestamps(),
-    transcriptFormatting: 'space',
-    ...overrides,
-  };
-}
+import { TranscriptRenderer, type TranscriptRenderOptions } from '../src/transcript/renderer';
+import { renderOptions, timestamps } from './helpers/render-options';
 
 class FakeEditorView {
   public lastUpdate: ViewUpdate | null = null;
