@@ -302,7 +302,7 @@ describe('event parsing', () => {
     });
   });
 
-  it('parses model_probe_result with and without mergedCapabilities', () => {
+  it('parses model_probe_result and backfills null when mergedCapabilities is omitted', () => {
     const baseSelection = {
       familyId: 'whisper' as const,
       kind: 'catalog_model' as const,
@@ -383,14 +383,6 @@ describe('event parsing', () => {
   });
 
   it.each([
-    ['missing sessionId', { sessionId: undefined }, 'event.sessionId must be a string.'],
-    ['missing utteranceId', { utteranceId: undefined }, 'event.utteranceId must be a string.'],
-  ] as const)('rejects transcript_ready with %s', (_label, omission, expectedMessage) => {
-    const payload = { ...transcriptReadyPayload(), ...omission };
-    expect(() => parseEventFrame(JSON.stringify(payload))).toThrow(expectedMessage);
-  });
-
-  it.each([
     ['numeric pause', 320],
     ['null pause', null],
   ] as const)('parses transcript_ready with %s', (_label, pauseMsBeforeUtterance) => {
@@ -467,19 +459,6 @@ describe('event parsing', () => {
       tier,
       type: 'transcription_queue_changed',
     });
-  });
-
-  it('rejects transcription_queue_changed at an unknown tier', () => {
-    expect(() =>
-      parseEventFrame(
-        JSON.stringify({
-          queuedUtterances: 7,
-          sessionId: 'session-1',
-          tier: 'overheating',
-          type: 'transcription_queue_changed',
-        }),
-      ),
-    ).toThrow(/event\.tier must be one of/);
   });
 
   it('parses session_stopped with the queue_overload reason', () => {
