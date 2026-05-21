@@ -1,50 +1,17 @@
 import { describe, expect, it } from 'vitest';
 import type { ActiveInstallInfo, ModelManagerState } from '../src/models/model-install-manager';
-import type {
-  InstalledModelRecord,
-  ModelInstallUpdateRecord,
-  SelectedModel,
-} from '../src/models/model-management-types';
+import type { SelectedModel } from '../src/models/model-management-types';
 import {
   deriveCurrentModelDisplay,
   deriveModelRowStates,
   type ModelRowState,
 } from '../src/models/model-row-state';
 import { sampleCatalog } from './fixtures/catalog';
+import { sampleInstalledModel, sampleInstallUpdate } from './fixtures/models';
 
 // ---------------------------------------------------------------------------
-// Fixtures
+// Fixtures (test-local; shared model/install fixtures live in fixtures/models.ts)
 // ---------------------------------------------------------------------------
-
-function sampleInstalledModel(modelId = 'whisper_large_v3_turbo_q8_0'): InstalledModelRecord {
-  return {
-    catalogVersion: 1,
-    familyId: 'whisper',
-    installPath: `/models/whisper_cpp/${modelId}`,
-    installedAtUnixMs: 1_700_000_000_000,
-    modelId,
-    runtimeId: 'whisper_cpp',
-    runtimePath: `/models/whisper_cpp/${modelId}/model.bin`,
-    totalSizeBytes: modelId === 'whisper_large_v3_turbo_q8_0' ? 900 : 100,
-  };
-}
-
-function sampleInstallUpdate(
-  overrides?: Partial<ModelInstallUpdateRecord>,
-): ModelInstallUpdateRecord {
-  return {
-    details: null,
-    downloadedBytes: 50,
-    familyId: 'whisper',
-    installId: 'install-1',
-    message: 'Downloading',
-    modelId: 'whisper_large_v3_turbo_q8_0',
-    runtimeId: 'whisper_cpp',
-    state: 'downloading',
-    totalBytes: 900,
-    ...overrides,
-  };
-}
 
 function sampleActiveInstall(phase: ActiveInstallInfo['phase'] = 'installing'): ActiveInstallInfo {
   return {

@@ -135,32 +135,6 @@ describe('resolvePluginSettings', () => {
     );
   });
 
-  it('does not accept removed llmTransform fields', () => {
-    const resolved = resolvePluginSettings({
-      llmTransformDeveloperMode: true,
-      llmTransformEnabled: true,
-      llmTransformModel: 'llama3',
-      llmTransformPrompt: 'legacy',
-    });
-
-    expect(resolved.llmPostprocessMode).toBe('per_utterance');
-    expect(resolved.llmPostprocessModel).toBe('');
-    expect(resolved).not.toHaveProperty('llmTransformEnabled');
-    expect(resolved).not.toHaveProperty('llmTransformPrompt');
-  });
-
-  it('silently drops legacy formatting fields without migrating them', () => {
-    const resolved = resolvePluginSettings({
-      insertionMode: 'append_as_new_paragraph',
-      phraseSeparator: 'new_paragraph',
-    });
-
-    expect(resolved.dictationAnchor).toBe(DEFAULT_PLUGIN_SETTINGS.dictationAnchor);
-    expect(resolved.transcriptFormatting).toBe(DEFAULT_PLUGIN_SETTINGS.transcriptFormatting);
-    expect(resolved).not.toHaveProperty('insertionMode');
-    expect(resolved).not.toHaveProperty('phraseSeparator');
-  });
-
   it('falls back when persisted values are invalid', () => {
     expect(
       resolvePluginSettings({

@@ -8,13 +8,17 @@ import {
 import type {
   CatalogModelSelection,
   EngineCapabilitiesRecord,
-  InstalledModelRecord,
   ModelInstallUpdateRecord,
-  ModelStoreRecord,
 } from '../src/models/model-management-types';
 import { DEFAULT_PLUGIN_SETTINGS, type PluginSettings } from '../src/settings/plugin-settings';
 import type { SidecarEvent } from '../src/sidecar/protocol';
 import { sampleCatalog } from './fixtures/catalog';
+import {
+  sampleInstalledModel,
+  sampleInstallUpdate,
+  sampleModelStore,
+  sampleSelection,
+} from './fixtures/models';
 
 // ---------------------------------------------------------------------------
 // Shared helpers (pure exports)
@@ -188,15 +192,7 @@ describe('ModelInstallManager', () => {
         installId: 'install-refresh',
       });
       harness.sidecarConnection.listInstalledModels.mockResolvedValueOnce({
-        models: [
-          sampleInstalledModel(),
-          {
-            ...sampleInstalledModel(),
-            installPath: '/models/whisper_cpp/whisper_small_en_q5_1',
-            modelId: 'whisper_small_en_q5_1',
-            totalSizeBytes: 100,
-          },
-        ],
+        models: [sampleInstalledModel(), sampleInstalledModel('whisper_small_en_q5_1')],
       });
       emitInstallUpdate(harness, {
         installId: 'install-refresh',
@@ -297,15 +293,7 @@ describe('ModelInstallManager', () => {
       await harness.manager.cancel();
       vi.advanceTimersByTime(30_000);
       harness.sidecarConnection.listInstalledModels.mockResolvedValueOnce({
-        models: [
-          sampleInstalledModel(),
-          {
-            ...sampleInstalledModel(),
-            installPath: '/models/whisper_cpp/whisper_small_en_q5_1',
-            modelId: 'whisper_small_en_q5_1',
-            totalSizeBytes: 100,
-          },
-        ],
+        models: [sampleInstalledModel(), sampleInstalledModel('whisper_small_en_q5_1')],
       });
 
       await harness.manager.dismissCancelStuck();
@@ -483,6 +471,40 @@ describe('ModelInstallManager', () => {
 
       expect(harness.getSettings().selectedModel).toEqual(sampleSelection());
     });
+
+    it('auto-selects the just-installed model when nothing is currently selected', async () => {
+      // First-install UX: a fresh user installing their first model shouldn't
+      // need a second "Use" click. After completion, the manager probes and
+      // persists the selection automatically.
+      configureSidecarForInit(harness.sidecarConnection);
+      await harness.manager.init();
+      expect(harness.getSettings().selectedModel).toBeNull();
+      harness.sidecarConnection.probeModelSelection.mockResolvedValueOnce(sampleReadyProbeResult());
+
+      emitInstallUpdate(harness, { installId: 'install-auto' });
+      emitInstallUpdate(harness, { installId: 'install-auto', state: 'completed' });
+
+      await vi.waitFor(() => {
+        expect(harness.getSettings().selectedModel).toEqual(sampleSelection());
+      });
+    });
+
+    it('does not auto-select after install when a selection already exists', async () => {
+      const existing = sampleSelection('whisper_small_en_q5_1');
+      harness = createManagerHarness({ selectedModel: existing });
+      configureSidecarForInit(harness.sidecarConnection);
+      await harness.manager.init();
+      harness.sidecarConnection.probeModelSelection.mockClear();
+
+      emitInstallUpdate(harness, { installId: 'install-keep' });
+      emitInstallUpdate(harness, { installId: 'install-keep', state: 'completed' });
+
+      await vi.waitFor(() => {
+        expect(harness.sidecarConnection.listInstalledModels).toHaveBeenCalledTimes(2);
+      });
+      expect(harness.getSettings().selectedModel).toEqual(existing);
+      expect(harness.sidecarConnection.probeModelSelection).not.toHaveBeenCalled();
+    });
   });
 
   describe('selectedModelCapabilities', () => {
@@ -656,29 +678,8 @@ function emitInstallUpdate(harness: ManagerHarness, overrides?: Partial<ModelIns
 }
 
 // ---------------------------------------------------------------------------
-// Fixtures
+// Fixtures (test-local; shared model/install fixtures live in fixtures/models.ts)
 // ---------------------------------------------------------------------------
-
-function sampleInstalledModel(): InstalledModelRecord {
-  return {
-    catalogVersion: 1,
-    familyId: 'whisper',
-    installPath: '/models/whisper_cpp/whisper_large_v3_turbo_q8_0',
-    installedAtUnixMs: 1_700_000_000_000,
-    modelId: 'whisper_large_v3_turbo_q8_0',
-    runtimeId: 'whisper_cpp',
-    runtimePath: '/models/whisper_cpp/whisper_large_v3_turbo_q8_0/model.bin',
-    totalSizeBytes: 900,
-  };
-}
-
-function sampleModelStore(): ModelStoreRecord {
-  return {
-    overridePath: null,
-    path: '/models',
-    usingDefaultPath: true,
-  };
-}
 
 function sampleSystemInfo() {
   return {
@@ -714,32 +715,6 @@ function sampleSystemInfo() {
     sidecarVersion: '0.0.0-test',
     systemInfo: 'stub',
     type: 'system_info' as const,
-  };
-}
-
-function sampleInstallUpdate(
-  overrides?: Partial<ModelInstallUpdateRecord>,
-): ModelInstallUpdateRecord {
-  return {
-    details: null,
-    downloadedBytes: 50,
-    familyId: 'whisper',
-    installId: 'install-1',
-    message: 'Downloading',
-    modelId: 'whisper_large_v3_turbo_q8_0',
-    runtimeId: 'whisper_cpp',
-    state: 'downloading',
-    totalBytes: 900,
-    ...overrides,
-  };
-}
-
-function sampleSelection(modelId = 'whisper_large_v3_turbo_q8_0'): CatalogModelSelection {
-  return {
-    familyId: 'whisper',
-    kind: 'catalog_model',
-    modelId,
-    runtimeId: 'whisper_cpp',
   };
 }
 

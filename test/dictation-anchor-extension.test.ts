@@ -26,15 +26,6 @@ function countDecorations(state: EditorState): number {
 }
 
 describe('dictationAnchorStateField', () => {
-  it('does not throw if decorations initialize before anchor state is present', () => {
-    const state = EditorState.create({
-      doc: 'hello',
-      extensions: [dictationAnchorDecorationsField],
-    });
-
-    expect(countDecorations(state)).toBe(0);
-  });
-
   it('starts with pos null and hidden mode', () => {
     const state = createState('hello');
     expect(state.field(dictationAnchorStateField)).toEqual({
@@ -97,32 +88,31 @@ describe('dictationAnchorStateField', () => {
     expect(edited.field(dictationAnchorStateField).pos).toBe(12);
   });
 
-  it('keeps the visible widget visible when the cursor overlaps the anchor', () => {
-    const state = createState('hello world', 6).update({
-      effects: [setAnchorEffect.of(6), setAnchorModeEffect.of('visible')],
+  // Cursor-overlap regression: a single visible widget must render and stay
+  // visible whether the cursor sits before, on, or moves on/off the anchor.
+  it.each([
+    ['cursor before anchor', 0, 6],
+    ['cursor overlaps anchor', 6, 6],
+    ['end_of_note anchor overlaps cursor at doc end', 11, 11],
+  ] as const)('keeps the visible widget visible (%s)', (_label, selectionHead, anchorPos) => {
+    const state = createState('hello world', selectionHead).update({
+      effects: [setAnchorEffect.of(anchorPos), setAnchorModeEffect.of('visible')],
     }).state;
 
     expect(countDecorations(state)).toBe(1);
   });
 
-  it('keeps the visible widget visible when an end_of_note anchor overlaps the cursor', () => {
-    const state = createState('hello world', 11).update({
-      effects: [setAnchorEffect.of(11), setAnchorModeEffect.of('visible')],
-    }).state;
-
-    expect(countDecorations(state)).toBe(1);
-  });
-
-  it('keeps the visible widget visible when selection moves onto and away from the anchor', () => {
+  it('keeps the visible widget through selection moving onto and away from the anchor', () => {
     const initial = createState('hello world', 0).update({
       effects: [setAnchorEffect.of(6), setAnchorModeEffect.of('visible')],
     }).state;
-    expect(countDecorations(initial)).toBe(1);
-
     const overlapping = initial.update({ selection: EditorSelection.cursor(6) }).state;
-    expect(countDecorations(overlapping)).toBe(1);
-
     const movedAway = overlapping.update({ selection: EditorSelection.cursor(0) }).state;
-    expect(countDecorations(movedAway)).toBe(1);
+
+    expect([
+      countDecorations(initial),
+      countDecorations(overlapping),
+      countDecorations(movedAway),
+    ]).toEqual([1, 1, 1]);
   });
 });

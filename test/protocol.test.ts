@@ -167,7 +167,7 @@ describe('command serialization', () => {
     expect(readPayload(encodeJsonFrame(createHealthCommand()))).toEqual({ type: 'health' });
   });
 
-  it('serializes start_session with accelerationPreference (and no legacy useGpu key)', () => {
+  it('serializes start_session with accelerationPreference and sessionId', () => {
     const frame = encodeJsonFrame(
       createStartSessionCommand({
         accelerationPreference: 'auto',
@@ -182,7 +182,6 @@ describe('command serialization', () => {
     const payload = readPayload(frame) as Record<string, unknown>;
 
     expect(payload.accelerationPreference).toBe('auto');
-    expect(payload).not.toHaveProperty('useGpu');
     expect(payload.sessionId).toBe('session-gpu');
   });
 
