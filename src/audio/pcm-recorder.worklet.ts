@@ -1,5 +1,5 @@
 import { PCM_SAMPLE_RATE_HZ, PCM_SAMPLES_PER_FRAME } from '../shared/pcm-format';
-import { clearChannels, mixChannelsToMono, PcmFrameProcessor } from './pcm-frame-processor';
+import { clearChannels, PcmFrameProcessor } from './pcm-frame-processor';
 import { PCM_RECORDER_WORKLET_NAME } from './pcm-recorder-worklet-shared';
 
 declare abstract class AudioWorkletProcessor {
@@ -46,9 +46,7 @@ class PcmRecorderProcessor extends AudioWorkletProcessor {
       return true;
     }
 
-    const monoChunk = mixChannelsToMono(inputChannels);
-
-    for (const frame of this.frameProcessor.push(monoChunk)) {
+    for (const frame of this.frameProcessor.pushChannels(inputChannels)) {
       this.port.postMessage(frame.buffer, [frame.buffer]);
     }
 

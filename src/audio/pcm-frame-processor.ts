@@ -77,6 +77,34 @@ export class PcmFrameProcessor {
     return completedFrames;
   }
 
+  pushChannels(inputChannels: Float32Array[]): Int16Array[] {
+    if (inputChannels.length === 0) {
+      return [];
+    }
+
+    const firstChannel = inputChannels[0];
+    if (firstChannel === undefined) {
+      return [];
+    }
+
+    if (inputChannels.length === 1) {
+      return this.push(firstChannel);
+    }
+
+    const sampleCount = firstChannel.length;
+    const monoSamples = new Float32Array(sampleCount);
+
+    for (let sampleIndex = 0; sampleIndex < sampleCount; sampleIndex += 1) {
+      let sum = 0;
+      for (const channel of inputChannels) {
+        sum += channel[sampleIndex] ?? 0;
+      }
+      monoSamples[sampleIndex] = sum / inputChannels.length;
+    }
+
+    return this.push(monoSamples);
+  }
+
   reset(): void {
     this.frameBuffer.fill(0);
     this.frameOffset = 0;
@@ -85,33 +113,6 @@ export class PcmFrameProcessor {
     this.previousSample = null;
     this.previousSamplePosition = 0;
   }
-}
-
-export function mixChannelsToMono(inputChannels: Float32Array[]): Float32Array {
-  if (inputChannels.length === 0) {
-    return new Float32Array(0);
-  }
-
-  if (inputChannels.length === 1) {
-    const firstChannel = inputChannels[0];
-
-    return firstChannel === undefined ? new Float32Array(0) : new Float32Array(firstChannel);
-  }
-
-  const sampleCount = inputChannels[0]?.length ?? 0;
-  const output = new Float32Array(sampleCount);
-
-  for (const channel of inputChannels) {
-    for (let sampleIndex = 0; sampleIndex < sampleCount; sampleIndex += 1) {
-      output[sampleIndex] = (output[sampleIndex] ?? 0) + (channel[sampleIndex] ?? 0);
-    }
-  }
-
-  for (let sampleIndex = 0; sampleIndex < sampleCount; sampleIndex += 1) {
-    output[sampleIndex] = (output[sampleIndex] ?? 0) / inputChannels.length;
-  }
-
-  return output;
 }
 
 export function clearChannels(channels: Float32Array[] | undefined): void {
