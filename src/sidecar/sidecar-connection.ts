@@ -237,16 +237,12 @@ export class SidecarConnection {
     );
   }
 
-  async cancelModelInstall(installId: string): Promise<void> {
+  cancelModelInstall(installId: string): void {
     if (!this.process.isRunning()) {
       return;
     }
 
-    try {
-      this.process.write(encodeJsonFrame(createCancelModelInstallCommand(installId)));
-    } catch (error) {
-      throw asError(error, 'Failed to write sidecar command: cancel_model_install');
-    }
+    this.process.write(encodeJsonFrame(createCancelModelInstallCommand(installId)));
   }
 
   async startSession(
