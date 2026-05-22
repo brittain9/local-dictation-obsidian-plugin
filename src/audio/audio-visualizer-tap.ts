@@ -11,21 +11,53 @@ const FFT_SIZE = 512;
 const BAND_EDGES_HZ: readonly number[] = [80, 200, 500, 1000, 2000, 4000, 8000];
 
 /**
- * dB window calibrated for speech. Defaults (-100, -30) leave normal speech
- * (-50 to -25 dB) compressed into the bottom third of the byte range. The
- * tighter (-85, -10) window stretches speech across the full 0-255 output.
- * Matches MDN's Voice-change-O-matic visualization reference.
+ * dB window calibrated for normal-speech levels post-AGC. Voice rarely hits
+ * −10 dBFS, so the previous (−85, −10) window left the top ~15 dB of byte
+ * range dead. (−85, −25) matches audioMotion.dev's production default and
+ * stretches typical conversation across the full 0–255 output.
  */
 const MIN_DECIBELS = -85;
-const MAX_DECIBELS = -10;
+const MAX_DECIBELS = -25;
 
 /**
- * PPM-style asymmetric smoothing: snap to peaks, decay slowly. The classic
- * broadcast PPM uses 1.7 ms attack / 650 ms release; at 60 fps these map to
- * coefficients ~1.0 and ~0.025. We trade a hair of snap for jitter resistance.
+ * Per-band pre-emphasis to counter the −6 dB/octave net far-field spectral
+ * tilt of speech (Flanagan via PMC4818273). Mean-bin aggregation averages
+ * broadband sibilant noise ~3 dB below peak-bin, so the curve is a hair
+ * hotter than pure tilt compensation. /s/ (3.8–8.5 kHz) and /ʃ/ (2.3–7 kHz)
+ * land in bands 5–6, which get the most lift. This curve is engineering
+ * judgment, not a published spec value — expect to iterate.
  */
-const ATTACK = 0.95;
-const RELEASE = 0.06;
+const BAND_GAIN_DB: readonly number[] = [0, 0, 2, 5, 8, 11];
+const BAND_GAIN_LINEAR: readonly number[] = BAND_GAIN_DB.map((db) => 10 ** (db / 20));
+
+/**
+ * `getByteFrequencyData` already maps dB linearly into [0, 255], so the byte
+ * is already log-amplitude. A second `Math.sqrt` on top is double-compression.
+ * Stevens' loudness law sits near 0.6; 0.7 is a soft middle that keeps moderate
+ * sounds visible without over-flattening peaks. If mid-range vowels look weak,
+ * drop to 0.6 (closer to Stevens) or remove the curve entirely.
+ */
+const PERCEPTUAL_EXPONENT = 0.7;
+
+/**
+ * PPM-style asymmetric smoothing, per band.
+ *
+ * ATTACK 0.99 on bands 5–6 only — sibilants are 30–100 ms bursts and the prior
+ * 0.95 took ~48 ms (3 frames @ 60 fps) to settle, clipping short fricatives.
+ *
+ * RELEASE has irrational spread around the prior 0.06 so no two bars share a
+ * coefficient. Audio-driven decays no longer collapse on the same frame.
+ */
+const BAND_ATTACK: readonly number[] = [0.95, 0.95, 0.95, 0.95, 0.99, 0.99];
+const BAND_RELEASE: readonly number[] = [0.053, 0.061, 0.057, 0.067, 0.071, 0.059];
+
+if (
+  BAND_GAIN_DB.length !== BAND_COUNT ||
+  BAND_ATTACK.length !== BAND_COUNT ||
+  BAND_RELEASE.length !== BAND_COUNT
+) {
+  throw new Error('Per-band gain/attack/release arrays must each have BAND_COUNT entries.');
+}
 
 export interface AudioBandReader {
   /** Returns smoothed band levels in [0, 1], length {@link BAND_COUNT}, or null when detached. */
@@ -91,11 +123,14 @@ export class AudioVisualizerTap implements AudioBandReader, AudioVisualizerAttac
 
     for (let band = 0; band < BAND_COUNT; band++) {
       const range = this.bandRanges[band] as BandRange;
-      // sqrt is a standard perceptual-loudness approximation: lifts moderate
-      // sounds visually without making peaks look saturated.
-      const raw = Math.sqrt(meanNormalized(buffer, range[0], range[1]));
+      const mean = meanNormalized(buffer, range[0], range[1]);
+      // Gain after mean (not before) so individual byte values never exceed 255
+      // pre-aggregation. Clamp keeps loud sibilants from saturating past 1.0.
+      const lifted = Math.min(1, mean * (BAND_GAIN_LINEAR[band] as number));
+      const raw = lifted ** PERCEPTUAL_EXPONENT;
       const previous = this.smoothed[band] as number;
-      const coefficient = raw > previous ? ATTACK : RELEASE;
+      const coefficient =
+        raw > previous ? (BAND_ATTACK[band] as number) : (BAND_RELEASE[band] as number);
       this.smoothed[band] = previous + (raw - previous) * coefficient;
     }
 

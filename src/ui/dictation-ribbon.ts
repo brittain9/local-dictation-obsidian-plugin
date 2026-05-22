@@ -4,6 +4,7 @@ import type { AudioBandReader } from '../audio/audio-visualizer-tap';
 import { AudioVisualizerTap } from '../audio/audio-visualizer-tap';
 import type { DictationControllerState } from '../dictation/dictation-session-controller';
 import type { QueueBackpressureTier } from '../sidecar/protocol';
+import { ValueNoise1D } from './value-noise';
 
 type RibbonVisualState = 'idle' | 'starting' | 'listening' | 'speech_detected' | 'error';
 
@@ -57,6 +58,37 @@ const REDUCED_MOTION_QUERY = '(prefers-reduced-motion: reduce)';
  */
 const SPEECH_TAIL_HOLD_MS = 5_000;
 
+/**
+ * Below this audio level, bars are silent enough that we mix in low-amplitude
+ * value noise so the icon never freezes flat between syllables. Above the
+ * threshold, the audio signal dominates and noise is suppressed entirely.
+ */
+const NOISE_AUDIO_FLOOR = 0.05;
+
+/**
+ * Maximum lift the noise can apply to a bar (in the same [0, 1] space as the
+ * audio level). Stays inside the lower half of the bar envelope so noise reads
+ * as ambient drift, not as fake speech.
+ */
+const NOISE_FLOOR_AMPLITUDE = 0.12;
+
+/**
+ * Per-bar parameters that decorrelate the drift. Irrational-ish rate ratios
+ * prevent beating; the phase offsets ensure bars don't all peak together.
+ * Seeds are arbitrary 16-bit constants; the visual quality is insensitive to
+ * the specific values, only that they differ.
+ */
+const NOISE_RATES: readonly number[] = [0.55, 0.78, 0.62, 0.91, 0.71, 0.83];
+const NOISE_PHASES: readonly number[] = [0, 137.5, 275, 60, 197, 335];
+const NOISE_SEEDS: readonly number[] = [0x1f3a, 0x2b7c, 0x4d91, 0x6e54, 0x8c1d, 0xa3b6];
+if (
+  NOISE_RATES.length !== AudioVisualizerTap.BAND_COUNT ||
+  NOISE_PHASES.length !== AudioVisualizerTap.BAND_COUNT ||
+  NOISE_SEEDS.length !== AudioVisualizerTap.BAND_COUNT
+) {
+  throw new Error('NOISE_RATES/PHASES/SEEDS lengths must match AudioVisualizerTap.BAND_COUNT.');
+}
+
 export class DictationRibbonController {
   private bandReader: AudioBandReader | null = null;
   private rafId: number | null = null;
@@ -66,6 +98,9 @@ export class DictationRibbonController {
   private visualState: DictationControllerState = 'idle';
   private holdTimer: ReturnType<typeof setTimeout> | null = null;
   private queueTier: QueueBackpressureTier = 'normal';
+  private readonly noise: readonly ValueNoise1D[] = NOISE_SEEDS.map(
+    (seed) => new ValueNoise1D(seed),
+  );
 
   constructor(private readonly element: HTMLElement) {
     this.reducedMotion = matchMedia(REDUCED_MOTION_QUERY);
@@ -201,12 +236,26 @@ export class DictationRibbonController {
   }
 
   private applyBands(bands: Readonly<Float32Array>): void {
+    const allowNoise = !this.reducedMotion.matches;
+    const t = performance.now() / 1000;
     for (let i = 0; i < BAR_ENVELOPE.length; i++) {
       const [floor, ceiling] = BAR_ENVELOPE[i] as readonly [number, number];
-      const level = clamp01(bands[i] as number);
+      const audioLevel = clamp01(bands[i] as number);
+      // Math.max (not addition) so audio always dominates noise when present —
+      // sibilants and vowels keep their full punch from the audio-side gain.
+      const level =
+        allowNoise && audioLevel < NOISE_AUDIO_FLOOR
+          ? Math.max(audioLevel, NOISE_FLOOR_AMPLITUDE * this.sampleNoise(i, t))
+          : audioLevel;
       const scale = floor + (ceiling - floor) * level;
       this.element.style.setProperty(`--local-stt-bar-${i + 1}`, scale.toFixed(2));
     }
+  }
+
+  private sampleNoise(bar: number, timeSeconds: number): number {
+    const rate = NOISE_RATES[bar] as number;
+    const phase = NOISE_PHASES[bar] as number;
+    return (this.noise[bar] as ValueNoise1D).sample(timeSeconds * rate + phase);
   }
 
   private resetBars(): void {

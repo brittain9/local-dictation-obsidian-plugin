@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import type { AudioBandReader } from '../src/audio/audio-visualizer-tap';
+import { AudioVisualizerTap } from '../src/audio/audio-visualizer-tap';
 import { DictationRibbonController } from '../src/ui/dictation-ribbon';
 
 class FakeMediaQueryList {
@@ -127,3 +129,61 @@ describe('DictationRibbonController bar icon', () => {
 function countPaths(html: string): number {
   return (html.match(/<path\b/g) ?? []).length;
 }
+
+function stubRaf(): Array<() => void> {
+  const callbacks: Array<() => void> = [];
+  vi.stubGlobal('requestAnimationFrame', (cb: () => void): number => {
+    callbacks.push(cb);
+    return callbacks.length;
+  });
+  vi.stubGlobal('cancelAnimationFrame', () => {});
+  return callbacks;
+}
+
+function silentBandReader(): AudioBandReader {
+  return { readBands: () => new Float32Array(AudioVisualizerTap.BAND_COUNT) };
+}
+
+describe('DictationRibbonController idle-floor noise drift', () => {
+  it('lifts bars above their unmixed floor when audio is silent', () => {
+    const rafCallbacks = stubRaf();
+    const { controller, element } = makeController();
+    controller.setVisualizer(silentBandReader());
+    controller.setState('listening');
+    controller.setState('speech_detected');
+
+    let bar1Max = 0;
+    const distinctRendered = new Set<string>();
+    for (let i = 0; i < 30; i++) {
+      const cb = rafCallbacks.shift();
+      if (!cb) break;
+      cb();
+      const rendered = element.styleProps['--local-stt-bar-1'];
+      if (rendered !== undefined) {
+        bar1Max = Math.max(bar1Max, parseFloat(rendered));
+        distinctRendered.add(rendered);
+      }
+      vi.advanceTimersByTime(100);
+    }
+
+    // BAR_ENVELOPE[0] floor is 0.35 — that's the value without noise mix.
+    // Across 30 sampled frames, noise must lift the bar above the floor.
+    expect(bar1Max).toBeGreaterThan(0.35);
+    // And the value must move between frames, not just bump once.
+    expect(distinctRendered.size).toBeGreaterThan(3);
+  });
+
+  it('suppresses drift entirely under prefers-reduced-motion: reduce', () => {
+    mediaQuery.matches = true;
+    const rafCallbacks = stubRaf();
+    const { controller, element } = makeController();
+    controller.setVisualizer(silentBandReader());
+    controller.setState('listening');
+    controller.setState('speech_detected');
+
+    // syncAnimation short-circuits when reducedMotion is on, so the RAF loop
+    // never starts and bar CSS variables are never written.
+    expect(rafCallbacks).toHaveLength(0);
+    expect(element.styleProps['--local-stt-bar-1']).toBeUndefined();
+  });
+});

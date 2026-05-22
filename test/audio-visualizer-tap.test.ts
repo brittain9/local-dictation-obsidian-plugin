@@ -147,24 +147,47 @@ describe('AudioVisualizerTap', () => {
   it('snaps to the peak on the first tick after silence', () => {
     const { tap: attached, analyser } = attachTap();
     analyser.setSpectrum(flatSpectrum(255));
+    // PPM-style attack: a single tick should already be near the ceiling.
     const first = (attached.readBands() as Readonly<Float32Array>)[0] as number;
-    expect(first).toBeGreaterThan(0.5);
+    expect(first).toBeGreaterThan(0.9);
   });
 
-  it('decays monotonically between syllables', () => {
+  it('releases slowly between syllables', () => {
     const { tap: attached, analyser } = attachTap();
+    // Saturate to ~1.0.
     analyser.setSpectrum(flatSpectrum(255));
     for (let i = 0; i < 10; i++) {
       attached.readBands();
     }
+    // Drop to silence and confirm the level decays gently, not in one frame.
     analyser.setSpectrum(flatSpectrum(0));
-    const levels = Array.from({ length: 10 }, () => {
-      return (attached.readBands() as Readonly<Float32Array>)[0] as number;
-    });
-    expect(levels[0]).toBeGreaterThan(0.5);
-    for (let i = 1; i < levels.length; i++) {
-      expect(levels[i]).toBeLessThanOrEqual(levels[i - 1] as number);
-    }
+    const afterOneTick = (attached.readBands() as Readonly<Float32Array>)[0] as number;
+    // BAND_RELEASE[0] = 0.053 → previous * (1 - 0.053) ≈ 0.947 after one tick.
+    expect(afterOneTick).toBeGreaterThan(0.85);
+    expect(afterOneTick).toBeLessThan(0.97);
+  });
+
+  it('boosts midrange amplitude via the perceptual pow(0.7) curve and band gain', () => {
+    const { tap: attached, analyser } = attachTap();
+    // Half-amplitude input across all bands.
+    analyser.setSpectrum(flatSpectrum(128));
+    const level = (attached.readBands() as Readonly<Float32Array>)[2] as number;
+    // mean = 128/255 ≈ 0.502; BAND_GAIN_LINEAR[2] = 10^(2/20) ≈ 1.259
+    // → lifted ≈ 0.632; pow(0.632, 0.7) ≈ 0.722; after attack 0.95 → ≈ 0.686.
+    // A purely linear mapping (no curve, no gain) would land near 0.477.
+    expect(level).toBeGreaterThan(0.65);
+  });
+
+  it('lifts high bands far more than low bands on a flat quiet spectrum (pre-emphasis)', () => {
+    const { tap: attached, analyser } = attachTap();
+    // Quiet uniform spectrum: every band sees the same byte input.
+    analyser.setSpectrum(flatSpectrum(64));
+    const levels = attached.readBands() as Readonly<Float32Array>;
+    const lowBand = levels[0] as number;
+    const highBand = levels[5] as number;
+    // Same audio energy in every band → after BAND_GAIN [0, 0, 2, 5, 8, 11] dB,
+    // band 5 must end up well above band 0. Linear ratio is ~3.5×.
+    expect(highBand).toBeGreaterThan(lowBand * 2);
   });
 
   it('disconnects the analyser on detach', () => {
