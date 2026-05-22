@@ -221,8 +221,7 @@ export function resolvePluginSettings(data: unknown): PluginSettings {
       DEFAULT_PLUGIN_SETTINGS.modelStorePathOverride,
     ),
     // Bump `schemaVersion` and add a migration step when renaming a key or changing default semantics.
-    schemaVersion:
-      raw.schemaVersion === 1 ? raw.schemaVersion : DEFAULT_PLUGIN_SETTINGS.schemaVersion,
+    schemaVersion: 1,
     selectedModel: readSelectedModel(raw.selectedModel),
     setupCompletedAt: readSetupCompletedAt(raw.setupCompletedAt),
     sidecarPathOverride: readString(
