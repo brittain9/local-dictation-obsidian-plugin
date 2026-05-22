@@ -46,13 +46,12 @@ afterAll(async () => {
 });
 
 describe('assertAbsoluteExistingFilePath', () => {
-  it('rejects an empty string', async () => {
-    await expect(assertAbsoluteExistingFilePath('', LABEL)).rejects.toThrow(/is not configured/);
-  });
-
-  it('rejects whitespace-only input (trimmed empty)', async () => {
-    await expect(assertAbsoluteExistingFilePath('   \t\n', LABEL)).rejects.toThrow(
-      /is not configured/,
+  it.each([
+    ['empty', ''],
+    ['whitespace-only', '   \t\n'],
+  ])('rejects %s input as "not configured" with the label embedded', async (_label, input) => {
+    await expect(assertAbsoluteExistingFilePath(input, 'Ollama binary')).rejects.toThrow(
+      /^Ollama binary is not configured/,
     );
   });
 
@@ -84,8 +83,7 @@ describe('assertAbsoluteExistingFilePath', () => {
       return;
     }
     // Contract: the validator does NOT call realpath. A symlink to a file is
-    // accepted and returned as-given. Future security work may want to resolve
-    // symlinks before passing the result to the sidecar.
+    // accepted and returned as-given.
     await expect(assertAbsoluteExistingFilePath(symlinkToFilePath, LABEL)).resolves.toBe(
       symlinkToFilePath,
     );
@@ -97,12 +95,6 @@ describe('assertAbsoluteExistingFilePath', () => {
     }
     await expect(assertAbsoluteExistingFilePath(symlinkToDirPath, LABEL)).rejects.toThrow(
       /must point to a file/,
-    );
-  });
-
-  it('includes the configured label in the error message', async () => {
-    await expect(assertAbsoluteExistingFilePath('', 'Ollama binary')).rejects.toThrow(
-      /Ollama binary/,
     );
   });
 });
