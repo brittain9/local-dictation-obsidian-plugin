@@ -1,3 +1,5 @@
+import { vi } from 'vitest';
+
 export const Platform = {
   isMacOS: false,
   isWin: false,
@@ -17,6 +19,14 @@ export class Notice {
   }
 }
 
-export function setIcon(_parent: unknown, _iconId: string): void {
-  // no-op in tests
-}
+/**
+ * Tracked spy: tests can assert on calls (`expect(setIcon).toHaveBeenCalledWith`)
+ * and the side effect mirrors the real Obsidian API's contract of replacing the
+ * parent's child SVG. The stub markup uses a data-icon attribute so assertions
+ * like `element.innerHTML.includes('data-icon="mic"')` are exact.
+ */
+export const setIcon = vi.fn((parent: unknown, iconId: string): void => {
+  if (parent && typeof parent === 'object' && 'innerHTML' in parent) {
+    (parent as { innerHTML: string }).innerHTML = `<svg data-icon="${iconId}"></svg>`;
+  }
+});

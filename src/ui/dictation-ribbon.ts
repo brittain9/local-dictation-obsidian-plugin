@@ -6,44 +6,45 @@ import type { DictationControllerState } from '../dictation/dictation-session-co
 import type { QueueBackpressureTier } from '../sidecar/protocol';
 import { ValueNoise1D } from './value-noise';
 
-type RibbonVisualState = 'idle' | 'starting' | 'listening' | 'speech_detected' | 'error';
+type RibbonIcon = 'bars' | 'mic' | 'loader' | 'mic-off';
 
 /**
- * Custom audio-bars SVG used only while the ribbon is actively animating
- * (`speech_detected`). Heights (10/16/8/14/12/8) are visually varied but
- * sum-balanced left-vs-right (34 vs 34), avoiding both Lucide `audio-lines`'s
- * left-loaded asymmetry (native 3/11/18/7/13/3) and the over-uniform look of a
- * pair-mirrored bell. ViewBox + stroke attributes match Lucide so it blends
- * with the rest of the ribbon iconography. The resting `listening` state keeps
- * the standard Lucide `audio-lines` so the static look matches other Obsidian
- * surfaces (e.g. the LLM sidebar ribbon).
+ * Custom audio-bars SVG shared by both `listening` and `speech_detected`. A
+ * palindromic 8/14/16/16/14/8 silhouette (center-peaked, sum-balanced) replaces
+ * Lucide `audio-lines`, and crucially the same path nodes persist across the
+ * listening ↔ speech_detected flip — the styles.css 450ms opacity crossfade and
+ * the 60ms / 550ms transform transitions only fire when the path identities
+ * don't change between data-state changes. Listening uses the same DOM at
+ * opacity 0.45 (per styles.css); speech_detected goes full opacity and writes
+ * per-bar CSS variables on every frame.
  */
 const ANIMATED_BARS_SVG =
   '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" ' +
   'fill="none" stroke="currentColor" stroke-width="2" ' +
   'stroke-linecap="round" stroke-linejoin="round" class="svg-icon">' +
-  '<path d="M2 7v10"/>' +
-  '<path d="M6 4v16"/>' +
-  '<path d="M10 8v8"/>' +
-  '<path d="M14 5v14"/>' +
-  '<path d="M18 6v12"/>' +
+  '<path d="M2 8v8"/>' +
+  '<path d="M6 5v14"/>' +
+  '<path d="M10 4v16"/>' +
+  '<path d="M14 4v16"/>' +
+  '<path d="M18 5v14"/>' +
   '<path d="M22 8v8"/>' +
   '</svg>';
 
 /**
- * Per-bar scaleY envelope as [floor, ceiling] tuples. Quiet speech shrinks bars
- * toward the floor; loud peaks overshoot above 1.0 (the static icon height), so
- * the user sees a clear "punch above neutral" instead of bars that only ever shrink.
- * Center bars get the most overshoot — they're the tallest in the icon, so
- * amplifying them reads as a coherent wave bouncing outward.
+ * Per-bar scaleY envelope as [floor, ceiling] tuples, indexed by band 0..5.
+ * Quiet speech shrinks bars toward `floor`; loud peaks overshoot above 1.0
+ * (the static icon height). Center bars (16-unit, the tallest in the SVG)
+ * get the widest dynamic range so a coherent wave bouncing outward reads
+ * through the icon; outer bars (8-unit) keep a higher relative floor so
+ * they stay visible at rest.
  */
 const BAR_ENVELOPE: ReadonlyArray<readonly [floor: number, ceiling: number]> = [
-  [0.35, 1.25],
-  [0.25, 1.35],
-  [0.15, 1.45],
-  [0.15, 1.45],
-  [0.25, 1.35],
-  [0.35, 1.25],
+  [0.45, 1.25],
+  [0.3, 1.4],
+  [0.2, 1.5],
+  [0.2, 1.5],
+  [0.3, 1.4],
+  [0.45, 1.25],
 ];
 if (BAR_ENVELOPE.length !== AudioVisualizerTap.BAND_COUNT) {
   throw new Error('BAR_ENVELOPE length must match AudioVisualizerTap.BAND_COUNT.');
@@ -56,12 +57,17 @@ const REDUCED_MOTION_QUERY = '(prefers-reduced-motion: reduce)';
  * Smooths over natural micro-pauses between phrases so the icon doesn't feel
  * twitchy while the user is mid-thought.
  */
-const SPEECH_TAIL_HOLD_MS = 5_000;
+const SPEECH_TAIL_HOLD_MS = 10_000;
 
 /**
- * Below this audio level, bars are silent enough that we mix in low-amplitude
- * value noise so the icon never freezes flat between syllables. Above the
- * threshold, the audio signal dominates and noise is suppressed entirely.
+ * Below this aggregate audio level, bars drift via low-amplitude value noise so
+ * the icon never freezes flat between syllables. Above the threshold, the audio
+ * signal dominates and drift fades out smoothly.
+ *
+ * Gating off the loudest band (rather than each band's own level) keeps drift
+ * symmetric: per-band pre-emphasis pushes the high bands well above any
+ * per-band floor under realistic mic self-noise, which would otherwise produce
+ * drift only on the low bars.
  */
 const NOISE_AUDIO_FLOOR = 0.05;
 
@@ -98,13 +104,14 @@ export class DictationRibbonController {
   private visualState: DictationControllerState = 'idle';
   private holdTimer: ReturnType<typeof setTimeout> | null = null;
   private queueTier: QueueBackpressureTier = 'normal';
+  private currentIcon: RibbonIcon | null = null;
   private readonly noise: readonly ValueNoise1D[] = NOISE_SEEDS.map(
     (seed) => new ValueNoise1D(seed),
   );
 
   constructor(private readonly element: HTMLElement) {
     this.reducedMotion = matchMedia(REDUCED_MOTION_QUERY);
-    this.reducedMotionListener = (): void => this.syncAnimation();
+    this.reducedMotionListener = (): void => this.onReducedMotionChange();
     this.reducedMotion.addEventListener('change', this.reducedMotionListener);
     this.render();
   }
@@ -120,6 +127,9 @@ export class DictationRibbonController {
     const previousState = this.state;
     this.state = state;
     if (this.shouldStartHold(previousState, state)) {
+      // visualState lags behind during the tail-hold, but the announced state
+      // (aria-label, title) must reflect reality immediately.
+      this.renderLabel();
       this.startHold();
       return;
     }
@@ -134,7 +144,11 @@ export class DictationRibbonController {
       return;
     }
     this.queueTier = tier;
-    this.render();
+    // queueTier is not currently surfaced in the label or icon. Intentionally
+    // do not call render() here — re-running paintIcon while speech_detected is
+    // active would replace the live <svg> element, killing the in-flight
+    // transform/opacity transitions. If a future revision starts reflecting the
+    // tier, route it through renderLabel() (label-only), not render().
   }
 
   setVisualizer(bandReader: AudioBandReader | null): void {
@@ -150,32 +164,45 @@ export class DictationRibbonController {
   }
 
   private render(): void {
-    const label = buildRibbonLabel(this.visualState, this.queueTier);
-
     this.paintIcon(this.visualState);
+    this.element.dataset.localSttState = this.visualState;
+    this.renderLabel();
+  }
+
+  private renderLabel(): void {
+    // aria-label and title follow this.state, not visualState — a screen reader
+    // or tooltip must announce the real controller state, even during the
+    // speech-tail visual hold where visualState lags by up to SPEECH_TAIL_HOLD_MS.
+    const label = buildRibbonLabel(this.state);
     this.element.setAttribute('aria-label', label);
     this.element.setAttribute('data-tooltip-position', 'top');
-    this.element.dataset.localSttState = toVisualState(this.visualState);
     this.element.title = label;
   }
 
   private paintIcon(state: DictationControllerState): void {
-    switch (state) {
-      case 'speech_detected':
+    const icon = iconForState(state);
+    if (icon === this.currentIcon) {
+      // Skipping the DOM write is essential: re-injecting innerHTML or running
+      // setIcon would destroy the live path nodes that CSS transitions are
+      // mid-flight on (and that the RAF loop is writing per-bar CSS vars to).
+      return;
+    }
+    this.currentIcon = icon;
+    switch (icon) {
+      case 'bars':
         this.element.innerHTML = ANIMATED_BARS_SVG;
         return;
-      case 'listening':
-        setIcon(this.element, 'audio-lines');
-        return;
-      case 'idle':
+      case 'mic':
         setIcon(this.element, 'mic');
         return;
-      case 'starting':
+      case 'loader':
         setIcon(this.element, 'loader');
         return;
-      case 'error':
+      case 'mic-off':
         setIcon(this.element, 'mic-off');
         return;
+      default:
+        assertNever(icon);
     }
   }
 
@@ -190,6 +217,18 @@ export class DictationRibbonController {
     } else {
       this.stopAnimation();
     }
+  }
+
+  private onReducedMotionChange(): void {
+    // If reduced-motion turns on mid-hold, abandon the visual lag immediately —
+    // leaving a still custom-bars icon under a `reduce` preference is exactly
+    // the artifact the preference is meant to suppress.
+    if (this.reducedMotion.matches && this.visualState !== this.state) {
+      this.cancelHold();
+      this.visualState = this.state;
+      this.render();
+    }
+    this.syncAnimation();
   }
 
   private shouldStartHold(from: DictationControllerState, to: DictationControllerState): boolean {
@@ -238,15 +277,18 @@ export class DictationRibbonController {
   private applyBands(bands: Readonly<Float32Array>): void {
     const allowNoise = !this.reducedMotion.matches;
     const t = performance.now() / 1000;
+    const audioMax = maxBand(bands);
+    // Smooth blend: as audioMax climbs through NOISE_AUDIO_FLOOR the gate fades
+    // continuously to 0, so the noise contribution shrinks rather than dropping
+    // off a cliff (the prior `Math.max(audio, noise)` formulation could
+    // momentarily shave 7% off the bar height at the boundary, producing a
+    // visible stutter on quiet vowel onsets).
+    const noiseGate = allowNoise ? Math.max(0, 1 - audioMax / NOISE_AUDIO_FLOOR) : 0;
     for (let i = 0; i < BAR_ENVELOPE.length; i++) {
       const [floor, ceiling] = BAR_ENVELOPE[i] as readonly [number, number];
       const audioLevel = clamp01(bands[i] as number);
-      // Math.max (not addition) so audio always dominates noise when present —
-      // sibilants and vowels keep their full punch from the audio-side gain.
-      const level =
-        allowNoise && audioLevel < NOISE_AUDIO_FLOOR
-          ? Math.max(audioLevel, NOISE_FLOOR_AMPLITUDE * this.sampleNoise(i, t))
-          : audioLevel;
+      const noiseLift = NOISE_FLOOR_AMPLITUDE * this.sampleNoise(i, t) * noiseGate;
+      const level = clamp01(audioLevel + noiseLift);
       const scale = floor + (ceiling - floor) * level;
       this.element.style.setProperty(`--local-stt-bar-${i + 1}`, scale.toFixed(2));
     }
@@ -265,10 +307,23 @@ export class DictationRibbonController {
   }
 }
 
-function buildRibbonLabel(
-  state: DictationControllerState,
-  _queueTier: QueueBackpressureTier,
-): string {
+function iconForState(state: DictationControllerState): RibbonIcon {
+  switch (state) {
+    case 'idle':
+      return 'mic';
+    case 'starting':
+      return 'loader';
+    case 'listening':
+    case 'speech_detected':
+      return 'bars';
+    case 'error':
+      return 'mic-off';
+    default:
+      return assertNever(state);
+  }
+}
+
+function buildRibbonLabel(state: DictationControllerState): string {
   switch (state) {
     case 'idle':
       return 'Local Dictation — start dictation';
@@ -280,26 +335,28 @@ function buildRibbonLabel(
       return 'Local Dictation — hearing speech';
     case 'error':
       return 'Local Dictation — error';
+    default:
+      return assertNever(state);
   }
 }
 
-function toVisualState(state: DictationControllerState): RibbonVisualState {
-  switch (state) {
-    case 'idle':
-      return 'idle';
-    case 'starting':
-      return 'starting';
-    case 'listening':
-      return 'listening';
-    case 'speech_detected':
-      return 'speech_detected';
-    case 'error':
-      return 'error';
+function maxBand(bands: Readonly<Float32Array>): number {
+  let max = 0;
+  for (let i = 0; i < bands.length; i++) {
+    const v = bands[i] as number;
+    if (v > max) {
+      max = v;
+    }
   }
+  return max;
 }
 
 function clamp01(value: number): number {
   if (value < 0) return 0;
   if (value > 1) return 1;
   return value;
+}
+
+function assertNever(x: never): never {
+  throw new Error(`Unhandled ribbon variant: ${x as string}`);
 }

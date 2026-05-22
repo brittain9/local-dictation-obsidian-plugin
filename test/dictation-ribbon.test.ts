@@ -1,3 +1,4 @@
+import { setIcon } from 'obsidian';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { AudioBandReader } from '../src/audio/audio-visualizer-tap';
@@ -6,8 +7,16 @@ import { DictationRibbonController } from '../src/ui/dictation-ribbon';
 
 class FakeMediaQueryList {
   matches = false;
-  addEventListener(_event: 'change', _cb: () => void): void {}
-  removeEventListener(_event: 'change', _cb: () => void): void {}
+  private listeners = new Set<() => void>();
+  addEventListener(_event: 'change', cb: () => void): void {
+    this.listeners.add(cb);
+  }
+  removeEventListener(_event: 'change', cb: () => void): void {
+    this.listeners.delete(cb);
+  }
+  fireChange(): void {
+    for (const cb of this.listeners) cb();
+  }
 }
 
 class FakeElement {
@@ -39,6 +48,7 @@ beforeEach(() => {
   mediaQuery = new FakeMediaQueryList();
   vi.stubGlobal('matchMedia', () => mediaQuery);
   vi.useFakeTimers();
+  vi.mocked(setIcon).mockClear();
 });
 
 afterEach(() => {
@@ -53,7 +63,7 @@ function makeController(): { controller: DictationRibbonController; element: Fak
 }
 
 describe('DictationRibbonController speech tail hold', () => {
-  it('keeps the speech_detected look for 5s after VAD drops, then flips to listening', () => {
+  it('keeps the speech_detected look for 10s after VAD drops, then flips to listening', () => {
     const { controller, element } = makeController();
     controller.setState('listening');
     controller.setState('speech_detected');
@@ -62,7 +72,7 @@ describe('DictationRibbonController speech tail hold', () => {
     controller.setState('listening');
     expect(element.dataset.localSttState).toBe('speech_detected');
 
-    vi.advanceTimersByTime(4_999);
+    vi.advanceTimersByTime(9_999);
     expect(element.dataset.localSttState).toBe('speech_detected');
 
     vi.advanceTimersByTime(1);
@@ -74,12 +84,18 @@ describe('DictationRibbonController speech tail hold', () => {
     controller.setState('listening');
     controller.setState('speech_detected');
     controller.setState('listening');
+    // Arm check: the hold timer is the only outstanding timer right now.
+    expect(vi.getTimerCount()).toBe(1);
     vi.advanceTimersByTime(2_000);
+    expect(vi.getTimerCount()).toBe(1);
 
     controller.setState('speech_detected');
+    // The cancel must clear the timer — otherwise the late firing would
+    // overwrite visualState even after speech resumed.
+    expect(vi.getTimerCount()).toBe(0);
     expect(element.dataset.localSttState).toBe('speech_detected');
 
-    vi.advanceTimersByTime(10_000);
+    vi.advanceTimersByTime(20_000);
     expect(element.dataset.localSttState).toBe('speech_detected');
   });
 
@@ -93,7 +109,7 @@ describe('DictationRibbonController speech tail hold', () => {
     controller.setState('error');
     expect(element.dataset.localSttState).toBe('error');
 
-    vi.advanceTimersByTime(10_000);
+    vi.advanceTimersByTime(20_000);
     expect(element.dataset.localSttState).toBe('error');
   });
 
@@ -107,22 +123,118 @@ describe('DictationRibbonController speech tail hold', () => {
   });
 });
 
-describe('DictationRibbonController bar icon', () => {
-  it('leaves the resting listening state to Lucide (no custom SVG injection)', () => {
+describe('DictationRibbonController a11y during hold', () => {
+  it('announces real state on aria-label/title immediately, even while the visual lags', () => {
     const { controller, element } = makeController();
     controller.setState('listening');
-    expect(countPaths(element.innerHTML)).toBe(0);
-    expect(element.innerHTML).not.toContain('<svg');
+    controller.setState('speech_detected');
+    expect(element.attributes['aria-label']).toBe('Local Dictation — hearing speech');
+    expect(element.title).toBe('Local Dictation — hearing speech');
+
+    controller.setState('listening');
+    // Visual still held on speech_detected — animation/CSS keeps drifting bars.
+    expect(element.dataset.localSttState).toBe('speech_detected');
+    // But a screen reader / tooltip must see truth right away.
+    expect(element.attributes['aria-label']).toBe('Local Dictation — listening');
+    expect(element.title).toBe('Local Dictation — listening');
+
+    vi.advanceTimersByTime(10_000);
+    expect(element.dataset.localSttState).toBe('listening');
+    expect(element.attributes['aria-label']).toBe('Local Dictation — listening');
+  });
+});
+
+describe('DictationRibbonController paintIcon', () => {
+  it('shares the bars SVG between listening and speech_detected (no DOM swap on the flip)', () => {
+    const { controller, element } = makeController();
+    controller.setState('listening');
+    // The 6-bar SVG is the listening icon — keeps path identities across the
+    // listening↔speech_detected flip so styles.css transitions can fire.
+    expect(countPaths(element.innerHTML)).toBe(6);
+
+    const beforeFlip = element.innerHTML;
+    controller.setState('speech_detected');
+    expect(element.innerHTML).toBe(beforeFlip);
   });
 
-  it('injects the custom 6-path SVG only when transitioning into speech_detected', () => {
+  it('does not re-inject the SVG on a redundant paintIcon (same icon)', () => {
     const { controller, element } = makeController();
     controller.setState('listening');
-    expect(countPaths(element.innerHTML)).toBe(0);
-
     controller.setState('speech_detected');
-    expect(countPaths(element.innerHTML)).toBe(6);
-    expect(element.innerHTML).toContain('<svg');
+    const snapshot = element.innerHTML;
+
+    // setState('speech_detected') during the tail hold (real state=listening,
+    // visual=speech_detected) triggers paintIcon('speech_detected') again. The
+    // icon hasn't changed (still 'bars'), so innerHTML must NOT be rewritten —
+    // otherwise the live <path> nodes that CSS is mid-transition on get
+    // destroyed and replaced, snapping the animation.
+    controller.setState('listening');
+    controller.setState('speech_detected');
+    expect(element.innerHTML).toBe(snapshot);
+  });
+
+  it('uses Lucide setIcon for idle/starting/error states', () => {
+    const { controller } = makeController();
+    // Constructor renders idle → setIcon called with 'mic'.
+    expect(setIcon).toHaveBeenLastCalledWith(expect.anything(), 'mic');
+
+    controller.setState('starting');
+    expect(setIcon).toHaveBeenLastCalledWith(expect.anything(), 'loader');
+
+    controller.setState('listening');
+    controller.setState('speech_detected');
+    controller.setState('error');
+    expect(setIcon).toHaveBeenLastCalledWith(expect.anything(), 'mic-off');
+  });
+
+  it('does not call setIcon when entering the bars-driven states', () => {
+    const { controller } = makeController();
+    vi.mocked(setIcon).mockClear();
+    controller.setState('listening');
+    controller.setState('speech_detected');
+    expect(setIcon).not.toHaveBeenCalled();
+  });
+});
+
+describe('DictationRibbonController hold lifecycle interactions', () => {
+  it('cancels the pending hold timer on dispose', () => {
+    const { controller } = makeController();
+    controller.setState('listening');
+    controller.setState('speech_detected');
+    controller.setState('listening');
+    expect(vi.getTimerCount()).toBe(1);
+
+    controller.dispose();
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it('setQueueTier during the hold does not rewrite the live SVG', () => {
+    const { controller, element } = makeController();
+    controller.setState('listening');
+    controller.setState('speech_detected');
+    controller.setState('listening');
+    const snapshot = element.innerHTML;
+
+    controller.setQueueTier('catching_up');
+    controller.setQueueTier('saturated');
+    expect(element.innerHTML).toBe(snapshot);
+  });
+
+  it('cancels the hold immediately when reduced-motion turns on mid-hold', () => {
+    const { controller, element } = makeController();
+    controller.setState('listening');
+    controller.setState('speech_detected');
+    controller.setState('listening');
+    expect(element.dataset.localSttState).toBe('speech_detected');
+    expect(vi.getTimerCount()).toBe(1);
+
+    mediaQuery.matches = true;
+    mediaQuery.fireChange();
+
+    // The hold must be aborted: leaving a still bars icon under a `reduce`
+    // preference is exactly the artifact the preference is meant to suppress.
+    expect(vi.getTimerCount()).toBe(0);
+    expect(element.dataset.localSttState).toBe('listening');
   });
 });
 
@@ -166,9 +278,10 @@ describe('DictationRibbonController idle-floor noise drift', () => {
       vi.advanceTimersByTime(100);
     }
 
-    // BAR_ENVELOPE[0] floor is 0.35 — that's the value without noise mix.
-    // Across 30 sampled frames, noise must lift the bar above the floor.
-    expect(bar1Max).toBeGreaterThan(0.35);
+    // BAR_ENVELOPE[0] floor is 0.45 — the value at level=0. Across 30 sampled
+    // frames the value-noise drift must lift the bar above the floor at least
+    // once, otherwise the icon would visibly freeze between syllables.
+    expect(bar1Max).toBeGreaterThan(0.45);
     // And the value must move between frames, not just bump once.
     expect(distinctRendered.size).toBeGreaterThan(3);
   });

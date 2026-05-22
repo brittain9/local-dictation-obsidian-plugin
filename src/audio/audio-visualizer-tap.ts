@@ -29,6 +29,14 @@ const MAX_DECIBELS = -25;
  */
 const BAND_GAIN_DB: readonly number[] = [0, 0, 2, 5, 8, 11];
 const BAND_GAIN_LINEAR: readonly number[] = BAND_GAIN_DB.map((db) => 10 ** (db / 20));
+/**
+ * Per-band normalization for the tanh soft saturator below: `tanh(gain)` is
+ * the saturator's output at mean = 1 (a fully-driven band), so dividing by it
+ * keeps the calibrated ceiling at 1.0 regardless of per-band pre-emphasis.
+ * Without this, low-gain bands would top out at tanh(1) ≈ 0.76 and never
+ * appear "fully lit" even at maxDecibels.
+ */
+const BAND_TANH_NORM: readonly number[] = BAND_GAIN_LINEAR.map((gain) => Math.tanh(gain));
 
 /**
  * `getByteFrequencyData` already maps dB linearly into [0, 255], so the byte
@@ -124,9 +132,13 @@ export class AudioVisualizerTap implements AudioBandReader, AudioVisualizerAttac
     for (let band = 0; band < BAND_COUNT; band++) {
       const range = this.bandRanges[band] as BandRange;
       const mean = meanNormalized(buffer, range[0], range[1]);
-      // Gain after mean (not before) so individual byte values never exceed 255
-      // pre-aggregation. Clamp keeps loud sibilants from saturating past 1.0.
-      const lifted = Math.min(1, mean * (BAND_GAIN_LINEAR[band] as number));
+      // Soft saturator via tanh: a hard Math.min(1, mean*gain) caused gained
+      // bands to saturate at mean ≥ 1/gain (byte ~72 in band 5), making soft
+      // /s/ and loud /s/ indistinguishable. tanh stays linear-ish below the
+      // knee, then asymptotes — soft and loud sibilants now produce
+      // distinguishable peaks. Dividing by tanh(gain) keeps the ceiling at 1.0.
+      const gained = mean * (BAND_GAIN_LINEAR[band] as number);
+      const lifted = Math.tanh(gained) / (BAND_TANH_NORM[band] as number);
       const raw = lifted ** PERCEPTUAL_EXPONENT;
       const previous = this.smoothed[band] as number;
       const coefficient =

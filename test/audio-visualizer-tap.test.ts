@@ -67,6 +67,15 @@ function flatSpectrum(value: number): Uint8Array {
   return buffer;
 }
 
+function readOnce(spectrum: Uint8Array): number {
+  // Fresh tap per call so smoothing state from prior reads cannot leak in.
+  // Returns the high-band level after a single tick from a zero baseline.
+  const { tap, analyser } = attachTap();
+  analyser.setSpectrum(spectrum);
+  const levels = tap.readBands() as Readonly<Float32Array>;
+  return levels[5] as number;
+}
+
 function bandSpectrum(bandIndex: number, value: number): Uint8Array {
   const buffer = new Uint8Array(BIN_COUNT);
   const hzPerBin = SAMPLE_RATE / 2 / BIN_COUNT;
@@ -173,21 +182,33 @@ describe('AudioVisualizerTap', () => {
     analyser.setSpectrum(flatSpectrum(128));
     const level = (attached.readBands() as Readonly<Float32Array>)[2] as number;
     // mean = 128/255 ≈ 0.502; BAND_GAIN_LINEAR[2] = 10^(2/20) ≈ 1.259
-    // → lifted ≈ 0.632; pow(0.632, 0.7) ≈ 0.722; after attack 0.95 → ≈ 0.686.
+    // → gained 0.632; tanh(0.632)/tanh(1.259) ≈ 0.658; pow(0.658, 0.7) ≈ 0.749;
+    // after attack 0.95 → ≈ 0.711.
     // A purely linear mapping (no curve, no gain) would land near 0.477.
     expect(level).toBeGreaterThan(0.65);
   });
 
   it('lifts high bands far more than low bands on a flat quiet spectrum (pre-emphasis)', () => {
     const { tap: attached, analyser } = attachTap();
-    // Quiet uniform spectrum: every band sees the same byte input.
-    analyser.setSpectrum(flatSpectrum(64));
+    // Quiet uniform spectrum (mean ≈ 0.125): well below the tanh saturator's
+    // knee, so the soft saturator stays in its linear region and the per-band
+    // gain ratio (0 → 11 dB ≈ 3.55× linear) survives through the perceptual
+    // pow(0.7) curve to ~2× in the smoothed output. Picking a hotter input
+    // would put the high band into the tanh elbow, compressing the ratio.
+    analyser.setSpectrum(flatSpectrum(32));
     const levels = attached.readBands() as Readonly<Float32Array>;
     const lowBand = levels[0] as number;
     const highBand = levels[5] as number;
-    // Same audio energy in every band → after BAND_GAIN [0, 0, 2, 5, 8, 11] dB,
-    // band 5 must end up well above band 0. Linear ratio is ~3.5×.
     expect(highBand).toBeGreaterThan(lowBand * 2);
+  });
+
+  it('distinguishes soft and loud sibilants in the high band (tanh, not hard clip)', () => {
+    const softReading = readOnce(flatSpectrum(90));
+    const loudReading = readOnce(flatSpectrum(200));
+    // Hard Math.min(1, …) would saturate both inputs to 1 in band 5 (gain
+    // 3.55×) and produce identical smoothed levels — the original visualizer
+    // bug. The tanh soft saturator must keep them resolvably apart.
+    expect(loudReading - softReading).toBeGreaterThan(0.05);
   });
 
   it('disconnects the analyser on detach', () => {
