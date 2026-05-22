@@ -302,7 +302,7 @@ describe('event parsing', () => {
     });
   });
 
-  it('parses model_probe_result and backfills null when mergedCapabilities is omitted', () => {
+  it('parses model_probe_result with merged capabilities and with explicit null', () => {
     const baseSelection = {
       familyId: 'whisper' as const,
       kind: 'catalog_model' as const,
@@ -347,8 +347,8 @@ describe('event parsing', () => {
     );
     expect(ready).toMatchObject({ available: true, status: 'ready' });
 
-    // When mergedCapabilities is omitted in the wire payload, the parser
-    // backfills an explicit null so consumers can `?? defaultCaps` safely.
+    // Rust emits explicit `null` for unset optionals (no `skip_serializing_if`),
+    // so the parser trusts the wire shape verbatim instead of backfilling.
     const missing = parseEventFrame(
       JSON.stringify({
         available: false,
@@ -356,6 +356,7 @@ describe('event parsing', () => {
         displayName: null,
         familyId: 'whisper',
         installed: false,
+        mergedCapabilities: null,
         message: 'The selected managed model is not installed or is incomplete.',
         modelId: 'small',
         resolvedPath: null,
@@ -370,13 +371,13 @@ describe('event parsing', () => {
   });
 
   it.each([
-    ['non-object JSON', '"hello"', 'Sidecar event must be a JSON object.'],
-    ['number JSON', '42', 'Sidecar event must be a JSON object.'],
-    ['missing type', '{}', 'event.type must be a string.'],
+    ['non-object JSON', '"hello"', /Sidecar event must be a JSON object/],
+    ['number JSON', '42', /Sidecar event must be a JSON object/],
+    ['missing type', '{}', /Unsupported sidecar event type/],
     [
       'unknown type',
       JSON.stringify({ type: 'nonexistent_event' }),
-      'Unsupported sidecar event type',
+      /Unsupported sidecar event type/,
     ],
   ] as const)('rejects malformed event (%s)', (_label, body, expectedMessage) => {
     expect(() => parseEventFrame(body)).toThrow(expectedMessage);

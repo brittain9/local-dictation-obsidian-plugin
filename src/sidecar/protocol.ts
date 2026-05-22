@@ -496,25 +496,33 @@ export interface AudioFrame {
 
 export type ParsedFrame<TEnvelope> = AudioFrame | JsonFrame<TEnvelope>;
 
-const SIDECAR_EVENT_TYPES = new Set<SidecarEvent['type']>([
-  'batch_cleanup_ready',
-  'context_request',
-  'error',
-  'health_ok',
-  'installed_models',
-  'model_catalog',
-  'model_install_update',
-  'model_probe_result',
-  'model_removed',
-  'model_store',
-  'session_started',
-  'session_state_changed',
-  'session_stopped',
-  'system_info',
-  'transcript_ready',
-  'transcription_queue_changed',
-  'warning',
-]);
+const SIDECAR_EVENT_TYPE_FLAGS = {
+  batch_cleanup_ready: 1,
+  context_request: 1,
+  error: 1,
+  health_ok: 1,
+  installed_models: 1,
+  model_catalog: 1,
+  model_install_update: 1,
+  model_probe_result: 1,
+  model_removed: 1,
+  model_store: 1,
+  session_started: 1,
+  session_state_changed: 1,
+  session_stopped: 1,
+  system_info: 1,
+  transcript_ready: 1,
+  transcription_queue_changed: 1,
+  warning: 1,
+} as const satisfies Record<SidecarEvent['type'], 1>;
+
+const SIDECAR_EVENT_TYPES: ReadonlySet<SidecarEvent['type']> = new Set(
+  Object.keys(SIDECAR_EVENT_TYPE_FLAGS) as SidecarEvent['type'][],
+);
+
+function isKnownEventType(value: unknown): value is SidecarEvent['type'] {
+  return typeof value === 'string' && SIDECAR_EVENT_TYPES.has(value as SidecarEvent['type']);
+}
 
 export class FramedMessageParser<TEnvelope> {
   private buffered: Uint8Array<ArrayBufferLike> = new Uint8Array(0);
@@ -575,19 +583,11 @@ export function parseEventFrame(jsonText: string): SidecarEvent {
   const parsedValue: unknown = JSON.parse(jsonText);
 
   if (!isRecord(parsedValue)) {
-    throw new Error('Sidecar event must be a JSON object.');
+    throw new Error(`Sidecar event must be a JSON object, received: ${jsonText.slice(0, 200)}`);
   }
 
-  if (typeof parsedValue.type !== 'string') {
-    throw new Error('event.type must be a string.');
-  }
-
-  if (!SIDECAR_EVENT_TYPES.has(parsedValue.type as SidecarEvent['type'])) {
-    throw new Error(`Unsupported sidecar event type: ${parsedValue.type}`);
-  }
-
-  if (parsedValue.type === 'model_probe_result' && parsedValue.mergedCapabilities === undefined) {
-    return { ...parsedValue, mergedCapabilities: null } as ModelProbeResultEvent;
+  if (!isKnownEventType(parsedValue.type)) {
+    throw new Error(`Unsupported sidecar event type: ${String(parsedValue.type)}`);
   }
 
   return parsedValue as unknown as SidecarEvent;
