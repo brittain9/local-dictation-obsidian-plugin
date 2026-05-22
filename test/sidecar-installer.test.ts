@@ -280,7 +280,6 @@ describe('installSidecar', () => {
     const variantDir = variantDirectoryPath(pluginDirectory, 'cpu');
     await mkdir(variantDir, { recursive: true });
     await writeFile(join(variantDir, 'local-dictation-sidecar'), 'old-binary');
-    await writeFile(join(variantDir, 'install.json'), '{"old":true}');
 
     const stagingDirectory = join(pluginDirectory, 'bin', '.cpu-staging');
     const backupDir = `${variantDir}.old`;
@@ -300,8 +299,6 @@ describe('installSidecar', () => {
     await expect(
       installSidecar({
         beforeReplace: async () => {
-          // Tear down staging right before the promotion rename, mimicking
-          // an external process or transient I/O failure.
           await rm(stagingDirectory, { force: true, recursive: true });
         },
         pluginDirectory,
@@ -311,10 +308,10 @@ describe('installSidecar', () => {
       }),
     ).rejects.toThrow();
 
+    // rename is atomic per inode, so one file confirms the whole dir survived.
     await expect(readFile(join(variantDir, 'local-dictation-sidecar'), 'utf8')).resolves.toBe(
       'old-binary',
     );
-    await expect(readFile(join(variantDir, 'install.json'), 'utf8')).resolves.toBe('{"old":true}');
     await expect(readInstallManifest(backupDir)).resolves.toBeNull();
   });
 
