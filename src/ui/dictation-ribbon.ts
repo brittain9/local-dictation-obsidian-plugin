@@ -5,8 +5,29 @@ import { AudioVisualizerTap } from '../audio/audio-visualizer-tap';
 import type { DictationControllerState } from '../dictation/dictation-session-controller';
 import type { QueueBackpressureTier } from '../sidecar/protocol';
 
-type RibbonIcon = 'audio-lines' | 'loader' | 'mic' | 'mic-off';
 type RibbonVisualState = 'idle' | 'starting' | 'listening' | 'speech_detected' | 'error';
+
+/**
+ * Custom audio-bars SVG used only while the ribbon is actively animating
+ * (`speech_detected`). Heights (10/16/8/14/12/8) are visually varied but
+ * sum-balanced left-vs-right (34 vs 34), avoiding both Lucide `audio-lines`'s
+ * left-loaded asymmetry (native 3/11/18/7/13/3) and the over-uniform look of a
+ * pair-mirrored bell. ViewBox + stroke attributes match Lucide so it blends
+ * with the rest of the ribbon iconography. The resting `listening` state keeps
+ * the standard Lucide `audio-lines` so the static look matches other Obsidian
+ * surfaces (e.g. the LLM sidebar ribbon).
+ */
+const ANIMATED_BARS_SVG =
+  '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" ' +
+  'fill="none" stroke="currentColor" stroke-width="2" ' +
+  'stroke-linecap="round" stroke-linejoin="round" class="svg-icon">' +
+  '<path d="M2 7v10"/>' +
+  '<path d="M6 4v16"/>' +
+  '<path d="M10 8v8"/>' +
+  '<path d="M14 5v14"/>' +
+  '<path d="M18 6v12"/>' +
+  '<path d="M22 8v8"/>' +
+  '</svg>';
 
 /**
  * Per-bar scaleY envelope as [floor, ceiling] tuples. Quiet speech shrinks bars
@@ -28,12 +49,22 @@ if (BAR_ENVELOPE.length !== AudioVisualizerTap.BAND_COUNT) {
 }
 const REDUCED_MOTION_QUERY = '(prefers-reduced-motion: reduce)';
 
+/**
+ * After VAD drops from speech_detected back to listening, keep the reactive
+ * look alive for this long before easing into the static "resting cymbal".
+ * Smooths over natural micro-pauses between phrases so the icon doesn't feel
+ * twitchy while the user is mid-thought.
+ */
+const SPEECH_TAIL_HOLD_MS = 5_000;
+
 export class DictationRibbonController {
   private bandReader: AudioBandReader | null = null;
   private rafId: number | null = null;
   private readonly reducedMotion: MediaQueryList;
   private readonly reducedMotionListener: () => void;
   private state: DictationControllerState = 'idle';
+  private visualState: DictationControllerState = 'idle';
+  private holdTimer: ReturnType<typeof setTimeout> | null = null;
   private queueTier: QueueBackpressureTier = 'normal';
 
   constructor(private readonly element: HTMLElement) {
@@ -51,7 +82,14 @@ export class DictationRibbonController {
     if (this.state === state) {
       return;
     }
+    const previousState = this.state;
     this.state = state;
+    if (this.shouldStartHold(previousState, state)) {
+      this.startHold();
+      return;
+    }
+    this.cancelHold();
+    this.visualState = state;
     this.render();
     this.syncAnimation();
   }
@@ -70,29 +108,73 @@ export class DictationRibbonController {
   }
 
   dispose(): void {
+    this.cancelHold();
     this.stopAnimation();
     this.reducedMotion.removeEventListener('change', this.reducedMotionListener);
     this.element.remove();
   }
 
   private render(): void {
-    const { icon, label } = buildRibbonState(this.state, this.queueTier);
+    const label = buildRibbonLabel(this.visualState, this.queueTier);
 
-    setIcon(this.element, icon);
+    this.paintIcon(this.visualState);
     this.element.setAttribute('aria-label', label);
     this.element.setAttribute('data-tooltip-position', 'top');
-    this.element.dataset.localSttState = toVisualState(this.state);
+    this.element.dataset.localSttState = toVisualState(this.visualState);
     this.element.title = label;
+  }
+
+  private paintIcon(state: DictationControllerState): void {
+    switch (state) {
+      case 'speech_detected':
+        this.element.innerHTML = ANIMATED_BARS_SVG;
+        return;
+      case 'listening':
+        setIcon(this.element, 'audio-lines');
+        return;
+      case 'idle':
+        setIcon(this.element, 'mic');
+        return;
+      case 'starting':
+        setIcon(this.element, 'loader');
+        return;
+      case 'error':
+        setIcon(this.element, 'mic-off');
+        return;
+    }
   }
 
   private syncAnimation(): void {
     const shouldRun =
-      this.state === 'speech_detected' && this.bandReader !== null && !this.reducedMotion.matches;
+      this.visualState === 'speech_detected' &&
+      this.bandReader !== null &&
+      !this.reducedMotion.matches;
 
     if (shouldRun) {
       this.startAnimation();
     } else {
       this.stopAnimation();
+    }
+  }
+
+  private shouldStartHold(from: DictationControllerState, to: DictationControllerState): boolean {
+    return from === 'speech_detected' && to === 'listening' && !this.reducedMotion.matches;
+  }
+
+  private startHold(): void {
+    this.cancelHold();
+    this.holdTimer = setTimeout(() => {
+      this.holdTimer = null;
+      this.visualState = this.state;
+      this.render();
+      this.syncAnimation();
+    }, SPEECH_TAIL_HOLD_MS);
+  }
+
+  private cancelHold(): void {
+    if (this.holdTimer !== null) {
+      clearTimeout(this.holdTimer);
+      this.holdTimer = null;
     }
   }
 
@@ -134,28 +216,21 @@ export class DictationRibbonController {
   }
 }
 
-function buildRibbonState(
+function buildRibbonLabel(
   state: DictationControllerState,
   _queueTier: QueueBackpressureTier,
-): {
-  icon: RibbonIcon;
-  label: string;
-} {
+): string {
   switch (state) {
     case 'idle':
-      return { icon: 'mic', label: 'Local Dictation — start dictation' };
-
+      return 'Local Dictation — start dictation';
     case 'starting':
-      return { icon: 'loader', label: 'Local Dictation — starting…' };
-
+      return 'Local Dictation — starting…';
     case 'listening':
-      return { icon: 'audio-lines', label: 'Local Dictation — listening' };
-
+      return 'Local Dictation — listening';
     case 'speech_detected':
-      return { icon: 'audio-lines', label: 'Local Dictation — hearing speech' };
-
+      return 'Local Dictation — hearing speech';
     case 'error':
-      return { icon: 'mic-off', label: 'Local Dictation — error' };
+      return 'Local Dictation — error';
   }
 }
 
