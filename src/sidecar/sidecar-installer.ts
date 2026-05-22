@@ -1,11 +1,14 @@
 import { createHash, type Hash } from 'node:crypto';
-import { createWriteStream, type WriteStream } from 'node:fs';
+import { createReadStream, createWriteStream, type WriteStream } from 'node:fs';
 import { chmod, mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import type { IncomingMessage } from 'node:http';
 import { get as httpsGet, type RequestOptions } from 'node:https';
 import { dirname, join, normalize, sep } from 'node:path';
-import { gunzipSync } from 'node:zlib';
+import { Writable } from 'node:stream';
+import { pipeline } from 'node:stream/promises';
+import { createGunzip } from 'node:zlib';
 
+import { getExistingPathKind } from '../filesystem/path-validation';
 import { asError } from '../shared/error-utils';
 import type { PluginLogger } from '../shared/plugin-logger';
 import { formatSidecarExecutableName } from './sidecar-executable';
@@ -179,8 +182,36 @@ export async function installSidecar(
     );
 
     await options.beforeReplace?.();
-    await rm(destinationDirectory, { force: true, recursive: true });
-    await rename(stagingDirectory, destinationDirectory);
+
+    // Atomic-ish promotion: move the existing install aside before we move
+    // the new one in, so a crash between the two renames leaves a recoverable
+    // backup rather than no install. Cleanup of any prior `.old` from a
+    // previous crashed install happens up front so it cannot accumulate.
+    const backupDir = `${destinationDirectory}.old`;
+    const destExists = (await getExistingPathKind(destinationDirectory)) !== 'missing';
+
+    if (destExists) {
+      await rm(backupDir, { force: true, recursive: true });
+      await rename(destinationDirectory, backupDir);
+    }
+
+    try {
+      await rename(stagingDirectory, destinationDirectory);
+    } catch (renameError) {
+      if (destExists) {
+        await rename(backupDir, destinationDirectory).catch((rollbackError) => {
+          options.logger?.warn(
+            'installer',
+            `Failed to roll back install backup: ${asError(rollbackError, 'rollback').message}`,
+          );
+        });
+      }
+      throw renameError;
+    }
+
+    if (destExists) {
+      await rm(backupDir, { force: true, recursive: true });
+    }
 
     options.logger?.debug(
       'installer',
@@ -432,8 +463,21 @@ function resolveSidecarExecutableName(): string {
 }
 
 async function extractTarGz(archivePath: string, destDir: string): Promise<void> {
-  const compressed = await readFile(archivePath);
-  const decompressed = gunzipSync(compressed);
+  // Stream the gunzip so the event loop is not blocked while decompressing
+  // (matters for the CUDA bundle). Memory is still O(archive) but no longer
+  // O(archive) of synchronous CPU on the main thread.
+  const chunks: Buffer[] = [];
+  await pipeline(
+    createReadStream(archivePath),
+    createGunzip(),
+    new Writable({
+      write(chunk: Buffer, _encoding, callback) {
+        chunks.push(chunk);
+        callback();
+      },
+    }),
+  );
+  const decompressed = Buffer.concat(chunks);
   const blockSize = 512;
   let offset = 0;
 
