@@ -20,6 +20,10 @@ export const JSON_FRAME_KIND = 0x01;
 export const AUDIO_FRAME_KIND = 0x02;
 export const FRAME_HEADER_LENGTH = 5;
 export const SESSION_ID_BYTES = 16;
+// Must match `MAX_FRAME_PAYLOAD` in native/src/protocol.rs. Symmetric caps stop a
+// corrupted length header (or a misbehaving sidecar) from triggering a multi-GiB
+// allocation that would OOM the Obsidian renderer.
+export const MAX_FRAME_PAYLOAD_BYTES = 16 * 1024 * 1024;
 
 export type AccelerationPreference = 'auto' | 'cpu_only';
 export type SpeakingStyle = 'responsive' | 'balanced' | 'patient';
@@ -524,6 +528,11 @@ function isKnownEventType(value: unknown): value is SidecarEvent['type'] {
   return typeof value === 'string' && SIDECAR_EVENT_TYPES.has(value as SidecarEvent['type']);
 }
 
+export interface PushChunkResult<TEnvelope> {
+  fatal: Error | undefined;
+  frames: ParsedFrame<TEnvelope>[];
+}
+
 export class FramedMessageParser<TEnvelope> {
   private buffered: Uint8Array<ArrayBufferLike> = new Uint8Array(0);
 
@@ -533,11 +542,12 @@ export class FramedMessageParser<TEnvelope> {
     this.buffered = new Uint8Array(0);
   }
 
-  pushChunk(chunk: Uint8Array<ArrayBufferLike>): ParsedFrame<TEnvelope>[] {
+  pushChunk(chunk: Uint8Array<ArrayBufferLike>): PushChunkResult<TEnvelope> {
     this.buffered = concatBytes(this.buffered, chunk);
 
     const frames: ParsedFrame<TEnvelope>[] = [];
     let offset = 0;
+    let fatal: Error | undefined;
 
     while (this.buffered.byteLength - offset >= FRAME_HEADER_LENGTH) {
       const kind = this.buffered[offset];
@@ -547,6 +557,17 @@ export class FramedMessageParser<TEnvelope> {
       }
 
       const payloadLength = readUint32LE(this.buffered, offset + 1);
+
+      // Cap before slicing: a corrupted 4-byte length header can otherwise
+      // drive an allocation up to ~4 GiB while the parser waits for bytes
+      // that will never arrive.
+      if (payloadLength > MAX_FRAME_PAYLOAD_BYTES) {
+        fatal = new Error(
+          `Sidecar frame payload exceeds limit: ${payloadLength} bytes (max ${MAX_FRAME_PAYLOAD_BYTES}).`,
+        );
+        break;
+      }
+
       const frameLength = FRAME_HEADER_LENGTH + payloadLength;
 
       if (this.buffered.byteLength - offset < frameLength) {
@@ -555,27 +576,39 @@ export class FramedMessageParser<TEnvelope> {
 
       const payload = this.buffered.slice(offset + FRAME_HEADER_LENGTH, offset + frameLength);
 
-      if (kind === JSON_FRAME_KIND) {
-        frames.push({
-          envelope: this.parseJsonEnvelope(textDecoder.decode(payload)),
-          kind,
-        });
-      } else if (kind === AUDIO_FRAME_KIND) {
-        const { frameBytes, sessionId } = decodeAudioFrameEnvelope(payload);
-        frames.push({
-          frameBytes,
-          kind,
-          sessionId,
-        });
-      } else {
-        throw new Error(`Unsupported sidecar frame kind: ${kind}`);
+      try {
+        if (kind === JSON_FRAME_KIND) {
+          frames.push({
+            envelope: this.parseJsonEnvelope(textDecoder.decode(payload)),
+            kind,
+          });
+        } else if (kind === AUDIO_FRAME_KIND) {
+          const { frameBytes, sessionId } = decodeAudioFrameEnvelope(payload);
+          frames.push({
+            frameBytes,
+            kind,
+            sessionId,
+          });
+        } else {
+          fatal = new Error(`Unsupported sidecar frame kind: ${kind}`);
+          break;
+        }
+      } catch (error) {
+        fatal =
+          error instanceof Error
+            ? error
+            : new Error(`Failed to parse sidecar frame: ${String(error)}`);
+        break;
       }
 
       offset += frameLength;
     }
 
-    this.buffered = this.buffered.slice(offset);
-    return frames;
+    // On fatal, the buffer is unrecoverable: payload-length corruption or an
+    // unknown frame kind leaves us with no resynchronization point. Drop the
+    // backlog so the caller can restart the stream from a known state.
+    this.buffered = fatal ? new Uint8Array(0) : this.buffered.slice(offset);
+    return { fatal, frames };
   }
 }
 

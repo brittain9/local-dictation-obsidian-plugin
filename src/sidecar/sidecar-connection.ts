@@ -396,17 +396,9 @@ export class SidecarConnection {
   }
 
   private handleStdoutChunk(chunk: Uint8Array): void {
-    let parsedFrames: ReturnType<typeof this.frameParser.pushChunk>;
+    const { fatal, frames } = this.frameParser.pushChunk(chunk);
 
-    try {
-      parsedFrames = this.frameParser.pushChunk(chunk);
-    } catch (error) {
-      this.options.logger?.warn('protocol', 'failed to parse sidecar stdout chunk', error);
-      this.frameParser.reset();
-      return;
-    }
-
-    for (const frame of parsedFrames) {
+    for (const frame of frames) {
       if (frame.kind !== JSON_FRAME_KIND) {
         this.options.logger?.warn(
           'protocol',
@@ -416,6 +408,15 @@ export class SidecarConnection {
       }
 
       this.dispatchEvent(frame.envelope);
+    }
+
+    if (fatal !== undefined) {
+      // The stream is unrecoverable: drain waiters with a meaningful error
+      // and tear down the process. The unexpected-exit handler will surface
+      // the crash and the next sendCommand respawns via ensureStarted().
+      this.options.logger?.warn('protocol', 'fatal sidecar stream error; restarting', fatal);
+      this.rejectPendingWaiters(new Error(`Sidecar stream parse failed: ${fatal.message}`));
+      void this.process.stop();
     }
   }
 
