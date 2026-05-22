@@ -31,6 +31,10 @@ describe('resolvePluginSettings', () => {
     expect(resolvePluginSettings(undefined)).toEqual(DEFAULT_PLUGIN_SETTINGS);
   });
 
+  it('defaults missing schemaVersion to the current settings schema', () => {
+    expect(resolvePluginSettings({}).schemaVersion).toBe(1);
+  });
+
   it('defaults to visible per-utterance cleanup with the Clean up prompt', () => {
     expect(DEFAULT_PLUGIN_SETTINGS).toMatchObject({
       llmFeaturesEnabled: true,
@@ -158,6 +162,14 @@ describe('resolvePluginSettings', () => {
         useNoteAsContext: 'yes',
       }),
     ).toEqual(DEFAULT_PLUGIN_SETTINGS);
+  });
+
+  it('validates setupCompletedAt as the exact persisted ISO timestamp', () => {
+    const timestamp = '2026-05-22T10:00:00.000Z';
+
+    expect(resolvePluginSettings({ setupCompletedAt: timestamp }).setupCompletedAt).toBe(timestamp);
+    expect(resolvePluginSettings({ setupCompletedAt: 'corrupted' }).setupCompletedAt).toBeNull();
+    expect(resolvePluginSettings({ setupCompletedAt: '2026-05-22' }).setupCompletedAt).toBeNull();
   });
 
   it('clamps LLM postprocess numeric settings at the settings boundary', () => {

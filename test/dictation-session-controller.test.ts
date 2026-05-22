@@ -247,6 +247,44 @@ describe('DictationSessionController', () => {
     expect(sessions[0]?.dispose).toHaveBeenCalledTimes(1);
   });
 
+  it('warns when batch cleanup cannot read transcript text after the note closes', async () => {
+    const logger = new FakeLogger();
+    const sidecarConnection = new FakeSidecarConnection();
+    const sessions: FakeSession[] = [];
+    const controller = createController({
+      createSession: (session) => {
+        sessions.push(session);
+      },
+      getSettings: () =>
+        createSettings({
+          llmFeaturesEnabled: true,
+          llmPostprocessMode: 'batch',
+          llmPostprocessModel: 'llama3.2:latest',
+          selectedModel: createExternalModelSelection(),
+        }),
+      logger,
+      sidecarConnection,
+    });
+
+    await controller.startDictation();
+    const sessionId = sidecarConnection.startSession.mock.calls[0]?.[0].sessionId ?? '';
+    sidecarConnection.emit(transcriptReady(sessionId, 'raw transcript'));
+    await controller.stopDictation();
+    const session = sessions[0];
+    if (session === undefined) {
+      throw new Error('expected session fixture');
+    }
+    session.currentSessionText = '';
+    sidecarConnection.emit({ reason: 'user_stop', sessionId, type: 'session_stopped' });
+
+    expect(sidecarConnection.requestBatchCleanup).not.toHaveBeenCalled();
+    expect(logger.warn).toHaveBeenCalledWith(
+      'llm',
+      'batch cleanup skipped: locked note closed before transcript could be read',
+    );
+    expect(session.dispose).toHaveBeenCalledTimes(1);
+  });
+
   it('cleans up silently when the sidecar rejects capacity as a backstop', async () => {
     const captureStream = new FakeCaptureStream();
     const logger = new FakeLogger();
