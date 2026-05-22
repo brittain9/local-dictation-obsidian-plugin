@@ -362,7 +362,6 @@ pub enum Event {
         status: HealthStatus,
     },
     ModelStore {
-        #[serde(skip_serializing_if = "Option::is_none")]
         override_path: Option<String>,
         path: String,
         using_default_path: bool,
@@ -379,22 +378,16 @@ pub enum Event {
     },
     ModelProbeResult {
         available: bool,
-        #[serde(skip_serializing_if = "Option::is_none")]
         details: Option<String>,
-        #[serde(skip_serializing_if = "Option::is_none")]
         display_name: Option<String>,
         runtime_id: RuntimeId,
         family_id: ModelFamilyId,
         installed: bool,
-        #[serde(skip_serializing_if = "Option::is_none")]
         merged_capabilities: Option<EngineCapabilities>,
         message: String,
-        #[serde(skip_serializing_if = "Option::is_none")]
         model_id: Option<String>,
-        #[serde(skip_serializing_if = "Option::is_none")]
         resolved_path: Option<String>,
         selection: SelectedModel,
-        #[serde(skip_serializing_if = "Option::is_none")]
         size_bytes: Option<u64>,
         status: ModelProbeStatus,
     },
@@ -405,18 +398,14 @@ pub enum Event {
         removed: bool,
     },
     ModelInstallUpdate {
-        #[serde(skip_serializing_if = "Option::is_none")]
         details: Option<String>,
-        #[serde(skip_serializing_if = "Option::is_none")]
         downloaded_bytes: Option<u64>,
         runtime_id: RuntimeId,
         family_id: ModelFamilyId,
         install_id: String,
-        #[serde(skip_serializing_if = "Option::is_none")]
         message: Option<String>,
         model_id: String,
         state: ModelInstallState,
-        #[serde(skip_serializing_if = "Option::is_none")]
         total_bytes: Option<u64>,
     },
     SystemInfo {
@@ -448,7 +437,7 @@ pub enum Event {
         utterance_id: Uuid,
         utterance_index: u64,
         utterance_start_ms_in_session: u64,
-        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        #[serde(default)]
         warnings: Vec<RequestWarning>,
     },
     TranscriptionQueueChanged {
@@ -645,9 +634,9 @@ mod tests {
     use super::{
         AUDIO_FRAME_KIND, AccelerationPreference, AudioFrame, Command, Event, EventEnvelope,
         FRAME_HEADER_LENGTH, IncomingFrame, JSON_FRAME_KIND, ListeningMode, MAX_FRAME_PAYLOAD,
-        PCM_BYTES_PER_FRAME, QueueBackpressureTier, SelectedModel, SessionStopReason,
-        SpeakingStyle, StageId, encode_audio_frame_envelope, read_frame, write_event_frame,
-        write_frame,
+        ModelInstallState, ModelProbeStatus, PCM_BYTES_PER_FRAME, QueueBackpressureTier,
+        SelectedModel, SessionStopReason, SpeakingStyle, StageId, encode_audio_frame_envelope,
+        read_frame, write_event_frame, write_frame,
     };
     use crate::engine::capabilities::{ModelFamilyId, RuntimeId};
     use uuid::Uuid;
@@ -909,5 +898,108 @@ mod tests {
                 .to_string()
                 .contains("frame payload exceeds maximum supported size")
         );
+    }
+
+    // The TypeScript side declares these fields as `T | null` (non-optional) /
+    // non-optional `Vec` and trusts the wire format. Omitting a field would
+    // surface as `undefined` in JS and bypass `!== null` checks downstream
+    // (NaN math, broken iterators). Pin the contract: optional becomes null,
+    // empty vec becomes `[]`.
+
+    #[test]
+    fn transcript_ready_serializes_empty_warnings_as_empty_array() {
+        let event = Event::TranscriptReady {
+            is_final: true,
+            llm_postprocess_raw_text: None,
+            pause_ms_before_utterance: None,
+            processing_duration_ms: 12,
+            revision: 0,
+            segments: Vec::new(),
+            session_id: "session-1".to_string(),
+            stage_results: Vec::new(),
+            text: "hello".to_string(),
+            utterance_duration_ms: 1000,
+            utterance_end_ms_in_session: 1100,
+            utterance_id: Uuid::new_v4(),
+            utterance_index: 0,
+            utterance_start_ms_in_session: 100,
+            warnings: Vec::new(),
+        };
+        let json = serde_json::to_value(&event).expect("event should serialize");
+
+        assert_eq!(json["warnings"], serde_json::json!([]));
+    }
+
+    #[test]
+    fn model_install_update_serializes_none_optionals_as_null() {
+        let event = Event::ModelInstallUpdate {
+            details: None,
+            downloaded_bytes: None,
+            runtime_id: RuntimeId::WhisperCpp,
+            family_id: ModelFamilyId::Whisper,
+            install_id: "install-1".to_string(),
+            message: None,
+            model_id: "small".to_string(),
+            state: ModelInstallState::Queued,
+            total_bytes: None,
+        };
+        let json = serde_json::to_value(&event).expect("event should serialize");
+
+        for field in ["details", "downloadedBytes", "message", "totalBytes"] {
+            assert!(
+                json[field].is_null(),
+                "{field} must serialize as JSON null, not be omitted: {json}"
+            );
+        }
+    }
+
+    #[test]
+    fn model_probe_result_serializes_none_optionals_as_null() {
+        let event = Event::ModelProbeResult {
+            available: false,
+            details: None,
+            display_name: None,
+            runtime_id: RuntimeId::WhisperCpp,
+            family_id: ModelFamilyId::Whisper,
+            installed: false,
+            merged_capabilities: None,
+            message: "missing".to_string(),
+            model_id: None,
+            resolved_path: None,
+            selection: SelectedModel::ExternalFile {
+                runtime_id: RuntimeId::WhisperCpp,
+                family_id: ModelFamilyId::Whisper,
+                file_path: "/tmp/m.bin".to_string(),
+            },
+            size_bytes: None,
+            status: ModelProbeStatus::Missing,
+        };
+        let json = serde_json::to_value(&event).expect("event should serialize");
+
+        for field in [
+            "details",
+            "displayName",
+            "mergedCapabilities",
+            "modelId",
+            "resolvedPath",
+            "sizeBytes",
+        ] {
+            assert!(
+                json[field].is_null(),
+                "{field} must serialize as JSON null, not be omitted: {json}"
+            );
+        }
+    }
+
+    #[test]
+    fn model_store_serializes_none_override_as_null() {
+        let event = Event::ModelStore {
+            override_path: None,
+            path: "/tmp/models".to_string(),
+            using_default_path: true,
+        };
+        let json = serde_json::to_value(&event).expect("event should serialize");
+
+        assert!(json["overridePath"].is_null());
     }
 }

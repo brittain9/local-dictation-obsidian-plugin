@@ -91,7 +91,7 @@ pub enum LanguageSupport {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AcceleratorAvailability {
     pub available: bool,
-    #[serde(rename = "unavailableReason", skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "unavailableReason")]
     pub unavailable_reason: Option<String>,
 }
 
@@ -153,10 +153,7 @@ pub struct ModelFamilyCapabilities {
     pub supports_language_selection: bool,
     #[serde(rename = "supportedLanguages")]
     pub supported_languages: LanguageSupport,
-    #[serde(
-        rename = "maxAudioDurationSecs",
-        skip_serializing_if = "Option::is_none"
-    )]
+    #[serde(rename = "maxAudioDurationSecs")]
     pub max_audio_duration_secs: Option<f32>,
     #[serde(rename = "producesPunctuation")]
     pub produces_punctuation: bool,
@@ -194,6 +191,32 @@ mod tests {
         assert!(!unknown.produces_punctuation);
         assert!(unknown.max_audio_duration_secs.is_none());
         assert_eq!(unknown.supported_languages, LanguageSupport::Unknown);
+    }
+
+    // TypeScript declares both fields as `T | null`. Omission would surface as
+    // `undefined` in JS and slip past `!== null` guards (capability-view would
+    // call `Math.round(undefined)` -> NaN). Pin the wire contract here.
+
+    #[test]
+    fn model_family_capabilities_serializes_none_max_audio_duration_as_null() {
+        let unknown = ModelFamilyCapabilities::unknown();
+        let json = serde_json::to_value(&unknown).expect("capabilities should serialize");
+
+        assert!(
+            json["maxAudioDurationSecs"].is_null(),
+            "maxAudioDurationSecs must serialize as JSON null, not be omitted: {json}"
+        );
+    }
+
+    #[test]
+    fn accelerator_availability_serializes_none_reason_as_null() {
+        let available = AcceleratorAvailability::available();
+        let json = serde_json::to_value(&available).expect("availability should serialize");
+
+        assert!(
+            json["unavailableReason"].is_null(),
+            "unavailableReason must serialize as JSON null, not be omitted: {json}"
+        );
     }
 }
 
