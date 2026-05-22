@@ -145,16 +145,16 @@ describe('DictationRibbonController a11y during hold', () => {
 });
 
 describe('DictationRibbonController paintIcon', () => {
-  it('shares the bars SVG between listening and speech_detected (no DOM swap on the flip)', () => {
+  it('uses the static Lucide wave icon for listening and the custom SVG for speech', () => {
     const { controller, element } = makeController();
     controller.setState('listening');
-    // The 6-bar SVG is the listening icon — keeps path identities across the
-    // listening↔speech_detected flip so styles.css transitions can fire.
-    expect(countPaths(element.innerHTML)).toBe(6);
+    expect(setIcon).toHaveBeenLastCalledWith(expect.anything(), 'audio-lines');
+    expect(element.innerHTML).toBe('<svg data-icon="audio-lines"></svg>');
 
-    const beforeFlip = element.innerHTML;
+    vi.mocked(setIcon).mockClear();
     controller.setState('speech_detected');
-    expect(element.innerHTML).toBe(beforeFlip);
+    expect(setIcon).not.toHaveBeenCalled();
+    expect(countPaths(element.innerHTML)).toBe(6);
   });
 
   it('does not re-inject the SVG on a redundant paintIcon (same icon)', () => {
@@ -165,7 +165,7 @@ describe('DictationRibbonController paintIcon', () => {
 
     // setState('speech_detected') during the tail hold (real state=listening,
     // visual=speech_detected) triggers paintIcon('speech_detected') again. The
-    // icon hasn't changed (still 'bars'), so innerHTML must NOT be rewritten —
+    // icon hasn't changed (still the animated-bars SVG), so innerHTML must NOT be rewritten —
     // otherwise the live <path> nodes that CSS is mid-transition on get
     // destroyed and replaced, snapping the animation.
     controller.setState('listening');
@@ -173,7 +173,7 @@ describe('DictationRibbonController paintIcon', () => {
     expect(element.innerHTML).toBe(snapshot);
   });
 
-  it('uses Lucide setIcon for idle/starting/error states', () => {
+  it('uses Lucide setIcon for non-animated states', () => {
     const { controller } = makeController();
     // Constructor renders idle → setIcon called with 'mic'.
     expect(setIcon).toHaveBeenLastCalledWith(expect.anything(), 'mic');
@@ -182,15 +182,17 @@ describe('DictationRibbonController paintIcon', () => {
     expect(setIcon).toHaveBeenLastCalledWith(expect.anything(), 'loader');
 
     controller.setState('listening');
+    expect(setIcon).toHaveBeenLastCalledWith(expect.anything(), 'audio-lines');
+
     controller.setState('speech_detected');
     controller.setState('error');
     expect(setIcon).toHaveBeenLastCalledWith(expect.anything(), 'mic-off');
   });
 
-  it('does not call setIcon when entering the bars-driven states', () => {
+  it('does not call setIcon when entering the animated speech state', () => {
     const { controller } = makeController();
-    vi.mocked(setIcon).mockClear();
     controller.setState('listening');
+    vi.mocked(setIcon).mockClear();
     controller.setState('speech_detected');
     expect(setIcon).not.toHaveBeenCalled();
   });

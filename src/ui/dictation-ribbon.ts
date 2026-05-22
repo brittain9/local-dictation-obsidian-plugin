@@ -6,17 +6,13 @@ import type { DictationControllerState } from '../dictation/dictation-session-co
 import type { QueueBackpressureTier } from '../sidecar/protocol';
 import { ValueNoise1D } from './value-noise';
 
-type RibbonIcon = 'bars' | 'mic' | 'loader' | 'mic-off';
+type RibbonIcon = 'animated-bars' | 'audio-lines' | 'mic' | 'loader' | 'mic-off';
 
 /**
- * Custom audio-bars SVG shared by both `listening` and `speech_detected`. A
- * palindromic 8/14/16/16/14/8 silhouette (center-peaked, sum-balanced) replaces
- * Lucide `audio-lines`, and crucially the same path nodes persist across the
- * listening ↔ speech_detected flip — the styles.css 450ms opacity crossfade and
- * the 60ms / 550ms transform transitions only fire when the path identities
- * don't change between data-state changes. Listening uses the same DOM at
- * opacity 0.45 (per styles.css); speech_detected goes full opacity and writes
- * per-bar CSS variables on every frame.
+ * Custom audio-bars SVG used only while the ribbon is actively animating
+ * (`speech_detected`). The resting `listening` state keeps the standard Lucide
+ * `audio-lines` wave icon so the static state stays visually distinct from the
+ * reactive speech state.
  */
 const ANIMATED_BARS_SVG =
   '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" ' +
@@ -189,8 +185,11 @@ export class DictationRibbonController {
     }
     this.currentIcon = icon;
     switch (icon) {
-      case 'bars':
+      case 'animated-bars':
         this.element.innerHTML = ANIMATED_BARS_SVG;
+        return;
+      case 'audio-lines':
+        setIcon(this.element, 'audio-lines');
         return;
       case 'mic':
         setIcon(this.element, 'mic');
@@ -314,8 +313,9 @@ function iconForState(state: DictationControllerState): RibbonIcon {
     case 'starting':
       return 'loader';
     case 'listening':
+      return 'audio-lines';
     case 'speech_detected':
-      return 'bars';
+      return 'animated-bars';
     case 'error':
       return 'mic-off';
     default:
