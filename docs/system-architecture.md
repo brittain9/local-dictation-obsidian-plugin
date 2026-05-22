@@ -153,7 +153,7 @@ sequenceDiagram
 | `stop_session` | Graceful stop (drain pending transcriptions) |
 | `cancel_session` | Immediate cancel (discard pending) |
 | `context_response` | Reply to a `context_request` with the plugin-assembled `ContextWindow` (or `null`); correlated by `correlationId` |
-| `shutdown` | Request sidecar exit |
+| `shutdown` | Hard process-level cancel and sidecar exit; call `stop_session` first when final transcripts must drain |
 | `get_model_store` | Query model store path |
 | `list_model_catalog` | Fetch built-in model catalog |
 | `list_installed_models` | List locally installed models |

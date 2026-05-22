@@ -179,17 +179,15 @@ pub fn run_post_engine(
     }
 }
 
-/// Stages emit `durationMs: 0` placeholders in their payload; the loop
-/// overwrites with the measured wall-clock duration after the stage returns.
+/// Object payloads always receive the measured wall-clock duration after the
+/// stage returns. Stages do not need to emit a `durationMs` placeholder.
 fn stage_payload_with_duration(
     payload: Option<serde_json::Value>,
     duration_ms: u64,
 ) -> Option<serde_json::Value> {
     let mut payload = payload?;
 
-    if let serde_json::Value::Object(ref mut object) = payload
-        && object.contains_key("durationMs")
-    {
+    if let serde_json::Value::Object(ref mut object) = payload {
         object.insert("durationMs".to_string(), serde_json::json!(duration_ms));
     }
 
@@ -437,7 +435,13 @@ mod tests {
         assert_eq!(outcome.status, StageStatus::Ok);
         assert_eq!(outcome.revision_in, 0);
         assert_eq!(outcome.revision_out, Some(1));
-        assert_eq!(outcome.payload, Some(json!({ "rule": "test" })));
+        let payload = outcome.payload.as_ref().expect("payload");
+        assert_eq!(payload.get("rule"), Some(&json!("test")));
+        assert!(
+            payload
+                .get("durationMs")
+                .is_some_and(|value| value.is_u64())
+        );
     }
 
     #[test]
@@ -625,7 +629,20 @@ mod tests {
         assert!(
             matches!(&outcome.status, StageStatus::Failed { error } if error.contains("utterance duration"))
         );
-        assert_eq!(outcome.payload, Some(json!({ "tried": "overrun" })));
+        let payload = outcome.payload.as_ref().expect("payload");
+        assert_eq!(payload.get("tried"), Some(&json!("overrun")));
+        assert!(
+            payload
+                .get("durationMs")
+                .is_some_and(|value| value.is_u64())
+        );
+    }
+
+    #[test]
+    fn stage_payload_with_duration_inserts_duration_without_placeholder() {
+        let payload = stage_payload_with_duration(Some(json!({ "rule": "test" })), 42);
+
+        assert_eq!(payload, Some(json!({ "durationMs": 42, "rule": "test" })));
     }
 
     #[test]
