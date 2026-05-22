@@ -590,8 +590,7 @@ export class FramedMessageParser<TEnvelope> {
             sessionId,
           });
         } else {
-          fatal = new Error(`Unsupported sidecar frame kind: ${kind}`);
-          break;
+          throw new Error(`Unsupported sidecar frame kind: ${kind}`);
         }
       } catch (error) {
         fatal =

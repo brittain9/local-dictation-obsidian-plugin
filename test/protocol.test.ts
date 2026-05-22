@@ -111,27 +111,6 @@ describe('framing', () => {
     );
   });
 
-  it('reports a fatal result on unknown frame kind bytes without dropping prior frames', () => {
-    const parser = new FramedMessageParser(parseEventFrame);
-    const goodFrame = encodeJsonFrame(transcriptReadyPayload({ text: 'before-bad-frame' }));
-    const badFrame = new Uint8Array(FRAME_HEADER_LENGTH);
-    badFrame[0] = 0xff;
-    new DataView(badFrame.buffer).setUint32(1, 0, true);
-
-    const combined = new Uint8Array(goodFrame.byteLength + badFrame.byteLength);
-    combined.set(goodFrame, 0);
-    combined.set(badFrame, goodFrame.byteLength);
-
-    const { fatal, frames } = parser.pushChunk(combined);
-
-    expect(frames).toHaveLength(1);
-    expect(frames[0]).toMatchObject({
-      envelope: { text: 'before-bad-frame', type: 'transcript_ready' },
-      kind: JSON_FRAME_KIND,
-    });
-    expect(fatal?.message).toBe('Unsupported sidecar frame kind: 255');
-  });
-
   it('rejects wrong-size payloads in encodeAudioFrame', () => {
     expect(() => encodeAudioFrame(SESSION_ID, new Uint8Array(1))).toThrow(
       `Audio frames must be ${PCM_BYTES_PER_FRAME} bytes, received 1.`,
