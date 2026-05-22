@@ -15,7 +15,6 @@ import {
   createProbeModelSelectionCommand,
   createRemoveModelCommand,
   createRunBatchCleanupCommand,
-  createShutdownCommand,
   createStartSessionCommand,
   createStopSessionCommand,
   type ErrorEvent,
@@ -239,7 +238,15 @@ export class SidecarConnection {
   }
 
   async cancelModelInstall(installId: string): Promise<void> {
-    await this.sendCommand(createCancelModelInstallCommand(installId));
+    if (!this.process.isRunning()) {
+      return;
+    }
+
+    try {
+      this.process.write(encodeJsonFrame(createCancelModelInstallCommand(installId)));
+    } catch (error) {
+      throw asError(error, 'Failed to write sidecar command: cancel_model_install');
+    }
   }
 
   async startSession(
@@ -298,11 +305,12 @@ export class SidecarConnection {
     }
 
     this.expectedStop = true;
-    try {
-      this.process.write(encodeJsonFrame(createShutdownCommand()));
-    } finally {
-      await this.process.stop();
-    }
+    this.rejectPendingWaiters(new Error('Sidecar is shutting down.'));
+
+    // Stdin EOF is the shutdown signal. Avoid writing the redundant wire-level
+    // shutdown command immediately before closing stdin; Node write() only
+    // guarantees buffering, not that bytes flushed to the OS pipe.
+    await this.process.stop();
   }
 
   sendAudioFrame(sessionId: string, frameBytes: Uint8Array): void {
@@ -359,16 +367,6 @@ export class SidecarConnection {
         reject(asError(error, `Failed to write sidecar command: ${command.type}`));
       }
     });
-  }
-
-  private async sendCommand(command: SidecarCommand): Promise<void> {
-    await this.ensureStarted();
-
-    try {
-      this.process.write(encodeJsonFrame(command));
-    } catch (error) {
-      throw asError(error, `Failed to write sidecar command: ${command.type}`);
-    }
   }
 
   private createPendingWaiter(
