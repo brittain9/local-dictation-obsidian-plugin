@@ -18,6 +18,7 @@ import {
   FRAME_HEADER_LENGTH,
   FramedMessageParser,
   JSON_FRAME_KIND,
+  MAX_FRAME_PAYLOAD_BYTES,
   parseEventFrame,
   SESSION_ID_BYTES,
   sessionIdToBytes,
@@ -110,19 +111,6 @@ describe('framing', () => {
     );
   });
 
-  it('rejects unknown frame kind bytes in the framed parser', () => {
-    const parser = new FramedMessageParser(parseEventFrame);
-    const payload = new Uint8Array(4);
-    const frame = new Uint8Array(FRAME_HEADER_LENGTH + payload.byteLength);
-    const view = new DataView(frame.buffer);
-
-    frame[0] = 0xff;
-    view.setUint32(1, payload.byteLength, true);
-    frame.set(payload, FRAME_HEADER_LENGTH);
-
-    expect(() => parser.pushChunk(frame)).toThrow('Unsupported sidecar frame kind: 255');
-  });
-
   it('rejects wrong-size payloads in encodeAudioFrame', () => {
     expect(() => encodeAudioFrame(SESSION_ID, new Uint8Array(1))).toThrow(
       `Audio frames must be ${PCM_BYTES_PER_FRAME} bytes, received 1.`,
@@ -139,11 +127,12 @@ describe('framing', () => {
     combined.set(audioFrame, jsonFrame.byteLength);
 
     // Split mid-frame to confirm the parser buffers across chunks.
-    const frames = [
-      ...parser.pushChunk(combined.slice(0, 17)),
-      ...parser.pushChunk(combined.slice(17)),
-    ];
+    const first = parser.pushChunk(combined.slice(0, 17));
+    const second = parser.pushChunk(combined.slice(17));
+    const frames = [...first.frames, ...second.frames];
 
+    expect(first.fatal).toBeUndefined();
+    expect(second.fatal).toBeUndefined();
     expect(frames).toHaveLength(2);
     expect(frames[0]).toMatchObject({
       envelope: { type: 'transcript_ready' },
@@ -154,6 +143,98 @@ describe('framing', () => {
       kind: AUDIO_FRAME_KIND,
       sessionId: SESSION_ID,
     });
+  });
+});
+
+// Fatal stream handling ------------------------------------------------------
+
+describe('FramedMessageParser fatal stream handling', () => {
+  function encodeFatalHeader(kind: number, declaredPayloadLength: number): Uint8Array {
+    const header = new Uint8Array(FRAME_HEADER_LENGTH);
+    header[0] = kind;
+    new DataView(header.buffer).setUint32(1, declaredPayloadLength, true);
+    return header;
+  }
+
+  it('flags a fatal result when payload length exceeds the cap', () => {
+    const parser = new FramedMessageParser(parseEventFrame);
+    const header = encodeFatalHeader(JSON_FRAME_KIND, 0xffffffff);
+
+    const { fatal, frames } = parser.pushChunk(header);
+
+    expect(frames).toEqual([]);
+    expect(fatal?.message).toContain(`max ${MAX_FRAME_PAYLOAD_BYTES}`);
+    expect(fatal?.message).toContain('4294967295');
+  });
+
+  it('accepts a payload length of exactly MAX_FRAME_PAYLOAD_BYTES', () => {
+    // Boundary spec: <= MAX_FRAME_PAYLOAD_BYTES is accepted, matching Rust's
+    // ensure!(payload_length <= MAX_FRAME_PAYLOAD) in native/src/protocol.rs.
+    const parser = new FramedMessageParser(parseEventFrame);
+    const header = encodeFatalHeader(JSON_FRAME_KIND, MAX_FRAME_PAYLOAD_BYTES);
+
+    const { fatal, frames } = parser.pushChunk(header);
+
+    // The parser buffers waiting for the (huge) body and does not flag fatal.
+    expect(frames).toEqual([]);
+    expect(fatal).toBeUndefined();
+  });
+
+  it('delivers every valid frame that precedes a fatal frame in the same chunk', () => {
+    const parser = new FramedMessageParser(parseEventFrame);
+    const first = encodeJsonFrame(transcriptReadyPayload({ text: 'first' }));
+    const second = encodeJsonFrame(transcriptReadyPayload({ text: 'second' }));
+    const fatalFrame = encodeFatalHeader(0xff, 0);
+
+    const combined = new Uint8Array(first.byteLength + second.byteLength + fatalFrame.byteLength);
+    combined.set(first, 0);
+    combined.set(second, first.byteLength);
+    combined.set(fatalFrame, first.byteLength + second.byteLength);
+
+    const { fatal, frames } = parser.pushChunk(combined);
+
+    expect(frames).toHaveLength(2);
+    expect(frames[0]).toMatchObject({ envelope: { text: 'first', type: 'transcript_ready' } });
+    expect(frames[1]).toMatchObject({ envelope: { text: 'second', type: 'transcript_ready' } });
+    expect(fatal?.message).toBe('Unsupported sidecar frame kind: 255');
+  });
+
+  it('discards the buffered backlog after a fatal so subsequent chunks resync', () => {
+    const parser = new FramedMessageParser(parseEventFrame);
+
+    const fatalFrame = encodeFatalHeader(0xff, 0);
+    const fatalResult = parser.pushChunk(fatalFrame);
+    expect(fatalResult.fatal).toBeDefined();
+
+    // A clean frame pushed after the fatal must parse as if the buffer were empty.
+    const cleanFrame = encodeJsonFrame(transcriptReadyPayload({ text: 'after-recovery' }));
+    const next = parser.pushChunk(cleanFrame);
+
+    expect(next.fatal).toBeUndefined();
+    expect(next.frames).toHaveLength(1);
+    expect(next.frames[0]).toMatchObject({
+      envelope: { text: 'after-recovery', type: 'transcript_ready' },
+    });
+  });
+
+  it('reports JSON envelope parse errors as fatal without losing earlier frames', () => {
+    const parser = new FramedMessageParser(parseEventFrame);
+    const good = encodeJsonFrame(transcriptReadyPayload({ text: 'pre-bad-json' }));
+    const badJsonBody = new TextEncoder().encode(JSON.stringify({ type: 'not_a_known_event' }));
+    const badJsonFrame = new Uint8Array(FRAME_HEADER_LENGTH + badJsonBody.byteLength);
+    badJsonFrame[0] = JSON_FRAME_KIND;
+    new DataView(badJsonFrame.buffer).setUint32(1, badJsonBody.byteLength, true);
+    badJsonFrame.set(badJsonBody, FRAME_HEADER_LENGTH);
+
+    const combined = new Uint8Array(good.byteLength + badJsonFrame.byteLength);
+    combined.set(good, 0);
+    combined.set(badJsonFrame, good.byteLength);
+
+    const { fatal, frames } = parser.pushChunk(combined);
+
+    expect(frames).toHaveLength(1);
+    expect(frames[0]).toMatchObject({ envelope: { text: 'pre-bad-json' } });
+    expect(fatal?.message).toContain('Unsupported sidecar event type');
   });
 });
 
