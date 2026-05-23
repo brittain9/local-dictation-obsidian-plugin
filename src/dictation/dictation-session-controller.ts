@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 
 import type { AudioCaptureStream } from '../audio/audio-capture-stream';
+import { formatMicrophonePermissionDeniedMessage } from '../audio/microphone-permission-message';
 import type { NotePlacementOptions } from '../editor/note-surface';
 import { OLLAMA_KEEP_ALIVE } from '../llm/ollama-client';
 import { type LlmPostprocessMode, resolveStyleOption } from '../llm/presets';
@@ -830,8 +831,25 @@ export class DictationSessionController {
   private handleError(message: string, error: unknown): void {
     this.dependencies.logger?.error('session', message, error);
     this.applyUiState('error');
+
+    // The microphone-permission copy is a complete, actionable sentence on its
+    // own; prefixing it with the generic start-failure message just buries the
+    // instructions. The Settings mic picker shows it bare for the same reason.
+    if (isMicrophonePermissionDeniedError(error)) {
+      this.dependencies.notice(formatMicrophonePermissionDeniedMessage());
+      return;
+    }
+
     this.dependencies.notice(`${message}: ${formatErrorMessage(error)}`);
   }
+}
+
+function isMicrophonePermissionDeniedError(error: unknown): boolean {
+  return (
+    typeof error === 'object' &&
+    error !== null &&
+    (error as { name?: unknown }).name === 'NotAllowedError'
+  );
 }
 
 function createSessionId(): string {

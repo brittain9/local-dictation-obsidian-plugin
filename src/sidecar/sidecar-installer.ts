@@ -63,7 +63,9 @@ export function detectPlatformAsset(
     }
 
     if (arch !== 'arm64') {
-      throw new Error(`Unsupported macOS architecture for sidecar: ${arch}.`);
+      throw new Error(
+        'Local Dictation requires an Apple Silicon Mac (M1 or newer). Intel Macs are not supported.',
+      );
     }
 
     return 'sidecar-macos-arm64.tar.gz';

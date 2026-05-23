@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
+import { formatMicrophonePermissionDeniedMessage } from '../src/audio/microphone-permission-message';
 import {
   type DictationControllerState,
   DictationSessionController,
@@ -161,6 +162,22 @@ describe('DictationSessionController', () => {
 
     expect(sidecarConnection.sendAudioFrame).toHaveBeenCalledWith(startPayload?.sessionId, frame);
     expect(controller.getState()).toBe('listening');
+  });
+
+  it('surfaces the bare microphone-permission message when capture is denied, without the generic start-failure prefix', async () => {
+    const captureStream = new FakeCaptureStream();
+    captureStream.start.mockRejectedValueOnce(
+      Object.assign(new Error('Permission denied'), { name: 'NotAllowedError' }),
+    );
+    const notice = vi.fn();
+    const controller = createController({ captureStream, notice });
+
+    await controller.startDictation();
+
+    expect(notice).toHaveBeenCalledWith(formatMicrophonePermissionDeniedMessage());
+    expect(notice).not.toHaveBeenCalledWith(
+      expect.stringContaining('Failed to start the dictation session'),
+    );
   });
 
   it('accepts late transcript events from a stopped session after a new session starts', async () => {
