@@ -63,7 +63,7 @@ function makeController(): { controller: DictationRibbonController; element: Fak
 }
 
 describe('DictationRibbonController speech tail hold', () => {
-  it('keeps the speech_detected look for 10s after VAD drops, then flips to listening', () => {
+  it('keeps the speech_detected look for 5s after VAD drops, then flips to listening', () => {
     const { controller, element } = makeController();
     controller.setState('listening');
     controller.setState('speech_detected');
@@ -72,7 +72,7 @@ describe('DictationRibbonController speech tail hold', () => {
     controller.setState('listening');
     expect(element.dataset.localSttState).toBe('speech_detected');
 
-    vi.advanceTimersByTime(9_999);
+    vi.advanceTimersByTime(4_999);
     expect(element.dataset.localSttState).toBe('speech_detected');
 
     vi.advanceTimersByTime(1);
@@ -138,14 +138,14 @@ describe('DictationRibbonController a11y during hold', () => {
     expect(element.attributes['aria-label']).toBe('Local Dictation — listening');
     expect(element.title).toBe('Local Dictation — listening');
 
-    vi.advanceTimersByTime(10_000);
+    vi.advanceTimersByTime(5_000);
     expect(element.dataset.localSttState).toBe('listening');
     expect(element.attributes['aria-label']).toBe('Local Dictation — listening');
   });
 });
 
 describe('DictationRibbonController paintIcon', () => {
-  it('uses the static Lucide wave icon for listening and the custom SVG for speech', () => {
+  it('uses the Lucide audio-lines icon for both listening and speech states', () => {
     const { controller, element } = makeController();
     controller.setState('listening');
     expect(setIcon).toHaveBeenLastCalledWith(expect.anything(), 'audio-lines');
@@ -153,8 +153,10 @@ describe('DictationRibbonController paintIcon', () => {
 
     vi.mocked(setIcon).mockClear();
     controller.setState('speech_detected');
+    // Same icon name — paintIcon's cache key skips the re-paint so the live
+    // SVG paths are preserved across the state change.
     expect(setIcon).not.toHaveBeenCalled();
-    expect(countPaths(element.innerHTML)).toBe(6);
+    expect(element.innerHTML).toBe('<svg data-icon="audio-lines"></svg>');
   });
 
   it('does not re-inject the SVG on a redundant paintIcon (same icon)', () => {
@@ -164,8 +166,8 @@ describe('DictationRibbonController paintIcon', () => {
     const snapshot = element.innerHTML;
 
     // setState('speech_detected') during the tail hold (real state=listening,
-    // visual=speech_detected) triggers paintIcon('speech_detected') again. The
-    // icon hasn't changed (still the animated-bars SVG), so innerHTML must NOT be rewritten —
+    // visual=speech_detected) triggers paintIcon('speech_detected') again.
+    // The icon name is unchanged, so innerHTML must NOT be rewritten —
     // otherwise the live <path> nodes that CSS is mid-transition on get
     // destroyed and replaced, snapping the animation.
     controller.setState('listening');
@@ -240,10 +242,6 @@ describe('DictationRibbonController hold lifecycle interactions', () => {
   });
 });
 
-function countPaths(html: string): number {
-  return (html.match(/<path\b/g) ?? []).length;
-}
-
 function stubRaf(): Array<() => void> {
   const callbacks: Array<() => void> = [];
   vi.stubGlobal('requestAnimationFrame', (cb: () => void): number => {
@@ -258,47 +256,34 @@ function silentBandReader(): AudioBandReader {
   return { readBands: () => new Float32Array(AudioVisualizerTap.BAND_COUNT) };
 }
 
-describe('DictationRibbonController idle-floor noise drift', () => {
-  it('lifts bars above their unmixed floor when audio is silent', () => {
+describe('DictationRibbonController bar rendering', () => {
+  it('parks bars at the silent-floor scale when audio is silent', () => {
     const rafCallbacks = stubRaf();
     const { controller, element } = makeController();
     controller.setVisualizer(silentBandReader());
     controller.setState('listening');
     controller.setState('speech_detected');
 
-    let bar1Max = 0;
-    const distinctRendered = new Set<string>();
-    for (let i = 0; i < 30; i++) {
-      const cb = rafCallbacks.shift();
-      if (!cb) break;
-      cb();
-      const rendered = element.styleProps['--local-stt-bar-1'];
-      if (rendered !== undefined) {
-        bar1Max = Math.max(bar1Max, parseFloat(rendered));
-        distinctRendered.add(rendered);
-      }
-      vi.advanceTimersByTime(100);
-    }
+    const cb = rafCallbacks.shift();
+    if (!cb) throw new Error('expected a RAF callback');
+    cb();
 
-    // BAR_ENVELOPE[0] floor is 0.45 — the value at level=0. Across 30 sampled
-    // frames the value-noise drift must lift the bar above the floor at least
-    // once, otherwise the icon would visibly freeze between syllables.
-    expect(bar1Max).toBeGreaterThan(0.45);
-    // And the value must move between frames, not just bump once.
-    expect(distinctRendered.size).toBeGreaterThan(3);
+    // At silence every bar must equal BAR_FLOOR exactly — without an idle
+    // drift path the value is deterministic; this pin catches accidental
+    // re-introduction of noise mixing.
+    for (let i = 1; i <= AudioVisualizerTap.BAND_COUNT; i++) {
+      expect(element.styleProps[`--local-stt-bar-${i}`]).toBe('0.25');
+    }
   });
 
-  it('suppresses drift entirely under prefers-reduced-motion: reduce', () => {
+  it('does not run the RAF loop when prefers-reduced-motion is on', () => {
     mediaQuery.matches = true;
     const rafCallbacks = stubRaf();
-    const { controller, element } = makeController();
+    const { controller } = makeController();
     controller.setVisualizer(silentBandReader());
     controller.setState('listening');
     controller.setState('speech_detected');
 
-    // syncAnimation short-circuits when reducedMotion is on, so the RAF loop
-    // never starts and bar CSS variables are never written.
     expect(rafCallbacks).toHaveLength(0);
-    expect(element.styleProps['--local-stt-bar-1']).toBeUndefined();
   });
 });

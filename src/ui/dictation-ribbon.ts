@@ -4,46 +4,23 @@ import type { AudioBandReader } from '../audio/audio-visualizer-tap';
 import { AudioVisualizerTap } from '../audio/audio-visualizer-tap';
 import type { DictationControllerState } from '../dictation/dictation-session-controller';
 import type { QueueBackpressureTier } from '../sidecar/protocol';
-import { ValueNoise1D } from './value-noise';
 
-type RibbonIcon = 'animated-bars' | 'audio-lines' | 'mic' | 'loader' | 'mic-off';
-
-/**
- * Custom audio-bars SVG used only while the ribbon is actively animating
- * (`speech_detected`). The resting `listening` state keeps the standard Lucide
- * `audio-lines` wave icon so the static state stays visually distinct from the
- * reactive speech state.
- */
-const ANIMATED_BARS_SVG =
-  '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" ' +
-  'fill="none" stroke="currentColor" stroke-width="2" ' +
-  'stroke-linecap="round" stroke-linejoin="round" class="svg-icon">' +
-  '<path d="M2 8v8"/>' +
-  '<path d="M6 5v14"/>' +
-  '<path d="M10 4v16"/>' +
-  '<path d="M14 4v16"/>' +
-  '<path d="M18 5v14"/>' +
-  '<path d="M22 8v8"/>' +
-  '</svg>';
+type RibbonIcon = 'audio-lines' | 'mic' | 'loader' | 'mic-off';
 
 /**
- * Per-bar scaleY envelope as [floor, ceiling] tuples, indexed by band 0..5.
- * Quiet speech shrinks bars toward `floor`; loud peaks overshoot above 1.0
- * (the static icon height). Center bars (16-unit, the tallest in the SVG)
- * get the widest dynamic range so a coherent wave bouncing outward reads
- * through the icon; outer bars (8-unit) keep a higher relative floor so
- * they stay visible at rest.
+ * Per-bar scaleY envelope. Lucide `audio-lines` has path heights
+ * [3, 11, 18, 7, 13, 3] — band 5 is six times shorter than band 2 in the
+ * SVG, so a uniform ceiling makes /s/ visually disappear next to vowels
+ * even when the audio levels are equal. We compensate by giving the small
+ * outer bars (and the right-side mid-bars) wider ceilings so they swing
+ * harder visually when their band is active.
+ *
+ * Floors are kept uniform so the at-rest icon still reads as Lucide.
  */
-const BAR_ENVELOPE: ReadonlyArray<readonly [floor: number, ceiling: number]> = [
-  [0.45, 1.25],
-  [0.3, 1.4],
-  [0.2, 1.5],
-  [0.2, 1.5],
-  [0.3, 1.4],
-  [0.45, 1.25],
-];
-if (BAR_ENVELOPE.length !== AudioVisualizerTap.BAND_COUNT) {
-  throw new Error('BAR_ENVELOPE length must match AudioVisualizerTap.BAND_COUNT.');
+const BAR_FLOOR = 0.25;
+const BAR_CEILINGS: readonly number[] = [1.6, 1.3, 1.4, 1.8, 1.7, 2.8];
+if (BAR_CEILINGS.length !== AudioVisualizerTap.BAND_COUNT) {
+  throw new Error('BAR_CEILINGS length must match AudioVisualizerTap.BAND_COUNT.');
 }
 const REDUCED_MOTION_QUERY = '(prefers-reduced-motion: reduce)';
 
@@ -53,43 +30,7 @@ const REDUCED_MOTION_QUERY = '(prefers-reduced-motion: reduce)';
  * Smooths over natural micro-pauses between phrases so the icon doesn't feel
  * twitchy while the user is mid-thought.
  */
-const SPEECH_TAIL_HOLD_MS = 10_000;
-
-/**
- * Below this aggregate audio level, bars drift via low-amplitude value noise so
- * the icon never freezes flat between syllables. Above the threshold, the audio
- * signal dominates and drift fades out smoothly.
- *
- * Gating off the loudest band (rather than each band's own level) keeps drift
- * symmetric: per-band pre-emphasis pushes the high bands well above any
- * per-band floor under realistic mic self-noise, which would otherwise produce
- * drift only on the low bars.
- */
-const NOISE_AUDIO_FLOOR = 0.05;
-
-/**
- * Maximum lift the noise can apply to a bar (in the same [0, 1] space as the
- * audio level). Stays inside the lower half of the bar envelope so noise reads
- * as ambient drift, not as fake speech.
- */
-const NOISE_FLOOR_AMPLITUDE = 0.12;
-
-/**
- * Per-bar parameters that decorrelate the drift. Irrational-ish rate ratios
- * prevent beating; the phase offsets ensure bars don't all peak together.
- * Seeds are arbitrary 16-bit constants; the visual quality is insensitive to
- * the specific values, only that they differ.
- */
-const NOISE_RATES: readonly number[] = [0.55, 0.78, 0.62, 0.91, 0.71, 0.83];
-const NOISE_PHASES: readonly number[] = [0, 137.5, 275, 60, 197, 335];
-const NOISE_SEEDS: readonly number[] = [0x1f3a, 0x2b7c, 0x4d91, 0x6e54, 0x8c1d, 0xa3b6];
-if (
-  NOISE_RATES.length !== AudioVisualizerTap.BAND_COUNT ||
-  NOISE_PHASES.length !== AudioVisualizerTap.BAND_COUNT ||
-  NOISE_SEEDS.length !== AudioVisualizerTap.BAND_COUNT
-) {
-  throw new Error('NOISE_RATES/PHASES/SEEDS lengths must match AudioVisualizerTap.BAND_COUNT.');
-}
+const SPEECH_TAIL_HOLD_MS = 5_000;
 
 export class DictationRibbonController {
   private bandReader: AudioBandReader | null = null;
@@ -101,9 +42,6 @@ export class DictationRibbonController {
   private holdTimer: ReturnType<typeof setTimeout> | null = null;
   private queueTier: QueueBackpressureTier = 'normal';
   private currentIcon: RibbonIcon | null = null;
-  private readonly noise: readonly ValueNoise1D[] = NOISE_SEEDS.map(
-    (seed) => new ValueNoise1D(seed),
-  );
 
   constructor(private readonly element: HTMLElement) {
     this.reducedMotion = matchMedia(REDUCED_MOTION_QUERY);
@@ -185,9 +123,6 @@ export class DictationRibbonController {
     }
     this.currentIcon = icon;
     switch (icon) {
-      case 'animated-bars':
-        this.element.innerHTML = ANIMATED_BARS_SVG;
-        return;
       case 'audio-lines':
         setIcon(this.element, 'audio-lines');
         return;
@@ -274,33 +209,16 @@ export class DictationRibbonController {
   }
 
   private applyBands(bands: Readonly<Float32Array>): void {
-    const allowNoise = !this.reducedMotion.matches;
-    const t = performance.now() / 1000;
-    const audioMax = maxBand(bands);
-    // Smooth blend: as audioMax climbs through NOISE_AUDIO_FLOOR the gate fades
-    // continuously to 0, so the noise contribution shrinks rather than dropping
-    // off a cliff (the prior `Math.max(audio, noise)` formulation could
-    // momentarily shave 7% off the bar height at the boundary, producing a
-    // visible stutter on quiet vowel onsets).
-    const noiseGate = allowNoise ? Math.max(0, 1 - audioMax / NOISE_AUDIO_FLOOR) : 0;
-    for (let i = 0; i < BAR_ENVELOPE.length; i++) {
-      const [floor, ceiling] = BAR_ENVELOPE[i] as readonly [number, number];
-      const audioLevel = clamp01(bands[i] as number);
-      const noiseLift = NOISE_FLOOR_AMPLITUDE * this.sampleNoise(i, t) * noiseGate;
-      const level = clamp01(audioLevel + noiseLift);
-      const scale = floor + (ceiling - floor) * level;
+    for (let i = 0; i < AudioVisualizerTap.BAND_COUNT; i++) {
+      const level = clamp01(bands[i] as number);
+      const ceiling = BAR_CEILINGS[i] as number;
+      const scale = BAR_FLOOR + (ceiling - BAR_FLOOR) * level;
       this.element.style.setProperty(`--local-stt-bar-${i + 1}`, scale.toFixed(2));
     }
   }
 
-  private sampleNoise(bar: number, timeSeconds: number): number {
-    const rate = NOISE_RATES[bar] as number;
-    const phase = NOISE_PHASES[bar] as number;
-    return (this.noise[bar] as ValueNoise1D).sample(timeSeconds * rate + phase);
-  }
-
   private resetBars(): void {
-    for (let i = 0; i < BAR_ENVELOPE.length; i++) {
+    for (let i = 0; i < AudioVisualizerTap.BAND_COUNT; i++) {
       this.element.style.removeProperty(`--local-stt-bar-${i + 1}`);
     }
   }
@@ -313,9 +231,8 @@ function iconForState(state: DictationControllerState): RibbonIcon {
     case 'starting':
       return 'loader';
     case 'listening':
-      return 'audio-lines';
     case 'speech_detected':
-      return 'animated-bars';
+      return 'audio-lines';
     case 'error':
       return 'mic-off';
     default:
@@ -338,17 +255,6 @@ function buildRibbonLabel(state: DictationControllerState): string {
     default:
       return assertNever(state);
   }
-}
-
-function maxBand(bands: Readonly<Float32Array>): number {
-  let max = 0;
-  for (let i = 0; i < bands.length; i++) {
-    const v = bands[i] as number;
-    if (v > max) {
-      max = v;
-    }
-  }
-  return max;
 }
 
 function clamp01(value: number): number {

@@ -1,7 +1,7 @@
 /**
  * Parallel AnalyserNode tap off the live mic source. Splits the FFT into 6
- * log-spaced speech bands and applies asymmetric attack/release smoothing so
- * the UI behaves like a VU meter (snappy onset, graceful decay).
+ * log-spaced speech bands and normalizes each band to its own slow-decaying
+ * peak so visual response stays balanced regardless of speech spectral tilt.
  *
  * Pure: no DOM, no Obsidian APIs. Owned at the same layer as AudioCaptureStream.
  */
@@ -11,60 +11,40 @@ const FFT_SIZE = 512;
 const BAND_EDGES_HZ: readonly number[] = [80, 200, 500, 1000, 2000, 4000, 8000];
 
 /**
- * dB window calibrated for normal-speech levels post-AGC. Voice rarely hits
- * −10 dBFS, so the previous (−85, −10) window left the top ~15 dB of byte
- * range dead. (−85, −25) matches audioMotion.dev's production default and
- * stretches typical conversation across the full 0–255 output.
+ * dB window. `MIN_DECIBELS` doubles as a noise gate: anything below it maps to
+ * byte 0 before any per-band logic runs. Room tone sits around −55 to −65
+ * dBFS, so −60 keeps idle bars at the floor. `MAX_DECIBELS = −30` widens the
+ * byte range so typical speech reaches the upper half of [0, 255].
  */
-const MIN_DECIBELS = -85;
-const MAX_DECIBELS = -25;
+const MIN_DECIBELS = -60;
+const MAX_DECIBELS = -30;
 
 /**
- * Per-band pre-emphasis to counter the −6 dB/octave net far-field spectral
- * tilt of speech (Flanagan via PMC4818273). Mean-bin aggregation averages
- * broadband sibilant noise ~3 dB below peak-bin, so the curve is a hair
- * hotter than pure tilt compensation. /s/ (3.8–8.5 kHz) and /ʃ/ (2.3–7 kHz)
- * land in bands 5–6, which get the most lift. This curve is engineering
- * judgment, not a published spec value — expect to iterate.
- */
-const BAND_GAIN_DB: readonly number[] = [0, 0, 2, 5, 8, 11];
-const BAND_GAIN_LINEAR: readonly number[] = BAND_GAIN_DB.map((db) => 10 ** (db / 20));
-/**
- * Per-band normalization for the tanh soft saturator below: `tanh(gain)` is
- * the saturator's output at mean = 1 (a fully-driven band), so dividing by it
- * keeps the calibrated ceiling at 1.0 regardless of per-band pre-emphasis.
- * Without this, low-gain bands would top out at tanh(1) ≈ 0.76 and never
- * appear "fully lit" even at maxDecibels.
- */
-const BAND_TANH_NORM: readonly number[] = BAND_GAIN_LINEAR.map((gain) => Math.tanh(gain));
-
-/**
- * `getByteFrequencyData` already maps dB linearly into [0, 255], so the byte
- * is already log-amplitude. A second `Math.sqrt` on top is double-compression.
- * Stevens' loudness law sits near 0.6; 0.7 is a soft middle that keeps moderate
- * sounds visible without over-flattening peaks. If mid-range vowels look weak,
- * drop to 0.6 (closer to Stevens) or remove the curve entirely.
- */
-const PERCEPTUAL_EXPONENT = 0.7;
-
-/**
- * PPM-style asymmetric smoothing, per band.
+ * Per-band peak AGC: each band keeps a slow-decaying running max so its
+ * normalized output fills [0, 1] regardless of absolute energy. Static gain
+ * curves cannot follow per-speaker / per-phoneme variation; AGC solves
+ * that structurally — high bands self-calibrate against their own recent
+ * sibilant peaks instead of competing with vowels for headroom.
  *
- * ATTACK 0.99 on bands 5–6 only — sibilants are 30–100 ms bursts and the prior
- * 0.95 took ~48 ms (3 frames @ 60 fps) to settle, clipping short fricatives.
- *
- * RELEASE has irrational spread around the prior 0.06 so no two bars share a
- * coefficient. Audio-driven decays no longer collapse on the same frame.
+ * `PEAK_DECAY_PER_FRAME = exp(-1/60)` ≈ 1 s time constant at 60 fps.
+ * `PEAK_FLOOR` is the smallest the divisor may hit; prevents idle pumping
+ * and means a new onset must clear the floor before normalizing.
+ */
+const PEAK_DECAY_PER_FRAME = Math.exp(-1 / 60);
+const PEAK_FLOOR = 0.02;
+
+/**
+ * Visual ballistics applied to the normalized band level. Fast attack so
+ * onsets register; moderate release (~8-12 frames to halve at 60fps,
+ * ~140-200ms half-life) so bars glide down between syllables instead of
+ * snapping. Irrational-ish spread on release keeps no two bars decaying
+ * on the same frame.
  */
 const BAND_ATTACK: readonly number[] = [0.95, 0.95, 0.95, 0.95, 0.99, 0.99];
-const BAND_RELEASE: readonly number[] = [0.053, 0.061, 0.057, 0.067, 0.071, 0.059];
+const BAND_RELEASE: readonly number[] = [0.055, 0.075, 0.065, 0.085, 0.095, 0.065];
 
-if (
-  BAND_GAIN_DB.length !== BAND_COUNT ||
-  BAND_ATTACK.length !== BAND_COUNT ||
-  BAND_RELEASE.length !== BAND_COUNT
-) {
-  throw new Error('Per-band gain/attack/release arrays must each have BAND_COUNT entries.');
+if (BAND_ATTACK.length !== BAND_COUNT || BAND_RELEASE.length !== BAND_COUNT) {
+  throw new Error('Per-band attack/release arrays must each have BAND_COUNT entries.');
 }
 
 export interface AudioBandReader {
@@ -86,6 +66,7 @@ export class AudioVisualizerTap implements AudioBandReader, AudioVisualizerAttac
   private bandRanges: readonly BandRange[] = [];
   private frequencyBuffer: Uint8Array<ArrayBuffer> | null = null;
   private readonly smoothed: Float32Array = new Float32Array(BAND_COUNT);
+  private readonly peaks: Float32Array = new Float32Array(BAND_COUNT);
 
   attach(audioContext: AudioContext, sourceNode: AudioNode): void {
     if (this.analyser !== null) {
@@ -103,6 +84,7 @@ export class AudioVisualizerTap implements AudioBandReader, AudioVisualizerAttac
     this.frequencyBuffer = new Uint8Array(analyser.frequencyBinCount);
     this.bandRanges = computeBandRanges(audioContext.sampleRate, analyser.frequencyBinCount);
     this.smoothed.fill(0);
+    this.peaks.fill(PEAK_FLOOR);
   }
 
   detach(): void {
@@ -118,6 +100,7 @@ export class AudioVisualizerTap implements AudioBandReader, AudioVisualizerAttac
     this.frequencyBuffer = null;
     this.bandRanges = [];
     this.smoothed.fill(0);
+    this.peaks.fill(PEAK_FLOOR);
   }
 
   readBands(): Readonly<Float32Array> | null {
@@ -131,19 +114,18 @@ export class AudioVisualizerTap implements AudioBandReader, AudioVisualizerAttac
 
     for (let band = 0; band < BAND_COUNT; band++) {
       const range = this.bandRanges[band] as BandRange;
-      const mean = meanNormalized(buffer, range[0], range[1]);
-      // Soft saturator via tanh: a hard Math.min(1, mean*gain) caused gained
-      // bands to saturate at mean ≥ 1/gain (byte ~72 in band 5), making soft
-      // /s/ and loud /s/ indistinguishable. tanh stays linear-ish below the
-      // knee, then asymptotes — soft and loud sibilants now produce
-      // distinguishable peaks. Dividing by tanh(gain) keeps the ceiling at 1.0.
-      const gained = mean * (BAND_GAIN_LINEAR[band] as number);
-      const lifted = Math.tanh(gained) / (BAND_TANH_NORM[band] as number);
-      const raw = lifted ** PERCEPTUAL_EXPONENT;
+      const raw = meanNormalized(buffer, range[0], range[1]);
+
+      // Per-band peak AGC.
+      const previousPeak = this.peaks[band] as number;
+      const peak = Math.max(raw, previousPeak * PEAK_DECAY_PER_FRAME, PEAK_FLOOR);
+      this.peaks[band] = peak;
+      const normalized = Math.min(1, raw / peak);
+
       const previous = this.smoothed[band] as number;
       const coefficient =
-        raw > previous ? (BAND_ATTACK[band] as number) : (BAND_RELEASE[band] as number);
-      this.smoothed[band] = previous + (raw - previous) * coefficient;
+        normalized > previous ? (BAND_ATTACK[band] as number) : (BAND_RELEASE[band] as number);
+      this.smoothed[band] = previous + (normalized - previous) * coefficient;
     }
 
     return this.smoothed;

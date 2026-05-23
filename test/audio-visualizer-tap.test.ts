@@ -161,54 +161,54 @@ describe('AudioVisualizerTap', () => {
     expect(first).toBeGreaterThan(0.9);
   });
 
-  it('releases slowly between syllables', () => {
+  it('decays gradually between syllables (smooth release, no peak hold)', () => {
     const { tap: attached, analyser } = attachTap();
     // Saturate to ~1.0.
     analyser.setSpectrum(flatSpectrum(255));
     for (let i = 0; i < 10; i++) {
       attached.readBands();
     }
-    // Drop to silence and confirm the level decays gently, not in one frame.
+    // Drop to silence; the bar must start decaying immediately (no peak
+    // hold) but the decay is gentle enough to feel smooth.
     analyser.setSpectrum(flatSpectrum(0));
     const afterOneTick = (attached.readBands() as Readonly<Float32Array>)[0] as number;
-    // BAND_RELEASE[0] = 0.053 → previous * (1 - 0.053) ≈ 0.947 after one tick.
-    expect(afterOneTick).toBeGreaterThan(0.85);
-    expect(afterOneTick).toBeLessThan(0.97);
+    // The release should be slow enough that the bar visibly lingers for one
+    // frame, but still starts falling immediately (no peak hold).
+    expect(afterOneTick).toBeLessThan(0.95);
+    expect(afterOneTick).toBeGreaterThan(0.94);
   });
 
-  it('boosts midrange amplitude via the perceptual pow(0.7) curve and band gain', () => {
-    const { tap: attached, analyser } = attachTap();
-    // Half-amplitude input across all bands.
-    analyser.setSpectrum(flatSpectrum(128));
-    const level = (attached.readBands() as Readonly<Float32Array>)[2] as number;
-    // mean = 128/255 ≈ 0.502; BAND_GAIN_LINEAR[2] = 10^(2/20) ≈ 1.259
-    // → gained 0.632; tanh(0.632)/tanh(1.259) ≈ 0.658; pow(0.658, 0.7) ≈ 0.749;
-    // after attack 0.95 → ≈ 0.711.
-    // A purely linear mapping (no curve, no gain) would land near 0.477.
-    expect(level).toBeGreaterThan(0.65);
-  });
-
-  it('lifts high bands far more than low bands on a flat quiet spectrum (pre-emphasis)', () => {
-    const { tap: attached, analyser } = attachTap();
-    // Quiet uniform spectrum (mean ≈ 0.125): well below the tanh saturator's
-    // knee, so the soft saturator stays in its linear region and the per-band
-    // gain ratio (0 → 11 dB ≈ 3.55× linear) survives through the perceptual
-    // pow(0.7) curve to ~2× in the smoothed output. Picking a hotter input
-    // would put the high band into the tanh elbow, compressing the ratio.
-    analyser.setSpectrum(flatSpectrum(32));
-    const levels = attached.readBands() as Readonly<Float32Array>;
-    const lowBand = levels[0] as number;
-    const highBand = levels[5] as number;
-    expect(highBand).toBeGreaterThan(lowBand * 2);
-  });
-
-  it('distinguishes soft and loud sibilants in the high band (tanh, not hard clip)', () => {
+  it('normalizes both soft and loud inputs to the same ceiling (per-band AGC)', () => {
+    // Per-band AGC: each band tracks its own running peak and rescales to it,
+    // so the visualization is supposed to fill regardless of absolute level.
+    // Soft /s/ and loud /s/ should both peg band 5 — that's how the right
+    // side stays readable even when the speaker is quiet.
     const softReading = readOnce(flatSpectrum(90));
     const loudReading = readOnce(flatSpectrum(200));
-    // Hard Math.min(1, …) would saturate both inputs to 1 in band 5 (gain
-    // 3.55×) and produce identical smoothed levels — the original visualizer
-    // bug. The tanh soft saturator must keep them resolvably apart.
-    expect(loudReading - softReading).toBeGreaterThan(0.05);
+    expect(softReading).toBeGreaterThan(0.9);
+    expect(loudReading).toBeGreaterThan(0.9);
+  });
+
+  it('decays the per-band peak so a smaller follow-up onset eventually re-fills', () => {
+    const { tap: attached, analyser } = attachTap();
+    // Drive band 0 hard so its peak is fully loaded.
+    analyser.setSpectrum(bandSpectrum(0, 255));
+    for (let i = 0; i < 5; i++) {
+      attached.readBands();
+    }
+    // Drop to silence and let the peak decay (~1s time constant, run plenty).
+    analyser.setSpectrum(flatSpectrum(0));
+    for (let i = 0; i < 600; i++) {
+      attached.readBands();
+    }
+    // A modest follow-up input should now normalize back toward 1.0 because
+    // the peak has decayed close to the floor.
+    analyser.setSpectrum(bandSpectrum(0, 80));
+    for (let i = 0; i < 5; i++) {
+      attached.readBands();
+    }
+    const levels = attached.readBands() as Readonly<Float32Array>;
+    expect(levels[0]).toBeGreaterThan(0.9);
   });
 
   it('disconnects the analyser on detach', () => {
