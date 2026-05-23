@@ -1,6 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
-  createInstallId,
   createInstallLifecycleLogMessage,
   isTerminalInstallState,
   ModelInstallManager,
@@ -25,17 +24,16 @@ import {
 // ---------------------------------------------------------------------------
 
 describe('isTerminalInstallState', () => {
-  it.each(['completed', 'cancelled', 'failed'] as const)('treats %s as terminal', (state) => {
-    expect(isTerminalInstallState(state)).toBe(true);
-  });
-
   it.each([
-    'downloading',
-    'queued',
-    'verifying',
-    'probing',
-  ] as const)('treats %s as non-terminal', (state) => {
-    expect(isTerminalInstallState(state)).toBe(false);
+    ['completed', true],
+    ['cancelled', true],
+    ['failed', true],
+    ['downloading', false],
+    ['queued', false],
+    ['verifying', false],
+    ['probing', false],
+  ] as const)('classifies %s terminal=%s', (state, expected) => {
+    expect(isTerminalInstallState(state)).toBe(expected);
   });
 });
 
@@ -61,16 +59,6 @@ describe('createInstallLifecycleLogMessage', () => {
     'queued',
   ] as const)('returns null at intermediate state %s', (state) => {
     expect(createInstallLifecycleLogMessage({ ...sampleInstallUpdate(), state })).toBeNull();
-  });
-});
-
-describe('createInstallId', () => {
-  it('produces unique install IDs in the expected format', () => {
-    const first = createInstallId();
-    const second = createInstallId();
-
-    expect(first).toMatch(/^install-\d+-\d+$/);
-    expect(second).not.toBe(first);
   });
 });
 

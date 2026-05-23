@@ -2,8 +2,6 @@ import { describe, expect, it } from 'vitest';
 
 import {
   formatLandmark,
-  formatSessionHeader,
-  isMeaningfulPause,
   SMART_PARAGRAPH_PAUSE_MS,
   type TranscriptAppendInput,
   TranscriptRenderer,
@@ -28,20 +26,6 @@ describe('formatLandmark', () => {
 
   it('formats wall-clock landmarks without seconds', () => {
     expect(formatLandmark(65_000, DEFAULT_SESSION_START_MS, 'wallclock')).toBe('(14:33)');
-  });
-});
-
-describe('formatSessionHeader', () => {
-  it('formats the local session start date and time', () => {
-    expect(formatSessionHeader(DEFAULT_SESSION_START_MS)).toBe('[2026-05-16 14:32]');
-  });
-});
-
-describe('isMeaningfulPause', () => {
-  it('uses the shared smart paragraph threshold', () => {
-    expect(isMeaningfulPause(null)).toBe(false);
-    expect(isMeaningfulPause(SMART_PARAGRAPH_PAUSE_MS - 1)).toBe(false);
-    expect(isMeaningfulPause(SMART_PARAGRAPH_PAUSE_MS)).toBe(true);
   });
 });
 

@@ -310,20 +310,21 @@ describe('Session', () => {
     expect(surface.readNoteGlossary).toHaveBeenCalledWith(256);
   });
 
-  it('replaceSessionRangeWithCleaned succeeds when the current range matches recorded raw text', () => {
+  it('tracks transcript revisions through batch-cleaned range replacement', () => {
     const { session, surface } = createSessionHarness();
 
-    session.acceptTranscript(transcript({ text: 'hello', utteranceId: 'u1' }));
-    session.acceptTranscript(transcript({ text: 'world', utteranceId: 'u2' }));
+    session.acceptTranscript(transcript({ revision: 0, text: 'rough', utteranceId: 'u1' }));
+    session.acceptTranscript(transcript({ revision: 1, text: 'polished', utteranceId: 'u1' }));
+    session.acceptTranscript(transcript({ text: 'tail', utteranceId: 'u2' }));
 
-    expect(surface.documentText).toBe('hello world');
-    expect(session.joinRawSessionText()).toBe('hello world');
-    expect(session.replaceSessionRangeWithCleaned('Hello world.')).toBe(true);
+    expect(surface.documentText).toBe('polished tail');
+    expect(session.joinRawSessionText()).toBe('polished tail');
+    expect(session.replaceSessionRangeWithCleaned('Polished tail.')).toBe(true);
 
     expect(surface.rewriteCalls).toEqual([
-      { newText: 'Hello world.', range: { from: 0, to: 'hello world'.length } },
+      { newText: 'Polished tail.', range: { from: 0, to: 'polished tail'.length } },
     ]);
-    expect(surface.documentText).toBe('Hello world.');
+    expect(surface.documentText).toBe('Polished tail.');
   });
 
   it('replaceSessionRangeWithCleaned force-replaces the tracked range even if its text diverged', () => {
@@ -350,19 +351,6 @@ describe('Session', () => {
       }),
     ).toBe(true);
     expect(surface.documentText).toBe('Cleaned words.\n\n> [!note]- raw\n> raw words');
-  });
-
-  it('range tracking follows transcript revisions across multiple acceptTranscript calls', () => {
-    const { session, surface } = createSessionHarness();
-
-    session.acceptTranscript(transcript({ revision: 0, text: 'rough', utteranceId: 'u1' }));
-    session.acceptTranscript(transcript({ revision: 1, text: 'polished', utteranceId: 'u1' }));
-    session.acceptTranscript(transcript({ text: 'tail', utteranceId: 'u2' }));
-
-    expect(surface.documentText).toBe('polished tail');
-    expect(session.joinRawSessionText()).toBe('polished tail');
-    expect(session.replaceSessionRangeWithCleaned('Polished tail.')).toBe(true);
-    expect(surface.rewriteCalls[0]?.range).toEqual({ from: 0, to: 'polished tail'.length });
   });
 
   it('preserves the first insertion boundary when replacing a batch-cleaned range', () => {

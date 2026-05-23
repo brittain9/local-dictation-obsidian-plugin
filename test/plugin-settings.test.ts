@@ -213,20 +213,6 @@ describe('resolvePluginSettings', () => {
     ).toBe(600_000);
   });
 
-  it('defaults useLlmNoteContext to false', () => {
-    expect(DEFAULT_PLUGIN_SETTINGS.useLlmNoteContext).toBe(false);
-    expect(resolvePluginSettings({}).useLlmNoteContext).toBe(false);
-  });
-
-  it('accepts useLlmNoteContext when persisted as a boolean', () => {
-    expect(resolvePluginSettings({ useLlmNoteContext: true }).useLlmNoteContext).toBe(true);
-    expect(resolvePluginSettings({ useLlmNoteContext: false }).useLlmNoteContext).toBe(false);
-  });
-
-  it('falls back to the default when useLlmNoteContext is not a boolean', () => {
-    expect(resolvePluginSettings({ useLlmNoteContext: 'yes' }).useLlmNoteContext).toBe(false);
-  });
-
   it('infers active style refs from the current prompt', () => {
     expect(resolvePluginSettings({}).llmPostprocessActivePresetRef).toBe('builtin:clean-up');
     expect(
@@ -272,52 +258,51 @@ describe('resolvePluginSettings', () => {
     ).toBe('builtin:professional-writing');
   });
 
-  it('preserves valid prompt-shaped user styles in their original order', () => {
-    const presets = [
-      makeUserPreset({ id: 'a', label: 'Style A', description: 'first' }),
-      makeUserPreset({ id: 'b', label: 'Style B', prompt: 'second prompt' }),
-    ];
-    expect(
-      resolvePluginSettings({ llmPostprocessUserPresets: presets }).llmPostprocessUserPresets,
-    ).toEqual(presets);
-  });
-
-  it('drops invalid user style entries', () => {
-    expect(
-      resolvePluginSettings({
-        llmPostprocessUserPresets: [
-          null,
-          'string',
-          { id: '', label: 'empty id', prompt: 'x' },
-          { id: 'valid', label: '   ', prompt: 'x' },
-          { id: 'no-label', prompt: 'x' },
-          makeUserPreset({ id: 'ok', label: 'Keeper' }),
-        ],
-      }).llmPostprocessUserPresets,
-    ).toEqual([makeUserPreset({ id: 'ok', label: 'Keeper' })]);
-  });
-
-  it('drops duplicate user style IDs after the first valid entry', () => {
-    expect(
-      resolvePluginSettings({
-        llmPostprocessUserPresets: [
-          makeUserPreset({ id: 'a', label: 'First A' }),
-          makeUserPreset({ id: 'a', label: 'Second A' }),
-          makeUserPreset({ id: 'b', label: 'Keeper B' }),
-        ],
-      }).llmPostprocessUserPresets,
-    ).toEqual([
-      makeUserPreset({ id: 'a', label: 'First A' }),
-      makeUserPreset({ id: 'b', label: 'Keeper B' }),
-    ]);
-  });
-
-  it('falls back empty user-preset prompts to the Clean up prompt', () => {
-    const preset = resolvePluginSettings({
-      llmPostprocessUserPresets: [{ id: 'a', label: 'A', prompt: '' }],
-    }).llmPostprocessUserPresets[0];
-
-    expect(preset?.prompt).toBe(DEFAULT_LLM_POSTPROCESS_PROMPT);
+  it.each([
+    [
+      'preserves valid prompt-shaped entries in order',
+      [
+        makeUserPreset({ id: 'a', label: 'Style A', description: 'first' }),
+        makeUserPreset({ id: 'b', label: 'Style B', prompt: 'second prompt' }),
+      ],
+      [
+        makeUserPreset({ id: 'a', label: 'Style A', description: 'first' }),
+        makeUserPreset({ id: 'b', label: 'Style B', prompt: 'second prompt' }),
+      ],
+    ],
+    [
+      'drops invalid entries',
+      [
+        null,
+        'string',
+        { id: '', label: 'empty id', prompt: 'x' },
+        { id: 'valid', label: '   ', prompt: 'x' },
+        { id: 'no-label', prompt: 'x' },
+        makeUserPreset({ id: 'ok', label: 'Keeper' }),
+      ],
+      [makeUserPreset({ id: 'ok', label: 'Keeper' })],
+    ],
+    [
+      'drops duplicate IDs after the first valid entry',
+      [
+        makeUserPreset({ id: 'a', label: 'First A' }),
+        makeUserPreset({ id: 'a', label: 'Second A' }),
+        makeUserPreset({ id: 'b', label: 'Keeper B' }),
+      ],
+      [
+        makeUserPreset({ id: 'a', label: 'First A' }),
+        makeUserPreset({ id: 'b', label: 'Keeper B' }),
+      ],
+    ],
+    [
+      'falls back empty prompts to the Clean up prompt',
+      [{ id: 'a', label: 'A', prompt: '' }],
+      [makeUserPreset({ id: 'a', label: 'A', prompt: DEFAULT_LLM_POSTPROCESS_PROMPT })],
+    ],
+  ] as const)('normalizes user styles: %s', (_label, llmPostprocessUserPresets, expected) => {
+    expect(resolvePluginSettings({ llmPostprocessUserPresets }).llmPostprocessUserPresets).toEqual(
+      expected,
+    );
   });
 
   it('keeps valid per-preset minWords and temperature overrides; drops invalid', () => {

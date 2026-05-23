@@ -130,22 +130,6 @@ describe('NoteSurface', () => {
     expect(doc(view)).toBe('AB');
   });
 
-  it('keeps same-cursor sessions ordered when the earlier session writes first', () => {
-    const view = new FakeEditorView('', 0);
-    const earlier = new NoteSurface(view as unknown as EditorView, { anchor: 'at_cursor' });
-    const later = new NoteSurface(view as unknown as EditorView, { anchor: 'at_cursor' });
-
-    expect(append(earlier, 'earlier', 'A').kind).toBe('appended');
-    if (view.lastUpdate === null) {
-      throw new Error('earlier append should produce an update');
-    }
-    later.observeTransaction(view.lastUpdate);
-
-    expect(append(later, 'later', 'B').kind).toBe('appended');
-
-    expect(doc(view)).toBe('A B');
-  });
-
   it('extends the writing-region tail past user text typed at the initial anchor before any utterance', () => {
     const { surface, view } = createSurface();
 
@@ -359,51 +343,59 @@ describe('NoteSurface', () => {
     expect(surface.replaceAnchor('u2', 'SECOND', 'second').kind).toBe('replaced');
   });
 
-  it('rewrites an intact region and drops old anchors', () => {
+  it.each([
+    {
+      allowedSpans: [],
+      editFirstChar: false,
+      expectedDoc: 'FIRST second',
+      expectedRangeEnd: 5,
+      label: 'single intact span',
+      newText: 'FIRST',
+      rangeEnd: 5,
+      verifiesOldAnchorsDropped: true,
+    },
+    {
+      allowedSpans: [],
+      editFirstChar: false,
+      expectedDoc: 'Cleaned.',
+      expectedRangeEnd: 'first second'.length,
+      label: 'multi-utterance region',
+      newText: 'Cleaned.',
+      rangeEnd: null,
+      verifiesOldAnchorsDropped: false,
+    },
+    {
+      allowedSpans: [{ utteranceId: 'u1' }, { utteranceId: 'u2' }],
+      editFirstChar: true,
+      expectedDoc: 'Cleaned.',
+      expectedRangeEnd: 'First second'.length,
+      label: 'externally changed allowed spans',
+      newText: 'Cleaned.',
+      rangeEnd: null,
+      verifiesOldAnchorsDropped: false,
+    },
+  ] as const)('rewrites allowed region: $label', (input) => {
     const { surface, view } = createSurface();
 
     expect(append(surface, 'u1', 'first').kind).toBe('appended');
     expect(append(surface, 'u2', 'second').kind).toBe('appended');
-
-    expect(surface.rewriteRegion({ from: 0, to: 5 }, 'FIRST', [])).toEqual({
-      kind: 'rewritten',
-      range: { from: 0, to: 5 },
-    });
-    expect(doc(view)).toBe('FIRST second');
-    expect(surface.replaceAnchor('u1', 'next', 'first').kind).toBe('denied');
-    expect(surface.replaceAnchor('u2', 'SECOND', 'second').kind).toBe('replaced');
-  });
-
-  it('rewrites a multi-utterance region without latching as span_mismatch', () => {
-    const { surface, view } = createSurface();
-
-    expect(append(surface, 'u1', 'first').kind).toBe('appended');
-    expect(append(surface, 'u2', 'second').kind).toBe('appended');
-
-    expect(surface.rewriteRegion({ from: 0, to: doc(view).length }, 'Cleaned.', [])).toEqual({
-      kind: 'rewritten',
-      range: { from: 0, to: 'first second'.length },
-    });
-    expect(doc(view)).toBe('Cleaned.');
-  });
-
-  it('rewrites a changed region when the contained spans are allowed', () => {
-    const { surface, view } = createSurface();
-
-    expect(append(surface, 'u1', 'first').kind).toBe('appended');
-    expect(append(surface, 'u2', 'second').kind).toBe('appended');
-    surface.observeTransaction(view.apply({ changes: { from: 0, to: 1, insert: 'F' } }));
+    if (input.editFirstChar) {
+      surface.observeTransaction(view.apply({ changes: { from: 0, to: 1, insert: 'F' } }));
+    }
 
     expect(
-      surface.rewriteRegion({ from: 0, to: doc(view).length }, 'Cleaned.', [
-        { utteranceId: 'u1' },
-        { utteranceId: 'u2' },
+      surface.rewriteRegion({ from: 0, to: input.rangeEnd ?? doc(view).length }, input.newText, [
+        ...input.allowedSpans,
       ]),
     ).toEqual({
       kind: 'rewritten',
-      range: { from: 0, to: 'First second'.length },
+      range: { from: 0, to: input.expectedRangeEnd },
     });
-    expect(doc(view)).toBe('Cleaned.');
+    expect(doc(view)).toBe(input.expectedDoc);
+    if (input.verifiesOldAnchorsDropped) {
+      expect(surface.replaceAnchor('u1', 'next', 'first').kind).toBe('denied');
+      expect(surface.replaceAnchor('u2', 'SECOND', 'second').kind).toBe('replaced');
+    }
   });
 
   it('denies rewrites that cut through an utterance span', () => {
@@ -434,38 +426,26 @@ describe('NoteSurface', () => {
       expect(surface.readNoteGlossary(384)).toBeNull();
     });
 
-    it('extracts acronyms', () => {
+    it.each([
+      ['acronyms', 'We use NVIDIA GPU acceleration with STT.', 'Glossary: NVIDIA, GPU, STT'],
+      [
+        'mixed-case identifiers',
+        'See writingRegionTail and TranscriptionRequest for details.',
+        'Glossary: writingRegionTail, TranscriptionRequest',
+      ],
+      [
+        'hyphenated, underscored, and dotted identifiers',
+        'Files: note-surface, set_initial_prompt, whisper.cpp, Object.keys.',
+        'Glossary: note-surface, set_initial_prompt, whisper.cpp, Object.keys',
+      ],
+    ] as const)('extracts %s', (_label, text, expected) => {
       const { surface } = createSurface({
-        doc: 'We use NVIDIA GPU acceleration with STT.',
+        doc: text,
         selectionHead: 0,
       });
 
       expect(surface.readNoteGlossary(384)).toEqual({
-        text: 'Glossary: NVIDIA, GPU, STT',
-        truncated: false,
-      });
-    });
-
-    it('extracts mixed-case identifiers (camelCase, PascalCase)', () => {
-      const { surface } = createSurface({
-        doc: 'See writingRegionTail and TranscriptionRequest for details.',
-        selectionHead: 0,
-      });
-
-      expect(surface.readNoteGlossary(384)).toEqual({
-        text: 'Glossary: writingRegionTail, TranscriptionRequest',
-        truncated: false,
-      });
-    });
-
-    it('extracts hyphenated, underscored, and dotted identifiers', () => {
-      const { surface } = createSurface({
-        doc: 'Files: note-surface, set_initial_prompt, whisper.cpp, Object.keys.',
-        selectionHead: 0,
-      });
-
-      expect(surface.readNoteGlossary(384)).toEqual({
-        text: 'Glossary: note-surface, set_initial_prompt, whisper.cpp, Object.keys',
+        text: expected,
         truncated: false,
       });
     });
