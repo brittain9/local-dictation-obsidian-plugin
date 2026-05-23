@@ -103,7 +103,17 @@ export class SidecarInstallModal extends Modal {
   }
 
   private renderPreInstall(): void {
-    const asset = detectPlatformAssetForCurrentEnv(this.options.variant);
+    let asset: string;
+    try {
+      asset = detectPlatformAssetForCurrentEnv(this.options.variant);
+    } catch (error) {
+      // Currently the only path here is Intel Mac (CUDA-on-macOS is unreachable
+      // because callers gate the variant on platform). The unsupported view
+      // gives the user a clear answer instead of a render-time crash that
+      // bubbles to a generic Notice.
+      this.renderUnsupported(formatErrorMessage(error));
+      return;
+    }
 
     this.contentEl.createEl('p', { text: this.options.copy.bodyText });
 
@@ -149,6 +159,18 @@ export class SidecarInstallModal extends Modal {
       text: active.phase === 'canceling' ? 'Cancelling...' : 'Downloading...',
     }).disabled = true;
     buttons.createEl('button', { text: 'Close' }).addEventListener('click', () => {
+      this.close();
+    });
+  }
+
+  private renderUnsupported(message: string): void {
+    this.contentEl.createEl('p', {
+      cls: 'local-stt-sidecar-install__status local-stt-sidecar-install__status--error',
+      text: message,
+    });
+
+    const buttons = this.contentEl.createDiv({ cls: 'local-stt-sidecar-install__buttons' });
+    buttons.createEl('button', { cls: 'mod-cta', text: 'Close' }).addEventListener('click', () => {
       this.close();
     });
   }

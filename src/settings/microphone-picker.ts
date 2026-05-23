@@ -1,5 +1,6 @@
 import { Notice, Setting } from 'obsidian';
 
+import { formatMicrophonePermissionDeniedMessage } from '../audio/microphone-permission-message';
 import type { PluginLogger } from '../shared/plugin-logger';
 import type { AudioInputDevice } from './plugin-settings';
 import type { SettingAccess } from './setting-helpers';
@@ -211,7 +212,7 @@ export function renderMicrophonePicker(
     } catch (error) {
       const name = (error as { name?: unknown }).name;
       if (name === 'NotAllowedError') {
-        new Notice('Microphone permission denied. Grant access in your OS settings and try again.');
+        new Notice(formatMicrophonePermissionDeniedMessage());
       } else {
         new Notice('Could not detect microphones. Check your system audio settings.');
       }

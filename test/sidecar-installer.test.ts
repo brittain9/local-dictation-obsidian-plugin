@@ -106,8 +106,11 @@ describe('detectPlatformAsset', () => {
     expect(() => detectPlatformAsset('darwin', 'arm64', 'cuda')).toThrow(/not available on macOS/i);
   });
 
-  it('rejects Intel Mac', () => {
-    expect(() => detectPlatformAsset('darwin', 'x64', 'cpu')).toThrow(/architecture/i);
+  it('rejects Intel Mac with an Apple Silicon requirement message', () => {
+    expect(() => detectPlatformAsset('darwin', 'x64', 'cpu')).toThrow(/Apple Silicon/);
+    expect(() => detectPlatformAsset('darwin', 'x64', 'cpu')).toThrow(
+      /Intel Macs are not supported/,
+    );
   });
 
   it('returns the Linux tarball variants', () => {
