@@ -16,6 +16,7 @@ import {
 } from '../sidecar/sidecar-install-manager';
 import { readInstallManifest, variantDirectoryPath } from '../sidecar/sidecar-installer';
 import { renderActiveInstallCard } from './install-progress-row';
+import { renderMicrophonePicker } from './microphone-picker';
 import { renderModelSection } from './model-settings-section';
 import {
   type DictationAnchor,
@@ -99,6 +100,7 @@ export class LocalSttSettingTab extends PluginSettingTab {
 
   private readonly access: SettingAccess;
   private disposeEngineSection: (() => void) | null = null;
+  private disposeMicrophoneSection: (() => void) | null = null;
   private disposeMissingSidecarBanner: (() => void) | null = null;
   private disposeModelSection: (() => void) | null = null;
   private disposeSidecarSection: (() => void) | null = null;
@@ -162,6 +164,12 @@ export class LocalSttSettingTab extends PluginSettingTab {
 
     // --- Transcription ---
     const transcriptionCard = createSettingGroup(containerEl, 'Transcription');
+
+    this.disposeMicrophoneSection = renderMicrophonePicker(transcriptionCard, {
+      access: this.access,
+      isDictationBusy: this.dependencies.isDictationBusy,
+      logger: this.dependencies.logger,
+    });
 
     addEnumSetting(transcriptionCard, this.access, {
       name: 'Listening mode',
@@ -275,6 +283,8 @@ export class LocalSttSettingTab extends PluginSettingTab {
     this.disposeModelSection = null;
     this.disposeEngineSection?.();
     this.disposeEngineSection = null;
+    this.disposeMicrophoneSection?.();
+    this.disposeMicrophoneSection = null;
     this.disposeSidecarSection?.();
     this.disposeSidecarSection = null;
     this.disposeMissingSidecarBanner?.();

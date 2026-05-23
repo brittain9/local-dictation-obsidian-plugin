@@ -20,9 +20,12 @@ class FakeCaptureStream {
   public frameListener: ((sessionId: string, frameBytes: Uint8Array) => void) | null = null;
   public sessionId: string | null = null;
   public start = vi.fn(
-    async (sessionId: string, listener: (sessionId: string, frameBytes: Uint8Array) => void) => {
+    async (
+      options: { sessionId: string; audioInputDeviceId?: string | null },
+      listener: (sessionId: string, frameBytes: Uint8Array) => void,
+    ) => {
       this.capturing = true;
-      this.sessionId = sessionId;
+      this.sessionId = options.sessionId;
       this.frameListener = listener;
     },
   );

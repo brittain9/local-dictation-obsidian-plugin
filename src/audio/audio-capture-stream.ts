@@ -9,7 +9,16 @@ type AudioFrameListener = (sessionId: string, frameBytes: Uint8Array) => void;
 
 interface AudioCaptureStreamOptions {
   logger?: PluginLogger;
+  // Invoked when a saved deviceId is unavailable and we transparently fall back
+  // to the OS default. Lets the wiring layer (main.ts) surface a Notice without
+  // pulling Obsidian UI imports into this module.
+  onDeviceFallback?: () => void;
   visualizer?: AudioVisualizerAttachable;
+}
+
+export interface AudioCaptureStartOptions {
+  audioInputDeviceId?: string | null;
+  sessionId: string;
 }
 
 export class AudioCaptureStream {
@@ -26,7 +35,9 @@ export class AudioCaptureStream {
     return this.mediaStream !== null;
   }
 
-  async start(sessionId: string, frameListener: AudioFrameListener): Promise<void> {
+  async start(options: AudioCaptureStartOptions, frameListener: AudioFrameListener): Promise<void> {
+    const { sessionId, audioInputDeviceId } = options;
+
     if (this.isCapturing()) {
       throw new Error('Audio capture is already active.');
     }
@@ -37,15 +48,7 @@ export class AudioCaptureStream {
       throw new Error('Microphone capture is not available in this Obsidian runtime.');
     }
 
-    const mediaStream = await mediaDevices.getUserMedia({
-      audio: {
-        autoGainControl: false,
-        channelCount: PCM_CHANNEL_COUNT,
-        echoCancellation: false,
-        noiseSuppression: false,
-      },
-      video: false,
-    });
+    const mediaStream = await this.requestUserMedia(mediaDevices, audioInputDeviceId);
 
     let audioContext: AudioContext | null = null;
 
@@ -114,6 +117,48 @@ export class AudioCaptureStream {
     this.options.logger?.debug('audio', 'capture stopped');
   }
 
+  private async requestUserMedia(
+    mediaDevices: MediaDevices,
+    audioInputDeviceId: string | null | undefined,
+  ): Promise<MediaStream> {
+    const baseConstraints: MediaTrackConstraints = {
+      autoGainControl: false,
+      channelCount: PCM_CHANNEL_COUNT,
+      echoCancellation: false,
+      noiseSuppression: false,
+    };
+
+    if (typeof audioInputDeviceId !== 'string' || audioInputDeviceId.length === 0) {
+      return mediaDevices.getUserMedia({ audio: baseConstraints, video: false });
+    }
+
+    try {
+      return await mediaDevices.getUserMedia({
+        audio: { ...baseConstraints, deviceId: { exact: audioInputDeviceId } },
+        video: false,
+      });
+    } catch (error) {
+      if (!isDeviceConstraintError(error)) {
+        throw error;
+      }
+
+      this.options.logger?.warn(
+        'audio',
+        'saved microphone unavailable; falling back to the default input device',
+        error,
+      );
+      // Only fire the fallback notice if the retry actually succeeds. If it
+      // also rejects, the outer error path will surface a single "Failed to
+      // start dictation" notice rather than two contradictory ones.
+      const mediaStream = await mediaDevices.getUserMedia({
+        audio: baseConstraints,
+        video: false,
+      });
+      this.options.onDeviceFallback?.();
+      return mediaStream;
+    }
+  }
+
   private async releaseCapture(): Promise<void> {
     const audioContext = this.audioContext;
     const mediaStream = this.mediaStream;
@@ -153,6 +198,19 @@ export class AudioCaptureStream {
       await closeAudioContext(audioContext);
     }
   }
+}
+
+// OverconstrainedError is the spec-defined rejection when `deviceId: { exact }`
+// matches nothing. We only treat that exact case as a "fall back to default"
+// signal — other DOMExceptions (NotAllowed, NotFound, NotReadable) propagate so
+// the existing top-level error path can surface them.
+function isDeviceConstraintError(error: unknown): boolean {
+  if (typeof error !== 'object' || error === null) {
+    return false;
+  }
+
+  const named = error as { constraint?: unknown; name?: unknown };
+  return named.name === 'OverconstrainedError' && named.constraint === 'deviceId';
 }
 
 function getAudioContextConstructor(): typeof AudioContext {

@@ -262,27 +262,34 @@ export class DictationSessionController {
       }
       entry.phase = 'active';
 
-      await this.dependencies.captureStream.start(sessionId, (frameSessionId, frameBytes) => {
-        if (this.activeSessionId !== frameSessionId) {
-          return;
-        }
+      // Read the saved deviceId at session-start time so a settings change
+      // applies on the next dictation rather than mid-session.
+      const audioInputDeviceId = this.dependencies.getSettings().audioInputDevice?.deviceId ?? null;
 
-        const activeEntry = this.sessions.get(frameSessionId);
-        if (activeEntry === undefined || activeEntry.phase !== 'active') {
-          return;
-        }
+      await this.dependencies.captureStream.start(
+        { sessionId, audioInputDeviceId },
+        (frameSessionId, frameBytes) => {
+          if (this.activeSessionId !== frameSessionId) {
+            return;
+          }
 
-        try {
-          this.dependencies.sidecarConnection.sendAudioFrame(frameSessionId, frameBytes);
-        } catch (error) {
-          this.dependencies.logger?.warn(
-            'session',
-            'stopping audio capture: sidecar rejected an audio frame',
-            error,
-          );
-          void this.cancelSession(frameSessionId);
-        }
-      });
+          const activeEntry = this.sessions.get(frameSessionId);
+          if (activeEntry === undefined || activeEntry.phase !== 'active') {
+            return;
+          }
+
+          try {
+            this.dependencies.sidecarConnection.sendAudioFrame(frameSessionId, frameBytes);
+          } catch (error) {
+            this.dependencies.logger?.warn(
+              'session',
+              'stopping audio capture: sidecar rejected an audio frame',
+              error,
+            );
+            void this.cancelSession(frameSessionId);
+          }
+        },
+      );
 
       if (this.activeSessionId === sessionId) {
         this.applyUiState('listening');
