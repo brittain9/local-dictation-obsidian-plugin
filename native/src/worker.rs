@@ -625,6 +625,7 @@ mod tests {
             transcript.stage_history[1].payload,
             Some(serde_json::json!({
                 "audioStartMs": voice_activity.audio_start_ms,
+                "durationMs": 0,
                 "voicedMs": voice_activity.voiced_ms,
             }))
         );
@@ -690,7 +691,7 @@ mod tests {
 
         assert_eq!(
             transcript.stage_history[1].payload,
-            Some(serde_json::json!({ "pauseMsBeforeUtterance": 150 }))
+            Some(serde_json::json!({ "durationMs": 0, "pauseMsBeforeUtterance": 150 }))
         );
     }
 
@@ -727,7 +728,10 @@ mod tests {
             .as_ref()
             .expect("processor should emit payload")
             .clone();
-        assert_eq!(payload, serde_json::json!({ "voicedFraction": 0.7_f32 }));
+        assert_eq!(
+            payload,
+            serde_json::json!({ "durationMs": 0, "voicedFraction": 0.7_f32 })
+        );
     }
 
     fn engine_output() -> EngineTranscriptOutput {
