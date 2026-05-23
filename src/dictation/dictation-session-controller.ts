@@ -983,7 +983,7 @@ function shouldAppendRawLlmPostprocessCallout(
   );
 }
 
-function enforceLlmContextCap(
+export function enforceLlmContextCap(
   sources: ContextWindowSource[],
   totalContextCap: number,
 ): ContextWindowSource[] {
