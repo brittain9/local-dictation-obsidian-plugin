@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   type ErrorEvent,
   encodeJsonFrame,
+  type HealthOkEvent,
   type ModelInstallUpdateEvent,
   type SidecarEvent,
   type WarningEvent,
@@ -32,6 +33,9 @@ class FakeSidecarProcess {
   }
 
   async start(): Promise<void> {
+    if (this.running) {
+      return;
+    }
     this.startCalls += 1;
     this.running = true;
   }
@@ -107,6 +111,15 @@ function errorEvent(overrides: Partial<ErrorEvent> = {}): ErrorEvent {
     code: 'invalid_frame',
     message: 'invalid frame',
     type: 'error',
+    ...overrides,
+  };
+}
+
+function healthOkEvent(overrides: Partial<HealthOkEvent> = {}): HealthOkEvent {
+  return {
+    sidecarVersion: '0.0.0-test',
+    status: 'ready',
+    type: 'health_ok',
     ...overrides,
   };
 }
@@ -201,5 +214,50 @@ describe('SidecarConnection', () => {
       message: 'Invalid frame (bad length)',
       name: 'SidecarError',
     } satisfies Partial<SidecarError>);
+  });
+
+  it('drains waiters during shutdown without writing a wire-level shutdown command', async () => {
+    const { connection, process } = createHarness();
+
+    const resultPromise = connection.healthCheck();
+    const assertion = expect(resultPromise).rejects.toThrow('Sidecar is shutting down.');
+    await flushMicrotasks();
+    expect(process.writtenFrames).toHaveLength(1);
+
+    await connection.shutdown();
+
+    await assertion;
+    expect(process.stopCalls).toBe(1);
+    expect(process.writtenFrames).toHaveLength(1);
+  });
+
+  it('keeps restart waiter cleanup isolated from the new process', async () => {
+    const { connection, process } = createHarness();
+
+    const stalePromise = connection.getSystemInfo();
+    const staleAssertion = expect(stalePromise).rejects.toThrow('Sidecar is shutting down.');
+    await flushMicrotasks();
+    expect(process.writtenFrames).toHaveLength(1);
+
+    const restartPromise = connection.restart();
+    await vi.waitFor(() => expect(process.writtenFrames).toHaveLength(2));
+    process.deliver(healthOkEvent());
+
+    await expect(restartPromise).resolves.toMatchObject({
+      status: 'ready',
+      type: 'health_ok',
+    });
+    await staleAssertion;
+    expect(process.startCalls).toBe(2);
+    expect(process.stopCalls).toBe(1);
+  });
+
+  it('does not start the sidecar just to cancel a stale model install', async () => {
+    const { connection, process } = createHarness();
+
+    await connection.cancelModelInstall('install-1');
+
+    expect(process.startCalls).toBe(0);
+    expect(process.writtenFrames).toHaveLength(0);
   });
 });
