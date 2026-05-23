@@ -289,7 +289,9 @@ export function openSidecarInstallModal(
   },
 ): void {
   if (deps.isDictationBusy()) {
-    new Notice('Stop dictation before installing a sidecar — the install restarts the engine.');
+    new Notice(
+      'Stop dictation before installing a sidecar — the install restarts the engine. If a transcript is still processing, run "Cancel dictation" to stop it now.',
+    );
     return;
   }
 
@@ -320,7 +322,9 @@ async function uninstallSidecarVariantWithUx(
   const userFacingName = Platform.isMacOS ? 'sidecar' : `${variantLabel} sidecar`;
 
   if (deps.isDictationBusy()) {
-    new Notice(`Stop dictation before uninstalling the ${userFacingName}.`);
+    new Notice(
+      `Stop dictation before uninstalling the ${userFacingName}. If a transcript is still processing, run "Cancel dictation" to stop it now.`,
+    );
     return;
   }
 

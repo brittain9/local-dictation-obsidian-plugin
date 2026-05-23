@@ -313,8 +313,9 @@ export class DictationSessionController {
     const entry = this.sessions.get(sessionId);
     if (entry !== undefined) {
       entry.phase = 'stopping';
-      this.clearAnchorTimer(entry);
-      entry.session.setAnchorMode('hidden');
+      // Keep the cursor where text will land while queued transcripts drain.
+      // It is cleared when the session is finally disposed (after the drain),
+      // and the anchor timer is cleaned up there too.
     }
 
     await this.clearActiveSession(sessionId);
@@ -690,6 +691,9 @@ export class DictationSessionController {
         ? (entry.session.readNoteText(entry.snapshot.llmPostprocessNoteContextChars)?.text ?? null)
         : null;
 
+    // The flashing processing range is now the "working" indicator, so the
+    // cursor steps aside for the batch rewrite.
+    entry.session.setAnchorMode('hidden');
     entry.session.markSessionRangeAsProcessing();
     try {
       this.dependencies.sidecarConnection.requestBatchCleanup({

@@ -375,6 +375,68 @@ describe('DictationSessionController', () => {
     expect(captureStream.start).not.toHaveBeenCalled();
     expect(controller.getState()).toBe('idle');
   });
+
+  it('keeps the cursor through Stop and only releases it when the drained session is disposed', async () => {
+    const sidecarConnection = new FakeSidecarConnection();
+    const sessions: FakeSession[] = [];
+    const controller = createController({
+      createSession: (session) => {
+        sessions.push(session);
+      },
+      sidecarConnection,
+    });
+
+    await controller.startDictation();
+    const sessionId = sidecarConnection.startSession.mock.calls[0]?.[0].sessionId ?? '';
+    const session = sessions[0];
+    if (session === undefined) {
+      throw new Error('expected session fixture');
+    }
+
+    session.setAnchorMode.mockClear();
+    await controller.stopDictation();
+
+    // Stop must not hide the cursor — queued transcripts still land at it.
+    expect(session.setAnchorMode).not.toHaveBeenCalled();
+    expect(session.dispose).not.toHaveBeenCalled();
+
+    // The drain completes; disposing the surface is what releases the cursor.
+    sidecarConnection.emit({ reason: 'user_stop', sessionId, type: 'session_stopped' });
+    expect(session.dispose).toHaveBeenCalledTimes(1);
+  });
+
+  it('hides the cursor when the batch-cleanup flash starts', async () => {
+    const sidecarConnection = new FakeSidecarConnection();
+    const sessions: FakeSession[] = [];
+    const controller = createController({
+      createSession: (session) => {
+        sessions.push(session);
+      },
+      getSettings: () =>
+        createSettings({
+          llmFeaturesEnabled: true,
+          llmPostprocessMode: 'batch',
+          llmPostprocessModel: 'llama3.2:latest',
+          selectedModel: createExternalModelSelection(),
+        }),
+      sidecarConnection,
+    });
+
+    await controller.startDictation();
+    const sessionId = sidecarConnection.startSession.mock.calls[0]?.[0].sessionId ?? '';
+    const session = sessions[0];
+    if (session === undefined) {
+      throw new Error('expected session fixture');
+    }
+    sidecarConnection.emit(transcriptReady(sessionId, 'raw transcript'));
+    await controller.stopDictation();
+
+    session.setAnchorMode.mockClear();
+    sidecarConnection.emit({ reason: 'user_stop', sessionId, type: 'session_stopped' });
+
+    expect(session.markSessionRangeAsProcessing).toHaveBeenCalledTimes(1);
+    expect(session.setAnchorMode).toHaveBeenCalledWith('hidden');
+  });
 });
 
 function createController({
