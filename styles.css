@@ -375,20 +375,15 @@
   animation-delay: 1.05s;
 }
 
-/* Crossfade the muted listening state into the vibrant speech state. */
-.side-dock-ribbon-action[data-local-stt-state="listening"] > svg,
-.side-dock-ribbon-action[data-local-stt-state="speech_detected"] > svg {
-  transition: opacity 450ms ease-out;
-}
-
 .side-dock-ribbon-action[data-local-stt-state="listening"] > svg {
   opacity: 0.45;
 }
 
 /* Live per-band FFT amplitude scales each bar via --local-stt-bar-N (1..6),
-   written by DictationRibbonController on every animation frame while VAD reports speech.
-   When state flips back to listening the variables are cleared (fallback = 1) and the
-   longer ease-out transition smooths the return to native, instead of snapping. */
+   written by DictationRibbonController on every animation frame while VAD
+   reports speech. The listening state shares the same transform rules with a
+   slower ease so the bars settle back to default scale (no variables set)
+   gracefully when speech_detected flips off after the tail hold. */
 .side-dock-ribbon-action[data-local-stt-state="listening"] > svg > path,
 .side-dock-ribbon-action[data-local-stt-state="speech_detected"] > svg > path {
   transform-origin: center;

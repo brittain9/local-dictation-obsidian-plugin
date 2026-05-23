@@ -67,6 +67,15 @@ function flatSpectrum(value: number): Uint8Array {
   return buffer;
 }
 
+function readOnce(spectrum: Uint8Array): number {
+  // Fresh tap per call so smoothing state from prior reads cannot leak in.
+  // Returns the high-band level after a single tick from a zero baseline.
+  const { tap, analyser } = attachTap();
+  analyser.setSpectrum(spectrum);
+  const levels = tap.readBands() as Readonly<Float32Array>;
+  return levels[5] as number;
+}
+
 function bandSpectrum(bandIndex: number, value: number): Uint8Array {
   const buffer = new Uint8Array(BIN_COUNT);
   const hzPerBin = SAMPLE_RATE / 2 / BIN_COUNT;
@@ -147,24 +156,59 @@ describe('AudioVisualizerTap', () => {
   it('snaps to the peak on the first tick after silence', () => {
     const { tap: attached, analyser } = attachTap();
     analyser.setSpectrum(flatSpectrum(255));
+    // PPM-style attack: a single tick should already be near the ceiling.
     const first = (attached.readBands() as Readonly<Float32Array>)[0] as number;
-    expect(first).toBeGreaterThan(0.5);
+    expect(first).toBeGreaterThan(0.9);
   });
 
-  it('decays monotonically between syllables', () => {
+  it('decays gradually between syllables (smooth release, no peak hold)', () => {
     const { tap: attached, analyser } = attachTap();
+    // Saturate to ~1.0.
     analyser.setSpectrum(flatSpectrum(255));
     for (let i = 0; i < 10; i++) {
       attached.readBands();
     }
+    // Drop to silence; the bar must start decaying immediately (no peak
+    // hold) but the decay is gentle enough to feel smooth.
     analyser.setSpectrum(flatSpectrum(0));
-    const levels = Array.from({ length: 10 }, () => {
-      return (attached.readBands() as Readonly<Float32Array>)[0] as number;
-    });
-    expect(levels[0]).toBeGreaterThan(0.5);
-    for (let i = 1; i < levels.length; i++) {
-      expect(levels[i]).toBeLessThanOrEqual(levels[i - 1] as number);
+    const afterOneTick = (attached.readBands() as Readonly<Float32Array>)[0] as number;
+    // The release should be slow enough that the bar visibly lingers for one
+    // frame, but still starts falling immediately (no peak hold).
+    expect(afterOneTick).toBeLessThan(0.95);
+    expect(afterOneTick).toBeGreaterThan(0.94);
+  });
+
+  it('normalizes both soft and loud inputs to the same ceiling (per-band AGC)', () => {
+    // Per-band AGC: each band tracks its own running peak and rescales to it,
+    // so the visualization is supposed to fill regardless of absolute level.
+    // Soft /s/ and loud /s/ should both peg band 5 — that's how the right
+    // side stays readable even when the speaker is quiet.
+    const softReading = readOnce(flatSpectrum(90));
+    const loudReading = readOnce(flatSpectrum(200));
+    expect(softReading).toBeGreaterThan(0.9);
+    expect(loudReading).toBeGreaterThan(0.9);
+  });
+
+  it('decays the per-band peak so a smaller follow-up onset eventually re-fills', () => {
+    const { tap: attached, analyser } = attachTap();
+    // Drive band 0 hard so its peak is fully loaded.
+    analyser.setSpectrum(bandSpectrum(0, 255));
+    for (let i = 0; i < 5; i++) {
+      attached.readBands();
     }
+    // Drop to silence and let the peak decay (~1s time constant, run plenty).
+    analyser.setSpectrum(flatSpectrum(0));
+    for (let i = 0; i < 600; i++) {
+      attached.readBands();
+    }
+    // A modest follow-up input should now normalize back toward 1.0 because
+    // the peak has decayed close to the floor.
+    analyser.setSpectrum(bandSpectrum(0, 80));
+    for (let i = 0; i < 5; i++) {
+      attached.readBands();
+    }
+    const levels = attached.readBands() as Readonly<Float32Array>;
+    expect(levels[0]).toBeGreaterThan(0.9);
   });
 
   it('disconnects the analyser on detach', () => {
