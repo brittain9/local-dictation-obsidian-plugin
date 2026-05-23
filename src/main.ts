@@ -57,6 +57,9 @@ export default class LocalSttPlugin extends Plugin {
     this.audioVisualizerTap = new AudioVisualizerTap();
     this.audioCaptureStream = new AudioCaptureStream({
       logger: this.logger,
+      onDeviceFallback: () => {
+        new Notice('Saved microphone unavailable. Using the default input device.');
+      },
       visualizer: this.audioVisualizerTap,
     });
     const ollamaClient = createOllamaClient();

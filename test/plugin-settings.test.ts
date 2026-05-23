@@ -377,6 +377,25 @@ describe('resolvePluginSettings', () => {
     ).toEqual([]);
   });
 
+  it('reads a valid audioInputDevice and trims whitespace', () => {
+    expect(
+      resolvePluginSettings({
+        audioInputDevice: { deviceId: '  abc123  ', label: '  Plantronics Headset  ' },
+      }).audioInputDevice,
+    ).toEqual({ deviceId: 'abc123', label: 'Plantronics Headset' });
+  });
+
+  it.each([
+    ['missing field', { audioInputDevice: { deviceId: 'abc' } }],
+    ['empty deviceId', { audioInputDevice: { deviceId: '', label: 'Mic' } }],
+    ['empty label', { audioInputDevice: { deviceId: 'abc', label: '' } }],
+    ['whitespace-only label', { audioInputDevice: { deviceId: 'abc', label: '   ' } }],
+    ['wrong types', { audioInputDevice: { deviceId: 42, label: 'Mic' } }],
+    ['not an object', { audioInputDevice: 'abc123' }],
+  ])('coerces invalid audioInputDevice to null (%s)', (_label, raw) => {
+    expect(resolvePluginSettings(raw).audioInputDevice).toBeNull();
+  });
+
   it('resets editable LLM defaults without touching visibility, model, raw display, or styles', () => {
     const presets = [makeUserPreset({ id: 'a', label: 'Keep me' })];
     const reset = resetLlmPostprocessDefaults({
