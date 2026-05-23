@@ -39,6 +39,11 @@ export function renderMicrophonePicker(
   let selectEl: HTMLSelectElement | null = null;
   let detectButtonEl: HTMLElement | null = null;
   let disposed = false;
+  // Bumped on every enumerate() call. Out-of-order resolutions (initial
+  // enumerate vs a devicechange-debounced one) compare against this and drop
+  // their result if a newer call has already started, so a stale response
+  // cannot overwrite a fresher device list.
+  let enumerateVersion = 0;
 
   function getSaved(): AudioInputDevice | null {
     return deps.access.getSettings().audioInputDevice;
@@ -89,11 +94,21 @@ export function renderMicrophonePicker(
     if (detectButtonEl === null) {
       return;
     }
-    const needsPriming = devices.length > 0 && devices.every((device) => device.label === '');
-    detectButtonEl.style.display = needsPriming ? '' : 'none';
+    const mediaDevices = globalThis.navigator?.mediaDevices;
+    if (mediaDevices?.getUserMedia === undefined) {
+      detectButtonEl.style.display = 'none';
+      return;
+    }
+    // Show the button whenever no enumerated device has a usable label. That
+    // covers the empty list (locked-down OS permission, no inputs visible) and
+    // the labels-look-empty cases (permission not yet granted, or label is
+    // only a VID:PID suffix that formatDeviceLabel strips to '').
+    const hasLabeledDevice = devices.some((device) => formatDeviceLabel(device.label).length > 0);
+    detectButtonEl.style.display = hasLabeledDevice ? 'none' : '';
   }
 
   async function enumerate(): Promise<void> {
+    const version = ++enumerateVersion;
     const mediaDevices = globalThis.navigator?.mediaDevices;
     if (mediaDevices?.enumerateDevices === undefined) {
       devices = [];
@@ -103,7 +118,7 @@ export function renderMicrophonePicker(
 
     try {
       const all = await mediaDevices.enumerateDevices();
-      if (disposed) {
+      if (disposed || version !== enumerateVersion) {
         return;
       }
       devices = all.filter(
@@ -111,6 +126,9 @@ export function renderMicrophonePicker(
       );
       repopulate();
     } catch (error) {
+      if (disposed || version !== enumerateVersion) {
+        return;
+      }
       deps.logger?.warn('audio', 'enumerateDevices failed', error);
       devices = [];
       repopulate();
@@ -138,12 +156,16 @@ export function renderMicrophonePicker(
   async function handleChange(value: string): Promise<void> {
     if (value === DEFAULT_OPTION_VALUE) {
       await deps.access.persistOne('audioInputDevice', null);
+      repopulate();
       return;
     }
 
     if (value === MISSING_OPTION_VALUE) {
-      // The disconnected row is selected by default when the saved device is
-      // absent — no-op on re-selection.
+      // Re-selecting the disconnected row is normally a no-op, but if the user
+      // previously switched to Default in this session the saved state is null
+      // and the MISSING row is an orphan. Repopulate to drop it and re-sync
+      // the dropdown with saved state.
+      repopulate();
       return;
     }
 
@@ -165,6 +187,7 @@ export function renderMicrophonePicker(
     }
 
     await deps.access.persistOne('audioInputDevice', { deviceId: picked.deviceId, label });
+    repopulate();
   }
 
   async function primePermission(): Promise<void> {

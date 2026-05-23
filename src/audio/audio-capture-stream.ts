@@ -147,8 +147,15 @@ export class AudioCaptureStream {
         'saved microphone unavailable; falling back to the default input device',
         error,
       );
+      // Only fire the fallback notice if the retry actually succeeds. If it
+      // also rejects, the outer error path will surface a single "Failed to
+      // start dictation" notice rather than two contradictory ones.
+      const mediaStream = await mediaDevices.getUserMedia({
+        audio: baseConstraints,
+        video: false,
+      });
       this.options.onDeviceFallback?.();
-      return mediaDevices.getUserMedia({ audio: baseConstraints, video: false });
+      return mediaStream;
     }
   }
 
