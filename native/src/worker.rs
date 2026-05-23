@@ -127,18 +127,30 @@ impl TranscriptionWorker {
 
 struct WorkerSession {
     metadata: SessionMetadata,
+    family_capabilities: ModelFamilyCapabilities,
     loaded_model: Box<dyn LoadedModel>,
     processors: Vec<Box<dyn StageProcessor>>,
 }
 
-fn load_model_for_session(
+struct LoadedSessionResources {
+    family_capabilities: ModelFamilyCapabilities,
+    loaded_model: Box<dyn LoadedModel>,
+}
+
+fn load_session_resources(
     registry: &EngineRegistry,
     metadata: &SessionMetadata,
-) -> Result<Box<dyn LoadedModel>, TranscriptionError> {
+) -> Result<LoadedSessionResources, TranscriptionError> {
     let adapter = registry
         .adapter(metadata.runtime_id, metadata.family_id)
         .ok_or_else(|| missing_adapter_error(metadata.runtime_id, metadata.family_id))?;
-    adapter.load(&metadata.model_file_path, metadata.gpu_config)
+    let family_capabilities = adapter.capabilities().clone();
+    let loaded_model = adapter.load(&metadata.model_file_path, metadata.gpu_config)?;
+
+    Ok(LoadedSessionResources {
+        family_capabilities,
+        loaded_model,
+    })
 }
 
 fn worker_main(
@@ -156,16 +168,17 @@ fn worker_main(
         match command {
             WorkerCommand::BeginSession(metadata) => {
                 let load_result = panic::catch_unwind(AssertUnwindSafe(|| {
-                    load_model_for_session(registry.as_ref(), &metadata)
+                    load_session_resources(registry.as_ref(), &metadata)
                 }));
 
                 match load_result {
-                    Ok(Ok(loaded_model)) => {
+                    Ok(Ok(resources)) => {
                         sessions.insert(
                             metadata.session_id.clone(),
                             WorkerSession {
                                 metadata,
-                                loaded_model,
+                                family_capabilities: resources.family_capabilities,
+                                loaded_model: resources.loaded_model,
                                 processors: post_engine_processors(),
                             },
                         );
@@ -267,10 +280,7 @@ fn worker_main(
                 };
                 let stage_context = request.context.clone();
 
-                let warnings = registry
-                    .adapter(session.metadata.runtime_id, session.metadata.family_id)
-                    .map(|adapter| apply_capability_gates(adapter.capabilities(), &mut request))
-                    .unwrap_or_default();
+                let warnings = apply_capability_gates(&session.family_capabilities, &mut request);
 
                 let started_at = Instant::now();
                 let result = panic::catch_unwind(AssertUnwindSafe(|| {
@@ -280,10 +290,6 @@ fn worker_main(
 
                 match result {
                     Ok(Ok(engine_output)) => {
-                        let family_capabilities = registry
-                            .adapter(session.metadata.runtime_id, session.metadata.family_id)
-                            .map(|adapter| adapter.capabilities().clone())
-                            .unwrap_or_else(ModelFamilyCapabilities::unknown);
                         let transcript = assemble_transcript(TranscriptAssembly {
                             utterance_id,
                             engine_output,
@@ -293,7 +299,7 @@ fn worker_main(
                             vad_probabilities: &vad_probabilities,
                             voice_activity,
                             context: stage_context.as_ref(),
-                            family_capabilities: &family_capabilities,
+                            family_capabilities: &session.family_capabilities,
                             stage_enablement: &session.metadata.stage_enablement,
                             processors: &session.processors,
                             tokio_runtime: &tokio_runtime,
@@ -560,6 +566,24 @@ mod tests {
         }
     }
 
+    struct FamilyCapabilitiesReadingProcessor;
+
+    impl StageProcessor for FamilyCapabilitiesReadingProcessor {
+        fn id(&self) -> StageId {
+            StageId::HallucinationFilter
+        }
+
+        fn process(&self, transcript: &Transcript, ctx: &StageContext<'_>) -> StageProcess {
+            StageProcess::Ok {
+                segments: transcript.segments.clone(),
+                payload: Some(serde_json::json!({
+                    "supportsInitialPrompt": ctx.family_capabilities.supports_initial_prompt,
+                    "supportsLanguageSelection": ctx.family_capabilities.supports_language_selection,
+                })),
+            }
+        }
+    }
+
     #[test]
     fn assemble_transcript_includes_voice_activity_in_engine_payload() {
         let voice_activity = voice_activity();
@@ -731,6 +755,38 @@ mod tests {
         assert_eq!(
             payload,
             serde_json::json!({ "durationMs": 0, "voicedFraction": 0.7_f32 })
+        );
+    }
+
+    #[test]
+    fn stage_context_exposes_session_family_capabilities_to_processors() {
+        let processors: Vec<Box<dyn StageProcessor>> =
+            vec![Box::new(FamilyCapabilitiesReadingProcessor)];
+        let runtime = test_runtime();
+        let (_cancel_tx, cancel_rx) = watch::channel(false);
+        let transcript = assemble_transcript(TranscriptAssembly {
+            cancel_rx: &cancel_rx,
+            context: None,
+            engine_duration_ms: 7,
+            engine_output: engine_output(),
+            family_capabilities: &whisper_caps(),
+            is_final: true,
+            llm_postprocess: None,
+            pause_ms_before_utterance: None,
+            processors: &processors,
+            stage_enablement: &StageEnablement::default(),
+            tokio_runtime: &runtime,
+            utterance_id: Uuid::nil(),
+            vad_probabilities: &[],
+            voice_activity: voice_activity(),
+        });
+
+        assert_eq!(
+            transcript.stage_history[1].payload,
+            Some(serde_json::json!({
+                "supportsInitialPrompt": true,
+                "supportsLanguageSelection": false,
+            }))
         );
     }
 
