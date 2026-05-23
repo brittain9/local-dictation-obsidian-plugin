@@ -20,6 +20,10 @@ import {
   resolvePluginSettings,
 } from './settings/plugin-settings';
 import { LocalSttSettingTab } from './settings/settings-tab';
+import {
+  openSidecarInstallModal,
+  type SidecarInstallActionDeps,
+} from './settings/sidecar-settings-section';
 import { SetupWizardModal } from './setup/setup-wizard-modal';
 import { formatErrorMessage } from './shared/format-utils';
 import { createPluginLogger, type PluginLogger } from './shared/plugin-logger';
@@ -27,8 +31,17 @@ import { assertSidecarExecutableIsFresh } from './sidecar/sidecar-build-state';
 import { SidecarConnection } from './sidecar/sidecar-connection';
 import { formatSidecarExecutableName } from './sidecar/sidecar-executable';
 import { SidecarInstallManager } from './sidecar/sidecar-install-manager';
-import { resolveSidecarExecutablePath, SidecarNotInstalledError } from './sidecar/sidecar-paths';
+import {
+  type ResolvedSidecarExecutable,
+  type ResolveSidecarExecutablePathOptions,
+  resolveSidecarExecutablePath,
+  SidecarNotInstalledError,
+} from './sidecar/sidecar-paths';
 import type { SidecarLaunchSpec } from './sidecar/sidecar-process';
+import {
+  detectSidecarVersionDrift,
+  type SidecarVersionDrift,
+} from './sidecar/sidecar-version-drift';
 import { DictationRibbonController } from './ui/dictation-ribbon';
 import { LOCAL_DICTATION_VIEW_TYPE, LocalDictationView } from './ui/local-dictation-view';
 
@@ -176,6 +189,11 @@ export default class LocalSttPlugin extends Plugin {
 
   private async runPostLayoutStartup(): Promise<void> {
     await this.bootstrapLocalDictationSidebar();
+
+    // Surface sidecar/plugin version drift before the health handshake. An
+    // Obsidian update swaps the plugin files but never the separately-installed
+    // sidecar, so a stale sidecar may even be the reason the handshake fails.
+    await this.checkSidecarVersionDrift();
 
     try {
       await this.checkSidecarHealth({ showNotice: false });
@@ -419,24 +437,29 @@ export default class LocalSttPlugin extends Plugin {
         : undefined;
 
     return {
-      args: ['--app-version', this.manifest.version],
       command: executablePath,
       cwd: dirname(executablePath),
       ...(env ? { env } : {}),
     };
   }
 
-  private async resolveSidecarExecutablePath(): Promise<string> {
-    const pluginDirectory = await this.resolvePluginDirectoryPath();
-    const sidecarProjectDirectory = join(pluginDirectory, 'native');
-    const resolved = await resolveSidecarExecutablePath({
+  private buildSidecarResolutionOptions(
+    pluginDirectory: string,
+  ): ResolveSidecarExecutablePathOptions {
+    return {
       accelerationPreference: this.settings.accelerationPreference,
       executableName: getSidecarExecutableName(),
       pluginDirectory,
       sidecarPathOverride: this.settings.sidecarPathOverride,
-      sidecarProjectDirectory,
+      sidecarProjectDirectory: join(pluginDirectory, 'native'),
       supportsCuda: !Platform.isMacOS,
-    });
+    };
+  }
+
+  private async resolveSidecarExecutablePath(): Promise<string> {
+    const pluginDirectory = await this.resolvePluginDirectoryPath();
+    const options = this.buildSidecarResolutionOptions(pluginDirectory);
+    const resolved = await resolveSidecarExecutablePath(options);
 
     if (resolved.source === 'installed' && resolved.variant !== null) {
       this.logger.debug(
@@ -447,10 +470,104 @@ export default class LocalSttPlugin extends Plugin {
       if (resolved.variant === 'cuda') {
         this.logger.debug('sidecar', `using CUDA sidecar build at ${resolved.path}`);
       }
-      await assertSidecarExecutableIsFresh(resolved.path, sidecarProjectDirectory);
+      await assertSidecarExecutableIsFresh(resolved.path, options.sidecarProjectDirectory);
     }
 
     return resolved.path;
+  }
+
+  /**
+   * On startup, compare the installed sidecar's recorded version against the
+   * current plugin version and prompt for a one-click reinstall when they
+   * differ. Obsidian updates the plugin files but never the separately-
+   * installed sidecar, so the two silently fall out of sync after an update.
+   * Self-contained: every failure path (including no sidecar installed) is
+   * swallowed so this can never disrupt startup.
+   */
+  private async checkSidecarVersionDrift(): Promise<void> {
+    let pluginDirectory: string;
+    let resolved: ResolvedSidecarExecutable;
+
+    try {
+      pluginDirectory = await this.resolvePluginDirectoryPath();
+      resolved = await resolveSidecarExecutablePath(
+        this.buildSidecarResolutionOptions(pluginDirectory),
+      );
+    } catch (error) {
+      // No installed sidecar (or an unreadable plugin dir): the setup and
+      // health paths own that case — there is no installed version to compare.
+      if (!(error instanceof SidecarNotInstalledError)) {
+        this.logger.error('sidecar', 'version drift check could not resolve sidecar', error);
+      }
+      return;
+    }
+
+    // Only a release-installed sidecar carries an install.json version. Dev
+    // builds and explicit path overrides are intentionally exempt.
+    if (resolved.source !== 'installed' || resolved.variant === null) return;
+
+    let drift: SidecarVersionDrift | null;
+    try {
+      drift = await detectSidecarVersionDrift({
+        pluginDirectory,
+        pluginVersion: this.manifest.version,
+        variant: resolved.variant,
+      });
+    } catch (error) {
+      this.logger.error('sidecar', 'version drift check failed', error);
+      return;
+    }
+
+    if (drift === null) return;
+
+    this.logger.debug(
+      'sidecar',
+      `sidecar version drift: installed ${drift.installedVersion}, plugin ${drift.pluginVersion}`,
+    );
+    this.notifySidecarVersionDrift(drift, pluginDirectory);
+  }
+
+  private notifySidecarVersionDrift(drift: SidecarVersionDrift, pluginDirectory: string): void {
+    const notice = new Notice(
+      createFragment((fragment) => {
+        fragment.createDiv({
+          text: `Local Dictation updated to ${drift.pluginVersion}, but its speech engine is still ${drift.installedVersion}. Reinstall to keep them in sync.`,
+        });
+        fragment
+          .createEl('a', { href: '#', text: 'Reinstall speech engine' })
+          .addEventListener('click', (event) => {
+            event.preventDefault();
+            notice.hide();
+            openSidecarInstallModal(this.buildSidecarInstallActionDeps(), {
+              intent: 'reinstall',
+              pluginDirectory,
+              variant: drift.variant,
+            });
+          });
+      }),
+      0,
+    );
+  }
+
+  private buildSidecarInstallActionDeps(): SidecarInstallActionDeps {
+    return {
+      app: this.app,
+      isDictationBusy: () => this.dictationController?.isBusy() ?? false,
+      logger: this.logger,
+      modelInstallManager: this.requireModelInstallManager(),
+      pluginVersion: this.manifest.version,
+      refreshSettingsTab: () => {
+        // No-op: the settings tab re-reads install manifests on each render, so
+        // a reinstall from this startup notice needs no explicit refresh.
+      },
+      restartSidecar: async () => {
+        await this.requireSidecarConnection().restart(
+          this.settings.sidecarStartupTimeoutSeconds * 1000,
+        );
+      },
+      sidecarConnection: this.requireSidecarConnection(),
+      sidecarInstallManager: this.requireSidecarInstallManager(),
+    };
   }
 
   private async resolvePluginDirectoryPath(): Promise<string> {
