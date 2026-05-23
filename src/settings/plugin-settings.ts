@@ -124,7 +124,7 @@ export const DEFAULT_PLUGIN_SETTINGS: PluginSettings = {
   developerMode: false,
   dictationAnchor: 'at_cursor',
   listeningMode: 'always_on',
-  llmFeaturesEnabled: true,
+  llmFeaturesEnabled: false,
   llmPostprocessActivePresetRef: DEFAULT_LLM_ACTIVE_PRESET_REF,
   llmPostprocessMode: 'per_utterance',
   llmPostprocessModel: '',

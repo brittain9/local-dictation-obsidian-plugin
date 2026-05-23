@@ -35,9 +35,9 @@ describe('resolvePluginSettings', () => {
     expect(resolvePluginSettings({}).schemaVersion).toBe(1);
   });
 
-  it('defaults to visible per-utterance cleanup with the Clean up prompt', () => {
+  it('defaults LLM features off (opt-in) with per-utterance cleanup and the Clean up prompt', () => {
     expect(DEFAULT_PLUGIN_SETTINGS).toMatchObject({
-      llmFeaturesEnabled: true,
+      llmFeaturesEnabled: false,
       llmPostprocessActivePresetRef: `builtin:${DEFAULT_LLM_BUILTIN_PRESET_ID}`,
       llmPostprocessMode: 'per_utterance',
       llmPostprocessPrompt: DEFAULT_LLM_POSTPROCESS_PROMPT,

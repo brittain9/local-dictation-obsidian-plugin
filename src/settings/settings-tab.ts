@@ -242,13 +242,13 @@ export class LocalSttSettingTab extends PluginSettingTab {
       placeholder: 'Use the shared default model store',
     });
 
-    const disableLlmSetting = new Setting(advancedSection)
-      .setName('Disable LLM features')
-      .setDesc('Hide the LLM transformation sidebar.');
-    disableLlmSetting.addToggle((toggle) => {
-      toggle.setValue(!this.dependencies.getSettings().llmFeaturesEnabled);
+    const enableLlmSetting = new Setting(advancedSection)
+      .setName('Enable LLM features')
+      .setDesc('Show the LLM transformation sidebar.');
+    enableLlmSetting.addToggle((toggle) => {
+      toggle.setValue(this.dependencies.getSettings().llmFeaturesEnabled);
       toggle.onChange(async (value) => {
-        await this.access.persistOne('llmFeaturesEnabled', !value);
+        await this.access.persistOne('llmFeaturesEnabled', value);
         this.display();
       });
     });
