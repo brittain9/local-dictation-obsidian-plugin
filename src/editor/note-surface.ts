@@ -391,8 +391,9 @@ export class NoteSurface {
     unregisterNoteSurface(this);
     // The anchor is a single shared widget. Only clear it when no other live
     // session is still using it — otherwise a draining older session would wipe
-    // the newer session's cursor. The processing-range flash is per-session, so
-    // always clear this surface's own mark.
+    // the newer session's cursor. The processing range is a single shared field
+    // too, but only the session currently draining ever shows the flash, so the
+    // disposing session always clears it.
     const effects = [setSessionProcessingEffect.of(null)];
     if (!this.hasOtherLiveSibling()) {
       effects.push(clearAnchorEffect.of(null));
