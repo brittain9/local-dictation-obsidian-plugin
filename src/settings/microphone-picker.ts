@@ -7,6 +7,16 @@ import type { SettingAccess } from './setting-helpers';
 const DEFAULT_OPTION_VALUE = '__default__';
 const MISSING_OPTION_VALUE = '__missing__';
 const UNLABELED_OPTION_TEXT = 'Microphone (label unavailable)';
+// Chromium on Windows suffixes USB device labels with a `(VID:PID)` tuple
+// (e.g. " (03f0:098d)"). It's stable but noise in a settings UI — strip it
+// for display and persistence so the dropdown matches what the user sees in
+// the OS sound control panel.
+const VID_PID_SUFFIX = /\s*\(([0-9a-f]{4}):([0-9a-f]{4})\)\s*$/i;
+// Chromium synthesizes two alias entries with these literal deviceIds that
+// track whichever physical device is currently the OS default for general /
+// communications routing. They duplicate real devices already in the list
+// and we expose our own "Default microphone" row at the top, so hide them.
+const SYNTHETIC_ALIAS_IDS = new Set(['default', 'communications']);
 // Windows fires `devicechange` once per HID interface on a single plug action;
 // 300 ms collapses those into a single re-enumeration.
 const DEVICE_CHANGE_DEBOUNCE_MS = 300;
@@ -46,7 +56,7 @@ export function renderMicrophonePicker(
 
     let savedIsPresent = false;
     for (const device of devices) {
-      const enumeratedLabel = device.label.trim();
+      const enumeratedLabel = formatDeviceLabel(device.label);
       // If a saved device is enumerated but came back with an empty label
       // (permission revoked between sessions), keep the friendly persisted
       // name so the row isn't blank.
@@ -96,7 +106,9 @@ export function renderMicrophonePicker(
       if (disposed) {
         return;
       }
-      devices = all.filter((device) => device.kind === 'audioinput');
+      devices = all.filter(
+        (device) => device.kind === 'audioinput' && !SYNTHETIC_ALIAS_IDS.has(device.deviceId),
+      );
       repopulate();
     } catch (error) {
       deps.logger?.warn('audio', 'enumerateDevices failed', error);
@@ -140,7 +152,7 @@ export function renderMicrophonePicker(
       return;
     }
 
-    const label = picked.label.trim();
+    const label = formatDeviceLabel(picked.label);
     if (label.length === 0) {
       // Shouldn't happen — the user can only pick an unlabeled row before
       // priming permission, and we don't want to persist a blank label.
@@ -213,4 +225,8 @@ export function renderMicrophonePicker(
 function appendOption(selectEl: HTMLSelectElement, value: string, text: string): void {
   const option = selectEl.createEl('option', { text });
   option.value = value;
+}
+
+function formatDeviceLabel(raw: string): string {
+  return raw.replace(VID_PID_SUFFIX, '').trim();
 }
