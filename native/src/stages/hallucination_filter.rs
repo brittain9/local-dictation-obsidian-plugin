@@ -15,7 +15,9 @@ const STRONG_VAD_VOICED_FRACTION: f32 = 0.10;
 const STRONG_VAD_VOICED_MS: u64 = 200;
 
 // Weak corroborators — ≥2 needed to drop a SOFT phrase, ≥1 needed for the
-// repetition and prompt-leak rules. None of these alone may drop normal text.
+// repetition rule. Prompt leaks require two total corroborators because prompt
+// text can overlap legitimate dictation. None of these alone may drop normal
+// text.
 const WEAK_VAD_VOICED_FRACTION: f32 = 0.35;
 const WEAK_AVG_LOGPROB: f32 = -0.70;
 const SHORT_VOICE_MS: u64 = 1_200;
@@ -176,6 +178,12 @@ impl SegmentEvidence {
             || self.weak_corroborator_count() > 0
     }
 
+    fn prompt_leak_corroborator_count(&self) -> u8 {
+        u8::from(self.strong_whisper_silence())
+            + u8::from(self.strong_vad_silence())
+            + self.weak_corroborator_count()
+    }
+
     fn strong_whisper_silence(&self) -> bool {
         matches!(
             (self.no_speech_prob, self.avg_logprob),
@@ -315,7 +323,9 @@ fn classify_drop(
         return Some(DropReason::Repetition);
     }
 
-    if is_prompt_leak(evidence, normalized_context) && evidence.has_any_corroborator() {
+    if is_prompt_leak(evidence, normalized_context)
+        && evidence.prompt_leak_corroborator_count() >= 2
+    {
         return Some(DropReason::PromptLeakCorroborated);
     }
 
@@ -394,11 +404,37 @@ fn is_bare_domain(normalized: &str) -> bool {
         .strip_prefix("https://")
         .or_else(|| normalized.strip_prefix("http://"))
         .unwrap_or(normalized);
-    !text.contains(' ')
-        && text.contains('.')
-        && text
+    if text.contains(' ')
+        || !text.contains('.')
+        || !text
             .chars()
             .all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '.' | '-' | '/' | '_' | '?'))
+    {
+        return false;
+    }
+
+    let host = text.split(['/', '?']).next().unwrap_or(text);
+    let Some(tld) = host.rsplit('.').next() else {
+        return false;
+    };
+    matches!(
+        tld,
+        "app"
+            | "ai"
+            | "biz"
+            | "co"
+            | "com"
+            | "dev"
+            | "edu"
+            | "fr"
+            | "gov"
+            | "io"
+            | "me"
+            | "net"
+            | "org"
+            | "us"
+            | "uk"
+    )
 }
 
 fn words(text: &str) -> Vec<&str> {
@@ -672,6 +708,18 @@ mod tests {
             &transcript("Glossary: AlphaTerm, BetaTerm"),
             &ctx(&diagnostics, &[], Some(&context), true),
         );
+        assert!(matches!(result, StageProcess::Skipped { .. }));
+
+        let diagnostics = [SegmentDiagnostics {
+            avg_logprob: Some(-0.8),
+            no_speech_prob: None,
+            token_count: Some(5),
+            decode_reached_eos: Some(false),
+        }];
+        let result = HallucinationFilterStage.process(
+            &transcript("Glossary: AlphaTerm, BetaTerm"),
+            &ctx(&diagnostics, &[], Some(&context), true),
+        );
         assert!(matches!(result, StageProcess::Ok { .. }));
     }
 
@@ -698,6 +746,21 @@ mod tests {
         assert_eq!(
             classify_text(&normalize_text("example.com"), "example.com"),
             TextClass::Soft,
+        );
+        assert_eq!(
+            classify_text(
+                &normalize_text("https://example.dev/docs"),
+                "https://example.dev/docs"
+            ),
+            TextClass::Soft,
+        );
+        assert_eq!(
+            classify_text(&normalize_text("node.js"), "node.js"),
+            TextClass::Normal,
+        );
+        assert_eq!(
+            classify_text(&normalize_text("v1.2"), "v1.2"),
+            TextClass::Normal,
         );
         // No corroborating diagnostics or VAD: a dictated URL stays.
         let result = HallucinationFilterStage
