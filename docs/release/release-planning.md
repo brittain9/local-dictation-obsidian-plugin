@@ -34,7 +34,7 @@ Deferred: macOS x86_64, Linux arm64, Windows arm64. Add a runner only if real us
 
 ## Versioning And Install Layout
 
-The release git tag equals `manifest.version`. The sidecar binary reports its own version via `system_info`; the plugin compares `system_info.sidecarVersion` against `manifest.version` and offers to install the matching sidecar when they differ.
+The release git tag equals `manifest.version`. The sidecar binary reports its own compiled version (`CARGO_PKG_VERSION`) via `health_ok`/`system_info`. Because Obsidian's updater replaces only the plugin files and never the separately-installed sidecar, the plugin detects drift on startup by comparing the installed sidecar's recorded version (`bin/<variant>/install.json`) against `manifest.version`, and offers a one-click reinstall of the matching sidecar when they differ.
 
 The installer fetches `checksums.txt` at runtime alongside the selected sidecar archive and verifies the downloaded archive's SHA-256 before unpacking. Checksums are not embedded into `main.js`; the release manifest remains authoritative.
 
