@@ -94,6 +94,7 @@ export interface PluginSettings {
   llmPostprocessUserPresets: LlmUserPreset[];
   localTranscriptSidebarBootstrapped: boolean;
   modelStorePathOverride: string;
+  schemaVersion: 1;
   selectedModel: SelectedModel | null;
   setupCompletedAt: string | null;
   sidecarPathOverride: string;
@@ -130,6 +131,7 @@ export const DEFAULT_PLUGIN_SETTINGS: PluginSettings = {
   llmPostprocessUserPresets: [],
   localTranscriptSidebarBootstrapped: false,
   modelStorePathOverride: '',
+  schemaVersion: 1,
   selectedModel: null,
   setupCompletedAt: null,
   sidecarPathOverride: '',
@@ -218,8 +220,10 @@ export function resolvePluginSettings(data: unknown): PluginSettings {
       raw.modelStorePathOverride,
       DEFAULT_PLUGIN_SETTINGS.modelStorePathOverride,
     ),
+    // Bump `schemaVersion` and add a migration step when renaming a key or changing default semantics.
+    schemaVersion: 1,
     selectedModel: readSelectedModel(raw.selectedModel),
-    setupCompletedAt: typeof raw.setupCompletedAt === 'string' ? raw.setupCompletedAt : null,
+    setupCompletedAt: readSetupCompletedAt(raw.setupCompletedAt),
     sidecarPathOverride: readString(
       raw.sidecarPathOverride,
       DEFAULT_PLUGIN_SETTINGS.sidecarPathOverride,
@@ -295,6 +299,19 @@ function readBoolean(value: unknown, fallback: boolean): boolean {
 
 function readString(value: unknown, fallback: string): string {
   return typeof value === 'string' ? value.trim() : fallback;
+}
+
+function readSetupCompletedAt(value: unknown): string | null {
+  if (typeof value !== 'string') {
+    return null;
+  }
+
+  const parsed = Date.parse(value);
+  if (!Number.isFinite(parsed)) {
+    return null;
+  }
+
+  return new Date(parsed).toISOString() === value ? value : null;
 }
 
 function readPositiveInteger(value: unknown, fallback: number): number {

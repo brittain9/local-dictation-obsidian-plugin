@@ -667,6 +667,12 @@ export class DictationSessionController {
     const transcriptText = entry.session.readCurrentSessionText();
 
     if (config === null || transcriptText.length === 0) {
+      if (config !== null) {
+        this.dependencies.logger?.warn(
+          'llm',
+          'batch cleanup skipped: locked note closed before transcript could be read',
+        );
+      }
       this.disposeLocalSession(sessionId);
       return;
     }
