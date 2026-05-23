@@ -1,6 +1,8 @@
-# CODE_REVIEW — 2026-05-22
+# CODE_REVIEW — 2026-05-22 (status updated 2026-05-23)
 
 Comprehensive principal-engineer review of the full pipeline (audio capture → sidecar → VAD → inference → stages → editor) and the supporting install / settings / test infrastructure. Generated from seven parallel reviewer passes against `main` at `1b89fc6`.
+
+**Status as of 2026-05-23.** PR-1 through PR-8 are landed (PR-5 re-landed via #114 after #105 was orphaned by a wrong-base merge); PR-9 partial (M3 done, L2 deferred); PR-10 done (T1/T2 slimming via #98/#112, L5 directional tests). L8 partially done (#110 removed the dead `_queueTier` parameter on `buildRibbonLabel`; the `queueTier` field + `setQueueTier` method still exist as no-ops). Remaining work: M1, M2, L1, L2, L4, L7, L8 (decide A/B), L9, plus T3 item #6. Resolved findings are struck out in the index and carry a **Status. RESOLVED.** block at the top of their finding body.
 
 ---
 
@@ -30,62 +32,65 @@ Sequence assumes single-agent execution; if you want parallelism, PR-1 and PR-3 
 
 Touches: `src/sidecar/protocol.ts`, `src/sidecar/sidecar-connection.ts`, `test/protocol.test.ts`. Smallest blast radius; pure parser-and-caller changes; high downstream value because it makes everything else safer to test.
 
-**PR-2 — Install crash-safety + streaming decompress (Bundle A.2, ~half day)**
-- H7 (atomic install promotion via `.old` rename)
-- H8 (streaming gunzip)
+**PR-2 — Install crash-safety + streaming decompress (Bundle A.2, ~half day) — DONE (#102)**
+- ~~H7 (atomic install promotion via `.old` rename)~~ — RESOLVED
+- ~~H8 (streaming gunzip)~~ — RESOLVED
 
 Touches: `src/sidecar/sidecar-installer.ts`, `test/sidecar-installer.test.ts`. Self-contained file. Land before any next CUDA work; H8 specifically matters once large bundles ship.
 
-**PR-3 — Zero-coverage modules (Bundle A.3, parallel with PR-1/2, ~half day)**
-- H9 (`path-validation.ts` tests)
-- H10 (`PcmFrameProcessor` tests)
-- M9 (`enforceLlmContextCap` tests)
-- M12 (`SidecarInstallManager` re-install path test)
+**PR-3 — Zero-coverage modules (Bundle A.3, parallel with PR-1/2, ~half day) — DONE (#103, #108)**
+- ~~H9 (`path-validation.ts` tests)~~ — RESOLVED (#103)
+- ~~H10 (`PcmFrameProcessor` tests)~~ — RESOLVED (#103)
+- ~~M9 (`enforceLlmContextCap` tests)~~ — RESOLVED (#108)
+- ~~M12 (`SidecarInstallManager` re-install path test)~~ — RESOLVED (#108)
 
 Touches: only new files under `test/`. Independent of PR-1/PR-2; safe to run concurrently with another agent. If any of these tests fail on `main`, you have discovered a latent bug — escalate before continuing.
 
-**PR-4 — `SidecarConnection` round-trip coverage (~half day)**
-- M8 (round-trip tests)
+**PR-4 — `SidecarConnection` round-trip coverage (~half day) — DONE (#104)**
+- ~~M8 (round-trip tests)~~ — RESOLVED
 
 Touches: new `test/sidecar-connection.test.ts`. Must land before PR-5 because PR-5 changes the shutdown semantics this test pins.
 
-**PR-5 — Shutdown / restart correctness (Bundle B.1, ~half day)**
-- H3 (shutdown command write race — prefer Option A: drop the wire command)
-- H4 (drain waiters in `shutdown()`)
+**PR-5 — Shutdown / restart correctness (Bundle B.1, ~half day) — DONE (#114 re-land of orphaned #105)**
+- ~~H3 (shutdown command write race — prefer Option A: drop the wire command)~~ — RESOLVED (#114, Option A taken)
+- ~~H4 (drain waiters in `shutdown()`)~~ — RESOLVED (#114)
+- ~~L3 (`cancelModelInstall` short-circuit when sidecar stopped)~~ — RESOLVED (#114, folded in)
 
 Touches: `src/sidecar/sidecar-connection.ts`, possibly `src/sidecar/sidecar-process.ts`, new tests in `test/sidecar-connection.test.ts`. Bundles cleanly because both fix the same lifecycle bug.
 
-**PR-6 — Rust shutdown contract (Bundle B.2, ~half day)**
-- H6 (document `Command::Shutdown` as hard cancel + smoke test)
-- H5 (queue saturation naming alignment — pure docstring/rename)
-- M5 (`stage_payload_with_duration` always sets `durationMs`)
+**History.** PR #105 implemented this work and was merged on GitHub, but it targeted `test/sidecar-connection-round-trip` (the PR-4 branch) as its base. PR-4 was merged first (without #105's changes), so #105's merge commit (`c2199e7`) never reached `main`. PR #114 cherry-picked the two original commits (`ea392b4` shutdown drain + `c6a336c` cancelModelInstall short-circuit) onto a fresh branch off main and re-landed cleanly.
+
+**PR-6 — Rust shutdown contract (Bundle B.2, ~half day) — DONE (#106)**
+- ~~H6 (document `Command::Shutdown` as hard cancel + smoke test)~~ — RESOLVED
+- ~~H5 (queue saturation naming alignment — pure docstring/rename)~~ — RESOLVED (renamed to `QUEUE_OVERLOAD_DEPTH`)
+- ~~M5 (`stage_payload_with_duration` always sets `durationMs`)~~ — RESOLVED
 
 Touches: `native/src/app.rs`, `native/src/stages/mod.rs`, `docs/system-architecture.md`. All small, all Rust-side, all align contracts.
 
-**PR-7 — Hallucination filter tightening (Bundle B.3, ~half to full day)**
-- H11 (domain + prompt-leak false-positive fixes)
-- M4 (LLM postprocess char-length cap)
-- M11 (`done_reason: "length"` + HTTP-error tests)
+**PR-7 — Hallucination filter tightening (Bundle B.3, ~half to full day) — DONE (#109)**
+- ~~H11 (domain + prompt-leak false-positive fixes)~~ — RESOLVED
+- ~~M4 (LLM postprocess char-length cap)~~ — RESOLVED
+- ~~M11 (`done_reason: "length"` + HTTP-error tests)~~ — RESOLVED
 
 Touches: `native/src/stages/hallucination_filter.rs`, `native/src/stages/llm_postprocess.rs`. Read M4 first — small change unlocks one of the M11 test assertions.
 
-**PR-8 — Settings hardening (Bundle C, ~quarter day)**
-- M6 (`schemaVersion` field — one line)
-- M7 (`setupCompletedAt` ISO-8601 validation)
-- M10 (note-closed-mid-session warn log)
+**PR-8 — Settings hardening (Bundle C, ~quarter day) — DONE (#107)**
+- ~~M6 (`schemaVersion` field — one line)~~ — RESOLVED
+- ~~M7 (`setupCompletedAt` ISO-8601 validation)~~ — RESOLVED
+- ~~M10 (note-closed-mid-session warn log)~~ — RESOLVED
 
 Touches: `src/settings/plugin-settings.ts`, `src/dictation/dictation-session-controller.ts`, tests. Trivial individually; bundle to avoid PR overhead.
 
-**PR-9 — Worker hot-path allocations (Bundle D.1, ~quarter day)**
-- M3 (cache `Arc<ModelFamilyCapabilities>` and `supports_initial_prompt` on `WorkerSession`)
-- L2 (worklet allocation reduction — only if you can verify with a profile)
+**PR-9 — Worker hot-path allocations (Bundle D.1, ~quarter day) — PARTIAL (#111)**
+- ~~M3 (cache `Arc<ModelFamilyCapabilities>` and `supports_initial_prompt` on `WorkerSession`)~~ — RESOLVED (#111)
+- L2 (worklet allocation reduction — only if you can verify with a profile) — deferred (needs profiling evidence)
 
 Touches: `native/src/worker.rs`, `src/audio/pcm-frame-processor.ts`. L2 ships only if H10 has landed (you need the test bed). Skip L2 if you can't measure the win.
 
-**PR-10 — Test slimming and consolidation (Bundle E, ~half day)**
-- L6 delete list (~125 LOC recovered)
-- L6 consolidate list (~80 LOC recovered)
-- L5 (visualizer threshold tests → directional assertions)
+**PR-10 — Test slimming and consolidation (Bundle E, ~half day) — DONE (#98, #112)**
+- ~~T1 delete list (~125 LOC recovered)~~ — RESOLVED (#98, #112)
+- ~~T2 consolidate list (~80 LOC recovered)~~ — RESOLVED (#98, #112)
+- ~~L5 (visualizer threshold tests → directional assertions)~~ — RESOLVED (#98)
 
 Touches: many `test/*.test.ts` files. Lowest priority; ship when you want to reduce maintenance load. Do **not** bundle with bug fixes — keep test slimming reviewable on its own.
 
@@ -142,39 +147,39 @@ These were considered and rejected, or explicitly out of scope:
 
 | ID | Severity | Title | File |
 |----|----------|-------|------|
-| ~~H1~~ | ~~HIGH~~ | ~~Frame parser has no payload-length cap~~ — **RESOLVED** | `src/sidecar/protocol.ts` |
-| ~~H2~~ | ~~HIGH~~ | ~~`pushChunk` discards valid frames on later parse failure~~ — **RESOLVED** | `src/sidecar/protocol.ts` + `sidecar-connection.ts` |
-| H3 | HIGH | Shutdown command can be truncated by immediate `stdin.end()` | `src/sidecar/sidecar-connection.ts` |
-| H4 | HIGH | `restart()` may reject waiters against the new process | `src/sidecar/sidecar-connection.ts` |
-| H5 | MEDIUM | Queue saturation threshold: intent vs. behavior alignment | `native/src/app.rs` |
-| H6 | HIGH | `Command::Shutdown` drops sessions before draining the worker | `native/src/app.rs` |
-| H7 | HIGH | TS install promotion is not crash-safe | `src/sidecar/sidecar-installer.ts` |
-| H8 | HIGH | `extractTarGz` buffers and decompresses synchronously | `src/sidecar/sidecar-installer.ts` |
-| H9 | HIGH | `path-validation.ts` has zero direct tests | `src/filesystem/path-validation.ts` |
-| H10 | HIGH | `PcmFrameProcessor` has zero test coverage | `src/audio/pcm-frame-processor.ts` |
-| H11 | HIGH | Hallucination filter false-positives (domain + prompt leak) | `native/src/stages/hallucination_filter.rs` |
+| ~~H1~~ | ~~HIGH~~ | ~~Frame parser has no payload-length cap~~ — **RESOLVED** (#101) | `src/sidecar/protocol.ts` |
+| ~~H2~~ | ~~HIGH~~ | ~~`pushChunk` discards valid frames on later parse failure~~ — **RESOLVED** (#101) | `src/sidecar/protocol.ts` + `sidecar-connection.ts` |
+| ~~H3~~ | ~~HIGH~~ | ~~Shutdown command can be truncated by immediate `stdin.end()`~~ — **RESOLVED** (#114, re-land of orphaned #105) | `src/sidecar/sidecar-connection.ts` |
+| ~~H4~~ | ~~HIGH~~ | ~~`restart()` may reject waiters against the new process~~ — **RESOLVED** (#114) | `src/sidecar/sidecar-connection.ts` |
+| ~~H5~~ | ~~MEDIUM~~ | ~~Queue saturation threshold: intent vs. behavior alignment~~ — **RESOLVED** (#106, renamed to `QUEUE_OVERLOAD_DEPTH`) | `native/src/app.rs` |
+| ~~H6~~ | ~~HIGH~~ | ~~`Command::Shutdown` drops sessions before draining the worker~~ — **RESOLVED** (#106, hard-cancel contract pinned by test) | `native/src/app.rs` |
+| ~~H7~~ | ~~HIGH~~ | ~~TS install promotion is not crash-safe~~ — **RESOLVED** (#102) | `src/sidecar/sidecar-installer.ts` |
+| ~~H8~~ | ~~HIGH~~ | ~~`extractTarGz` buffers and decompresses synchronously~~ — **RESOLVED** (#102) | `src/sidecar/sidecar-installer.ts` |
+| ~~H9~~ | ~~HIGH~~ | ~~`path-validation.ts` has zero direct tests~~ — **RESOLVED** (#103) | `src/filesystem/path-validation.ts` |
+| ~~H10~~ | ~~HIGH~~ | ~~`PcmFrameProcessor` has zero test coverage~~ — **RESOLVED** (#103) | `src/audio/pcm-frame-processor.ts` |
+| ~~H11~~ | ~~HIGH~~ | ~~Hallucination filter false-positives (domain + prompt leak)~~ — **RESOLVED** (#109) | `native/src/stages/hallucination_filter.rs` |
 | M1 | MEDIUM | `app.rs` (2639 LOC) — extract session/queue state machine | `native/src/app.rs` |
 | M2 | MEDIUM | `local-dictation-view.ts` (872 LOC) — extract section renderers | `src/ui/local-dictation-view.ts` |
-| M3 | MEDIUM | Per-utterance allocations in worker hot path | `native/src/worker.rs` |
-| M4 | MEDIUM | LLM postprocess byte-length cap on multibyte input | `native/src/stages/llm_postprocess.rs` |
-| M5 | MEDIUM | `stage_payload_with_duration` silently no-ops on missing placeholder | `native/src/stages/mod.rs` |
-| M6 | MEDIUM | `plugin-settings.ts` has no `schemaVersion` | `src/settings/plugin-settings.ts` |
-| M7 | MEDIUM | `setupCompletedAt` accepts any string | `src/settings/plugin-settings.ts` |
-| M8 | MEDIUM | `SidecarConnection` round-trip is untested | `src/sidecar/sidecar-connection.ts` |
-| M9 | MEDIUM | `enforceLlmContextCap` is untested | `src/dictation/dictation-session-controller.ts` |
-| M10 | MEDIUM | Note-closed-mid-session silently loses batch cleanup | `src/dictation/dictation-session-controller.ts` |
-| M11 | MEDIUM | `done_reason: "length"` and Ollama HTTP-error tests missing | `native/src/stages/llm_postprocess.rs` |
-| M12 | MEDIUM | `SidecarInstallManager` re-install path untested | `test/sidecar-install-manager.test.ts` |
+| ~~M3~~ | ~~MEDIUM~~ | ~~Per-utterance allocations in worker hot path~~ — **RESOLVED** (#111) | `native/src/worker.rs` |
+| ~~M4~~ | ~~MEDIUM~~ | ~~LLM postprocess byte-length cap on multibyte input~~ — **RESOLVED** (#109, character counts) | `native/src/stages/llm_postprocess.rs` |
+| ~~M5~~ | ~~MEDIUM~~ | ~~`stage_payload_with_duration` silently no-ops on missing placeholder~~ — **RESOLVED** (#106) | `native/src/stages/mod.rs` |
+| ~~M6~~ | ~~MEDIUM~~ | ~~`plugin-settings.ts` has no `schemaVersion`~~ — **RESOLVED** (#107) | `src/settings/plugin-settings.ts` |
+| ~~M7~~ | ~~MEDIUM~~ | ~~`setupCompletedAt` accepts any string~~ — **RESOLVED** (#107) | `src/settings/plugin-settings.ts` |
+| ~~M8~~ | ~~MEDIUM~~ | ~~`SidecarConnection` round-trip is untested~~ — **RESOLVED** (#104) | `src/sidecar/sidecar-connection.ts` |
+| ~~M9~~ | ~~MEDIUM~~ | ~~`enforceLlmContextCap` is untested~~ — **RESOLVED** (#108) | `src/dictation/dictation-session-controller.ts` |
+| ~~M10~~ | ~~MEDIUM~~ | ~~Note-closed-mid-session silently loses batch cleanup~~ — **RESOLVED** (#107, warn log) | `src/dictation/dictation-session-controller.ts` |
+| ~~M11~~ | ~~MEDIUM~~ | ~~`done_reason: "length"` and Ollama HTTP-error tests missing~~ — **RESOLVED** (#109) | `native/src/stages/llm_postprocess.rs` |
+| ~~M12~~ | ~~MEDIUM~~ | ~~`SidecarInstallManager` re-install path untested~~ — **RESOLVED** (#108) | `test/sidecar-install-manager.test.ts` |
 | L1 | LOW | Audio resample aliasing is silent and undocumented | `src/audio/pcm-frame-processor.ts` |
 | L2 | LOW | Per-render-quantum allocations in worklet | `src/audio/pcm-frame-processor.ts` + worklet |
-| L3 | LOW | `cancelModelInstall` respawns sidecar to send a no-op | `src/sidecar/sidecar-connection.ts` |
+| ~~L3~~ | ~~LOW~~ | ~~`cancelModelInstall` respawns sidecar to send a no-op~~ — **RESOLVED** (#114) | `src/sidecar/sidecar-connection.ts` |
 | L4 | LOW | `mapPos` text-bias intent unclear; needs pin-down test | `src/editor/note-surface.ts` |
-| L5 | LOW | Visualizer smoothing-math tests assert on internal constants | `test/audio-visualizer-tap.test.ts` |
-| T1 | TESTS | Delete tautological tests (~125 LOC) | various — see TESTS section |
-| T2 | TESTS | Consolidate near-duplicate tests (~80 LOC) | various — see TESTS section |
-| T3 | TESTS | Add high-ROI tests for uncovered modules | cross-ref H9/H10/M8/M9/M12 |
+| ~~L5~~ | ~~LOW~~ | ~~Visualizer smoothing-math tests assert on internal constants~~ — **RESOLVED** (#98) | `test/audio-visualizer-tap.test.ts` |
+| ~~T1~~ | ~~TESTS~~ | ~~Delete tautological tests (~125 LOC)~~ — **RESOLVED** (#98, #112) | various — see TESTS section |
+| ~~T2~~ | ~~TESTS~~ | ~~Consolidate near-duplicate tests (~80 LOC)~~ — **RESOLVED** (#98, #112) | various — see TESTS section |
+| T3 | TESTS | Add high-ROI tests for uncovered modules — items #1–#5 done; #6 (`Session.replaceSessionRangeWithCleaned` denied-rewrite) still open | cross-ref H9/H10/M8/M9/M12 |
 | L7 | LOW | `missingNewlines` duplicated between renderer and session | `src/transcript/renderer.ts` + `src/session/session.ts` |
-| L8 | LOW | `dictation-ribbon.ts` `_queueTier` parameter is dead | `src/ui/dictation-ribbon.ts` |
+| L8 | LOW | `dictation-ribbon.ts` `_queueTier` parameter is dead — partial (#110 removed dead param on `buildRibbonLabel`; `queueTier` field + `setQueueTier` no-op remain pending A/B decision) | `src/ui/dictation-ribbon.ts` |
 | L9 | LOW | `runtime` trait doc oversells what it actually does | `native/src/engine/traits.rs` |
 
 ---
@@ -295,6 +300,8 @@ Update `handleStdoutChunk` to dispatch `frames` first, then if `fatal` is set, l
 
 ## H3 — Shutdown command can be truncated by immediate `stdin.end()`
 
+**Status.** RESOLVED (#114, re-land of orphaned #105). Option A taken: `SidecarConnection.shutdown()` no longer writes the redundant wire-level `shutdown` command before closing stdin. Rust treats stdin EOF as the clean shutdown signal, so the Node write-vs-end race is gone.
+
 **Location:** `src/sidecar/sidecar-connection.ts:295-306` (`shutdown()`) and `src/sidecar/sidecar-process.ts:90-106` (`stop()` / stdin-end semantics).
 
 **Problem.** `shutdown()` does `this.process.write(encodeJsonFrame(createShutdownCommand()))` in a `try` block, then `await this.process.stop()` in `finally`. `stop()` closes stdin via `child.stdin.end()`. Node's `Writable.write()` returns when the chunk is *buffered*, not when it's *flushed* to the OS pipe. If the OS pipe buffer is saturated (large audio writes in flight), the shutdown command's bytes can be split or dropped when `end()` runs.
@@ -333,6 +340,8 @@ Take Option A unless you discover a host beyond this plugin that depends on the 
 ---
 
 ## H4 — `restart()` may reject waiters against the new process
+
+**Status.** RESOLVED (#114). `shutdown()` now rejects all pending waiters with `"Sidecar is shutting down."` before stopping the process, so a restart cannot resolve stale requests against a replacement process. Round-trip behavior pinned by the `SidecarConnection` test harness added in #104 + #114.
 
 **Location:** `src/sidecar/sidecar-connection.ts:289-306` (`restart`, `shutdown`, `onExit` handler at lines 97-116).
 
@@ -377,6 +386,8 @@ Note: the `onExit` handler also calls `rejectPendingWaiters` — that becomes a 
 
 ## H5 — Queue saturation threshold: intent vs. behavior alignment
 
+**Status.** RESOLVED (#106). Constant renamed from `MAX_QUEUED_UTTERANCES` to `QUEUE_OVERLOAD_DEPTH` with a docstring matching the existing behavior ("when `queued_utterances` reaches this depth the session is saturated and starts overload drain"). Threshold value and behavior unchanged.
+
 **Location:** `native/src/app.rs:902-948` (`enqueue_utterance`) and the constant `MAX_QUEUED_UTTERANCES` (defined near top of `app.rs`). Test at `app.rs:2204` (`enqueue_at_saturation_accepts_and_enters_overload_drain`).
 
 **Severity note.** The reviewer flagged this as HIGH; my read on a second pass is the behavior and the user-facing message are already consistent ("queue depth reached saturation at 30" fires when `queued_utterances == 30`). The genuine concern is that the test cements the exact threshold, so any policy change must update the test. Downgrading to MEDIUM unless verification (below) finds a real off-by-one.
@@ -400,6 +411,8 @@ Note: the `onExit` handler also calls `rejectPendingWaiters` — that becomes a 
 ---
 
 ## H6 — `Command::Shutdown` drops sessions before draining the worker
+
+**Status.** RESOLVED (#106). `Command::Shutdown` is now documented (code + `docs/system-architecture.md`) as a hard process-level cancel. A new app-state test starts a session, enqueues work, sends shutdown, and verifies active session state is dropped immediately and late worker output is ignored — pinning the contract so a future "graceful drain" reinterpretation will fail the test instead of shipping silently.
 
 **Location:** `native/src/app.rs:566-573`.
 
@@ -438,6 +451,8 @@ Steps:
 ---
 
 ## H7 — TS install promotion is not crash-safe
+
+**Status.** RESOLVED (#102). The installer now renames the existing destination to `.old`, promotes staging into place, and only then removes the backup. On promotion failure the backup is renamed back. Any leftover `.old` from a previously crashed install is wiped at the top of the next install path so backups can't accumulate. Rollback path covered by a new installer test.
 
 **Location:** `src/sidecar/sidecar-installer.ts:181-196`.
 
@@ -502,6 +517,8 @@ Add `getExistingPathKind` import from `'../filesystem/path-validation'` if not a
 
 ## H8 — `extractTarGz` buffers and decompresses synchronously
 
+**Status.** RESOLVED (#102). Decompression now flows through `createReadStream → createGunzip → Writable` via `stream/promises.pipeline` — `gunzipSync` no longer runs on the Node event loop. The in-house 512-byte tar block-parser is preserved as-is; no archive dependency added.
+
 **Location:** `src/sidecar/sidecar-installer.ts:434-436`.
 
 **Problem.** `await readFile(archivePath)` loads the entire tarball into memory; `gunzipSync(compressed)` is a blocking synchronous decompress on the Node event loop. For the CPU sidecar (~20-50 MB) it's barely noticeable. For the CUDA bundle (hundreds of MB) it will block the Obsidian renderer thread for multi-second windows and double peak RSS.
@@ -548,6 +565,8 @@ This removes the blocking sync gunzip while keeping the in-house tar parser. Mem
 
 ## H9 — `path-validation.ts` has zero direct tests
 
+**Status.** RESOLVED (#103). Added `test/path-validation.test.ts` covering the trust-boundary contract (empty, whitespace, relative, missing, directory, regular file, symlink-to-file passthrough). The symlink-no-resolve behavior is now pinned as documented contract.
+
 **Location:** `src/filesystem/path-validation.ts` (whole file, 57 lines).
 
 **Problem.** `assertAbsoluteExistingFilePath` is the trust boundary for any user-configured external file path that the plugin reads or passes to the sidecar. It is referenced indirectly by other tests (via UI flows) but has no direct coverage.
@@ -586,6 +605,8 @@ Use `vitest`'s `beforeAll` + `afterAll` to create + tear down temp fixtures unde
 
 ## H10 — `PcmFrameProcessor` has zero test coverage
 
+**Status.** RESOLVED (#103). Added direct resampler + frame-pack coverage (16 kHz identity, 48→16 kHz decimation, 44.1→16 kHz drift, frame boundary continuation, reset re-initialization).
+
 **Location:** `src/audio/pcm-frame-processor.ts` (whole file).
 
 **Problem.** The resampler + frame packer is the highest-risk module in the audio path. Off-by-one errors in `nextOutputPosition`, drift across `push()` calls, mishandling of frame boundaries — any of these silently corrupts the audio the sidecar transcribes. The visualizer (purely UI) has ~200 lines of tests; the resampler has none.
@@ -613,6 +634,8 @@ Test plan:
 ---
 
 ## H11 — Hallucination filter false-positives (domain heuristic + prompt leak)
+
+**Status.** RESOLVED (#109). Bare-domain detection now requires a recognized domain suffix so `node.js` and `v1.2` no longer trip the soft-drop path. Prompt-leak drops now require two corroborating silence/quality signals before firing, reducing false positives on dictated text that overlaps prompt context.
 
 **Location:** `native/src/stages/hallucination_filter.rs:392-402` (`is_bare_domain`) and `:461-480` (`is_prompt_leak`).
 
@@ -777,6 +800,8 @@ Move all `render*` methods + `activePresetOverride` + `describeMode` + `formatSt
 
 ## M3 — Per-utterance allocations in worker hot path
 
+**Status.** RESOLVED (#111). Worker session setup now returns both the loaded model and the family capabilities from the selected adapter; per-utterance code paths read the cached capabilities off `WorkerSession` instead of looking up the adapter through the registry per utterance. A new regression test verifies processors receive the cached capabilities through `StageContext`.
+
 **Location:** `native/src/worker.rs:270-286`.
 
 **Problem.** `worker_main` looks up `(runtime_id, family_id)` in the registry on each utterance, and clones `ModelFamilyCapabilities` per utterance. Capabilities are fixed at session open; both the lookup and the clone are pure waste.
@@ -795,6 +820,8 @@ Move all `render*` methods + `activePresetOverride` + `describeMode` + `formatSt
 ---
 
 ## M4 — LLM postprocess byte-length cap on multibyte input
+
+**Status.** RESOLVED (#109). Output length checks and `outputChars` telemetry now count characters instead of bytes, keeping multibyte text accounting correct.
 
 **Location:** `native/src/stages/llm_postprocess.rs:152`.
 
@@ -830,6 +857,8 @@ Pick whichever expresses the intent more clearly. The byte-length cap was never 
 
 ## M5 — `stage_payload_with_duration` silently no-ops on missing placeholder
 
+**Status.** RESOLVED (#106). The stage runner now inserts `durationMs` into every object payload, even when a stage did not predeclare a placeholder. Stage authors no longer need to opt in to duration reporting. Existing worker/stage tests were updated to the new payload shape and a direct helper test covers the no-placeholder case.
+
 **Location:** `native/src/stages/mod.rs:188-197`.
 
 **Problem.** `stage_payload_with_duration` only patches `durationMs` when the key already exists in the payload. Stages that forget to emit the placeholder produce events with no `durationMs` field and no warning.
@@ -859,6 +888,8 @@ Remove the "must contain placeholder" requirement; stages no longer need to emit
 
 ## M6 — `plugin-settings.ts` has no `schemaVersion`
 
+**Status.** RESOLVED (#107). `PluginSettings` now carries an explicit `schemaVersion: 1`, and the resolver defaults missing or unsupported versions back to the current schema. Future renames can hang a migration step off this field; no migration framework added prematurely.
+
 **Location:** `src/settings/plugin-settings.ts` (resolver near top of file).
 
 **Problem.** `resolvePluginSettings` silently back-fills every default. There is no version field, so future renames or default-semantic changes will silently coerce old data through the new shape.
@@ -885,6 +916,8 @@ Update the resolver to read and preserve it (no migration logic; just pass it th
 ---
 
 ## M7 — `setupCompletedAt` accepts any string
+
+**Status.** RESOLVED (#107). `setupCompletedAt` only survives resolution when it is an exact persisted ISO timestamp. Corrupt strings and loose date-only values resolve to `null`, so malformed settings cannot falsely mark setup as completed.
 
 **Location:** `src/settings/plugin-settings.ts:222`.
 
@@ -913,6 +946,8 @@ function coerceSetupCompletedAt(raw: unknown): string | null {
 
 ## M8 — `SidecarConnection` round-trip is untested
 
+**Status.** RESOLVED (#104). `test/sidecar-connection.test.ts` now drives the connection through a fake process and covers correlation, subscribe/unsubscribe, timeout, crash-mid-request, and error-frame paths.
+
 **Location:** `src/sidecar/sidecar-connection.ts` (whole file, 503 LOC).
 
 **Problem.** Every higher test mocks `SidecarConnection`. The layer that does request/response correlation, event multiplexing, error envelope handling, subscribe/unsubscribe accounting — none of it is tested directly.
@@ -936,6 +971,8 @@ Minimum tests:
 ---
 
 ## M9 — `enforceLlmContextCap` is untested
+
+**Status.** RESOLVED (#108). Direct unit tests added covering the trim ordering, the cap-met-without-trim no-op, and the input-array-not-mutated guarantee.
 
 **Location:** `src/dictation/dictation-session-controller.ts:980-1015` (verify the line range; the function may have moved).
 
@@ -961,6 +998,8 @@ Minimum tests:
 
 ## M10 — Note-closed-mid-session silently loses batch cleanup
 
+**Status.** RESOLVED (#107). When batch cleanup is configured but the controller can't read transcript text at `session_stopped` time, it now logs a warning before disposing the local session — the note-closed-before-cleanup path is no longer silent. New test asserts the warning fires and the sidecar cleanup command is not called.
+
 **Location:** `src/dictation/dictation-session-controller.ts:665-696` and `src/session/session.ts:432-445`.
 
 **Problem.** If the locked note closes after `requestStopSession` but before `session_stopped` arrives, the session's surface is `null` by the time the controller tries `requestBatchCleanup`. `readCurrentSessionText` returns `''`, the controller calls `disposeLocalSession`, and returns. No notice, no log. The raw transcript is gone.
@@ -985,6 +1024,8 @@ Stronger fix: surface an Obsidian `Notice` so the user sees "Cleanup skipped bec
 ---
 
 ## M11 — `done_reason: "length"` and Ollama HTTP-error tests missing
+
+**Status.** RESOLVED (#109). The LLM postprocess test suite now pins truncation reporting for `done_reason: "length"` and HTTP error payload behavior.
 
 **Location:** `native/src/stages/llm_postprocess.rs:127-139` (truncation branch), `:236-238` (HTTP error branch), `:675` (existing mock server harness).
 
@@ -1015,6 +1056,8 @@ Match the exact failure-reporting conventions used by the stage today; read `:12
 ---
 
 ## M12 — `SidecarInstallManager` re-install path untested
+
+**Status.** RESOLVED (#108). The "second install runs cleanly after the first completes" path is now covered.
 
 **Location:** `test/sidecar-install-manager.test.ts`.
 
@@ -1047,6 +1090,8 @@ This section consolidates **test-quality** findings that span multiple files. In
 
 ## T1 — Delete tautological tests
 
+**Status.** RESOLVED (#98, #112). The TS test slim-down passes (`refactor(test): slim TypeScript suite` and `test: slim redundant coverage`) deleted the listed tautological tests and trimmed adjacent dead coverage. The deletes were reviewed and merged; this section is preserved for archival reference.
+
 The following tests assert that the code does what its source code literally does, with no externalized contract. Each one would pass against a regex-or-constant copy of the implementation. Delete them.
 
 | File | Test | Lines saved | Reason |
@@ -1071,6 +1116,8 @@ The following tests assert that the code does what its source code literally doe
 
 ## T2 — Consolidate near-duplicate tests
 
+**Status.** RESOLVED (#98, #112). Same passes consolidated the near-duplicate groups via `it.each` and shared fixtures under `test/fixtures/`. Preserved here for archival reference.
+
 These groups exercise the same property with trivial variations. Collapse using `it.each` and the shared fixtures already present in `test/fixtures/` and `test/helpers/`.
 
 | File | Tests to consolidate | Target |
@@ -1089,17 +1136,19 @@ These groups exercise the same property with trivial variations. Collapse using 
 
 ## T3 — Add high-ROI tests for uncovered modules
 
+**Status.** Items 1–5 RESOLVED (#103, #104, #108). Item 6 still open.
+
 Index of test-additions called out elsewhere in this document. Each is described in detail under its primary finding; cross-referenced here so test-focused reviewers can scan the list:
 
-1. **`path-validation.ts` boundary tests** — see H9. Whole module untested; security-adjacent trust boundary.
-2. **`PcmFrameProcessor` resample + frame-pack tests** — see H10. Whole module untested; highest-risk audio path.
-3. **`SidecarConnection` round-trip** — see M8. 503 LOC of correlation/multiplexing/error handling between two well-tested layers.
-4. **`enforceLlmContextCap` unit tests** — see M9. Only thing enforcing the LLM context cap.
-5. **`SidecarInstallManager` re-install path** — see M12. Where stale `activeInstall` state would bite.
+1. ~~**`path-validation.ts` boundary tests**~~ — RESOLVED (#103). Whole module untested; security-adjacent trust boundary.
+2. ~~**`PcmFrameProcessor` resample + frame-pack tests**~~ — RESOLVED (#103). Whole module untested; highest-risk audio path.
+3. ~~**`SidecarConnection` round-trip**~~ — RESOLVED (#104). 503 LOC of correlation/multiplexing/error handling between two well-tested layers.
+4. ~~**`enforceLlmContextCap` unit tests**~~ — RESOLVED (#108). Only thing enforcing the LLM context cap.
+5. ~~**`SidecarInstallManager` re-install path**~~ — RESOLVED (#108). Where stale `activeInstall` state would bite.
 
 Plus a sixth that doesn't have its own headline finding:
 
-6. **`Session.replaceSessionRangeWithCleaned` denied-rewrite paths.** `session.test.ts` covers the happy path but never exercises the `nextRewriteResult = { kind: 'denied', reason: { kind: 'range_partial' } }` or `range_invalid` branches. Add one test for each; assert the function returns the documented "failed" outcome and the document state is unchanged.
+6. **`Session.replaceSessionRangeWithCleaned` denied-rewrite paths.** STILL OPEN. `session.test.ts` covers the happy path but never exercises the `nextRewriteResult = { kind: 'denied', reason: { kind: 'range_partial' } }` or `range_invalid` branches. Add one test for each; assert the function returns the documented "failed" outcome and the document state is unchanged.
 
 **Acceptance.** All six test files exist; each test fails if the corresponding source contract is broken.
 
@@ -1144,6 +1193,8 @@ These are **not** flagged for change; documenting why so a future agent doesn't 
 ---
 
 ## L3 — `cancelModelInstall` respawns sidecar to send a no-op
+
+**Status.** RESOLVED (#114, folded in with H3/H4). `cancelModelInstall` is now synchronous void and short-circuits when `!this.process.isRunning()`, so a stale cancel cannot auto-start a fresh sidecar.
 
 **Location:** `src/sidecar/sidecar-connection.ts:241-243`.
 
@@ -1192,6 +1243,8 @@ it('keeps a single span replaceable when the user types after it', () => {
 
 ## L5 — Visualizer smoothing-math tests assert on internal constants
 
+**Status.** RESOLVED (#98). Visualizer test thresholds replaced with directional assertions during the test slim-down; the sqrt-curve test removed.
+
 **Location:** `test/audio-visualizer-tap.test.ts:147-153, 155-168, 170-178`.
 
 **Problem.** Three tests assert numeric thresholds (`> 0.85 && < 0.97`, `> 0.6`) derived by recomputing the exact `ATTACK`/`RELEASE` constants in the test comments. Any tweak to the perceptual smoothing breaks the tests without revealing a real defect.
@@ -1225,6 +1278,8 @@ Stronger fix: route the callout through the renderer with a "callout append" aff
 ---
 
 ## L8 — `dictation-ribbon.ts` `_queueTier` parameter is dead
+
+**Status.** PARTIAL (#110). The dead `_queueTier` parameter on `buildRibbonLabel` was removed and `setQueueTier` no longer calls `render()` (mid-animation churn). The `queueTier` field and `setQueueTier` method still exist on the ribbon as no-ops, with an in-code comment that `queueTier` is intentionally not surfaced today. Pick A (remove the field + method) or B (wire it up) when the queue-saturation UX intent is settled.
 
 **Location:** `src/ui/dictation-ribbon.ts:139`.
 

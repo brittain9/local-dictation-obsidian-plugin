@@ -1,6 +1,6 @@
 [package]
 name = "local-dictation-sidecar"
-version = "2026.5.20"
+version = "2026.5.23"
 edition = "2024"
 license = "MIT"
 rust-version = "1.94.1"
