@@ -1,4 +1,4 @@
-import type { Extension } from '@codemirror/state';
+import type { Extension, StateEffect } from '@codemirror/state';
 import { Annotation, Transaction } from '@codemirror/state';
 import { EditorView, type ViewUpdate } from '@codemirror/view';
 
@@ -151,8 +151,13 @@ export class NoteSurface {
     this.initialAnchorPos = this.computePinPosition();
     this.insertInitialPrefix();
     this.initialBoundaryPos = this.initialAnchorPos;
-    this.view.dispatch({ effects: setAnchorEffect.of(this.initialAnchorPos) });
+    // Register before pinning the anchor so the ownership check below sees this
+    // surface — a freshly created surface is always the newest, so it owns the
+    // shared cursor.
     registerNoteSurface(this);
+    if (this.isAnchorOwner()) {
+      this.view.dispatch({ effects: setAnchorEffect.of(this.initialAnchorPos) });
+    }
   }
 
   observeTransaction(update: ViewUpdate): void {
@@ -207,7 +212,7 @@ export class NoteSurface {
     this.view.dispatch({
       annotations: noteSurfaceInsertOrder.of(this.createdAt),
       changes: { from, insert: projection.projectedText },
-      effects: [setAnchorEffect.of(to), EditorView.scrollIntoView(to, { y: 'nearest' })],
+      effects: this.ownerAnchorEffects(to),
     });
 
     const span: ProjectedSpan = {
@@ -252,10 +257,7 @@ export class NoteSurface {
 
     this.view.dispatch({
       changes: { from: span.textStart, to: span.textEnd, insert: newText },
-      effects: [
-        setAnchorEffect.of(span.textStart + newText.length),
-        EditorView.scrollIntoView(span.textStart + newText.length, { y: 'nearest' }),
-      ],
+      effects: this.ownerAnchorEffects(span.textStart + newText.length),
     });
 
     const delta = newText.length - span.projectedText.length;
@@ -315,11 +317,14 @@ export class NoteSurface {
     }
 
     const end = range.from + newText.length;
+    const ownsAnchor = this.isAnchorOwner();
     this.view.dispatch({
       annotations: bypassSessionProcessingLock.of(true),
       changes: { from: range.from, to: range.to, insert: newText },
-      effects: [setAnchorEffect.of(end), EditorView.scrollIntoView(end, { y: 'nearest' })],
-      selection: { anchor: end },
+      effects: this.ownerAnchorEffects(end),
+      // Only move the real caret when this surface owns the cursor, so a batch
+      // rewrite from an older session can't yank focus from a newer session.
+      ...(ownsAnchor ? { selection: { anchor: end } } : {}),
     });
     for (const span of spansInRange) {
       this.spans.delete(span.utteranceId);
@@ -346,7 +351,7 @@ export class NoteSurface {
   }
 
   setAnchorMode(mode: DictationAnchorMode): void {
-    if (!this.disposed) {
+    if (this.isAnchorOwner()) {
       this.view.dispatch({ effects: setAnchorModeEffect.of(mode) });
     }
   }
@@ -382,11 +387,63 @@ export class NoteSurface {
 
   dispose(): void {
     this.trimPendingInitialPrefix();
-    this.view.dispatch({
-      effects: [clearAnchorEffect.of(null), setSessionProcessingEffect.of(null)],
-    });
     this.disposed = true;
     unregisterNoteSurface(this);
+    // The anchor is a single shared widget. Only clear it when no other live
+    // session is still using it — otherwise a draining older session would wipe
+    // the newer session's cursor. The processing range is a single shared field
+    // too, but only the session currently draining ever shows the flash, so the
+    // disposing session always clears it.
+    const effects = [setSessionProcessingEffect.of(null)];
+    if (!this.hasOtherLiveSibling()) {
+      effects.push(clearAnchorEffect.of(null));
+    }
+    this.view.dispatch({ effects });
+  }
+
+  // The shared cursor belongs to the newest live surface for this view. With
+  // overlapping sessions (a new one started while a previous one still drains
+  // on a slow backend), this keeps a single session in control of the cursor.
+  private isAnchorOwner(): boolean {
+    if (this.disposed) {
+      return false;
+    }
+
+    const siblings = noteSurfacesByView.get(this.view);
+    if (siblings === undefined) {
+      return true;
+    }
+
+    for (const surface of siblings) {
+      if (surface !== this && !surface.disposed && surface.createdAt > this.createdAt) {
+        return false;
+      }
+    }
+
+    return true;
+  }
+
+  private hasOtherLiveSibling(): boolean {
+    const siblings = noteSurfacesByView.get(this.view);
+    if (siblings === undefined) {
+      return false;
+    }
+
+    for (const surface of siblings) {
+      if (surface !== this && !surface.disposed) {
+        return true;
+      }
+    }
+
+    return false;
+  }
+
+  private ownerAnchorEffects(pos: number): StateEffect<unknown>[] {
+    if (!this.isAnchorOwner()) {
+      return [];
+    }
+
+    return [setAnchorEffect.of(pos), EditorView.scrollIntoView(pos, { y: 'nearest' })];
   }
 
   getSpan(utteranceId: UtteranceId): ProjectedSpan | undefined {

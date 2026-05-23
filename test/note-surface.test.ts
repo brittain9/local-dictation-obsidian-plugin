@@ -228,6 +228,28 @@ describe('NoteSurface', () => {
     expect(surface.replaceAnchor('u1', 'FIRST', 'first').kind).toBe('denied');
   });
 
+  it('lets only the newest session drive the shared cursor and clears it on the last dispose', () => {
+    const view = new FakeEditorView('', 0, dictationAnchorExtension());
+    const earlier = new NoteSurface(view as unknown as EditorView, { anchor: 'at_cursor' });
+    const later = new NoteSurface(view as unknown as EditorView, { anchor: 'at_cursor' });
+
+    // The older (non-owner) session cannot move the shared cursor.
+    earlier.setAnchorMode('visible');
+    expect(view.state.field(dictationAnchorStateField).mode).toBe('hidden');
+
+    // The newest session owns it.
+    later.setAnchorMode('visible');
+    expect(view.state.field(dictationAnchorStateField).mode).toBe('visible');
+
+    // An older session finishing must not wipe the newer session's cursor.
+    earlier.dispose();
+    expect(view.state.field(dictationAnchorStateField).mode).toBe('visible');
+
+    // The last session to dispose clears it.
+    later.dispose();
+    expect(view.state.field(dictationAnchorStateField)).toEqual({ mode: 'hidden', pos: null });
+  });
+
   it('keeps the visible anchor marker on the locked note surface', () => {
     const { surface, view } = createSurface({ extensions: dictationAnchorExtension() });
 
