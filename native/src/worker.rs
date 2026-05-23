@@ -784,6 +784,7 @@ mod tests {
         assert_eq!(
             transcript.stage_history[1].payload,
             Some(serde_json::json!({
+                "durationMs": 0,
                 "supportsInitialPrompt": true,
                 "supportsLanguageSelection": false,
             }))
