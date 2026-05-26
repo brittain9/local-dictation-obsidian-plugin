@@ -49,8 +49,9 @@ describe('resolvePluginSettings', () => {
         dictationAnchor: 'end_of_note',
         listeningMode: 'always_on',
         llmFeaturesEnabled: false,
+        llmGeminiApiKey: ' gemini-key ',
+        llmOpenRouterApiKey: ' openrouter-key ',
         llmPostprocessMode: 'batch',
-        llmPostprocessModel: ' llama3.2:latest ',
         llmPostprocessNoteContextChars: 4000,
         llmPostprocessPriorUtterancesN: 3,
         llmPostprocessPrompt: 'Custom prompt.',
@@ -58,6 +59,12 @@ describe('resolvePluginSettings', () => {
         llmPostprocessSkipMinWords: 6,
         llmPostprocessTemperature: 0.4,
         llmPostprocessTotalContextCap: 9000,
+        llmProvider: 'openrouter',
+        llmProviderModels: {
+          gemini: ' gemini-2.5-flash ',
+          ollama: ' llama3.2:latest ',
+          openrouter: ' anthropic/claude-sonnet-4.5 ',
+        },
         localTranscriptSidebarBootstrapped: true,
         modelStorePathOverride: ' /tmp/models ',
         selectedModel: {
@@ -85,9 +92,10 @@ describe('resolvePluginSettings', () => {
       dictationAnchor: 'end_of_note',
       listeningMode: 'always_on',
       llmFeaturesEnabled: false,
+      llmGeminiApiKey: 'gemini-key',
+      llmOpenRouterApiKey: 'openrouter-key',
       llmPostprocessActivePresetRef: null,
       llmPostprocessMode: 'batch',
-      llmPostprocessModel: 'llama3.2:latest',
       llmPostprocessNoteContextChars: 4000,
       llmPostprocessPriorUtterancesN: 3,
       llmPostprocessPrompt: 'Custom prompt.',
@@ -95,6 +103,12 @@ describe('resolvePluginSettings', () => {
       llmPostprocessSkipMinWords: 6,
       llmPostprocessTemperature: 0.4,
       llmPostprocessTotalContextCap: 9000,
+      llmProvider: 'openrouter',
+      llmProviderModels: {
+        gemini: 'gemini-2.5-flash',
+        ollama: 'llama3.2:latest',
+        openrouter: 'anthropic/claude-sonnet-4.5',
+      },
       localTranscriptSidebarBootstrapped: true,
       modelStorePathOverride: '/tmp/models',
       selectedModel: {
@@ -141,9 +155,12 @@ describe('resolvePluginSettings', () => {
         dictationAnchor: 'at_end',
         listeningMode: 'unsupported',
         llmFeaturesEnabled: 'yes',
+        llmGeminiApiKey: 123,
+        llmOpenRouterApiKey: 456,
         llmPostprocessMode: 'later',
-        llmPostprocessModel: 123,
         llmPostprocessPrompt: '',
+        llmProvider: 'claude',
+        llmProviderModels: 'llama3',
         localTranscriptSidebarBootstrapped: 'yes',
         modelStorePathOverride: 42,
         sidecarPathOverride: 12,
@@ -209,6 +226,42 @@ describe('resolvePluginSettings', () => {
   it('accepts useLlmNoteContext when persisted as a boolean', () => {
     expect(resolvePluginSettings({ useLlmNoteContext: true }).useLlmNoteContext).toBe(true);
     expect(resolvePluginSettings({ useLlmNoteContext: false }).useLlmNoteContext).toBe(false);
+  });
+
+  it('migrates the legacy single Ollama model into per-provider model storage', () => {
+    expect(
+      resolvePluginSettings({
+        llmPostprocessModel: ' llama3.2:latest ',
+      }),
+    ).toMatchObject({
+      llmProvider: 'ollama',
+      llmProviderModels: {
+        gemini: '',
+        ollama: 'llama3.2:latest',
+        openrouter: '',
+      },
+    });
+  });
+
+  it('prefers persisted per-provider models over the legacy model field', () => {
+    expect(
+      resolvePluginSettings({
+        llmPostprocessModel: 'old-ollama',
+        llmProvider: 'gemini',
+        llmProviderModels: {
+          gemini: 'gemini-2.5-flash',
+          ollama: 'new-ollama',
+          openrouter: 'openai/gpt-4.1',
+        },
+      }),
+    ).toMatchObject({
+      llmProvider: 'gemini',
+      llmProviderModels: {
+        gemini: 'gemini-2.5-flash',
+        ollama: 'new-ollama',
+        openrouter: 'openai/gpt-4.1',
+      },
+    });
   });
 
   it('falls back to the default when useLlmNoteContext is not a boolean', () => {
@@ -380,14 +433,13 @@ describe('resolvePluginSettings', () => {
     ).toEqual([]);
   });
 
-  it('resets editable LLM defaults without touching visibility, model, raw display, or styles', () => {
+  it('resets editable LLM defaults without touching visibility, provider models, raw display, or styles', () => {
     const presets = [makeUserPreset({ id: 'a', label: 'Keep me' })];
     const reset = resetLlmPostprocessDefaults({
       ...DEFAULT_PLUGIN_SETTINGS,
       llmFeaturesEnabled: false,
       llmPostprocessActivePresetRef: 'user:custom',
       llmPostprocessMode: 'batch',
-      llmPostprocessModel: 'llama3',
       llmPostprocessNoteContextChars: 333,
       llmPostprocessPriorUtterancesN: 3,
       llmPostprocessPrompt: 'changed',
@@ -396,16 +448,25 @@ describe('resolvePluginSettings', () => {
       llmPostprocessTemperature: 1,
       llmPostprocessTotalContextCap: 333,
       llmPostprocessUserPresets: presets,
+      llmProviderModels: {
+        gemini: 'gemini-2.5-flash',
+        ollama: 'llama3',
+        openrouter: 'openai/gpt-4.1',
+      },
     });
 
     expect(reset).toMatchObject({
       llmFeaturesEnabled: false,
       llmPostprocessActivePresetRef: `builtin:${DEFAULT_LLM_BUILTIN_PRESET_ID}`,
       llmPostprocessMode: 'per_utterance',
-      llmPostprocessModel: 'llama3',
       llmPostprocessPrompt: DEFAULT_PLUGIN_SETTINGS.llmPostprocessPrompt,
       llmPostprocessShowRawBelow: true,
       llmPostprocessUserPresets: presets,
+      llmProviderModels: {
+        gemini: 'gemini-2.5-flash',
+        ollama: 'llama3',
+        openrouter: 'openai/gpt-4.1',
+      },
     });
   });
 });

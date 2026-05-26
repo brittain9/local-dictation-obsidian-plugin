@@ -9,7 +9,7 @@ import { DictationSessionController } from './dictation/dictation-session-contro
 import { dictationAnchorExtension } from './editor/dictation-anchor-extension';
 import { noteSurfaceUpdateListenerExtension } from './editor/note-surface';
 import { sessionProcessingExtension } from './editor/session-processing-extension';
-import { createOllamaClient } from './llm/ollama-client';
+import { createProvider, type LlmCleanupFailure } from './llm/provider';
 import { ManageModelsModal } from './models/manage-models-modal';
 import { ModelInstallManager } from './models/model-install-manager';
 import { Session } from './session/session';
@@ -37,6 +37,8 @@ export default class LocalSttPlugin extends Plugin {
   private audioVisualizerTap: AudioVisualizerTap | null = null;
   private dictationController: DictationSessionController | null = null;
   private logger: PluginLogger = createPluginLogger(() => this.settings.developerMode);
+  private llmCleanupFailure: LlmCleanupFailure | null = null;
+  private readonly llmCleanupFailureSubscribers = new Set<() => void>();
   private modelInstallManager: ModelInstallManager | null = null;
   private ribbonController: DictationRibbonController | null = null;
   private settings: PluginSettings = DEFAULT_PLUGIN_SETTINGS;
@@ -59,7 +61,6 @@ export default class LocalSttPlugin extends Plugin {
       logger: this.logger,
       visualizer: this.audioVisualizerTap,
     });
-    const ollamaClient = createOllamaClient();
     this.modelInstallManager = new ModelInstallManager({
       getSettings: () => this.settings,
       logger: this.logger,
@@ -79,13 +80,19 @@ export default class LocalSttPlugin extends Plugin {
       (leaf) =>
         new LocalDictationView(leaf, {
           getSettings: () => this.settings,
+          getLlmCleanupFailure: () => this.llmCleanupFailure,
           logger: this.logger,
           notice: (message) => {
             new Notice(message);
           },
-          ollamaClient,
           saveSettings: async (nextSettings) => {
             await this.updateSettings(nextSettings);
+          },
+          subscribeLlmCleanupFailure: (callback) => {
+            this.llmCleanupFailureSubscribers.add(callback);
+            return () => {
+              this.llmCleanupFailureSubscribers.delete(callback);
+            };
           },
         }),
     );
@@ -105,10 +112,21 @@ export default class LocalSttPlugin extends Plugin {
           rendererOptions,
           sessionId,
         }),
+      createLlmProvider: (settings) => createProvider(settings),
       getSettings: () => this.settings,
       logger: this.logger,
       notice: (message) => {
         new Notice(message);
+      },
+      onLlmCleanupFailure: (failure) => {
+        this.llmCleanupFailure = failure;
+        this.notifyLlmCleanupFailureSubscribers();
+      },
+      onLlmCleanupSuccess: () => {
+        if (this.llmCleanupFailure !== null) {
+          this.llmCleanupFailure = null;
+          this.notifyLlmCleanupFailureSubscribers();
+        }
       },
       onModelMissing: () => {
         void this.openModelPicker();
@@ -369,6 +387,12 @@ export default class LocalSttPlugin extends Plugin {
     await this.saveData(this.settings);
     if (previousLlmFeaturesEnabled !== this.settings.llmFeaturesEnabled) {
       await this.syncLocalDictationSidebar();
+    }
+  }
+
+  private notifyLlmCleanupFailureSubscribers(): void {
+    for (const subscriber of this.llmCleanupFailureSubscribers) {
+      subscriber();
     }
   }
 

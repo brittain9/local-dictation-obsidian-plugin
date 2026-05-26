@@ -4,8 +4,15 @@ import type { AudioCaptureStream } from '../audio/audio-capture-stream';
 import type { NotePlacementOptions } from '../editor/note-surface';
 import { OLLAMA_KEEP_ALIVE } from '../llm/ollama-client';
 import { type LlmPostprocessMode, resolveStyleOption } from '../llm/presets';
+import {
+  getActiveLlmModel,
+  type LlmCleanupFailure,
+  type LlmProvider,
+  type LlmProviderId,
+  ProviderError,
+} from '../llm/provider';
 import type { Session } from '../session/session';
-import type { StageId } from '../session/session-journal';
+import type { StageId, StageOutcome, TranscriptRevision } from '../session/session-journal';
 import type { PluginSettings } from '../settings/plugin-settings';
 import { formatErrorMessage } from '../shared/format-utils';
 import type { PluginLogger } from '../shared/plugin-logger';
@@ -51,13 +58,18 @@ interface ActiveSessionSnapshot {
   dictationAnchor: PluginSettings['dictationAnchor'];
   listeningMode: PluginSettings['listeningMode'];
   llmFeaturesEnabled: PluginSettings['llmFeaturesEnabled'];
+  llmProvider: LlmProvider;
+  llmProviderId: LlmProviderId;
+  llmProviderModel: string;
   llmPostprocess: LlmPostprocessConfig | null;
   llmPostprocessMode: LlmPostprocessMode;
-  llmPostprocessModel: PluginSettings['llmPostprocessModel'];
   llmPostprocessNoteContextChars: PluginSettings['llmPostprocessNoteContextChars'];
   llmPostprocessPrompt: PluginSettings['llmPostprocessPrompt'];
+  llmPostprocessPriorUtterancesN: PluginSettings['llmPostprocessPriorUtterancesN'];
   llmPostprocessShowRawBelow: PluginSettings['llmPostprocessShowRawBelow'];
+  llmPostprocessSkipMinWords: PluginSettings['llmPostprocessSkipMinWords'];
   llmPostprocessTemperature: PluginSettings['llmPostprocessTemperature'];
+  llmPostprocessTotalContextCap: PluginSettings['llmPostprocessTotalContextCap'];
   modelSelection: NonNullable<PluginSettings['selectedModel']>;
   modelStorePathOverride: string;
   sessionStartUnixMs: number;
@@ -71,7 +83,9 @@ type SessionPhase = 'starting' | 'active' | 'stopping' | 'cancelling' | 'stopped
 
 interface ManagedSession {
   anchorTimerId: ReturnType<typeof setTimeout> | null;
+  cleanupAbortControllers: Set<AbortController>;
   llmFailureLogged: boolean;
+  pendingTranscriptWork: Set<Promise<void>>;
   phase: SessionPhase;
   session: ControllerSession;
   snapshot: ActiveSessionSnapshot;
@@ -88,9 +102,12 @@ interface DictationSessionControllerDependencies {
     rendererOptions: TranscriptRenderOptions;
     sessionId: string;
   }) => ControllerSession;
+  createLlmProvider: (settings: PluginSettings) => LlmProvider;
   getSettings: () => PluginSettings;
   logger?: PluginLogger;
   notice: (message: string) => void;
+  onLlmCleanupFailure?: (failure: LlmCleanupFailure) => void;
+  onLlmCleanupSuccess?: () => void;
   onModelMissing?: () => void;
   onSidecarMissing?: () => void;
   setRibbonQueueTier: (tier: QueueBackpressureTier) => void;
@@ -206,7 +223,11 @@ export class DictationSessionController {
     }
 
     const sessionId = createSessionId();
-    const snapshot = createSessionSnapshot(settings, settings.selectedModel);
+    const snapshot = createSessionSnapshot(
+      settings,
+      settings.selectedModel,
+      this.dependencies.createLlmProvider(settings),
+    );
     let session: ControllerSession;
 
     try {
@@ -233,7 +254,9 @@ export class DictationSessionController {
 
     const entry: ManagedSession = {
       anchorTimerId: null,
+      cleanupAbortControllers: new Set(),
       llmFailureLogged: false,
+      pendingTranscriptWork: new Set(),
       phase: 'starting',
       session,
       snapshot,
@@ -347,6 +370,7 @@ export class DictationSessionController {
     const entry = this.sessions.get(sessionId);
     if (entry !== undefined) {
       entry.phase = 'cancelling';
+      this.abortProviderCleanups(entry);
     }
 
     await this.clearActiveSession(sessionId);
@@ -387,6 +411,7 @@ export class DictationSessionController {
     }
 
     this.clearAnchorTimer(entry);
+    this.abortProviderCleanups(entry);
     entry.session.clearSessionProcessingMark();
     entry.session.dispose();
     this.sessions.delete(sessionId);
@@ -425,6 +450,13 @@ export class DictationSessionController {
       clearTimeout(entry.anchorTimerId);
       entry.anchorTimerId = null;
     }
+  }
+
+  private abortProviderCleanups(entry: ManagedSession): void {
+    for (const controller of entry.cleanupAbortControllers) {
+      controller.abort();
+    }
+    entry.cleanupAbortControllers.clear();
   }
 
   private async handleSidecarEvent(event: SidecarEvent): Promise<void> {
@@ -599,6 +631,19 @@ export class DictationSessionController {
       return;
     }
 
+    const work = this.processTranscriptReady(entry, event);
+    entry.pendingTranscriptWork.add(work);
+    try {
+      await work;
+    } finally {
+      entry.pendingTranscriptWork.delete(work);
+    }
+  }
+
+  private async processTranscriptReady(
+    entry: ManagedSession,
+    event: TranscriptReadyEvent,
+  ): Promise<void> {
     this.dependencies.logger?.debug(
       'session',
       `transcript received (${event.text.length} chars, ${event.processingDurationMs}ms processing)`,
@@ -613,27 +658,145 @@ export class DictationSessionController {
     this.logDroppedHallucinations(event);
     this.maybeLogLlmStageFailure(entry, event);
 
-    const result = entry.session.acceptTranscript({
-      isFinal: event.isFinal,
-      llmPostprocessRawText: shouldAppendRawLlmPostprocessCallout(event, entry.snapshot)
-        ? event.llmPostprocessRawText
-        : null,
-      pauseMsBeforeUtterance: event.pauseMsBeforeUtterance,
-      revision: event.revision,
-      segments: event.segments,
-      sessionId: event.sessionId,
-      stageResults: event.stageResults,
-      text: event.text.trim(),
-      utteranceEndMsInSession: event.utteranceEndMsInSession,
-      utteranceId: event.utteranceId,
-      utteranceIndex: event.utteranceIndex,
-      utteranceStartMsInSession: event.utteranceStartMsInSession,
-    });
+    const revision = await this.resolveTranscriptRevision(entry, event);
+    if (revision === null) {
+      return;
+    }
+    const result = entry.session.acceptTranscript(revision);
 
     if (result.kind === 'rejected') {
       this.handleError('Failed to record the local transcript', new Error(result.reason));
       await this.cancelSession(event.sessionId);
     }
+  }
+
+  private async resolveTranscriptRevision(
+    entry: ManagedSession,
+    event: TranscriptReadyEvent,
+  ): Promise<TranscriptRevision | null> {
+    const baseRevision = toTranscriptRevision(event, entry.snapshot);
+
+    if (!shouldRunProviderPerUtteranceCleanup(entry.snapshot, event)) {
+      return baseRevision;
+    }
+
+    const rawText = event.text.trim();
+    const startedAt = Date.now();
+    const abortController = new AbortController();
+    entry.cleanupAbortControllers.add(abortController);
+
+    try {
+      const cleanText = await entry.snapshot.llmProvider.cleanup({
+        abortSignal: abortController.signal,
+        model: entry.snapshot.llmProviderModel,
+        prompt: entry.snapshot.llmPostprocessPrompt,
+        temperature: entry.snapshot.llmPostprocessTemperature,
+        userMessage: renderProviderUserMessage(
+          this.buildProviderCleanupContextSources(entry),
+          rawText,
+        ),
+      });
+
+      if (abortController.signal.aborted || !this.sessions.has(event.sessionId)) {
+        return null;
+      }
+
+      this.dependencies.onLlmCleanupSuccess?.();
+
+      return {
+        ...baseRevision,
+        llmPostprocessRawText: entry.snapshot.llmPostprocessShowRawBelow ? rawText : null,
+        stageResults: [
+          ...baseRevision.stageResults,
+          createProviderStageOutcome({
+            durationMs: Date.now() - startedAt,
+            isFinal: event.isFinal,
+            model: entry.snapshot.llmProviderModel,
+            providerId: entry.snapshot.llmProviderId,
+            revision: event.revision,
+            status: { kind: 'ok' },
+          }),
+        ],
+        text: cleanText.trim(),
+      };
+    } catch (error) {
+      if (abortController.signal.aborted || !this.sessions.has(event.sessionId)) {
+        return null;
+      }
+
+      const failure = this.handleProviderCleanupFailure(entry.snapshot, error);
+      return {
+        ...baseRevision,
+        stageResults: [
+          ...baseRevision.stageResults,
+          createProviderStageOutcome({
+            durationMs: Date.now() - startedAt,
+            isFinal: event.isFinal,
+            model: entry.snapshot.llmProviderModel,
+            providerId: entry.snapshot.llmProviderId,
+            revision: event.revision,
+            status: { error: failure.message, kind: 'failed' },
+          }),
+        ],
+      };
+    } finally {
+      entry.cleanupAbortControllers.delete(abortController);
+    }
+  }
+
+  private buildProviderCleanupContextSources(entry: ManagedSession): ContextWindowSource[] {
+    const sources: ContextWindowSource[] = [];
+
+    if (entry.snapshot.llmPostprocessNoteContextChars > 0) {
+      const noteText = entry.session.readNoteText(entry.snapshot.llmPostprocessNoteContextChars);
+      if (noteText !== null) {
+        sources.push({ kind: 'note_text', text: noteText.text, truncated: noteText.truncated });
+      }
+    }
+
+    const priorUtteranceBudget =
+      entry.snapshot.llmPostprocessPriorUtterancesN > 0
+        ? Math.max(
+            1,
+            Math.ceil(
+              entry.snapshot.llmPostprocessTotalContextCap /
+                entry.snapshot.llmPostprocessPriorUtterancesN,
+            ),
+          )
+        : 0;
+    for (const utterance of entry.session.readPriorUtterances(
+      entry.snapshot.llmPostprocessPriorUtterancesN,
+      priorUtteranceBudget,
+    )) {
+      sources.push({
+        kind: 'prior_utterance',
+        text: utterance.text,
+        truncated: utterance.truncated,
+      });
+    }
+
+    return enforceLlmContextCap(sources, entry.snapshot.llmPostprocessTotalContextCap);
+  }
+
+  private handleProviderCleanupFailure(
+    snapshot: ActiveSessionSnapshot,
+    error: unknown,
+  ): LlmCleanupFailure {
+    const providerError = normalizeProviderError(error);
+    const failure: LlmCleanupFailure = {
+      code: providerError.code,
+      message: providerError.message,
+      providerId: snapshot.llmProviderId,
+    };
+
+    this.dependencies.logger?.warn(
+      'llm',
+      `${snapshot.llmProviderId} cleanup failed; raw transcript kept: ${failure.message}`,
+      error,
+    );
+    this.dependencies.onLlmCleanupFailure?.(failure);
+
+    return failure;
   }
 
   private handleSessionStopped(event: Extract<SidecarEvent, { type: 'session_stopped' }>): void {
@@ -655,14 +818,23 @@ export class DictationSessionController {
     }
 
     if (shouldRunBatchCleanup(entry.snapshot, event.reason)) {
-      this.requestBatchCleanup(event.sessionId, entry);
+      void this.requestBatchCleanup(event.sessionId, entry);
       return;
     }
 
-    this.disposeLocalSession(event.sessionId);
+    void this.disposeAfterPendingWork(event.sessionId, entry);
   }
 
-  private requestBatchCleanup(sessionId: string, entry: ManagedSession): void {
+  private async disposeAfterPendingWork(sessionId: string, entry: ManagedSession): Promise<void> {
+    while (entry.pendingTranscriptWork.size > 0) {
+      await Promise.allSettled([...entry.pendingTranscriptWork]);
+    }
+    if (this.sessions.get(sessionId) === entry) {
+      this.disposeLocalSession(sessionId);
+    }
+  }
+
+  private async requestBatchCleanup(sessionId: string, entry: ManagedSession): Promise<void> {
     const config = resolveBatchLlmPostprocessConfig(entry.snapshot);
     const transcriptText = entry.session.readCurrentSessionText();
 
@@ -677,6 +849,12 @@ export class DictationSessionController {
         : null;
 
     entry.session.markSessionRangeAsProcessing();
+
+    if (entry.snapshot.llmProviderId !== 'ollama') {
+      await this.runProviderBatchCleanup(sessionId, entry, transcriptText, noteContext);
+      return;
+    }
+
     try {
       this.dependencies.sidecarConnection.requestBatchCleanup({
         config,
@@ -692,6 +870,79 @@ export class DictationSessionController {
       );
       entry.session.clearSessionProcessingMark();
       this.disposeLocalSession(sessionId);
+    }
+  }
+
+  private async runProviderBatchCleanup(
+    sessionId: string,
+    entry: ManagedSession,
+    transcriptText: string,
+    noteContext: string | null,
+  ): Promise<void> {
+    const abortController = new AbortController();
+    entry.cleanupAbortControllers.add(abortController);
+
+    try {
+      const cleanText = await entry.snapshot.llmProvider.cleanup({
+        abortSignal: abortController.signal,
+        model: entry.snapshot.llmProviderModel,
+        prompt: entry.snapshot.llmPostprocessPrompt,
+        temperature: entry.snapshot.llmPostprocessTemperature,
+        userMessage: renderBatchProviderUserMessage(noteContext, transcriptText),
+      });
+
+      if (abortController.signal.aborted) {
+        if (this.sessions.get(sessionId) === entry) {
+          entry.session.clearSessionProcessingMark();
+          this.disposeLocalSession(sessionId);
+        }
+        return;
+      }
+      if (!this.sessions.has(sessionId)) {
+        return;
+      }
+
+      entry.session.clearSessionProcessingMark();
+
+      const trimmed = cleanText.trim();
+      if (trimmed.length === 0) {
+        throw new ProviderError('Provider returned empty cleaned text.', 'invalid_response');
+      }
+
+      const replaced = entry.session.replaceSessionRangeWithCleaned(trimmed, {
+        rawTextForCallout: transcriptText,
+        showRawBelow: entry.snapshot.llmPostprocessShowRawBelow,
+      });
+
+      if (!replaced) {
+        this.dependencies.logger?.warn(
+          'llm',
+          'batch cleanup replacement skipped; session range no longer available',
+        );
+      } else {
+        this.dependencies.logger?.debug('llm', 'batch cleanup complete', {
+          chars: trimmed.length,
+        });
+      }
+      this.dependencies.onLlmCleanupSuccess?.();
+      this.disposeLocalSession(sessionId);
+    } catch (error) {
+      if (abortController.signal.aborted) {
+        if (this.sessions.get(sessionId) === entry) {
+          entry.session.clearSessionProcessingMark();
+          this.disposeLocalSession(sessionId);
+        }
+        return;
+      }
+      if (!this.sessions.has(sessionId)) {
+        return;
+      }
+
+      this.handleProviderCleanupFailure(entry.snapshot, error);
+      entry.session.clearSessionProcessingMark();
+      this.disposeLocalSession(sessionId);
+    } finally {
+      entry.cleanupAbortControllers.delete(abortController);
     }
   }
 
@@ -832,23 +1083,30 @@ function isCapacityExceededStartError(error: unknown): boolean {
 function createSessionSnapshot(
   settings: PluginSettings,
   selectedModel: NonNullable<PluginSettings['selectedModel']>,
+  llmProvider: LlmProvider,
 ): ActiveSessionSnapshot {
   const effectiveGeneration = resolveActiveGenerationDefaults(settings);
   const sessionStartUnixMs = Date.now();
   const noteContextChars = settings.useLlmNoteContext ? settings.llmPostprocessNoteContextChars : 0;
+  const llmProviderModel = getActiveLlmModel(settings);
 
   return {
     accelerationPreference: settings.accelerationPreference,
     dictationAnchor: settings.dictationAnchor,
     listeningMode: settings.listeningMode,
     llmFeaturesEnabled: settings.llmFeaturesEnabled,
+    llmProvider,
+    llmProviderId: settings.llmProvider,
+    llmProviderModel,
     llmPostprocess: resolveLlmPostprocessSnapshot(settings, noteContextChars),
     llmPostprocessMode: settings.llmPostprocessMode,
-    llmPostprocessModel: settings.llmPostprocessModel,
     llmPostprocessNoteContextChars: noteContextChars,
     llmPostprocessPrompt: settings.llmPostprocessPrompt,
+    llmPostprocessPriorUtterancesN: settings.llmPostprocessPriorUtterancesN,
     llmPostprocessShowRawBelow: settings.llmPostprocessShowRawBelow,
+    llmPostprocessSkipMinWords: effectiveGeneration.skipMinWords,
     llmPostprocessTemperature: effectiveGeneration.temperature,
+    llmPostprocessTotalContextCap: settings.llmPostprocessTotalContextCap,
     modelSelection: selectedModel,
     modelStorePathOverride: settings.modelStorePathOverride,
     sessionStartUnixMs,
@@ -870,10 +1128,11 @@ function resolveLlmPostprocessSnapshot(
   settings: PluginSettings,
   noteContextChars: number,
 ): LlmPostprocessConfig | null {
-  const model = settings.llmPostprocessModel.trim();
+  const model = getActiveLlmModel(settings);
 
   if (
     !settings.llmFeaturesEnabled ||
+    settings.llmProvider !== 'ollama' ||
     settings.llmPostprocessMode !== 'per_utterance' ||
     model.length === 0
   ) {
@@ -898,7 +1157,7 @@ function resolveLlmPostprocessSnapshot(
 function resolveBatchLlmPostprocessConfig(
   snapshot: ActiveSessionSnapshot,
 ): LlmPostprocessConfig | null {
-  const model = snapshot.llmPostprocessModel.trim();
+  const model = snapshot.llmProviderModel.trim();
 
   if (
     !snapshot.llmFeaturesEnabled ||
@@ -944,6 +1203,126 @@ function shouldRunBatchCleanup(
   }
 
   return reason === 'user_stop' || reason === 'sentence_complete';
+}
+
+function shouldRunProviderPerUtteranceCleanup(
+  snapshot: ActiveSessionSnapshot,
+  event: TranscriptReadyEvent,
+): boolean {
+  const rawText = event.text.trim();
+
+  return (
+    snapshot.llmFeaturesEnabled &&
+    snapshot.llmProviderId !== 'ollama' &&
+    snapshot.llmPostprocessMode === 'per_utterance' &&
+    snapshot.llmProviderModel.length > 0 &&
+    event.isFinal &&
+    rawText.length > 0 &&
+    wordCount(rawText) >= snapshot.llmPostprocessSkipMinWords
+  );
+}
+
+function toTranscriptRevision(
+  event: TranscriptReadyEvent,
+  snapshot: ActiveSessionSnapshot,
+): TranscriptRevision {
+  return {
+    isFinal: event.isFinal,
+    llmPostprocessRawText: shouldAppendRawLlmPostprocessCallout(event, snapshot)
+      ? event.llmPostprocessRawText
+      : null,
+    pauseMsBeforeUtterance: event.pauseMsBeforeUtterance,
+    revision: event.revision,
+    segments: event.segments,
+    sessionId: event.sessionId,
+    stageResults: event.stageResults,
+    text: event.text.trim(),
+    utteranceEndMsInSession: event.utteranceEndMsInSession,
+    utteranceId: event.utteranceId,
+    utteranceIndex: event.utteranceIndex,
+    utteranceStartMsInSession: event.utteranceStartMsInSession,
+  };
+}
+
+function createProviderStageOutcome(args: {
+  durationMs: number;
+  isFinal: boolean;
+  model: string;
+  providerId: LlmProviderId;
+  revision: number;
+  status: StageOutcome['status'];
+}): StageOutcome {
+  return {
+    durationMs: args.durationMs,
+    isFinal: args.isFinal,
+    payload: {
+      model: args.model,
+      provider: args.providerId,
+    },
+    revisionIn: args.revision,
+    revisionOut: args.revision,
+    stageId: 'llm_postprocess',
+    status: args.status,
+  };
+}
+
+function normalizeProviderError(error: unknown): ProviderError {
+  if (error instanceof ProviderError) {
+    return error;
+  }
+
+  return new ProviderError(
+    error instanceof Error ? error.message : String(error),
+    'connection_failed',
+  );
+}
+
+function renderProviderUserMessage(
+  sources: readonly ContextWindowSource[],
+  utterance: string,
+): string {
+  const noteContext = joinContextSources(sources, 'note_text');
+  const priorUtterances = joinContextSources(sources, 'prior_utterance');
+  const sections: string[] = [];
+
+  if (noteContext.length > 0) {
+    sections.push(`<note_context>\n${noteContext}\n</note_context>`);
+  }
+  if (priorUtterances.length > 0) {
+    sections.push(`<prior_utterances>\n${priorUtterances}\n</prior_utterances>`);
+  }
+  sections.push(`<utterance>\n${utterance}\n</utterance>`);
+
+  return sections.join('\n\n');
+}
+
+function renderBatchProviderUserMessage(
+  noteContext: string | null,
+  transcriptText: string,
+): string {
+  const sections: string[] = [];
+
+  if (noteContext !== null && noteContext.trim().length > 0) {
+    sections.push(`<note_context>\n${noteContext.trim()}\n</note_context>`);
+  }
+  sections.push(`<session_transcript>\n${transcriptText.trim()}\n</session_transcript>`);
+
+  return sections.join('\n\n');
+}
+
+function joinContextSources(
+  sources: readonly ContextWindowSource[],
+  kind: ContextWindowSource['kind'],
+): string {
+  return sources
+    .filter((source) => source.kind === kind)
+    .map((source) => source.text)
+    .filter((text) => text.trim().length > 0)
+    .join('\n\n');
+}
+
+function wordCount(text: string): number {
+  return text.split(/\s+/u).filter((word) => word.length > 0).length;
 }
 
 function isAnchorVisibleSessionState(state: SessionState): boolean {

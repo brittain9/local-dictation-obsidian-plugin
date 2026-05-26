@@ -9,6 +9,7 @@ import {
   type LlmUserPreset,
   resolveStyleOption,
 } from '../llm/presets';
+import type { LlmProviderId, LlmProviderModels } from '../llm/provider';
 import {
   isSelectedModel,
   normalizeSelectedModel,
@@ -81,9 +82,10 @@ export interface PluginSettings {
   dictationAnchor: DictationAnchor;
   listeningMode: ListeningMode;
   llmFeaturesEnabled: boolean;
+  llmGeminiApiKey: string;
+  llmOpenRouterApiKey: string;
   llmPostprocessActivePresetRef: string | null;
   llmPostprocessMode: LlmPostprocessMode;
-  llmPostprocessModel: string;
   llmPostprocessNoteContextChars: number;
   llmPostprocessPriorUtterancesN: number;
   llmPostprocessPrompt: string;
@@ -92,6 +94,8 @@ export interface PluginSettings {
   llmPostprocessTemperature: number;
   llmPostprocessTotalContextCap: number;
   llmPostprocessUserPresets: LlmUserPreset[];
+  llmProvider: LlmProviderId;
+  llmProviderModels: LlmProviderModels;
   localTranscriptSidebarBootstrapped: boolean;
   modelStorePathOverride: string;
   selectedModel: SelectedModel | null;
@@ -117,9 +121,10 @@ export const DEFAULT_PLUGIN_SETTINGS: PluginSettings = {
   dictationAnchor: 'at_cursor',
   listeningMode: 'always_on',
   llmFeaturesEnabled: true,
+  llmGeminiApiKey: '',
+  llmOpenRouterApiKey: '',
   llmPostprocessActivePresetRef: DEFAULT_LLM_ACTIVE_PRESET_REF,
   llmPostprocessMode: 'per_utterance',
-  llmPostprocessModel: '',
   llmPostprocessNoteContextChars: DEFAULT_LLM_POSTPROCESS_CONTEXT.noteContextChars,
   llmPostprocessPriorUtterancesN: DEFAULT_LLM_POSTPROCESS_CONTEXT.priorUtterancesN,
   llmPostprocessPrompt: DEFAULT_LLM_POSTPROCESS_PROMPT,
@@ -128,6 +133,12 @@ export const DEFAULT_PLUGIN_SETTINGS: PluginSettings = {
   llmPostprocessTemperature: DEFAULT_LLM_POSTPROCESS_GENERATION.temperature,
   llmPostprocessTotalContextCap: DEFAULT_LLM_POSTPROCESS_CONTEXT.totalContextCap,
   llmPostprocessUserPresets: [],
+  llmProvider: 'ollama',
+  llmProviderModels: {
+    gemini: '',
+    ollama: '',
+    openrouter: '',
+  },
   localTranscriptSidebarBootstrapped: false,
   modelStorePathOverride: '',
   selectedModel: null,
@@ -155,6 +166,10 @@ export function resolvePluginSettings(data: unknown): PluginSettings {
     llmPostprocessPrompt,
     userPresets,
   );
+  const hasProviderModelsBlock = isRecord(raw.llmProviderModels);
+  const legacyModel =
+    typeof raw.llmPostprocessModel === 'string' ? raw.llmPostprocessModel.trim() : '';
+  const llmProviderModels = readLlmProviderModels(raw.llmProviderModels, legacyModel);
 
   return {
     accelerationPreference: readAccelerationPreference(raw.accelerationPreference),
@@ -168,12 +183,13 @@ export function resolvePluginSettings(data: unknown): PluginSettings {
       raw.llmFeaturesEnabled,
       DEFAULT_PLUGIN_SETTINGS.llmFeaturesEnabled,
     ),
+    llmGeminiApiKey: readString(raw.llmGeminiApiKey, DEFAULT_PLUGIN_SETTINGS.llmGeminiApiKey),
+    llmOpenRouterApiKey: readString(
+      raw.llmOpenRouterApiKey,
+      DEFAULT_PLUGIN_SETTINGS.llmOpenRouterApiKey,
+    ),
     llmPostprocessActivePresetRef,
     llmPostprocessMode: readLlmPostprocessMode(raw.llmPostprocessMode),
-    llmPostprocessModel: readString(
-      raw.llmPostprocessModel,
-      DEFAULT_PLUGIN_SETTINGS.llmPostprocessModel,
-    ),
     llmPostprocessNoteContextChars: readClampedInteger(
       raw.llmPostprocessNoteContextChars,
       DEFAULT_PLUGIN_SETTINGS.llmPostprocessNoteContextChars,
@@ -210,6 +226,11 @@ export function resolvePluginSettings(data: unknown): PluginSettings {
       30_000,
     ),
     llmPostprocessUserPresets: userPresets,
+    llmProvider:
+      !hasProviderModelsBlock && legacyModel.length > 0
+        ? 'ollama'
+        : readLlmProvider(raw.llmProvider),
+    llmProviderModels,
     localTranscriptSidebarBootstrapped: readBoolean(
       raw.localTranscriptSidebarBootstrapped,
       DEFAULT_PLUGIN_SETTINGS.localTranscriptSidebarBootstrapped,
@@ -361,6 +382,25 @@ function readLlmPostprocessMode(value: unknown): LlmPostprocessMode {
   return DEFAULT_PLUGIN_SETTINGS.llmPostprocessMode;
 }
 
+function readLlmProvider(value: unknown): LlmProviderId {
+  return isLlmProvider(value) ? value : DEFAULT_PLUGIN_SETTINGS.llmProvider;
+}
+
+function readLlmProviderModels(value: unknown, legacyOllamaModel: string): LlmProviderModels {
+  if (!isRecord(value)) {
+    return {
+      ...DEFAULT_PLUGIN_SETTINGS.llmProviderModels,
+      ollama: legacyOllamaModel,
+    };
+  }
+
+  return {
+    gemini: readString(value.gemini, DEFAULT_PLUGIN_SETTINGS.llmProviderModels.gemini),
+    ollama: readString(value.ollama, DEFAULT_PLUGIN_SETTINGS.llmProviderModels.ollama),
+    openrouter: readString(value.openrouter, DEFAULT_PLUGIN_SETTINGS.llmProviderModels.openrouter),
+  };
+}
+
 function readUserPresets(value: unknown): LlmUserPreset[] {
   if (!Array.isArray(value)) {
     return [];
@@ -432,6 +472,10 @@ export function isTimestampDensity(value: unknown): value is TimestampDensity {
 
 export function isListeningMode(value: unknown): value is ListeningMode {
   return typeof value === 'string' && (LISTENING_MODES as readonly string[]).includes(value);
+}
+
+export function isLlmProvider(value: unknown): value is LlmProviderId {
+  return value === 'ollama' || value === 'openrouter' || value === 'gemini';
 }
 
 function readSelectedModel(selectedModel: unknown): SelectedModel | null {

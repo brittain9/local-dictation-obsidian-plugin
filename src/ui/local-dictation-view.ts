@@ -2,7 +2,6 @@ import { randomUUID } from 'node:crypto';
 
 import { ItemView, Notice, Setting, setIcon, type WorkspaceLeaf } from 'obsidian';
 
-import type { OllamaClient, OllamaModelOption } from '../llm/ollama-client';
 import {
   DEFAULT_LLM_BUILTIN_PRESET_ID,
   findMatchingStyleRef,
@@ -18,6 +17,19 @@ import {
   resolveStyleOption,
 } from '../llm/presets';
 import {
+  createProvider,
+  formatLlmProviderName,
+  getActiveLlmModel,
+  isLocalLlmProvider,
+  type LlmCleanupFailure,
+  type LlmProviderId,
+  type ModelOption,
+  ProviderError,
+  type ProviderHealth,
+  withActiveProviderModel,
+} from '../llm/provider';
+import {
+  isLlmProvider,
   LLM_USER_PRESET_MAX_COUNT,
   type PluginSettings,
   resetLlmPostprocessDefaults,
@@ -31,18 +43,18 @@ import {
 import type { PluginLogger } from '../shared/plugin-logger';
 import { ConfirmModal } from './confirm-modal';
 import {
-  deriveInlineStatus,
-  formatOllamaHealth,
-  INLINE_STATUS_PRESENTATION,
-  type OllamaHealth,
-} from './llm-status';
+  findClosestModelId,
+  formatCleanupFailureBanner,
+  providerHealthFromError,
+} from './llm-provider-ui';
+import { deriveInlineStatus, formatProviderHealth, INLINE_STATUS_PRESENTATION } from './llm-status';
 import { SaveStyleModal } from './save-style-modal';
 
 export const LOCAL_DICTATION_VIEW_TYPE = 'local-dictation-sidebar';
 const LOCAL_DICTATION_VIEW_TITLE = 'Local Dictation';
 const LOCAL_DICTATION_VIEW_ICON = 'audio-lines';
 const HEADING_TOOLTIP =
-  'Uses a local Ollama model to transform the dictated transcript — cleaning, rewriting, summarizing, reformatting, or running custom prompts. Transcription stays local.';
+  'Uses an LLM provider to transform the dictated transcript — cleaning, rewriting, summarizing, reformatting, or running custom prompts.';
 const STYLE_PICKER_TOOLTIP =
   'A preset is a saved LLM transform prompt. Pick a built-in preset or a saved preset. Editing the prompt switches to Custom. The suffix after each preset name shows which mode it is meant for: (per phrase) runs after every spoken phrase, (batch) runs once when you stop, (either) works in both — picking a (per phrase) or (batch) preset will switch the mode for you.';
 const CUSTOM_STYLE_VALUE = '__custom__';
@@ -56,10 +68,11 @@ const CLEANUP_MODE_OPTIONS: ReadonlyArray<{ label: string; value: LlmPresetMode 
 
 interface LocalDictationViewDependencies {
   getSettings: () => PluginSettings;
+  getLlmCleanupFailure?: () => LlmCleanupFailure | null;
   logger?: PluginLogger | undefined;
   notice?: (message: string) => void;
-  ollamaClient: OllamaClient;
   saveSettings: (settings: PluginSettings) => Promise<void>;
+  subscribeLlmCleanupFailure?: (callback: () => void) => () => void;
 }
 
 const PROMPT_SAVE_DEBOUNCE_MS = 400;
@@ -67,14 +80,19 @@ const PROMPT_SAVE_DEBOUNCE_MS = 400;
 export class LocalDictationView extends ItemView {
   private advancedOpen = false;
   private focusedInput: HTMLElement | null = null;
-  private models: OllamaModelOption[] = [];
+  private models: ModelOption[] = [];
+  private modelsProviderId: LlmProviderId | null = null;
   private modelsRefreshInFlight = false;
   private narrowObserver: ResizeObserver | null = null;
-  private ollamaHealth: OllamaHealth = { kind: 'unknown' };
+  private providerHealth: ProviderHealth = { kind: 'unknown' };
+  private openRouterCatalog: ModelOption[] | null = null;
+  private openRouterCheckMessage: string | null = null;
   private lastEnabledMode: LlmPresetMode = DEFAULT_ENABLED_CLEANUP_MODE;
   private promptBlurRenderPending = false;
   private promptSaveTimerId: ReturnType<typeof setTimeout> | null = null;
   private pendingPromptValue: string | null = null;
+  private apiKeyRefreshTimerId: ReturnType<typeof setTimeout> | null = null;
+  private unsubscribeLlmCleanupFailure: (() => void) | null = null;
 
   constructor(
     leaf: WorkspaceLeaf,
@@ -98,6 +116,10 @@ export class LocalDictationView extends ItemView {
   override async onOpen(): Promise<void> {
     this.render();
     this.attachWidthObserver();
+    this.unsubscribeLlmCleanupFailure =
+      this.dependencies.subscribeLlmCleanupFailure?.(() => {
+        this.render();
+      }) ?? null;
     this.maybeRefreshModels();
     this.registerDomEvent(this.contentEl.win, 'focus', () => {
       this.maybeRefreshModels();
@@ -107,6 +129,12 @@ export class LocalDictationView extends ItemView {
   override async onClose(): Promise<void> {
     this.narrowObserver?.disconnect();
     this.narrowObserver = null;
+    this.unsubscribeLlmCleanupFailure?.();
+    this.unsubscribeLlmCleanupFailure = null;
+    if (this.apiKeyRefreshTimerId !== null) {
+      clearTimeout(this.apiKeyRefreshTimerId);
+      this.apiKeyRefreshTimerId = null;
+    }
     await this.flushPendingPromptSave();
   }
 
@@ -148,6 +176,8 @@ export class LocalDictationView extends ItemView {
       return;
     }
 
+    this.renderProviderPicker(cleanupGroup, settings);
+    this.renderRuntimeFailureBanner(cleanupGroup);
     this.renderInlineStatus(cleanupGroup, settings);
     this.renderModelPicker(cleanupGroup, settings);
     this.renderStylePicker(cleanupGroup, settings);
@@ -293,6 +323,46 @@ export class LocalDictationView extends ItemView {
     }
   }
 
+  private renderProviderPicker(parent: HTMLElement, settings: PluginSettings): void {
+    new Setting(parent)
+      .setName('Provider')
+      .setDesc('Choose where LLM transformation runs.')
+      .addDropdown((dropdown) => {
+        for (const providerId of ['ollama', 'openrouter', 'gemini'] as const) {
+          dropdown.addOption(providerId, formatLlmProviderName(providerId));
+        }
+        dropdown.setValue(settings.llmProvider);
+        dropdown.onChange(async (value) => {
+          if (!isLlmProvider(value)) {
+            return;
+          }
+          this.models = [];
+          this.modelsProviderId = null;
+          this.providerHealth = { kind: 'unknown' };
+          this.openRouterCheckMessage = null;
+          await this.saveField('llmProvider', value);
+          this.maybeRefreshModels();
+        });
+      });
+  }
+
+  private renderRuntimeFailureBanner(parent: HTMLElement): void {
+    const failure = this.dependencies.getLlmCleanupFailure?.() ?? null;
+    if (failure === null) {
+      return;
+    }
+
+    const row = parent.createDiv({
+      cls: `local-dictation-status ${INLINE_STATUS_PRESENTATION.warning.className}`,
+    });
+    const iconEl = row.createSpan({ cls: 'local-dictation-status__icon' });
+    setIcon(iconEl, INLINE_STATUS_PRESENTATION.warning.icon);
+    row.createSpan({
+      cls: 'local-dictation-status__text',
+      text: formatCleanupFailureBanner(failure),
+    });
+  }
+
   private confirmDeleteUserStyle(option: LlmStyleOption): void {
     const modal = new ConfirmModal(this.app, {
       title: 'Delete preset',
@@ -307,13 +377,27 @@ export class LocalDictationView extends ItemView {
   }
 
   private renderModelPicker(parent: HTMLElement, settings: PluginSettings): void {
-    const selectedModel = settings.llmPostprocessModel;
+    if (settings.llmProvider === 'openrouter') {
+      this.renderOpenRouterSettings(parent, settings);
+      return;
+    }
+
+    if (settings.llmProvider === 'gemini') {
+      this.renderGeminiApiKey(parent, settings);
+    }
+
+    const selectedModel = getActiveLlmModel(settings);
+    const providerName = formatLlmProviderName(settings.llmProvider);
     const hasSelectedModel =
       selectedModel.length > 0 && this.models.some((model) => model.id === selectedModel);
 
     new Setting(parent)
-      .setName('Ollama model')
-      .setDesc('Pick a local Ollama chat model.')
+      .setName(`${providerName} model`)
+      .setDesc(
+        settings.llmProvider === 'ollama'
+          ? 'Pick a local Ollama chat model.'
+          : 'Pick a Gemini model that supports generateContent.',
+      )
       .addDropdown((dropdown) => {
         dropdown.addOption('', 'Select a model');
         if (selectedModel.length > 0 && !hasSelectedModel) {
@@ -325,22 +409,95 @@ export class LocalDictationView extends ItemView {
         dropdown.setValue(selectedModel);
         dropdown.onChange(async (value) => {
           const nextModel = value.trim();
-          await this.saveField('llmPostprocessModel', nextModel);
+          await this.persistSettings(
+            withActiveProviderModel(this.dependencies.getSettings(), nextModel),
+          );
           if (nextModel.length > 0) {
-            void this.dependencies.ollamaClient.prewarmModel(nextModel).catch((error: unknown) => {
-              this.dependencies.logger?.warn('llm', 'Ollama pre-warm failed', error);
-            });
+            const provider = createProvider(this.dependencies.getSettings());
+            if (isLocalLlmProvider(provider)) {
+              void provider.prewarmModel(nextModel).catch((error: unknown) => {
+                this.dependencies.logger?.warn('llm', `${providerName} pre-warm failed`, error);
+              });
+            }
           }
         });
       })
       .addExtraButton((button) => {
         button
           .setIcon('refresh-cw')
-          .setTooltip('Refresh Ollama models')
+          .setTooltip(`Refresh ${providerName} models`)
           .onClick(() => {
             void this.refreshModels();
           });
-        button.extraSettingsEl.setAttribute('aria-label', 'Refresh Ollama models');
+        button.extraSettingsEl.setAttribute('aria-label', `Refresh ${providerName} models`);
+      });
+  }
+
+  private renderOpenRouterSettings(parent: HTMLElement, settings: PluginSettings): void {
+    this.renderApiKeySetting(parent, settings, {
+      key: 'llmOpenRouterApiKey',
+      name: 'OpenRouter API key',
+      placeholder: 'sk-or-...',
+    });
+
+    const selectedModel = getActiveLlmModel(settings);
+    const setting = new Setting(parent)
+      .setName('OpenRouter model')
+      .setDesc(this.openRouterCheckMessage ?? 'Enter an OpenRouter model id.')
+      .addText((text) => {
+        text.setPlaceholder('anthropic/claude-sonnet-4.5');
+        text.setValue(selectedModel);
+        this.trackInputFocus(text.inputEl);
+        text.onChange(async (value) => {
+          this.openRouterCheckMessage = null;
+          await this.persistSettings(
+            withActiveProviderModel(this.dependencies.getSettings(), value),
+            {
+              rerender: false,
+            },
+          );
+        });
+      });
+
+    setting.addButton((button) => {
+      button.setButtonText('Check').onClick(() => {
+        void this.checkOpenRouterModel();
+      });
+    });
+  }
+
+  private renderGeminiApiKey(parent: HTMLElement, settings: PluginSettings): void {
+    this.renderApiKeySetting(parent, settings, {
+      key: 'llmGeminiApiKey',
+      name: 'Gemini API key',
+      placeholder: 'AIza...',
+    });
+  }
+
+  private renderApiKeySetting(
+    parent: HTMLElement,
+    settings: PluginSettings,
+    options: {
+      key: 'llmGeminiApiKey' | 'llmOpenRouterApiKey';
+      name: string;
+      placeholder: string;
+    },
+  ): void {
+    new Setting(parent)
+      .setName(options.name)
+      .setDesc('Stored in plain text in your vault.')
+      .addText((text) => {
+        text.inputEl.type = 'password';
+        text.setPlaceholder(options.placeholder);
+        text.setValue(settings[options.key]);
+        this.trackInputFocus(text.inputEl);
+        text.onChange(async (value) => {
+          this.models = [];
+          this.modelsProviderId = null;
+          this.providerHealth = { kind: 'unknown' };
+          await this.saveField(options.key, value.trim(), { rerender: false });
+          this.scheduleApiKeyRefresh();
+        });
       });
   }
 
@@ -504,9 +661,10 @@ export class LocalDictationView extends ItemView {
 
   private renderInlineStatus(parent: HTMLElement, settings: PluginSettings): void {
     const status = deriveInlineStatus({
-      health: this.ollamaHealth,
-      models: this.models,
-      selectedModel: settings.llmPostprocessModel,
+      health: this.providerHealth,
+      models: this.modelsProviderId === settings.llmProvider ? this.models : [],
+      providerId: settings.llmProvider,
+      selectedModel: getActiveLlmModel(settings),
     });
     if (status === null) {
       return;
@@ -589,12 +747,14 @@ export class LocalDictationView extends ItemView {
         });
       });
 
-    new Setting(items).setName('Ollama status').setDesc(formatOllamaHealth(this.ollamaHealth));
+    new Setting(items)
+      .setName(`${formatLlmProviderName(settings.llmProvider)} status`)
+      .setDesc(formatProviderHealth(this.providerHealth, settings.llmProvider));
 
     new Setting(items)
       .setName('Reset LLM defaults')
       .setDesc(
-        'Restore the default prompt, mode, context, skip gates, and generation values. Your saved presets and selected model are kept.',
+        'Restore the default prompt, mode, context, skip gates, and generation values. Your saved presets and selected provider model are kept.',
       )
       .addButton((button) => {
         button.setButtonText('Reset');
@@ -609,7 +769,7 @@ export class LocalDictationView extends ItemView {
     new ConfirmModal(this.app, {
       title: 'Reset LLM defaults',
       message:
-        'Restore the default prompt, mode, context, skip gates, and generation values? Your saved presets and selected model are kept.',
+        'Restore the default prompt, mode, context, skip gates, and generation values? Your saved presets and selected provider model are kept.',
       confirmLabel: 'Reset',
       destructive: true,
       onConfirm: async () => {
@@ -745,38 +905,126 @@ export class LocalDictationView extends ItemView {
     const settings = this.dependencies.getSettings();
     if (!settings.llmFeaturesEnabled) return;
     if (settings.llmPostprocessMode === 'off') return;
+    if (settings.llmProvider === 'openrouter') return;
+    if (settings.llmProvider === 'gemini' && settings.llmGeminiApiKey.length === 0) return;
     void this.refreshModels({ silent: true });
+  }
+
+  private scheduleApiKeyRefresh(): void {
+    if (this.apiKeyRefreshTimerId !== null) {
+      clearTimeout(this.apiKeyRefreshTimerId);
+    }
+    this.apiKeyRefreshTimerId = setTimeout(() => {
+      this.apiKeyRefreshTimerId = null;
+      const settings = this.dependencies.getSettings();
+      const keyField =
+        settings.llmProvider === 'gemini'
+          ? settings.llmGeminiApiKey
+          : settings.llmProvider === 'openrouter'
+            ? settings.llmOpenRouterApiKey
+            : '';
+      if (keyField.length === 0) {
+        this.scheduleRender();
+        return;
+      }
+      void this.refreshProviderHealth();
+    }, 500);
+  }
+
+  private async refreshProviderHealth(): Promise<void> {
+    const settings = this.dependencies.getSettings();
+    const providerId = settings.llmProvider;
+    try {
+      const health = await createProvider(settings).probe();
+      if (this.dependencies.getSettings().llmProvider !== providerId) return;
+      this.providerHealth = health;
+    } catch (error) {
+      if (this.dependencies.getSettings().llmProvider !== providerId) return;
+      this.providerHealth = providerHealthFromError(error);
+    }
+    if (settings.llmProvider === 'gemini') {
+      void this.refreshModels({ silent: true });
+    } else {
+      this.scheduleRender();
+    }
   }
 
   private async refreshModels(options: { silent?: boolean } = {}): Promise<void> {
     if (this.modelsRefreshInFlight) return;
     this.modelsRefreshInFlight = true;
 
-    let nextModels: OllamaModelOption[];
-    let nextHealth: OllamaHealth;
+    const settings = this.dependencies.getSettings();
+    const providerName = formatLlmProviderName(settings.llmProvider);
+    let nextModels: ModelOption[];
+    let nextHealth: ProviderHealth;
     try {
-      nextModels = await this.dependencies.ollamaClient.listOllamaModels();
+      nextModels = await createProvider(settings).listModels();
       nextHealth =
         nextModels.length === 0
           ? { kind: 'no_models' }
           : { kind: 'ready', modelCount: nextModels.length };
     } catch (error) {
       nextModels = [];
-      nextHealth = { kind: 'unreachable' };
-      this.dependencies.logger?.warn('llm', 'Ollama refresh failed', error);
+      nextHealth = providerHealthFromError(error);
+      this.dependencies.logger?.warn('llm', `${providerName} refresh failed`, error);
       if (options.silent !== true) {
-        this.notice('Local Dictation: Ollama is unavailable.');
+        this.notice(`Local Dictation: ${providerName} is unavailable.`);
       }
     } finally {
       this.modelsRefreshInFlight = false;
     }
 
-    if (healthEqual(this.ollamaHealth, nextHealth) && modelsEqual(this.models, nextModels)) {
+    if (
+      this.modelsProviderId === settings.llmProvider &&
+      healthEqual(this.providerHealth, nextHealth) &&
+      modelsEqual(this.models, nextModels)
+    ) {
       return;
     }
     this.models = nextModels;
-    this.ollamaHealth = nextHealth;
+    this.modelsProviderId = settings.llmProvider;
+    this.providerHealth = nextHealth;
     this.scheduleRender();
+  }
+
+  private async checkOpenRouterModel(): Promise<void> {
+    const settings = this.dependencies.getSettings();
+    if (settings.llmProvider !== 'openrouter') {
+      return;
+    }
+
+    const selectedModel = getActiveLlmModel(settings);
+    if (selectedModel.length === 0) {
+      this.openRouterCheckMessage = 'Enter a model id first.';
+      this.render();
+      return;
+    }
+
+    try {
+      const catalog = this.openRouterCatalog ?? (await createProvider(settings).listModels());
+      this.openRouterCatalog = catalog;
+      this.models = catalog;
+      this.modelsProviderId = 'openrouter';
+      this.providerHealth =
+        catalog.length === 0
+          ? { kind: 'no_models' }
+          : { kind: 'ready', modelCount: catalog.length };
+
+      if (catalog.some((model) => model.id === selectedModel)) {
+        this.openRouterCheckMessage = 'Model verified.';
+      } else {
+        const suggestion = findClosestModelId(selectedModel, catalog);
+        this.openRouterCheckMessage =
+          suggestion === null ? 'Unknown model.' : `Unknown model. Did you mean ${suggestion}?`;
+      }
+    } catch (error) {
+      this.providerHealth = providerHealthFromError(error);
+      this.openRouterCheckMessage =
+        error instanceof ProviderError ? error.message : 'Could not check model.';
+      this.dependencies.logger?.warn('llm', 'OpenRouter model check failed', error);
+    }
+
+    this.render();
   }
 
   // Deferring while an input is focused avoids clobbering in-progress text and cursor on re-render.
@@ -821,7 +1069,7 @@ export class LocalDictationView extends ItemView {
   }
 }
 
-function modelsEqual(a: readonly OllamaModelOption[], b: readonly OllamaModelOption[]): boolean {
+function modelsEqual(a: readonly ModelOption[], b: readonly ModelOption[]): boolean {
   if (a.length !== b.length) return false;
   return a.every((itemA, i) => {
     const itemB = b[i];
@@ -829,7 +1077,7 @@ function modelsEqual(a: readonly OllamaModelOption[], b: readonly OllamaModelOpt
   });
 }
 
-function healthEqual(a: OllamaHealth, b: OllamaHealth): boolean {
+function healthEqual(a: ProviderHealth, b: ProviderHealth): boolean {
   if (a.kind !== b.kind) return false;
   if (a.kind === 'ready' && b.kind === 'ready') {
     return a.modelCount === b.modelCount;

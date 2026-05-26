@@ -78,7 +78,7 @@ export class SaveStyleModal extends Modal {
     }
 
     this.contentEl.createEl('p', {
-      text: 'Save the current prompt as a reusable preset. The Ollama model and other settings are not included.',
+      text: 'Save the current prompt as a reusable preset. The provider, model, and other settings are not included.',
     });
 
     new Setting(this.contentEl).setName('Name').addText((text) => {

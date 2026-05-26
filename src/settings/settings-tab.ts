@@ -16,6 +16,7 @@ import {
 } from '../sidecar/sidecar-install-manager';
 import { readInstallManifest, variantDirectoryPath } from '../sidecar/sidecar-installer';
 import { renderActiveInstallCard } from './install-progress-row';
+import { LlmProviderSettingsSection } from './llm-provider-settings-section';
 import { renderModelSection } from './model-settings-section';
 import {
   type DictationAnchor,
@@ -102,6 +103,7 @@ export class LocalSttSettingTab extends PluginSettingTab {
   private disposeMissingSidecarBanner: (() => void) | null = null;
   private disposeModelSection: (() => void) | null = null;
   private disposeSidecarSection: (() => void) | null = null;
+  private readonly llmProviderSection: LlmProviderSettingsSection;
   private missingSidecarProgressEl: HTMLDivElement | null = null;
 
   constructor(
@@ -119,6 +121,14 @@ export class LocalSttSettingTab extends PluginSettingTab {
         });
       },
     };
+    this.llmProviderSection = new LlmProviderSettingsSection({
+      access: this.access,
+      logger: this.dependencies.logger,
+      refreshSettingsTab: () => {
+        this.display();
+      },
+      saveSettings: this.dependencies.saveSettings,
+    });
   }
 
   override display(): void {
@@ -200,6 +210,11 @@ export class LocalSttSettingTab extends PluginSettingTab {
 
     const timestampsCard = createSettingGroup(containerEl, 'Timestamps');
     this.renderTimestampSettings(timestampsCard, settings);
+
+    if (settings.llmFeaturesEnabled) {
+      const llmCard = createSettingGroup(containerEl, 'LLM transformation');
+      this.llmProviderSection.render(llmCard, settings);
+    }
 
     // --- Engine options ---
     // Built inline (rather than via createSettingGroup) so renderEngineOptions
