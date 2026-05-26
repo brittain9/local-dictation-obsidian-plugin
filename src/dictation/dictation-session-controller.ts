@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 
 import type { AudioCaptureStream } from '../audio/audio-capture-stream';
+import { formatMicrophonePermissionDeniedMessage } from '../audio/microphone-permission-message';
 import type { NotePlacementOptions } from '../editor/note-surface';
 import { OLLAMA_KEEP_ALIVE } from '../llm/ollama-client';
 import { type LlmPostprocessMode, resolveStyleOption } from '../llm/presets';
@@ -285,27 +286,34 @@ export class DictationSessionController {
       }
       entry.phase = 'active';
 
-      await this.dependencies.captureStream.start(sessionId, (frameSessionId, frameBytes) => {
-        if (this.activeSessionId !== frameSessionId) {
-          return;
-        }
+      // Read the saved deviceId at session-start time so a settings change
+      // applies on the next dictation rather than mid-session.
+      const audioInputDeviceId = this.dependencies.getSettings().audioInputDevice?.deviceId ?? null;
 
-        const activeEntry = this.sessions.get(frameSessionId);
-        if (activeEntry === undefined || activeEntry.phase !== 'active') {
-          return;
-        }
+      await this.dependencies.captureStream.start(
+        { sessionId, audioInputDeviceId },
+        (frameSessionId, frameBytes) => {
+          if (this.activeSessionId !== frameSessionId) {
+            return;
+          }
 
-        try {
-          this.dependencies.sidecarConnection.sendAudioFrame(frameSessionId, frameBytes);
-        } catch (error) {
-          this.dependencies.logger?.warn(
-            'session',
-            'stopping audio capture: sidecar rejected an audio frame',
-            error,
-          );
-          void this.cancelSession(frameSessionId);
-        }
-      });
+          const activeEntry = this.sessions.get(frameSessionId);
+          if (activeEntry === undefined || activeEntry.phase !== 'active') {
+            return;
+          }
+
+          try {
+            this.dependencies.sidecarConnection.sendAudioFrame(frameSessionId, frameBytes);
+          } catch (error) {
+            this.dependencies.logger?.warn(
+              'session',
+              'stopping audio capture: sidecar rejected an audio frame',
+              error,
+            );
+            void this.cancelSession(frameSessionId);
+          }
+        },
+      );
 
       if (this.activeSessionId === sessionId) {
         this.applyUiState('listening');
@@ -328,8 +336,9 @@ export class DictationSessionController {
     const entry = this.sessions.get(sessionId);
     if (entry !== undefined) {
       entry.phase = 'stopping';
-      this.clearAnchorTimer(entry);
-      entry.session.setAnchorMode('hidden');
+      // Keep the cursor where text will land while queued transcripts drain.
+      // It is cleared when the session is finally disposed (after the drain),
+      // and the anchor timer is cleaned up there too.
     }
 
     await this.clearActiveSession(sessionId);
@@ -839,6 +848,12 @@ export class DictationSessionController {
     const transcriptText = entry.session.readCurrentSessionText();
 
     if (config === null || transcriptText.length === 0) {
+      if (config !== null) {
+        this.dependencies.logger?.warn(
+          'llm',
+          'batch cleanup skipped: locked note closed before transcript could be read',
+        );
+      }
       this.disposeLocalSession(sessionId);
       return;
     }
@@ -848,6 +863,9 @@ export class DictationSessionController {
         ? (entry.session.readNoteText(entry.snapshot.llmPostprocessNoteContextChars)?.text ?? null)
         : null;
 
+    // The flashing processing range is now the "working" indicator, so the
+    // cursor steps aside for the batch rewrite.
+    entry.session.setAnchorMode('hidden');
     entry.session.markSessionRangeAsProcessing();
 
     if (entry.snapshot.llmProviderId !== 'ollama') {
@@ -1068,8 +1086,25 @@ export class DictationSessionController {
   private handleError(message: string, error: unknown): void {
     this.dependencies.logger?.error('session', message, error);
     this.applyUiState('error');
+
+    // The microphone-permission copy is a complete, actionable sentence on its
+    // own; prefixing it with the generic start-failure message just buries the
+    // instructions. The Settings mic picker shows it bare for the same reason.
+    if (isMicrophonePermissionDeniedError(error)) {
+      this.dependencies.notice(formatMicrophonePermissionDeniedMessage());
+      return;
+    }
+
     this.dependencies.notice(`${message}: ${formatErrorMessage(error)}`);
   }
+}
+
+function isMicrophonePermissionDeniedError(error: unknown): boolean {
+  return (
+    typeof error === 'object' &&
+    error !== null &&
+    (error as { name?: unknown }).name === 'NotAllowedError'
+  );
 }
 
 function createSessionId(): string {
@@ -1356,7 +1391,7 @@ function shouldAppendRawLlmPostprocessCallout(
   );
 }
 
-function enforceLlmContextCap(
+export function enforceLlmContextCap(
   sources: ContextWindowSource[],
   totalContextCap: number,
 ): ContextWindowSource[] {

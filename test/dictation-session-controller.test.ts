@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
+import { formatMicrophonePermissionDeniedMessage } from '../src/audio/microphone-permission-message';
 import {
   type DictationControllerState,
   DictationSessionController,
@@ -21,9 +22,12 @@ class FakeCaptureStream {
   public frameListener: ((sessionId: string, frameBytes: Uint8Array) => void) | null = null;
   public sessionId: string | null = null;
   public start = vi.fn(
-    async (sessionId: string, listener: (sessionId: string, frameBytes: Uint8Array) => void) => {
+    async (
+      options: { sessionId: string; audioInputDeviceId?: string | null },
+      listener: (sessionId: string, frameBytes: Uint8Array) => void,
+    ) => {
       this.capturing = true;
-      this.sessionId = sessionId;
+      this.sessionId = options.sessionId;
       this.frameListener = listener;
     },
   );
@@ -159,6 +163,22 @@ describe('DictationSessionController', () => {
 
     expect(sidecarConnection.sendAudioFrame).toHaveBeenCalledWith(startPayload?.sessionId, frame);
     expect(controller.getState()).toBe('listening');
+  });
+
+  it('surfaces the bare microphone-permission message when capture is denied, without the generic start-failure prefix', async () => {
+    const captureStream = new FakeCaptureStream();
+    captureStream.start.mockRejectedValueOnce(
+      Object.assign(new Error('Permission denied'), { name: 'NotAllowedError' }),
+    );
+    const notice = vi.fn();
+    const controller = createController({ captureStream, notice });
+
+    await controller.startDictation();
+
+    expect(notice).toHaveBeenCalledWith(formatMicrophonePermissionDeniedMessage());
+    expect(notice).not.toHaveBeenCalledWith(
+      expect.stringContaining('Failed to start the dictation session'),
+    );
   });
 
   it('accepts late transcript events from a stopped session after a new session starts', async () => {
@@ -396,6 +416,47 @@ describe('DictationSessionController', () => {
     expect(sessions[0]?.dispose).toHaveBeenCalledTimes(1);
   });
 
+  it('warns when batch cleanup cannot read transcript text after the note closes', async () => {
+    const logger = new FakeLogger();
+    const sidecarConnection = new FakeSidecarConnection();
+    const sessions: FakeSession[] = [];
+    const controller = createController({
+      createSession: (session) => {
+        sessions.push(session);
+      },
+      getSettings: () =>
+        createSettings({
+          llmFeaturesEnabled: true,
+          llmPostprocessMode: 'batch',
+          llmProviderModels: {
+            ...DEFAULT_PLUGIN_SETTINGS.llmProviderModels,
+            ollama: 'llama3.2:latest',
+          },
+          selectedModel: createExternalModelSelection(),
+        }),
+      logger,
+      sidecarConnection,
+    });
+
+    await controller.startDictation();
+    const sessionId = sidecarConnection.startSession.mock.calls[0]?.[0].sessionId ?? '';
+    sidecarConnection.emit(transcriptReady(sessionId, 'raw transcript'));
+    await controller.stopDictation();
+    const session = sessions[0];
+    if (session === undefined) {
+      throw new Error('expected session fixture');
+    }
+    session.currentSessionText = '';
+    sidecarConnection.emit({ reason: 'user_stop', sessionId, type: 'session_stopped' });
+
+    expect(sidecarConnection.requestBatchCleanup).not.toHaveBeenCalled();
+    expect(logger.warn).toHaveBeenCalledWith(
+      'llm',
+      'batch cleanup skipped: locked note closed before transcript could be read',
+    );
+    expect(session.dispose).toHaveBeenCalledTimes(1);
+  });
+
   it('cleans up silently when the sidecar rejects capacity as a backstop', async () => {
     const captureStream = new FakeCaptureStream();
     const logger = new FakeLogger();
@@ -465,6 +526,71 @@ describe('DictationSessionController', () => {
     expect(sidecarConnection.requestStopSession).toHaveBeenCalledWith(sessionId);
     expect(captureStream.start).not.toHaveBeenCalled();
     expect(controller.getState()).toBe('idle');
+  });
+
+  it('keeps the cursor through Stop and only releases it when the drained session is disposed', async () => {
+    const sidecarConnection = new FakeSidecarConnection();
+    const sessions: FakeSession[] = [];
+    const controller = createController({
+      createSession: (session) => {
+        sessions.push(session);
+      },
+      sidecarConnection,
+    });
+
+    await controller.startDictation();
+    const sessionId = sidecarConnection.startSession.mock.calls[0]?.[0].sessionId ?? '';
+    const session = sessions[0];
+    if (session === undefined) {
+      throw new Error('expected session fixture');
+    }
+
+    session.setAnchorMode.mockClear();
+    await controller.stopDictation();
+
+    // Stop must not hide the cursor — queued transcripts still land at it.
+    expect(session.setAnchorMode).not.toHaveBeenCalled();
+    expect(session.dispose).not.toHaveBeenCalled();
+
+    // The drain completes; disposing the surface is what releases the cursor.
+    sidecarConnection.emit({ reason: 'user_stop', sessionId, type: 'session_stopped' });
+    expect(session.dispose).toHaveBeenCalledTimes(1);
+  });
+
+  it('hides the cursor when the batch-cleanup flash starts', async () => {
+    const sidecarConnection = new FakeSidecarConnection();
+    const sessions: FakeSession[] = [];
+    const controller = createController({
+      createSession: (session) => {
+        sessions.push(session);
+      },
+      getSettings: () =>
+        createSettings({
+          llmFeaturesEnabled: true,
+          llmPostprocessMode: 'batch',
+          llmProviderModels: {
+            ...DEFAULT_PLUGIN_SETTINGS.llmProviderModels,
+            ollama: 'llama3.2:latest',
+          },
+          selectedModel: createExternalModelSelection(),
+        }),
+      sidecarConnection,
+    });
+
+    await controller.startDictation();
+    const sessionId = sidecarConnection.startSession.mock.calls[0]?.[0].sessionId ?? '';
+    const session = sessions[0];
+    if (session === undefined) {
+      throw new Error('expected session fixture');
+    }
+    sidecarConnection.emit(transcriptReady(sessionId, 'raw transcript'));
+    await controller.stopDictation();
+
+    session.setAnchorMode.mockClear();
+    sidecarConnection.emit({ reason: 'user_stop', sessionId, type: 'session_stopped' });
+
+    expect(session.markSessionRangeAsProcessing).toHaveBeenCalledTimes(1);
+    expect(session.setAnchorMode).toHaveBeenCalledWith('hidden');
   });
 });
 

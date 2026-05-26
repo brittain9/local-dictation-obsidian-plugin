@@ -28,6 +28,8 @@ CPU works everywhere with no extra dependencies. CUDA acceleration requires an R
 
 > **Linux distro coverage.** macOS and Windows are the primary tested targets. On Linux, the plugin is regularly used on Fedora 44; other distributions (Arch, Ubuntu, Debian, etc.) should work but are not routinely verified. If you hit a problem on your distro, please open an issue with details.
 
+> **macOS Voice Isolation.** If transcription quality drops on macOS, open Control Center → Mic Mode and set it to **Standard**. Voice Isolation and Wide Spectrum are applied by Core Audio at the system level and can clip sibilants in ways the plugin can't override.
+
 ## 🚀 Quick Start
 
 Install Local Dictation from Obsidian's Community Plugins. On first run, a **setup wizard** walks you through downloading the speech engine and picking a transcription model — that's the easiest path.

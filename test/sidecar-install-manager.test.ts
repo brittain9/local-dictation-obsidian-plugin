@@ -32,6 +32,18 @@ function defaultInstallOptions() {
   };
 }
 
+function successfulInstallResult(variant: 'cpu' | 'cuda' = 'cpu') {
+  return {
+    manifest: {
+      installedAt: '2026-05-03T00:00:00.000Z',
+      sha256: 'abc',
+      variant,
+      version: '2026.5.16',
+    },
+    variantDirectory: `/plugin/bin/${variant}`,
+  };
+}
+
 describe('SidecarInstallManager', () => {
   it('rejects concurrent installs while one is in flight', () => {
     installSidecarMock.mockImplementationOnce(() => new Promise(() => {}));
@@ -57,15 +69,7 @@ describe('SidecarInstallManager', () => {
   });
 
   it('clears state, invokes the onInstalled hook, and shows the success notice', async () => {
-    installSidecarMock.mockResolvedValueOnce({
-      manifest: {
-        installedAt: '2026-05-03T00:00:00.000Z',
-        sha256: 'abc',
-        variant: 'cpu',
-        version: '2026.5.16',
-      },
-      variantDirectory: '/plugin/bin/cpu',
-    });
+    installSidecarMock.mockResolvedValueOnce(successfulInstallResult());
     const notice = vi.fn();
     const onInstalled = vi.fn(async () => {});
     const manager = new SidecarInstallManager({ notice });
@@ -75,6 +79,39 @@ describe('SidecarInstallManager', () => {
 
     expect(onInstalled).toHaveBeenCalledOnce();
     expect(notice).toHaveBeenCalledWith('Installed.');
+    expect(manager.getState().lastError).toBeNull();
+  });
+
+  it('allows a second install after the first completes successfully', async () => {
+    installSidecarMock
+      .mockResolvedValueOnce(successfulInstallResult('cpu'))
+      .mockResolvedValueOnce(successfulInstallResult('cuda'));
+    const notice = vi.fn();
+    const firstInstalled = vi.fn(async () => {});
+    const secondInstalled = vi.fn(async () => {});
+    const manager = new SidecarInstallManager({ notice });
+
+    manager.install({
+      ...defaultInstallOptions(),
+      onInstalled: firstInstalled,
+      successNotice: 'CPU installed.',
+      variant: 'cpu',
+    });
+    await vi.waitFor(() => expect(manager.getState().activeInstall).toBeNull());
+
+    manager.install({
+      ...defaultInstallOptions(),
+      onInstalled: secondInstalled,
+      successNotice: 'CUDA installed.',
+      variant: 'cuda',
+    });
+    await vi.waitFor(() => expect(manager.getState().activeInstall).toBeNull());
+
+    expect(installSidecarMock).toHaveBeenCalledTimes(2);
+    expect(firstInstalled).toHaveBeenCalledOnce();
+    expect(secondInstalled).toHaveBeenCalledOnce();
+    expect(notice).toHaveBeenNthCalledWith(1, 'CPU installed.');
+    expect(notice).toHaveBeenNthCalledWith(2, 'CUDA installed.');
     expect(manager.getState().lastError).toBeNull();
   });
 

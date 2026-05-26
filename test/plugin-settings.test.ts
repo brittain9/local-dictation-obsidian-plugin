@@ -31,9 +31,13 @@ describe('resolvePluginSettings', () => {
     expect(resolvePluginSettings(undefined)).toEqual(DEFAULT_PLUGIN_SETTINGS);
   });
 
-  it('defaults to visible per-utterance cleanup with the Clean up prompt', () => {
+  it('defaults missing schemaVersion to the current settings schema', () => {
+    expect(resolvePluginSettings({}).schemaVersion).toBe(1);
+  });
+
+  it('defaults LLM features off (opt-in) with per-utterance cleanup and the Clean up prompt', () => {
     expect(DEFAULT_PLUGIN_SETTINGS).toMatchObject({
-      llmFeaturesEnabled: true,
+      llmFeaturesEnabled: false,
       llmPostprocessActivePresetRef: `builtin:${DEFAULT_LLM_BUILTIN_PRESET_ID}`,
       llmPostprocessMode: 'per_utterance',
       llmPostprocessPrompt: DEFAULT_LLM_POSTPROCESS_PROMPT,
@@ -177,6 +181,14 @@ describe('resolvePluginSettings', () => {
     ).toEqual(DEFAULT_PLUGIN_SETTINGS);
   });
 
+  it('validates setupCompletedAt as the exact persisted ISO timestamp', () => {
+    const timestamp = '2026-05-22T10:00:00.000Z';
+
+    expect(resolvePluginSettings({ setupCompletedAt: timestamp }).setupCompletedAt).toBe(timestamp);
+    expect(resolvePluginSettings({ setupCompletedAt: 'corrupted' }).setupCompletedAt).toBeNull();
+    expect(resolvePluginSettings({ setupCompletedAt: '2026-05-22' }).setupCompletedAt).toBeNull();
+  });
+
   it('clamps LLM postprocess numeric settings at the settings boundary', () => {
     const low = resolvePluginSettings({
       llmPostprocessNoteContextChars: -1,
@@ -313,52 +325,51 @@ describe('resolvePluginSettings', () => {
     ).toBe('builtin:professional-writing');
   });
 
-  it('preserves valid prompt-shaped user styles in their original order', () => {
-    const presets = [
-      makeUserPreset({ id: 'a', label: 'Style A', description: 'first' }),
-      makeUserPreset({ id: 'b', label: 'Style B', prompt: 'second prompt' }),
-    ];
-    expect(
-      resolvePluginSettings({ llmPostprocessUserPresets: presets }).llmPostprocessUserPresets,
-    ).toEqual(presets);
-  });
-
-  it('drops invalid user style entries', () => {
-    expect(
-      resolvePluginSettings({
-        llmPostprocessUserPresets: [
-          null,
-          'string',
-          { id: '', label: 'empty id', prompt: 'x' },
-          { id: 'valid', label: '   ', prompt: 'x' },
-          { id: 'no-label', prompt: 'x' },
-          makeUserPreset({ id: 'ok', label: 'Keeper' }),
-        ],
-      }).llmPostprocessUserPresets,
-    ).toEqual([makeUserPreset({ id: 'ok', label: 'Keeper' })]);
-  });
-
-  it('drops duplicate user style IDs after the first valid entry', () => {
-    expect(
-      resolvePluginSettings({
-        llmPostprocessUserPresets: [
-          makeUserPreset({ id: 'a', label: 'First A' }),
-          makeUserPreset({ id: 'a', label: 'Second A' }),
-          makeUserPreset({ id: 'b', label: 'Keeper B' }),
-        ],
-      }).llmPostprocessUserPresets,
-    ).toEqual([
-      makeUserPreset({ id: 'a', label: 'First A' }),
-      makeUserPreset({ id: 'b', label: 'Keeper B' }),
-    ]);
-  });
-
-  it('falls back empty user-preset prompts to the Clean up prompt', () => {
-    const preset = resolvePluginSettings({
-      llmPostprocessUserPresets: [{ id: 'a', label: 'A', prompt: '' }],
-    }).llmPostprocessUserPresets[0];
-
-    expect(preset?.prompt).toBe(DEFAULT_LLM_POSTPROCESS_PROMPT);
+  it.each([
+    [
+      'preserves valid prompt-shaped entries in order',
+      [
+        makeUserPreset({ id: 'a', label: 'Style A', description: 'first' }),
+        makeUserPreset({ id: 'b', label: 'Style B', prompt: 'second prompt' }),
+      ],
+      [
+        makeUserPreset({ id: 'a', label: 'Style A', description: 'first' }),
+        makeUserPreset({ id: 'b', label: 'Style B', prompt: 'second prompt' }),
+      ],
+    ],
+    [
+      'drops invalid entries',
+      [
+        null,
+        'string',
+        { id: '', label: 'empty id', prompt: 'x' },
+        { id: 'valid', label: '   ', prompt: 'x' },
+        { id: 'no-label', prompt: 'x' },
+        makeUserPreset({ id: 'ok', label: 'Keeper' }),
+      ],
+      [makeUserPreset({ id: 'ok', label: 'Keeper' })],
+    ],
+    [
+      'drops duplicate IDs after the first valid entry',
+      [
+        makeUserPreset({ id: 'a', label: 'First A' }),
+        makeUserPreset({ id: 'a', label: 'Second A' }),
+        makeUserPreset({ id: 'b', label: 'Keeper B' }),
+      ],
+      [
+        makeUserPreset({ id: 'a', label: 'First A' }),
+        makeUserPreset({ id: 'b', label: 'Keeper B' }),
+      ],
+    ],
+    [
+      'falls back empty prompts to the Clean up prompt',
+      [{ id: 'a', label: 'A', prompt: '' }],
+      [makeUserPreset({ id: 'a', label: 'A', prompt: DEFAULT_LLM_POSTPROCESS_PROMPT })],
+    ],
+  ] as const)('normalizes user styles: %s', (_label, llmPostprocessUserPresets, expected) => {
+    expect(resolvePluginSettings({ llmPostprocessUserPresets }).llmPostprocessUserPresets).toEqual(
+      expected,
+    );
   });
 
   it('keeps valid per-preset minWords and temperature overrides; drops invalid', () => {
@@ -431,6 +442,25 @@ describe('resolvePluginSettings', () => {
     expect(
       resolvePluginSettings({ llmPostprocessUserPresets: { 0: 'oops' } }).llmPostprocessUserPresets,
     ).toEqual([]);
+  });
+
+  it('reads a valid audioInputDevice and trims whitespace', () => {
+    expect(
+      resolvePluginSettings({
+        audioInputDevice: { deviceId: '  abc123  ', label: '  Plantronics Headset  ' },
+      }).audioInputDevice,
+    ).toEqual({ deviceId: 'abc123', label: 'Plantronics Headset' });
+  });
+
+  it.each([
+    ['missing field', { audioInputDevice: { deviceId: 'abc' } }],
+    ['empty deviceId', { audioInputDevice: { deviceId: '', label: 'Mic' } }],
+    ['empty label', { audioInputDevice: { deviceId: 'abc', label: '' } }],
+    ['whitespace-only label', { audioInputDevice: { deviceId: 'abc', label: '   ' } }],
+    ['wrong types', { audioInputDevice: { deviceId: 42, label: 'Mic' } }],
+    ['not an object', { audioInputDevice: 'abc123' }],
+  ])('coerces invalid audioInputDevice to null (%s)', (_label, raw) => {
+    expect(resolvePluginSettings(raw).audioInputDevice).toBeNull();
   });
 
   it('resets editable LLM defaults without touching visibility, provider models, raw display, or styles', () => {

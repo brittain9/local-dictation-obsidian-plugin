@@ -117,7 +117,8 @@ impl StageProcessor for LlmPostprocessStage {
 
         let done_reason = response.done_reason.as_deref().unwrap_or("stop");
         let output = response.message.content.trim().to_string();
-        let output_chars = output.len() as u32;
+        let output_char_count = output.chars().count();
+        let output_chars = output_char_count as u32;
         let telemetry = ChatTelemetry {
             done_reason,
             eval_count: response.eval_count,
@@ -149,7 +150,13 @@ impl StageProcessor for LlmPostprocessStage {
                 "Ollama returned empty output".to_string(),
             );
         }
-        if output.len() > trimmed_input.len().saturating_mul(10).saturating_add(1_000) {
+        if output_char_count
+            > trimmed_input
+                .chars()
+                .count()
+                .saturating_mul(10)
+                .saturating_add(1_000)
+        {
             return failed(
                 failed_payload(
                     &config.model,
@@ -589,6 +596,60 @@ mod tests {
     }
 
     #[test]
+    fn multibyte_output_reports_character_count() {
+        let (url, _body_rx) =
+            start_mock_ollama(r#"{"message":{"content":"好好"},"done_reason":"stop"}"#);
+
+        let result = process_with_chat_url(url, "input secret words now", config());
+
+        match result {
+            StageProcess::Ok { segments, payload } => {
+                assert_eq!(segments[0].text, "好好");
+                let payload = payload.expect("ok should carry diagnostic payload");
+                assert_eq!(payload["outputChars"], 2);
+            }
+            _ => panic!("expected ok"),
+        }
+    }
+
+    #[test]
+    fn done_reason_length_reports_truncation() {
+        let (url, _body_rx) =
+            start_mock_ollama(r#"{"message":{"content":"Partial"},"done_reason":"length"}"#);
+
+        let result = process_with_chat_url(url, "input secret words now", config());
+
+        match result {
+            StageProcess::Failed { error, payload } => {
+                assert_eq!(error, "Ollama stopped with done_reason=length");
+                let payload = payload.expect("failure should carry diagnostic payload");
+                assert_eq!(payload["doneReason"], "length");
+                assert_eq!(payload["outputChars"], 7);
+                assert_eq!(payload["truncated"], true);
+            }
+            _ => panic!("expected failed"),
+        }
+    }
+
+    #[test]
+    fn http_error_reports_status_without_truncation() {
+        let (url, _body_rx) =
+            start_mock_ollama_with_status(StatusCode::SERVICE_UNAVAILABLE, "unavailable");
+
+        let result = process_with_chat_url(url, "input secret words now", config());
+
+        match result {
+            StageProcess::Failed { error, payload } => {
+                assert_eq!(error, "Ollama returned HTTP 503 Service Unavailable");
+                let payload = payload.expect("failure should carry diagnostic payload");
+                assert_eq!(payload["outputChars"], 0);
+                assert_eq!(payload["truncated"], false);
+            }
+            _ => panic!("expected failed"),
+        }
+    }
+
+    #[test]
     fn closed_cancel_channel_does_not_skip_chat() {
         let (url, body_rx) =
             start_mock_ollama(r#"{"message":{"content":"Cleaned output."},"done_reason":"stop"}"#);
@@ -672,10 +733,18 @@ mod tests {
         );
     }
 
-    fn start_mock_ollama(response_body: &'static str) -> (String, mpsc::Receiver<Value>) {
+    fn start_mock_ollama(response_body: impl Into<String>) -> (String, mpsc::Receiver<Value>) {
+        start_mock_ollama_with_status(StatusCode::OK, response_body)
+    }
+
+    fn start_mock_ollama_with_status(
+        status: StatusCode,
+        response_body: impl Into<String>,
+    ) -> (String, mpsc::Receiver<Value>) {
         let listener = TcpListener::bind("127.0.0.1:0").expect("mock server binds");
         let addr = listener.local_addr().expect("mock server addr");
         let (tx, rx) = mpsc::channel();
+        let response_body = response_body.into();
 
         thread::spawn(move || {
             let (mut stream, _) = listener.accept().expect("request should arrive");
@@ -686,8 +755,11 @@ mod tests {
             let body: Value =
                 serde_json::from_str(&request[body_start..]).expect("request body should parse");
             tx.send(body).expect("test should receive body");
+            let reason = status.canonical_reason().unwrap_or("");
             let response = format!(
-                "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\n\r\n{}",
+                "HTTP/1.1 {} {}\r\ncontent-type: application/json\r\ncontent-length: {}\r\n\r\n{}",
+                status.as_u16(),
+                reason,
                 response_body.len(),
                 response_body
             );
@@ -697,6 +769,34 @@ mod tests {
         });
 
         (format!("http://{addr}/api/chat"), rx)
+    }
+
+    fn process_with_chat_url(
+        url: String,
+        text: &str,
+        config: LlmPostprocessConfig,
+    ) -> StageProcess {
+        let runtime = runtime();
+        let (_cancel_tx, cancel_rx) = tokio::sync::watch::channel(false);
+        let transcript = transcript(text);
+        let voice_activity = voice_activity();
+        let caps = caps();
+        let enablement = StageEnablement::default();
+        let ctx = StageContext {
+            cancel_rx: &cancel_rx,
+            context: None,
+            family_capabilities: &caps,
+            is_final: true,
+            llm_postprocess: Some(&config),
+            pause_ms_before_utterance: None,
+            segment_diagnostics: &[],
+            stage_enabled: &enablement,
+            tokio_runtime: &runtime,
+            vad_probabilities: &[],
+            voice_activity: &voice_activity,
+        };
+
+        LlmPostprocessStage::with_chat_url(url).process(&transcript, &ctx)
     }
 
     fn start_hanging_mock_ollama() -> (String, mpsc::Receiver<()>) {

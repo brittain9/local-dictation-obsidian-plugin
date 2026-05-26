@@ -28,11 +28,10 @@ use crate::stages::StageEnablement;
 use crate::transcription::GpuConfig;
 use crate::worker::{SessionMetadata, TranscriptionWorker, WorkerCommand, WorkerEvent};
 
-/// Hard cap on waiting utterances behind the active worker item. Reaching
-/// this depth marks the session as `saturated` and triggers an overload
+/// Queue depth that marks a session as `saturated` and triggers an overload
 /// drain (capture stops; queued work finishes; session ends with
 /// `SessionStopReason::QueueOverload`).
-const MAX_QUEUED_UTTERANCES: usize = 30;
+const QUEUE_OVERLOAD_DEPTH: usize = 30;
 // Whisper's `initial_prompt` is hard-capped at 224 tokens (silently truncated
 // to the final 224 — see OpenAI's Whisper Prompting Guide). 384 chars of
 // glossary content (mostly short identifiers) lands comfortably under that
@@ -563,6 +562,9 @@ impl AppState {
 
                 (ControlFlow::Continue, events)
             }
+            // Shutdown is a hard process-level cancel, not a graceful session
+            // drain. Hosts that need final transcripts must stop sessions
+            // first, wait for `session_stopped`, then terminate the process.
             Command::Shutdown => {
                 for (_, active_session) in self.active_sessions.drain() {
                     let _ = active_session.cancel_tx.send(true);
@@ -933,14 +935,14 @@ impl AppState {
         if let Some(active_session) = self.active_sessions.get_mut(&session_id) {
             emit_queue_tier_if_changed(active_session, events);
 
-            if active_session.queued_utterances >= MAX_QUEUED_UTTERANCES
+            if active_session.queued_utterances >= QUEUE_OVERLOAD_DEPTH
                 && !active_session.overload_draining
             {
                 active_session.overload_draining = true;
                 events.push(Event::Error {
                     code: "utterance_queue_overload".to_string(),
                     details: Some(format!(
-                        "queue depth reached saturation at {MAX_QUEUED_UTTERANCES}"
+                        "queue depth reached saturation at {QUEUE_OVERLOAD_DEPTH}"
                     )),
                     message: "Local Dictation stopped because the transcription backlog reached capacity. Already accepted utterances will finish processing.".to_string(),
                     session_id: Some(session_id),
@@ -2234,6 +2236,36 @@ mod tests {
             active.pending_context_requests.len(),
             31,
             "all accepted utterances should still be tracked through their context flow"
+        );
+    }
+
+    #[test]
+    fn shutdown_hard_cancels_sessions_and_ignores_late_worker_output() {
+        let model_file_path = create_model_file();
+        let mut app = test_app();
+        let _ = app.handle_command(start_session_command("session-1", &model_file_path));
+        let _ = enqueue_n_utterances(&mut app, 1);
+
+        let (control_flow, shutdown_events) = app.handle_command(Command::Shutdown);
+        assert_eq!(control_flow, ControlFlow::Shutdown);
+        assert!(
+            shutdown_events.is_empty(),
+            "shutdown is a hard cancel and must not emit graceful stop events"
+        );
+        assert!(
+            !app.active_sessions.contains_key("session-1"),
+            "shutdown must drop active sessions immediately"
+        );
+
+        let mut late_events = Vec::new();
+        app.handle_worker_event(
+            fake_worker_transcript_ready("session-1", None),
+            &mut late_events,
+        );
+
+        assert!(
+            late_events.is_empty(),
+            "late worker output after shutdown must be ignored"
         );
     }
 

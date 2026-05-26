@@ -25,28 +25,15 @@ describe('LLM presets', () => {
     expect(findMatchingStyleRef('missing prompt', [])).toBeNull();
   });
 
-  it('exposes a batch-only TLDR built-in', () => {
-    const tldr = getLlmBuiltinPreset('tldr');
-    expect(tldr.mode).toBe('batch');
-    expect(tldr.prompt).toMatch(/TLDR/);
-  });
-
-  it('exposes a batch-only Markdown formatting built-in', () => {
-    const md = getLlmBuiltinPreset('markdown-formatting');
-    expect(md.mode).toBe('batch');
-    expect(md.prompt).toMatch(/Markdown/);
-  });
-
-  it('exposes a batch-only Brain dump organizer built-in', () => {
-    const bd = getLlmBuiltinPreset('brain-dump');
-    expect(bd.mode).toBe('batch');
-    expect(bd.prompt).toMatch(/brain dump/i);
-  });
-
-  it('exposes a batch-only Voice commands built-in', () => {
-    const vc = getLlmBuiltinPreset('voice-commands');
-    expect(vc.mode).toBe('batch');
-    expect(vc.prompt).toMatch(/directive/i);
+  it.each([
+    ['tldr', /TLDR/],
+    ['markdown-formatting', /Markdown/],
+    ['brain-dump', /brain dump/i],
+    ['voice-commands', /directive/i],
+  ] as const)('exposes %s as a batch-only built-in', (id, promptPattern) => {
+    const preset = getLlmBuiltinPreset(id);
+    expect(preset.mode).toBe('batch');
+    expect(preset.prompt).toMatch(promptPattern);
   });
 
   it('clean-up and professional-writing built-ins are mode-agnostic', () => {

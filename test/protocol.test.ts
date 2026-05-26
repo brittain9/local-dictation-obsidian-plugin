@@ -7,7 +7,6 @@ import {
   type ContextWindow,
   createCancelSessionCommand,
   createContextResponseCommand,
-  createGetSystemInfoCommand,
   createHealthCommand,
   createRunBatchCleanupCommand,
   createStartSessionCommand,
@@ -241,13 +240,6 @@ describe('FramedMessageParser fatal stream handling', () => {
 // Commands -------------------------------------------------------------------
 
 describe('command serialization', () => {
-  it('encodes get_system_info and health as bare-typed payloads', () => {
-    expect(readPayload(encodeJsonFrame(createGetSystemInfoCommand()))).toEqual({
-      type: 'get_system_info',
-    });
-    expect(readPayload(encodeJsonFrame(createHealthCommand()))).toEqual({ type: 'health' });
-  });
-
   it('serializes start_session with accelerationPreference and sessionId', () => {
     const frame = encodeJsonFrame(
       createStartSessionCommand({

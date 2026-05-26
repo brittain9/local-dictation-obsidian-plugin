@@ -3,7 +3,7 @@ use std::sync::mpsc::{self, Receiver};
 use std::thread;
 use std::time::Duration;
 
-use anyhow::{Context, Result, anyhow};
+use anyhow::{Context, Result};
 use local_dictation_sidecar::app::{AppState, ControlFlow};
 use local_dictation_sidecar::catalog::ModelCatalog;
 use local_dictation_sidecar::protocol::{Event, IncomingFrame, read_frame, write_event_frame};
@@ -18,16 +18,15 @@ enum InputMessage {
 fn main() -> Result<()> {
     install_logging_hooks();
 
-    let config = SidecarStartupConfig::from_args(std::env::args().skip(1))?;
     let catalog = ModelCatalog::load_bundled()?;
-    run_stdio(catalog, config.app_version)
+    run_stdio(catalog, env!("CARGO_PKG_VERSION").to_string())
 }
 
-fn run_stdio(catalog: ModelCatalog, app_version: String) -> Result<()> {
+fn run_stdio(catalog: ModelCatalog, sidecar_version: String) -> Result<()> {
     let stdout = io::stdout();
     let mut writer = io::BufWriter::new(stdout.lock());
     let input_rx = spawn_input_reader();
-    let mut app_state = AppState::new(app_version, catalog);
+    let mut app_state = AppState::new(sidecar_version, catalog);
 
     loop {
         write_events(&mut writer, app_state.drain_pending_outputs())?;
@@ -66,31 +65,6 @@ fn run_stdio(catalog: ModelCatalog, app_version: String) -> Result<()> {
     }
 
     Ok(())
-}
-
-#[derive(Debug)]
-struct SidecarStartupConfig {
-    app_version: String,
-}
-
-impl SidecarStartupConfig {
-    fn from_args(args: impl IntoIterator<Item = String>) -> Result<Self> {
-        let mut app_version = env!("CARGO_PKG_VERSION").to_string();
-        let mut args = args.into_iter();
-
-        while let Some(argument) = args.next() {
-            match argument.as_str() {
-                "--app-version" => {
-                    app_version = args
-                        .next()
-                        .ok_or_else(|| anyhow!("--app-version requires a version string"))?;
-                }
-                _ => return Err(anyhow!("unsupported sidecar argument: {argument}")),
-            }
-        }
-
-        Ok(Self { app_version })
-    }
 }
 
 fn spawn_input_reader() -> Receiver<InputMessage> {
@@ -132,25 +106,4 @@ fn write_events(writer: &mut impl Write, events: Vec<Event>) -> Result<()> {
     }
 
     Ok(())
-}
-
-#[cfg(test)]
-mod tests {
-    use super::SidecarStartupConfig;
-
-    #[test]
-    fn startup_config_accepts_app_version_override() {
-        let config =
-            SidecarStartupConfig::from_args(["--app-version".to_string(), "1.0.0".to_string()])
-                .expect("config should parse");
-
-        assert_eq!(config.app_version, "1.0.0");
-    }
-
-    #[test]
-    fn startup_config_uses_cargo_version_by_default() {
-        let config = SidecarStartupConfig::from_args([]).expect("config should parse");
-
-        assert_eq!(config.app_version, env!("CARGO_PKG_VERSION"));
-    }
 }

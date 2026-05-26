@@ -75,8 +75,14 @@ export const LLM_USER_PRESET_MAX_LABEL_CHARS = 60;
 export const LLM_USER_PRESET_MAX_DESCRIPTION_CHARS = 240;
 export const LLM_USER_PRESET_MAX_COUNT = 25;
 
+export interface AudioInputDevice {
+  deviceId: string;
+  label: string;
+}
+
 export interface PluginSettings {
   accelerationPreference: AccelerationPreference;
+  audioInputDevice: AudioInputDevice | null;
   cudaLibraryPath: string;
   developerMode: boolean;
   dictationAnchor: DictationAnchor;
@@ -98,6 +104,7 @@ export interface PluginSettings {
   llmProviderModels: LlmProviderModels;
   localTranscriptSidebarBootstrapped: boolean;
   modelStorePathOverride: string;
+  schemaVersion: 1;
   selectedModel: SelectedModel | null;
   setupCompletedAt: string | null;
   sidecarPathOverride: string;
@@ -116,11 +123,12 @@ export interface PluginSettings {
 
 export const DEFAULT_PLUGIN_SETTINGS: PluginSettings = {
   accelerationPreference: 'auto',
+  audioInputDevice: null,
   cudaLibraryPath: '',
   developerMode: false,
   dictationAnchor: 'at_cursor',
   listeningMode: 'always_on',
-  llmFeaturesEnabled: true,
+  llmFeaturesEnabled: false,
   llmGeminiApiKey: '',
   llmOpenRouterApiKey: '',
   llmPostprocessActivePresetRef: DEFAULT_LLM_ACTIVE_PRESET_REF,
@@ -141,6 +149,7 @@ export const DEFAULT_PLUGIN_SETTINGS: PluginSettings = {
   },
   localTranscriptSidebarBootstrapped: false,
   modelStorePathOverride: '',
+  schemaVersion: 1,
   selectedModel: null,
   setupCompletedAt: null,
   sidecarPathOverride: '',
@@ -173,6 +182,7 @@ export function resolvePluginSettings(data: unknown): PluginSettings {
 
   return {
     accelerationPreference: readAccelerationPreference(raw.accelerationPreference),
+    audioInputDevice: readAudioInputDevice(raw.audioInputDevice),
     cudaLibraryPath: readString(raw.cudaLibraryPath, DEFAULT_PLUGIN_SETTINGS.cudaLibraryPath),
     developerMode: readBoolean(raw.developerMode, DEFAULT_PLUGIN_SETTINGS.developerMode),
     dictationAnchor: isDictationAnchor(raw.dictationAnchor)
@@ -239,8 +249,10 @@ export function resolvePluginSettings(data: unknown): PluginSettings {
       raw.modelStorePathOverride,
       DEFAULT_PLUGIN_SETTINGS.modelStorePathOverride,
     ),
+    // Bump `schemaVersion` and add a migration step when renaming a key or changing default semantics.
+    schemaVersion: 1,
     selectedModel: readSelectedModel(raw.selectedModel),
-    setupCompletedAt: typeof raw.setupCompletedAt === 'string' ? raw.setupCompletedAt : null,
+    setupCompletedAt: readSetupCompletedAt(raw.setupCompletedAt),
     sidecarPathOverride: readString(
       raw.sidecarPathOverride,
       DEFAULT_PLUGIN_SETTINGS.sidecarPathOverride,
@@ -302,6 +314,21 @@ export function resetLlmPostprocessDefaults(settings: PluginSettings): PluginSet
   };
 }
 
+function readAudioInputDevice(value: unknown): AudioInputDevice | null {
+  if (!isRecord(value)) {
+    return null;
+  }
+
+  const deviceId = typeof value.deviceId === 'string' ? value.deviceId.trim() : '';
+  const label = typeof value.label === 'string' ? value.label.trim() : '';
+
+  if (deviceId.length === 0 || label.length === 0) {
+    return null;
+  }
+
+  return { deviceId, label };
+}
+
 function readAccelerationPreference(value: unknown): AccelerationPreference {
   if (value === 'auto' || value === 'cpu_only') {
     return value;
@@ -316,6 +343,19 @@ function readBoolean(value: unknown, fallback: boolean): boolean {
 
 function readString(value: unknown, fallback: string): string {
   return typeof value === 'string' ? value.trim() : fallback;
+}
+
+function readSetupCompletedAt(value: unknown): string | null {
+  if (typeof value !== 'string') {
+    return null;
+  }
+
+  const parsed = Date.parse(value);
+  if (!Number.isFinite(parsed)) {
+    return null;
+  }
+
+  return new Date(parsed).toISOString() === value ? value : null;
 }
 
 function readPositiveInteger(value: unknown, fallback: number): number {
