@@ -166,6 +166,7 @@ pub enum TimestampGranularity {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum StageId {
+    Diarization,
     Engine,
     HallucinationFilter,
     LlmPostprocess,
@@ -280,6 +281,8 @@ pub enum Command {
     StartSession {
         #[serde(default)]
         acceleration_preference: AccelerationPreference,
+        #[serde(default)]
+        diarization_enabled: bool,
         language: String,
         #[serde(default)]
         llm_postprocess: Option<Box<LlmPostprocessConfig>>,
@@ -430,6 +433,7 @@ pub enum Event {
         revision: u32,
         segments: Vec<TranscriptSegment>,
         session_id: String,
+        speaker_index: Option<u32>,
         stage_results: Vec<StageOutcome>,
         text: String,
         utterance_duration_ms: u64,
@@ -668,6 +672,7 @@ mod tests {
             parsed,
             IncomingFrame::Command(Command::StartSession {
                 acceleration_preference: AccelerationPreference::Auto,
+                diarization_enabled: false,
                 language: "en".to_string(),
                 mode: ListeningMode::AlwaysOn,
                 model_selection: SelectedModel::ExternalFile {
@@ -859,6 +864,7 @@ mod tests {
             revision: 0,
             segments: Vec::new(),
             session_id: "session-1".to_string(),
+            speaker_index: None,
             stage_results: Vec::new(),
             text: "hello".to_string(),
             utterance_duration_ms: 1000,
@@ -916,6 +922,7 @@ mod tests {
             revision: 0,
             segments: Vec::new(),
             session_id: "session-1".to_string(),
+            speaker_index: None,
             stage_results: Vec::new(),
             text: "hello".to_string(),
             utterance_duration_ms: 1000,

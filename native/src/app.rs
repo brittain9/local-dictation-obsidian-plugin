@@ -371,6 +371,7 @@ impl AppState {
             }
             Command::StartSession {
                 acceleration_preference,
+                diarization_enabled,
                 language,
                 llm_postprocess,
                 mode,
@@ -454,6 +455,7 @@ impl AppState {
                                 runtime_id: resolved_model.runtime_id,
                                 family_id: resolved_model.family_id,
                                 gpu_config: GpuConfig { use_gpu },
+                                diarization_enabled,
                                 language,
                                 llm_postprocess,
                                 model_file_path: resolved_model.resolved_path.clone(),
@@ -808,6 +810,7 @@ impl AppState {
                 pause_ms_before_utterance,
                 processing_duration_ms,
                 session_id,
+                speaker_index,
                 transcript,
                 utterance_duration_ms,
                 utterance_end_ms_in_session,
@@ -842,6 +845,7 @@ impl AppState {
                     revision: transcript.revision,
                     segments: transcript.segments,
                     session_id: session_id.clone(),
+                    speaker_index,
                     stage_results: transcript.stage_history,
                     text,
                     utterance_duration_ms,
@@ -2542,6 +2546,7 @@ mod tests {
     fn start_session_command(session_id: &str, model_file_path: &std::path::Path) -> Command {
         Command::StartSession {
             acceleration_preference: AccelerationPreference::Auto,
+            diarization_enabled: false,
             language: "en".to_string(),
             llm_postprocess: None,
             mode: ListeningMode::AlwaysOn,
@@ -2600,6 +2605,7 @@ mod tests {
             pause_ms_before_utterance,
             processing_duration_ms: 75,
             session_id: session_id.to_string(),
+            speaker_index: None,
             transcript: Transcript {
                 utterance_id: Uuid::new_v4(),
                 revision: 0,

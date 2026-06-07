@@ -11,6 +11,7 @@ use tokio::sync::watch;
 use uuid::Uuid;
 
 use crate::audio_metadata::VoiceActivityEvidence;
+use crate::diarize::SessionDiarizer;
 use crate::engine::capabilities::{
     ModelFamilyCapabilities, ModelFamilyId, RequestWarning, RuntimeId,
 };
@@ -35,6 +36,7 @@ pub struct SessionMetadata {
     pub runtime_id: RuntimeId,
     pub family_id: ModelFamilyId,
     pub gpu_config: GpuConfig,
+    pub diarization_enabled: bool,
     pub language: String,
     pub llm_postprocess: Option<LlmPostprocessConfig>,
     pub model_file_path: PathBuf,
@@ -84,6 +86,7 @@ pub enum WorkerEvent {
         pause_ms_before_utterance: Option<u64>,
         processing_duration_ms: u64,
         session_id: String,
+        speaker_index: Option<u32>,
         transcript: Transcript,
         utterance_duration_ms: u64,
         utterance_end_ms_in_session: u64,
@@ -130,6 +133,7 @@ struct WorkerSession {
     family_capabilities: ModelFamilyCapabilities,
     loaded_model: Box<dyn LoadedModel>,
     processors: Vec<Box<dyn StageProcessor>>,
+    diarizer: Option<SessionDiarizer>,
 }
 
 struct LoadedSessionResources {
@@ -173,6 +177,19 @@ fn worker_main(
 
                 match load_result {
                     Ok(Ok(resources)) => {
+                        let diarizer = if metadata.diarization_enabled {
+                            match SessionDiarizer::new() {
+                                Ok(diarizer) => Some(diarizer),
+                                Err(error) => {
+                                    eprintln!(
+                                        "diarization disabled for session: failed to load speaker-embedding model: {error}"
+                                    );
+                                    None
+                                }
+                            }
+                        } else {
+                            None
+                        };
                         sessions.insert(
                             metadata.session_id.clone(),
                             WorkerSession {
@@ -180,6 +197,7 @@ fn worker_main(
                                 family_capabilities: resources.family_capabilities,
                                 loaded_model: resources.loaded_model,
                                 processors: post_engine_processors(),
+                                diarizer,
                             },
                         );
                     }
@@ -290,7 +308,7 @@ fn worker_main(
 
                 match result {
                     Ok(Ok(engine_output)) => {
-                        let transcript = assemble_transcript(TranscriptAssembly {
+                        let mut transcript = assemble_transcript(TranscriptAssembly {
                             utterance_id,
                             engine_output,
                             engine_duration_ms,
@@ -306,10 +324,16 @@ fn worker_main(
                             llm_postprocess: session.metadata.llm_postprocess.as_ref(),
                             cancel_rx: &session.metadata.cancel_rx,
                         });
+                        let speaker_index = diarize_utterance(
+                            session.diarizer.as_mut(),
+                            &mut transcript,
+                            &request.audio_samples,
+                        );
                         let _ = event_tx.send(WorkerEvent::TranscriptReady {
                             pause_ms_before_utterance,
                             processing_duration_ms: started_at.elapsed().as_millis() as u64,
                             session_id,
+                            speaker_index,
                             transcript,
                             utterance_duration_ms,
                             utterance_end_ms_in_session,
@@ -361,6 +385,55 @@ struct TranscriptAssembly<'a> {
     tokio_runtime: &'a Runtime,
     llm_postprocess: Option<&'a LlmPostprocessConfig>,
     cancel_rx: &'a watch::Receiver<bool>,
+}
+
+/// Run diarization on a finalized utterance after the text stages. Returns the
+/// session-stable speaker index, or `None` when diarization is disabled, the
+/// utterance has no surviving text, or embedding failed. Records a
+/// `Diarization` stage outcome whenever it runs so the timeline reflects it.
+fn diarize_utterance(
+    diarizer: Option<&mut SessionDiarizer>,
+    transcript: &mut Transcript,
+    samples: &[f32],
+) -> Option<u32> {
+    let diarizer = diarizer?;
+    if transcript.joined_text().is_empty() {
+        return None;
+    }
+
+    let revision = transcript.revision;
+    let started_at = Instant::now();
+    let outcome = match diarizer.assign(samples) {
+        Ok(assignment) => {
+            let speaker_index = assignment.speaker_index;
+            transcript.stage_history.push(StageOutcome {
+                duration_ms: started_at.elapsed().as_millis() as u64,
+                is_final: true,
+                payload: Some(serde_json::json!({
+                    "speakerIndex": assignment.speaker_index,
+                    "similarity": assignment.similarity,
+                    "isNewSpeaker": assignment.is_new_speaker,
+                    "speakerCount": assignment.speaker_count,
+                })),
+                revision_in: revision,
+                revision_out: Some(revision),
+                stage_id: StageId::Diarization,
+                status: StageStatus::Ok,
+            });
+            return Some(speaker_index);
+        }
+        Err(error) => StageOutcome {
+            duration_ms: started_at.elapsed().as_millis() as u64,
+            is_final: true,
+            payload: None,
+            revision_in: revision,
+            revision_out: None,
+            stage_id: StageId::Diarization,
+            status: StageStatus::Failed { error },
+        },
+    };
+    transcript.stage_history.push(outcome);
+    None
 }
 
 fn assemble_transcript(input: TranscriptAssembly<'_>) -> Transcript {
