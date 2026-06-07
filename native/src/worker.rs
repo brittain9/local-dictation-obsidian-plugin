@@ -905,4 +905,80 @@ mod tests {
             produces_punctuation: true,
         }
     }
+
+    fn diarize_transcript(text: &str) -> Transcript {
+        let segments = if text.is_empty() {
+            Vec::new()
+        } else {
+            vec![TranscriptSegment {
+                start_ms: 0,
+                end_ms: 1_000,
+                text: text.to_string(),
+                timestamp_granularity: TimestampGranularity::Segment,
+                timestamp_source: TimestampSource::Engine,
+            }]
+        };
+        Transcript {
+            utterance_id: Uuid::nil(),
+            revision: 0,
+            segments,
+            stage_history: Vec::new(),
+        }
+    }
+
+    fn speech_like(samples: usize) -> Vec<f32> {
+        (0..samples)
+            .map(|n| (2.0 * std::f32::consts::PI * 180.0 * n as f32 / 16_000.0).sin() * 0.4)
+            .collect()
+    }
+
+    #[test]
+    fn diarize_utterance_returns_none_when_disabled() {
+        let mut transcript = diarize_transcript("hello there");
+        let speaker = diarize_utterance(None, &mut transcript, &speech_like(16_000));
+        assert_eq!(speaker, None);
+        assert!(
+            !transcript
+                .stage_history
+                .iter()
+                .any(|stage| stage.stage_id == StageId::Diarization),
+            "no diarization stage should be recorded when disabled"
+        );
+    }
+
+    #[test]
+    fn diarize_utterance_skips_empty_text_without_recording_a_stage() {
+        let mut diarizer = SessionDiarizer::new().expect("model should load");
+        let mut transcript = diarize_transcript("");
+        let speaker = diarize_utterance(Some(&mut diarizer), &mut transcript, &speech_like(16_000));
+        assert_eq!(speaker, None);
+        assert!(
+            !transcript
+                .stage_history
+                .iter()
+                .any(|stage| stage.stage_id == StageId::Diarization),
+            "a fully-filtered utterance must not register a speaker"
+        );
+    }
+
+    #[test]
+    fn diarize_utterance_assigns_first_speaker_and_records_stage() {
+        let mut diarizer = SessionDiarizer::new().expect("model should load");
+        let mut transcript = diarize_transcript("hello there");
+        let speaker = diarize_utterance(Some(&mut diarizer), &mut transcript, &speech_like(16_000));
+        assert_eq!(speaker, Some(0));
+        let stage = transcript
+            .stage_history
+            .iter()
+            .find(|stage| stage.stage_id == StageId::Diarization)
+            .expect("a diarization stage should be recorded");
+        assert_eq!(stage.status, StageStatus::Ok);
+        assert_eq!(
+            stage
+                .payload
+                .as_ref()
+                .and_then(|payload| payload.get("speakerIndex")),
+            Some(&serde_json::json!(0))
+        );
+    }
 }

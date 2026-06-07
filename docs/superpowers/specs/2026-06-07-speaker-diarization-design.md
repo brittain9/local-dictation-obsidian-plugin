@@ -243,6 +243,37 @@ transcript through every layer.
 - Renaming and persistent speaker profiles are deferred.
 - File-import diarization (a `speakrs`-based batch path) is deferred.
 
+### Overlap-aware diarization (planned)
+
+Overlapping speech and reliable intra-utterance turns require a *segmentation*
+model; the embedding model alone cannot detect them (the literature is explicit
+that a plain segmentation→embedding→clustering pipeline needs a dedicated
+overlap-detection + overlap-assignment stage). The path that stays on the
+existing `ort` runtime and our privacy/bundling constraints:
+
+1. Bundle pyannote `segmentation-3.0.onnx` (~6 MB, permissive, runs on `ort`).
+   Per 10 s window it emits a per-frame **powerset** distribution over
+   `{∅, s1, s2, s3, s1+s2, s1+s3, s2+s3}`; the combination classes are overlap
+   (≤3 speakers/chunk, 2/frame).
+2. Decode powerset → per-frame local speaker activity, stitched across windows.
+3. Tiers, in increasing cost:
+   - **Turn splitting (single-label).** Split a VAD utterance at local speaker
+     changes into homogeneous sub-segments, embed and cluster each. Fixes the
+     "rapid back-and-forth merged into one utterance" case — the highest
+     practical value for meetings, and it keeps speaker assignment single-valued.
+   - **Overlap flagging.** Mark frames the powerset reports as two speakers
+     (e.g. a `[crosstalk]` marker / segment flag) without resolving who.
+   - **Overlap assignment (multi-label).** Assign both speakers to overlapped
+     frames, embedding each track via the segmentation masks.
+4. Contract impact: speaker identity moves from the utterance to the *segment*
+   level, and true overlap makes it multi-valued — `TranscriptSegment.speaker`
+   (plus a small `speakers: Vec<u32>` for overlapped frames) rather than one
+   `speakerIndex` per utterance. The renderer would group consecutive
+   same-speaker segments under one label.
+5. Validation needs real labelled multi-speaker audio (DER on a held-out clip)
+   and threshold tuning, so this work is gated on a test set rather than landed
+   blind.
+
 ## Testing strategy
 
 - `fbank`: shape, determinism, and parity against a known reference vector for

@@ -178,4 +178,20 @@ mod tests {
         assert!(!borderline.is_new_speaker);
         assert_eq!(borderline.speaker_count, 1);
     }
+
+    #[test]
+    fn speaker_id_is_stable_when_a_voice_returns_after_another() {
+        let mut registry = SpeakerRegistry::new();
+        let first = registry.assign(&[1.0, 0.0, 0.0], LONG);
+        let second = registry.assign(&[0.0, 1.0, 0.0], LONG);
+        let first_again = registry.assign(&[0.97, 0.05, 0.0], LONG);
+        assert_eq!(first.speaker_index, 0);
+        assert_eq!(second.speaker_index, 1);
+        assert_eq!(
+            first_again.speaker_index, 0,
+            "a returning voice must keep its original id"
+        );
+        assert!(!first_again.is_new_speaker);
+        assert_eq!(first_again.speaker_count, 2);
+    }
 }
