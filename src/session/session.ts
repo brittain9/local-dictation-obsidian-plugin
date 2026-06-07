@@ -225,7 +225,16 @@ export class Session {
       options.showRawBelow === true,
       options.rawTextForCallout,
     );
-    const result = this.surface.rewriteRegion(range, replacement, []);
+    // A batch rewrite deliberately replaces the whole session region we just
+    // read, cleaned, and locked, so allow overwriting spans the user edited
+    // mid-session — their edits were already folded into the cleaned text.
+    // Passing [] here made any in-note edit during dictation bail the rewrite
+    // and discard the (already paid-for) cleanup result.
+    const result = this.surface.rewriteRegion(
+      range,
+      replacement,
+      this.rawSessionEntries.map((entry) => ({ utteranceId: entry.utteranceId })),
+    );
 
     return result.kind === 'rewritten';
   }
