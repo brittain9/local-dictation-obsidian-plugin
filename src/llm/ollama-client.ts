@@ -123,7 +123,9 @@ async function cleanup(
         { content: cleanupOptions.userMessage, role: 'user' },
       ],
       model: cleanupOptions.model,
-      options: { num_predict: 512, temperature: cleanupOptions.temperature },
+      // Cap output to match the remote path; 512 truncated longer transforms,
+      // especially batch cleanups of a full session transcript.
+      options: { num_predict: 4_096, temperature: cleanupOptions.temperature },
       stream: false,
       think: false,
     },
@@ -142,6 +144,13 @@ async function cleanup(
 
   if (typeof response.message.content !== 'string') {
     throw new OllamaClientError('Ollama returned an invalid chat message.', 'invalid_response');
+  }
+
+  if (response.done_reason === 'length') {
+    throw new OllamaClientError(
+      'Ollama stopped because the transformed text exceeded the output limit.',
+      'invalid_response',
+    );
   }
 
   return response.message.content.trim();
