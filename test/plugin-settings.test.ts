@@ -13,6 +13,7 @@ import {
   LLM_USER_PRESET_MAX_LABEL_CHARS,
   resetLlmPostprocessDefaults,
   resolvePluginSettings,
+  shouldRefreshLlmSidebar,
 } from '../src/settings/plugin-settings';
 
 const PROFESSIONAL_WRITING_PRESET = getLlmBuiltinPreset('professional-writing');
@@ -35,11 +36,12 @@ describe('resolvePluginSettings', () => {
     expect(resolvePluginSettings({}).schemaVersion).toBe(1);
   });
 
-  it('defaults LLM features off (opt-in) with per-utterance cleanup and the Clean up prompt', () => {
+  it('enables LLM capabilities but keeps transformation off by default', () => {
     expect(DEFAULT_PLUGIN_SETTINGS).toMatchObject({
-      llmFeaturesEnabled: false,
+      llmFeaturesEnabled: true,
+      llmRemoteFeaturesEnabled: true,
       llmPostprocessActivePresetRef: `builtin:${DEFAULT_LLM_BUILTIN_PRESET_ID}`,
-      llmPostprocessMode: 'per_utterance',
+      llmPostprocessMode: 'off',
       llmPostprocessPrompt: DEFAULT_LLM_POSTPROCESS_PROMPT,
       llmPostprocessUserPresets: [],
     });
@@ -54,6 +56,7 @@ describe('resolvePluginSettings', () => {
         listeningMode: 'always_on',
         llmFeaturesEnabled: false,
         llmOpenRouterApiKey: ' openrouter-key ',
+        llmRemoteFeaturesEnabled: false,
         llmPostprocessMode: 'batch',
         llmPostprocessNoteContextChars: 4000,
         llmPostprocessPriorUtterancesN: 3,
@@ -96,6 +99,7 @@ describe('resolvePluginSettings', () => {
       listeningMode: 'always_on',
       llmFeaturesEnabled: false,
       llmOpenRouterApiKey: 'openrouter-key',
+      llmRemoteFeaturesEnabled: false,
       llmPostprocessActivePresetRef: null,
       llmPostprocessMode: 'batch',
       llmPostprocessNoteContextChars: 4000,
@@ -158,6 +162,7 @@ describe('resolvePluginSettings', () => {
         listeningMode: 'unsupported',
         llmFeaturesEnabled: 'yes',
         llmOpenRouterApiKey: 456,
+        llmRemoteFeaturesEnabled: 'yes',
         llmPostprocessMode: 'later',
         llmPostprocessPrompt: '',
         llmProviderModels: 'llama3',
@@ -236,6 +241,21 @@ describe('resolvePluginSettings', () => {
   it('accepts useLlmNoteContext when persisted as a boolean', () => {
     expect(resolvePluginSettings({ useLlmNoteContext: true }).useLlmNoteContext).toBe(true);
     expect(resolvePluginSettings({ useLlmNoteContext: false }).useLlmNoteContext).toBe(false);
+  });
+
+  it('refreshes the LLM sidebar when remote availability changes', () => {
+    expect(
+      shouldRefreshLlmSidebar(DEFAULT_PLUGIN_SETTINGS, {
+        ...DEFAULT_PLUGIN_SETTINGS,
+        llmRemoteFeaturesEnabled: false,
+      }),
+    ).toBe(true);
+    expect(
+      shouldRefreshLlmSidebar(DEFAULT_PLUGIN_SETTINGS, {
+        ...DEFAULT_PLUGIN_SETTINGS,
+        developerMode: true,
+      }),
+    ).toBe(false);
   });
 
   it('migrates the legacy single Ollama model into per-provider model storage', () => {
@@ -498,7 +518,7 @@ describe('resolvePluginSettings', () => {
     expect(reset).toMatchObject({
       llmFeaturesEnabled: false,
       llmPostprocessActivePresetRef: `builtin:${DEFAULT_LLM_BUILTIN_PRESET_ID}`,
-      llmPostprocessMode: 'per_utterance',
+      llmPostprocessMode: 'off',
       llmPostprocessPrompt: DEFAULT_PLUGIN_SETTINGS.llmPostprocessPrompt,
       llmPostprocessShowRawBelow: true,
       llmPostprocessUserPresets: presets,

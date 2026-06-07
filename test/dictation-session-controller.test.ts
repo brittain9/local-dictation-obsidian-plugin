@@ -328,6 +328,7 @@ describe('DictationSessionController', () => {
         cleanup: vi.fn(async () => {
           throw new ProviderError('bad key', 'auth_invalid');
         }),
+        providerId: 'openrouter',
       }),
       onLlmCleanupFailure,
       sidecarConnection,
@@ -345,6 +346,41 @@ describe('DictationSessionController', () => {
         code: 'auth_invalid',
         message: 'bad key',
         providerId: 'openrouter',
+      });
+    });
+  });
+
+  it('attributes cleanup failures to the provider selected by the router', async () => {
+    const sidecarConnection = new FakeSidecarConnection();
+    const onLlmCleanupFailure = vi.fn();
+    const controller = createController({
+      getSettings: () =>
+        createSettings({
+          llmFeaturesEnabled: true,
+          llmPostprocessMode: 'per_utterance',
+          llmPostprocessSkipMinWords: 0,
+          llmRouting: 'remote',
+          selectedModel: createExternalModelSelection(),
+        }),
+      llmRouter: createFakeLlmRouter({
+        cleanup: vi.fn(async () => {
+          throw new ProviderError('Ollama unavailable', 'connection_failed');
+        }),
+        providerId: 'ollama',
+      }),
+      onLlmCleanupFailure,
+      sidecarConnection,
+    });
+
+    await controller.startDictation();
+    const sessionId = sidecarConnection.startSession.mock.calls[0]?.[0].sessionId ?? '';
+    sidecarConnection.emit(transcriptReady(sessionId, 'private transcript'));
+
+    await vi.waitFor(() => {
+      expect(onLlmCleanupFailure).toHaveBeenCalledWith({
+        code: 'connection_failed',
+        message: 'Ollama unavailable',
+        providerId: 'ollama',
       });
     });
   });

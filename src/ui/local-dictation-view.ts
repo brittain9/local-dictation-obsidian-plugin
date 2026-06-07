@@ -106,11 +106,11 @@ export class LocalDictationView extends ItemView {
   }
 
   override async onOpen(): Promise<void> {
-    this.render();
+    this.refresh();
     this.attachWidthObserver();
     this.unsubscribeLlmCleanupFailure =
       this.dependencies.subscribeLlmCleanupFailure?.(() => {
-        this.render();
+        this.refresh();
       }) ?? null;
     this.routingControls.refreshActiveProviders();
     this.registerDomEvent(this.contentEl.win, 'focus', () => {
@@ -140,7 +140,7 @@ export class LocalDictationView extends ItemView {
     this.narrowObserver.observe(target);
   }
 
-  private render(): void {
+  refresh(): void {
     const { contentEl } = this;
     const settings = this.dependencies.getSettings();
 
@@ -715,7 +715,7 @@ export class LocalDictationView extends ItemView {
         return;
       }
       this.promptBlurRenderPending = false;
-      this.render();
+      this.refresh();
     }, 0);
   }
 
@@ -725,7 +725,7 @@ export class LocalDictationView extends ItemView {
       this.promptBlurRenderPending = true;
       return;
     }
-    this.render();
+    this.refresh();
   }
 
   private async saveField<TKey extends keyof PluginSettings>(
@@ -748,7 +748,7 @@ export class LocalDictationView extends ItemView {
   ): Promise<void> {
     await this.dependencies.saveSettings(nextSettings);
     if (options.rerender ?? true) {
-      this.render();
+      this.refresh();
     }
   }
 }

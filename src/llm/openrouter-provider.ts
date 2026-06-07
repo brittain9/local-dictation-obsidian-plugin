@@ -10,7 +10,7 @@ import type {
 import { ProviderError } from './provider';
 
 const OPENROUTER_API_BASE_URL = 'https://openrouter.ai/api/v1';
-const MAX_TOKENS = 512;
+const MAX_OUTPUT_TOKENS = 4_096;
 
 interface OpenRouterProviderOptions {
   apiKey: string;
@@ -37,7 +37,9 @@ export class OpenRouterProvider implements LlmProvider {
         `${this.baseUrl}/chat/completions`,
         {
           body: JSON.stringify({
-            max_tokens: MAX_TOKENS,
+            // OpenRouter's portable output-token cap is `max_tokens`; the newer
+            // `max_completion_tokens` isn't honored by every proxied provider.
+            max_tokens: MAX_OUTPUT_TOKENS,
             messages: [
               { content: options.prompt, role: 'system' },
               { content: options.userMessage, role: 'user' },
@@ -119,8 +121,10 @@ function parseModels(response: unknown): ModelOption[] {
 
   return response.data
     .map((entry): ModelOption | null => {
+      // Skip a malformed entry rather than failing the whole catalog — one bad
+      // model in OpenRouter's evolving list shouldn't blank the picker.
       if (!isRecord(entry) || typeof entry.id !== 'string') {
-        throw new ProviderError('OpenRouter returned an invalid model entry.', 'invalid_response');
+        return null;
       }
 
       // The transform only sends and expects text, so drop models that emit audio
@@ -222,6 +226,12 @@ function parseChatContent(response: unknown): string {
     typeof choice.message.content !== 'string'
   ) {
     throw new ProviderError('OpenRouter returned an invalid chat message.', 'invalid_response');
+  }
+  if (choice.finish_reason === 'length') {
+    throw new ProviderError(
+      'OpenRouter stopped because the transformed text exceeded the output limit.',
+      'invalid_response',
+    );
   }
 
   const content = choice.message.content.trim();

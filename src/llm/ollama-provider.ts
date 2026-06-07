@@ -1,8 +1,8 @@
 import { createOllamaClient, type OllamaClient, OllamaClientError } from './ollama-client';
-import type { CleanupOptions, LocalLlmProvider, ModelOption, ProviderHealth } from './provider';
+import type { CleanupOptions, LlmProvider, ModelOption, ProviderHealth } from './provider';
 import { ProviderError } from './provider';
 
-export class OllamaProvider implements LocalLlmProvider {
+export class OllamaProvider implements LlmProvider {
   readonly id = 'ollama' as const;
 
   constructor(private readonly client: OllamaClient = createOllamaClient()) {}

@@ -37,7 +37,7 @@ describe('OpenRouterProvider', () => {
       'content-type': 'application/json',
     });
     expect(JSON.parse(String(init?.body))).toEqual({
-      max_tokens: 512,
+      max_tokens: 4096,
       messages: [
         { content: 'Clean it.', role: 'system' },
         { content: '<utterance>raw</utterance>', role: 'user' },
@@ -46,6 +46,24 @@ describe('OpenRouterProvider', () => {
       stream: false,
       temperature: 0.2,
     });
+  });
+
+  it('rejects truncated responses instead of returning partial transformed text', async () => {
+    mockFetch(async () =>
+      jsonResponse({
+        choices: [
+          {
+            finish_reason: 'length',
+            message: { content: 'Partial transformed text' },
+          },
+        ],
+      }),
+    );
+
+    await expect(cleanup()).rejects.toMatchObject({
+      code: 'invalid_response',
+      name: 'ProviderError',
+    } satisfies Partial<ProviderError>);
   });
 
   it('lists text models with pricing and drops audio/image models', async () => {

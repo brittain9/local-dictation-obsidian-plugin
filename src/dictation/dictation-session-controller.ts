@@ -4,13 +4,7 @@ import type { AudioCaptureStream } from '../audio/audio-capture-stream';
 import { formatMicrophonePermissionDeniedMessage } from '../audio/microphone-permission-message';
 import type { NotePlacementOptions } from '../editor/note-surface';
 import { type LlmPostprocessMode, resolveStyleOption } from '../llm/presets';
-import {
-  type LlmCleanupFailure,
-  type LlmProviderId,
-  type LlmRouting,
-  ProviderError,
-  selectRouteProviderId,
-} from '../llm/provider';
+import { type LlmCleanupFailure, type LlmProviderId, ProviderError } from '../llm/provider';
 import type { LlmRouter } from '../llm/router';
 import type { Session } from '../session/session';
 import type { StageId, StageOutcome, TranscriptRevision } from '../session/session-journal';
@@ -63,9 +57,7 @@ interface ActiveSessionSnapshot {
   dictationAnchor: PluginSettings['dictationAnchor'];
   listeningMode: PluginSettings['listeningMode'];
   llmFeaturesEnabled: PluginSettings['llmFeaturesEnabled'];
-  llmRemoteThresholdChars: PluginSettings['llmRemoteThresholdChars'];
   llmRouter: LlmRouter;
-  llmRouting: LlmRouting;
   llmPostprocessMode: LlmPostprocessMode;
   llmPostprocessNoteContextChars: PluginSettings['llmPostprocessNoteContextChars'];
   llmPostprocessPrompt: PluginSettings['llmPostprocessPrompt'];
@@ -609,6 +601,11 @@ export class DictationSessionController {
     entry.pendingTranscriptWork.add(work);
     try {
       await work;
+    } catch (error) {
+      // processTranscriptReady handles cleanup failures itself; this guards the
+      // rare case where acceptTranscript throws, so it cannot escape as an
+      // unhandled rejection from the void-ed sidecar event handler.
+      this.dependencies.logger?.error('session', 'failed to process transcript', error);
     } finally {
       entry.pendingTranscriptWork.delete(work);
     }
@@ -665,13 +662,7 @@ export class DictationSessionController {
       this.buildProviderCleanupContextSources(entry),
       rawText,
     );
-    // Mirror the router's pure selection so failure telemetry names the right
-    // provider (the router itself can throw before returning one).
-    const providerId = selectRouteProviderId(
-      entry.snapshot.llmRouting,
-      userMessage.length,
-      entry.snapshot.llmRemoteThresholdChars,
-    );
+    const providerId = entry.snapshot.llmRouter.selectProviderId(userMessage.length);
     const startedAt = Date.now();
     const abortController = new AbortController();
     entry.cleanupAbortControllers.add(abortController);
@@ -855,11 +846,7 @@ export class DictationSessionController {
         ? (entry.session.readNoteText(entry.snapshot.llmPostprocessNoteContextChars)?.text ?? null)
         : null;
     const userMessage = renderBatchProviderUserMessage(noteContext, transcriptText);
-    const providerId = selectRouteProviderId(
-      entry.snapshot.llmRouting,
-      userMessage.length,
-      entry.snapshot.llmRemoteThresholdChars,
-    );
+    const providerId = entry.snapshot.llmRouter.selectProviderId(userMessage.length);
 
     // The flashing processing range is now the "working" indicator, so the
     // cursor steps aside for the batch rewrite.
@@ -1041,9 +1028,7 @@ function createSessionSnapshot(
     dictationAnchor: settings.dictationAnchor,
     listeningMode: settings.listeningMode,
     llmFeaturesEnabled: settings.llmFeaturesEnabled,
-    llmRemoteThresholdChars: settings.llmRemoteThresholdChars,
     llmRouter,
-    llmRouting: settings.llmRouting,
     llmPostprocessMode: settings.llmPostprocessMode,
     llmPostprocessNoteContextChars: noteContextChars,
     llmPostprocessPrompt: settings.llmPostprocessPrompt,

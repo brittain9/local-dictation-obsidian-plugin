@@ -93,6 +93,7 @@ export interface PluginSettings {
   listeningMode: ListeningMode;
   llmFeaturesEnabled: boolean;
   llmOpenRouterApiKey: string;
+  llmRemoteFeaturesEnabled: boolean;
   llmPostprocessActivePresetRef: string | null;
   llmPostprocessMode: LlmPostprocessMode;
   llmPostprocessNoteContextChars: number;
@@ -132,10 +133,11 @@ export const DEFAULT_PLUGIN_SETTINGS: PluginSettings = {
   developerMode: false,
   dictationAnchor: 'at_cursor',
   listeningMode: 'always_on',
-  llmFeaturesEnabled: false,
+  llmFeaturesEnabled: true,
   llmOpenRouterApiKey: '',
+  llmRemoteFeaturesEnabled: true,
   llmPostprocessActivePresetRef: DEFAULT_LLM_ACTIVE_PRESET_REF,
-  llmPostprocessMode: 'per_utterance',
+  llmPostprocessMode: 'off',
   llmPostprocessNoteContextChars: DEFAULT_LLM_POSTPROCESS_CONTEXT.noteContextChars,
   llmPostprocessPriorUtterancesN: DEFAULT_LLM_POSTPROCESS_CONTEXT.priorUtterancesN,
   llmPostprocessPrompt: DEFAULT_LLM_POSTPROCESS_PROMPT,
@@ -198,6 +200,10 @@ export function resolvePluginSettings(data: unknown): PluginSettings {
     llmOpenRouterApiKey: readString(
       raw.llmOpenRouterApiKey,
       DEFAULT_PLUGIN_SETTINGS.llmOpenRouterApiKey,
+    ),
+    llmRemoteFeaturesEnabled: readBoolean(
+      raw.llmRemoteFeaturesEnabled,
+      DEFAULT_PLUGIN_SETTINGS.llmRemoteFeaturesEnabled,
     ),
     llmPostprocessActivePresetRef,
     llmPostprocessMode: readLlmPostprocessMode(raw.llmPostprocessMode),
@@ -316,6 +322,10 @@ export function resetLlmPostprocessDefaults(settings: PluginSettings): PluginSet
     llmPostprocessTotalContextCap: DEFAULT_PLUGIN_SETTINGS.llmPostprocessTotalContextCap,
     useLlmNoteContext: DEFAULT_PLUGIN_SETTINGS.useLlmNoteContext,
   };
+}
+
+export function shouldRefreshLlmSidebar(previous: PluginSettings, next: PluginSettings): boolean {
+  return previous.llmRemoteFeaturesEnabled !== next.llmRemoteFeaturesEnabled;
 }
 
 function readAudioInputDevice(value: unknown): AudioInputDevice | null {

@@ -37,5 +37,6 @@ export function createFakeLlmRouter(options: FakeRouterOptions = {}): LlmRouter 
         providerId,
         text: `clean: ${cleanupOptions.userMessage}`,
       })),
+    selectProviderId: vi.fn(() => providerId),
   };
 }

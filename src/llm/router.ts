@@ -23,6 +23,7 @@ export interface LlmRouterCleanupResult {
 
 export interface LlmRouter {
   cleanup(options: LlmRouterCleanupOptions): Promise<LlmRouterCleanupResult>;
+  selectProviderId(userMessageChars: number): LlmProviderId;
 }
 
 // Routes each cleanup call to a provider by message size (see
@@ -32,14 +33,18 @@ export interface LlmRouter {
 export function createLlmRouter(
   settings: PluginSettings,
   createProviderFn = createProvider,
+  isRemoteFeaturesEnabled: () => boolean = () => settings.llmRemoteFeaturesEnabled,
 ): LlmRouter {
+  const selectProviderId = (userMessageChars: number): LlmProviderId =>
+    selectRouteProviderId(
+      isRemoteFeaturesEnabled() ? settings.llmRouting : 'local',
+      userMessageChars,
+      settings.llmRemoteThresholdChars,
+    );
+
   return {
     async cleanup(options) {
-      const providerId = selectRouteProviderId(
-        settings.llmRouting,
-        options.userMessage.length,
-        settings.llmRemoteThresholdChars,
-      );
+      const providerId = selectProviderId(options.userMessage.length);
       const model = getProviderModel(settings, providerId);
       if (model.length === 0) {
         throw new ProviderError(
@@ -58,5 +63,6 @@ export function createLlmRouter(
 
       return { model, providerId, text };
     },
+    selectProviderId,
   };
 }

@@ -56,15 +56,9 @@ export interface LlmProvider {
   readonly id: LlmProviderId;
   cleanup(options: CleanupOptions): Promise<string>;
   listModels(): Promise<ModelOption[]>;
+  /** Best-effort warm-up; only local providers (Ollama) implement it. */
+  prewarmModel?(modelId: string): Promise<void>;
   probe(): Promise<ProviderHealth>;
-}
-
-export interface LocalLlmProvider extends LlmProvider {
-  prewarmModel(modelId: string): Promise<void>;
-}
-
-export function isLocalLlmProvider(provider: LlmProvider): provider is LocalLlmProvider {
-  return provider.id === 'ollama';
 }
 
 export interface LlmProviderModels {

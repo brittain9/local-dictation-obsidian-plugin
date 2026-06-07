@@ -4,7 +4,6 @@ import {
   createProvider,
   formatLlmProviderName,
   getProviderModel,
-  isLocalLlmProvider,
   type LlmProviderId,
   type LlmRouting,
   type ModelOption,
@@ -131,15 +130,35 @@ export class LlmRoutingControls {
   // needs, so the dropdowns are populated by the time the user looks.
   refreshActiveProviders(): void {
     const settings = this.dependencies.getSettings();
+    if (!settings.llmRemoteFeaturesEnabled) {
+      this.warmModels('ollama');
+      return;
+    }
     if (settings.llmRouting === 'local' || settings.llmRouting === 'auto') {
-      void this.refreshModels('ollama', { silent: true });
+      this.warmModels('ollama');
     }
     if (settings.llmRouting === 'remote' || settings.llmRouting === 'auto') {
-      void this.refreshModels('openrouter', { silent: true });
+      this.warmModels('openrouter');
     }
   }
 
+  // Background warm: load a provider's catalog once. Unlike the manual refresh
+  // button, this skips providers already loaded or in flight, so it is safe to
+  // call on every render and window focus without re-fetching the catalog.
+  private warmModels(providerId: LlmProviderId): void {
+    const state = this.providers[providerId];
+    if (state.modelsLoaded || this.modelsRefreshInFlight[providerId] === true) {
+      return;
+    }
+    void this.refreshModels(providerId, { silent: true });
+  }
+
   render(parent: HTMLElement, settings: PluginSettings): void {
+    if (!settings.llmRemoteFeaturesEnabled) {
+      this.renderModelDropdown(parent, settings, 'ollama');
+      return;
+    }
+
     this.renderSegmentedControl(parent, settings);
 
     switch (settings.llmRouting) {
@@ -279,9 +298,7 @@ export class LlmRoutingControls {
 
     this.renderStatusRow(parent, settings, providerId);
 
-    if (!state.modelsLoaded && this.modelsRefreshInFlight[providerId] !== true) {
-      void this.refreshModels(providerId, { silent: true });
-    }
+    this.warmModels(providerId);
   }
 
   private renderApiKey(parent: HTMLElement, settings: PluginSettings): void {
@@ -305,7 +322,6 @@ export class LlmRoutingControls {
   }
 
   private renderOpenRouterModel(parent: HTMLElement, settings: PluginSettings): void {
-    const state = this.providers.openrouter;
     const selectedModel = getProviderModel(settings, 'openrouter');
     new Setting(parent)
       .setName('OpenRouter model')
@@ -337,9 +353,7 @@ export class LlmRoutingControls {
 
     this.renderStatusRow(parent, settings, 'openrouter');
 
-    if (!state.modelsLoaded && this.modelsRefreshInFlight.openrouter !== true) {
-      void this.refreshModels('openrouter', { silent: true });
-    }
+    this.warmModels('openrouter');
   }
 
   private renderStatusRow(
@@ -369,15 +383,13 @@ export class LlmRoutingControls {
       return;
     }
     const provider = createProvider(providerId, this.dependencies.getSettings());
-    if (isLocalLlmProvider(provider)) {
-      void provider.prewarmModel(modelId).catch((error: unknown) => {
-        this.dependencies.logger?.warn(
-          'llm',
-          `${formatLlmProviderName(providerId)} pre-warm failed`,
-          error,
-        );
-      });
-    }
+    void provider.prewarmModel?.(modelId)?.catch((error: unknown) => {
+      this.dependencies.logger?.warn(
+        'llm',
+        `${formatLlmProviderName(providerId)} pre-warm failed`,
+        error,
+      );
+    });
   }
 
   private scheduleApiKeyRefresh(): void {

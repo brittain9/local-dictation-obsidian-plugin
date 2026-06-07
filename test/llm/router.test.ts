@@ -68,6 +68,49 @@ describe('createLlmRouter', () => {
   });
 
   it.each([
+    'remote',
+    'auto',
+  ] as const)('forces %s routing through Ollama when remote LLM features are disabled', async (llmRouting) => {
+    const { calls, router } = routerWithSpy(
+      settings({
+        llmRemoteFeaturesEnabled: false,
+        llmRemoteThresholdChars: 100,
+        llmRouting,
+      }),
+    );
+
+    const result = await router.cleanup(cleanupArgs('x'.repeat(1_000)));
+
+    expect(result.providerId).toBe('ollama');
+    expect(calls).toEqual([{ model: 'llama3.2:latest', providerId: 'ollama' }]);
+  });
+
+  it('re-checks remote availability when cleanup runs', async () => {
+    let remoteEnabled = true;
+    const pluginSettings = settings({ llmRouting: 'remote' });
+    const calls: LlmProviderId[] = [];
+    const router = createLlmRouter(
+      pluginSettings,
+      (providerId) =>
+        createFakeLlmProvider({
+          id: providerId,
+          cleanup: vi.fn(async () => {
+            calls.push(providerId);
+            return 'cleaned';
+          }),
+        }),
+      () => remoteEnabled,
+    );
+
+    remoteEnabled = false;
+    expect(router.selectProviderId('private transcript'.length)).toBe('ollama');
+    const result = await router.cleanup(cleanupArgs('private transcript'));
+
+    expect(result.providerId).toBe('ollama');
+    expect(calls).toEqual(['ollama']);
+  });
+
+  it.each([
     ['at the threshold stays local', 100, 'ollama'],
     ['one over the threshold escalates to remote', 101, 'openrouter'],
   ] as const)('auto %s', async (_label, chars, expected) => {

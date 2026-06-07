@@ -19,6 +19,7 @@ import {
   DEFAULT_PLUGIN_SETTINGS,
   type PluginSettings,
   resolvePluginSettings,
+  shouldRefreshLlmSidebar,
 } from './settings/plugin-settings';
 import { LocalSttSettingTab } from './settings/settings-tab';
 import {
@@ -129,7 +130,8 @@ export default class LocalSttPlugin extends Plugin {
           rendererOptions,
           sessionId,
         }),
-      createLlmRouter: (settings) => createLlmRouter(settings),
+      createLlmRouter: (settings) =>
+        createLlmRouter(settings, undefined, () => this.settings.llmRemoteFeaturesEnabled),
       getSettings: () => this.settings,
       logger: this.logger,
       notice: (message) => {
@@ -404,11 +406,19 @@ export default class LocalSttPlugin extends Plugin {
   }
 
   private async updateSettings(nextSettings: PluginSettings): Promise<void> {
-    const previousLlmFeaturesEnabled = this.settings.llmFeaturesEnabled;
+    const previousSettings = this.settings;
     this.settings = resolvePluginSettings(nextSettings);
     await this.saveData(this.settings);
-    if (previousLlmFeaturesEnabled !== this.settings.llmFeaturesEnabled) {
+    if (previousSettings.llmFeaturesEnabled !== this.settings.llmFeaturesEnabled) {
       await this.syncLocalDictationSidebar();
+      return;
+    }
+    if (shouldRefreshLlmSidebar(previousSettings, this.settings)) {
+      for (const leaf of this.app.workspace.getLeavesOfType(LOCAL_DICTATION_VIEW_TYPE)) {
+        if (leaf.view instanceof LocalDictationView) {
+          leaf.view.refresh();
+        }
+      }
     }
   }
 
