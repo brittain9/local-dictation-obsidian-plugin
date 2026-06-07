@@ -1,5 +1,6 @@
 import { isRecord } from '../shared/type-guards';
 import { fetchJson, PROBE_TIMEOUT_MS } from './http-shared';
+import { outputTokenBudget } from './output-budget';
 import type {
   CleanupOptions,
   LlmProvider,
@@ -10,7 +11,6 @@ import type {
 import { ProviderError } from './provider';
 
 const OPENROUTER_API_BASE_URL = 'https://openrouter.ai/api/v1';
-const MAX_OUTPUT_TOKENS = 4_096;
 
 interface OpenRouterProviderOptions {
   apiKey: string;
@@ -39,7 +39,7 @@ export class OpenRouterProvider implements LlmProvider {
           body: JSON.stringify({
             // OpenRouter's portable output-token cap is `max_tokens`; the newer
             // `max_completion_tokens` isn't honored by every proxied provider.
-            max_tokens: MAX_OUTPUT_TOKENS,
+            max_tokens: outputTokenBudget(options.userMessage.length),
             messages: [
               { content: options.prompt, role: 'system' },
               { content: options.userMessage, role: 'user' },

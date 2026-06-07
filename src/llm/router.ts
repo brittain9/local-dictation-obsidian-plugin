@@ -35,6 +35,9 @@ export function createLlmRouter(
   createProviderFn = createProvider,
   isRemoteFeaturesEnabled: () => boolean = () => settings.llmRemoteFeaturesEnabled,
 ): LlmRouter {
+  // `isRemoteFeaturesEnabled` must read live state, not the snapshot captured in
+  // `settings`, so the kill switch takes effect mid-session; the default exists
+  // only for tests that pass a fixed snapshot.
   const selectProviderId = (userMessageChars: number): LlmProviderId =>
     selectRouteProviderId(
       isRemoteFeaturesEnabled() ? settings.llmRouting : 'local',

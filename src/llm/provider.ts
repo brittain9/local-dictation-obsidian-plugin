@@ -61,10 +61,7 @@ export interface LlmProvider {
   probe(): Promise<ProviderHealth>;
 }
 
-export interface LlmProviderModels {
-  ollama: string;
-  openrouter: string;
-}
+export type LlmProviderModels = Record<LlmProviderId, string>;
 
 export interface LlmCleanupFailure {
   code: ProviderErrorCode;

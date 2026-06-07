@@ -48,6 +48,26 @@ describe('OpenRouterProvider', () => {
     });
   });
 
+  it('scales max_tokens with the input so a long transcript is not capped at the floor', async () => {
+    const fetchMock = mockFetch(async () =>
+      jsonResponse({ choices: [{ message: { content: 'ok' } }] }),
+    );
+    const provider = new OpenRouterProvider({
+      apiKey: 'sk-or-test',
+      baseUrl: 'https://openrouter.test/api/v1',
+    });
+
+    await provider.cleanup({
+      model: 'anthropic/claude-sonnet-4.5',
+      prompt: 'Clean it.',
+      temperature: 0.2,
+      userMessage: 'x'.repeat(40_000),
+    });
+
+    const [, init] = fetchMock.mock.calls[0] ?? [];
+    expect(JSON.parse(String(init?.body)).max_tokens).toBe(15_000);
+  });
+
   it('rejects truncated responses instead of returning partial transformed text', async () => {
     mockFetch(async () =>
       jsonResponse({

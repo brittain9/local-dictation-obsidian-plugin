@@ -134,6 +134,22 @@ describe('createLlmRouter', () => {
     } satisfies Partial<ProviderError>);
   });
 
+  it('throws unknown_model for the remote provider when auto escalates but no remote model is set', async () => {
+    const { router } = routerWithSpy(
+      settings({
+        llmProviderModels: { ollama: 'llama3.2:latest', openrouter: '' },
+        llmRemoteThresholdChars: 100,
+        llmRouting: 'auto',
+      }),
+    );
+
+    await expect(router.cleanup(cleanupArgs('x'.repeat(200)))).rejects.toMatchObject({
+      code: 'unknown_model',
+      message: expect.stringContaining('OpenRouter'),
+      name: 'ProviderError',
+    } satisfies Partial<ProviderError>);
+  });
+
   it('propagates the provider id and model on a successful cleanup', async () => {
     const { router } = routerWithSpy(settings({ llmRouting: 'remote' }), async () => '  spaced  ');
 
