@@ -1,8 +1,7 @@
 import { randomUUID } from 'node:crypto';
 
-import { ItemView, Notice, Setting, setIcon, type WorkspaceLeaf } from 'obsidian';
+import { ItemView, Setting, setIcon, type WorkspaceLeaf } from 'obsidian';
 
-import type { OllamaClient, OllamaModelOption } from '../llm/ollama-client';
 import {
   DEFAULT_LLM_BUILTIN_PRESET_ID,
   findMatchingStyleRef,
@@ -17,6 +16,7 @@ import {
   parseStyleRef,
   resolveStyleOption,
 } from '../llm/presets';
+import type { LlmCleanupFailure } from '../llm/provider';
 import {
   LLM_USER_PRESET_MAX_COUNT,
   type PluginSettings,
@@ -30,19 +30,16 @@ import {
 } from '../settings/setting-helpers';
 import type { PluginLogger } from '../shared/plugin-logger';
 import { ConfirmModal } from './confirm-modal';
-import {
-  deriveInlineStatus,
-  formatOllamaHealth,
-  INLINE_STATUS_PRESENTATION,
-  type OllamaHealth,
-} from './llm-status';
+import { formatCleanupFailureBanner } from './llm-provider-ui';
+import { LlmRoutingControls } from './llm-routing-controls';
+import { INLINE_STATUS_PRESENTATION } from './llm-status';
 import { SaveStyleModal } from './save-style-modal';
 
 export const LOCAL_DICTATION_VIEW_TYPE = 'local-dictation-sidebar';
 const LOCAL_DICTATION_VIEW_TITLE = 'Local Dictation';
 const LOCAL_DICTATION_VIEW_ICON = 'audio-lines';
 const HEADING_TOOLTIP =
-  'Uses a local Ollama model to transform the dictated transcript — cleaning, rewriting, summarizing, reformatting, or running custom prompts. Transcription stays local.';
+  'Uses an LLM provider to transform the dictated transcript — cleaning, rewriting, summarizing, reformatting, or running custom prompts.';
 const STYLE_PICKER_TOOLTIP =
   'A preset is a saved LLM transform prompt. Pick a built-in preset or a saved preset. Editing the prompt switches to Custom. The suffix after each preset name shows which mode it is meant for: (per phrase) runs after every spoken phrase, (batch) runs once when you stop, (either) works in both — picking a (per phrase) or (batch) preset will switch the mode for you.';
 const CUSTOM_STYLE_VALUE = '__custom__';
@@ -56,10 +53,11 @@ const CLEANUP_MODE_OPTIONS: ReadonlyArray<{ label: string; value: LlmPresetMode 
 
 interface LocalDictationViewDependencies {
   getSettings: () => PluginSettings;
+  getLlmCleanupFailure?: () => LlmCleanupFailure | null;
   logger?: PluginLogger | undefined;
   notice?: (message: string) => void;
-  ollamaClient: OllamaClient;
   saveSettings: (settings: PluginSettings) => Promise<void>;
+  subscribeLlmCleanupFailure?: (callback: () => void) => () => void;
 }
 
 const PROMPT_SAVE_DEBOUNCE_MS = 400;
@@ -67,20 +65,32 @@ const PROMPT_SAVE_DEBOUNCE_MS = 400;
 export class LocalDictationView extends ItemView {
   private advancedOpen = false;
   private focusedInput: HTMLElement | null = null;
-  private models: OllamaModelOption[] = [];
-  private modelsRefreshInFlight = false;
   private narrowObserver: ResizeObserver | null = null;
-  private ollamaHealth: OllamaHealth = { kind: 'unknown' };
   private lastEnabledMode: LlmPresetMode = DEFAULT_ENABLED_CLEANUP_MODE;
   private promptBlurRenderPending = false;
   private promptSaveTimerId: ReturnType<typeof setTimeout> | null = null;
   private pendingPromptValue: string | null = null;
+  private readonly routingControls: LlmRoutingControls;
+  private unsubscribeLlmCleanupFailure: (() => void) | null = null;
 
   constructor(
     leaf: WorkspaceLeaf,
     private readonly dependencies: LocalDictationViewDependencies,
   ) {
     super(leaf);
+    this.routingControls = new LlmRoutingControls({
+      app: this.app,
+      getSettings: () => this.dependencies.getSettings(),
+      logger: this.dependencies.logger,
+      ...(this.dependencies.notice !== undefined ? { notice: this.dependencies.notice } : {}),
+      persist: (settings, options) => this.persistSettings(settings, options),
+      requestRerender: () => {
+        this.scheduleRender();
+      },
+    });
+    this.routingControls.setInputTracker((element) => {
+      this.trackInputFocus(element);
+    });
   }
 
   override getViewType(): string {
@@ -96,17 +106,24 @@ export class LocalDictationView extends ItemView {
   }
 
   override async onOpen(): Promise<void> {
-    this.render();
+    this.refresh();
     this.attachWidthObserver();
-    this.maybeRefreshModels();
+    this.unsubscribeLlmCleanupFailure =
+      this.dependencies.subscribeLlmCleanupFailure?.(() => {
+        this.refresh();
+      }) ?? null;
+    this.routingControls.refreshActiveProviders();
     this.registerDomEvent(this.contentEl.win, 'focus', () => {
-      this.maybeRefreshModels();
+      this.routingControls.refreshActiveProviders();
     });
   }
 
   override async onClose(): Promise<void> {
     this.narrowObserver?.disconnect();
     this.narrowObserver = null;
+    this.unsubscribeLlmCleanupFailure?.();
+    this.unsubscribeLlmCleanupFailure = null;
+    this.routingControls.dispose();
     await this.flushPendingPromptSave();
   }
 
@@ -123,7 +140,7 @@ export class LocalDictationView extends ItemView {
     this.narrowObserver.observe(target);
   }
 
-  private render(): void {
+  refresh(): void {
     const { contentEl } = this;
     const settings = this.dependencies.getSettings();
 
@@ -140,19 +157,30 @@ export class LocalDictationView extends ItemView {
       this.lastEnabledMode = settings.llmPostprocessMode;
     }
 
-    const cleanupGroup = createSettingGroup(contentEl, 'LLM transformation', HEADING_TOOLTIP);
-
-    this.renderCleanupToggle(cleanupGroup, settings);
+    const headerGroup = createSettingGroup(contentEl, 'LLM transformation', HEADING_TOOLTIP);
+    this.renderCleanupToggle(headerGroup, settings);
 
     if (settings.llmPostprocessMode === 'off') {
+      headerGroup.createEl('p', {
+        cls: 'local-dictation-muted',
+        text: 'Raw Whisper text is inserted as-is. Turn on to clean, rewrite, or summarize the transcript with an LLM.',
+      });
       return;
     }
 
-    this.renderInlineStatus(cleanupGroup, settings);
-    this.renderModelPicker(cleanupGroup, settings);
-    this.renderStylePicker(cleanupGroup, settings);
-    this.renderCleanupMode(cleanupGroup, settings);
-    this.renderUseNoteContextToggle(cleanupGroup, settings);
+    this.renderRuntimeFailureBanner(headerGroup);
+
+    const whereGroup = createSettingGroup(contentEl, 'Where it runs');
+    this.routingControls.render(whereGroup, settings);
+
+    const styleGroup = createSettingGroup(contentEl, 'Style');
+    this.renderStylePicker(styleGroup, settings);
+    this.renderCleanupMode(styleGroup, settings);
+    this.renderPromptEditor(styleGroup, settings);
+
+    const contextGroup = createSettingGroup(contentEl, 'Context');
+    this.renderUseNoteContextToggle(contextGroup, settings);
+    this.renderNoteContextChars(contextGroup, settings);
 
     const advanced = contentEl.createEl('details', { cls: 'local-dictation-advanced' });
     advanced.createEl('summary', { text: 'Advanced' });
@@ -161,9 +189,7 @@ export class LocalDictationView extends ItemView {
       this.advancedOpen = advanced.open;
     });
 
-    this.renderContextLimitsSection(advanced, settings);
-    this.renderCustomizeStyleSection(advanced, settings);
-    this.renderSkipSection(advanced, settings);
+    this.renderLimitsSection(advanced, settings);
     this.renderGenerationSection(advanced, settings);
     this.renderDiagnosticsSection(advanced, settings);
   }
@@ -172,7 +198,7 @@ export class LocalDictationView extends ItemView {
     const enabled = settings.llmPostprocessMode !== 'off';
     new Setting(parent)
       .setName('Transform')
-      .setDesc(enabled ? '' : 'Raw Whisper text is inserted directly.')
+      .setDesc('')
       .addToggle((toggle) => {
         toggle.setValue(enabled);
         toggle.onChange(async (value) => {
@@ -182,7 +208,7 @@ export class LocalDictationView extends ItemView {
           }
           const nextMode = value ? this.resolveModeOnEnable(current) : 'off';
           await this.saveField('llmPostprocessMode', nextMode);
-          this.maybeRefreshModels();
+          this.routingControls.refreshActiveProviders();
         });
       });
   }
@@ -293,6 +319,23 @@ export class LocalDictationView extends ItemView {
     }
   }
 
+  private renderRuntimeFailureBanner(parent: HTMLElement): void {
+    const failure = this.dependencies.getLlmCleanupFailure?.() ?? null;
+    if (failure === null) {
+      return;
+    }
+
+    const row = parent.createDiv({
+      cls: `local-dictation-status ${INLINE_STATUS_PRESENTATION.warning.className}`,
+    });
+    const iconEl = row.createSpan({ cls: 'local-dictation-status__icon' });
+    setIcon(iconEl, INLINE_STATUS_PRESENTATION.warning.icon);
+    row.createSpan({
+      cls: 'local-dictation-status__text',
+      text: formatCleanupFailureBanner(failure),
+    });
+  }
+
   private confirmDeleteUserStyle(option: LlmStyleOption): void {
     const modal = new ConfirmModal(this.app, {
       title: 'Delete preset',
@@ -304,44 +347,6 @@ export class LocalDictationView extends ItemView {
       },
     });
     modal.open();
-  }
-
-  private renderModelPicker(parent: HTMLElement, settings: PluginSettings): void {
-    const selectedModel = settings.llmPostprocessModel;
-    const hasSelectedModel =
-      selectedModel.length > 0 && this.models.some((model) => model.id === selectedModel);
-
-    new Setting(parent)
-      .setName('Ollama model')
-      .setDesc('Pick a local Ollama chat model.')
-      .addDropdown((dropdown) => {
-        dropdown.addOption('', 'Select a model');
-        if (selectedModel.length > 0 && !hasSelectedModel) {
-          dropdown.addOption(selectedModel, selectedModel);
-        }
-        for (const model of this.models) {
-          dropdown.addOption(model.id, model.displayName);
-        }
-        dropdown.setValue(selectedModel);
-        dropdown.onChange(async (value) => {
-          const nextModel = value.trim();
-          await this.saveField('llmPostprocessModel', nextModel);
-          if (nextModel.length > 0) {
-            void this.dependencies.ollamaClient.prewarmModel(nextModel).catch((error: unknown) => {
-              this.dependencies.logger?.warn('llm', 'Ollama pre-warm failed', error);
-            });
-          }
-        });
-      })
-      .addExtraButton((button) => {
-        button
-          .setIcon('refresh-cw')
-          .setTooltip('Refresh Ollama models')
-          .onClick(() => {
-            void this.refreshModels();
-          });
-        button.extraSettingsEl.setAttribute('aria-label', 'Refresh Ollama models');
-      });
   }
 
   private async applyStyleByRef(ref: string): Promise<void> {
@@ -456,34 +461,40 @@ export class LocalDictationView extends ItemView {
       });
   }
 
-  private renderContextLimitsSection(parent: HTMLElement, settings: PluginSettings): void {
+  private renderPromptEditor(parent: HTMLElement, settings: PluginSettings): void {
+    this.addTextAreaSetting(
+      parent,
+      'Prompt',
+      'System prompt sent to the model.',
+      settings.llmPostprocessPrompt,
+      10,
+      (value) => {
+        this.schedulePromptSave(value);
+      },
+      'Instructions sent as the system prompt for the local LLM transform.',
+    );
+  }
+
+  private renderNoteContextChars(parent: HTMLElement, settings: PluginSettings): void {
+    if (!settings.useLlmNoteContext) {
+      return;
+    }
+    this.addNumberSetting(
+      parent,
+      'Note context chars',
+      'Chars of note text',
+      settings.llmPostprocessNoteContextChars,
+      (value) => this.saveField('llmPostprocessNoteContextChars', value, { rerender: false }),
+      'Characters of surrounding note text fed to the model as context.',
+    );
+  }
+
+  private renderLimitsSection(parent: HTMLElement, settings: PluginSettings): void {
     const items = createSettingGroup(
       parent,
-      'Context limits',
-      'Bounded slice of the open note and recent utterances fed to the model.',
+      'Limits',
+      'Bounds on the context fed to the model, plus a word floor for skipping the transform.',
     );
-
-    if (settings.useLlmNoteContext) {
-      this.addNumberSetting(
-        items,
-        'Note context chars',
-        'Chars of note text',
-        settings.llmPostprocessNoteContextChars,
-        (value) => this.saveField('llmPostprocessNoteContextChars', value, { rerender: false }),
-        'Characters of surrounding note text fed to the model as context.',
-      );
-    }
-
-    if (settings.llmPostprocessMode !== 'batch') {
-      this.addNumberSetting(
-        items,
-        'Prior utterances',
-        'Recent utterances kept',
-        settings.llmPostprocessPriorUtterancesN,
-        (value) => this.saveField('llmPostprocessPriorUtterancesN', value, { rerender: false }),
-        'Number of recent transcribed utterances included as conversation history.',
-      );
-    }
 
     this.addNumberSetting(
       items,
@@ -500,45 +511,18 @@ export class LocalDictationView extends ItemView {
         text: 'Large context windows can slow local models and reduce LLM transform quality.',
       });
     }
-  }
 
-  private renderInlineStatus(parent: HTMLElement, settings: PluginSettings): void {
-    const status = deriveInlineStatus({
-      health: this.ollamaHealth,
-      models: this.models,
-      selectedModel: settings.llmPostprocessModel,
-    });
-    if (status === null) {
-      return;
+    if (settings.llmPostprocessMode !== 'batch') {
+      this.addNumberSetting(
+        items,
+        'Prior utterances',
+        'Recent utterances kept',
+        settings.llmPostprocessPriorUtterancesN,
+        (value) => this.saveField('llmPostprocessPriorUtterancesN', value, { rerender: false }),
+        'Number of recent transcribed utterances included as conversation history.',
+      );
     }
-    const { className, icon } = INLINE_STATUS_PRESENTATION[status.variant];
-    const row = parent.createDiv({ cls: `local-dictation-status ${className}` });
-    const iconEl = row.createSpan({ cls: 'local-dictation-status__icon' });
-    setIcon(iconEl, icon);
-    row.createSpan({ cls: 'local-dictation-status__text', text: status.text });
-  }
 
-  private renderCustomizeStyleSection(parent: HTMLElement, settings: PluginSettings): void {
-    const items = createSettingGroup(parent, 'Prompt');
-    this.addTextAreaSetting(
-      items,
-      'Prompt',
-      'System prompt sent to the model.',
-      settings.llmPostprocessPrompt,
-      10,
-      (value) => {
-        this.schedulePromptSave(value);
-      },
-      'Instructions sent as the system prompt for the local LLM transform.',
-    );
-  }
-
-  private renderSkipSection(parent: HTMLElement, settings: PluginSettings): void {
-    const items = createSettingGroup(
-      parent,
-      'Skip gates',
-      'Conditions that bypass the LLM so short utterances pass straight through to the note.',
-    );
     const override = activePresetOverride(settings, 'minWords');
     this.addNumberSetting(
       items,
@@ -589,12 +573,10 @@ export class LocalDictationView extends ItemView {
         });
       });
 
-    new Setting(items).setName('Ollama status').setDesc(formatOllamaHealth(this.ollamaHealth));
-
     new Setting(items)
       .setName('Reset LLM defaults')
       .setDesc(
-        'Restore the default prompt, mode, context, skip gates, and generation values. Your saved presets and selected model are kept.',
+        'Restore the default prompt, mode, context, skip gates, and generation values. Your saved presets and selected provider model are kept.',
       )
       .addButton((button) => {
         button.setButtonText('Reset');
@@ -609,7 +591,7 @@ export class LocalDictationView extends ItemView {
     new ConfirmModal(this.app, {
       title: 'Reset LLM defaults',
       message:
-        'Restore the default prompt, mode, context, skip gates, and generation values? Your saved presets and selected model are kept.',
+        'Restore the default prompt, mode, context, skip gates, and generation values? Your saved presets and selected provider model are kept.',
       confirmLabel: 'Reset',
       destructive: true,
       onConfirm: async () => {
@@ -737,46 +719,8 @@ export class LocalDictationView extends ItemView {
         return;
       }
       this.promptBlurRenderPending = false;
-      this.render();
+      this.refresh();
     }, 0);
-  }
-
-  private maybeRefreshModels(): void {
-    const settings = this.dependencies.getSettings();
-    if (!settings.llmFeaturesEnabled) return;
-    if (settings.llmPostprocessMode === 'off') return;
-    void this.refreshModels({ silent: true });
-  }
-
-  private async refreshModels(options: { silent?: boolean } = {}): Promise<void> {
-    if (this.modelsRefreshInFlight) return;
-    this.modelsRefreshInFlight = true;
-
-    let nextModels: OllamaModelOption[];
-    let nextHealth: OllamaHealth;
-    try {
-      nextModels = await this.dependencies.ollamaClient.listOllamaModels();
-      nextHealth =
-        nextModels.length === 0
-          ? { kind: 'no_models' }
-          : { kind: 'ready', modelCount: nextModels.length };
-    } catch (error) {
-      nextModels = [];
-      nextHealth = { kind: 'unreachable' };
-      this.dependencies.logger?.warn('llm', 'Ollama refresh failed', error);
-      if (options.silent !== true) {
-        this.notice('Local Dictation: Ollama is unavailable.');
-      }
-    } finally {
-      this.modelsRefreshInFlight = false;
-    }
-
-    if (healthEqual(this.ollamaHealth, nextHealth) && modelsEqual(this.models, nextModels)) {
-      return;
-    }
-    this.models = nextModels;
-    this.ollamaHealth = nextHealth;
-    this.scheduleRender();
   }
 
   // Deferring while an input is focused avoids clobbering in-progress text and cursor on re-render.
@@ -785,7 +729,7 @@ export class LocalDictationView extends ItemView {
       this.promptBlurRenderPending = true;
       return;
     }
-    this.render();
+    this.refresh();
   }
 
   private async saveField<TKey extends keyof PluginSettings>(
@@ -808,33 +752,9 @@ export class LocalDictationView extends ItemView {
   ): Promise<void> {
     await this.dependencies.saveSettings(nextSettings);
     if (options.rerender ?? true) {
-      this.render();
+      this.refresh();
     }
   }
-
-  private notice(message: string): void {
-    if (this.dependencies.notice !== undefined) {
-      this.dependencies.notice(message);
-      return;
-    }
-    new Notice(message);
-  }
-}
-
-function modelsEqual(a: readonly OllamaModelOption[], b: readonly OllamaModelOption[]): boolean {
-  if (a.length !== b.length) return false;
-  return a.every((itemA, i) => {
-    const itemB = b[i];
-    return itemB !== undefined && itemA.id === itemB.id && itemA.displayName === itemB.displayName;
-  });
-}
-
-function healthEqual(a: OllamaHealth, b: OllamaHealth): boolean {
-  if (a.kind !== b.kind) return false;
-  if (a.kind === 'ready' && b.kind === 'ready') {
-    return a.modelCount === b.modelCount;
-  }
-  return true;
 }
 
 function activePresetOverride(

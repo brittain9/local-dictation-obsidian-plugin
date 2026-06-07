@@ -4,18 +4,12 @@ use std::time::Instant;
 use crate::audio_metadata::VoiceActivityEvidence;
 use crate::engine::capabilities::ModelFamilyCapabilities;
 use crate::panic_util::format_panic_message;
-use crate::protocol::{
-    LlmPostprocessConfig, StageId, StageOutcome, StageStatus, TranscriptSegment,
-};
+use crate::protocol::{StageId, StageOutcome, StageStatus, TranscriptSegment};
 use crate::transcription::{SegmentDiagnostics, Transcript};
 
 mod hallucination_filter;
-mod llm_postprocess;
 
 /// Boolean opt-out for stages that always have a runtime config to consume.
-/// Stages with optional per-session configuration (e.g. LLM postprocess) gate
-/// themselves on the presence of that config in `StageContext`, not a flag
-/// here.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct StageEnablement {
     pub hallucination_filter: bool,
@@ -34,7 +28,6 @@ pub struct StageContext<'a> {
     pub context: Option<&'a crate::protocol::ContextWindow>,
     pub family_capabilities: &'a ModelFamilyCapabilities,
     pub is_final: bool,
-    pub llm_postprocess: Option<&'a LlmPostprocessConfig>,
     pub pause_ms_before_utterance: Option<u64>,
     pub segment_diagnostics: &'a [SegmentDiagnostics],
     pub stage_enabled: &'a StageEnablement,
@@ -75,14 +68,7 @@ pub trait StageProcessor: Send + Sync {
 /// Build the registered post-engine processor chain in canonical order. The
 /// engine stage outcome is appended separately by `assemble_transcript`.
 pub fn post_engine_processors() -> Vec<Box<dyn StageProcessor>> {
-    vec![
-        Box::new(hallucination_filter::HallucinationFilterStage),
-        llm_postprocess_processor(),
-    ]
-}
-
-pub fn llm_postprocess_processor() -> Box<dyn StageProcessor> {
-    Box::new(llm_postprocess::LlmPostprocessStage::new())
+    vec![Box::new(hallucination_filter::HallucinationFilterStage)]
 }
 
 pub fn run_post_engine(
@@ -313,7 +299,7 @@ mod tests {
 
     impl StageProcessor for BoundaryCollapsingProcessor {
         fn id(&self) -> StageId {
-            StageId::LlmPostprocess
+            StageId::Punctuation
         }
         fn collapses_segment_boundaries(&self) -> bool {
             true
@@ -348,7 +334,6 @@ mod tests {
             context: None,
             family_capabilities: &caps,
             is_final: true,
-            llm_postprocess: None,
             pause_ms_before_utterance: None,
             segment_diagnostics: &[],
             stage_enabled: &enablement,
@@ -373,7 +358,6 @@ mod tests {
             context: None,
             family_capabilities: &caps,
             is_final: false,
-            llm_postprocess: None,
             pause_ms_before_utterance: None,
             segment_diagnostics: &[],
             stage_enabled: &enablement,

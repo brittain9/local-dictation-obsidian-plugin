@@ -692,8 +692,111 @@
   color: var(--text-muted);
 }
 
+/* --- LLM routing control ------------------------------------------ */
+
+.local-dictation-route-field {
+  padding: var(--size-4-2) var(--size-4-3) var(--size-4-3);
+}
+
+.local-dictation-route-field__hint {
+  margin-top: var(--size-4-2);
+  font-size: var(--font-ui-smaller);
+  color: var(--text-muted);
+}
+
+.local-dictation-segmented {
+  display: flex;
+  width: 100%;
+  gap: 3px;
+  padding: 3px;
+  border-radius: var(--radius-m, 8px);
+  background: var(--background-modifier-border, rgba(128, 128, 128, 0.15));
+}
+
+.local-dictation-segmented__option {
+  flex: 1;
+  appearance: none;
+  border: none;
+  box-shadow: none;
+  cursor: pointer;
+  padding: 5px 12px;
+  border-radius: var(--radius-s, 6px);
+  background: transparent;
+  color: var(--text-muted);
+  font-size: var(--font-ui-small);
+  font-weight: 500;
+  transition:
+    background-color 120ms ease,
+    color 120ms ease,
+    box-shadow 120ms ease;
+}
+
+.local-dictation-segmented__option:hover {
+  color: var(--text-normal);
+}
+
+.local-dictation-segmented__option:focus-visible {
+  outline: 2px solid var(--interactive-accent);
+  outline-offset: 1px;
+}
+
+.local-dictation-segmented__option.is-active {
+  background: var(--background-primary);
+  box-shadow: var(--shadow-s, 0 1px 2px rgba(0, 0, 0, 0.15));
+  color: var(--text-normal);
+  font-weight: 600;
+}
+
+.local-dictation-route-leg {
+  padding: var(--size-4-3) var(--size-4-3) var(--size-4-1);
+  font-size: var(--font-ui-smaller);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
 .local-stt-hidden {
   display: none;
+}
+
+/* --- OpenRouter model suggest secondary line ---------------------- */
+
+.local-dictation-suggest__top {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--size-4-2);
+}
+
+.local-dictation-suggest__primary {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.local-dictation-suggest__secondary {
+  display: block;
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+}
+
+.local-dictation-price {
+  flex-shrink: 0;
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.03em;
+}
+
+.local-dictation-price--free {
+  color: var(--text-success, #2e8b57);
+}
+
+.local-dictation-price--premium {
+  color: var(--text-warning, var(--color-orange));
 }
 
 .local-stt-version-chip {

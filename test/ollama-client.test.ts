@@ -111,11 +111,31 @@ describe('Ollama client', () => {
           { content: '<session_transcript>raw</session_transcript>', role: 'user' },
         ],
         model: 'llama3.2:latest',
-        options: { num_predict: 512, temperature: 0.2 },
+        options: { num_predict: 4096, temperature: 0.2 },
         stream: false,
         think: false,
       },
     ]);
+  });
+
+  it('rejects truncated cleanup output instead of returning partial text', async () => {
+    const { port } = await startServer((_request, response) => {
+      response.end(
+        JSON.stringify({ done_reason: 'length', message: { content: 'Partial cleaned text' } }),
+      );
+    });
+
+    await expect(
+      createOllamaClient({ port }).cleanup({
+        model: 'llama3.2:latest',
+        prompt: 'Clean this.',
+        temperature: 0.2,
+        userMessage: '<session_transcript>raw</session_transcript>',
+      }),
+    ).rejects.toMatchObject({
+      code: 'invalid_response',
+      name: 'OllamaClientError',
+    } satisfies Partial<OllamaClientError>);
   });
 
   it('cleanup aborts via the supplied signal', async () => {

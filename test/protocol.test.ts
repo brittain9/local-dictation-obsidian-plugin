@@ -8,7 +8,6 @@ import {
   createCancelSessionCommand,
   createContextResponseCommand,
   createHealthCommand,
-  createRunBatchCleanupCommand,
   createStartSessionCommand,
   createStopSessionCommand,
   decodeAudioFrameEnvelope,
@@ -39,7 +38,6 @@ function transcriptReadyPayload(
 ): TranscriptReadyEvent {
   return {
     isFinal: true,
-    llmPostprocessRawText: null,
     pauseMsBeforeUtterance: null,
     processingDurationMs: 125,
     revision: 0,
@@ -65,20 +63,6 @@ function externalModelSelection() {
     kind: 'external_file',
     runtimeId: 'whisper_cpp',
   } as const;
-}
-
-function llmPostprocessConfig() {
-  return {
-    keepAlive: '30m',
-    model: 'llama3.2:latest',
-    noteContextChars: 3000,
-    priorUtterancesN: 2,
-    prompt: 'Clean it.',
-    showRawBelow: true,
-    skipMinWords: 4,
-    temperature: 0.2,
-    totalContextCap: 7000,
-  };
 }
 
 // Framing --------------------------------------------------------------------
@@ -258,24 +242,6 @@ describe('command serialization', () => {
     expect(payload.sessionId).toBe('session-gpu');
   });
 
-  it('serializes start_session with the llmPostprocess config nested verbatim', () => {
-    const command = createStartSessionCommand({
-      accelerationPreference: 'auto',
-      language: 'en',
-      llmPostprocess: llmPostprocessConfig(),
-      mode: 'always_on',
-      modelSelection: externalModelSelection(),
-      sessionStartUnixMs: 1_700_000_000_000,
-      sessionId: 'session-llm',
-      speakingStyle: 'balanced',
-    });
-
-    expect(readPayload(encodeJsonFrame(command))).toMatchObject({
-      llmPostprocess: llmPostprocessConfig(),
-      type: 'start_session',
-    });
-  });
-
   it('encodes session-addressed lifecycle commands with sessionId echoed in the payload', () => {
     expect(readPayload(encodeJsonFrame(createStopSessionCommand(SESSION_ID)))).toEqual({
       sessionId: SESSION_ID,
@@ -285,28 +251,12 @@ describe('command serialization', () => {
       sessionId: SESSION_ID,
       type: 'cancel_session',
     });
-    expect(
-      readPayload(
-        encodeJsonFrame(
-          createRunBatchCleanupCommand({
-            config: llmPostprocessConfig(),
-            noteContext: null,
-            sessionId: SESSION_ID,
-            transcriptText: 'raw',
-          }),
-        ),
-      ),
-    ).toMatchObject({
-      sessionId: SESSION_ID,
-      transcriptText: 'raw',
-      type: 'run_batch_cleanup',
-    });
   });
 
   it('serializes context_response carrying a context window or explicit null', () => {
     const window: ContextWindow = {
       budgetChars: 512,
-      sources: [{ kind: 'prior_utterance', text: 'hello', truncated: false }],
+      sources: [{ kind: 'note_glossary', text: 'hello', truncated: false }],
       text: 'hello',
       truncated: false,
     };

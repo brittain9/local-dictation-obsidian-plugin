@@ -209,6 +209,24 @@ export class LocalSttSettingTab extends PluginSettingTab {
     const timestampsCard = createSettingGroup(containerEl, 'Timestamps');
     this.renderTimestampSettings(timestampsCard, settings);
 
+    const llmCard = createSettingGroup(containerEl, 'LLM transformation');
+    const enableLlmSetting = new Setting(llmCard)
+      .setName('Enable LLM features')
+      .setDesc('Make LLM transformations available. Turn transformation on or off in the sidebar.');
+    enableLlmSetting.addToggle((toggle) => {
+      toggle.setValue(settings.llmFeaturesEnabled);
+      toggle.onChange(async (value) => {
+        await this.access.persistOne('llmFeaturesEnabled', value);
+        this.display();
+      });
+    });
+
+    addToggleSetting(llmCard, this.access, {
+      name: 'Enable remote LLM',
+      desc: 'Allow transcript text and included note context to be sent to OpenRouter. Audio is never sent.',
+      key: 'llmRemoteFeaturesEnabled',
+    });
+
     // --- Engine options ---
     // Built inline (rather than via createSettingGroup) so renderEngineOptions
     // can hide the whole card when no rows apply (e.g. macOS + a model with
@@ -240,17 +258,6 @@ export class LocalSttSettingTab extends PluginSettingTab {
       desc: 'Custom folder for managed model downloads.',
       key: 'modelStorePathOverride',
       placeholder: 'Use the shared default model store',
-    });
-
-    const enableLlmSetting = new Setting(advancedSection)
-      .setName('Enable LLM features')
-      .setDesc('Show the LLM transformation sidebar.');
-    enableLlmSetting.addToggle((toggle) => {
-      toggle.setValue(this.dependencies.getSettings().llmFeaturesEnabled);
-      toggle.onChange(async (value) => {
-        await this.access.persistOne('llmFeaturesEnabled', value);
-        this.display();
-      });
     });
 
     new Setting(advancedSection)

@@ -13,6 +13,7 @@ import {
   LLM_USER_PRESET_MAX_LABEL_CHARS,
   resetLlmPostprocessDefaults,
   resolvePluginSettings,
+  shouldRefreshLlmSidebar,
 } from '../src/settings/plugin-settings';
 
 const PROFESSIONAL_WRITING_PRESET = getLlmBuiltinPreset('professional-writing');
@@ -35,11 +36,12 @@ describe('resolvePluginSettings', () => {
     expect(resolvePluginSettings({}).schemaVersion).toBe(1);
   });
 
-  it('defaults LLM features off (opt-in) with per-utterance cleanup and the Clean up prompt', () => {
+  it('enables LLM capabilities but keeps transformation off by default', () => {
     expect(DEFAULT_PLUGIN_SETTINGS).toMatchObject({
-      llmFeaturesEnabled: false,
+      llmFeaturesEnabled: true,
+      llmRemoteFeaturesEnabled: true,
       llmPostprocessActivePresetRef: `builtin:${DEFAULT_LLM_BUILTIN_PRESET_ID}`,
-      llmPostprocessMode: 'per_utterance',
+      llmPostprocessMode: 'off',
       llmPostprocessPrompt: DEFAULT_LLM_POSTPROCESS_PROMPT,
       llmPostprocessUserPresets: [],
     });
@@ -53,8 +55,9 @@ describe('resolvePluginSettings', () => {
         dictationAnchor: 'end_of_note',
         listeningMode: 'always_on',
         llmFeaturesEnabled: false,
+        llmOpenRouterApiKey: ' openrouter-key ',
+        llmRemoteFeaturesEnabled: false,
         llmPostprocessMode: 'batch',
-        llmPostprocessModel: ' llama3.2:latest ',
         llmPostprocessNoteContextChars: 4000,
         llmPostprocessPriorUtterancesN: 3,
         llmPostprocessPrompt: 'Custom prompt.',
@@ -62,6 +65,12 @@ describe('resolvePluginSettings', () => {
         llmPostprocessSkipMinWords: 6,
         llmPostprocessTemperature: 0.4,
         llmPostprocessTotalContextCap: 9000,
+        llmProviderModels: {
+          ollama: ' llama3.2:latest ',
+          openrouter: ' anthropic/claude-sonnet-4.5 ',
+        },
+        llmRemoteThresholdChars: 8000,
+        llmRouting: 'auto',
         localTranscriptSidebarBootstrapped: true,
         modelStorePathOverride: ' /tmp/models ',
         selectedModel: {
@@ -89,9 +98,10 @@ describe('resolvePluginSettings', () => {
       dictationAnchor: 'end_of_note',
       listeningMode: 'always_on',
       llmFeaturesEnabled: false,
+      llmOpenRouterApiKey: 'openrouter-key',
+      llmRemoteFeaturesEnabled: false,
       llmPostprocessActivePresetRef: null,
       llmPostprocessMode: 'batch',
-      llmPostprocessModel: 'llama3.2:latest',
       llmPostprocessNoteContextChars: 4000,
       llmPostprocessPriorUtterancesN: 3,
       llmPostprocessPrompt: 'Custom prompt.',
@@ -99,6 +109,12 @@ describe('resolvePluginSettings', () => {
       llmPostprocessSkipMinWords: 6,
       llmPostprocessTemperature: 0.4,
       llmPostprocessTotalContextCap: 9000,
+      llmProviderModels: {
+        ollama: 'llama3.2:latest',
+        openrouter: 'anthropic/claude-sonnet-4.5',
+      },
+      llmRemoteThresholdChars: 8000,
+      llmRouting: 'auto',
       localTranscriptSidebarBootstrapped: true,
       modelStorePathOverride: '/tmp/models',
       selectedModel: {
@@ -145,9 +161,13 @@ describe('resolvePluginSettings', () => {
         dictationAnchor: 'at_end',
         listeningMode: 'unsupported',
         llmFeaturesEnabled: 'yes',
+        llmOpenRouterApiKey: 456,
+        llmRemoteFeaturesEnabled: 'yes',
         llmPostprocessMode: 'later',
-        llmPostprocessModel: 123,
         llmPostprocessPrompt: '',
+        llmProviderModels: 'llama3',
+        llmRemoteThresholdChars: 'soon',
+        llmRouting: 'claude',
         localTranscriptSidebarBootstrapped: 'yes',
         modelStorePathOverride: 42,
         sidecarPathOverride: 12,
@@ -211,6 +231,84 @@ describe('resolvePluginSettings', () => {
     expect(
       resolvePluginSettings({ timestampSparseIntervalMs: 999_999 }).timestampSparseIntervalMs,
     ).toBe(600_000);
+  });
+
+  it('defaults useLlmNoteContext to false', () => {
+    expect(DEFAULT_PLUGIN_SETTINGS.useLlmNoteContext).toBe(false);
+    expect(resolvePluginSettings({}).useLlmNoteContext).toBe(false);
+  });
+
+  it('accepts useLlmNoteContext when persisted as a boolean', () => {
+    expect(resolvePluginSettings({ useLlmNoteContext: true }).useLlmNoteContext).toBe(true);
+    expect(resolvePluginSettings({ useLlmNoteContext: false }).useLlmNoteContext).toBe(false);
+  });
+
+  it('refreshes the LLM sidebar when remote availability changes', () => {
+    expect(
+      shouldRefreshLlmSidebar(DEFAULT_PLUGIN_SETTINGS, {
+        ...DEFAULT_PLUGIN_SETTINGS,
+        llmRemoteFeaturesEnabled: false,
+      }),
+    ).toBe(true);
+    expect(
+      shouldRefreshLlmSidebar(DEFAULT_PLUGIN_SETTINGS, {
+        ...DEFAULT_PLUGIN_SETTINGS,
+        developerMode: true,
+      }),
+    ).toBe(false);
+  });
+
+  it('migrates the legacy single Ollama model into per-provider model storage', () => {
+    expect(
+      resolvePluginSettings({
+        llmPostprocessModel: ' llama3.2:latest ',
+      }),
+    ).toMatchObject({
+      llmProviderModels: {
+        ollama: 'llama3.2:latest',
+        openrouter: '',
+      },
+    });
+  });
+
+  it.each([
+    ['ollama maps to local', 'ollama', 'local'],
+    ['openrouter maps to remote', 'openrouter', 'remote'],
+    ['gemini maps to local', 'gemini', 'local'],
+  ] as const)('migrates legacy llmProvider %s', (_label, llmProvider, llmRouting) => {
+    expect(resolvePluginSettings({ llmProvider }).llmRouting).toBe(llmRouting);
+  });
+
+  it('prefers a valid llmRouting over a legacy llmProvider value', () => {
+    expect(resolvePluginSettings({ llmProvider: 'ollama', llmRouting: 'remote' }).llmRouting).toBe(
+      'remote',
+    );
+  });
+
+  it('drops the legacy gemini model and keeps ollama/openrouter', () => {
+    expect(
+      resolvePluginSettings({
+        llmProviderModels: {
+          gemini: 'gemini-2.5-flash',
+          ollama: 'new-ollama',
+          openrouter: 'openai/gpt-4.1',
+        },
+      }).llmProviderModels,
+    ).toEqual({
+      ollama: 'new-ollama',
+      openrouter: 'openai/gpt-4.1',
+    });
+  });
+
+  it('clamps the remote routing threshold at the settings boundary', () => {
+    expect(resolvePluginSettings({ llmRemoteThresholdChars: 1 }).llmRemoteThresholdChars).toBe(500);
+    expect(
+      resolvePluginSettings({ llmRemoteThresholdChars: 999_999 }).llmRemoteThresholdChars,
+    ).toBe(60_000);
+  });
+
+  it('falls back to the default when useLlmNoteContext is not a boolean', () => {
+    expect(resolvePluginSettings({ useLlmNoteContext: 'yes' }).useLlmNoteContext).toBe(false);
   });
 
   it('infers active style refs from the current prompt', () => {
@@ -396,14 +494,13 @@ describe('resolvePluginSettings', () => {
     expect(resolvePluginSettings(raw).audioInputDevice).toBeNull();
   });
 
-  it('resets editable LLM defaults without touching visibility, model, raw display, or styles', () => {
+  it('resets editable LLM defaults without touching visibility, provider models, raw display, or styles', () => {
     const presets = [makeUserPreset({ id: 'a', label: 'Keep me' })];
     const reset = resetLlmPostprocessDefaults({
       ...DEFAULT_PLUGIN_SETTINGS,
       llmFeaturesEnabled: false,
       llmPostprocessActivePresetRef: 'user:custom',
       llmPostprocessMode: 'batch',
-      llmPostprocessModel: 'llama3',
       llmPostprocessNoteContextChars: 333,
       llmPostprocessPriorUtterancesN: 3,
       llmPostprocessPrompt: 'changed',
@@ -412,16 +509,23 @@ describe('resolvePluginSettings', () => {
       llmPostprocessTemperature: 1,
       llmPostprocessTotalContextCap: 333,
       llmPostprocessUserPresets: presets,
+      llmProviderModels: {
+        ollama: 'llama3',
+        openrouter: 'openai/gpt-4.1',
+      },
     });
 
     expect(reset).toMatchObject({
       llmFeaturesEnabled: false,
       llmPostprocessActivePresetRef: `builtin:${DEFAULT_LLM_BUILTIN_PRESET_ID}`,
-      llmPostprocessMode: 'per_utterance',
-      llmPostprocessModel: 'llama3',
+      llmPostprocessMode: 'off',
       llmPostprocessPrompt: DEFAULT_PLUGIN_SETTINGS.llmPostprocessPrompt,
       llmPostprocessShowRawBelow: true,
       llmPostprocessUserPresets: presets,
+      llmProviderModels: {
+        ollama: 'llama3',
+        openrouter: 'openai/gpt-4.1',
+      },
     });
   });
 });

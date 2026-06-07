@@ -72,22 +72,11 @@ export type TimestampSource = (typeof TIMESTAMP_SOURCES)[number];
 export const TIMESTAMP_GRANULARITIES = ['segment', 'utterance', 'word'] as const;
 export type TimestampGranularity = (typeof TIMESTAMP_GRANULARITIES)[number];
 
-export type ContextWindowSource =
-  | {
-      kind: 'note_glossary';
-      text: string;
-      truncated: boolean;
-    }
-  | {
-      kind: 'note_text';
-      text: string;
-      truncated: boolean;
-    }
-  | {
-      kind: 'prior_utterance';
-      text: string;
-      truncated: boolean;
-    };
+export interface ContextWindowSource {
+  kind: 'note_glossary';
+  text: string;
+  truncated: boolean;
+}
 
 export interface ContextWindow {
   budgetChars: number;
@@ -115,22 +104,9 @@ interface EnvelopeBase<TType extends string> {
 
 export interface HealthCommand extends EnvelopeBase<'health'> {}
 
-export interface LlmPostprocessConfig {
-  keepAlive: string;
-  model: string;
-  noteContextChars: number;
-  priorUtterancesN: number;
-  prompt: string;
-  showRawBelow: boolean;
-  skipMinWords: number;
-  temperature: number;
-  totalContextCap: number;
-}
-
 export interface StartSessionCommand extends EnvelopeBase<'start_session'> {
   accelerationPreference: AccelerationPreference;
   language: 'en';
-  llmPostprocess?: LlmPostprocessConfig;
   mode: ListeningMode;
   modelSelection: SelectedModel;
   modelStorePathOverride?: string;
@@ -186,13 +162,6 @@ export interface CancelSessionCommand extends EnvelopeBase<'cancel_session'> {
   sessionId: string;
 }
 
-export interface RunBatchCleanupCommand extends EnvelopeBase<'run_batch_cleanup'> {
-  config: LlmPostprocessConfig;
-  noteContext: string | null;
-  sessionId: string;
-  transcriptText: string;
-}
-
 export interface ShutdownCommand extends EnvelopeBase<'shutdown'> {}
 
 export interface GetSystemInfoCommand extends EnvelopeBase<'get_system_info'> {}
@@ -209,7 +178,6 @@ export type SidecarCommand =
   | ListModelCatalogCommand
   | ProbeModelSelectionCommand
   | RemoveModelCommand
-  | RunBatchCleanupCommand
   | ShutdownCommand
   | StartSessionCommand
   | StopSessionCommand;
@@ -256,7 +224,6 @@ export interface SessionStateChangedEvent extends EnvelopeBase<'session_state_ch
 
 export interface TranscriptReadyEvent extends EnvelopeBase<'transcript_ready'> {
   isFinal: boolean;
-  llmPostprocessRawText: string | null;
   pauseMsBeforeUtterance: number | null;
   processingDurationMs: number;
   revision: number;
@@ -298,13 +265,6 @@ export interface SessionStoppedEvent extends EnvelopeBase<'session_stopped'> {
   sessionId: string;
 }
 
-export interface BatchCleanupReadyEvent extends EnvelopeBase<'batch_cleanup_ready'> {
-  cleanText: string;
-  rawText: string;
-  sessionId: string;
-  stageResults: StageOutcome[];
-}
-
 export interface ErrorEvent extends EnvelopeBase<'error'> {
   code: string;
   details?: string;
@@ -313,7 +273,6 @@ export interface ErrorEvent extends EnvelopeBase<'error'> {
 }
 
 export type SidecarEvent =
-  | BatchCleanupReadyEvent
   | ContextRequestEvent
   | ErrorEvent
   | HealthOkEvent
@@ -416,15 +375,6 @@ export function createCancelSessionCommand(sessionId: string): CancelSessionComm
   };
 }
 
-export function createRunBatchCleanupCommand(
-  payload: Omit<RunBatchCleanupCommand, 'type'>,
-): RunBatchCleanupCommand {
-  return {
-    ...createEnvelope('run_batch_cleanup'),
-    ...payload,
-  };
-}
-
 export function createShutdownCommand(): ShutdownCommand {
   return createEnvelope('shutdown');
 }
@@ -501,7 +451,6 @@ export interface AudioFrame {
 export type ParsedFrame<TEnvelope> = AudioFrame | JsonFrame<TEnvelope>;
 
 const SIDECAR_EVENT_TYPE_FLAGS = {
-  batch_cleanup_ready: 1,
   context_request: 1,
   error: 1,
   health_ok: 1,

@@ -1,23 +1,21 @@
 import { describe, expect, it } from 'vitest';
 
-import { enforceLlmContextCap } from '../src/dictation/dictation-session-controller';
-import type { ContextWindowSource } from '../src/sidecar/protocol';
+import {
+  enforceLlmContextCap,
+  type ProviderContextSource,
+} from '../src/dictation/dictation-session-controller';
 
 function source(
-  kind: ContextWindowSource['kind'],
+  kind: ProviderContextSource['kind'],
   text: string,
   truncated = false,
-): ContextWindowSource {
-  return { kind, text, truncated } as ContextWindowSource;
+): ProviderContextSource {
+  return { kind, text, truncated };
 }
 
 describe('enforceLlmContextCap', () => {
   it('leaves sources unchanged when total text already fits the cap', () => {
-    const sources = [
-      source('note_text', 'note'),
-      source('prior_utterance', 'prior'),
-      source('note_glossary', 'term'),
-    ];
+    const sources = [source('note_text', 'note'), source('prior_utterance', 'prior')];
 
     expect(enforceLlmContextCap(sources, 100)).toEqual(sources);
   });
@@ -36,10 +34,7 @@ describe('enforceLlmContextCap', () => {
 
   it('returns no sources when the cap is zero', () => {
     expect(
-      enforceLlmContextCap(
-        [source('note_glossary', 'terms'), source('prior_utterance', 'prior')],
-        0,
-      ),
+      enforceLlmContextCap([source('note_text', 'terms'), source('prior_utterance', 'prior')], 0),
     ).toEqual([]);
   });
 

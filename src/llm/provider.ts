@@ -1,0 +1,144 @@
+import type { PluginSettings } from '../settings/plugin-settings';
+import { OllamaProvider } from './ollama-provider';
+import { OpenRouterProvider } from './openrouter-provider';
+
+export const LLM_PROVIDER_IDS = ['ollama', 'openrouter'] as const;
+
+export type LlmProviderId = (typeof LLM_PROVIDER_IDS)[number];
+
+export const LLM_ROUTINGS = ['local', 'remote', 'auto'] as const;
+
+export type LlmRouting = (typeof LLM_ROUTINGS)[number];
+
+export function isLlmRouting(value: unknown): value is LlmRouting {
+  return typeof value === 'string' && (LLM_ROUTINGS as readonly string[]).includes(value);
+}
+
+export type ProviderErrorCode =
+  | 'auth_invalid'
+  | 'connection_failed'
+  | 'http_error'
+  | 'invalid_response'
+  | 'rate_limited'
+  | 'timeout'
+  | 'unknown_model';
+
+export type ProviderHealth =
+  | { kind: 'unknown' }
+  | { kind: 'unreachable' }
+  | { kind: 'auth_invalid' }
+  | { kind: 'rate_limited' }
+  | { kind: 'no_models' }
+  | { kind: 'ready'; modelCount: number };
+
+export interface ModelPricing {
+  /** USD per 1M prompt (input) tokens. */
+  input: number;
+  /** USD per 1M completion (output) tokens. */
+  output: number;
+}
+
+export interface ModelOption {
+  displayName: string;
+  id: string;
+  pricing?: ModelPricing;
+}
+
+export interface CleanupOptions {
+  abortSignal?: AbortSignal;
+  model: string;
+  prompt: string;
+  temperature: number;
+  userMessage: string;
+}
+
+export interface LlmProvider {
+  readonly id: LlmProviderId;
+  cleanup(options: CleanupOptions): Promise<string>;
+  listModels(): Promise<ModelOption[]>;
+  /** Best-effort warm-up; only local providers (Ollama) implement it. */
+  prewarmModel?(modelId: string): Promise<void>;
+  probe(): Promise<ProviderHealth>;
+}
+
+export type LlmProviderModels = Record<LlmProviderId, string>;
+
+export interface LlmCleanupFailure {
+  code: ProviderErrorCode;
+  message: string;
+  providerId: LlmProviderId;
+}
+
+export class ProviderError extends Error {
+  readonly responseText?: string;
+  readonly status?: number;
+
+  constructor(
+    message: string,
+    public readonly code: ProviderErrorCode,
+    options: { responseText?: string | undefined; status?: number | undefined } = {},
+  ) {
+    super(message);
+    this.name = 'ProviderError';
+    if (options.responseText !== undefined) {
+      this.responseText = options.responseText;
+    }
+    if (options.status !== undefined) {
+      this.status = options.status;
+    }
+  }
+}
+
+export function createProvider(providerId: LlmProviderId, settings: PluginSettings): LlmProvider {
+  switch (providerId) {
+    case 'ollama':
+      return new OllamaProvider();
+    case 'openrouter':
+      return new OpenRouterProvider({ apiKey: settings.llmOpenRouterApiKey });
+  }
+}
+
+export function getProviderModel(settings: PluginSettings, providerId: LlmProviderId): string {
+  return settings.llmProviderModels[providerId].trim();
+}
+
+export function withProviderModel(
+  settings: PluginSettings,
+  providerId: LlmProviderId,
+  model: string,
+): PluginSettings {
+  return {
+    ...settings,
+    llmProviderModels: {
+      ...settings.llmProviderModels,
+      [providerId]: model.trim(),
+    },
+  };
+}
+
+// Pure size-based routing: 'local' always picks Ollama, 'remote' always picks
+// OpenRouter, and 'auto' escalates to OpenRouter once the user message exceeds
+// the configured character threshold (local models choke on large contexts).
+export function selectRouteProviderId(
+  routing: LlmRouting,
+  userMessageChars: number,
+  thresholdChars: number,
+): LlmProviderId {
+  switch (routing) {
+    case 'local':
+      return 'ollama';
+    case 'remote':
+      return 'openrouter';
+    case 'auto':
+      return userMessageChars <= thresholdChars ? 'ollama' : 'openrouter';
+  }
+}
+
+export function formatLlmProviderName(providerId: LlmProviderId): string {
+  switch (providerId) {
+    case 'ollama':
+      return 'Ollama';
+    case 'openrouter':
+      return 'OpenRouter';
+  }
+}

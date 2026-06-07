@@ -9,7 +9,8 @@ import { DictationSessionController } from './dictation/dictation-session-contro
 import { dictationAnchorExtension } from './editor/dictation-anchor-extension';
 import { noteSurfaceUpdateListenerExtension } from './editor/note-surface';
 import { sessionProcessingExtension } from './editor/session-processing-extension';
-import { createOllamaClient } from './llm/ollama-client';
+import type { LlmCleanupFailure } from './llm/provider';
+import { createLlmRouter } from './llm/router';
 import { ManageModelsModal } from './models/manage-models-modal';
 import { ModelInstallManager } from './models/model-install-manager';
 import { Session } from './session/session';
@@ -18,6 +19,7 @@ import {
   DEFAULT_PLUGIN_SETTINGS,
   type PluginSettings,
   resolvePluginSettings,
+  shouldRefreshLlmSidebar,
 } from './settings/plugin-settings';
 import { LocalSttSettingTab } from './settings/settings-tab';
 import {
@@ -50,6 +52,8 @@ export default class LocalSttPlugin extends Plugin {
   private audioVisualizerTap: AudioVisualizerTap | null = null;
   private dictationController: DictationSessionController | null = null;
   private logger: PluginLogger = createPluginLogger(() => this.settings.developerMode);
+  private llmCleanupFailure: LlmCleanupFailure | null = null;
+  private readonly llmCleanupFailureSubscribers = new Set<() => void>();
   private modelInstallManager: ModelInstallManager | null = null;
   private ribbonController: DictationRibbonController | null = null;
   private settings: PluginSettings = DEFAULT_PLUGIN_SETTINGS;
@@ -75,7 +79,6 @@ export default class LocalSttPlugin extends Plugin {
       },
       visualizer: this.audioVisualizerTap,
     });
-    const ollamaClient = createOllamaClient();
     this.modelInstallManager = new ModelInstallManager({
       getSettings: () => this.settings,
       logger: this.logger,
@@ -95,13 +98,19 @@ export default class LocalSttPlugin extends Plugin {
       (leaf) =>
         new LocalDictationView(leaf, {
           getSettings: () => this.settings,
+          getLlmCleanupFailure: () => this.llmCleanupFailure,
           logger: this.logger,
           notice: (message) => {
             new Notice(message);
           },
-          ollamaClient,
           saveSettings: async (nextSettings) => {
             await this.updateSettings(nextSettings);
+          },
+          subscribeLlmCleanupFailure: (callback) => {
+            this.llmCleanupFailureSubscribers.add(callback);
+            return () => {
+              this.llmCleanupFailureSubscribers.delete(callback);
+            };
           },
         }),
     );
@@ -121,10 +130,22 @@ export default class LocalSttPlugin extends Plugin {
           rendererOptions,
           sessionId,
         }),
+      createLlmRouter: (settings) =>
+        createLlmRouter(settings, undefined, () => this.settings.llmRemoteFeaturesEnabled),
       getSettings: () => this.settings,
       logger: this.logger,
       notice: (message) => {
         new Notice(message);
+      },
+      onLlmCleanupFailure: (failure) => {
+        this.llmCleanupFailure = failure;
+        this.notifyLlmCleanupFailureSubscribers();
+      },
+      onLlmCleanupSuccess: () => {
+        if (this.llmCleanupFailure !== null) {
+          this.llmCleanupFailure = null;
+          this.notifyLlmCleanupFailureSubscribers();
+        }
       },
       onModelMissing: () => {
         void this.openModelPicker();
@@ -385,11 +406,25 @@ export default class LocalSttPlugin extends Plugin {
   }
 
   private async updateSettings(nextSettings: PluginSettings): Promise<void> {
-    const previousLlmFeaturesEnabled = this.settings.llmFeaturesEnabled;
+    const previousSettings = this.settings;
     this.settings = resolvePluginSettings(nextSettings);
     await this.saveData(this.settings);
-    if (previousLlmFeaturesEnabled !== this.settings.llmFeaturesEnabled) {
+    if (previousSettings.llmFeaturesEnabled !== this.settings.llmFeaturesEnabled) {
       await this.syncLocalDictationSidebar();
+      return;
+    }
+    if (shouldRefreshLlmSidebar(previousSettings, this.settings)) {
+      for (const leaf of this.app.workspace.getLeavesOfType(LOCAL_DICTATION_VIEW_TYPE)) {
+        if (leaf.view instanceof LocalDictationView) {
+          leaf.view.refresh();
+        }
+      }
+    }
+  }
+
+  private notifyLlmCleanupFailureSubscribers(): void {
+    for (const subscriber of this.llmCleanupFailureSubscribers) {
+      subscriber();
     }
   }
 
