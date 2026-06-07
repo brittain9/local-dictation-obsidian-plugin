@@ -157,19 +157,30 @@ export class LocalDictationView extends ItemView {
       this.lastEnabledMode = settings.llmPostprocessMode;
     }
 
-    const cleanupGroup = createSettingGroup(contentEl, 'LLM transformation', HEADING_TOOLTIP);
-
-    this.renderCleanupToggle(cleanupGroup, settings);
+    const headerGroup = createSettingGroup(contentEl, 'LLM transformation', HEADING_TOOLTIP);
+    this.renderCleanupToggle(headerGroup, settings);
 
     if (settings.llmPostprocessMode === 'off') {
+      headerGroup.createEl('p', {
+        cls: 'local-dictation-muted',
+        text: 'Raw Whisper text is inserted as-is. Turn on to clean, rewrite, or summarize the transcript with an LLM.',
+      });
       return;
     }
 
-    this.routingControls.render(cleanupGroup, settings);
-    this.renderRuntimeFailureBanner(cleanupGroup);
-    this.renderStylePicker(cleanupGroup, settings);
-    this.renderCleanupMode(cleanupGroup, settings);
-    this.renderUseNoteContextToggle(cleanupGroup, settings);
+    this.renderRuntimeFailureBanner(headerGroup);
+
+    const whereGroup = createSettingGroup(contentEl, 'Where it runs');
+    this.routingControls.render(whereGroup, settings);
+
+    const styleGroup = createSettingGroup(contentEl, 'Style');
+    this.renderStylePicker(styleGroup, settings);
+    this.renderCleanupMode(styleGroup, settings);
+    this.renderPromptEditor(styleGroup, settings);
+
+    const contextGroup = createSettingGroup(contentEl, 'Context');
+    this.renderUseNoteContextToggle(contextGroup, settings);
+    this.renderNoteContextChars(contextGroup, settings);
 
     const advanced = contentEl.createEl('details', { cls: 'local-dictation-advanced' });
     advanced.createEl('summary', { text: 'Advanced' });
@@ -178,9 +189,7 @@ export class LocalDictationView extends ItemView {
       this.advancedOpen = advanced.open;
     });
 
-    this.renderContextLimitsSection(advanced, settings);
-    this.renderCustomizeStyleSection(advanced, settings);
-    this.renderSkipSection(advanced, settings);
+    this.renderLimitsSection(advanced, settings);
     this.renderGenerationSection(advanced, settings);
     this.renderDiagnosticsSection(advanced, settings);
   }
@@ -189,7 +198,7 @@ export class LocalDictationView extends ItemView {
     const enabled = settings.llmPostprocessMode !== 'off';
     new Setting(parent)
       .setName('Transform')
-      .setDesc(enabled ? '' : 'Raw Whisper text is inserted directly.')
+      .setDesc('')
       .addToggle((toggle) => {
         toggle.setValue(enabled);
         toggle.onChange(async (value) => {
@@ -452,34 +461,40 @@ export class LocalDictationView extends ItemView {
       });
   }
 
-  private renderContextLimitsSection(parent: HTMLElement, settings: PluginSettings): void {
+  private renderPromptEditor(parent: HTMLElement, settings: PluginSettings): void {
+    this.addTextAreaSetting(
+      parent,
+      'Prompt',
+      'System prompt sent to the model.',
+      settings.llmPostprocessPrompt,
+      10,
+      (value) => {
+        this.schedulePromptSave(value);
+      },
+      'Instructions sent as the system prompt for the local LLM transform.',
+    );
+  }
+
+  private renderNoteContextChars(parent: HTMLElement, settings: PluginSettings): void {
+    if (!settings.useLlmNoteContext) {
+      return;
+    }
+    this.addNumberSetting(
+      parent,
+      'Note context chars',
+      'Chars of note text',
+      settings.llmPostprocessNoteContextChars,
+      (value) => this.saveField('llmPostprocessNoteContextChars', value, { rerender: false }),
+      'Characters of surrounding note text fed to the model as context.',
+    );
+  }
+
+  private renderLimitsSection(parent: HTMLElement, settings: PluginSettings): void {
     const items = createSettingGroup(
       parent,
-      'Context limits',
-      'Bounded slice of the open note and recent utterances fed to the model.',
+      'Limits',
+      'Bounds on the context fed to the model, plus a word floor for skipping the transform.',
     );
-
-    if (settings.useLlmNoteContext) {
-      this.addNumberSetting(
-        items,
-        'Note context chars',
-        'Chars of note text',
-        settings.llmPostprocessNoteContextChars,
-        (value) => this.saveField('llmPostprocessNoteContextChars', value, { rerender: false }),
-        'Characters of surrounding note text fed to the model as context.',
-      );
-    }
-
-    if (settings.llmPostprocessMode !== 'batch') {
-      this.addNumberSetting(
-        items,
-        'Prior utterances',
-        'Recent utterances kept',
-        settings.llmPostprocessPriorUtterancesN,
-        (value) => this.saveField('llmPostprocessPriorUtterancesN', value, { rerender: false }),
-        'Number of recent transcribed utterances included as conversation history.',
-      );
-    }
 
     this.addNumberSetting(
       items,
@@ -496,29 +511,18 @@ export class LocalDictationView extends ItemView {
         text: 'Large context windows can slow local models and reduce LLM transform quality.',
       });
     }
-  }
 
-  private renderCustomizeStyleSection(parent: HTMLElement, settings: PluginSettings): void {
-    const items = createSettingGroup(parent, 'Prompt');
-    this.addTextAreaSetting(
-      items,
-      'Prompt',
-      'System prompt sent to the model.',
-      settings.llmPostprocessPrompt,
-      10,
-      (value) => {
-        this.schedulePromptSave(value);
-      },
-      'Instructions sent as the system prompt for the local LLM transform.',
-    );
-  }
+    if (settings.llmPostprocessMode !== 'batch') {
+      this.addNumberSetting(
+        items,
+        'Prior utterances',
+        'Recent utterances kept',
+        settings.llmPostprocessPriorUtterancesN,
+        (value) => this.saveField('llmPostprocessPriorUtterancesN', value, { rerender: false }),
+        'Number of recent transcribed utterances included as conversation history.',
+      );
+    }
 
-  private renderSkipSection(parent: HTMLElement, settings: PluginSettings): void {
-    const items = createSettingGroup(
-      parent,
-      'Skip gates',
-      'Conditions that bypass the LLM so short utterances pass straight through to the note.',
-    );
     const override = activePresetOverride(settings, 'minWords');
     this.addNumberSetting(
       items,
