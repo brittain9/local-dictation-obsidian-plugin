@@ -767,6 +767,18 @@
   display: none;
 }
 
+/* --- OpenRouter model suggest secondary line ---------------------- */
+
+.local-dictation-suggest__primary {
+  display: block;
+}
+
+.local-dictation-suggest__secondary {
+  display: block;
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+}
+
 .local-stt-version-chip {
   margin-left: 0.55em;
   color: var(--text-muted);

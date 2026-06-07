@@ -256,7 +256,7 @@ describe('command serialization', () => {
   it('serializes context_response carrying a context window or explicit null', () => {
     const window: ContextWindow = {
       budgetChars: 512,
-      sources: [{ kind: 'prior_utterance', text: 'hello', truncated: false }],
+      sources: [{ kind: 'note_glossary', text: 'hello', truncated: false }],
       text: 'hello',
       truncated: false,
     };

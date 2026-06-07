@@ -1,5 +1,17 @@
 import { vi } from 'vitest';
 
+export abstract class AbstractInputSuggest<T> {
+  abstract getSuggestions(query: string): T[] | Promise<T[]>;
+  abstract renderSuggestion(value: T, el: HTMLElement): void;
+  abstract selectSuggestion(value: T, evt: MouseEvent | KeyboardEvent): void;
+  limit = 100;
+  setValue(_value: string): void {}
+  getValue(): string {
+    return '';
+  }
+  close(): void {}
+}
+
 export const Platform = {
   isMacOS: false,
   isWin: false,

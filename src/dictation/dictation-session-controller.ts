@@ -31,6 +31,12 @@ import { type SidecarConnection, SidecarError } from '../sidecar/sidecar-connect
 import { SidecarNotInstalledError } from '../sidecar/sidecar-paths';
 import type { TranscriptRenderOptions } from '../transcript/renderer';
 
+export interface ProviderContextSource {
+  kind: 'note_text' | 'prior_utterance';
+  text: string;
+  truncated: boolean;
+}
+
 export type DictationControllerState =
   | 'idle'
   | 'starting'
@@ -726,8 +732,8 @@ export class DictationSessionController {
     }
   }
 
-  private buildProviderCleanupContextSources(entry: ManagedSession): ContextWindowSource[] {
-    const sources: ContextWindowSource[] = [];
+  private buildProviderCleanupContextSources(entry: ManagedSession): ProviderContextSource[] {
+    const sources: ProviderContextSource[] = [];
 
     if (entry.snapshot.llmPostprocessNoteContextChars > 0) {
       const noteText = entry.session.readNoteText(entry.snapshot.llmPostprocessNoteContextChars);
@@ -807,9 +813,15 @@ export class DictationSessionController {
     void this.disposeAfterPendingWork(event.sessionId, entry);
   }
 
-  private async disposeAfterPendingWork(sessionId: string, entry: ManagedSession): Promise<void> {
+  private async drainPendingTranscriptWork(entry: ManagedSession): Promise<void> {
     while (entry.pendingTranscriptWork.size > 0) {
       await Promise.allSettled([...entry.pendingTranscriptWork]);
+    }
+  }
+
+  private async disposeAfterPendingWork(sessionId: string, entry: ManagedSession): Promise<void> {
+    if (entry.pendingTranscriptWork.size > 0) {
+      await this.drainPendingTranscriptWork(entry);
     }
     if (this.sessions.get(sessionId) === entry) {
       this.disposeLocalSession(sessionId);
@@ -817,6 +829,16 @@ export class DictationSessionController {
   }
 
   private async runBatchCleanup(sessionId: string, entry: ManagedSession): Promise<void> {
+    // The sidecar can emit the final transcript_ready and session_stopped in the
+    // same I/O chunk, so drain in-flight per-utterance accepts before reading the
+    // transcript — otherwise the batch rewrite would miss the last utterance(s).
+    if (entry.pendingTranscriptWork.size > 0) {
+      await this.drainPendingTranscriptWork(entry);
+      if (this.sessions.get(sessionId) !== entry) {
+        return;
+      }
+    }
+
     const transcriptText = entry.session.readCurrentSessionText();
 
     if (transcriptText.length === 0) {
@@ -1140,7 +1162,7 @@ function normalizeProviderError(error: unknown): ProviderError {
 }
 
 function renderProviderUserMessage(
-  sources: readonly ContextWindowSource[],
+  sources: readonly ProviderContextSource[],
   utterance: string,
 ): string {
   const noteContext = joinContextSources(sources, 'note_text');
@@ -1173,8 +1195,8 @@ function renderBatchProviderUserMessage(
 }
 
 function joinContextSources(
-  sources: readonly ContextWindowSource[],
-  kind: ContextWindowSource['kind'],
+  sources: readonly ProviderContextSource[],
+  kind: ProviderContextSource['kind'],
 ): string {
   return sources
     .filter((source) => source.kind === kind)
@@ -1206,9 +1228,9 @@ function toCaptureUiState(state: SessionState): DictationControllerState | null 
 }
 
 export function enforceLlmContextCap(
-  sources: ContextWindowSource[],
+  sources: ProviderContextSource[],
   totalContextCap: number,
-): ContextWindowSource[] {
+): ProviderContextSource[] {
   if (totalContextCap <= 0) {
     return [];
   }
@@ -1237,11 +1259,9 @@ export function enforceLlmContextCap(
     }
   }
 
-  return result.filter(
-    (source) => source.text.trim().length > 0 || source.kind === 'note_glossary',
-  );
+  return result.filter((source) => source.text.trim().length > 0);
 }
 
-function totalSourceChars(sources: readonly ContextWindowSource[]): number {
+function totalSourceChars(sources: readonly ProviderContextSource[]): number {
   return sources.reduce((sum, source) => sum + source.text.length, 0);
 }

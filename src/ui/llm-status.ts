@@ -20,25 +20,6 @@ export const INLINE_STATUS_PRESENTATION: Record<
   info: { icon: 'info', className: 'local-dictation-status--info' },
 };
 
-export function formatProviderHealth(health: ProviderHealth, providerId: LlmProviderId): string {
-  switch (health.kind) {
-    case 'unknown':
-      return 'Status unknown.';
-    case 'unreachable':
-      return providerId === 'ollama' ? 'Not running.' : 'Unreachable.';
-    case 'auth_invalid':
-      return 'API key rejected.';
-    case 'rate_limited':
-      return 'Rate limit hit.';
-    case 'no_models':
-      return providerId === 'ollama'
-        ? 'Running, but no chat models installed.'
-        : 'No usable models found.';
-    case 'ready':
-      return `Ready (${health.modelCount} model${health.modelCount === 1 ? '' : 's'}).`;
-  }
-}
-
 export function deriveInlineStatus(args: {
   health: ProviderHealth;
   models: ReadonlyArray<ModelOption>;

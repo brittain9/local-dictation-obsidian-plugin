@@ -79,6 +79,7 @@ export class LocalDictationView extends ItemView {
   ) {
     super(leaf);
     this.routingControls = new LlmRoutingControls({
+      app: this.app,
       getSettings: () => this.dependencies.getSettings(),
       logger: this.dependencies.logger,
       ...(this.dependencies.notice !== undefined ? { notice: this.dependencies.notice } : {}),

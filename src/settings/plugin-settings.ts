@@ -9,12 +9,7 @@ import {
   type LlmUserPreset,
   resolveStyleOption,
 } from '../llm/presets';
-import {
-  isLlmRouting,
-  type LlmProviderId,
-  type LlmProviderModels,
-  type LlmRouting,
-} from '../llm/provider';
+import { isLlmRouting, type LlmProviderModels, type LlmRouting } from '../llm/provider';
 import {
   isSelectedModel,
   normalizeSelectedModel,
@@ -535,10 +530,6 @@ export function isTimestampDensity(value: unknown): value is TimestampDensity {
 
 export function isListeningMode(value: unknown): value is ListeningMode {
   return typeof value === 'string' && (LISTENING_MODES as readonly string[]).includes(value);
-}
-
-export function isLlmProvider(value: unknown): value is LlmProviderId {
-  return value === 'ollama' || value === 'openrouter';
 }
 
 export { isLlmRouting };

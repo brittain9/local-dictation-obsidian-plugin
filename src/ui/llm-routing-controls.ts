@@ -1,4 +1,4 @@
-import { Notice, Setting, setIcon } from 'obsidian';
+import { AbstractInputSuggest, type App, Notice, Setting, setIcon } from 'obsidian';
 
 import {
   createProvider,
@@ -8,16 +8,16 @@ import {
   type LlmProviderId,
   type LlmRouting,
   type ModelOption,
-  ProviderError,
   type ProviderHealth,
   withProviderModel,
 } from '../llm/provider';
 import { isLlmRouting, type PluginSettings } from '../settings/plugin-settings';
 import type { PluginLogger } from '../shared/plugin-logger';
-import { findClosestModelId, providerHealthFromError } from './llm-provider-ui';
+import { providerHealthFromError } from './llm-provider-ui';
 import { deriveInlineStatus, INLINE_STATUS_PRESENTATION } from './llm-status';
 
 export interface LlmRoutingControlsDependencies {
+  app: App;
   getSettings: () => PluginSettings;
   logger?: PluginLogger | undefined;
   notice?: ((message: string) => void) | undefined;
@@ -36,8 +36,6 @@ const CHARS_PER_TOKEN = 4;
 const API_KEY_REFRESH_DEBOUNCE_MS = 500;
 
 interface ProviderState {
-  catalog: ModelOption[] | null;
-  checkMessage: string | null;
   health: ProviderHealth;
   models: ModelOption[];
   modelsLoaded: boolean;
@@ -45,12 +43,45 @@ interface ProviderState {
 
 function emptyProviderState(): ProviderState {
   return {
-    catalog: null,
-    checkMessage: null,
     health: { kind: 'unknown' },
     models: [],
     modelsLoaded: false,
   };
+}
+
+class OpenRouterModelSuggest extends AbstractInputSuggest<ModelOption> {
+  constructor(
+    app: App,
+    inputEl: HTMLInputElement | HTMLDivElement,
+    private readonly getCatalog: () => ModelOption[],
+    private readonly onChoose: (id: string) => void,
+  ) {
+    super(app, inputEl);
+  }
+
+  override getSuggestions(query: string): ModelOption[] {
+    const q = query.trim().toLowerCase();
+    const catalog = this.getCatalog();
+    if (q.length === 0) {
+      return catalog;
+    }
+    return catalog.filter(
+      (model) => model.id.toLowerCase().includes(q) || model.displayName.toLowerCase().includes(q),
+    );
+  }
+
+  override renderSuggestion(model: ModelOption, el: HTMLElement): void {
+    el.createSpan({ cls: 'local-dictation-suggest__primary', text: model.id });
+    if (model.displayName !== model.id) {
+      el.createSpan({ cls: 'local-dictation-suggest__secondary', text: model.displayName });
+    }
+  }
+
+  override selectSuggestion(model: ModelOption): void {
+    this.setValue(model.id);
+    this.onChoose(model.id);
+    this.close();
+  }
 }
 
 // Self-contained routing UI (Layout A): a segmented Local/Remote/Auto control
@@ -86,6 +117,9 @@ export class LlmRoutingControls {
     const settings = this.dependencies.getSettings();
     if (settings.llmRouting === 'local' || settings.llmRouting === 'auto') {
       void this.refreshModels('ollama', { silent: true });
+    }
+    if (settings.llmRouting === 'remote' || settings.llmRouting === 'auto') {
+      void this.refreshModels('openrouter', { silent: true });
     }
   }
 
@@ -259,26 +293,37 @@ export class LlmRoutingControls {
     const selectedModel = getProviderModel(settings, 'openrouter');
     new Setting(parent)
       .setName('OpenRouter model')
-      .setDesc(state.checkMessage ?? 'Enter an OpenRouter model id.')
+      .setDesc('Type to search OpenRouter models.')
       .addText((text) => {
         text.setPlaceholder('anthropic/claude-sonnet-4.5');
         text.setValue(selectedModel);
         this.onModelInput?.(text.inputEl);
+        // Constructing the suggest registers it with the input; AbstractInputSuggest
+        // owns its own popover lifecycle, so we keep no handle.
+        new OpenRouterModelSuggest(
+          this.dependencies.app,
+          text.inputEl,
+          () => this.providers.openrouter.models,
+          async (id) => {
+            await this.dependencies.persist(
+              withProviderModel(this.dependencies.getSettings(), 'openrouter', id),
+              { rerender: false },
+            );
+          },
+        );
         text.onChange(async (value) => {
-          state.checkMessage = null;
           await this.dependencies.persist(
             withProviderModel(this.dependencies.getSettings(), 'openrouter', value),
             { rerender: false },
           );
         });
-      })
-      .addButton((button) => {
-        button.setButtonText('Check').onClick(() => {
-          void this.checkOpenRouterModel();
-        });
       });
 
     this.renderStatusRow(parent, settings, 'openrouter');
+
+    if (!state.modelsLoaded && this.modelsRefreshInFlight.openrouter !== true) {
+      void this.refreshModels('openrouter', { silent: true });
+    }
   }
 
   private renderStatusRow(
@@ -369,42 +414,6 @@ export class LlmRoutingControls {
     } finally {
       state.modelsLoaded = true;
       this.modelsRefreshInFlight[providerId] = false;
-    }
-
-    this.dependencies.requestRerender();
-  }
-
-  private async checkOpenRouterModel(): Promise<void> {
-    const settings = this.dependencies.getSettings();
-    const state = this.providers.openrouter;
-    const selectedModel = getProviderModel(settings, 'openrouter');
-    if (selectedModel.length === 0) {
-      state.checkMessage = 'Enter a model id first.';
-      this.dependencies.requestRerender();
-      return;
-    }
-
-    try {
-      const catalog = state.catalog ?? (await createProvider('openrouter', settings).listModels());
-      state.catalog = catalog;
-      state.models = catalog;
-      state.modelsLoaded = true;
-      state.health =
-        catalog.length === 0
-          ? { kind: 'no_models' }
-          : { kind: 'ready', modelCount: catalog.length };
-      if (catalog.some((model) => model.id === selectedModel)) {
-        state.checkMessage = 'Model verified.';
-      } else {
-        const suggestion = findClosestModelId(selectedModel, catalog);
-        state.checkMessage =
-          suggestion === null ? 'Unknown model.' : `Unknown model. Did you mean ${suggestion}?`;
-      }
-    } catch (error) {
-      state.health = providerHealthFromError(error);
-      state.checkMessage =
-        error instanceof ProviderError ? error.message : 'Could not check model.';
-      this.dependencies.logger?.warn('llm', 'OpenRouter model check failed', error);
     }
 
     this.dependencies.requestRerender();

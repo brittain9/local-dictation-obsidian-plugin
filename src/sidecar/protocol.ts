@@ -72,22 +72,11 @@ export type TimestampSource = (typeof TIMESTAMP_SOURCES)[number];
 export const TIMESTAMP_GRANULARITIES = ['segment', 'utterance', 'word'] as const;
 export type TimestampGranularity = (typeof TIMESTAMP_GRANULARITIES)[number];
 
-export type ContextWindowSource =
-  | {
-      kind: 'note_glossary';
-      text: string;
-      truncated: boolean;
-    }
-  | {
-      kind: 'note_text';
-      text: string;
-      truncated: boolean;
-    }
-  | {
-      kind: 'prior_utterance';
-      text: string;
-      truncated: boolean;
-    };
+export interface ContextWindowSource {
+  kind: 'note_glossary';
+  text: string;
+  truncated: boolean;
+}
 
 export interface ContextWindow {
   budgetChars: number;

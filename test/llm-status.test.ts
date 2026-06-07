@@ -1,27 +1,9 @@
 import { describe, expect, it } from 'vitest';
 
 import type { ModelOption } from '../src/llm/provider';
-import { deriveInlineStatus, formatProviderHealth } from '../src/ui/llm-status';
+import { deriveInlineStatus } from '../src/ui/llm-status';
 
 const models = (...ids: string[]): ModelOption[] => ids.map((id) => ({ displayName: id, id }));
-
-describe('formatProviderHealth', () => {
-  it('formats each health kind', () => {
-    expect(formatProviderHealth({ kind: 'unknown' }, 'ollama')).toBe('Status unknown.');
-    expect(formatProviderHealth({ kind: 'unreachable' }, 'ollama')).toBe('Not running.');
-    expect(formatProviderHealth({ kind: 'auth_invalid' }, 'openrouter')).toBe('API key rejected.');
-    expect(formatProviderHealth({ kind: 'rate_limited' }, 'openrouter')).toBe('Rate limit hit.');
-    expect(formatProviderHealth({ kind: 'no_models' }, 'ollama')).toBe(
-      'Running, but no chat models installed.',
-    );
-    expect(formatProviderHealth({ kind: 'ready', modelCount: 1 }, 'ollama')).toBe(
-      'Ready (1 model).',
-    );
-    expect(formatProviderHealth({ kind: 'ready', modelCount: 3 }, 'ollama')).toBe(
-      'Ready (3 models).',
-    );
-  });
-});
 
 describe('deriveInlineStatus', () => {
   it('asks for a model while health is unknown and no model is selected', () => {

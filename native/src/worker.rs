@@ -16,11 +16,11 @@ use crate::engine::capabilities::{
 use crate::engine::registry::{EngineRegistry, apply_capability_gates, missing_adapter_error};
 use crate::engine::traits::LoadedModel;
 use crate::panic_util::format_panic_message;
-use crate::protocol::{
-    ContextWindow, EngineStagePayload, StageId, StageOutcome, StageStatus,
-};
+use crate::protocol::{ContextWindow, EngineStagePayload, StageId, StageOutcome, StageStatus};
 use crate::session::FinalizedUtterance;
-use crate::stages::{StageContext, StageEnablement, StageProcessor, post_engine_processors, run_post_engine};
+use crate::stages::{
+    StageContext, StageEnablement, StageProcessor, post_engine_processors, run_post_engine,
+};
 use crate::transcription::{
     EngineTranscriptOutput, GpuConfig, Transcript, TranscriptionError, TranscriptionRequest,
 };
@@ -355,7 +355,6 @@ fn assemble_transcript(input: TranscriptAssembly<'_>) -> Transcript {
 
     transcript
 }
-
 
 #[cfg(test)]
 mod tests {

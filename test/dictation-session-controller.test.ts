@@ -395,6 +395,48 @@ describe('DictationSessionController', () => {
     expect(sessions[0]?.dispose).toHaveBeenCalledTimes(1);
   });
 
+  it('drains pending utterance accepts before the batch read when stop arrives in the same turn', async () => {
+    const sidecarConnection = new FakeSidecarConnection();
+    const sessions: FakeSession[] = [];
+    const cleanup = vi.fn(
+      async (): Promise<LlmRouterCleanupResult> => ({
+        model: 'm',
+        providerId: 'ollama',
+        text: 'Clean batch.',
+      }),
+    );
+    const controller = createController({
+      createSession: (session) => {
+        sessions.push(session);
+      },
+      getSettings: () =>
+        createSettings({
+          llmFeaturesEnabled: true,
+          llmPostprocessMode: 'batch',
+          selectedModel: createExternalModelSelection(),
+        }),
+      llmRouter: createFakeLlmRouter({ cleanup }),
+      sidecarConnection,
+    });
+
+    await controller.startDictation();
+    const sessionId = sidecarConnection.startSession.mock.calls[0]?.[0].sessionId ?? '';
+
+    // The sidecar delivers the final transcript_ready and session_stopped in one
+    // I/O chunk; emit them in the same synchronous turn (no await between) so the
+    // batch read must wait for the last utterance's accept to land.
+    sidecarConnection.emit(transcriptReady(sessionId, 'final utterance'));
+    sidecarConnection.emit({ reason: 'user_stop', sessionId, type: 'session_stopped' });
+
+    await vi.waitFor(() => {
+      expect(cleanup).toHaveBeenCalledWith(
+        expect.objectContaining({
+          userMessage: '<session_transcript>\nfinal utterance\n</session_transcript>',
+        }),
+      );
+    });
+  });
+
   it('keeps raw transcript when a batch cleanup fails and reports it', async () => {
     const sidecarConnection = new FakeSidecarConnection();
     const sessions: FakeSession[] = [];
@@ -469,11 +511,16 @@ describe('DictationSessionController', () => {
     await controller.startDictation();
     const sessionId = sidecarConnection.startSession.mock.calls[0]?.[0].sessionId ?? '';
     sidecarConnection.emit(transcriptReady(sessionId, 'raw transcript'));
+    await vi.waitFor(() => {
+      expect(sessions[0]?.acceptTranscript).toHaveBeenCalled();
+    });
     await controller.stopDictation();
     const session = sessions[0];
     if (session === undefined) {
       throw new Error('expected session fixture');
     }
+    // The utterance has landed; now simulate the note closing so the batch read
+    // comes back empty.
     session.currentSessionText = '';
     sidecarConnection.emit({ reason: 'user_stop', sessionId, type: 'session_stopped' });
 
@@ -609,6 +656,9 @@ describe('DictationSessionController', () => {
       throw new Error('expected session fixture');
     }
     sidecarConnection.emit(transcriptReady(sessionId, 'raw transcript'));
+    await vi.waitFor(() => {
+      expect(session.acceptTranscript).toHaveBeenCalled();
+    });
     await controller.stopDictation();
 
     session.setAnchorMode.mockClear();

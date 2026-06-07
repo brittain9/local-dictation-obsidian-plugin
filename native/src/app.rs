@@ -16,9 +16,8 @@ use crate::model_store::{
 };
 use crate::protocol::{
     AccelerationPreference, AudioFrame, Command, CompiledAdapterInfo, CompiledRuntimeInfo,
-    ContextWindow, Event, HealthStatus, ListeningMode, ModelInstallState,
-    ModelProbeStatus, QueueBackpressureTier, SelectedModel, SessionState, SessionStopReason,
-    system_info_string,
+    ContextWindow, Event, HealthStatus, ListeningMode, ModelInstallState, ModelProbeStatus,
+    QueueBackpressureTier, SelectedModel, SessionState, SessionStopReason, system_info_string,
 };
 use crate::session::{
     FinalizedUtterance, ListeningSession, SessionAction, SessionBaseState, SessionConfig,
@@ -1229,7 +1228,6 @@ fn resolved_model_supports_initial_prompt(
         .adapter(runtime_id, family_id)
         .is_some_and(|adapter| adapter.capabilities().supports_initial_prompt)
 }
-
 
 fn context_source_chars(window: &ContextWindow) -> usize {
     window

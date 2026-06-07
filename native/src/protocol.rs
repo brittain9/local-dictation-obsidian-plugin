@@ -225,7 +225,6 @@ pub struct ContextWindow {
     pub truncated: bool,
 }
 
-
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CompiledRuntimeInfo {
@@ -600,8 +599,8 @@ mod tests {
         AUDIO_FRAME_KIND, AccelerationPreference, AudioFrame, Command, Event, EventEnvelope,
         FRAME_HEADER_LENGTH, IncomingFrame, JSON_FRAME_KIND, ListeningMode, MAX_FRAME_PAYLOAD,
         ModelInstallState, ModelProbeStatus, PCM_BYTES_PER_FRAME, QueueBackpressureTier,
-        SelectedModel, SessionStopReason, SpeakingStyle, encode_audio_frame_envelope,
-        read_frame, write_event_frame, write_frame,
+        SelectedModel, SessionStopReason, SpeakingStyle, encode_audio_frame_envelope, read_frame,
+        write_event_frame, write_frame,
     };
     use crate::engine::capabilities::{ModelFamilyId, RuntimeId};
     use uuid::Uuid;
