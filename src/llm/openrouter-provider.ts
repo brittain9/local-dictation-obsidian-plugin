@@ -127,6 +127,13 @@ function parseModels(response: unknown): ModelOption[] {
         return null;
       }
 
+      // OpenRouter lists "~author/...-latest" alias entries that redirect to the
+      // newest model in a family, but they expose no servable endpoints and 404 on
+      // chat/completions, so they must never appear in the picker.
+      if (entry.id.startsWith('~')) {
+        return null;
+      }
+
       // The transform only sends and expects text, so drop models that emit audio
       // or images (e.g. TTS / image generation).
       if (!isTextModel(entry)) {

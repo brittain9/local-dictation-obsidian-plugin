@@ -98,6 +98,13 @@ describe('OpenRouterProvider', () => {
           },
           // No architecture data: kept rather than hidden.
           { id: 'a/model' },
+          // "~...-latest" alias: redirects to the newest model but exposes no
+          // endpoints, so it is dropped even though it looks like a text model.
+          {
+            id: '~b/model-latest',
+            name: 'Bee Latest',
+            architecture: { input_modalities: ['text'], output_modalities: ['text'] },
+          },
           // Vision chat: image input but text output -> kept.
           {
             id: 'm/vision',
