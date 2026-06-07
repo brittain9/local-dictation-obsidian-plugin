@@ -177,8 +177,6 @@ export class LlmRoutingControls {
 
   private renderSegmentedControl(parent: HTMLElement, settings: PluginSettings): void {
     const field = parent.createDiv({ cls: 'local-dictation-route-field' });
-    field.createDiv({ cls: 'local-dictation-route-field__label', text: 'Where transforms run' });
-
     const segmented = field.createDiv({ cls: 'local-dictation-segmented' });
     segmented.setAttribute('role', 'group');
     for (const segment of ROUTING_SEGMENTS) {
