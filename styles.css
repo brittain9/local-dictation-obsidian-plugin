@@ -769,14 +769,41 @@
 
 /* --- OpenRouter model suggest secondary line ---------------------- */
 
+.local-dictation-suggest__top {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--size-4-2);
+}
+
 .local-dictation-suggest__primary {
-  display: block;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .local-dictation-suggest__secondary {
   display: block;
   color: var(--text-muted);
   font-size: var(--font-ui-smaller);
+}
+
+.local-dictation-price {
+  flex-shrink: 0;
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.03em;
+}
+
+.local-dictation-price--free {
+  color: var(--text-success, #2e8b57);
+}
+
+.local-dictation-price--premium {
+  color: var(--text-warning, var(--color-orange));
 }
 
 .local-stt-version-chip {

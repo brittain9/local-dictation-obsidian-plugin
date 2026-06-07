@@ -1,9 +1,30 @@
 import {
   formatLlmProviderName,
   type LlmCleanupFailure,
+  type ModelPricing,
   ProviderError,
   type ProviderHealth,
 } from '../llm/provider';
+
+export type PriceTier = 'free' | '$' | '$$' | '$$$' | '$$$$';
+
+// Restaurant-style price tier from a model's pricing, using the industry-standard
+// 3:1 input:output blended cost (Artificial Analysis convention). Output is the
+// pricier rate but input dominates token volume, so 3:1 reflects typical spend.
+// Returns null when pricing is unknown so callers omit the tag.
+export function priceTier(pricing: ModelPricing | undefined): PriceTier | null {
+  if (pricing === undefined) {
+    return null;
+  }
+  if (pricing.input === 0 && pricing.output === 0) {
+    return 'free';
+  }
+  const blendedPerMillion = (3 * pricing.input + pricing.output) / 4;
+  if (blendedPerMillion <= 1) return '$';
+  if (blendedPerMillion <= 15) return '$$';
+  if (blendedPerMillion <= 40) return '$$$';
+  return '$$$$';
+}
 
 export function providerHealthFromError(error: unknown): ProviderHealth {
   if (!(error instanceof ProviderError)) {

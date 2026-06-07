@@ -48,10 +48,13 @@ describe('OpenRouterProvider', () => {
     });
   });
 
-  it('lists models from the catalog response', async () => {
+  it('lists models from the catalog response and parses pricing', async () => {
     mockFetch(async () =>
       jsonResponse({
-        data: [{ id: 'z/model', name: 'Zed' }, { id: 'a/model' }],
+        data: [
+          { id: 'z/model', name: 'Zed', pricing: { completion: '0.000015', prompt: '0.000003' } },
+          { id: 'a/model' },
+        ],
       }),
     );
 
@@ -62,7 +65,7 @@ describe('OpenRouterProvider', () => {
       }).listModels(),
     ).resolves.toEqual([
       { displayName: 'a/model', id: 'a/model' },
-      { displayName: 'Zed', id: 'z/model' },
+      { displayName: 'Zed', id: 'z/model', pricing: { input: 3, output: 15 } },
     ]);
   });
 

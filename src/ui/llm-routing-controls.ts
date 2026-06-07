@@ -13,7 +13,7 @@ import {
 } from '../llm/provider';
 import { isLlmRouting, type PluginSettings } from '../settings/plugin-settings';
 import type { PluginLogger } from '../shared/plugin-logger';
-import { providerHealthFromError } from './llm-provider-ui';
+import { priceTier, providerHealthFromError } from './llm-provider-ui';
 import { deriveInlineStatus, INLINE_STATUS_PRESENTATION } from './llm-status';
 
 export interface LlmRoutingControlsDependencies {
@@ -71,7 +71,23 @@ class OpenRouterModelSuggest extends AbstractInputSuggest<ModelOption> {
   }
 
   override renderSuggestion(model: ModelOption, el: HTMLElement): void {
-    el.createSpan({ cls: 'local-dictation-suggest__primary', text: model.id });
+    const top = el.createDiv({ cls: 'local-dictation-suggest__top' });
+    top.createSpan({ cls: 'local-dictation-suggest__primary', text: model.id });
+
+    const tier = priceTier(model.pricing);
+    if (tier !== null) {
+      const pill = top.createSpan({
+        cls: 'local-dictation-price',
+        text: tier === 'free' ? 'Free' : tier,
+      });
+      pill.setAttribute('title', 'Approximate price tier');
+      if (tier === 'free') {
+        pill.addClass('local-dictation-price--free');
+      } else if (tier === '$$$' || tier === '$$$$') {
+        pill.addClass('local-dictation-price--premium');
+      }
+    }
+
     if (model.displayName !== model.id) {
       el.createSpan({ cls: 'local-dictation-suggest__secondary', text: model.displayName });
     }

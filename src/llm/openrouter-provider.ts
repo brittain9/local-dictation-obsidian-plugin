@@ -1,6 +1,12 @@
 import { isRecord } from '../shared/type-guards';
 import { fetchJson, PROBE_TIMEOUT_MS } from './http-shared';
-import type { CleanupOptions, LlmProvider, ModelOption, ProviderHealth } from './provider';
+import type {
+  CleanupOptions,
+  LlmProvider,
+  ModelOption,
+  ModelPricing,
+  ProviderHealth,
+} from './provider';
 import { ProviderError } from './provider';
 
 const OPENROUTER_API_BASE_URL = 'https://openrouter.ai/api/v1';
@@ -117,13 +123,39 @@ function parseModels(response: unknown): ModelOption[] {
         throw new ProviderError('OpenRouter returned an invalid model entry.', 'invalid_response');
       }
 
+      const pricing = parsePricing(entry.pricing);
       return {
         displayName:
           typeof entry.name === 'string' && entry.name.length > 0 ? entry.name : entry.id,
         id: entry.id,
+        ...(pricing !== null ? { pricing } : {}),
       };
     })
     .sort((left, right) => left.displayName.localeCompare(right.displayName));
+}
+
+// OpenRouter prices are USD per token; convert to per-1M-token figures for the
+// price-tier badge. Returns null when prompt/completion pricing is absent or
+// malformed so the UI omits the tag rather than implying "free".
+function parsePricing(value: unknown): ModelPricing | null {
+  if (!isRecord(value)) {
+    return null;
+  }
+  const input = toPerMillionUsd(value.prompt);
+  const output = toPerMillionUsd(value.completion);
+  if (input === null || output === null) {
+    return null;
+  }
+  return { input, output };
+}
+
+function toPerMillionUsd(raw: unknown): number | null {
+  const perToken =
+    typeof raw === 'number' ? raw : typeof raw === 'string' ? Number.parseFloat(raw) : Number.NaN;
+  if (!Number.isFinite(perToken) || perToken < 0) {
+    return null;
+  }
+  return perToken * 1_000_000;
 }
 
 function parseChatContent(response: unknown): string {

@@ -31,9 +31,17 @@ export type ProviderHealth =
   | { kind: 'no_models' }
   | { kind: 'ready'; modelCount: number };
 
+export interface ModelPricing {
+  /** USD per 1M prompt (input) tokens. */
+  input: number;
+  /** USD per 1M completion (output) tokens. */
+  output: number;
+}
+
 export interface ModelOption {
   displayName: string;
   id: string;
+  pricing?: ModelPricing;
 }
 
 export interface CleanupOptions {
