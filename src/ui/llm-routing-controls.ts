@@ -294,7 +294,7 @@ export class LlmRoutingControls {
         button.extraSettingsEl.setAttribute('aria-label', `Refresh ${providerName} models`);
       });
 
-    this.renderStatusRow(parent, settings, providerId);
+    this.renderStatusRow(parent, providerId);
 
     this.warmModels(providerId);
   }
@@ -321,6 +321,9 @@ export class LlmRoutingControls {
 
   private renderOpenRouterModel(parent: HTMLElement, settings: PluginSettings): void {
     const selectedModel = getProviderModel(settings, 'openrouter');
+    // Assigned once the status row exists; the input handlers below call it after
+    // each edit so the status tracks the model without a focus-stealing re-render.
+    let refreshStatus: () => void = () => {};
     new Setting(parent)
       .setName('OpenRouter model')
       .setDesc('Type to search OpenRouter models.')
@@ -339,6 +342,7 @@ export class LlmRoutingControls {
               withProviderModel(this.dependencies.getSettings(), 'openrouter', id),
               { rerender: false },
             );
+            refreshStatus();
           },
         );
         text.onChange(async (value) => {
@@ -346,34 +350,42 @@ export class LlmRoutingControls {
             withProviderModel(this.dependencies.getSettings(), 'openrouter', value),
             { rerender: false },
           );
+          refreshStatus();
         });
       });
 
-    this.renderStatusRow(parent, settings, 'openrouter');
+    refreshStatus = this.renderStatusRow(parent, 'openrouter');
 
     this.warmModels('openrouter');
   }
 
-  private renderStatusRow(
-    parent: HTMLElement,
-    settings: PluginSettings,
-    providerId: LlmProviderId,
-  ): void {
-    const state = this.providers[providerId];
-    const status = deriveInlineStatus({
-      health: state.health,
-      models: state.modelsLoaded ? state.models : [],
-      providerId,
-      selectedModel: getProviderModel(settings, providerId),
-    });
-    if (status === null) {
-      return;
-    }
-    const { className, icon } = INLINE_STATUS_PRESENTATION[status.variant];
-    const row = parent.createDiv({ cls: `local-dictation-status ${className}` });
-    const iconEl = row.createSpan({ cls: 'local-dictation-status__icon' });
-    setIcon(iconEl, icon);
-    row.createSpan({ cls: 'local-dictation-status__text', text: status.text });
+  // Render the inline status line and return a callback that re-derives it in
+  // place. The OpenRouter model field persists with `rerender: false`, so it uses
+  // this to keep the status in sync with the selected model instead of relying on
+  // a full settings re-render (which would steal focus from the text input).
+  private renderStatusRow(parent: HTMLElement, providerId: LlmProviderId): () => void {
+    const row = parent.createDiv();
+    const update = (): void => {
+      row.empty();
+      const state = this.providers[providerId];
+      const status = deriveInlineStatus({
+        health: state.health,
+        models: state.modelsLoaded ? state.models : [],
+        providerId,
+        selectedModel: getProviderModel(this.dependencies.getSettings(), providerId),
+      });
+      if (status === null) {
+        row.className = '';
+        return;
+      }
+      const { className, icon } = INLINE_STATUS_PRESENTATION[status.variant];
+      row.className = `local-dictation-status ${className}`;
+      const iconEl = row.createSpan({ cls: 'local-dictation-status__icon' });
+      setIcon(iconEl, icon);
+      row.createSpan({ cls: 'local-dictation-status__text', text: status.text });
+    };
+    update();
+    return update;
   }
 
   private prewarm(providerId: LlmProviderId, modelId: string): void {
