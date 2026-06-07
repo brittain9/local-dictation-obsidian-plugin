@@ -9,7 +9,12 @@ import {
   type LlmUserPreset,
   resolveStyleOption,
 } from '../llm/presets';
-import type { LlmProviderId, LlmProviderModels } from '../llm/provider';
+import {
+  isLlmRouting,
+  type LlmProviderId,
+  type LlmProviderModels,
+  type LlmRouting,
+} from '../llm/provider';
 import {
   isSelectedModel,
   normalizeSelectedModel,
@@ -71,6 +76,10 @@ export const DEFAULT_LLM_POSTPROCESS_SKIP = {
   minWords: 4,
 } as const;
 
+export const DEFAULT_LLM_REMOTE_THRESHOLD_CHARS = 6_000;
+export const MIN_LLM_REMOTE_THRESHOLD_CHARS = 500;
+export const MAX_LLM_REMOTE_THRESHOLD_CHARS = 60_000;
+
 export const LLM_USER_PRESET_MAX_LABEL_CHARS = 60;
 export const LLM_USER_PRESET_MAX_DESCRIPTION_CHARS = 240;
 export const LLM_USER_PRESET_MAX_COUNT = 25;
@@ -88,7 +97,6 @@ export interface PluginSettings {
   dictationAnchor: DictationAnchor;
   listeningMode: ListeningMode;
   llmFeaturesEnabled: boolean;
-  llmGeminiApiKey: string;
   llmOpenRouterApiKey: string;
   llmPostprocessActivePresetRef: string | null;
   llmPostprocessMode: LlmPostprocessMode;
@@ -100,8 +108,9 @@ export interface PluginSettings {
   llmPostprocessTemperature: number;
   llmPostprocessTotalContextCap: number;
   llmPostprocessUserPresets: LlmUserPreset[];
-  llmProvider: LlmProviderId;
   llmProviderModels: LlmProviderModels;
+  llmRemoteThresholdChars: number;
+  llmRouting: LlmRouting;
   localTranscriptSidebarBootstrapped: boolean;
   modelStorePathOverride: string;
   schemaVersion: 1;
@@ -129,7 +138,6 @@ export const DEFAULT_PLUGIN_SETTINGS: PluginSettings = {
   dictationAnchor: 'at_cursor',
   listeningMode: 'always_on',
   llmFeaturesEnabled: false,
-  llmGeminiApiKey: '',
   llmOpenRouterApiKey: '',
   llmPostprocessActivePresetRef: DEFAULT_LLM_ACTIVE_PRESET_REF,
   llmPostprocessMode: 'per_utterance',
@@ -141,12 +149,12 @@ export const DEFAULT_PLUGIN_SETTINGS: PluginSettings = {
   llmPostprocessTemperature: DEFAULT_LLM_POSTPROCESS_GENERATION.temperature,
   llmPostprocessTotalContextCap: DEFAULT_LLM_POSTPROCESS_CONTEXT.totalContextCap,
   llmPostprocessUserPresets: [],
-  llmProvider: 'ollama',
   llmProviderModels: {
-    gemini: '',
     ollama: '',
     openrouter: '',
   },
+  llmRemoteThresholdChars: DEFAULT_LLM_REMOTE_THRESHOLD_CHARS,
+  llmRouting: 'local',
   localTranscriptSidebarBootstrapped: false,
   modelStorePathOverride: '',
   schemaVersion: 1,
@@ -175,7 +183,6 @@ export function resolvePluginSettings(data: unknown): PluginSettings {
     llmPostprocessPrompt,
     userPresets,
   );
-  const hasProviderModelsBlock = isRecord(raw.llmProviderModels);
   const legacyModel =
     typeof raw.llmPostprocessModel === 'string' ? raw.llmPostprocessModel.trim() : '';
   const llmProviderModels = readLlmProviderModels(raw.llmProviderModels, legacyModel);
@@ -193,7 +200,6 @@ export function resolvePluginSettings(data: unknown): PluginSettings {
       raw.llmFeaturesEnabled,
       DEFAULT_PLUGIN_SETTINGS.llmFeaturesEnabled,
     ),
-    llmGeminiApiKey: readString(raw.llmGeminiApiKey, DEFAULT_PLUGIN_SETTINGS.llmGeminiApiKey),
     llmOpenRouterApiKey: readString(
       raw.llmOpenRouterApiKey,
       DEFAULT_PLUGIN_SETTINGS.llmOpenRouterApiKey,
@@ -236,11 +242,14 @@ export function resolvePluginSettings(data: unknown): PluginSettings {
       30_000,
     ),
     llmPostprocessUserPresets: userPresets,
-    llmProvider:
-      !hasProviderModelsBlock && legacyModel.length > 0
-        ? 'ollama'
-        : readLlmProvider(raw.llmProvider),
     llmProviderModels,
+    llmRemoteThresholdChars: readClampedInteger(
+      raw.llmRemoteThresholdChars,
+      DEFAULT_PLUGIN_SETTINGS.llmRemoteThresholdChars,
+      MIN_LLM_REMOTE_THRESHOLD_CHARS,
+      MAX_LLM_REMOTE_THRESHOLD_CHARS,
+    ),
+    llmRouting: resolveLlmRouting(raw),
     localTranscriptSidebarBootstrapped: readBoolean(
       raw.localTranscriptSidebarBootstrapped,
       DEFAULT_PLUGIN_SETTINGS.localTranscriptSidebarBootstrapped,
@@ -422,8 +431,23 @@ function readLlmPostprocessMode(value: unknown): LlmPostprocessMode {
   return DEFAULT_PLUGIN_SETTINGS.llmPostprocessMode;
 }
 
-function readLlmProvider(value: unknown): LlmProviderId {
-  return isLlmProvider(value) ? value : DEFAULT_PLUGIN_SETTINGS.llmProvider;
+// Resolve routing from a valid `llmRouting`, else map the legacy `llmProvider`
+// enum (ollama→local, openrouter→remote, gemini→local since Gemini is gone),
+// else fall back to the default. schemaVersion stays 1: these are tolerant reads.
+function resolveLlmRouting(raw: Record<string, unknown>): LlmRouting {
+  if (isLlmRouting(raw.llmRouting)) {
+    return raw.llmRouting;
+  }
+  switch (raw.llmProvider) {
+    case 'ollama':
+      return 'local';
+    case 'openrouter':
+      return 'remote';
+    case 'gemini':
+      return 'local';
+    default:
+      return DEFAULT_PLUGIN_SETTINGS.llmRouting;
+  }
 }
 
 function readLlmProviderModels(value: unknown, legacyOllamaModel: string): LlmProviderModels {
@@ -435,7 +459,6 @@ function readLlmProviderModels(value: unknown, legacyOllamaModel: string): LlmPr
   }
 
   return {
-    gemini: readString(value.gemini, DEFAULT_PLUGIN_SETTINGS.llmProviderModels.gemini),
     ollama: readString(value.ollama, DEFAULT_PLUGIN_SETTINGS.llmProviderModels.ollama),
     openrouter: readString(value.openrouter, DEFAULT_PLUGIN_SETTINGS.llmProviderModels.openrouter),
   };
@@ -515,8 +538,10 @@ export function isListeningMode(value: unknown): value is ListeningMode {
 }
 
 export function isLlmProvider(value: unknown): value is LlmProviderId {
-  return value === 'ollama' || value === 'openrouter' || value === 'gemini';
+  return value === 'ollama' || value === 'openrouter';
 }
+
+export { isLlmRouting };
 
 function readSelectedModel(selectedModel: unknown): SelectedModel | null {
   if (isSelectedModel(selectedModel)) {

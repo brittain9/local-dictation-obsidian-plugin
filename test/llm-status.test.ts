@@ -9,7 +9,7 @@ describe('formatProviderHealth', () => {
   it('formats each health kind', () => {
     expect(formatProviderHealth({ kind: 'unknown' }, 'ollama')).toBe('Status unknown.');
     expect(formatProviderHealth({ kind: 'unreachable' }, 'ollama')).toBe('Not running.');
-    expect(formatProviderHealth({ kind: 'auth_invalid' }, 'gemini')).toBe('API key rejected.');
+    expect(formatProviderHealth({ kind: 'auth_invalid' }, 'openrouter')).toBe('API key rejected.');
     expect(formatProviderHealth({ kind: 'rate_limited' }, 'openrouter')).toBe('Rate limit hit.');
     expect(formatProviderHealth({ kind: 'no_models' }, 'ollama')).toBe(
       'Running, but no chat models installed.',

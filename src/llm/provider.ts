@@ -1,11 +1,18 @@
 import type { PluginSettings } from '../settings/plugin-settings';
-import { GeminiProvider } from './gemini-provider';
 import { OllamaProvider } from './ollama-provider';
 import { OpenRouterProvider } from './openrouter-provider';
 
-export const LLM_PROVIDER_IDS = ['ollama', 'openrouter', 'gemini'] as const;
+export const LLM_PROVIDER_IDS = ['ollama', 'openrouter'] as const;
 
 export type LlmProviderId = (typeof LLM_PROVIDER_IDS)[number];
+
+export const LLM_ROUTINGS = ['local', 'remote', 'auto'] as const;
+
+export type LlmRouting = (typeof LLM_ROUTINGS)[number];
+
+export function isLlmRouting(value: unknown): value is LlmRouting {
+  return typeof value === 'string' && (LLM_ROUTINGS as readonly string[]).includes(value);
+}
 
 export type ProviderErrorCode =
   | 'auth_invalid'
@@ -53,7 +60,6 @@ export function isLocalLlmProvider(provider: LlmProvider): provider is LocalLlmP
 }
 
 export interface LlmProviderModels {
-  gemini: string;
   ollama: string;
   openrouter: string;
 }
@@ -84,19 +90,17 @@ export class ProviderError extends Error {
   }
 }
 
-export function createProvider(settings: PluginSettings): LlmProvider {
-  switch (settings.llmProvider) {
+export function createProvider(providerId: LlmProviderId, settings: PluginSettings): LlmProvider {
+  switch (providerId) {
     case 'ollama':
       return new OllamaProvider();
     case 'openrouter':
       return new OpenRouterProvider({ apiKey: settings.llmOpenRouterApiKey });
-    case 'gemini':
-      return new GeminiProvider({ apiKey: settings.llmGeminiApiKey });
   }
 }
 
-export function getActiveLlmModel(settings: PluginSettings): string {
-  return settings.llmProviderModels[settings.llmProvider].trim();
+export function getProviderModel(settings: PluginSettings, providerId: LlmProviderId): string {
+  return settings.llmProviderModels[providerId].trim();
 }
 
 export function withProviderModel(
@@ -113,8 +117,22 @@ export function withProviderModel(
   };
 }
 
-export function withActiveProviderModel(settings: PluginSettings, model: string): PluginSettings {
-  return withProviderModel(settings, settings.llmProvider, model);
+// Pure size-based routing: 'local' always picks Ollama, 'remote' always picks
+// OpenRouter, and 'auto' escalates to OpenRouter once the user message exceeds
+// the configured character threshold (local models choke on large contexts).
+export function selectRouteProviderId(
+  routing: LlmRouting,
+  userMessageChars: number,
+  thresholdChars: number,
+): LlmProviderId {
+  switch (routing) {
+    case 'local':
+      return 'ollama';
+    case 'remote':
+      return 'openrouter';
+    case 'auto':
+      return userMessageChars <= thresholdChars ? 'ollama' : 'openrouter';
+  }
 }
 
 export function formatLlmProviderName(providerId: LlmProviderId): string {
@@ -123,7 +141,5 @@ export function formatLlmProviderName(providerId: LlmProviderId): string {
       return 'Ollama';
     case 'openrouter':
       return 'OpenRouter';
-    case 'gemini':
-      return 'Gemini';
   }
 }

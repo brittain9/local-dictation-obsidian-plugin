@@ -53,7 +53,6 @@ describe('resolvePluginSettings', () => {
         dictationAnchor: 'end_of_note',
         listeningMode: 'always_on',
         llmFeaturesEnabled: false,
-        llmGeminiApiKey: ' gemini-key ',
         llmOpenRouterApiKey: ' openrouter-key ',
         llmPostprocessMode: 'batch',
         llmPostprocessNoteContextChars: 4000,
@@ -63,12 +62,12 @@ describe('resolvePluginSettings', () => {
         llmPostprocessSkipMinWords: 6,
         llmPostprocessTemperature: 0.4,
         llmPostprocessTotalContextCap: 9000,
-        llmProvider: 'openrouter',
         llmProviderModels: {
-          gemini: ' gemini-2.5-flash ',
           ollama: ' llama3.2:latest ',
           openrouter: ' anthropic/claude-sonnet-4.5 ',
         },
+        llmRemoteThresholdChars: 8000,
+        llmRouting: 'auto',
         localTranscriptSidebarBootstrapped: true,
         modelStorePathOverride: ' /tmp/models ',
         selectedModel: {
@@ -96,7 +95,6 @@ describe('resolvePluginSettings', () => {
       dictationAnchor: 'end_of_note',
       listeningMode: 'always_on',
       llmFeaturesEnabled: false,
-      llmGeminiApiKey: 'gemini-key',
       llmOpenRouterApiKey: 'openrouter-key',
       llmPostprocessActivePresetRef: null,
       llmPostprocessMode: 'batch',
@@ -107,12 +105,12 @@ describe('resolvePluginSettings', () => {
       llmPostprocessSkipMinWords: 6,
       llmPostprocessTemperature: 0.4,
       llmPostprocessTotalContextCap: 9000,
-      llmProvider: 'openrouter',
       llmProviderModels: {
-        gemini: 'gemini-2.5-flash',
         ollama: 'llama3.2:latest',
         openrouter: 'anthropic/claude-sonnet-4.5',
       },
+      llmRemoteThresholdChars: 8000,
+      llmRouting: 'auto',
       localTranscriptSidebarBootstrapped: true,
       modelStorePathOverride: '/tmp/models',
       selectedModel: {
@@ -159,12 +157,12 @@ describe('resolvePluginSettings', () => {
         dictationAnchor: 'at_end',
         listeningMode: 'unsupported',
         llmFeaturesEnabled: 'yes',
-        llmGeminiApiKey: 123,
         llmOpenRouterApiKey: 456,
         llmPostprocessMode: 'later',
         llmPostprocessPrompt: '',
-        llmProvider: 'claude',
         llmProviderModels: 'llama3',
+        llmRemoteThresholdChars: 'soon',
+        llmRouting: 'claude',
         localTranscriptSidebarBootstrapped: 'yes',
         modelStorePathOverride: 42,
         sidecarPathOverride: 12,
@@ -246,34 +244,47 @@ describe('resolvePluginSettings', () => {
         llmPostprocessModel: ' llama3.2:latest ',
       }),
     ).toMatchObject({
-      llmProvider: 'ollama',
       llmProviderModels: {
-        gemini: '',
         ollama: 'llama3.2:latest',
         openrouter: '',
       },
     });
   });
 
-  it('prefers persisted per-provider models over the legacy model field', () => {
+  it.each([
+    ['ollama maps to local', 'ollama', 'local'],
+    ['openrouter maps to remote', 'openrouter', 'remote'],
+    ['gemini maps to local', 'gemini', 'local'],
+  ] as const)('migrates legacy llmProvider %s', (_label, llmProvider, llmRouting) => {
+    expect(resolvePluginSettings({ llmProvider }).llmRouting).toBe(llmRouting);
+  });
+
+  it('prefers a valid llmRouting over a legacy llmProvider value', () => {
+    expect(resolvePluginSettings({ llmProvider: 'ollama', llmRouting: 'remote' }).llmRouting).toBe(
+      'remote',
+    );
+  });
+
+  it('drops the legacy gemini model and keeps ollama/openrouter', () => {
     expect(
       resolvePluginSettings({
-        llmPostprocessModel: 'old-ollama',
-        llmProvider: 'gemini',
         llmProviderModels: {
           gemini: 'gemini-2.5-flash',
           ollama: 'new-ollama',
           openrouter: 'openai/gpt-4.1',
         },
-      }),
-    ).toMatchObject({
-      llmProvider: 'gemini',
-      llmProviderModels: {
-        gemini: 'gemini-2.5-flash',
-        ollama: 'new-ollama',
-        openrouter: 'openai/gpt-4.1',
-      },
+      }).llmProviderModels,
+    ).toEqual({
+      ollama: 'new-ollama',
+      openrouter: 'openai/gpt-4.1',
     });
+  });
+
+  it('clamps the remote routing threshold at the settings boundary', () => {
+    expect(resolvePluginSettings({ llmRemoteThresholdChars: 1 }).llmRemoteThresholdChars).toBe(500);
+    expect(
+      resolvePluginSettings({ llmRemoteThresholdChars: 999_999 }).llmRemoteThresholdChars,
+    ).toBe(60_000);
   });
 
   it('falls back to the default when useLlmNoteContext is not a boolean', () => {
@@ -479,7 +490,6 @@ describe('resolvePluginSettings', () => {
       llmPostprocessTotalContextCap: 333,
       llmPostprocessUserPresets: presets,
       llmProviderModels: {
-        gemini: 'gemini-2.5-flash',
         ollama: 'llama3',
         openrouter: 'openai/gpt-4.1',
       },
@@ -493,7 +503,6 @@ describe('resolvePluginSettings', () => {
       llmPostprocessShowRawBelow: true,
       llmPostprocessUserPresets: presets,
       llmProviderModels: {
-        gemini: 'gemini-2.5-flash',
         ollama: 'llama3',
         openrouter: 'openai/gpt-4.1',
       },

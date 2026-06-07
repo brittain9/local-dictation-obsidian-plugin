@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 
-import { ItemView, Notice, Setting, setIcon, type WorkspaceLeaf } from 'obsidian';
+import { ItemView, Setting, setIcon, type WorkspaceLeaf } from 'obsidian';
 
 import {
   DEFAULT_LLM_BUILTIN_PRESET_ID,
@@ -16,20 +16,8 @@ import {
   parseStyleRef,
   resolveStyleOption,
 } from '../llm/presets';
+import type { LlmCleanupFailure } from '../llm/provider';
 import {
-  createProvider,
-  formatLlmProviderName,
-  getActiveLlmModel,
-  isLocalLlmProvider,
-  type LlmCleanupFailure,
-  type LlmProviderId,
-  type ModelOption,
-  ProviderError,
-  type ProviderHealth,
-  withActiveProviderModel,
-} from '../llm/provider';
-import {
-  isLlmProvider,
   LLM_USER_PRESET_MAX_COUNT,
   type PluginSettings,
   resetLlmPostprocessDefaults,
@@ -42,12 +30,9 @@ import {
 } from '../settings/setting-helpers';
 import type { PluginLogger } from '../shared/plugin-logger';
 import { ConfirmModal } from './confirm-modal';
-import {
-  findClosestModelId,
-  formatCleanupFailureBanner,
-  providerHealthFromError,
-} from './llm-provider-ui';
-import { deriveInlineStatus, formatProviderHealth, INLINE_STATUS_PRESENTATION } from './llm-status';
+import { formatCleanupFailureBanner } from './llm-provider-ui';
+import { LlmRoutingControls } from './llm-routing-controls';
+import { INLINE_STATUS_PRESENTATION } from './llm-status';
 import { SaveStyleModal } from './save-style-modal';
 
 export const LOCAL_DICTATION_VIEW_TYPE = 'local-dictation-sidebar';
@@ -80,18 +65,12 @@ const PROMPT_SAVE_DEBOUNCE_MS = 400;
 export class LocalDictationView extends ItemView {
   private advancedOpen = false;
   private focusedInput: HTMLElement | null = null;
-  private models: ModelOption[] = [];
-  private modelsProviderId: LlmProviderId | null = null;
-  private modelsRefreshInFlight = false;
   private narrowObserver: ResizeObserver | null = null;
-  private providerHealth: ProviderHealth = { kind: 'unknown' };
-  private openRouterCatalog: ModelOption[] | null = null;
-  private openRouterCheckMessage: string | null = null;
   private lastEnabledMode: LlmPresetMode = DEFAULT_ENABLED_CLEANUP_MODE;
   private promptBlurRenderPending = false;
   private promptSaveTimerId: ReturnType<typeof setTimeout> | null = null;
   private pendingPromptValue: string | null = null;
-  private apiKeyRefreshTimerId: ReturnType<typeof setTimeout> | null = null;
+  private readonly routingControls: LlmRoutingControls;
   private unsubscribeLlmCleanupFailure: (() => void) | null = null;
 
   constructor(
@@ -99,6 +78,18 @@ export class LocalDictationView extends ItemView {
     private readonly dependencies: LocalDictationViewDependencies,
   ) {
     super(leaf);
+    this.routingControls = new LlmRoutingControls({
+      getSettings: () => this.dependencies.getSettings(),
+      logger: this.dependencies.logger,
+      ...(this.dependencies.notice !== undefined ? { notice: this.dependencies.notice } : {}),
+      persist: (settings, options) => this.persistSettings(settings, options),
+      requestRerender: () => {
+        this.scheduleRender();
+      },
+    });
+    this.routingControls.setInputTracker((element) => {
+      this.trackInputFocus(element);
+    });
   }
 
   override getViewType(): string {
@@ -120,9 +111,9 @@ export class LocalDictationView extends ItemView {
       this.dependencies.subscribeLlmCleanupFailure?.(() => {
         this.render();
       }) ?? null;
-    this.maybeRefreshModels();
+    this.routingControls.refreshActiveProviders();
     this.registerDomEvent(this.contentEl.win, 'focus', () => {
-      this.maybeRefreshModels();
+      this.routingControls.refreshActiveProviders();
     });
   }
 
@@ -131,10 +122,7 @@ export class LocalDictationView extends ItemView {
     this.narrowObserver = null;
     this.unsubscribeLlmCleanupFailure?.();
     this.unsubscribeLlmCleanupFailure = null;
-    if (this.apiKeyRefreshTimerId !== null) {
-      clearTimeout(this.apiKeyRefreshTimerId);
-      this.apiKeyRefreshTimerId = null;
-    }
+    this.routingControls.dispose();
     await this.flushPendingPromptSave();
   }
 
@@ -176,10 +164,8 @@ export class LocalDictationView extends ItemView {
       return;
     }
 
-    this.renderProviderPicker(cleanupGroup, settings);
+    this.routingControls.render(cleanupGroup, settings);
     this.renderRuntimeFailureBanner(cleanupGroup);
-    this.renderInlineStatus(cleanupGroup, settings);
-    this.renderModelPicker(cleanupGroup, settings);
     this.renderStylePicker(cleanupGroup, settings);
     this.renderCleanupMode(cleanupGroup, settings);
     this.renderUseNoteContextToggle(cleanupGroup, settings);
@@ -212,7 +198,7 @@ export class LocalDictationView extends ItemView {
           }
           const nextMode = value ? this.resolveModeOnEnable(current) : 'off';
           await this.saveField('llmPostprocessMode', nextMode);
-          this.maybeRefreshModels();
+          this.routingControls.refreshActiveProviders();
         });
       });
   }
@@ -323,29 +309,6 @@ export class LocalDictationView extends ItemView {
     }
   }
 
-  private renderProviderPicker(parent: HTMLElement, settings: PluginSettings): void {
-    new Setting(parent)
-      .setName('Provider')
-      .setDesc('Choose where LLM transformation runs.')
-      .addDropdown((dropdown) => {
-        for (const providerId of ['ollama', 'openrouter', 'gemini'] as const) {
-          dropdown.addOption(providerId, formatLlmProviderName(providerId));
-        }
-        dropdown.setValue(settings.llmProvider);
-        dropdown.onChange(async (value) => {
-          if (!isLlmProvider(value)) {
-            return;
-          }
-          this.models = [];
-          this.modelsProviderId = null;
-          this.providerHealth = { kind: 'unknown' };
-          this.openRouterCheckMessage = null;
-          await this.saveField('llmProvider', value);
-          this.maybeRefreshModels();
-        });
-      });
-  }
-
   private renderRuntimeFailureBanner(parent: HTMLElement): void {
     const failure = this.dependencies.getLlmCleanupFailure?.() ?? null;
     if (failure === null) {
@@ -374,131 +337,6 @@ export class LocalDictationView extends ItemView {
       },
     });
     modal.open();
-  }
-
-  private renderModelPicker(parent: HTMLElement, settings: PluginSettings): void {
-    if (settings.llmProvider === 'openrouter') {
-      this.renderOpenRouterSettings(parent, settings);
-      return;
-    }
-
-    if (settings.llmProvider === 'gemini') {
-      this.renderGeminiApiKey(parent, settings);
-    }
-
-    const selectedModel = getActiveLlmModel(settings);
-    const providerName = formatLlmProviderName(settings.llmProvider);
-    const hasSelectedModel =
-      selectedModel.length > 0 && this.models.some((model) => model.id === selectedModel);
-
-    new Setting(parent)
-      .setName(`${providerName} model`)
-      .setDesc(
-        settings.llmProvider === 'ollama'
-          ? 'Pick a local Ollama chat model.'
-          : 'Pick a Gemini model that supports generateContent.',
-      )
-      .addDropdown((dropdown) => {
-        dropdown.addOption('', 'Select a model');
-        if (selectedModel.length > 0 && !hasSelectedModel) {
-          dropdown.addOption(selectedModel, selectedModel);
-        }
-        for (const model of this.models) {
-          dropdown.addOption(model.id, model.displayName);
-        }
-        dropdown.setValue(selectedModel);
-        dropdown.onChange(async (value) => {
-          const nextModel = value.trim();
-          await this.persistSettings(
-            withActiveProviderModel(this.dependencies.getSettings(), nextModel),
-          );
-          if (nextModel.length > 0) {
-            const provider = createProvider(this.dependencies.getSettings());
-            if (isLocalLlmProvider(provider)) {
-              void provider.prewarmModel(nextModel).catch((error: unknown) => {
-                this.dependencies.logger?.warn('llm', `${providerName} pre-warm failed`, error);
-              });
-            }
-          }
-        });
-      })
-      .addExtraButton((button) => {
-        button
-          .setIcon('refresh-cw')
-          .setTooltip(`Refresh ${providerName} models`)
-          .onClick(() => {
-            void this.refreshModels();
-          });
-        button.extraSettingsEl.setAttribute('aria-label', `Refresh ${providerName} models`);
-      });
-  }
-
-  private renderOpenRouterSettings(parent: HTMLElement, settings: PluginSettings): void {
-    this.renderApiKeySetting(parent, settings, {
-      key: 'llmOpenRouterApiKey',
-      name: 'OpenRouter API key',
-      placeholder: 'sk-or-...',
-    });
-
-    const selectedModel = getActiveLlmModel(settings);
-    const setting = new Setting(parent)
-      .setName('OpenRouter model')
-      .setDesc(this.openRouterCheckMessage ?? 'Enter an OpenRouter model id.')
-      .addText((text) => {
-        text.setPlaceholder('anthropic/claude-sonnet-4.5');
-        text.setValue(selectedModel);
-        this.trackInputFocus(text.inputEl);
-        text.onChange(async (value) => {
-          this.openRouterCheckMessage = null;
-          await this.persistSettings(
-            withActiveProviderModel(this.dependencies.getSettings(), value),
-            {
-              rerender: false,
-            },
-          );
-        });
-      });
-
-    setting.addButton((button) => {
-      button.setButtonText('Check').onClick(() => {
-        void this.checkOpenRouterModel();
-      });
-    });
-  }
-
-  private renderGeminiApiKey(parent: HTMLElement, settings: PluginSettings): void {
-    this.renderApiKeySetting(parent, settings, {
-      key: 'llmGeminiApiKey',
-      name: 'Gemini API key',
-      placeholder: 'AIza...',
-    });
-  }
-
-  private renderApiKeySetting(
-    parent: HTMLElement,
-    settings: PluginSettings,
-    options: {
-      key: 'llmGeminiApiKey' | 'llmOpenRouterApiKey';
-      name: string;
-      placeholder: string;
-    },
-  ): void {
-    new Setting(parent)
-      .setName(options.name)
-      .setDesc('Stored in plain text in your vault.')
-      .addText((text) => {
-        text.inputEl.type = 'password';
-        text.setPlaceholder(options.placeholder);
-        text.setValue(settings[options.key]);
-        this.trackInputFocus(text.inputEl);
-        text.onChange(async (value) => {
-          this.models = [];
-          this.modelsProviderId = null;
-          this.providerHealth = { kind: 'unknown' };
-          await this.saveField(options.key, value.trim(), { rerender: false });
-          this.scheduleApiKeyRefresh();
-        });
-      });
   }
 
   private async applyStyleByRef(ref: string): Promise<void> {
@@ -659,23 +497,6 @@ export class LocalDictationView extends ItemView {
     }
   }
 
-  private renderInlineStatus(parent: HTMLElement, settings: PluginSettings): void {
-    const status = deriveInlineStatus({
-      health: this.providerHealth,
-      models: this.modelsProviderId === settings.llmProvider ? this.models : [],
-      providerId: settings.llmProvider,
-      selectedModel: getActiveLlmModel(settings),
-    });
-    if (status === null) {
-      return;
-    }
-    const { className, icon } = INLINE_STATUS_PRESENTATION[status.variant];
-    const row = parent.createDiv({ cls: `local-dictation-status ${className}` });
-    const iconEl = row.createSpan({ cls: 'local-dictation-status__icon' });
-    setIcon(iconEl, icon);
-    row.createSpan({ cls: 'local-dictation-status__text', text: status.text });
-  }
-
   private renderCustomizeStyleSection(parent: HTMLElement, settings: PluginSettings): void {
     const items = createSettingGroup(parent, 'Prompt');
     this.addTextAreaSetting(
@@ -746,10 +567,6 @@ export class LocalDictationView extends ItemView {
           await this.saveField('llmPostprocessShowRawBelow', value, { rerender: false });
         });
       });
-
-    new Setting(items)
-      .setName(`${formatLlmProviderName(settings.llmProvider)} status`)
-      .setDesc(formatProviderHealth(this.providerHealth, settings.llmProvider));
 
     new Setting(items)
       .setName('Reset LLM defaults')
@@ -901,132 +718,6 @@ export class LocalDictationView extends ItemView {
     }, 0);
   }
 
-  private maybeRefreshModels(): void {
-    const settings = this.dependencies.getSettings();
-    if (!settings.llmFeaturesEnabled) return;
-    if (settings.llmPostprocessMode === 'off') return;
-    if (settings.llmProvider === 'openrouter') return;
-    if (settings.llmProvider === 'gemini' && settings.llmGeminiApiKey.length === 0) return;
-    void this.refreshModels({ silent: true });
-  }
-
-  private scheduleApiKeyRefresh(): void {
-    if (this.apiKeyRefreshTimerId !== null) {
-      clearTimeout(this.apiKeyRefreshTimerId);
-    }
-    this.apiKeyRefreshTimerId = setTimeout(() => {
-      this.apiKeyRefreshTimerId = null;
-      const settings = this.dependencies.getSettings();
-      const keyField =
-        settings.llmProvider === 'gemini'
-          ? settings.llmGeminiApiKey
-          : settings.llmProvider === 'openrouter'
-            ? settings.llmOpenRouterApiKey
-            : '';
-      if (keyField.length === 0) {
-        this.scheduleRender();
-        return;
-      }
-      void this.refreshProviderHealth();
-    }, 500);
-  }
-
-  private async refreshProviderHealth(): Promise<void> {
-    const settings = this.dependencies.getSettings();
-    const providerId = settings.llmProvider;
-    try {
-      const health = await createProvider(settings).probe();
-      if (this.dependencies.getSettings().llmProvider !== providerId) return;
-      this.providerHealth = health;
-    } catch (error) {
-      if (this.dependencies.getSettings().llmProvider !== providerId) return;
-      this.providerHealth = providerHealthFromError(error);
-    }
-    if (settings.llmProvider === 'gemini') {
-      void this.refreshModels({ silent: true });
-    } else {
-      this.scheduleRender();
-    }
-  }
-
-  private async refreshModels(options: { silent?: boolean } = {}): Promise<void> {
-    if (this.modelsRefreshInFlight) return;
-    this.modelsRefreshInFlight = true;
-
-    const settings = this.dependencies.getSettings();
-    const providerName = formatLlmProviderName(settings.llmProvider);
-    let nextModels: ModelOption[];
-    let nextHealth: ProviderHealth;
-    try {
-      nextModels = await createProvider(settings).listModels();
-      nextHealth =
-        nextModels.length === 0
-          ? { kind: 'no_models' }
-          : { kind: 'ready', modelCount: nextModels.length };
-    } catch (error) {
-      nextModels = [];
-      nextHealth = providerHealthFromError(error);
-      this.dependencies.logger?.warn('llm', `${providerName} refresh failed`, error);
-      if (options.silent !== true) {
-        this.notice(`Local Dictation: ${providerName} is unavailable.`);
-      }
-    } finally {
-      this.modelsRefreshInFlight = false;
-    }
-
-    if (
-      this.modelsProviderId === settings.llmProvider &&
-      healthEqual(this.providerHealth, nextHealth) &&
-      modelsEqual(this.models, nextModels)
-    ) {
-      return;
-    }
-    this.models = nextModels;
-    this.modelsProviderId = settings.llmProvider;
-    this.providerHealth = nextHealth;
-    this.scheduleRender();
-  }
-
-  private async checkOpenRouterModel(): Promise<void> {
-    const settings = this.dependencies.getSettings();
-    if (settings.llmProvider !== 'openrouter') {
-      return;
-    }
-
-    const selectedModel = getActiveLlmModel(settings);
-    if (selectedModel.length === 0) {
-      this.openRouterCheckMessage = 'Enter a model id first.';
-      this.render();
-      return;
-    }
-
-    try {
-      const catalog = this.openRouterCatalog ?? (await createProvider(settings).listModels());
-      this.openRouterCatalog = catalog;
-      this.models = catalog;
-      this.modelsProviderId = 'openrouter';
-      this.providerHealth =
-        catalog.length === 0
-          ? { kind: 'no_models' }
-          : { kind: 'ready', modelCount: catalog.length };
-
-      if (catalog.some((model) => model.id === selectedModel)) {
-        this.openRouterCheckMessage = 'Model verified.';
-      } else {
-        const suggestion = findClosestModelId(selectedModel, catalog);
-        this.openRouterCheckMessage =
-          suggestion === null ? 'Unknown model.' : `Unknown model. Did you mean ${suggestion}?`;
-      }
-    } catch (error) {
-      this.providerHealth = providerHealthFromError(error);
-      this.openRouterCheckMessage =
-        error instanceof ProviderError ? error.message : 'Could not check model.';
-      this.dependencies.logger?.warn('llm', 'OpenRouter model check failed', error);
-    }
-
-    this.render();
-  }
-
   // Deferring while an input is focused avoids clobbering in-progress text and cursor on re-render.
   private scheduleRender(): void {
     if (this.focusedInput?.isConnected) {
@@ -1059,30 +750,6 @@ export class LocalDictationView extends ItemView {
       this.render();
     }
   }
-
-  private notice(message: string): void {
-    if (this.dependencies.notice !== undefined) {
-      this.dependencies.notice(message);
-      return;
-    }
-    new Notice(message);
-  }
-}
-
-function modelsEqual(a: readonly ModelOption[], b: readonly ModelOption[]): boolean {
-  if (a.length !== b.length) return false;
-  return a.every((itemA, i) => {
-    const itemB = b[i];
-    return itemB !== undefined && itemA.id === itemB.id && itemA.displayName === itemB.displayName;
-  });
-}
-
-function healthEqual(a: ProviderHealth, b: ProviderHealth): boolean {
-  if (a.kind !== b.kind) return false;
-  if (a.kind === 'ready' && b.kind === 'ready') {
-    return a.modelCount === b.modelCount;
-  }
-  return true;
 }
 
 function activePresetOverride(

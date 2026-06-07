@@ -9,7 +9,8 @@ import { DictationSessionController } from './dictation/dictation-session-contro
 import { dictationAnchorExtension } from './editor/dictation-anchor-extension';
 import { noteSurfaceUpdateListenerExtension } from './editor/note-surface';
 import { sessionProcessingExtension } from './editor/session-processing-extension';
-import { createProvider, type LlmCleanupFailure } from './llm/provider';
+import type { LlmCleanupFailure } from './llm/provider';
+import { createLlmRouter } from './llm/router';
 import { ManageModelsModal } from './models/manage-models-modal';
 import { ModelInstallManager } from './models/model-install-manager';
 import { Session } from './session/session';
@@ -128,7 +129,7 @@ export default class LocalSttPlugin extends Plugin {
           rendererOptions,
           sessionId,
         }),
-      createLlmProvider: (settings) => createProvider(settings),
+      createLlmRouter: (settings) => createLlmRouter(settings),
       getSettings: () => this.settings,
       logger: this.logger,
       notice: (message) => {

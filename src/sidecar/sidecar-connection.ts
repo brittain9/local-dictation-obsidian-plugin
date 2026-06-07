@@ -14,7 +14,6 @@ import {
   createListModelCatalogCommand,
   createProbeModelSelectionCommand,
   createRemoveModelCommand,
-  createRunBatchCleanupCommand,
   createStartSessionCommand,
   createStopSessionCommand,
   type ErrorEvent,
@@ -281,14 +280,6 @@ export class SidecarConnection {
     this.process.write(encodeJsonFrame(createStopSessionCommand(sessionId)));
   }
 
-  requestBatchCleanup(payload: Parameters<typeof createRunBatchCleanupCommand>[0]): void {
-    if (!this.process.isRunning()) {
-      return;
-    }
-
-    this.process.write(encodeJsonFrame(createRunBatchCleanupCommand(payload)));
-  }
-
   async restart(startupTimeoutMs = this.options.getRequestTimeoutMs()): Promise<HealthOkEvent> {
     await this.shutdown();
     await this.ensureStarted();
@@ -463,7 +454,6 @@ function shouldLogProtocolEvent(event: SidecarEvent): boolean {
     case 'session_started':
     case 'session_state_changed':
     case 'session_stopped':
-    case 'batch_cleanup_ready':
     case 'transcript_ready':
     case 'warning':
       return true;
@@ -484,8 +474,6 @@ function summarizeProtocolEvent(event: SidecarEvent): string {
       return `event: session_state_changed (${event.sessionId}, ${event.state})`;
     case 'session_stopped':
       return `event: session_stopped (${event.sessionId}, ${event.reason})`;
-    case 'batch_cleanup_ready':
-      return `event: batch_cleanup_ready (${event.sessionId}, ${event.cleanText.length} chars)`;
     case 'transcript_ready':
       return `event: transcript_ready (${event.sessionId}, ${event.text.length} chars)`;
     case 'warning':

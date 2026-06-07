@@ -16,9 +16,9 @@ use crate::model_store::{
 };
 use crate::protocol::{
     AccelerationPreference, AudioFrame, Command, CompiledAdapterInfo, CompiledRuntimeInfo,
-    ContextWindow, Event, HealthStatus, ListeningMode, LlmPostprocessConfig, ModelInstallState,
+    ContextWindow, Event, HealthStatus, ListeningMode, ModelInstallState,
     ModelProbeStatus, QueueBackpressureTier, SelectedModel, SessionState, SessionStopReason,
-    StageId, system_info_string,
+    system_info_string,
 };
 use crate::session::{
     FinalizedUtterance, ListeningSession, SessionAction, SessionBaseState, SessionConfig,
@@ -372,7 +372,6 @@ impl AppState {
             Command::StartSession {
                 acceleration_preference,
                 language,
-                llm_postprocess,
                 mode,
                 model_selection,
                 model_store_path_override,
@@ -380,7 +379,6 @@ impl AppState {
                 session_id,
                 speaking_style,
             } => {
-                let llm_postprocess = llm_postprocess.map(|boxed| *boxed);
                 if self.active_sessions.len() >= MAX_ACTIVE_SESSIONS {
                     events.push(Event::Error {
                         code: "session_capacity_exceeded".to_string(),
@@ -441,12 +439,12 @@ impl AppState {
                             resolved_model.runtime_id,
                             resolved_model.family_id,
                         );
-                        let context_budget_chars = context_budget_chars(
-                            engine_context_supported,
-                            llm_postprocess.as_ref(),
-                        );
-                        let context_required =
-                            engine_context_supported || llm_postprocess.is_some();
+                        let context_budget_chars = if engine_context_supported {
+                            CONTEXT_BUDGET_CHARS
+                        } else {
+                            0
+                        };
+                        let context_required = engine_context_supported;
 
                         if self
                             .transcription_worker
@@ -455,7 +453,6 @@ impl AppState {
                                 family_id: resolved_model.family_id,
                                 gpu_config: GpuConfig { use_gpu },
                                 language,
-                                llm_postprocess,
                                 model_file_path: resolved_model.resolved_path.clone(),
                                 cancel_rx,
                                 session_start_unix_ms,
@@ -530,32 +527,6 @@ impl AppState {
                         details: None,
                         message: "Cancel session was requested without an active session."
                             .to_string(),
-                        session_id: Some(session_id),
-                    });
-                }
-
-                (ControlFlow::Continue, events)
-            }
-            Command::RunBatchCleanup {
-                session_id,
-                transcript_text,
-                config,
-                note_context,
-            } => {
-                if self
-                    .transcription_worker
-                    .send(WorkerCommand::RunBatchCleanup {
-                        config,
-                        note_context,
-                        session_id: session_id.clone(),
-                        transcript_text,
-                    })
-                    .is_err()
-                {
-                    events.push(Event::Error {
-                        code: "internal_error".to_string(),
-                        details: None,
-                        message: "Failed to queue batch cleanup.".to_string(),
                         session_id: Some(session_id),
                     });
                 }
@@ -694,10 +665,9 @@ impl AppState {
         }
 
         // Transcription is still in flight; defer SessionStopped until the last
-        // TranscriptReady drains through the worker. Do not signal cancel — the
-        // LLM postprocess stage skips on cancel, so draining must run to
-        // completion with stages intact. maybe_complete_drain emits the final
-        // cancel as teardown.
+        // TranscriptReady drains through the worker. Do not signal cancel here —
+        // maybe_complete_drain emits the final cancel as teardown once the queue
+        // is empty.
         active_session.draining = true;
         active_session.drain_reason = Some(reason);
         self.emit_state_if_changed(session_id, &mut events);
@@ -791,19 +761,6 @@ impl AppState {
 
                 self.emit_state_if_changed(&session_id, events);
             }
-            WorkerEvent::BatchCleanupReady {
-                clean_text,
-                raw_text,
-                session_id,
-                stage_results,
-            } => {
-                events.push(Event::BatchCleanupReady {
-                    clean_text,
-                    raw_text,
-                    session_id,
-                    stage_results,
-                });
-            }
             WorkerEvent::TranscriptReady {
                 pause_ms_before_utterance,
                 processing_duration_ms,
@@ -826,17 +783,8 @@ impl AppState {
 
                 let is_final = transcript.is_final();
                 let text = transcript.joined_text();
-                let llm_postprocess_raw_text = transcript
-                    .stage_history
-                    .iter()
-                    .find(|stage| stage.stage_id == StageId::LlmPostprocess)
-                    .and_then(|stage| stage.payload.as_ref())
-                    .and_then(|payload| payload.get("rawText"))
-                    .and_then(|value| value.as_str())
-                    .map(String::from);
                 events.push(Event::TranscriptReady {
                     is_final,
-                    llm_postprocess_raw_text,
                     pause_ms_before_utterance,
                     processing_duration_ms,
                     revision: transcript.revision,
@@ -1282,21 +1230,6 @@ fn resolved_model_supports_initial_prompt(
         .is_some_and(|adapter| adapter.capabilities().supports_initial_prompt)
 }
 
-fn context_budget_chars(
-    engine_context_supported: bool,
-    llm_postprocess: Option<&LlmPostprocessConfig>,
-) -> u32 {
-    let engine_budget = if engine_context_supported {
-        CONTEXT_BUDGET_CHARS
-    } else {
-        0
-    };
-    let llm_budget = llm_postprocess
-        .map(|config| config.total_context_cap.max(config.note_context_chars))
-        .unwrap_or(0);
-
-    engine_budget.saturating_add(llm_budget)
-}
 
 fn context_source_chars(window: &ContextWindow) -> usize {
     window
@@ -1958,7 +1891,7 @@ mod tests {
 
         let context_window = ContextWindow {
             budget_chars: 384,
-            sources: vec![ContextWindowSource::PriorUtterance {
+            sources: vec![ContextWindowSource::NoteGlossary {
                 text: "previous note text".to_string(),
                 truncated: false,
             }],
@@ -2543,7 +2476,6 @@ mod tests {
         Command::StartSession {
             acceleration_preference: AccelerationPreference::Auto,
             language: "en".to_string(),
-            llm_postprocess: None,
             mode: ListeningMode::AlwaysOn,
             model_selection: SelectedModel::ExternalFile {
                 runtime_id: RuntimeId::WhisperCpp,

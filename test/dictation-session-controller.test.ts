@@ -5,17 +5,18 @@ import {
   DictationSessionController,
 } from '../src/dictation/dictation-session-controller';
 import type { NotePlacementOptions } from '../src/editor/note-surface';
-import { type LlmCleanupFailure, type LlmProvider, ProviderError } from '../src/llm/provider';
+import { type LlmCleanupFailure, ProviderError } from '../src/llm/provider';
+import type { LlmRouter, LlmRouterCleanupResult } from '../src/llm/router';
 import type { TranscriptRevision } from '../src/session/session-journal';
 import { DEFAULT_PLUGIN_SETTINGS, type PluginSettings } from '../src/settings/plugin-settings';
 import type {
   ContextWindow,
-  LlmPostprocessConfig,
   QueueBackpressureTier,
   SidecarEvent,
   StartSessionCommand,
 } from '../src/sidecar/protocol';
 import type { TranscriptRenderOptions } from '../src/transcript/renderer';
+import { createFakeLlmRouter } from './fixtures/llm';
 
 class FakeCaptureStream {
   public capturing = false;
@@ -51,7 +52,9 @@ class FakeCaptureStream {
 
 class FakeSession {
   public currentSessionText = '';
+  public readonly acceptedTexts: string[] = [];
   public readonly acceptTranscript = vi.fn((revision: TranscriptRevision) => {
+    this.acceptedTexts.push(revision.text);
     if (revision.isFinal) {
       this.currentSessionText = revision.text;
     }
@@ -98,28 +101,12 @@ class FakeLogger {
 }
 
 class FakeSidecarConnection {
-  public readonly batchCleanupRequests: Array<{
-    config: LlmPostprocessConfig;
-    noteContext: string | null;
-    sessionId: string;
-    transcriptText: string;
-  }> = [];
   public readonly cancelSession = vi.fn(async (sessionId: string) => {
     this.emit({ reason: 'user_cancel', sessionId, type: 'session_stopped' });
     return { reason: 'user_cancel', sessionId, type: 'session_stopped' } as const;
   });
   public readonly ensureStarted = vi.fn(async () => {});
   public readonly listeners = new Set<(event: SidecarEvent) => void>();
-  public readonly requestBatchCleanup = vi.fn(
-    (payload: {
-      config: LlmPostprocessConfig;
-      noteContext: string | null;
-      sessionId: string;
-      transcriptText: string;
-    }) => {
-      this.batchCleanupRequests.push(payload);
-    },
-  );
   public readonly requestStopSession = vi.fn((_sessionId: string) => {});
   public readonly sendAudioFrame = vi.fn((_sessionId: string, _frameBytes: Uint8Array) => {});
   public readonly sendContextResponse = vi.fn(
@@ -156,7 +143,8 @@ describe('DictationSessionController', () => {
     expect(startPayload?.sessionId).toMatch(
       /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u,
     );
-    expect(startPayload?.sessionId.startsWith('session-')).toBe(false);
+    // The sidecar no longer runs LLM work, so start-session must not carry it.
+    expect(startPayload).not.toHaveProperty('llmPostprocess');
 
     const frame = new Uint8Array(640).fill(3);
     captureStream.emitFrame(frame);
@@ -225,58 +213,16 @@ describe('DictationSessionController', () => {
     expect(sidecarConnection.startSession).toHaveBeenCalledTimes(5);
   });
 
-  it('runs batch cleanup through the sidecar and applies the ready event', async () => {
+  it('runs per-utterance cleanup through the router and keeps raw text for the callout', async () => {
     const sidecarConnection = new FakeSidecarConnection();
     const sessions: FakeSession[] = [];
-    const controller = createController({
-      createSession: (session) => {
-        sessions.push(session);
-      },
-      getSettings: () =>
-        createSettings({
-          llmFeaturesEnabled: true,
-          llmPostprocessMode: 'batch',
-          llmProviderModels: {
-            ...DEFAULT_PLUGIN_SETTINGS.llmProviderModels,
-            ollama: 'llama3.2:latest',
-          },
-          selectedModel: createExternalModelSelection(),
-        }),
-      sidecarConnection,
-    });
-
-    await controller.startDictation();
-    const sessionId = sidecarConnection.startSession.mock.calls[0]?.[0].sessionId ?? '';
-    sidecarConnection.emit(transcriptReady(sessionId, 'raw transcript'));
-    await controller.stopDictation();
-    sidecarConnection.emit({ reason: 'user_stop', sessionId, type: 'session_stopped' });
-
-    expect(sidecarConnection.requestBatchCleanup).toHaveBeenCalledWith(
-      expect.objectContaining({
-        sessionId,
-        transcriptText: 'raw transcript',
+    const cleanup = vi.fn(
+      async (): Promise<LlmRouterCleanupResult> => ({
+        model: 'llama3.2:latest',
+        providerId: 'ollama',
+        text: 'Clean transcript.',
       }),
     );
-
-    sidecarConnection.emit({
-      cleanText: 'Clean transcript.',
-      rawText: 'raw transcript',
-      sessionId,
-      stageResults: [],
-      type: 'batch_cleanup_ready',
-    });
-
-    expect(sessions[0]?.replaceSessionRangeWithCleaned).toHaveBeenCalledWith(
-      'Clean transcript.',
-      expect.objectContaining({ rawTextForCallout: 'raw transcript' }),
-    );
-    expect(sessions[0]?.dispose).toHaveBeenCalledTimes(1);
-  });
-
-  it('runs cloud per-utterance cleanup in the controller and keeps raw text for the callout', async () => {
-    const sidecarConnection = new FakeSidecarConnection();
-    const sessions: FakeSession[] = [];
-    const cleanup = vi.fn(async () => 'Clean transcript.');
     const onLlmCleanupSuccess = vi.fn();
     const controller = createController({
       createSession: (session) => {
@@ -288,14 +234,9 @@ describe('DictationSessionController', () => {
           llmPostprocessMode: 'per_utterance',
           llmPostprocessShowRawBelow: true,
           llmPostprocessSkipMinWords: 0,
-          llmProvider: 'openrouter',
-          llmProviderModels: {
-            ...DEFAULT_PLUGIN_SETTINGS.llmProviderModels,
-            openrouter: 'openai/gpt-4.1',
-          },
           selectedModel: createExternalModelSelection(),
         }),
-      llmProvider: createFakeLlmProvider({ cleanup, id: 'openrouter' }),
+      llmRouter: createFakeLlmRouter({ cleanup }),
       onLlmCleanupSuccess,
       sidecarConnection,
     });
@@ -304,13 +245,9 @@ describe('DictationSessionController', () => {
     const sessionId = sidecarConnection.startSession.mock.calls[0]?.[0].sessionId ?? '';
     sidecarConnection.emit(transcriptReady(sessionId, 'raw transcript'));
 
-    expect(sidecarConnection.startSession.mock.calls[0]?.[0].llmPostprocess).toBeUndefined();
     await vi.waitFor(() => {
       expect(cleanup).toHaveBeenCalledWith(
-        expect.objectContaining({
-          model: 'openai/gpt-4.1',
-          userMessage: '<utterance>\nraw transcript\n</utterance>',
-        }),
+        expect.objectContaining({ userMessage: '<utterance>\nraw transcript\n</utterance>' }),
       );
     });
     await vi.waitFor(() => {
@@ -324,7 +261,53 @@ describe('DictationSessionController', () => {
     expect(onLlmCleanupSuccess).toHaveBeenCalledTimes(1);
   });
 
-  it('keeps raw transcript and reports a typed cloud cleanup failure', async () => {
+  it('accepts cleaned per-utterance revisions in utterance order despite out-of-order completions', async () => {
+    const sidecarConnection = new FakeSidecarConnection();
+    const sessions: FakeSession[] = [];
+    const resolvers: Array<(value: LlmRouterCleanupResult) => void> = [];
+    const cleanup = vi.fn(
+      () =>
+        new Promise<LlmRouterCleanupResult>((resolve) => {
+          resolvers.push((value) => {
+            resolve(value);
+          });
+        }),
+    );
+    const controller = createController({
+      createSession: (session) => {
+        sessions.push(session);
+      },
+      getSettings: () =>
+        createSettings({
+          llmFeaturesEnabled: true,
+          llmPostprocessMode: 'per_utterance',
+          llmPostprocessSkipMinWords: 0,
+          selectedModel: createExternalModelSelection(),
+        }),
+      llmRouter: createFakeLlmRouter({ cleanup }),
+      sidecarConnection,
+    });
+
+    await controller.startDictation();
+    const sessionId = sidecarConnection.startSession.mock.calls[0]?.[0].sessionId ?? '';
+
+    sidecarConnection.emit(transcriptReady(sessionId, 'first utterance'));
+    sidecarConnection.emit(transcriptReady(sessionId, 'second utterance'));
+
+    await vi.waitFor(() => {
+      expect(resolvers).toHaveLength(2);
+    });
+
+    // Resolve the SECOND utterance's cleanup before the first.
+    resolvers[1]?.({ model: 'm', providerId: 'ollama', text: 'second clean' });
+    resolvers[0]?.({ model: 'm', providerId: 'ollama', text: 'first clean' });
+
+    await vi.waitFor(() => {
+      expect(sessions[0]?.acceptedTexts).toEqual(['first clean', 'second clean']);
+    });
+  });
+
+  it('keeps raw transcript and reports a typed per-utterance cleanup failure', async () => {
     const sidecarConnection = new FakeSidecarConnection();
     const sessions: FakeSession[] = [];
     const onLlmCleanupFailure = vi.fn();
@@ -336,19 +319,15 @@ describe('DictationSessionController', () => {
         createSettings({
           llmFeaturesEnabled: true,
           llmPostprocessMode: 'per_utterance',
+          llmPostprocessShowRawBelow: true,
           llmPostprocessSkipMinWords: 0,
-          llmProvider: 'gemini',
-          llmProviderModels: {
-            ...DEFAULT_PLUGIN_SETTINGS.llmProviderModels,
-            gemini: 'gemini-2.5-flash',
-          },
+          llmRouting: 'remote',
           selectedModel: createExternalModelSelection(),
         }),
-      llmProvider: createFakeLlmProvider({
+      llmRouter: createFakeLlmRouter({
         cleanup: vi.fn(async () => {
           throw new ProviderError('bad key', 'auth_invalid');
         }),
-        id: 'gemini',
       }),
       onLlmCleanupFailure,
       sidecarConnection,
@@ -365,15 +344,21 @@ describe('DictationSessionController', () => {
       expect(onLlmCleanupFailure).toHaveBeenCalledWith({
         code: 'auth_invalid',
         message: 'bad key',
-        providerId: 'gemini',
+        providerId: 'openrouter',
       });
     });
   });
 
-  it('runs cloud batch cleanup in the controller without calling sidecar batch cleanup', async () => {
+  it('runs batch cleanup through the router and replaces the session range', async () => {
     const sidecarConnection = new FakeSidecarConnection();
     const sessions: FakeSession[] = [];
-    const cleanup = vi.fn(async () => 'Clean batch.');
+    const cleanup = vi.fn(
+      async (): Promise<LlmRouterCleanupResult> => ({
+        model: 'llama3.2:latest',
+        providerId: 'ollama',
+        text: 'Clean batch.',
+      }),
+    );
     const controller = createController({
       createSession: (session) => {
         sessions.push(session);
@@ -382,44 +367,38 @@ describe('DictationSessionController', () => {
         createSettings({
           llmFeaturesEnabled: true,
           llmPostprocessMode: 'batch',
-          llmProvider: 'openrouter',
-          llmProviderModels: {
-            ...DEFAULT_PLUGIN_SETTINGS.llmProviderModels,
-            openrouter: 'openai/gpt-4.1',
-          },
           selectedModel: createExternalModelSelection(),
         }),
-      llmProvider: createFakeLlmProvider({ cleanup, id: 'openrouter' }),
+      llmRouter: createFakeLlmRouter({ cleanup }),
       sidecarConnection,
     });
 
     await controller.startDictation();
     const sessionId = sidecarConnection.startSession.mock.calls[0]?.[0].sessionId ?? '';
     sidecarConnection.emit(transcriptReady(sessionId, 'raw transcript'));
-    await Promise.resolve();
     await controller.stopDictation();
     sidecarConnection.emit({ reason: 'user_stop', sessionId, type: 'session_stopped' });
-    await Promise.resolve();
-    await Promise.resolve();
 
-    expect(sidecarConnection.requestBatchCleanup).not.toHaveBeenCalled();
-    expect(cleanup).toHaveBeenCalledWith(
-      expect.objectContaining({
-        model: 'openai/gpt-4.1',
-        userMessage: '<session_transcript>\nraw transcript\n</session_transcript>',
-      }),
-    );
-    expect(sessions[0]?.replaceSessionRangeWithCleaned).toHaveBeenCalledWith(
-      'Clean batch.',
-      expect.objectContaining({ rawTextForCallout: 'raw transcript' }),
-    );
+    await vi.waitFor(() => {
+      expect(cleanup).toHaveBeenCalledWith(
+        expect.objectContaining({
+          userMessage: '<session_transcript>\nraw transcript\n</session_transcript>',
+        }),
+      );
+    });
+    await vi.waitFor(() => {
+      expect(sessions[0]?.replaceSessionRangeWithCleaned).toHaveBeenCalledWith(
+        'Clean batch.',
+        expect.objectContaining({ rawTextForCallout: 'raw transcript' }),
+      );
+    });
     expect(sessions[0]?.dispose).toHaveBeenCalledTimes(1);
   });
 
-  it('warns when batch cleanup cannot read transcript text after the note closes', async () => {
-    const logger = new FakeLogger();
+  it('keeps raw transcript when a batch cleanup fails and reports it', async () => {
     const sidecarConnection = new FakeSidecarConnection();
     const sessions: FakeSession[] = [];
+    const onLlmCleanupFailure = vi.fn();
     const controller = createController({
       createSession: (session) => {
         sessions.push(session);
@@ -428,12 +407,61 @@ describe('DictationSessionController', () => {
         createSettings({
           llmFeaturesEnabled: true,
           llmPostprocessMode: 'batch',
-          llmProviderModels: {
-            ...DEFAULT_PLUGIN_SETTINGS.llmProviderModels,
-            ollama: 'llama3.2:latest',
-          },
           selectedModel: createExternalModelSelection(),
         }),
+      llmRouter: createFakeLlmRouter({
+        cleanup: vi.fn(async () => {
+          throw new ProviderError('model gone', 'unknown_model');
+        }),
+      }),
+      onLlmCleanupFailure,
+      sidecarConnection,
+    });
+
+    await controller.startDictation();
+    const sessionId = sidecarConnection.startSession.mock.calls[0]?.[0].sessionId ?? '';
+    sidecarConnection.emit(transcriptReady(sessionId, 'raw transcript'));
+    await controller.stopDictation();
+    sidecarConnection.emit({ reason: 'user_stop', sessionId, type: 'session_stopped' });
+
+    await vi.waitFor(() => {
+      expect(onLlmCleanupFailure).toHaveBeenCalledWith({
+        code: 'unknown_model',
+        message: 'model gone',
+        providerId: 'ollama',
+      });
+    });
+    const session = sessions[0];
+    if (session === undefined) {
+      throw new Error('expected session fixture');
+    }
+    expect(session.replaceSessionRangeWithCleaned).not.toHaveBeenCalled();
+    expect(session.clearSessionProcessingMark).toHaveBeenCalled();
+    expect(session.dispose).toHaveBeenCalledTimes(1);
+  });
+
+  it('warns when batch cleanup cannot read transcript text after the note closes', async () => {
+    const logger = new FakeLogger();
+    const sidecarConnection = new FakeSidecarConnection();
+    const sessions: FakeSession[] = [];
+    const cleanup = vi.fn(
+      async (): Promise<LlmRouterCleanupResult> => ({
+        model: 'm',
+        providerId: 'ollama',
+        text: 'unused',
+      }),
+    );
+    const controller = createController({
+      createSession: (session) => {
+        sessions.push(session);
+      },
+      getSettings: () =>
+        createSettings({
+          llmFeaturesEnabled: true,
+          llmPostprocessMode: 'batch',
+          selectedModel: createExternalModelSelection(),
+        }),
+      llmRouter: createFakeLlmRouter({ cleanup }),
       logger,
       sidecarConnection,
     });
@@ -449,7 +477,7 @@ describe('DictationSessionController', () => {
     session.currentSessionText = '';
     sidecarConnection.emit({ reason: 'user_stop', sessionId, type: 'session_stopped' });
 
-    expect(sidecarConnection.requestBatchCleanup).not.toHaveBeenCalled();
+    expect(cleanup).not.toHaveBeenCalled();
     expect(logger.warn).toHaveBeenCalledWith(
       'llm',
       'batch cleanup skipped: locked note closed before transcript could be read',
@@ -568,12 +596,9 @@ describe('DictationSessionController', () => {
         createSettings({
           llmFeaturesEnabled: true,
           llmPostprocessMode: 'batch',
-          llmProviderModels: {
-            ...DEFAULT_PLUGIN_SETTINGS.llmProviderModels,
-            ollama: 'llama3.2:latest',
-          },
           selectedModel: createExternalModelSelection(),
         }),
+      llmRouter: createFakeLlmRouter(),
       sidecarConnection,
     });
 
@@ -597,7 +622,7 @@ describe('DictationSessionController', () => {
 function createController({
   captureStream = new FakeCaptureStream(),
   createSession,
-  llmProvider = createFakeLlmProvider(),
+  llmRouter = createFakeLlmRouter(),
   getSettings = () => createSettings({ selectedModel: createExternalModelSelection() }),
   logger = new FakeLogger(),
   notice = vi.fn(),
@@ -608,7 +633,7 @@ function createController({
   captureStream?: FakeCaptureStream;
   createSession?: (session: FakeSession) => void;
   getSettings?: () => PluginSettings;
-  llmProvider?: LlmProvider;
+  llmRouter?: LlmRouter;
   logger?: FakeLogger;
   notice?: (message: string) => void;
   onLlmCleanupFailure?: (failure: LlmCleanupFailure) => void;
@@ -630,7 +655,7 @@ function createController({
       createSession?.(session);
       return session;
     },
-    createLlmProvider: () => llmProvider,
+    createLlmRouter: () => llmRouter,
     getSettings,
     logger,
     notice,
@@ -660,20 +685,9 @@ function createExternalModelSelection(): NonNullable<PluginSettings['selectedMod
   };
 }
 
-function createFakeLlmProvider(overrides: Partial<LlmProvider> = {}): LlmProvider {
-  return {
-    cleanup: vi.fn(async () => 'clean text'),
-    id: 'ollama',
-    listModels: vi.fn(async () => []),
-    probe: vi.fn(async () => ({ kind: 'unknown' as const })),
-    ...overrides,
-  };
-}
-
 function transcriptReady(sessionId: string, text: string): SidecarEvent {
   return {
     isFinal: true,
-    llmPostprocessRawText: null,
     pauseMsBeforeUtterance: null,
     processingDurationMs: 12,
     revision: 0,

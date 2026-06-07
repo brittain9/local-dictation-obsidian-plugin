@@ -1,0 +1,103 @@
+import { describe, expect, it, vi } from 'vitest';
+import type {
+  CleanupOptions,
+  LlmProvider,
+  LlmProviderId,
+  ProviderError,
+} from '../../src/llm/provider';
+import { createLlmRouter } from '../../src/llm/router';
+import { DEFAULT_PLUGIN_SETTINGS, type PluginSettings } from '../../src/settings/plugin-settings';
+import { createFakeLlmProvider } from '../fixtures/llm';
+
+function settings(overrides: Partial<PluginSettings> = {}): PluginSettings {
+  return {
+    ...DEFAULT_PLUGIN_SETTINGS,
+    llmProviderModels: { ollama: 'llama3.2:latest', openrouter: 'openai/gpt-4.1' },
+    ...overrides,
+  };
+}
+
+// Records which provider id the router constructed plus the model it passed to
+// cleanup(), so size-based routing can be asserted end to end.
+function routerWithSpy(
+  pluginSettings: PluginSettings,
+  cleanup: (options: CleanupOptions) => Promise<string> = async () => 'cleaned',
+): {
+  calls: Array<{ model: string; providerId: LlmProviderId }>;
+  router: ReturnType<typeof createLlmRouter>;
+} {
+  const calls: Array<{ model: string; providerId: LlmProviderId }> = [];
+  const router = createLlmRouter(
+    pluginSettings,
+    (providerId): LlmProvider =>
+      createFakeLlmProvider({
+        id: providerId,
+        cleanup: vi.fn(async (options: CleanupOptions) => {
+          calls.push({ model: options.model, providerId });
+          return cleanup(options);
+        }),
+      }),
+  );
+  return { calls, router };
+}
+
+const cleanupArgs = (userMessage: string) => ({
+  prompt: 'Clean it.',
+  temperature: 0.2,
+  userMessage,
+});
+
+describe('createLlmRouter', () => {
+  it('routes local to Ollama regardless of size', async () => {
+    const { calls, router } = routerWithSpy(settings({ llmRouting: 'local' }));
+
+    const result = await router.cleanup(cleanupArgs('x'.repeat(50_000)));
+
+    expect(result.providerId).toBe('ollama');
+    expect(result.model).toBe('llama3.2:latest');
+    expect(calls).toEqual([{ model: 'llama3.2:latest', providerId: 'ollama' }]);
+  });
+
+  it('routes remote to OpenRouter regardless of size', async () => {
+    const { calls, router } = routerWithSpy(settings({ llmRouting: 'remote' }));
+
+    const result = await router.cleanup(cleanupArgs('tiny'));
+
+    expect(result.providerId).toBe('openrouter');
+    expect(calls).toEqual([{ model: 'openai/gpt-4.1', providerId: 'openrouter' }]);
+  });
+
+  it.each([
+    ['at the threshold stays local', 100, 'ollama'],
+    ['one over the threshold escalates to remote', 101, 'openrouter'],
+  ] as const)('auto %s', async (_label, chars, expected) => {
+    const { router } = routerWithSpy(
+      settings({ llmRemoteThresholdChars: 100, llmRouting: 'auto' }),
+    );
+
+    const result = await router.cleanup(cleanupArgs('x'.repeat(chars)));
+
+    expect(result.providerId).toBe(expected);
+  });
+
+  it('throws unknown_model when the routed provider has no configured model', async () => {
+    const { router } = routerWithSpy(
+      settings({ llmProviderModels: { ollama: '', openrouter: '' }, llmRouting: 'local' }),
+    );
+
+    await expect(router.cleanup(cleanupArgs('hi'))).rejects.toMatchObject({
+      code: 'unknown_model',
+      name: 'ProviderError',
+    } satisfies Partial<ProviderError>);
+  });
+
+  it('propagates the provider id and model on a successful cleanup', async () => {
+    const { router } = routerWithSpy(settings({ llmRouting: 'remote' }), async () => '  spaced  ');
+
+    await expect(router.cleanup(cleanupArgs('hi'))).resolves.toEqual({
+      model: 'openai/gpt-4.1',
+      providerId: 'openrouter',
+      text: '  spaced  ',
+    });
+  });
+});

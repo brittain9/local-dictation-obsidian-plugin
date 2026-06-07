@@ -16,7 +16,6 @@ import {
 } from '../sidecar/sidecar-install-manager';
 import { readInstallManifest, variantDirectoryPath } from '../sidecar/sidecar-installer';
 import { renderActiveInstallCard } from './install-progress-row';
-import { LlmProviderSettingsSection } from './llm-provider-settings-section';
 import { renderMicrophonePicker } from './microphone-picker';
 import { renderModelSection } from './model-settings-section';
 import {
@@ -105,7 +104,6 @@ export class LocalSttSettingTab extends PluginSettingTab {
   private disposeMissingSidecarBanner: (() => void) | null = null;
   private disposeModelSection: (() => void) | null = null;
   private disposeSidecarSection: (() => void) | null = null;
-  private readonly llmProviderSection: LlmProviderSettingsSection;
   private missingSidecarProgressEl: HTMLDivElement | null = null;
 
   constructor(
@@ -123,14 +121,6 @@ export class LocalSttSettingTab extends PluginSettingTab {
         });
       },
     };
-    this.llmProviderSection = new LlmProviderSettingsSection({
-      access: this.access,
-      logger: this.dependencies.logger,
-      refreshSettingsTab: () => {
-        this.display();
-      },
-      saveSettings: this.dependencies.saveSettings,
-    });
   }
 
   override display(): void {
@@ -221,7 +211,10 @@ export class LocalSttSettingTab extends PluginSettingTab {
 
     if (settings.llmFeaturesEnabled) {
       const llmCard = createSettingGroup(containerEl, 'LLM transformation');
-      this.llmProviderSection.render(llmCard, settings);
+      llmCard.createEl('p', {
+        cls: 'setting-item-description',
+        text: 'Configure providers and routing in the Local Dictation panel.',
+      });
     }
 
     // --- Engine options ---
