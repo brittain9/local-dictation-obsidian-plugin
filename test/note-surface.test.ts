@@ -420,6 +420,36 @@ describe('NoteSurface', () => {
     }
   });
 
+  it('batch-rewrites the whole region even after the user edits an utterance', () => {
+    const { surface, view } = createSurface();
+
+    expect(append(surface, 'u1', 'first').kind).toBe('appended');
+    expect(append(surface, 'u2', 'second').kind).toBe('appended');
+    expect(append(surface, 'u3', 'third').kind).toBe('appended');
+
+    // The user fixes a word in the middle utterance mid-session.
+    surface.observeTransaction(
+      view.apply({
+        annotations: Transaction.userEvent.of('input.type'),
+        changes: { from: 7, to: 8, insert: 'X' },
+      }),
+    );
+
+    // Live mode still protects that edit: a per-utterance revision is denied.
+    expect(surface.replaceAnchor('u2', 'SECOND', 'second').kind).toBe('denied');
+
+    // Batch passes every session utterance as allowed, so the deliberate
+    // whole-region rewrite overwrites the edited span instead of bailing.
+    expect(
+      surface.rewriteRegion({ from: 0, to: doc(view).length }, 'Cleaned all.', [
+        { utteranceId: 'u1' },
+        { utteranceId: 'u2' },
+        { utteranceId: 'u3' },
+      ]),
+    ).toMatchObject({ kind: 'rewritten' });
+    expect(doc(view)).toBe('Cleaned all.');
+  });
+
   it('denies rewrites that cut through an utterance span', () => {
     const { surface } = createSurface();
 
