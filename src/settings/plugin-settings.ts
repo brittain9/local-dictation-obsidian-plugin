@@ -84,6 +84,7 @@ export interface PluginSettings {
   audioInputDevice: AudioInputDevice | null;
   cudaLibraryPath: string;
   developerMode: boolean;
+  diarizationEnabled: boolean;
   dictationAnchor: DictationAnchor;
   listeningMode: ListeningMode;
   llmFeaturesEnabled: boolean;
@@ -122,6 +123,7 @@ export const DEFAULT_PLUGIN_SETTINGS: PluginSettings = {
   audioInputDevice: null,
   cudaLibraryPath: '',
   developerMode: false,
+  diarizationEnabled: false,
   dictationAnchor: 'at_cursor',
   listeningMode: 'always_on',
   llmFeaturesEnabled: false,
@@ -170,6 +172,10 @@ export function resolvePluginSettings(data: unknown): PluginSettings {
     audioInputDevice: readAudioInputDevice(raw.audioInputDevice),
     cudaLibraryPath: readString(raw.cudaLibraryPath, DEFAULT_PLUGIN_SETTINGS.cudaLibraryPath),
     developerMode: readBoolean(raw.developerMode, DEFAULT_PLUGIN_SETTINGS.developerMode),
+    diarizationEnabled: readBoolean(
+      raw.diarizationEnabled,
+      DEFAULT_PLUGIN_SETTINGS.diarizationEnabled,
+    ),
     dictationAnchor: isDictationAnchor(raw.dictationAnchor)
       ? raw.dictationAnchor
       : DEFAULT_PLUGIN_SETTINGS.dictationAnchor,

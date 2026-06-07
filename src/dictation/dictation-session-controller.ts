@@ -49,6 +49,7 @@ type ControllerSession = Pick<
 
 interface ActiveSessionSnapshot {
   accelerationPreference: PluginSettings['accelerationPreference'];
+  diarizationEnabled: PluginSettings['diarizationEnabled'];
   dictationAnchor: PluginSettings['dictationAnchor'];
   listeningMode: PluginSettings['listeningMode'];
   llmFeaturesEnabled: PluginSettings['llmFeaturesEnabled'];
@@ -246,6 +247,7 @@ export class DictationSessionController {
     try {
       await this.dependencies.sidecarConnection.startSession({
         accelerationPreference: snapshot.accelerationPreference,
+        diarizationEnabled: snapshot.diarizationEnabled,
         language: 'en',
         ...(snapshot.llmPostprocess !== null ? { llmPostprocess: snapshot.llmPostprocess } : {}),
         mode: snapshot.listeningMode,
@@ -631,6 +633,7 @@ export class DictationSessionController {
       revision: event.revision,
       segments: event.segments,
       sessionId: event.sessionId,
+      speakerIndex: event.speakerIndex,
       stageResults: event.stageResults,
       text: event.text.trim(),
       utteranceEndMsInSession: event.utteranceEndMsInSession,
@@ -874,6 +877,7 @@ function createSessionSnapshot(
 
   return {
     accelerationPreference: settings.accelerationPreference,
+    diarizationEnabled: settings.diarizationEnabled,
     dictationAnchor: settings.dictationAnchor,
     listeningMode: settings.listeningMode,
     llmFeaturesEnabled: settings.llmFeaturesEnabled,

@@ -296,6 +296,7 @@ export class Session {
     const projection = this.renderer.planAppend(
       {
         pauseMsBeforeUtterance: revision.pauseMsBeforeUtterance,
+        speakerIndex: revision.speakerIndex,
         text: revision.text,
         utteranceId: revision.utteranceId,
         utteranceStartMsInSession: revision.utteranceStartMsInSession,
@@ -338,6 +339,7 @@ export class Session {
     const callout = formatRawPostprocessCallout(rawText);
     const boundary = missingNewlines(context.tailContent, 2);
     const projection: TranscriptInsertProjection = {
+      emittedSpeakerIndex: null,
       emittedTimestamp: null,
       insertedText: callout,
       projectedText: `${boundary}${callout}`,

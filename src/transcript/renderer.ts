@@ -23,6 +23,7 @@ export interface TranscriptTimestampRenderOptions {
 
 export interface TranscriptAppendInput {
   readonly pauseMsBeforeUtterance: number | null;
+  readonly speakerIndex: number | null;
   readonly text: string;
   readonly utteranceId: UtteranceId;
   readonly utteranceStartMsInSession: number;
@@ -38,6 +39,7 @@ export interface EmittedTimestamp {
 }
 
 export interface TranscriptInsertProjection {
+  readonly emittedSpeakerIndex: number | null;
   readonly emittedTimestamp: EmittedTimestamp | null;
   readonly insertedText: string;
   readonly projectedText: string;
@@ -48,6 +50,7 @@ export interface TranscriptInsertProjection {
 
 export class TranscriptRenderer {
   private hasRenderedText = false;
+  private lastRenderedSpeakerIndex: number | null = null;
   private lastTimestampMsInSession: number | null = null;
 
   constructor(private readonly options: TranscriptRenderOptions) {}
@@ -71,11 +74,15 @@ export class TranscriptRenderer {
         }
       : null;
     const timestampPrefix = emittedTimestamp === null ? '' : `${emittedTimestamp.text} `;
-    const prefix = `${boundary}${sessionHeader}${timestampPrefix}`;
+    const speakerPrefix = this.shouldEmitSpeakerLabel(input.speakerIndex)
+      ? `${formatSpeakerLabel(input.speakerIndex)} `
+      : '';
+    const prefix = `${boundary}${sessionHeader}${timestampPrefix}${speakerPrefix}`;
     const textStartOffset = prefix.length;
     const projectedText = `${prefix}${input.text}`;
 
     return {
+      emittedSpeakerIndex: input.speakerIndex,
       emittedTimestamp,
       insertedText: input.text,
       projectedText,
@@ -90,6 +97,13 @@ export class TranscriptRenderer {
 
     if (projection.emittedTimestamp !== null) {
       this.lastTimestampMsInSession = projection.emittedTimestamp.elapsedMs;
+    }
+
+    // An unassigned utterance (null) carries no speaker, so it neither relabels
+    // nor resets the running speaker — a later same-speaker utterance stays
+    // suppressed across the gap.
+    if (projection.emittedSpeakerIndex !== null) {
+      this.lastRenderedSpeakerIndex = projection.emittedSpeakerIndex;
     }
   }
 
@@ -142,6 +156,13 @@ export class TranscriptRenderer {
       !this.hasRenderedText && this.options.timestamps.enabled && this.options.timestamps.header
     );
   }
+
+  // Label only on speaker change: the first assigned speaker is always labeled,
+  // then a label appears only when the speaker differs from the last one
+  // rendered. Unassigned utterances (null) never carry a label.
+  private shouldEmitSpeakerLabel(speakerIndex: number | null): speakerIndex is number {
+    return speakerIndex !== null && speakerIndex !== this.lastRenderedSpeakerIndex;
+  }
 }
 
 export function isMeaningfulPause(pauseMsBeforeUtterance: number | null): boolean {
@@ -177,6 +198,11 @@ export function formatSessionHeader(sessionStartUnixMs: number): string {
   return `[${date.getFullYear()}-${padTwo(date.getMonth() + 1)}-${padTwo(date.getDate())} ${padTwo(
     date.getHours(),
   )}:${padTwo(date.getMinutes())}]`;
+}
+
+// Speaker indices are 0-based on the wire; the rendered label is 1-based.
+export function formatSpeakerLabel(speakerIndex: number): string {
+  return `**Speaker ${speakerIndex + 1}:**`;
 }
 
 function padTwo(value: number): string {

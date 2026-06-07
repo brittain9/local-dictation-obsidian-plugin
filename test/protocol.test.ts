@@ -45,6 +45,7 @@ function transcriptReadyPayload(
     revision: 0,
     segments: [],
     sessionId: 'session-1',
+    speakerIndex: null,
     stageResults: [],
     text: 'hello world',
     type: 'transcript_ready',
@@ -244,6 +245,7 @@ describe('command serialization', () => {
     const frame = encodeJsonFrame(
       createStartSessionCommand({
         accelerationPreference: 'auto',
+        diarizationEnabled: true,
         language: 'en',
         mode: 'always_on',
         modelSelection: externalModelSelection(),
@@ -255,12 +257,14 @@ describe('command serialization', () => {
     const payload = readPayload(frame) as Record<string, unknown>;
 
     expect(payload.accelerationPreference).toBe('auto');
+    expect(payload.diarizationEnabled).toBe(true);
     expect(payload.sessionId).toBe('session-gpu');
   });
 
   it('serializes start_session with the llmPostprocess config nested verbatim', () => {
     const command = createStartSessionCommand({
       accelerationPreference: 'auto',
+      diarizationEnabled: false,
       language: 'en',
       llmPostprocess: llmPostprocessConfig(),
       mode: 'always_on',
@@ -467,6 +471,18 @@ describe('event parsing', () => {
     expect(event.type).toBe('transcript_ready');
     if (event.type === 'transcript_ready') {
       expect(event.pauseMsBeforeUtterance).toBe(pauseMsBeforeUtterance);
+    }
+  });
+
+  it.each([
+    ['an assigned speaker index', 1],
+    ['a null speaker (diarization off)', null],
+  ] as const)('parses transcript_ready with %s', (_label, speakerIndex) => {
+    const event = parseEventFrame(JSON.stringify(transcriptReadyPayload({ speakerIndex })));
+
+    expect(event.type).toBe('transcript_ready');
+    if (event.type === 'transcript_ready') {
+      expect(event.speakerIndex).toBe(speakerIndex);
     }
   });
 

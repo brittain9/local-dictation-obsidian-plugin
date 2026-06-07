@@ -129,6 +129,7 @@ export interface LlmPostprocessConfig {
 
 export interface StartSessionCommand extends EnvelopeBase<'start_session'> {
   accelerationPreference: AccelerationPreference;
+  diarizationEnabled: boolean;
   language: 'en';
   llmPostprocess?: LlmPostprocessConfig;
   mode: ListeningMode;
@@ -262,6 +263,7 @@ export interface TranscriptReadyEvent extends EnvelopeBase<'transcript_ready'> {
   revision: number;
   segments: TranscriptSegment[];
   sessionId: string;
+  speakerIndex: number | null;
   stageResults: StageOutcome[];
   text: string;
   utteranceDurationMs: number;

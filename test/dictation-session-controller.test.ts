@@ -505,6 +505,7 @@ function transcriptReady(sessionId: string, text: string): SidecarEvent {
     revision: 0,
     segments: [],
     sessionId,
+    speakerIndex: null,
     stageResults: [],
     text,
     type: 'transcript_ready',

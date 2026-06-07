@@ -226,6 +226,126 @@ describe('TranscriptRenderer', () => {
   });
 });
 
+describe('TranscriptRenderer speaker labels', () => {
+  it('labels the first assigned utterance, suppresses same-speaker repeats, and relabels on change', () => {
+    const renderer = new TranscriptRenderer({
+      timestamps: timestamps(),
+      transcriptFormatting: 'space',
+    });
+
+    expect(planAndCommit(renderer, { speakerIndex: 0, text: 'hi' }).projectedText).toBe(
+      '**Speaker 1:** hi',
+    );
+    expect(planAndCommit(renderer, { speakerIndex: 0, text: 'still me' }, 't').projectedText).toBe(
+      ' still me',
+    );
+    expect(planAndCommit(renderer, { speakerIndex: 1, text: 'now you' }, 't').projectedText).toBe(
+      ' **Speaker 2:** now you',
+    );
+    expect(planAndCommit(renderer, { speakerIndex: 0, text: 'me again' }, 't').projectedText).toBe(
+      ' **Speaker 1:** me again',
+    );
+  });
+
+  it('never labels when the speaker is unassigned (diarization off)', () => {
+    const renderer = new TranscriptRenderer({
+      timestamps: timestamps(),
+      transcriptFormatting: 'space',
+    });
+
+    expect(planAndCommit(renderer, { speakerIndex: null, text: 'first' }).projectedText).toBe(
+      'first',
+    );
+    expect(planAndCommit(renderer, { speakerIndex: null, text: 'second' }, 't').projectedText).toBe(
+      ' second',
+    );
+  });
+
+  it('keeps same-speaker suppression across an unassigned utterance', () => {
+    const renderer = new TranscriptRenderer({
+      timestamps: timestamps(),
+      transcriptFormatting: 'space',
+    });
+
+    planAndCommit(renderer, { speakerIndex: 0, text: 'one' });
+    // A null utterance carries no speaker, so it must not reset the running
+    // speaker and trigger a spurious relabel on the next same-speaker line.
+    planAndCommit(renderer, { speakerIndex: null, text: 'gap' }, 't');
+    expect(planAndCommit(renderer, { speakerIndex: 0, text: 'two' }, 't').projectedText).toBe(
+      ' two',
+    );
+  });
+
+  it('does not advance the running speaker until the append is committed', () => {
+    const renderer = new TranscriptRenderer({
+      timestamps: timestamps(),
+      transcriptFormatting: 'space',
+    });
+
+    // Planning twice without committing must re-emit the same first-speaker label;
+    // only commitAppend advances the suppression state.
+    const planned = renderer.planAppend(
+      {
+        pauseMsBeforeUtterance: null,
+        speakerIndex: 0,
+        text: 'a',
+        utteranceId: 'u',
+        utteranceStartMsInSession: 0,
+      },
+      { tailContent: '' },
+    );
+    const replanned = renderer.planAppend(
+      {
+        pauseMsBeforeUtterance: null,
+        speakerIndex: 0,
+        text: 'a',
+        utteranceId: 'u',
+        utteranceStartMsInSession: 0,
+      },
+      { tailContent: '' },
+    );
+
+    expect(planned.projectedText).toBe('**Speaker 1:** a');
+    expect(replanned.projectedText).toBe('**Speaker 1:** a');
+  });
+
+  it('composes the speaker label after the timestamp on one line', () => {
+    const renderer = new TranscriptRenderer({
+      timestamps: timestamps({ enabled: true, header: false }),
+      transcriptFormatting: 'space',
+    });
+
+    const first = planAndCommit(renderer, {
+      speakerIndex: 0,
+      text: 'hello',
+      utteranceStartMsInSession: 0,
+    });
+    const later = planAndCommit(
+      renderer,
+      { speakerIndex: 1, text: 'reply', utteranceStartMsInSession: DEFAULT_SPARSE_INTERVAL_MS },
+      't',
+    );
+
+    expect(first.projectedText).toBe('(0:00) **Speaker 1:** hello');
+    expect(later.projectedText).toBe(' (0:30) **Speaker 2:** reply');
+  });
+
+  it('excludes the speaker label from the replaceable text region', () => {
+    const renderer = new TranscriptRenderer({
+      timestamps: timestamps(),
+      transcriptFormatting: 'space',
+    });
+
+    const projection = planAndCommit(renderer, { speakerIndex: 0, text: 'hello' });
+
+    // The label rides in the prefix so an interim->final text swap (which only
+    // rewrites [textStartOffset, textEndOffset]) leaves the label intact.
+    expect(projection.insertedText).toBe('hello');
+    expect(projection.projectedText.slice(projection.textStartOffset)).toBe('hello');
+    expect(projection.projectedText.slice(0, projection.textStartOffset)).toBe('**Speaker 1:** ');
+  });
+});
+
 function planAndCommit(
   renderer: TranscriptRenderer,
   input: Partial<TranscriptAppendInput> & { text: string },
@@ -234,6 +354,7 @@ function planAndCommit(
   const projection = renderer.planAppend(
     {
       pauseMsBeforeUtterance: null,
+      speakerIndex: null,
       utteranceId: 'utt',
       utteranceStartMsInSession: 0,
       ...input,

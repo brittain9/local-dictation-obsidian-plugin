@@ -1,6 +1,7 @@
 export type UtteranceId = string;
 
 export const STAGE_IDS = [
+  'diarization',
   'engine',
   'hallucination_filter',
   'llm_postprocess',
@@ -40,6 +41,7 @@ export interface TranscriptRevision {
   revision: number;
   segments: readonly TranscriptSegment[];
   sessionId: string;
+  speakerIndex: number | null;
   stageResults: readonly StageOutcome[];
   text: string;
   utteranceEndMsInSession: number;

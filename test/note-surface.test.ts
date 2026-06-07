@@ -90,6 +90,7 @@ function appendWithRenderer(
   const projection = renderer.planAppend(
     {
       pauseMsBeforeUtterance: input.pauseMsBeforeUtterance ?? null,
+      speakerIndex: null,
       text,
       utteranceId,
       utteranceStartMsInSession: input.utteranceStartMsInSession ?? 0,

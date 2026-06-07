@@ -17,6 +17,7 @@ export function transcript(
     ],
     pauseMsBeforeUtterance: null,
     sessionId: 'session-1',
+    speakerIndex: null,
     stageResults: [
       {
         durationMs: 10,

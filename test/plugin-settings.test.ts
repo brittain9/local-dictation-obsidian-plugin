@@ -45,6 +45,12 @@ describe('resolvePluginSettings', () => {
     });
   });
 
+  it('defaults speaker diarization off and honors a persisted boolean', () => {
+    expect(DEFAULT_PLUGIN_SETTINGS.diarizationEnabled).toBe(false);
+    expect(resolvePluginSettings({ diarizationEnabled: true }).diarizationEnabled).toBe(true);
+    expect(resolvePluginSettings({ diarizationEnabled: 'yes' }).diarizationEnabled).toBe(false);
+  });
+
   it('merges valid persisted values', () => {
     expect(
       resolvePluginSettings({

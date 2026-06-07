@@ -206,6 +206,12 @@ export class LocalSttSettingTab extends PluginSettingTab {
       isValid: isTranscriptFormattingMode,
     });
 
+    addToggleSetting(transcriptionCard, this.access, {
+      name: 'Speaker labels (diarization)',
+      desc: 'Label each utterance with a detected speaker (Speaker 1, Speaker 2, …). Runs fully on-device; no audio leaves your machine.',
+      key: 'diarizationEnabled',
+    });
+
     const timestampsCard = createSettingGroup(containerEl, 'Timestamps');
     this.renderTimestampSettings(timestampsCard, settings);
 

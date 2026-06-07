@@ -11,6 +11,7 @@ Private, on-device speech-to-text for Obsidian. Dictate notes with Whisper or Co
 - **Cohere Transcribe** — a [Hugging Face Open ASR Leaderboard](https://huggingface.co/spaces/hf-audio/open_asr_leaderboard)-topping engine, running locally.
 - **Whisper** — mature offline transcription with a range of size/speed options.
 - **Silero v6 VAD** — [enterprise-grade neural voice activity detection](https://github.com/snakers4/silero-vad) for real-time speech boundary detection.
+- **Speaker diarization** — optionally label who is speaking (Speaker 1, Speaker 2, …) for interviews, meetings, and conversations. Runs fully on-device; speaker data stays in memory for the session and is never persisted.
 - **Optional Ollama LLM cleanup** — polish dictated text with a local LLM.
 - **One-click model management** — browse, download, and remove models from inside the plugin.
 - **Hardware acceleration** — Metal on macOS, CUDA on Linux/Windows (Turing-or-newer NVIDIA GPUs).
@@ -53,6 +54,7 @@ To make local transcription work, the plugin does a few things:
 - **Installs a helper program.** A small native "sidecar" is downloaded once from this repository's GitHub Releases and stored inside the plugin's folder. The plugin runs this helper locally to do the actual transcription.
 - **Stores model files on disk.** Whisper and voice-activity models are cached outside your vault so they aren't duplicated per-vault. You can browse and remove them from the plugin's model manager.
 - **Uses the network only for downloads.** The sidecar archive and model files are fetched from their official sources on demand. Nothing else is sent anywhere.
+- **Keeps speaker data in memory only.** With speaker diarization enabled, the voice embeddings used to tell speakers apart exist only for the duration of a session and are discarded when it ends. No voiceprints are written to disk.
 
 ## 🤝 Contributing
 
@@ -61,3 +63,5 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for prerequisites, setup, scripts, branch
 ## 📄 License
 
 MIT. See [LICENSE](LICENSE).
+
+The bundled speaker-embedding model (`wespeaker_en_voxceleb_resnet34_LM`, used for speaker diarization) is derived from [WeSpeaker](https://github.com/wenet-e2e/wespeaker) and distributed under [CC-BY-4.0](https://creativecommons.org/licenses/by/4.0/).
