@@ -118,9 +118,15 @@ function parseModels(response: unknown): ModelOption[] {
   }
 
   return response.data
-    .map((entry): ModelOption => {
+    .map((entry): ModelOption | null => {
       if (!isRecord(entry) || typeof entry.id !== 'string') {
         throw new ProviderError('OpenRouter returned an invalid model entry.', 'invalid_response');
+      }
+
+      // The transform only sends and expects text, so drop models that emit audio
+      // or images (e.g. TTS / image generation).
+      if (!isTextModel(entry)) {
+        return null;
       }
 
       const pricing = parsePricing(entry.pricing);
@@ -131,7 +137,53 @@ function parseModels(response: unknown): ModelOption[] {
         ...(pricing !== null ? { pricing } : {}),
       };
     })
+    .filter((model): model is ModelOption => model !== null)
     .sort((left, right) => left.displayName.localeCompare(right.displayName));
+}
+
+// Keep text-in / text-out chat models. Multimodal models that accept images or
+// audio but answer in text (e.g. vision chat) are kept; models that emit audio or
+// images are dropped. Unknown modality data is kept rather than hidden.
+function isTextModel(entry: Record<string, unknown>): boolean {
+  if (!isRecord(entry.architecture)) {
+    return true;
+  }
+  const { inputs, outputs } = readModalities(entry.architecture);
+  const acceptsText = inputs === null || inputs.includes('text');
+  const textOnlyOutput =
+    outputs === null || (outputs.length > 0 && outputs.every((modality) => modality === 'text'));
+  return acceptsText && textOnlyOutput;
+}
+
+function readModalities(architecture: Record<string, unknown>): {
+  inputs: string[] | null;
+  outputs: string[] | null;
+} {
+  const inputs = toStringArray(architecture.input_modalities);
+  const outputs = toStringArray(architecture.output_modalities);
+  if (inputs !== null || outputs !== null) {
+    return { inputs, outputs };
+  }
+  // Legacy single-field form, e.g. "text+image->text".
+  if (typeof architecture.modality === 'string') {
+    const [input, output] = architecture.modality.split('->');
+    return {
+      inputs: input === undefined ? null : splitModalityPart(input),
+      outputs: output === undefined ? null : splitModalityPart(output),
+    };
+  }
+  return { inputs: null, outputs: null };
+}
+
+function splitModalityPart(part: string): string[] {
+  return part
+    .split('+')
+    .map((modality) => modality.trim())
+    .filter((modality) => modality.length > 0);
+}
+
+function toStringArray(value: unknown): string[] | null {
+  return Array.isArray(value) && value.every((entry) => typeof entry === 'string') ? value : null;
 }
 
 // OpenRouter prices are USD per token; convert to per-1M-token figures for the

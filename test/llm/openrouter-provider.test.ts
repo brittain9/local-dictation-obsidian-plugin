@@ -48,12 +48,33 @@ describe('OpenRouterProvider', () => {
     });
   });
 
-  it('lists models from the catalog response and parses pricing', async () => {
+  it('lists text models with pricing and drops audio/image models', async () => {
     mockFetch(async () =>
       jsonResponse({
         data: [
-          { id: 'z/model', name: 'Zed', pricing: { completion: '0.000015', prompt: '0.000003' } },
+          {
+            id: 'z/model',
+            name: 'Zed',
+            pricing: { completion: '0.000015', prompt: '0.000003' },
+            architecture: { input_modalities: ['text'], output_modalities: ['text'] },
+          },
+          // No architecture data: kept rather than hidden.
           { id: 'a/model' },
+          // Vision chat: image input but text output -> kept.
+          {
+            id: 'm/vision',
+            name: 'Multi',
+            architecture: { input_modalities: ['text', 'image'], output_modalities: ['text'] },
+          },
+          // Emits audio -> dropped.
+          {
+            id: 'x/audio',
+            name: 'Audible',
+            architecture: {
+              input_modalities: ['text', 'audio'],
+              output_modalities: ['text', 'audio'],
+            },
+          },
         ],
       }),
     );
@@ -65,6 +86,7 @@ describe('OpenRouterProvider', () => {
       }).listModels(),
     ).resolves.toEqual([
       { displayName: 'a/model', id: 'a/model' },
+      { displayName: 'Multi', id: 'm/vision' },
       { displayName: 'Zed', id: 'z/model', pricing: { input: 3, output: 15 } },
     ]);
   });
