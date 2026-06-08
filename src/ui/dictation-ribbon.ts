@@ -39,7 +39,7 @@ export class DictationRibbonController {
   private readonly reducedMotionListener: () => void;
   private state: DictationControllerState = 'idle';
   private visualState: DictationControllerState = 'idle';
-  private holdTimer: ReturnType<typeof setTimeout> | null = null;
+  private holdTimer: number | null = null;
   private queueTier: QueueBackpressureTier = 'normal';
   private currentIcon: RibbonIcon | null = null;
 
@@ -171,7 +171,7 @@ export class DictationRibbonController {
 
   private startHold(): void {
     this.cancelHold();
-    this.holdTimer = setTimeout(() => {
+    this.holdTimer = window.setTimeout(() => {
       this.holdTimer = null;
       this.visualState = this.state;
       this.render();
@@ -181,7 +181,7 @@ export class DictationRibbonController {
 
   private cancelHold(): void {
     if (this.holdTimer !== null) {
-      clearTimeout(this.holdTimer);
+      window.clearTimeout(this.holdTimer);
       this.holdTimer = null;
     }
   }
@@ -195,9 +195,9 @@ export class DictationRibbonController {
       if (bands) {
         this.applyBands(bands);
       }
-      this.rafId = requestAnimationFrame(tick);
+      this.rafId = window.requestAnimationFrame(tick);
     };
-    this.rafId = requestAnimationFrame(tick);
+    this.rafId = window.requestAnimationFrame(tick);
   }
 
   private stopAnimation(): void {

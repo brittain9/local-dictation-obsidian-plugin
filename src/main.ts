@@ -333,7 +333,11 @@ export default class LocalSttPlugin extends Plugin {
     }
   }
 
-  override async onunload(): Promise<void> {
+  override onunload(): void {
+    void this.disposeAll();
+  }
+
+  private async disposeAll(): Promise<void> {
     try {
       this.modelInstallManager?.dispose();
     } catch (error) {

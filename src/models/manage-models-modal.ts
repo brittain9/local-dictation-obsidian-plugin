@@ -258,7 +258,7 @@ export class ManageModelsModal extends Modal {
       if (progressState !== null) {
         const progressEl = createInstallProgressElement(progressState);
         this.progressElements.set(getRowKey(row), progressEl);
-        const fragment = document.createDocumentFragment();
+        const fragment = activeDocument.createDocumentFragment();
         fragment.append(progressEl);
         setting.setDesc(fragment);
       }
@@ -480,7 +480,7 @@ export class ManageModelsModal extends Modal {
   }
 
   private buildTagsFragment(model: CatalogModelRecord): DocumentFragment {
-    const frag = document.createDocumentFragment();
+    const frag = activeDocument.createDocumentFragment();
     const tagsContainer = frag.createEl('span', { cls: 'local-stt-tags' });
 
     for (const tag of model.uxTags) {

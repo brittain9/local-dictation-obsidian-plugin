@@ -42,7 +42,7 @@ export class AudioCaptureStream {
       throw new Error('Audio capture is already active.');
     }
 
-    const mediaDevices = globalThis.navigator?.mediaDevices;
+    const mediaDevices = window.navigator?.mediaDevices;
 
     if (mediaDevices?.getUserMedia === undefined) {
       throw new Error('Microphone capture is not available in this Obsidian runtime.');
@@ -214,8 +214,8 @@ function isDeviceConstraintError(error: unknown): boolean {
 }
 
 function getAudioContextConstructor(): typeof AudioContext {
-  if (globalThis.AudioContext !== undefined) {
-    return globalThis.AudioContext;
+  if (window.AudioContext !== undefined) {
+    return window.AudioContext;
   }
 
   throw new Error('AudioContext is not available in this Obsidian runtime.');

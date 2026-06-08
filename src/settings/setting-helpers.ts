@@ -61,9 +61,9 @@ export function addToggleSetting<K extends SettingsKeyOf<boolean>>(
 ): Setting {
   const setting = new Setting(parent).setName(spec.name).setDesc(spec.desc);
   setting.addToggle((toggle) => {
-    toggle.setValue(access.getSettings()[spec.key] as boolean);
+    toggle.setValue(access.getSettings()[spec.key]);
     toggle.onChange(async (value) => {
-      await access.persistOne(spec.key, value as PluginSettings[K]);
+      await access.persistOne(spec.key, value);
     });
   });
   appendInfoTooltip(setting, spec.tooltip);
@@ -78,9 +78,9 @@ export function addTextSetting<K extends SettingsKeyOf<string>>(
   const setting = new Setting(parent).setName(spec.name).setDesc(spec.desc);
   setting.addText((text) => {
     if (spec.placeholder !== undefined) text.setPlaceholder(spec.placeholder);
-    text.setValue(access.getSettings()[spec.key] as string);
+    text.setValue(access.getSettings()[spec.key]);
     text.onChange(async (value) => {
-      await access.persistOne(spec.key, value.trim() as PluginSettings[K]);
+      await access.persistOne(spec.key, value.trim());
     });
   });
   appendInfoTooltip(setting, spec.tooltip);
@@ -98,7 +98,7 @@ export function addPositiveIntSetting<K extends SettingsKeyOf<number>>(
     text.onChange(async (value) => {
       const parsed = Number.parseInt(value, 10);
       if (!Number.isInteger(parsed) || parsed <= 0) return;
-      await access.persistOne(spec.key, parsed as PluginSettings[K]);
+      await access.persistOne(spec.key, parsed);
     });
   });
   appendInfoTooltip(setting, spec.tooltip);

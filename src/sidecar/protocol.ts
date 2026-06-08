@@ -102,7 +102,7 @@ interface EnvelopeBase<TType extends string> {
   type: TType;
 }
 
-export interface HealthCommand extends EnvelopeBase<'health'> {}
+export type HealthCommand = EnvelopeBase<'health'>;
 
 export interface StartSessionCommand extends EnvelopeBase<'start_session'> {
   accelerationPreference: AccelerationPreference;
@@ -124,7 +124,7 @@ export interface GetModelStoreCommand extends EnvelopeBase<'get_model_store'> {
   modelStorePathOverride?: string;
 }
 
-export interface ListModelCatalogCommand extends EnvelopeBase<'list_model_catalog'> {}
+export type ListModelCatalogCommand = EnvelopeBase<'list_model_catalog'>;
 
 export interface ListInstalledModelsCommand extends EnvelopeBase<'list_installed_models'> {
   modelStorePathOverride?: string;
@@ -162,9 +162,9 @@ export interface CancelSessionCommand extends EnvelopeBase<'cancel_session'> {
   sessionId: string;
 }
 
-export interface ShutdownCommand extends EnvelopeBase<'shutdown'> {}
+export type ShutdownCommand = EnvelopeBase<'shutdown'>;
 
-export interface GetSystemInfoCommand extends EnvelopeBase<'get_system_info'> {}
+export type GetSystemInfoCommand = EnvelopeBase<'get_system_info'>;
 
 export type SidecarCommand =
   | CancelModelInstallCommand

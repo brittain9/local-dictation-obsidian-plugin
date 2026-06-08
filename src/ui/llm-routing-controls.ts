@@ -108,7 +108,7 @@ export class LlmRoutingControls {
     ollama: emptyProviderState(),
     openrouter: emptyProviderState(),
   };
-  private apiKeyRefreshTimerId: ReturnType<typeof setTimeout> | null = null;
+  private apiKeyRefreshTimerId: number | null = null;
   private modelsRefreshInFlight: Partial<Record<LlmProviderId, boolean>> = {};
   private onModelInput: ((element: HTMLElement) => void) | null = null;
 
@@ -121,7 +121,7 @@ export class LlmRoutingControls {
 
   dispose(): void {
     if (this.apiKeyRefreshTimerId !== null) {
-      clearTimeout(this.apiKeyRefreshTimerId);
+      window.clearTimeout(this.apiKeyRefreshTimerId);
       this.apiKeyRefreshTimerId = null;
     }
   }
@@ -337,12 +337,14 @@ export class LlmRoutingControls {
           this.dependencies.app,
           text.inputEl,
           () => this.providers.openrouter.models,
-          async (id) => {
-            await this.dependencies.persist(
-              withProviderModel(this.dependencies.getSettings(), 'openrouter', id),
-              { rerender: false },
-            );
-            refreshStatus();
+          (id) => {
+            void (async () => {
+              await this.dependencies.persist(
+                withProviderModel(this.dependencies.getSettings(), 'openrouter', id),
+                { rerender: false },
+              );
+              refreshStatus();
+            })();
           },
         );
         text.onChange(async (value) => {
@@ -404,9 +406,9 @@ export class LlmRoutingControls {
 
   private scheduleApiKeyRefresh(): void {
     if (this.apiKeyRefreshTimerId !== null) {
-      clearTimeout(this.apiKeyRefreshTimerId);
+      window.clearTimeout(this.apiKeyRefreshTimerId);
     }
-    this.apiKeyRefreshTimerId = setTimeout(() => {
+    this.apiKeyRefreshTimerId = window.setTimeout(() => {
       this.apiKeyRefreshTimerId = null;
       if (this.dependencies.getSettings().llmOpenRouterApiKey.length === 0) {
         this.dependencies.requestRerender();

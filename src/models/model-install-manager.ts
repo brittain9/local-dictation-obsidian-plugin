@@ -141,7 +141,7 @@ function createProbeFailureMessage(probeResult: ModelProbeResultEvent): string {
 
 export class ModelInstallManager {
   private activeInstall: ActiveInstallInfo | null = null;
-  private cancelStuckTimer: ReturnType<typeof globalThis.setTimeout> | null = null;
+  private cancelStuckTimer: number | null = null;
   private catalog: ModelCatalogRecord = EMPTY_CATALOG;
   private compiledAdapters: CompiledAdapterInfo[] = [];
   private compiledRuntimes: CompiledRuntimeInfo[] = [];
@@ -206,7 +206,7 @@ export class ModelInstallManager {
 
   dispose(): void {
     if (this.cancelStuckTimer !== null) {
-      globalThis.clearTimeout(this.cancelStuckTimer);
+      window.clearTimeout(this.cancelStuckTimer);
       this.cancelStuckTimer = null;
     }
 
@@ -279,7 +279,7 @@ export class ModelInstallManager {
 
     // Clear any lingering timer from a prior cancel attempt.
     if (this.cancelStuckTimer !== null) {
-      globalThis.clearTimeout(this.cancelStuckTimer);
+      window.clearTimeout(this.cancelStuckTimer);
       this.cancelStuckTimer = null;
     }
 
@@ -287,7 +287,7 @@ export class ModelInstallManager {
     this.notify();
 
     try {
-      await this.deps.sidecarConnection.cancelModelInstall(current.installUpdate.installId);
+      this.deps.sidecarConnection.cancelModelInstall(current.installUpdate.installId);
     } catch (error) {
       // If the cancel command itself failed and we are still tracking the same
       // install, revert to 'installing' so the user can retry.
@@ -308,7 +308,7 @@ export class ModelInstallManager {
 
     // Start the cancel-stuck timeout.
     const cancelledInstallId = current.installUpdate.installId;
-    this.cancelStuckTimer = globalThis.setTimeout(() => {
+    this.cancelStuckTimer = window.setTimeout(() => {
       if (
         this.activeInstall !== null &&
         this.activeInstall.installUpdate.installId === cancelledInstallId &&
@@ -341,7 +341,7 @@ export class ModelInstallManager {
 
     // Clear the stuck timer if it is somehow still pending.
     if (this.cancelStuckTimer !== null) {
-      globalThis.clearTimeout(this.cancelStuckTimer);
+      window.clearTimeout(this.cancelStuckTimer);
       this.cancelStuckTimer = null;
     }
 
@@ -521,7 +521,7 @@ export class ModelInstallManager {
 
     // Clear cancel-stuck timer on any terminal event.
     if (isTerminalInstallState(event.state) && this.cancelStuckTimer !== null) {
-      globalThis.clearTimeout(this.cancelStuckTimer);
+      window.clearTimeout(this.cancelStuckTimer);
       this.cancelStuckTimer = null;
     }
 
