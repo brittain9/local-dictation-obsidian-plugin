@@ -359,7 +359,7 @@ export class Session {
     if (result?.kind === 'denied') {
       this.dependencies.logger?.debug(
         'session',
-        `raw LLM postprocess callout append denied (${rawText.length} chars): ${result.reason}`,
+        `raw LLM postprocess callout append denied (${rawText.length} chars): ${result.reason.kind}`,
       );
     }
   }

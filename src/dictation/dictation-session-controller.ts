@@ -78,7 +78,7 @@ interface ActiveSessionSnapshot {
 type SessionPhase = 'starting' | 'active' | 'stopping' | 'cancelling' | 'stopped';
 
 interface ManagedSession {
-  anchorTimerId: ReturnType<typeof setTimeout> | null;
+  anchorTimerId: number | null;
   // Per-session FIFO: per-utterance cleanups run concurrently but their
   // accept() must land in utterance order, so each transcript's cleanup+accept
   // chains on the previous one's completion.
@@ -441,7 +441,7 @@ export class DictationSessionController {
       return;
     }
 
-    const timerId = setTimeout(() => {
+    const timerId = window.setTimeout(() => {
       if (entry.anchorTimerId !== timerId) {
         return;
       }
@@ -454,7 +454,7 @@ export class DictationSessionController {
 
   private clearAnchorTimer(entry: ManagedSession): void {
     if (entry.anchorTimerId !== null) {
-      clearTimeout(entry.anchorTimerId);
+      window.clearTimeout(entry.anchorTimerId);
       entry.anchorTimerId = null;
     }
   }

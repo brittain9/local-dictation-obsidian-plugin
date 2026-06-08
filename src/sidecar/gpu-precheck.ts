@@ -22,18 +22,18 @@ export async function detectNvidiaDriver(): Promise<NvidiaDriverStatus> {
       return;
     }
 
-    const timeoutHandle = globalThis.setTimeout(() => {
+    const timeoutHandle = window.setTimeout(() => {
       child.kill();
       settle('unknown');
     }, PROBE_TIMEOUT_MS);
 
     child.once('error', (error: NodeJS.ErrnoException) => {
-      globalThis.clearTimeout(timeoutHandle);
+      window.clearTimeout(timeoutHandle);
       settle(error.code === 'ENOENT' ? 'absent' : 'unknown');
     });
 
     child.once('exit', (code) => {
-      globalThis.clearTimeout(timeoutHandle);
+      window.clearTimeout(timeoutHandle);
       settle(code === 0 ? 'present' : 'unknown');
     });
   });

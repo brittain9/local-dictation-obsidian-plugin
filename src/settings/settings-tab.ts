@@ -130,7 +130,6 @@ export class LocalSttSettingTab extends PluginSettingTab {
     const settings = this.dependencies.getSettings();
 
     containerEl.empty();
-    containerEl.createEl('h2', { text: 'Local Dictation' });
 
     const missingSidecarGroup = containerEl.createDiv({ cls: 'setting-group' });
     this.disposeMissingSidecarBanner = this.renderMissingSidecarBanner(missingSidecarGroup);
@@ -477,12 +476,12 @@ export class LocalSttSettingTab extends PluginSettingTab {
       if (disposed || !group.isConnected) return;
 
       const activeInstall = this.dependencies.sidecarInstallManager.getState().activeInstall;
-      if (cpuManifest !== null || cudaManifest !== null) {
-        group.style.display = 'none';
+      const sidecarInstalled = cpuManifest !== null || cudaManifest !== null;
+      group.toggleClass('local-stt-hidden', sidecarInstalled);
+      if (sidecarInstalled) {
         return;
       }
 
-      group.style.display = '';
       const items = group.createDiv({ cls: 'setting-items' });
 
       if (activeInstall !== null) {

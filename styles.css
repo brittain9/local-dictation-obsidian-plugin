@@ -904,3 +904,9 @@
   justify-content: flex-end;
   margin-top: 18px;
 }
+
+/* Visibility utility toggled in place of inline `style.display`, so show/hide
+   state lives in CSS (themeable, overridable) instead of element styles. */
+.local-stt-hidden {
+  display: none;
+}

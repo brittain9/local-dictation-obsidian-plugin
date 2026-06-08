@@ -20,7 +20,7 @@ export async function fetchJson(
   const controller = new AbortController();
   let timeoutFired = false;
 
-  const timeoutId = setTimeout(() => {
+  const timeoutId = window.setTimeout(() => {
     timeoutFired = true;
     controller.abort();
   }, timeoutMs);
@@ -36,6 +36,10 @@ export async function fetchJson(
   }
 
   try {
+    // Desktop-only plugin: fetch is required for AbortSignal cancellation and the
+    // streamed byte-cap read below, neither of which Obsidian's requestUrl supports.
+    // CORS/mobile motivations for requestUrl do not apply (isDesktopOnly: true).
+    // eslint-disable-next-line no-restricted-globals -- see comment above
     const response = await fetch(url, { ...init, signal: controller.signal });
     const responseText = await readResponseText(response, maxBytes);
 
@@ -66,7 +70,7 @@ export async function fetchJson(
     }
     throw new ProviderError(`Failed to reach provider: ${formatError(error)}`, 'connection_failed');
   } finally {
-    clearTimeout(timeoutId);
+    window.clearTimeout(timeoutId);
     options.abortSignal?.removeEventListener('abort', abortFromCaller);
   }
 }

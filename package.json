@@ -1,6 +1,6 @@
 {
   "name": "local-dictation",
-  "version": "2026.6.7",
+  "version": "2026.6.8",
   "description": "Dictate notes privately on-device with Whisper, Cohere Transcribe, Silero VAD, and optional Ollama LLM cleanup.",
   "private": true,
   "license": "MIT",
@@ -23,12 +23,13 @@
     "dev": "node esbuild.config.mjs watch",
     "typecheck": "tsc --project tsconfig.json --noEmit",
     "lint": "biome check .",
+    "lint:obsidian": "eslint src",
     "format": "biome format --write .",
     "test": "vitest run",
     "install:dev": "node scripts/install-dev-plugin.mjs",
     "verify:build-output": "node scripts/verify-build-output.mjs",
     "verify:build-output:release": "node scripts/verify-build-output.mjs --release",
-    "check:frontend": "npm run typecheck && npm run lint && npm run test && npm run build:frontend",
+    "check:frontend": "npm run typecheck && npm run lint && npm run lint:obsidian && npm run test && npm run build:frontend",
     "check:js": "npm run check:frontend && npm run build:sidecar && npm run verify:build-output",
     "check:rust": "node scripts/check-rust.mjs",
     "check": "npm run check:js && npm run check:rust"
@@ -37,11 +38,17 @@
     "@biomejs/biome": "2.4.16",
     "@codemirror/state": "6.6.0",
     "@codemirror/view": "6.43.0",
+    "@eslint/js": "^10.0.1",
+    "@eslint/json": "^2.0.0",
     "@types/node": "25.9.1",
+    "@typescript-eslint/parser": "^8.60.1",
     "esbuild": "0.28.0",
+    "eslint": "^10.4.1",
+    "eslint-plugin-obsidianmd": "^0.3.0",
     "obsidian": "1.8.7",
     "tslib": "2.8.1",
     "typescript": "6.0.3",
+    "typescript-eslint": "^8.60.1",
     "vitest": "4.1.8"
   }
 }

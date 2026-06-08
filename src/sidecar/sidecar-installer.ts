@@ -357,10 +357,10 @@ async function downloadToFile(
   let lastReportedBytes = 0;
   let lastReportedAt = 0;
 
-  let idleTimer: NodeJS.Timeout | null = null;
+  let idleTimer: number | null = null;
   const armIdleTimer = (): void => {
-    if (idleTimer !== null) clearTimeout(idleTimer);
-    idleTimer = setTimeout(() => {
+    if (idleTimer !== null) window.clearTimeout(idleTimer);
+    idleTimer = window.setTimeout(() => {
       stream.destroy(
         new Error(
           `Download stalled: no data received from ${url} for ${String(DOWNLOAD_IDLE_TIMEOUT_MS)}ms.`,
@@ -370,7 +370,7 @@ async function downloadToFile(
   };
   const clearIdleTimer = (): void => {
     if (idleTimer !== null) {
-      clearTimeout(idleTimer);
+      window.clearTimeout(idleTimer);
       idleTimer = null;
     }
   };

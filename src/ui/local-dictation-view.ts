@@ -68,7 +68,7 @@ export class LocalDictationView extends ItemView {
   private narrowObserver: ResizeObserver | null = null;
   private lastEnabledMode: LlmPresetMode = DEFAULT_ENABLED_CLEANUP_MODE;
   private promptBlurRenderPending = false;
-  private promptSaveTimerId: ReturnType<typeof setTimeout> | null = null;
+  private promptSaveTimerId: number | null = null;
   private pendingPromptValue: string | null = null;
   private readonly routingControls: LlmRoutingControls;
   private unsubscribeLlmCleanupFailure: (() => void) | null = null;
@@ -650,9 +650,9 @@ export class LocalDictationView extends ItemView {
   private schedulePromptSave(value: string): void {
     this.pendingPromptValue = value;
     if (this.promptSaveTimerId !== null) {
-      clearTimeout(this.promptSaveTimerId);
+      window.clearTimeout(this.promptSaveTimerId);
     }
-    this.promptSaveTimerId = setTimeout(() => {
+    this.promptSaveTimerId = window.setTimeout(() => {
       this.promptSaveTimerId = null;
       void this.flushPendingPromptSave();
     }, PROMPT_SAVE_DEBOUNCE_MS);
@@ -660,7 +660,7 @@ export class LocalDictationView extends ItemView {
 
   private async flushPendingPromptSave(): Promise<void> {
     if (this.promptSaveTimerId !== null) {
-      clearTimeout(this.promptSaveTimerId);
+      window.clearTimeout(this.promptSaveTimerId);
       this.promptSaveTimerId = null;
     }
     const value = this.pendingPromptValue;

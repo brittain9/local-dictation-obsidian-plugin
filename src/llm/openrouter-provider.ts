@@ -226,7 +226,7 @@ function parseChatContent(response: unknown): string {
     throw new ProviderError('OpenRouter returned an invalid chat response.', 'invalid_response');
   }
 
-  const choice = response.choices[0];
+  const choice: unknown = response.choices[0];
   if (
     !isRecord(choice) ||
     !isRecord(choice.message) ||

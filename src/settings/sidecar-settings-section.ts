@@ -38,7 +38,7 @@ export interface SidecarInstallActionDeps {
 
 export interface SidecarSettingsSectionDependencies extends SidecarInstallActionDeps {
   access: SettingAccess;
-  resolvePluginDirectory(): Promise<string>;
+  resolvePluginDirectory: () => Promise<string>;
 }
 
 export class SidecarSettingsSection {
