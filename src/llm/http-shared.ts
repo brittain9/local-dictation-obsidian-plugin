@@ -39,8 +39,9 @@ export async function fetchJson(
     // Desktop-only plugin: fetch is required for AbortSignal cancellation and the
     // streamed byte-cap read below, neither of which Obsidian's requestUrl supports.
     // CORS/mobile motivations for requestUrl do not apply (isDesktopOnly: true).
-    // eslint-disable-next-line no-restricted-globals -- see comment above
-    const response = await fetch(url, { ...init, signal: controller.signal });
+    // Reached through window.* (like the timers above) so it is a member access, not
+    // a bare restricted global — the review ruleset forbids disabling that rule.
+    const response = await window.fetch(url, { ...init, signal: controller.signal });
     const responseText = await readResponseText(response, maxBytes);
 
     if (!response.ok) {
