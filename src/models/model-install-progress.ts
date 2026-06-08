@@ -121,7 +121,7 @@ export function updateInstallProgressElement(
   const details = root.querySelector<HTMLElement>('.local-stt-install-progress__details');
   if (details) {
     details.textContent = viewModel.secondaryLine ?? '';
-    details.style.display = viewModel.secondaryLine !== null ? '' : 'none';
+    details.toggleClass('local-stt-hidden', viewModel.secondaryLine === null);
   }
 }
 

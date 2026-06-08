@@ -456,7 +456,7 @@ export class LocalSttSettingTab extends PluginSettingTab {
       rendered += 1;
     }
 
-    group.style.display = rendered === 0 ? 'none' : '';
+    group.toggleClass('local-stt-hidden', rendered === 0);
   }
 
   private renderMissingSidecarBanner(group: HTMLDivElement): () => void {
