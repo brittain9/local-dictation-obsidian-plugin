@@ -357,7 +357,9 @@ export class PresetManagerModal extends Modal {
   // ------------------------------------------------------------ persistence
 
   private async handleSave(
-    editor: { kind: 'create'; draft: LlmPresetDraft } | { kind: 'edit'; draft: LlmPresetDraft; presetId: string },
+    editor:
+      | { kind: 'create'; draft: LlmPresetDraft }
+      | { kind: 'edit'; draft: LlmPresetDraft; presetId: string },
     errorEl: HTMLElement,
   ): Promise<void> {
     const settings = this.deps.getSettings();

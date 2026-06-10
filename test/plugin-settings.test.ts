@@ -440,7 +440,12 @@ describe('user preset normalization', () => {
           prompt: 'p',
           overrides: { minWords: 0, temperature: 0.7, useNoteContext: true },
         },
-        { id: 'b', label: 'Clamped high', prompt: 'p', overrides: { minWords: 999, temperature: 99 } },
+        {
+          id: 'b',
+          label: 'Clamped high',
+          prompt: 'p',
+          overrides: { minWords: 999, temperature: 99 },
+        },
         {
           id: 'c',
           label: 'Bad types',
