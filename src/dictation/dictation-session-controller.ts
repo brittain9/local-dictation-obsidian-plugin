@@ -3,7 +3,12 @@ import { randomUUID } from 'node:crypto';
 import type { AudioCaptureStream } from '../audio/audio-capture-stream';
 import { formatMicrophonePermissionDeniedMessage } from '../audio/microphone-permission-message';
 import type { NotePlacementOptions } from '../editor/note-surface';
-import { type LlmPostprocessMode, resolveStyleOption } from '../llm/presets';
+import {
+  type LlmPostprocessMode,
+  type LlmPresetOutput,
+  resolveActivePresetEntry,
+  resolveEffectiveLlmGlobals,
+} from '../llm/presets';
 import { type LlmCleanupFailure, type LlmProviderId, ProviderError } from '../llm/provider';
 import type { LlmRouter } from '../llm/router';
 import type { Session } from '../session/session';
@@ -43,6 +48,7 @@ type ControllerSession = Pick<
   | 'acceptTranscript'
   | 'clearSessionProcessingMark'
   | 'dispose'
+  | 'insertAdjacentToSessionRange'
   | 'markSessionRangeAsProcessing'
   | 'readCurrentSessionText'
   | 'readNoteGlossary'
@@ -60,7 +66,8 @@ interface ActiveSessionSnapshot {
   llmRouter: LlmRouter;
   llmPostprocessMode: LlmPostprocessMode;
   llmPostprocessNoteContextChars: PluginSettings['llmPostprocessNoteContextChars'];
-  llmPostprocessPrompt: PluginSettings['llmPostprocessPrompt'];
+  llmPostprocessOutput: LlmPresetOutput;
+  llmPostprocessPrompt: string;
   llmPostprocessPriorUtterancesN: PluginSettings['llmPostprocessPriorUtterancesN'];
   llmPostprocessShowRawBelow: PluginSettings['llmPostprocessShowRawBelow'];
   llmPostprocessSkipMinWords: PluginSettings['llmPostprocessSkipMinWords'];
@@ -878,24 +885,47 @@ export class DictationSessionController {
       entry.session.clearSessionProcessingMark();
 
       const trimmed = result.text.trim();
-      if (trimmed.length === 0) {
-        throw new ProviderError('Provider returned empty cleaned text.', 'invalid_response');
-      }
+      if (entry.snapshot.llmPostprocessOutput === 'replace') {
+        if (trimmed.length === 0) {
+          throw new ProviderError('Provider returned empty cleaned text.', 'invalid_response');
+        }
 
-      const replaced = entry.session.replaceSessionRangeWithCleaned(trimmed, {
-        rawTextForCallout: transcriptText,
-        showRawBelow: entry.snapshot.llmPostprocessShowRawBelow,
-      });
+        const replaced = entry.session.replaceSessionRangeWithCleaned(trimmed, {
+          rawTextForCallout: transcriptText,
+          showRawBelow: entry.snapshot.llmPostprocessShowRawBelow,
+        });
 
-      if (!replaced) {
-        this.dependencies.logger?.warn(
+        if (!replaced) {
+          this.dependencies.logger?.warn(
+            'llm',
+            'batch cleanup replacement skipped; session range no longer available',
+          );
+        } else {
+          this.dependencies.logger?.debug('llm', 'batch cleanup complete', {
+            chars: trimmed.length,
+          });
+        }
+      } else if (trimmed.length === 0) {
+        // Additive presets may legitimately find nothing to add (e.g. no action items).
+        this.dependencies.logger?.debug(
           'llm',
-          'batch cleanup replacement skipped; session range no longer available',
+          'additive batch returned empty output; nothing inserted',
         );
       } else {
-        this.dependencies.logger?.debug('llm', 'batch cleanup complete', {
-          chars: trimmed.length,
-        });
+        const placement = entry.snapshot.llmPostprocessOutput === 'add_above' ? 'above' : 'below';
+        const inserted = entry.session.insertAdjacentToSessionRange(trimmed, placement);
+
+        if (!inserted) {
+          this.dependencies.logger?.warn(
+            'llm',
+            'additive batch insert skipped; session range no longer available',
+          );
+        } else {
+          this.dependencies.logger?.debug('llm', 'additive batch insert complete', {
+            chars: trimmed.length,
+            placement,
+          });
+        }
       }
       this.dependencies.onLlmCleanupSuccess?.();
       this.disposeLocalSession(sessionId);
@@ -1019,9 +1049,26 @@ function createSessionSnapshot(
   selectedModel: NonNullable<PluginSettings['selectedModel']>,
   llmRouter: LlmRouter,
 ): ActiveSessionSnapshot {
-  const effectiveGeneration = resolveActiveGenerationDefaults(settings);
+  const activePreset = resolveActivePresetEntry(
+    settings.llmPostprocessActivePresetRef,
+    settings.llmPostprocessUserPresets,
+  ).preset;
+  const effective = resolveEffectiveLlmGlobals(
+    {
+      minWords: settings.llmPostprocessSkipMinWords,
+      temperature: settings.llmPostprocessTemperature,
+      useNoteContext: settings.useLlmNoteContext,
+    },
+    activePreset,
+  );
+  // A preset with pinned timing forces the effective mode without overwriting
+  // the stored user choice.
+  const llmPostprocessMode: LlmPostprocessMode =
+    settings.llmPostprocessMode === 'off'
+      ? 'off'
+      : (activePreset.timing ?? settings.llmPostprocessMode);
   const sessionStartUnixMs = Date.now();
-  const noteContextChars = settings.useLlmNoteContext ? settings.llmPostprocessNoteContextChars : 0;
+  const noteContextChars = effective.useNoteContext ? settings.llmPostprocessNoteContextChars : 0;
 
   return {
     accelerationPreference: settings.accelerationPreference,
@@ -1029,13 +1076,14 @@ function createSessionSnapshot(
     listeningMode: settings.listeningMode,
     llmFeaturesEnabled: settings.llmFeaturesEnabled,
     llmRouter,
-    llmPostprocessMode: settings.llmPostprocessMode,
+    llmPostprocessMode,
     llmPostprocessNoteContextChars: noteContextChars,
-    llmPostprocessPrompt: settings.llmPostprocessPrompt,
+    llmPostprocessOutput: activePreset.output,
+    llmPostprocessPrompt: activePreset.prompt,
     llmPostprocessPriorUtterancesN: settings.llmPostprocessPriorUtterancesN,
     llmPostprocessShowRawBelow: settings.llmPostprocessShowRawBelow,
-    llmPostprocessSkipMinWords: effectiveGeneration.skipMinWords,
-    llmPostprocessTemperature: effectiveGeneration.temperature,
+    llmPostprocessSkipMinWords: effective.minWords,
+    llmPostprocessTemperature: effective.temperature,
     llmPostprocessTotalContextCap: settings.llmPostprocessTotalContextCap,
     modelSelection: selectedModel,
     modelStorePathOverride: settings.modelStorePathOverride,
@@ -1051,20 +1099,6 @@ function createSessionSnapshot(
     },
     transcriptFormatting: settings.transcriptFormatting,
     useNoteAsContext: settings.useNoteAsContext,
-  };
-}
-
-function resolveActiveGenerationDefaults(settings: PluginSettings): {
-  skipMinWords: number;
-  temperature: number;
-} {
-  const activeOption = resolveStyleOption(
-    settings.llmPostprocessActivePresetRef,
-    settings.llmPostprocessUserPresets,
-  );
-  return {
-    skipMinWords: activeOption?.minWords ?? settings.llmPostprocessSkipMinWords,
-    temperature: activeOption?.temperature ?? settings.llmPostprocessTemperature,
   };
 }
 

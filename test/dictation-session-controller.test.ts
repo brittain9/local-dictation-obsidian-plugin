@@ -16,7 +16,7 @@ import type {
   StartSessionCommand,
 } from '../src/sidecar/protocol';
 import type { TranscriptRenderOptions } from '../src/transcript/renderer';
-import { createFakeLlmRouter } from './fixtures/llm';
+import { createFakeLlmRouter, createUserPreset } from './fixtures/llm';
 
 class FakeCaptureStream {
   public capturing = false;
@@ -62,6 +62,9 @@ class FakeSession {
   });
   public readonly clearSessionProcessingMark = vi.fn();
   public readonly dispose = vi.fn();
+  public readonly insertAdjacentToSessionRange = vi.fn(
+    (_blockText: string, _placement: 'above' | 'below') => true,
+  );
   public readonly markSessionRangeAsProcessing = vi.fn(() => true);
   public readonly readCurrentSessionText = vi.fn(() => this.currentSessionText);
   public readonly readNoteGlossary = vi.fn(
@@ -429,6 +432,127 @@ describe('DictationSessionController', () => {
       );
     });
     expect(sessions[0]?.dispose).toHaveBeenCalledTimes(1);
+  });
+
+  it('resolves the active preset prompt, overrides, and pinned timing into the snapshot', async () => {
+    const sidecarConnection = new FakeSidecarConnection();
+    const cleanup = vi.fn(
+      async (): Promise<LlmRouterCleanupResult> => ({
+        model: 'm',
+        providerId: 'ollama',
+        text: 'Clean batch.',
+      }),
+    );
+    const controller = createController({
+      getSettings: () =>
+        createSettings({
+          llmFeaturesEnabled: true,
+          llmPostprocessActivePresetRef: 'user:a',
+          // Stored mode stays the user's choice; the preset pins batch timing.
+          llmPostprocessMode: 'per_utterance',
+          llmPostprocessTemperature: 0.2,
+          llmPostprocessUserPresets: [
+            createUserPreset({
+              id: 'a',
+              overrides: { temperature: 1.1 },
+              prompt: 'P!',
+              timing: 'batch',
+            }),
+          ],
+          selectedModel: createExternalModelSelection(),
+        }),
+      llmRouter: createFakeLlmRouter({ cleanup }),
+      sidecarConnection,
+    });
+
+    await controller.startDictation();
+    const sessionId = sidecarConnection.startSession.mock.calls[0]?.[0].sessionId ?? '';
+    sidecarConnection.emit(transcriptReady(sessionId, 'raw transcript'));
+    await controller.stopDictation();
+    sidecarConnection.emit({ reason: 'user_stop', sessionId, type: 'session_stopped' });
+
+    await vi.waitFor(() => {
+      expect(cleanup).toHaveBeenCalledWith(
+        expect.objectContaining({ prompt: 'P!', temperature: 1.1 }),
+      );
+    });
+    expect(cleanup).toHaveBeenCalledTimes(1);
+  });
+
+  it('additive batch inserts adjacent to the session range instead of replacing', async () => {
+    const sidecarConnection = new FakeSidecarConnection();
+    const sessions: FakeSession[] = [];
+    const cleanup = vi.fn(
+      async (): Promise<LlmRouterCleanupResult> => ({
+        model: 'm',
+        providerId: 'ollama',
+        text: 'TLDR\n- point',
+      }),
+    );
+    const controller = createController({
+      createSession: (session) => {
+        sessions.push(session);
+      },
+      getSettings: () =>
+        createSettings({
+          llmFeaturesEnabled: true,
+          llmPostprocessActivePresetRef: 'builtin:tldr',
+          llmPostprocessMode: 'batch',
+          selectedModel: createExternalModelSelection(),
+        }),
+      llmRouter: createFakeLlmRouter({ cleanup }),
+      sidecarConnection,
+    });
+
+    await controller.startDictation();
+    const sessionId = sidecarConnection.startSession.mock.calls[0]?.[0].sessionId ?? '';
+    sidecarConnection.emit(transcriptReady(sessionId, 'raw transcript'));
+    await controller.stopDictation();
+    sidecarConnection.emit({ reason: 'user_stop', sessionId, type: 'session_stopped' });
+
+    await vi.waitFor(() => {
+      expect(sessions[0]?.insertAdjacentToSessionRange).toHaveBeenCalledWith(
+        'TLDR\n- point',
+        'above',
+      );
+    });
+    expect(sessions[0]?.replaceSessionRangeWithCleaned).not.toHaveBeenCalled();
+    expect(sessions[0]?.dispose).toHaveBeenCalledTimes(1);
+  });
+
+  it('additive batch treats empty output as nothing to add', async () => {
+    const sidecarConnection = new FakeSidecarConnection();
+    const sessions: FakeSession[] = [];
+    const onLlmCleanupFailure = vi.fn();
+    const controller = createController({
+      createSession: (session) => {
+        sessions.push(session);
+      },
+      getSettings: () =>
+        createSettings({
+          llmFeaturesEnabled: true,
+          llmPostprocessActivePresetRef: 'builtin:action-items',
+          llmPostprocessMode: 'batch',
+          selectedModel: createExternalModelSelection(),
+        }),
+      llmRouter: createFakeLlmRouter({
+        cleanup: vi.fn(async () => ({ model: 'm', providerId: 'ollama' as const, text: '   ' })),
+      }),
+      onLlmCleanupFailure,
+      sidecarConnection,
+    });
+
+    await controller.startDictation();
+    const sessionId = sidecarConnection.startSession.mock.calls[0]?.[0].sessionId ?? '';
+    sidecarConnection.emit(transcriptReady(sessionId, 'raw transcript'));
+    await controller.stopDictation();
+    sidecarConnection.emit({ reason: 'user_stop', sessionId, type: 'session_stopped' });
+
+    await vi.waitFor(() => {
+      expect(sessions[0]?.dispose).toHaveBeenCalledTimes(1);
+    });
+    expect(sessions[0]?.insertAdjacentToSessionRange).not.toHaveBeenCalled();
+    expect(onLlmCleanupFailure).not.toHaveBeenCalled();
   });
 
   it('drains pending utterance accepts before the batch read when stop arrives in the same turn', async () => {
