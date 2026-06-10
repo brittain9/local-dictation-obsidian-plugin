@@ -19,6 +19,7 @@ export type ProviderErrorCode =
   | 'connection_failed'
   | 'http_error'
   | 'invalid_response'
+  | 'model_not_configured'
   | 'rate_limited'
   | 'timeout'
   | 'unknown_model';
@@ -94,7 +95,10 @@ export function createProvider(providerId: LlmProviderId, settings: PluginSettin
     case 'ollama':
       return new OllamaProvider();
     case 'openrouter':
-      return new OpenRouterProvider({ apiKey: settings.llmOpenRouterApiKey });
+      return new OpenRouterProvider({
+        apiKey: settings.llmOpenRouterApiKey,
+        timeoutMs: settings.llmRemoteTimeoutSec * 1000,
+      });
   }
 }
 

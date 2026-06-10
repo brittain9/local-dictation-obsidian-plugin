@@ -748,12 +748,23 @@
 }
 
 .local-dictation-route-leg {
-  padding: var(--size-4-3) var(--size-4-3) var(--size-4-1);
+  display: flex;
+  align-items: center;
+  gap: var(--size-4-2);
+  padding: var(--size-4-3) 0 var(--size-4-1);
   font-size: var(--font-ui-smaller);
   font-weight: 600;
   letter-spacing: 0.04em;
   text-transform: uppercase;
   color: var(--text-faint);
+}
+
+/* Trailing hairline so the leg label reads as a section divider instead of a
+   stray caption between setting rows. */
+.local-dictation-route-leg::after {
+  content: "";
+  flex: 1;
+  border-top: 1px solid var(--background-modifier-border);
 }
 
 .local-stt-hidden {

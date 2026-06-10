@@ -106,6 +106,7 @@ export interface PluginSettings {
   llmPostprocessUserPresets: LlmUserPreset[];
   llmProviderModels: LlmProviderModels;
   llmRemoteThresholdChars: number;
+  llmRemoteTimeoutSec: number;
   llmRouting: LlmRouting;
   localTranscriptSidebarBootstrapped: boolean;
   modelStorePathOverride: string;
@@ -151,6 +152,7 @@ export const DEFAULT_PLUGIN_SETTINGS: PluginSettings = {
     openrouter: '',
   },
   llmRemoteThresholdChars: DEFAULT_LLM_REMOTE_THRESHOLD_CHARS,
+  llmRemoteTimeoutSec: 60,
   llmRouting: 'local',
   localTranscriptSidebarBootstrapped: false,
   modelStorePathOverride: '',
@@ -249,6 +251,12 @@ export function resolvePluginSettings(data: unknown): PluginSettings {
       DEFAULT_PLUGIN_SETTINGS.llmRemoteThresholdChars,
       MIN_LLM_REMOTE_THRESHOLD_CHARS,
       MAX_LLM_REMOTE_THRESHOLD_CHARS,
+    ),
+    llmRemoteTimeoutSec: readClampedInteger(
+      raw.llmRemoteTimeoutSec,
+      DEFAULT_PLUGIN_SETTINGS.llmRemoteTimeoutSec,
+      5,
+      600,
     ),
     llmRouting: resolveLlmRouting(raw),
     localTranscriptSidebarBootstrapped: readBoolean(

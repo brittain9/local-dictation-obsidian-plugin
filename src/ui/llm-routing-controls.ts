@@ -1,4 +1,11 @@
-import { AbstractInputSuggest, type App, Notice, Setting, setIcon } from 'obsidian';
+import {
+  AbstractInputSuggest,
+  type App,
+  type ExtraButtonComponent,
+  Notice,
+  Setting,
+  setIcon,
+} from 'obsidian';
 
 import {
   createProvider,
@@ -7,12 +14,14 @@ import {
   type LlmProviderId,
   type LlmRouting,
   type ModelOption,
+  ProviderError,
   type ProviderHealth,
   withProviderModel,
 } from '../llm/provider';
 import { isLlmRouting, type PluginSettings } from '../settings/plugin-settings';
+import { appendInfoTooltip } from '../settings/setting-helpers';
 import type { PluginLogger } from '../shared/plugin-logger';
-import { priceTier, providerHealthFromError } from './llm-provider-ui';
+import { formatCleanupFailureBanner, priceTier, providerHealthFromError } from './llm-provider-ui';
 import { deriveInlineStatus, INLINE_STATUS_PRESENTATION } from './llm-status';
 
 export interface LlmRoutingControlsDependencies {
@@ -33,6 +42,7 @@ const ROUTING_SEGMENTS: ReadonlyArray<{ label: string; value: LlmRouting }> = [
 // Rough chars-per-token ratio used only for the human-readable threshold hint.
 const CHARS_PER_TOKEN = 4;
 const API_KEY_REFRESH_DEBOUNCE_MS = 500;
+const TEST_RESULT_ICON_MS = 2500;
 
 interface ProviderState {
   health: ProviderHealth;
@@ -111,6 +121,7 @@ export class LlmRoutingControls {
   private apiKeyRefreshTimerId: number | null = null;
   private modelsRefreshInFlight: Partial<Record<LlmProviderId, boolean>> = {};
   private onModelInput: ((element: HTMLElement) => void) | null = null;
+  private openRouterTestInFlight = false;
 
   constructor(private readonly dependencies: LlmRoutingControlsDependencies) {}
 
@@ -127,24 +138,35 @@ export class LlmRoutingControls {
   }
 
   // Kick off background model loads for whichever providers the current routing
-  // needs, so the dropdowns are populated by the time the user looks.
+  // needs, so the dropdowns are populated by the time the user looks. Called on
+  // open, window focus, and routing changes — points where the outside world may
+  // have changed — so it also retries providers whose last load left them
+  // unhealthy (e.g. Ollama was started after the first probe).
   refreshActiveProviders(): void {
     const settings = this.dependencies.getSettings();
     if (!settings.llmRemoteFeaturesEnabled) {
-      this.warmModels('ollama');
+      this.recheckModels('ollama');
       return;
     }
     if (settings.llmRouting === 'local' || settings.llmRouting === 'auto') {
-      this.warmModels('ollama');
+      this.recheckModels('ollama');
     }
     if (settings.llmRouting === 'remote' || settings.llmRouting === 'auto') {
-      this.warmModels('openrouter');
+      this.recheckModels('openrouter');
     }
   }
 
-  // Background warm: load a provider's catalog once. Unlike the manual refresh
-  // button, this skips providers already loaded or in flight, so it is safe to
-  // call on every render and window focus without re-fetching the catalog.
+  private recheckModels(providerId: LlmProviderId): void {
+    const state = this.providers[providerId];
+    if (state.modelsLoaded && state.health.kind === 'ready') {
+      return;
+    }
+    void this.refreshModels(providerId, { silent: true });
+  }
+
+  // Background warm: load a provider's catalog once. Unlike `recheckModels`,
+  // this never retries a failed load — a failure triggers a re-render, and the
+  // render paths below call this, so retrying here would loop.
   private warmModels(providerId: LlmProviderId): void {
     const state = this.providers[providerId];
     if (state.modelsLoaded || this.modelsRefreshInFlight[providerId] === true) {
@@ -243,10 +265,10 @@ export class LlmRoutingControls {
         });
       });
 
-    parent.createEl('p', {
-      cls: 'local-dictation-muted',
-      text: 'Large transcripts can overflow a local model’s context or run slowly — Auto sends just those to OpenRouter.',
-    });
+    appendInfoTooltip(
+      setting,
+      'Large transcripts can overflow a local model’s context or run slowly — Auto sends just those to OpenRouter.',
+    );
   }
 
   private renderLeg(parent: HTMLElement, label: string): void {
@@ -354,6 +376,13 @@ export class LlmRoutingControls {
           );
           refreshStatus();
         });
+      })
+      .addExtraButton((button) => {
+        button.setIcon('plug-zap').setTooltip('Test API key and model');
+        button.extraSettingsEl.setAttribute('aria-label', 'Test OpenRouter API key and model');
+        button.onClick(() => {
+          void this.runOpenRouterTest(button);
+        });
       });
 
     refreshStatus = this.renderStatusRow(parent, 'openrouter');
@@ -388,6 +417,65 @@ export class LlmRoutingControls {
     };
     update();
     return update;
+  }
+
+  // Proves the whole remote path — key, credits, and the exact model id — with a
+  // minimal real completion. Returns null on success, or a user-facing failure
+  // message in the same vocabulary as the cleanup-failure banner.
+  async testOpenRouter(): Promise<string | null> {
+    const settings = this.dependencies.getSettings();
+    const model = getProviderModel(settings, 'openrouter').trim();
+    if (model.length === 0) {
+      return formatCleanupFailureBanner({
+        code: 'model_not_configured',
+        message: '',
+        providerId: 'openrouter',
+      });
+    }
+
+    try {
+      await createProvider('openrouter', settings).cleanup({
+        model,
+        prompt: 'Reply with the single word OK.',
+        temperature: 0,
+        userMessage: 'ping',
+      });
+      return null;
+    } catch (error) {
+      const providerError =
+        error instanceof ProviderError
+          ? error
+          : new ProviderError(
+              error instanceof Error ? error.message : String(error),
+              'connection_failed',
+            );
+      return formatCleanupFailureBanner({
+        code: providerError.code,
+        message: providerError.message,
+        providerId: 'openrouter',
+      });
+    }
+  }
+
+  private async runOpenRouterTest(button: ExtraButtonComponent): Promise<void> {
+    if (this.openRouterTestInFlight) {
+      return;
+    }
+    this.openRouterTestInFlight = true;
+    button.setDisabled(true);
+    try {
+      const failure = await this.testOpenRouter();
+      button.setIcon(failure === null ? 'check' : 'x');
+      if (failure !== null) {
+        this.notice(`Local Dictation: ${failure}`);
+      }
+      window.setTimeout(() => {
+        button.setIcon('plug-zap');
+      }, TEST_RESULT_ICON_MS);
+    } finally {
+      this.openRouterTestInFlight = false;
+      button.setDisabled(false);
+    }
   }
 
   private prewarm(providerId: LlmProviderId, modelId: string): void {

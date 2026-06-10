@@ -44,6 +44,15 @@ export class OllamaProvider implements LlmProvider {
 
 function mapOllamaError(error: unknown): ProviderError {
   if (error instanceof OllamaClientError) {
+    // Ollama reports a missing/unpulled model as a 404 from /api/chat; surface
+    // it as unknown_model so the UI names the real problem (mirrors OpenRouter).
+    if (
+      error.code === 'http_error' &&
+      error.status === 404 &&
+      /model/i.test(error.responseText ?? error.message)
+    ) {
+      return new ProviderError('Ollama model was not found.', 'unknown_model');
+    }
     return new ProviderError(error.message, error.code);
   }
 

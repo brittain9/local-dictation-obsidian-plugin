@@ -174,6 +174,29 @@ describe('OpenRouterProvider', () => {
     await assertion;
   });
 
+  it('honors a configured cleanup timeout', async () => {
+    vi.useFakeTimers();
+    mockFetch((_url, init) => rejectWhenAborted(init));
+
+    const promise = new OpenRouterProvider({
+      apiKey: 'sk-or-test',
+      baseUrl: 'https://openrouter.test/api/v1',
+      timeoutMs: 5_000,
+    }).cleanup({
+      model: 'anthropic/claude-sonnet-4.5',
+      prompt: 'Clean it.',
+      temperature: 0.2,
+      userMessage: 'raw',
+    });
+    const assertion = expect(promise).rejects.toMatchObject({
+      code: 'timeout',
+      name: 'ProviderError',
+    } satisfies Partial<ProviderError>);
+    await vi.advanceTimersByTimeAsync(5_000);
+
+    await assertion;
+  });
+
   it('propagates caller abort signals', async () => {
     mockFetch((_url, init) => rejectWhenAborted(init));
     const controller = new AbortController();

@@ -12,6 +12,10 @@ export abstract class AbstractInputSuggest<T> {
   close(): void {}
 }
 
+// Export-resolution stub so modules importing `Setting` load under vitest's
+// node environment; tests that exercise render paths need a real DOM stub.
+export class Setting {}
+
 export const Platform = {
   isMacOS: false,
   isWin: false,

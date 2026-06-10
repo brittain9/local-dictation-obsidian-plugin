@@ -25,12 +25,22 @@ export interface OllamaModelOption {
 }
 
 export class OllamaClientError extends Error {
+  readonly responseText?: string;
+  readonly status?: number;
+
   constructor(
     message: string,
     public readonly code: 'connection_failed' | 'http_error' | 'invalid_response' | 'timeout',
+    options: { responseText?: string | undefined; status?: number | undefined } = {},
   ) {
     super(message);
     this.name = 'OllamaClientError';
+    if (options.responseText !== undefined) {
+      this.responseText = options.responseText;
+    }
+    if (options.status !== undefined) {
+      this.status = options.status;
+    }
   }
 }
 
@@ -224,7 +234,12 @@ function requestText(
           if (exceeded) return;
           const statusCode = response.statusCode ?? 0;
           if (statusCode < 200 || statusCode >= 300) {
-            reject(new OllamaClientError(`Ollama returned HTTP ${statusCode}.`, 'http_error'));
+            reject(
+              new OllamaClientError(`Ollama returned HTTP ${statusCode}.`, 'http_error', {
+                responseText: Buffer.concat(chunks).toString('utf8'),
+                status: statusCode,
+              }),
+            );
             return;
           }
           resolve(Buffer.concat(chunks).toString('utf8'));
