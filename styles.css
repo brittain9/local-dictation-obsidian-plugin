@@ -767,6 +767,12 @@
   border-top: 1px solid var(--background-modifier-border);
 }
 
+/* The labeled divider replaces the built-in row separator, so drop the
+   following setting row's own border to avoid a doubled line. */
+.local-dictation-route-leg + .setting-item {
+  border-top: none;
+}
+
 .local-stt-hidden {
   display: none;
 }
