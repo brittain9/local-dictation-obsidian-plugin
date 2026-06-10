@@ -3,10 +3,9 @@ import { describe, expect, it } from 'vitest';
 import {
   DEFAULT_LLM_BUILTIN_PRESET_ID,
   getLlmBuiltinPreset,
-  type LlmUserPreset,
+  type LlmPreset,
 } from '../src/llm/presets';
 import {
-  DEFAULT_LLM_POSTPROCESS_PROMPT,
   DEFAULT_PLUGIN_SETTINGS,
   LLM_USER_PRESET_MAX_COUNT,
   LLM_USER_PRESET_MAX_DESCRIPTION_CHARS,
@@ -16,12 +15,10 @@ import {
   shouldRefreshLlmSidebar,
 } from '../src/settings/plugin-settings';
 
-const PROFESSIONAL_WRITING_PRESET = getLlmBuiltinPreset('professional-writing');
-
-function makeUserPreset(overrides: Partial<LlmUserPreset> & { id: string }): LlmUserPreset {
+function makeUserPreset(overrides: Partial<LlmPreset> & { id: string }): LlmPreset {
   return {
-    description: '',
     label: `Style ${overrides.id}`,
+    output: 'replace',
     prompt: 'Clean it my way.',
     ...overrides,
   };
@@ -42,7 +39,6 @@ describe('resolvePluginSettings', () => {
       llmRemoteFeaturesEnabled: true,
       llmPostprocessActivePresetRef: `builtin:${DEFAULT_LLM_BUILTIN_PRESET_ID}`,
       llmPostprocessMode: 'off',
-      llmPostprocessPrompt: DEFAULT_LLM_POSTPROCESS_PROMPT,
       llmPostprocessUserPresets: [],
     });
   });
@@ -60,7 +56,6 @@ describe('resolvePluginSettings', () => {
         llmPostprocessMode: 'batch',
         llmPostprocessNoteContextChars: 4000,
         llmPostprocessPriorUtterancesN: 3,
-        llmPostprocessPrompt: 'Custom prompt.',
         llmPostprocessShowRawBelow: true,
         llmPostprocessSkipMinWords: 6,
         llmPostprocessTemperature: 0.4,
@@ -100,11 +95,9 @@ describe('resolvePluginSettings', () => {
       llmFeaturesEnabled: false,
       llmOpenRouterApiKey: 'openrouter-key',
       llmRemoteFeaturesEnabled: false,
-      llmPostprocessActivePresetRef: null,
       llmPostprocessMode: 'batch',
       llmPostprocessNoteContextChars: 4000,
       llmPostprocessPriorUtterancesN: 3,
-      llmPostprocessPrompt: 'Custom prompt.',
       llmPostprocessShowRawBelow: true,
       llmPostprocessSkipMinWords: 6,
       llmPostprocessTemperature: 0.4,
@@ -317,55 +310,88 @@ describe('resolvePluginSettings', () => {
   it('falls back to the default when useLlmNoteContext is not a boolean', () => {
     expect(resolvePluginSettings({ useLlmNoteContext: 'yes' }).useLlmNoteContext).toBe(false);
   });
+});
 
-  it('infers active style refs from the current prompt', () => {
-    expect(resolvePluginSettings({}).llmPostprocessActivePresetRef).toBe('builtin:clean-up');
-    expect(
-      resolvePluginSettings({
-        llmPostprocessPrompt: PROFESSIONAL_WRITING_PRESET.prompt,
-      }).llmPostprocessActivePresetRef,
-    ).toBe('builtin:professional-writing');
-    expect(
-      resolvePluginSettings({
-        llmPostprocessPrompt: 'something fully custom',
-      }).llmPostprocessActivePresetRef,
-    ).toBeNull();
-  });
-
-  it('preserves a persisted active preset ref over content-based matching', () => {
-    const userPreset = makeUserPreset({
-      id: 'a',
-      label: 'Mirror clean-up',
-      prompt: getLlmBuiltinPreset(DEFAULT_LLM_BUILTIN_PRESET_ID).prompt,
+describe('llm preset migration', () => {
+  it('drops a legacy prompt that matches the active preset', () => {
+    const settings = resolvePluginSettings({
+      llmPostprocessActivePresetRef: 'builtin:professional-writing',
+      llmPostprocessPrompt: getLlmBuiltinPreset('professional-writing').prompt,
     });
-
-    expect(
-      resolvePluginSettings({
-        llmPostprocessActivePresetRef: 'user:a',
-        llmPostprocessPrompt: userPreset.prompt,
-        llmPostprocessUserPresets: [userPreset],
-      }).llmPostprocessActivePresetRef,
-    ).toBe('user:a');
-
-    expect(
-      resolvePluginSettings({
-        llmPostprocessActivePresetRef: null,
-        llmPostprocessPrompt: getLlmBuiltinPreset(DEFAULT_LLM_BUILTIN_PRESET_ID).prompt,
-      }).llmPostprocessActivePresetRef,
-    ).toBeNull();
-
-    expect(
-      resolvePluginSettings({
-        llmPostprocessActivePresetRef: 'user:gone',
-        llmPostprocessPrompt: PROFESSIONAL_WRITING_PRESET.prompt,
-        llmPostprocessUserPresets: [],
-      }).llmPostprocessActivePresetRef,
-    ).toBe('builtin:professional-writing');
+    expect(settings.llmPostprocessActivePresetRef).toBe('builtin:professional-writing');
+    expect(settings.llmPostprocessUserPresets).toHaveLength(0);
+    expect('llmPostprocessPrompt' in settings).toBe(false);
   });
 
+  it('re-points the ref when a legacy prompt matches another preset', () => {
+    const settings = resolvePluginSettings({
+      llmPostprocessActivePresetRef: 'builtin:clean-up',
+      llmPostprocessPrompt: getLlmBuiltinPreset('professional-writing').prompt,
+    });
+    expect(settings.llmPostprocessActivePresetRef).toBe('builtin:professional-writing');
+  });
+
+  it('converts a custom legacy prompt into a "My preset" user preset', () => {
+    const settings = resolvePluginSettings({ llmPostprocessPrompt: 'fully custom prompt' });
+    const created = settings.llmPostprocessUserPresets[0];
+    expect(created).toMatchObject({
+      label: 'My preset',
+      output: 'replace',
+      prompt: 'fully custom prompt',
+    });
+    expect(settings.llmPostprocessActivePresetRef).toBe(`user:${created?.id}`);
+  });
+
+  it('suffixes the migrated preset label when "My preset" is taken', () => {
+    const settings = resolvePluginSettings({
+      llmPostprocessPrompt: 'fully custom prompt',
+      llmPostprocessUserPresets: [makeUserPreset({ id: 'a', label: 'My preset' })],
+    });
+    expect(settings.llmPostprocessUserPresets[1]?.label).toBe('My preset 2');
+  });
+
+  it('falls back to clean-up for unknown refs, including removed voice-commands', () => {
+    expect(
+      resolvePluginSettings({ llmPostprocessActivePresetRef: 'builtin:voice-commands' })
+        .llmPostprocessActivePresetRef,
+    ).toBe('builtin:clean-up');
+    expect(
+      resolvePluginSettings({ llmPostprocessActivePresetRef: null }).llmPostprocessActivePresetRef,
+    ).toBe('builtin:clean-up');
+  });
+
+  it('migrates legacy user-preset fields into the new shape', () => {
+    const settings = resolvePluginSettings({
+      llmPostprocessUserPresets: [
+        { id: 'a', label: 'Old', prompt: 'p', mode: 'batch', minWords: 2, temperature: 0.7 },
+      ],
+    });
+    expect(settings.llmPostprocessUserPresets[0]).toEqual({
+      id: 'a',
+      label: 'Old',
+      output: 'replace',
+      overrides: { minWords: 2, temperature: 0.7 },
+      prompt: 'p',
+      timing: 'batch',
+    });
+  });
+
+  it('drops user presets without a prompt and forces batch timing for additive presets', () => {
+    const settings = resolvePluginSettings({
+      llmPostprocessUserPresets: [
+        { id: 'empty', label: 'No prompt', prompt: '   ' },
+        { id: 'add', label: 'Adder', prompt: 'p', output: 'add_above', timing: 'per_utterance' },
+      ],
+    });
+    expect(settings.llmPostprocessUserPresets).toHaveLength(1);
+    expect(settings.llmPostprocessUserPresets[0]).toMatchObject({ id: 'add', timing: 'batch' });
+  });
+});
+
+describe('user preset normalization', () => {
   it.each([
     [
-      'preserves valid prompt-shaped entries in order',
+      'preserves valid entries in order',
       [
         makeUserPreset({ id: 'a', label: 'Style A', description: 'first' }),
         makeUserPreset({ id: 'b', label: 'Style B', prompt: 'second prompt' }),
@@ -399,49 +425,50 @@ describe('resolvePluginSettings', () => {
         makeUserPreset({ id: 'b', label: 'Keeper B' }),
       ],
     ],
-    [
-      'falls back empty prompts to the Clean up prompt',
-      [{ id: 'a', label: 'A', prompt: '' }],
-      [makeUserPreset({ id: 'a', label: 'A', prompt: DEFAULT_LLM_POSTPROCESS_PROMPT })],
-    ],
-  ] as const)('normalizes user styles: %s', (_label, llmPostprocessUserPresets, expected) => {
+  ] as const)('normalizes user presets: %s', (_label, llmPostprocessUserPresets, expected) => {
     expect(resolvePluginSettings({ llmPostprocessUserPresets }).llmPostprocessUserPresets).toEqual(
       expected,
     );
   });
 
-  it('keeps valid per-preset minWords and temperature overrides; drops invalid', () => {
+  it('keeps valid override values in the overrides bag; drops invalid', () => {
     const presets = resolvePluginSettings({
       llmPostprocessUserPresets: [
-        { id: 'a', label: 'Has both', prompt: 'p', minWords: 0, temperature: 0.7 },
-        { id: 'b', label: 'Clamped high', prompt: 'p', minWords: 999, temperature: 99 },
-        { id: 'c', label: 'Bad types', prompt: 'p', minWords: '3', temperature: 'hot' },
+        {
+          id: 'a',
+          label: 'Has all',
+          prompt: 'p',
+          overrides: { minWords: 0, temperature: 0.7, useNoteContext: true },
+        },
+        { id: 'b', label: 'Clamped high', prompt: 'p', overrides: { minWords: 999, temperature: 99 } },
+        {
+          id: 'c',
+          label: 'Bad types',
+          prompt: 'p',
+          overrides: { minWords: '3', temperature: 'hot', useNoteContext: 'yes' },
+        },
         { id: 'd', label: 'None', prompt: 'p' },
       ],
     }).llmPostprocessUserPresets;
 
-    expect(presets[0]?.minWords).toBe(0);
-    expect(presets[0]?.temperature).toBe(0.7);
-    expect(presets[1]?.minWords).toBe(50);
-    expect(presets[1]?.temperature).toBe(2);
-    expect(presets[2]?.minWords).toBeUndefined();
-    expect(presets[2]?.temperature).toBeUndefined();
-    expect(presets[3]?.minWords).toBeUndefined();
-    expect(presets[3]?.temperature).toBeUndefined();
+    expect(presets[0]?.overrides).toEqual({ minWords: 0, temperature: 0.7, useNoteContext: true });
+    expect(presets[1]?.overrides).toEqual({ minWords: 50, temperature: 2 });
+    expect(presets[2]?.overrides).toBeUndefined();
+    expect(presets[3]?.overrides).toBeUndefined();
   });
 
-  it('keeps valid preset modes and drops invalid ones', () => {
+  it('keeps valid preset timings and drops invalid ones', () => {
     const presets = resolvePluginSettings({
       llmPostprocessUserPresets: [
-        { id: 'a', label: 'Phrase', mode: 'per_utterance', prompt: 'p' },
-        { id: 'b', label: 'Batch', mode: 'batch', prompt: 'p' },
-        { id: 'c', label: 'Off rejected', mode: 'off', prompt: 'p' },
-        { id: 'd', label: 'Unknown rejected', mode: 'whenever', prompt: 'p' },
-        { id: 'e', label: 'No mode', prompt: 'p' },
+        { id: 'a', label: 'Phrase', prompt: 'p', timing: 'per_utterance' },
+        { id: 'b', label: 'Batch', prompt: 'p', timing: 'batch' },
+        { id: 'c', label: 'Off rejected', prompt: 'p', timing: 'off' },
+        { id: 'd', label: 'Unknown rejected', prompt: 'p', timing: 'whenever' },
+        { id: 'e', label: 'No timing', prompt: 'p' },
       ],
     }).llmPostprocessUserPresets;
 
-    expect(presets.map((preset) => preset.mode)).toEqual([
+    expect(presets.map((preset) => preset.timing)).toEqual([
       'per_utterance',
       'batch',
       undefined,
@@ -450,7 +477,7 @@ describe('resolvePluginSettings', () => {
     ]);
   });
 
-  it('clamps user style label and description lengths', () => {
+  it('clamps user preset label and description lengths', () => {
     const longLabel = 'L'.repeat(LLM_USER_PRESET_MAX_LABEL_CHARS + 20);
     const longDesc = 'D'.repeat(LLM_USER_PRESET_MAX_DESCRIPTION_CHARS + 50);
     const preset = resolvePluginSettings({
@@ -460,10 +487,10 @@ describe('resolvePluginSettings', () => {
     }).llmPostprocessUserPresets[0];
 
     expect(preset?.label.length).toBe(LLM_USER_PRESET_MAX_LABEL_CHARS);
-    expect(preset?.description.length).toBe(LLM_USER_PRESET_MAX_DESCRIPTION_CHARS);
+    expect(preset?.description?.length).toBe(LLM_USER_PRESET_MAX_DESCRIPTION_CHARS);
   });
 
-  it(`caps user style count at ${LLM_USER_PRESET_MAX_COUNT}`, () => {
+  it(`caps user preset count at ${LLM_USER_PRESET_MAX_COUNT}`, () => {
     const presets = Array.from({ length: LLM_USER_PRESET_MAX_COUNT + 5 }, (_, i) =>
       makeUserPreset({ id: `id-${i}`, label: `Label ${i}` }),
     );
@@ -481,7 +508,9 @@ describe('resolvePluginSettings', () => {
       resolvePluginSettings({ llmPostprocessUserPresets: { 0: 'oops' } }).llmPostprocessUserPresets,
     ).toEqual([]);
   });
+});
 
+describe('audio input device', () => {
   it('reads a valid audioInputDevice and trims whitespace', () => {
     expect(
       resolvePluginSettings({
@@ -500,8 +529,10 @@ describe('resolvePluginSettings', () => {
   ])('coerces invalid audioInputDevice to null (%s)', (_label, raw) => {
     expect(resolvePluginSettings(raw).audioInputDevice).toBeNull();
   });
+});
 
-  it('resets editable LLM defaults without touching visibility, provider models, raw display, or styles', () => {
+describe('resetLlmPostprocessDefaults', () => {
+  it('resets editable LLM defaults, keeps the transform on, and preserves presets and provider models', () => {
     const presets = [makeUserPreset({ id: 'a', label: 'Keep me' })];
     const reset = resetLlmPostprocessDefaults({
       ...DEFAULT_PLUGIN_SETTINGS,
@@ -510,7 +541,6 @@ describe('resolvePluginSettings', () => {
       llmPostprocessMode: 'batch',
       llmPostprocessNoteContextChars: 333,
       llmPostprocessPriorUtterancesN: 3,
-      llmPostprocessPrompt: 'changed',
       llmPostprocessShowRawBelow: true,
       llmPostprocessSkipMinWords: 3,
       llmPostprocessTemperature: 1,
@@ -525,8 +555,7 @@ describe('resolvePluginSettings', () => {
     expect(reset).toMatchObject({
       llmFeaturesEnabled: false,
       llmPostprocessActivePresetRef: `builtin:${DEFAULT_LLM_BUILTIN_PRESET_ID}`,
-      llmPostprocessMode: 'off',
-      llmPostprocessPrompt: DEFAULT_PLUGIN_SETTINGS.llmPostprocessPrompt,
+      llmPostprocessMode: 'per_utterance',
       llmPostprocessShowRawBelow: true,
       llmPostprocessUserPresets: presets,
       llmProviderModels: {
