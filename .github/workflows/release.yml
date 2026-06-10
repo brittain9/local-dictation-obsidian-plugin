@@ -268,11 +268,11 @@ jobs:
             cuda: true
             cuda_architectures: '75-virtual'
 
-    # Pinned, not windows-latest: that label now resolves to the VS 2026 (v18)
-    # image, and CUDA 12.9 ships MSBuild integration only up to VS 2022, so
-    # CMake fails with "No CUDA toolset found". Revisit when a CUDA release
-    # supports VS 2026.
-    runs-on: windows-2025
+    # Pinned to the VS 2022 image: CUDA 12.9 ships MSBuild integration only up
+    # to VS 2022, and both windows-latest and windows-2025 are mid-migration to
+    # a VS 2026 (v18) image that carries no VS 2022 toolchain, so CMake fails
+    # with "No CUDA toolset found". See #139 for the unpin path.
+    runs-on: windows-2022
 
     steps:
       - name: Checkout
