@@ -95,6 +95,8 @@ describe('resolvePluginSettings', () => {
       llmFeaturesEnabled: false,
       llmOpenRouterApiKey: 'openrouter-key',
       llmRemoteFeaturesEnabled: false,
+      // Seeded from the stored mode (no explicit value persisted).
+      llmPostprocessLastEnabledMode: 'batch',
       llmPostprocessMode: 'batch',
       llmPostprocessNoteContextChars: 4000,
       llmPostprocessPriorUtterancesN: 3,
@@ -309,6 +311,20 @@ describe('resolvePluginSettings', () => {
 
   it('falls back to the default when useLlmNoteContext is not a boolean', () => {
     expect(resolvePluginSettings({ useLlmNoteContext: 'yes' }).useLlmNoteContext).toBe(false);
+  });
+
+  it('persists the last enabled LLM mode and seeds it from the stored mode', () => {
+    expect(
+      resolvePluginSettings({ llmPostprocessLastEnabledMode: 'batch' })
+        .llmPostprocessLastEnabledMode,
+    ).toBe('batch');
+    // Vaults that predate the field seed from the enabled mode.
+    expect(
+      resolvePluginSettings({ llmPostprocessMode: 'batch' }).llmPostprocessLastEnabledMode,
+    ).toBe('batch');
+    expect(
+      resolvePluginSettings({ llmPostprocessLastEnabledMode: 'off' }).llmPostprocessLastEnabledMode,
+    ).toBe('per_utterance');
   });
 });
 
@@ -565,6 +581,7 @@ describe('resetLlmPostprocessDefaults', () => {
       ...DEFAULT_PLUGIN_SETTINGS,
       llmFeaturesEnabled: false,
       llmPostprocessActivePresetRef: 'user:custom',
+      llmPostprocessLastEnabledMode: 'batch',
       llmPostprocessMode: 'batch',
       llmPostprocessNoteContextChars: 333,
       llmPostprocessPriorUtterancesN: 3,
@@ -582,6 +599,7 @@ describe('resetLlmPostprocessDefaults', () => {
     expect(reset).toMatchObject({
       llmFeaturesEnabled: false,
       llmPostprocessActivePresetRef: `builtin:${DEFAULT_LLM_BUILTIN_PRESET_ID}`,
+      llmPostprocessLastEnabledMode: 'per_utterance',
       llmPostprocessMode: 'per_utterance',
       llmPostprocessShowRawBelow: true,
       llmPostprocessUserPresets: presets,

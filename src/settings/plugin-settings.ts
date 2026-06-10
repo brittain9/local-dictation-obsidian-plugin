@@ -10,6 +10,7 @@ import {
   type LlmPostprocessMode,
   type LlmPreset,
   type LlmPresetOverrides,
+  type LlmPresetTiming,
   listPresetEntries,
   resolveActivePresetEntry,
   resolvePresetEntry,
@@ -97,6 +98,9 @@ export interface PluginSettings {
   llmOpenRouterApiKey: string;
   llmRemoteFeaturesEnabled: boolean;
   llmPostprocessActivePresetRef: string;
+  // The user's timing choice while the transform is enabled; survives the
+  // mode being set to 'off' so re-enabling restores it across restarts.
+  llmPostprocessLastEnabledMode: LlmPresetTiming;
   llmPostprocessMode: LlmPostprocessMode;
   llmPostprocessNoteContextChars: number;
   llmPostprocessPriorUtterancesN: number;
@@ -139,6 +143,7 @@ export const DEFAULT_PLUGIN_SETTINGS: PluginSettings = {
   llmOpenRouterApiKey: '',
   llmRemoteFeaturesEnabled: true,
   llmPostprocessActivePresetRef: DEFAULT_LLM_ACTIVE_PRESET_REF,
+  llmPostprocessLastEnabledMode: 'per_utterance',
   llmPostprocessMode: 'off',
   llmPostprocessNoteContextChars: DEFAULT_LLM_POSTPROCESS_CONTEXT.noteContextChars,
   llmPostprocessPriorUtterancesN: DEFAULT_LLM_POSTPROCESS_CONTEXT.priorUtterancesN,
@@ -206,6 +211,10 @@ export function resolvePluginSettings(data: unknown): PluginSettings {
       DEFAULT_PLUGIN_SETTINGS.llmRemoteFeaturesEnabled,
     ),
     llmPostprocessActivePresetRef: activeRef,
+    llmPostprocessLastEnabledMode: readLastEnabledMode(
+      raw.llmPostprocessLastEnabledMode,
+      raw.llmPostprocessMode,
+    ),
     llmPostprocessMode: readLlmPostprocessMode(raw.llmPostprocessMode),
     llmPostprocessNoteContextChars: readClampedInteger(
       raw.llmPostprocessNoteContextChars,
@@ -318,6 +327,7 @@ export function resetLlmPostprocessDefaults(settings: PluginSettings): PluginSet
   return {
     ...settings,
     llmPostprocessActivePresetRef: DEFAULT_PLUGIN_SETTINGS.llmPostprocessActivePresetRef,
+    llmPostprocessLastEnabledMode: 'per_utterance',
     // Not the 'off' default: the reset button is only reachable while the
     // transform is on, and resetting should not silently disable it.
     llmPostprocessMode: 'per_utterance',
@@ -465,6 +475,18 @@ function migrateLlmPresetState(args: {
     activeRef: formatStyleRef({ kind: 'user', id: migrated.id }),
     userPresets: [...args.userPresets, migrated],
   };
+}
+
+// Seeds from the stored mode for vaults that predate the field, so an
+// already-enabled batch user keeps batch on their first disable/enable cycle.
+function readLastEnabledMode(value: unknown, storedMode: unknown): LlmPresetTiming {
+  if (isLlmPresetTiming(value)) {
+    return value;
+  }
+  if (isLlmPresetTiming(storedMode)) {
+    return storedMode;
+  }
+  return DEFAULT_PLUGIN_SETTINGS.llmPostprocessLastEnabledMode;
 }
 
 function readLlmPostprocessMode(value: unknown): LlmPostprocessMode {

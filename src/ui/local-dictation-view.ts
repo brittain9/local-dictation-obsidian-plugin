@@ -32,8 +32,6 @@ const HEADING_TOOLTIP =
 const STYLE_PICKER_TOOLTIP =
   'A preset bundles a transform prompt with optional timing, output behavior, and setting overrides. Use Manage presets to view a prompt or create, edit, duplicate, and delete presets.';
 
-const DEFAULT_ENABLED_CLEANUP_MODE: LlmPresetTiming = 'per_utterance';
-
 const CLEANUP_MODE_OPTIONS: ReadonlyArray<{ label: string; value: LlmPresetTiming }> = [
   { label: 'After each phrase', value: 'per_utterance' },
   { label: 'All at once on stop', value: 'batch' },
@@ -52,7 +50,6 @@ export class LocalDictationView extends ItemView {
   private advancedOpen = false;
   private focusedInput: HTMLElement | null = null;
   private narrowObserver: ResizeObserver | null = null;
-  private lastEnabledMode: LlmPresetTiming = DEFAULT_ENABLED_CLEANUP_MODE;
   private deferredRenderPending = false;
   private readonly routingControls: LlmRoutingControls;
   private unsubscribeLlmCleanupFailure: (() => void) | null = null;
@@ -140,10 +137,6 @@ export class LocalDictationView extends ItemView {
       return;
     }
 
-    if (settings.llmPostprocessMode !== 'off') {
-      this.lastEnabledMode = settings.llmPostprocessMode;
-    }
-
     const headerGroup = createSettingGroup(contentEl, 'LLM transformation', HEADING_TOOLTIP);
     this.renderCleanupToggle(headerGroup, settings);
 
@@ -189,10 +182,10 @@ export class LocalDictationView extends ItemView {
         toggle.setValue(enabled);
         toggle.onChange(async (value) => {
           const current = this.dependencies.getSettings();
-          if (!value && isLlmPresetTiming(current.llmPostprocessMode)) {
-            this.lastEnabledMode = current.llmPostprocessMode;
-          }
-          await this.saveField('llmPostprocessMode', value ? this.lastEnabledMode : 'off');
+          await this.persistSettings({
+            ...current,
+            llmPostprocessMode: value ? current.llmPostprocessLastEnabledMode : 'off',
+          });
           this.routingControls.refreshActiveProviders();
         });
       });
@@ -225,8 +218,11 @@ export class LocalDictationView extends ItemView {
           if (!isLlmPresetTiming(value)) {
             return;
           }
-          this.lastEnabledMode = value;
-          await this.saveField('llmPostprocessMode', value);
+          await this.persistSettings({
+            ...this.dependencies.getSettings(),
+            llmPostprocessLastEnabledMode: value,
+            llmPostprocessMode: value,
+          });
         });
       });
   }
@@ -299,7 +295,10 @@ export class LocalDictationView extends ItemView {
           await this.saveField('useLlmNoteContext', value);
         });
       });
-    appendInfoTooltip(setting, 'Experimental: results vary with note length and model.');
+    appendInfoTooltip(
+      setting,
+      'Experimental: results vary with note length and model. The note text is sent with every transform — on OpenRouter that adds input-token cost; on local models it adds latency.',
+    );
   }
 
   private renderNoteContextChars(parent: HTMLElement, settings: PluginSettings): void {
