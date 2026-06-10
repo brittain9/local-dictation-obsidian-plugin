@@ -37,6 +37,19 @@ runs:
       shell: pwsh
       run: echo "LIBCLANG_PATH=$((Get-Command clang).Source | Split-Path -Parent)" >> $env:GITHUB_ENV
 
+    # Fork the rust-cache key by Visual Studio product line (e.g. 2022 vs
+    # 2026). cmake configures whisper.cpp's build dir inside target/ with a
+    # VS-versioned generator, and CMake hard-fails on a generator mismatch, so
+    # a cache built under one VS poisons jobs running under another (runner
+    # image migrations flip VS out from under us; see release 2026.6.10).
+    # rust-cache hashes CMAKE*-prefixed env vars into the key segment that is
+    # also part of its fallback restore prefix, so this blocks stale restores
+    # both exact and fuzzy.
+    - name: Fork Rust cache key by Visual Studio version (Windows)
+      if: runner.os == 'Windows'
+      shell: pwsh
+      run: echo "CMAKE_VS_PRODUCT_LINE=$(& "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -property catalog_productLineVersion)" >> $env:GITHUB_ENV
+
     - name: Setup Rust (with components)
       if: inputs.components != ''
       uses: dtolnay/rust-toolchain@stable
