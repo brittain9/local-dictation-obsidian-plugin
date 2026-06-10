@@ -82,6 +82,11 @@ export const LLM_USER_PRESET_MAX_LABEL_CHARS = 60;
 export const LLM_USER_PRESET_MAX_DESCRIPTION_CHARS = 240;
 export const LLM_USER_PRESET_MAX_COUNT = 25;
 
+// Shared bounds for the min-words skip gate and sampling temperature, used by
+// the settings reader, the preset editor, and the preset draft validator.
+export const LLM_MIN_WORDS_MAX = 50;
+export const LLM_TEMPERATURE_MAX = 2;
+
 export interface AudioInputDevice {
   deviceId: string;
   label: string;
@@ -236,13 +241,13 @@ export function resolvePluginSettings(data: unknown): PluginSettings {
       raw.llmPostprocessSkipMinWords,
       DEFAULT_PLUGIN_SETTINGS.llmPostprocessSkipMinWords,
       0,
-      50,
+      LLM_MIN_WORDS_MAX,
     ),
     llmPostprocessTemperature: readClampedNumber(
       raw.llmPostprocessTemperature,
       DEFAULT_PLUGIN_SETTINGS.llmPostprocessTemperature,
       0,
-      2,
+      LLM_TEMPERATURE_MAX,
     ),
     llmPostprocessTotalContextCap: readClampedInteger(
       raw.llmPostprocessTotalContextCap,
@@ -393,19 +398,11 @@ function readPositiveInteger(value: unknown, fallback: number): number {
 }
 
 function readClampedInteger(value: unknown, fallback: number, min: number, max: number): number {
-  if (typeof value !== 'number' || !Number.isFinite(value) || !Number.isInteger(value)) {
-    return fallback;
-  }
-
-  return Math.min(max, Math.max(min, value));
+  return readOptionalClampedInteger(value, min, max) ?? fallback;
 }
 
 function readClampedNumber(value: unknown, fallback: number, min: number, max: number): number {
-  if (typeof value !== 'number' || !Number.isFinite(value)) {
-    return fallback;
-  }
-
-  return Math.min(max, Math.max(min, value));
+  return readOptionalClampedNumber(value, min, max) ?? fallback;
 }
 
 function readOptionalClampedInteger(value: unknown, min: number, max: number): number | undefined {
@@ -574,11 +571,15 @@ function readUserPresets(value: unknown): LlmPreset[] {
     const timing = output === 'replace' ? legacyTiming : 'batch';
     // Pre-redesign presets stored minWords/temperature at the top level.
     const overridesRaw = isRecord(entry.overrides) ? entry.overrides : {};
-    const minWords = readOptionalClampedInteger(overridesRaw.minWords ?? entry.minWords, 0, 50);
+    const minWords = readOptionalClampedInteger(
+      overridesRaw.minWords ?? entry.minWords,
+      0,
+      LLM_MIN_WORDS_MAX,
+    );
     const temperature = readOptionalClampedNumber(
       overridesRaw.temperature ?? entry.temperature,
       0,
-      2,
+      LLM_TEMPERATURE_MAX,
     );
     const useNoteContext =
       typeof overridesRaw.useNoteContext === 'boolean' ? overridesRaw.useNoteContext : undefined;

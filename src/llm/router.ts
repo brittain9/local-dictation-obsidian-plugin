@@ -4,6 +4,7 @@ import {
   createProvider,
   formatLlmProviderName,
   getProviderModel,
+  type LlmProvider,
   type LlmProviderId,
   ProviderError,
   selectRouteProviderId,
@@ -41,14 +42,30 @@ export function createLlmRouter(
   isRemoteFeaturesEnabled: () => boolean = () => settings.llmRemoteFeaturesEnabled,
 ): LlmRouter {
   // `isRemoteFeaturesEnabled` must read live state, not the snapshot captured in
-  // `settings`, so the kill switch takes effect mid-session; the default exists
-  // only for tests that pass a fixed snapshot.
+  // `settings`, so the privacy kill switch takes effect mid-session; the default
+  // exists only for tests that pass a fixed snapshot. Everything else here —
+  // routing mode, auto threshold, model strings — deliberately stays frozen from
+  // the session-start snapshot so a running session behaves predictably;
+  // mid-session settings edits apply from the next session.
   const selectProviderId = (userMessageChars: number): LlmProviderId =>
     selectRouteProviderId(
       isRemoteFeaturesEnabled() ? settings.llmRouting : 'local',
       userMessageChars,
       settings.llmRemoteThresholdChars,
     );
+
+  // The settings snapshot is frozen for the router's lifetime, so each provider
+  // can be constructed once instead of per cleanup call.
+  const providers = new Map<LlmProviderId, LlmProvider>();
+  const providerFor = (providerId: LlmProviderId): LlmProvider => {
+    const existing = providers.get(providerId);
+    if (existing !== undefined) {
+      return existing;
+    }
+    const created = createProviderFn(providerId, settings);
+    providers.set(providerId, created);
+    return created;
+  };
 
   return {
     async cleanup(options) {
@@ -64,7 +81,7 @@ export function createLlmRouter(
       }
 
       try {
-        const text = await createProviderFn(providerId, settings).cleanup({
+        const text = await providerFor(providerId).cleanup({
           ...(options.abortSignal !== undefined ? { abortSignal: options.abortSignal } : {}),
           maxOutputTokens: outputTokenBudget(options.transcriptChars),
           model,

@@ -189,10 +189,22 @@ export function resolvePresetEntry(
   ref: string | null,
   userPresets: readonly LlmPreset[],
 ): LlmPresetEntry | null {
-  if (ref === null) {
+  const parsed = parseStyleRef(ref);
+  if (parsed === null) {
     return null;
   }
-  return listPresetEntries(userPresets).find((entry) => entry.ref === ref) ?? null;
+  if (parsed.kind === 'builtin') {
+    return {
+      isBuiltin: true,
+      preset: getLlmBuiltinPreset(parsed.id),
+      ref: formatStyleRef(parsed),
+    };
+  }
+  const preset = userPresets.find((entry) => entry.id === parsed.id);
+  if (preset === undefined) {
+    return null;
+  }
+  return { isBuiltin: false, preset, ref: formatStyleRef(parsed) };
 }
 
 export function resolveActivePresetEntry(

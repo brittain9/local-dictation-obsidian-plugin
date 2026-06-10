@@ -1,3 +1,4 @@
+import { formatErrorMessage } from '../shared/format-utils';
 import { isRecord } from '../shared/type-guards';
 import { CLEANUP_TIMEOUT_MS, fetchJson, PROBE_TIMEOUT_MS } from './http-shared';
 import type {
@@ -257,10 +258,7 @@ function parseChatContent(response: unknown): string {
 
 function mapOpenRouterError(error: unknown): ProviderError {
   if (!(error instanceof ProviderError)) {
-    return new ProviderError(
-      error instanceof Error ? error.message : String(error),
-      'connection_failed',
-    );
+    return new ProviderError(formatErrorMessage(error), 'connection_failed');
   }
 
   if (error.code !== 'http_error') {

@@ -894,52 +894,7 @@ export class DictationSessionController {
 
       entry.session.clearSessionProcessingMark();
 
-      const trimmed = result.text.trim();
-      if (entry.snapshot.llmPostprocessOutput === 'replace') {
-        if (trimmed.length === 0) {
-          throw new ProviderError('Provider returned empty cleaned text.', 'invalid_response');
-        }
-
-        const replaced = entry.session.replaceSessionRangeWithCleaned(trimmed, {
-          rawTextForCallout: transcriptText,
-          showRawBelow: entry.snapshot.llmPostprocessShowRawBelow,
-        });
-
-        if (!replaced) {
-          this.dependencies.logger?.warn(
-            'llm',
-            'batch cleanup replacement skipped; session range no longer available',
-          );
-        } else {
-          this.dependencies.logger?.debug('llm', 'batch cleanup complete', {
-            chars: trimmed.length,
-          });
-        }
-      } else if (trimmed.length === 0) {
-        // Additive presets may legitimately find nothing to add (e.g. no action
-        // items), but say so — a silently failing model would otherwise look
-        // like success.
-        this.dependencies.notice('LLM transform returned nothing to add.');
-        this.dependencies.logger?.debug(
-          'llm',
-          'additive batch returned empty output; nothing inserted',
-        );
-      } else {
-        const placement = entry.snapshot.llmPostprocessOutput === 'add_above' ? 'above' : 'below';
-        const inserted = entry.session.insertAdjacentToSessionRange(trimmed, placement);
-
-        if (!inserted) {
-          this.dependencies.logger?.warn(
-            'llm',
-            'additive batch insert skipped; session range no longer available',
-          );
-        } else {
-          this.dependencies.logger?.debug('llm', 'additive batch insert complete', {
-            chars: trimmed.length,
-            placement,
-          });
-        }
-      }
+      this.applyBatchCleanupResult(entry, result.text.trim(), transcriptText);
       this.dependencies.onLlmCleanupSuccess?.();
       this.disposeLocalSession(sessionId);
     } catch (error) {
@@ -959,6 +914,66 @@ export class DictationSessionController {
       this.disposeLocalSession(sessionId);
     } finally {
       entry.cleanupAbortControllers.delete(abortController);
+    }
+  }
+
+  // Applies a batch result per the preset's output behavior: replace rewrites
+  // the session range, add_above/add_below insert next to the untouched
+  // transcript. Throws ProviderError for an empty replace result so the caller's
+  // failure path keeps the raw text.
+  private applyBatchCleanupResult(
+    entry: ManagedSession,
+    cleanedText: string,
+    transcriptText: string,
+  ): void {
+    if (entry.snapshot.llmPostprocessOutput === 'replace') {
+      if (cleanedText.length === 0) {
+        throw new ProviderError('Provider returned empty cleaned text.', 'invalid_response');
+      }
+
+      const replaced = entry.session.replaceSessionRangeWithCleaned(cleanedText, {
+        rawTextForCallout: transcriptText,
+        showRawBelow: entry.snapshot.llmPostprocessShowRawBelow,
+      });
+
+      if (!replaced) {
+        this.dependencies.logger?.warn(
+          'llm',
+          'batch cleanup replacement skipped; session range no longer available',
+        );
+      } else {
+        this.dependencies.logger?.debug('llm', 'batch cleanup complete', {
+          chars: cleanedText.length,
+        });
+      }
+      return;
+    }
+
+    if (cleanedText.length === 0) {
+      // Additive presets may legitimately find nothing to add (e.g. no action
+      // items), but say so — a silently failing model would otherwise look
+      // like success.
+      this.dependencies.notice('LLM transform returned nothing to add.');
+      this.dependencies.logger?.debug(
+        'llm',
+        'additive batch returned empty output; nothing inserted',
+      );
+      return;
+    }
+
+    const placement = entry.snapshot.llmPostprocessOutput === 'add_above' ? 'above' : 'below';
+    const inserted = entry.session.insertAdjacentToSessionRange(cleanedText, placement);
+
+    if (!inserted) {
+      this.dependencies.logger?.warn(
+        'llm',
+        'additive batch insert skipped; session range no longer available',
+      );
+    } else {
+      this.dependencies.logger?.debug('llm', 'additive batch insert complete', {
+        chars: cleanedText.length,
+        placement,
+      });
     }
   }
 
@@ -1196,10 +1211,7 @@ function normalizeProviderError(error: unknown): ProviderError {
     return error;
   }
 
-  return new ProviderError(
-    error instanceof Error ? error.message : String(error),
-    'connection_failed',
-  );
+  return new ProviderError(formatErrorMessage(error), 'connection_failed');
 }
 
 function renderProviderUserMessage(

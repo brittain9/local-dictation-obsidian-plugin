@@ -13,6 +13,8 @@ import {
   resolveActivePresetEntry,
 } from '../llm/presets';
 import {
+  LLM_MIN_WORDS_MAX,
+  LLM_TEMPERATURE_MAX,
   LLM_USER_PRESET_MAX_COUNT,
   LLM_USER_PRESET_MAX_DESCRIPTION_CHARS,
   LLM_USER_PRESET_MAX_LABEL_CHARS,
@@ -36,6 +38,8 @@ type EditorState =
   | { kind: 'create'; draft: LlmPresetDraft }
   | { kind: 'edit'; draft: LlmPresetDraft; presetId: string }
   | { kind: 'view'; preset: LlmPreset };
+
+const MAX_PRESETS_MESSAGE = `You can save up to ${LLM_USER_PRESET_MAX_COUNT} presets. Delete one first.`;
 
 export class PresetManagerModal extends Modal {
   private editor: EditorState | null = null;
@@ -105,9 +109,7 @@ export class PresetManagerModal extends Modal {
         button.setCta().setButtonText('New preset');
         if (reachedMaxCount) {
           button.setDisabled(true);
-          button.setTooltip(
-            `You can save up to ${LLM_USER_PRESET_MAX_COUNT} presets. Delete one first.`,
-          );
+          button.setTooltip(MAX_PRESETS_MESSAGE);
           return;
         }
         button.onClick(() => {
@@ -121,20 +123,15 @@ export class PresetManagerModal extends Modal {
       'Built-in',
       entries.filter((entry) => entry.isBuiltin),
       activeRef,
-      reachedMaxCount,
     );
     const userEntries = entries.filter((entry) => !entry.isBuiltin);
     if (userEntries.length > 0) {
-      this.renderListSection('Your presets', userEntries, activeRef, reachedMaxCount);
+      this.renderListSection('Your presets', userEntries, activeRef);
     }
   }
 
-  private renderListSection(
-    heading: string,
-    entries: LlmPresetEntry[],
-    activeRef: string,
-    reachedMaxCount: boolean,
-  ): void {
+  private renderListSection(heading: string, entries: LlmPresetEntry[], activeRef: string): void {
+    const reachedMaxCount = this.reachedMaxCount();
     new Setting(this.contentEl).setName(heading).setHeading();
     for (const entry of entries) {
       const { preset } = entry;
@@ -290,7 +287,7 @@ export class PresetManagerModal extends Modal {
     new Setting(this.contentEl).setName('Min words').addText((text) => {
       text.inputEl.type = 'number';
       text.inputEl.min = '0';
-      text.inputEl.max = '50';
+      text.inputEl.max = String(LLM_MIN_WORDS_MAX);
       text.setPlaceholder('Inherit');
       text.setValue(draft.minWords);
       text.setDisabled(isBuiltinView);
@@ -302,7 +299,7 @@ export class PresetManagerModal extends Modal {
     new Setting(this.contentEl).setName('Temperature').addText((text) => {
       text.inputEl.type = 'number';
       text.inputEl.min = '0';
-      text.inputEl.max = '2';
+      text.inputEl.max = String(LLM_TEMPERATURE_MAX);
       text.inputEl.step = '0.05';
       text.setPlaceholder('Inherit');
       text.setValue(draft.temperature);
@@ -335,9 +332,7 @@ export class PresetManagerModal extends Modal {
         button.setCta().setButtonText('Duplicate');
         if (this.reachedMaxCount()) {
           button.setDisabled(true);
-          button.setTooltip(
-            `You can save up to ${LLM_USER_PRESET_MAX_COUNT} presets. Delete one first.`,
-          );
+          button.setTooltip(MAX_PRESETS_MESSAGE);
           return;
         }
         button.onClick(() => {
@@ -402,9 +397,7 @@ export class PresetManagerModal extends Modal {
       });
     } else {
       if (settings.llmPostprocessUserPresets.length >= LLM_USER_PRESET_MAX_COUNT) {
-        errorEl.setText(
-          `You can save up to ${LLM_USER_PRESET_MAX_COUNT} presets. Delete one before saving a new preset.`,
-        );
+        errorEl.setText(MAX_PRESETS_MESSAGE);
         errorEl.removeClass('local-stt-hidden');
         return;
       }

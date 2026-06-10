@@ -1,3 +1,4 @@
+import { formatErrorMessage } from '../shared/format-utils';
 import { createOllamaClient, type OllamaClient, OllamaClientError } from './ollama-client';
 import type { CleanupOptions, LlmProvider, ModelOption, ProviderHealth } from './provider';
 import { ProviderError } from './provider';
@@ -56,8 +57,5 @@ function mapOllamaError(error: unknown): ProviderError {
     return new ProviderError(error.message, error.code);
   }
 
-  return new ProviderError(
-    error instanceof Error ? error.message : String(error),
-    'connection_failed',
-  );
+  return new ProviderError(formatErrorMessage(error), 'connection_failed');
 }

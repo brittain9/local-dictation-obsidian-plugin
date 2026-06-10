@@ -5,6 +5,8 @@ import type {
   LlmPresetTiming,
 } from '../llm/presets';
 import {
+  LLM_MIN_WORDS_MAX,
+  LLM_TEMPERATURE_MAX,
   LLM_USER_PRESET_MAX_DESCRIPTION_CHARS,
   LLM_USER_PRESET_MAX_LABEL_CHARS,
 } from '../settings/plugin-settings';
@@ -81,13 +83,19 @@ export function validatePresetDraft(
     return { kind: 'error', message: 'Enter a prompt for this preset.' };
   }
 
-  const minWords = parseOptionalInteger(draft.minWords, 0, 50);
+  const minWords = parseOptionalInteger(draft.minWords, 0, LLM_MIN_WORDS_MAX);
   if (minWords === 'invalid') {
-    return { kind: 'error', message: 'Min words must be a whole number between 0 and 50.' };
+    return {
+      kind: 'error',
+      message: `Min words must be a whole number between 0 and ${LLM_MIN_WORDS_MAX}.`,
+    };
   }
-  const temperature = parseOptionalNumber(draft.temperature, 0, 2);
+  const temperature = parseOptionalNumber(draft.temperature, 0, LLM_TEMPERATURE_MAX);
   if (temperature === 'invalid') {
-    return { kind: 'error', message: 'Temperature must be a number between 0 and 2.' };
+    return {
+      kind: 'error',
+      message: `Temperature must be a number between 0 and ${LLM_TEMPERATURE_MAX}.`,
+    };
   }
 
   const timing: LlmPresetTiming | undefined =
