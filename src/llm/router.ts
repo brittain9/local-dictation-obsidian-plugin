@@ -1,4 +1,5 @@
 import type { PluginSettings } from '../settings/plugin-settings';
+import { outputTokenBudget } from './output-budget';
 import {
   createProvider,
   formatLlmProviderName,
@@ -12,6 +13,10 @@ export interface LlmRouterCleanupOptions {
   abortSignal?: AbortSignal;
   prompt: string;
   temperature: number;
+  // Length of the dictated text being transformed. The output cap scales with
+  // this, not with `userMessage`, which also carries note/prior context that
+  // the output should never approach in size.
+  transcriptChars: number;
   userMessage: string;
 }
 
@@ -61,6 +66,7 @@ export function createLlmRouter(
       try {
         const text = await createProviderFn(providerId, settings).cleanup({
           ...(options.abortSignal !== undefined ? { abortSignal: options.abortSignal } : {}),
+          maxOutputTokens: outputTokenBudget(options.transcriptChars),
           model,
           prompt: options.prompt,
           temperature: options.temperature,

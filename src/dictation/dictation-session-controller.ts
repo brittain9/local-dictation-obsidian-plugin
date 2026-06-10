@@ -679,6 +679,7 @@ export class DictationSessionController {
         abortSignal: abortController.signal,
         prompt: entry.snapshot.llmPostprocessPrompt,
         temperature: entry.snapshot.llmPostprocessTemperature,
+        transcriptChars: rawText.length,
         userMessage,
       });
 
@@ -876,6 +877,7 @@ export class DictationSessionController {
         abortSignal: abortController.signal,
         prompt: entry.snapshot.llmPostprocessPrompt,
         temperature: entry.snapshot.llmPostprocessTemperature,
+        transcriptChars: transcriptText.length,
         userMessage,
       });
 
@@ -914,7 +916,10 @@ export class DictationSessionController {
           });
         }
       } else if (trimmed.length === 0) {
-        // Additive presets may legitimately find nothing to add (e.g. no action items).
+        // Additive presets may legitimately find nothing to add (e.g. no action
+        // items), but say so — a silently failing model would otherwise look
+        // like success.
+        this.dependencies.notice('LLM transform returned nothing to add.');
         this.dependencies.logger?.debug(
           'llm',
           'additive batch returned empty output; nothing inserted',

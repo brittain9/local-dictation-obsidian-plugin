@@ -2,7 +2,6 @@ import http from 'node:http';
 
 import { isRecord } from '../shared/type-guards';
 import { CLEANUP_TIMEOUT_MS, MAX_RESPONSE_BYTES, PROBE_TIMEOUT_MS } from './http-shared';
-import { outputTokenBudget } from './output-budget';
 
 const OLLAMA_HOST = '127.0.0.1';
 const OLLAMA_PORT = 11434;
@@ -58,6 +57,8 @@ export interface OllamaClient {
 
 export interface OllamaCleanupOptions {
   abortSignal?: AbortSignal;
+  /** Output-token cap computed by the router (see output-budget). */
+  maxOutputTokens: number;
   model: string;
   prompt: string;
   temperature: number;
@@ -137,10 +138,8 @@ async function cleanup(
         { content: cleanupOptions.userMessage, role: 'user' },
       ],
       model: cleanupOptions.model,
-      // Size the output cap to the input so long batch cleanups aren't truncated,
-      // matching the remote path (see output-budget).
       options: {
-        num_predict: outputTokenBudget(cleanupOptions.userMessage.length),
+        num_predict: cleanupOptions.maxOutputTokens,
         temperature: cleanupOptions.temperature,
       },
       stream: false,

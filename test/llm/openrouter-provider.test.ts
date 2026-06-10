@@ -22,6 +22,7 @@ describe('OpenRouterProvider', () => {
 
     await expect(
       provider.cleanup({
+        maxOutputTokens: 4096,
         model: 'anthropic/claude-sonnet-4.5',
         prompt: 'Clean it.',
         temperature: 0.2,
@@ -48,7 +49,7 @@ describe('OpenRouterProvider', () => {
     });
   });
 
-  it('scales max_tokens with the input so a long transcript is not capped at the floor', async () => {
+  it('sends the router-computed output cap as max_tokens', async () => {
     const fetchMock = mockFetch(async () =>
       jsonResponse({ choices: [{ message: { content: 'ok' } }] }),
     );
@@ -58,6 +59,7 @@ describe('OpenRouterProvider', () => {
     });
 
     await provider.cleanup({
+      maxOutputTokens: 15_000,
       model: 'anthropic/claude-sonnet-4.5',
       prompt: 'Clean it.',
       temperature: 0.2,
@@ -190,6 +192,7 @@ describe('OpenRouterProvider', () => {
       baseUrl: 'https://openrouter.test/api/v1',
       timeoutMs: 5_000,
     }).cleanup({
+      maxOutputTokens: 4096,
       model: 'anthropic/claude-sonnet-4.5',
       prompt: 'Clean it.',
       temperature: 0.2,
@@ -238,6 +241,7 @@ function cleanup(abortSignal?: AbortSignal): Promise<string> {
     baseUrl: 'https://openrouter.test/api/v1',
   }).cleanup({
     ...(abortSignal !== undefined ? { abortSignal } : {}),
+    maxOutputTokens: 4096,
     model: 'anthropic/claude-sonnet-4.5',
     prompt: 'Clean it.',
     temperature: 0.2,

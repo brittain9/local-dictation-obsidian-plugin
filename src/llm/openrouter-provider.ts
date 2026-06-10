@@ -1,6 +1,5 @@
 import { isRecord } from '../shared/type-guards';
 import { CLEANUP_TIMEOUT_MS, fetchJson, PROBE_TIMEOUT_MS } from './http-shared';
-import { outputTokenBudget } from './output-budget';
 import type {
   CleanupOptions,
   LlmProvider,
@@ -42,7 +41,7 @@ export class OpenRouterProvider implements LlmProvider {
           body: JSON.stringify({
             // OpenRouter's portable output-token cap is `max_tokens`; the newer
             // `max_completion_tokens` isn't honored by every proxied provider.
-            max_tokens: outputTokenBudget(options.userMessage.length),
+            max_tokens: options.maxOutputTokens,
             messages: [
               { content: options.prompt, role: 'system' },
               { content: options.userMessage, role: 'user' },

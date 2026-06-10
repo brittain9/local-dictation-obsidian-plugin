@@ -556,14 +556,16 @@ describe('DictationSessionController', () => {
     expect(sessions[0]?.dispose).toHaveBeenCalledTimes(1);
   });
 
-  it('additive batch treats empty output as nothing to add', async () => {
+  it('additive batch treats empty output as nothing to add and says so', async () => {
     const sidecarConnection = new FakeSidecarConnection();
     const sessions: FakeSession[] = [];
+    const notice = vi.fn();
     const onLlmCleanupFailure = vi.fn();
     const controller = createController({
       createSession: (session) => {
         sessions.push(session);
       },
+      notice,
       getSettings: () =>
         createSettings({
           llmFeaturesEnabled: true,
@@ -589,6 +591,7 @@ describe('DictationSessionController', () => {
     });
     expect(sessions[0]?.insertAdjacentToSessionRange).not.toHaveBeenCalled();
     expect(onLlmCleanupFailure).not.toHaveBeenCalled();
+    expect(notice).toHaveBeenCalledWith('LLM transform returned nothing to add.');
   });
 
   it('drains pending utterance accepts before the batch read when stop arrives in the same turn', async () => {

@@ -48,6 +48,8 @@ export interface ModelOption {
 
 export interface CleanupOptions {
   abortSignal?: AbortSignal;
+  /** Output-token cap computed by the router (see output-budget). */
+  maxOutputTokens: number;
   model: string;
   prompt: string;
   temperature: number;
