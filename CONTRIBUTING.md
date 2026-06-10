@@ -92,6 +92,23 @@ Examples: `feat/punctuation-stage`, `fix/cohere-segments`, `chore/ci-caching`.
 
 Keep PRs small and focused. One concern per PR.
 
+## Versioning
+
+Releases use calendar versioning in the form `YYYY.M.MICRO`:
+
+- `YYYY` — four-digit year
+- `M` — month, no leading zero
+- `MICRO` — release counter within that month, starting at `1`
+
+`2026.7.2` is the second release of July 2026. The third number is **not** a day-of-month; multiple releases on the same day just increment the counter.
+
+Rules:
+
+- Every new version must sort above all previously published versions (Obsidian's updater compares versions numerically), so the four-digit year is permanent — a two-digit year like `26.x` would read as a downgrade and existing installs would stop receiving updates.
+- Versions up to and including `2026.6.9` used day-of-month numbering, so June 2026 counters continue from `2026.6.10`. From July 2026 onward the counter starts at `1` each month.
+
+A version bump touches `manifest.json`, `package.json` + `package-lock.json`, `versions.json`, and `native/Cargo.toml` + `native/Cargo.lock`.
+
 ## Scripts
 
 **Build:**
