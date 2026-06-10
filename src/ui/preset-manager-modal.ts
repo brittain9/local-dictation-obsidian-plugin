@@ -21,6 +21,7 @@ import {
 import { ConfirmModal } from './confirm-modal';
 import {
   draftFromPreset,
+  duplicateLabel,
   emptyPresetDraft,
   type LlmPresetDraft,
   validatePresetDraft,
@@ -189,7 +190,7 @@ export class PresetManagerModal extends Modal {
 
   private openDuplicate(preset: LlmPreset): void {
     const draft = draftFromPreset(preset);
-    draft.label = `${preset.label} (copy)`.slice(0, LLM_USER_PRESET_MAX_LABEL_CHARS);
+    draft.label = duplicateLabel(preset.label);
     this.editor = { kind: 'create', draft };
     this.render();
   }

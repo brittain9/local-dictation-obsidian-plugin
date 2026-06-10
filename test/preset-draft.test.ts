@@ -1,7 +1,13 @@
 import { describe, expect, it } from 'vitest';
 
 import { getLlmBuiltinPreset } from '../src/llm/presets';
-import { draftFromPreset, emptyPresetDraft, validatePresetDraft } from '../src/ui/preset-draft';
+import { LLM_USER_PRESET_MAX_LABEL_CHARS } from '../src/settings/plugin-settings';
+import {
+  draftFromPreset,
+  duplicateLabel,
+  emptyPresetDraft,
+  validatePresetDraft,
+} from '../src/ui/preset-draft';
 
 const NO_LABELS: string[] = [];
 
@@ -44,6 +50,14 @@ describe('preset draft validation', () => {
       NO_LABELS,
     );
     expect(result).toMatchObject({ kind: 'ok', preset: { output: 'add_below', timing: 'batch' } });
+  });
+
+  it('duplicateLabel keeps the (copy) suffix within the label limit', () => {
+    expect(duplicateLabel('Mine')).toBe('Mine (copy)');
+
+    const atLimit = duplicateLabel('L'.repeat(LLM_USER_PRESET_MAX_LABEL_CHARS));
+    expect(atLimit.endsWith(' (copy)')).toBe(true);
+    expect(atLimit.length).toBeLessThanOrEqual(LLM_USER_PRESET_MAX_LABEL_CHARS);
   });
 
   it('draftFromPreset round-trips a built-in for duplication', () => {

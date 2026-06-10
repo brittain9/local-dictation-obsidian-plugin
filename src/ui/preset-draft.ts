@@ -39,6 +39,13 @@ export function emptyPresetDraft(): LlmPresetDraft {
   };
 }
 
+// Truncate the base label first so the suffix survives the length cap;
+// slicing afterwards would silently reproduce the original name.
+export function duplicateLabel(label: string): string {
+  const suffix = ' (copy)';
+  return `${label.slice(0, LLM_USER_PRESET_MAX_LABEL_CHARS - suffix.length)}${suffix}`;
+}
+
 export function draftFromPreset(preset: LlmPreset): LlmPresetDraft {
   return {
     description: preset.description ?? '',
