@@ -19,6 +19,7 @@ data.json
 .vscode/
 .worktrees/
 .claude/
+.superpowers/
 AGENTS.md
 CLAUDE.md
 PLANS.md
