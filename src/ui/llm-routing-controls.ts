@@ -7,6 +7,7 @@ import {
   setIcon,
 } from 'obsidian';
 
+import { MIN_OUTPUT_TOKENS } from '../llm/output-budget';
 import {
   createProvider,
   formatLlmProviderName,
@@ -435,6 +436,9 @@ export class LlmRoutingControls {
 
     try {
       await createProvider('openrouter', settings).cleanup({
+        // The budget floor, not a tiny cap: reasoning models spend hidden
+        // output tokens before the visible reply and would trip a small limit.
+        maxOutputTokens: MIN_OUTPUT_TOKENS,
         model,
         prompt: 'Reply with the single word OK.',
         temperature: 0,

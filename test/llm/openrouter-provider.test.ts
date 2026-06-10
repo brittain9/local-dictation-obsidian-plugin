@@ -22,6 +22,7 @@ describe('OpenRouterProvider', () => {
 
     await expect(
       provider.cleanup({
+        maxOutputTokens: 4096,
         model: 'anthropic/claude-sonnet-4.5',
         prompt: 'Clean it.',
         temperature: 0.2,
@@ -48,7 +49,7 @@ describe('OpenRouterProvider', () => {
     });
   });
 
-  it('scales max_tokens with the input so a long transcript is not capped at the floor', async () => {
+  it('sends the router-computed output cap as max_tokens', async () => {
     const fetchMock = mockFetch(async () =>
       jsonResponse({ choices: [{ message: { content: 'ok' } }] }),
     );
@@ -58,6 +59,7 @@ describe('OpenRouterProvider', () => {
     });
 
     await provider.cleanup({
+      maxOutputTokens: 15_000,
       model: 'anthropic/claude-sonnet-4.5',
       prompt: 'Clean it.',
       temperature: 0.2,
@@ -98,6 +100,12 @@ describe('OpenRouterProvider', () => {
           },
           // No architecture data: kept rather than hidden.
           { id: 'a/model' },
+          // Empty modality arrays mean "unspecified", same as missing: kept.
+          {
+            id: 'e/model',
+            name: 'Empty Modalities',
+            architecture: { input_modalities: [], output_modalities: [] },
+          },
           // "~...-latest" alias: redirects to the newest model but exposes no
           // endpoints, so it is dropped even though it looks like a text model.
           {
@@ -131,6 +139,7 @@ describe('OpenRouterProvider', () => {
       }).listModels(),
     ).resolves.toEqual([
       { displayName: 'a/model', id: 'a/model' },
+      { displayName: 'Empty Modalities', id: 'e/model' },
       { displayName: 'Multi', id: 'm/vision' },
       { displayName: 'Zed', id: 'z/model', pricing: { input: 3, output: 15 } },
     ]);
@@ -183,6 +192,7 @@ describe('OpenRouterProvider', () => {
       baseUrl: 'https://openrouter.test/api/v1',
       timeoutMs: 5_000,
     }).cleanup({
+      maxOutputTokens: 4096,
       model: 'anthropic/claude-sonnet-4.5',
       prompt: 'Clean it.',
       temperature: 0.2,
@@ -205,7 +215,7 @@ describe('OpenRouterProvider', () => {
     controller.abort();
 
     await expect(promise).rejects.toMatchObject({
-      code: 'connection_failed',
+      code: 'aborted',
       name: 'ProviderError',
     } satisfies Partial<ProviderError>);
   });
@@ -231,6 +241,7 @@ function cleanup(abortSignal?: AbortSignal): Promise<string> {
     baseUrl: 'https://openrouter.test/api/v1',
   }).cleanup({
     ...(abortSignal !== undefined ? { abortSignal } : {}),
+    maxOutputTokens: 4096,
     model: 'anthropic/claude-sonnet-4.5',
     prompt: 'Clean it.',
     temperature: 0.2,

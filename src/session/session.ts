@@ -239,6 +239,36 @@ export class Session {
     return result.kind === 'rewritten';
   }
 
+  insertAdjacentToSessionRange(blockText: string, placement: 'above' | 'below'): boolean {
+    if (this.surface === null || this.rawSessionEntries.length === 0) {
+      return false;
+    }
+
+    const range = this.resolveSessionRange();
+    if (range === null) {
+      return false;
+    }
+
+    const current = this.surface.readRange(range);
+    if (current === null) {
+      return false;
+    }
+
+    // Additive presets leave the dictated text untouched: rewrite the region to
+    // itself with the generated block stitched above or below it, reusing the
+    // same edit-tolerant region rewrite as the batch replace path.
+    const replacement =
+      placement === 'above' ? `${blockText}\n\n${current}` : `${current}\n\n${blockText}`;
+
+    const result = this.surface.rewriteRegion(
+      range,
+      replacement,
+      this.rawSessionEntries.map((entry) => ({ utteranceId: entry.utteranceId })),
+    );
+
+    return result.kind === 'rewritten';
+  }
+
   setAnchorMode(mode: DictationAnchorMode): void {
     this.surface?.setAnchorMode(mode);
   }

@@ -15,6 +15,7 @@ export function isLlmRouting(value: unknown): value is LlmRouting {
 }
 
 export type ProviderErrorCode =
+  | 'aborted'
   | 'auth_invalid'
   | 'connection_failed'
   | 'http_error'
@@ -47,6 +48,8 @@ export interface ModelOption {
 
 export interface CleanupOptions {
   abortSignal?: AbortSignal;
+  /** Output-token cap computed by the router (see output-budget). */
+  maxOutputTokens: number;
   model: string;
   prompt: string;
   temperature: number;
@@ -73,6 +76,9 @@ export interface LlmCleanupFailure {
 export class ProviderError extends Error {
   readonly responseText?: string;
   readonly status?: number;
+  // Set by the router so failures are attributed to the provider that was
+  // actually routed to, even if routing inputs changed mid-call.
+  providerId?: LlmProviderId;
 
   constructor(
     message: string,

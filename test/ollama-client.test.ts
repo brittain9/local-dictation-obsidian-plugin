@@ -99,6 +99,7 @@ describe('Ollama client', () => {
 
     await expect(
       createOllamaClient({ port }).cleanup({
+        maxOutputTokens: 4096,
         model: 'llama3.2:latest',
         prompt: 'Clean this.',
         temperature: 0.2,
@@ -129,6 +130,7 @@ describe('Ollama client', () => {
 
     await expect(
       createOllamaClient({ port }).cleanup({
+        maxOutputTokens: 4096,
         model: 'llama3.2:latest',
         prompt: 'Clean this.',
         temperature: 0.2,
@@ -150,6 +152,7 @@ describe('Ollama client', () => {
 
     await expect(
       new OllamaProvider(createOllamaClient({ port })).cleanup({
+        maxOutputTokens: 4096,
         model: 'ghost:latest',
         prompt: 'Clean this.',
         temperature: 0.2,
@@ -168,6 +171,7 @@ describe('Ollama client', () => {
     const controller = new AbortController();
     const promise = createOllamaClient({ port }).cleanup({
       abortSignal: controller.signal,
+      maxOutputTokens: 4096,
       model: 'llama3.2:latest',
       prompt: 'Clean this.',
       temperature: 0.2,
@@ -177,7 +181,7 @@ describe('Ollama client', () => {
     controller.abort();
 
     await expect(promise).rejects.toMatchObject({
-      code: 'connection_failed',
+      code: 'aborted',
       name: 'OllamaClientError',
     } satisfies Partial<OllamaClientError>);
   });

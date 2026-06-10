@@ -1,8 +1,8 @@
 import { describe, expect, it, vi } from 'vitest';
-import type {
-  CleanupOptions,
-  LlmProvider,
-  LlmProviderId,
+import {
+  type CleanupOptions,
+  type LlmProvider,
+  type LlmProviderId,
   ProviderError,
 } from '../../src/llm/provider';
 import { createLlmRouter } from '../../src/llm/router';
@@ -44,6 +44,7 @@ function routerWithSpy(
 const cleanupArgs = (userMessage: string) => ({
   prompt: 'Clean it.',
   temperature: 0.2,
+  transcriptChars: userMessage.length,
   userMessage,
 });
 
@@ -148,6 +149,54 @@ describe('createLlmRouter', () => {
       message: expect.stringContaining('OpenRouter'),
       name: 'ProviderError',
     } satisfies Partial<ProviderError>);
+  });
+
+  it('caps provider output from the transcript size, not the full message', async () => {
+    const captured: CleanupOptions[] = [];
+    const router = createLlmRouter(
+      settings({ llmRouting: 'local' }),
+      (providerId): LlmProvider =>
+        createFakeLlmProvider({
+          id: providerId,
+          cleanup: vi.fn(async (options: CleanupOptions) => {
+            captured.push(options);
+            return 'cleaned';
+          }),
+        }),
+    );
+
+    await router.cleanup({
+      prompt: 'Clean it.',
+      temperature: 0.2,
+      transcriptChars: 40_000,
+      userMessage: `<note_context>${'x'.repeat(100_000)}</note_context>`,
+    });
+
+    // outputTokenBudget(40_000) = ceil(10_000 * 1.5); the 100k-char context
+    // wrapper must not inflate the cap.
+    expect(captured[0]?.maxOutputTokens).toBe(15_000);
+  });
+
+  it('attaches the routed provider id to errors thrown during cleanup', async () => {
+    const { router } = routerWithSpy(settings({ llmRouting: 'remote' }), async () => {
+      throw new ProviderError('boom', 'http_error');
+    });
+
+    await expect(router.cleanup(cleanupArgs('hi'))).rejects.toMatchObject({
+      code: 'http_error',
+      providerId: 'openrouter',
+    });
+  });
+
+  it('attaches the provider id to model_not_configured errors', async () => {
+    const { router } = routerWithSpy(
+      settings({ llmProviderModels: { ollama: '', openrouter: '' }, llmRouting: 'local' }),
+    );
+
+    await expect(router.cleanup(cleanupArgs('hi'))).rejects.toMatchObject({
+      code: 'model_not_configured',
+      providerId: 'ollama',
+    });
   });
 
   it('propagates the provider id and model on a successful cleanup', async () => {

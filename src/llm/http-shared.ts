@@ -1,3 +1,4 @@
+import { formatErrorMessage } from '../shared/format-utils';
 import { ProviderError } from './provider';
 
 export const CLEANUP_TIMEOUT_MS = 60_000;
@@ -67,9 +68,12 @@ export async function fetchJson(
       throw new ProviderError(`Provider request timed out after ${timeoutMs}ms.`, 'timeout');
     }
     if (options.abortSignal?.aborted === true) {
-      throw new ProviderError('Provider request aborted.', 'connection_failed');
+      throw new ProviderError('Provider request aborted.', 'aborted');
     }
-    throw new ProviderError(`Failed to reach provider: ${formatError(error)}`, 'connection_failed');
+    throw new ProviderError(
+      `Failed to reach provider: ${formatErrorMessage(error)}`,
+      'connection_failed',
+    );
   } finally {
     window.clearTimeout(timeoutId);
     options.abortSignal?.removeEventListener('abort', abortFromCaller);
@@ -109,8 +113,4 @@ async function readResponseText(response: Response, maxBytes: number): Promise<s
   } finally {
     reader.releaseLock();
   }
-}
-
-function formatError(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
 }

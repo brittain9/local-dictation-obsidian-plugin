@@ -3,7 +3,12 @@ import { randomUUID } from 'node:crypto';
 import type { AudioCaptureStream } from '../audio/audio-capture-stream';
 import { formatMicrophonePermissionDeniedMessage } from '../audio/microphone-permission-message';
 import type { NotePlacementOptions } from '../editor/note-surface';
-import { type LlmPostprocessMode, resolveStyleOption } from '../llm/presets';
+import {
+  type LlmPostprocessMode,
+  type LlmPresetOutput,
+  resolveActivePresetEntry,
+  resolveEffectiveLlmGlobals,
+} from '../llm/presets';
 import { type LlmCleanupFailure, type LlmProviderId, ProviderError } from '../llm/provider';
 import type { LlmRouter } from '../llm/router';
 import type { Session } from '../session/session';
@@ -43,6 +48,7 @@ type ControllerSession = Pick<
   | 'acceptTranscript'
   | 'clearSessionProcessingMark'
   | 'dispose'
+  | 'insertAdjacentToSessionRange'
   | 'markSessionRangeAsProcessing'
   | 'readCurrentSessionText'
   | 'readNoteGlossary'
@@ -60,7 +66,8 @@ interface ActiveSessionSnapshot {
   llmRouter: LlmRouter;
   llmPostprocessMode: LlmPostprocessMode;
   llmPostprocessNoteContextChars: PluginSettings['llmPostprocessNoteContextChars'];
-  llmPostprocessPrompt: PluginSettings['llmPostprocessPrompt'];
+  llmPostprocessOutput: LlmPresetOutput;
+  llmPostprocessPrompt: string;
   llmPostprocessPriorUtterancesN: PluginSettings['llmPostprocessPriorUtterancesN'];
   llmPostprocessShowRawBelow: PluginSettings['llmPostprocessShowRawBelow'];
   llmPostprocessSkipMinWords: PluginSettings['llmPostprocessSkipMinWords'];
@@ -672,11 +679,19 @@ export class DictationSessionController {
         abortSignal: abortController.signal,
         prompt: entry.snapshot.llmPostprocessPrompt,
         temperature: entry.snapshot.llmPostprocessTemperature,
+        transcriptChars: rawText.length,
         userMessage,
       });
 
       if (abortController.signal.aborted || !this.sessions.has(event.sessionId)) {
         return null;
+      }
+
+      const cleanedText = result.text.trim();
+      if (cleanedText.length === 0) {
+        // An empty replacement would silently delete the spoken words from the
+        // note; keep the raw utterance and surface a failure instead.
+        throw new ProviderError('Provider returned empty cleaned text.', 'invalid_response');
       }
 
       this.dependencies.onLlmCleanupSuccess?.();
@@ -695,14 +710,15 @@ export class DictationSessionController {
             status: { kind: 'ok' },
           }),
         ],
-        text: result.text.trim(),
+        text: cleanedText,
       };
     } catch (error) {
       if (abortController.signal.aborted || !this.sessions.has(event.sessionId)) {
         return null;
       }
 
-      const failure = this.handleProviderCleanupFailure(providerId, error);
+      const failedId = failedProviderId(error, providerId);
+      const failure = this.handleProviderCleanupFailure(failedId, error);
       this.maybeLogLlmStageFailure(entry, failure.message);
       return {
         ...baseRevision,
@@ -712,7 +728,7 @@ export class DictationSessionController {
             durationMs: Date.now() - startedAt,
             isFinal: event.isFinal,
             model: '',
-            providerId,
+            providerId: failedId,
             revision: event.revision,
             status: { error: failure.message, kind: 'failed' },
           }),
@@ -861,6 +877,7 @@ export class DictationSessionController {
         abortSignal: abortController.signal,
         prompt: entry.snapshot.llmPostprocessPrompt,
         temperature: entry.snapshot.llmPostprocessTemperature,
+        transcriptChars: transcriptText.length,
         userMessage,
       });
 
@@ -877,26 +894,7 @@ export class DictationSessionController {
 
       entry.session.clearSessionProcessingMark();
 
-      const trimmed = result.text.trim();
-      if (trimmed.length === 0) {
-        throw new ProviderError('Provider returned empty cleaned text.', 'invalid_response');
-      }
-
-      const replaced = entry.session.replaceSessionRangeWithCleaned(trimmed, {
-        rawTextForCallout: transcriptText,
-        showRawBelow: entry.snapshot.llmPostprocessShowRawBelow,
-      });
-
-      if (!replaced) {
-        this.dependencies.logger?.warn(
-          'llm',
-          'batch cleanup replacement skipped; session range no longer available',
-        );
-      } else {
-        this.dependencies.logger?.debug('llm', 'batch cleanup complete', {
-          chars: trimmed.length,
-        });
-      }
+      this.applyBatchCleanupResult(entry, result.text.trim(), transcriptText);
       this.dependencies.onLlmCleanupSuccess?.();
       this.disposeLocalSession(sessionId);
     } catch (error) {
@@ -911,11 +909,71 @@ export class DictationSessionController {
         return;
       }
 
-      this.handleProviderCleanupFailure(providerId, error);
+      this.handleProviderCleanupFailure(failedProviderId(error, providerId), error);
       entry.session.clearSessionProcessingMark();
       this.disposeLocalSession(sessionId);
     } finally {
       entry.cleanupAbortControllers.delete(abortController);
+    }
+  }
+
+  // Applies a batch result per the preset's output behavior: replace rewrites
+  // the session range, add_above/add_below insert next to the untouched
+  // transcript. Throws ProviderError for an empty replace result so the caller's
+  // failure path keeps the raw text.
+  private applyBatchCleanupResult(
+    entry: ManagedSession,
+    cleanedText: string,
+    transcriptText: string,
+  ): void {
+    if (entry.snapshot.llmPostprocessOutput === 'replace') {
+      if (cleanedText.length === 0) {
+        throw new ProviderError('Provider returned empty cleaned text.', 'invalid_response');
+      }
+
+      const replaced = entry.session.replaceSessionRangeWithCleaned(cleanedText, {
+        rawTextForCallout: transcriptText,
+        showRawBelow: entry.snapshot.llmPostprocessShowRawBelow,
+      });
+
+      if (!replaced) {
+        this.dependencies.logger?.warn(
+          'llm',
+          'batch cleanup replacement skipped; session range no longer available',
+        );
+      } else {
+        this.dependencies.logger?.debug('llm', 'batch cleanup complete', {
+          chars: cleanedText.length,
+        });
+      }
+      return;
+    }
+
+    if (cleanedText.length === 0) {
+      // Additive presets may legitimately find nothing to add (e.g. no action
+      // items), but say so — a silently failing model would otherwise look
+      // like success.
+      this.dependencies.notice('LLM transform returned nothing to add.');
+      this.dependencies.logger?.debug(
+        'llm',
+        'additive batch returned empty output; nothing inserted',
+      );
+      return;
+    }
+
+    const placement = entry.snapshot.llmPostprocessOutput === 'add_above' ? 'above' : 'below';
+    const inserted = entry.session.insertAdjacentToSessionRange(cleanedText, placement);
+
+    if (!inserted) {
+      this.dependencies.logger?.warn(
+        'llm',
+        'additive batch insert skipped; session range no longer available',
+      );
+    } else {
+      this.dependencies.logger?.debug('llm', 'additive batch insert complete', {
+        chars: cleanedText.length,
+        placement,
+      });
     }
   }
 
@@ -1019,9 +1077,26 @@ function createSessionSnapshot(
   selectedModel: NonNullable<PluginSettings['selectedModel']>,
   llmRouter: LlmRouter,
 ): ActiveSessionSnapshot {
-  const effectiveGeneration = resolveActiveGenerationDefaults(settings);
+  const activePreset = resolveActivePresetEntry(
+    settings.llmPostprocessActivePresetRef,
+    settings.llmPostprocessUserPresets,
+  ).preset;
+  const effective = resolveEffectiveLlmGlobals(
+    {
+      minWords: settings.llmPostprocessSkipMinWords,
+      temperature: settings.llmPostprocessTemperature,
+      useNoteContext: settings.useLlmNoteContext,
+    },
+    activePreset,
+  );
+  // A preset with pinned timing forces the effective mode without overwriting
+  // the stored user choice.
+  const llmPostprocessMode: LlmPostprocessMode =
+    settings.llmPostprocessMode === 'off'
+      ? 'off'
+      : (activePreset.timing ?? settings.llmPostprocessMode);
   const sessionStartUnixMs = Date.now();
-  const noteContextChars = settings.useLlmNoteContext ? settings.llmPostprocessNoteContextChars : 0;
+  const noteContextChars = effective.useNoteContext ? settings.llmPostprocessNoteContextChars : 0;
 
   return {
     accelerationPreference: settings.accelerationPreference,
@@ -1029,13 +1104,14 @@ function createSessionSnapshot(
     listeningMode: settings.listeningMode,
     llmFeaturesEnabled: settings.llmFeaturesEnabled,
     llmRouter,
-    llmPostprocessMode: settings.llmPostprocessMode,
+    llmPostprocessMode,
     llmPostprocessNoteContextChars: noteContextChars,
-    llmPostprocessPrompt: settings.llmPostprocessPrompt,
+    llmPostprocessOutput: activePreset.output,
+    llmPostprocessPrompt: activePreset.prompt,
     llmPostprocessPriorUtterancesN: settings.llmPostprocessPriorUtterancesN,
     llmPostprocessShowRawBelow: settings.llmPostprocessShowRawBelow,
-    llmPostprocessSkipMinWords: effectiveGeneration.skipMinWords,
-    llmPostprocessTemperature: effectiveGeneration.temperature,
+    llmPostprocessSkipMinWords: effective.minWords,
+    llmPostprocessTemperature: effective.temperature,
     llmPostprocessTotalContextCap: settings.llmPostprocessTotalContextCap,
     modelSelection: selectedModel,
     modelStorePathOverride: settings.modelStorePathOverride,
@@ -1051,20 +1127,6 @@ function createSessionSnapshot(
     },
     transcriptFormatting: settings.transcriptFormatting,
     useNoteAsContext: settings.useNoteAsContext,
-  };
-}
-
-function resolveActiveGenerationDefaults(settings: PluginSettings): {
-  skipMinWords: number;
-  temperature: number;
-} {
-  const activeOption = resolveStyleOption(
-    settings.llmPostprocessActivePresetRef,
-    settings.llmPostprocessUserPresets,
-  );
-  return {
-    skipMinWords: activeOption?.minWords ?? settings.llmPostprocessSkipMinWords,
-    temperature: activeOption?.temperature ?? settings.llmPostprocessTemperature,
   };
 }
 
@@ -1135,15 +1197,21 @@ function createProviderStageOutcome(args: {
   };
 }
 
+// Prefer the provider the router actually used (attached to the thrown error)
+// over the caller's earlier selection, which can be stale when the remote kill
+// switch flips between selection and the cleanup call.
+function failedProviderId(error: unknown, fallback: LlmProviderId): LlmProviderId {
+  return error instanceof ProviderError && error.providerId !== undefined
+    ? error.providerId
+    : fallback;
+}
+
 function normalizeProviderError(error: unknown): ProviderError {
   if (error instanceof ProviderError) {
     return error;
   }
 
-  return new ProviderError(
-    error instanceof Error ? error.message : String(error),
-    'connection_failed',
-  );
+  return new ProviderError(formatErrorMessage(error), 'connection_failed');
 }
 
 function renderProviderUserMessage(

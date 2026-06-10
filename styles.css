@@ -492,10 +492,23 @@
   }
 }
 
-/* --- Preset delete icon ------------------------------------------- */
+/* --- Preset manager modal ------------------------------------------ */
 
-.local-stt-preset-delete:hover {
-  color: var(--text-error, var(--text-normal));
+.local-stt-preset-manager .local-stt-preset-row {
+  cursor: pointer;
+}
+
+.local-stt-preset-manager .local-stt-preset-back {
+  margin-bottom: var(--size-4-2);
+}
+
+.local-stt-preset-editor__prompt textarea {
+  width: 100%;
+}
+
+.local-stt-preset-editor__error {
+  color: var(--text-error);
+  margin: var(--size-2-2) 0;
 }
 
 /* --- Batch LLM processing pulse ----------------------------------- */
@@ -771,10 +784,6 @@
    following setting row's own border to avoid a doubled line. */
 .local-dictation-route-leg + .setting-item {
   border-top: none;
-}
-
-.local-stt-hidden {
-  display: none;
 }
 
 /* --- OpenRouter model suggest secondary line ---------------------- */
