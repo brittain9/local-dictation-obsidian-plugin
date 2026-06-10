@@ -64,7 +64,7 @@ export class AudioVisualizerTap implements AudioBandReader, AudioVisualizerAttac
 
   private analyser: AnalyserNode | null = null;
   private bandRanges: readonly BandRange[] = [];
-  private frequencyBuffer: Uint8Array<ArrayBuffer> | null = null;
+  private frequencyBuffer: ReturnType<typeof allocFrequencyBuffer> | null = null;
   private readonly smoothed: Float32Array = new Float32Array(BAND_COUNT);
   private readonly peaks: Float32Array = new Float32Array(BAND_COUNT);
 
@@ -81,7 +81,7 @@ export class AudioVisualizerTap implements AudioBandReader, AudioVisualizerAttac
     sourceNode.connect(analyser);
 
     this.analyser = analyser;
-    this.frequencyBuffer = new Uint8Array(analyser.frequencyBinCount);
+    this.frequencyBuffer = allocFrequencyBuffer(analyser.frequencyBinCount);
     this.bandRanges = computeBandRanges(audioContext.sampleRate, analyser.frequencyBinCount);
     this.smoothed.fill(0);
     this.peaks.fill(PEAK_FLOOR);
@@ -132,7 +132,17 @@ export class AudioVisualizerTap implements AudioBandReader, AudioVisualizerAttac
   }
 }
 
-function meanNormalized(buffer: Uint8Array<ArrayBuffer>, lo: number, hi: number): number {
+/**
+ * `frequencyBuffer` borrows this return type instead of being annotated
+ * `Uint8Array<ArrayBuffer>` (required by `getByteFrequencyData`): generic
+ * typed-array syntax needs TS >= 5.7, and the Obsidian code scanner lints
+ * with an older TypeScript that would turn it into an unresolved type.
+ */
+function allocFrequencyBuffer(length: number) {
+  return new Uint8Array(length);
+}
+
+function meanNormalized(buffer: Uint8Array, lo: number, hi: number): number {
   if (hi <= lo) {
     return 0;
   }

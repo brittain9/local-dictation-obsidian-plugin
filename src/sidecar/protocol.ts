@@ -443,7 +443,7 @@ export interface JsonFrame<TEnvelope> {
 }
 
 export interface AudioFrame {
-  frameBytes: Uint8Array<ArrayBufferLike>;
+  frameBytes: Uint8Array;
   kind: typeof AUDIO_FRAME_KIND;
   sessionId: string;
 }
@@ -483,7 +483,7 @@ export interface PushChunkResult<TEnvelope> {
 }
 
 export class FramedMessageParser<TEnvelope> {
-  private buffered: Uint8Array<ArrayBufferLike> = new Uint8Array(0);
+  private buffered: Uint8Array = new Uint8Array(0);
 
   constructor(private readonly parseJsonEnvelope: (jsonText: string) => TEnvelope) {}
 
@@ -491,7 +491,7 @@ export class FramedMessageParser<TEnvelope> {
     this.buffered = new Uint8Array(0);
   }
 
-  pushChunk(chunk: Uint8Array<ArrayBufferLike>): PushChunkResult<TEnvelope> {
+  pushChunk(chunk: Uint8Array): PushChunkResult<TEnvelope> {
     this.buffered = concatBytes(this.buffered, chunk);
 
     const frames: ParsedFrame<TEnvelope>[] = [];
@@ -591,10 +591,7 @@ function encodeFrame(kind: number, payload: Uint8Array): Uint8Array {
   return frame;
 }
 
-function concatBytes(
-  left: Uint8Array<ArrayBufferLike>,
-  right: Uint8Array<ArrayBufferLike>,
-): Uint8Array<ArrayBufferLike> {
+function concatBytes(left: Uint8Array, right: Uint8Array): Uint8Array {
   const concatenated = new Uint8Array(left.byteLength + right.byteLength);
   concatenated.set(left, 0);
   concatenated.set(right, left.byteLength);
