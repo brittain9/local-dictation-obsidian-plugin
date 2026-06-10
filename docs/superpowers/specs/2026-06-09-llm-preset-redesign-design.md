@@ -61,6 +61,15 @@ interface LlmPreset {
 }
 ```
 
+- A preset has exactly one output behavior; output never varies by timing.
+  "Either" timing exists only for `replace` presets. `add_*` presets are
+  always batch — there is no per-utterance additive, and a single preset
+  cannot replace per-utterance while adding on stop (that would be chained
+  transforms, out of scope).
+- `overrides` is the extension point for future per-transform settings: each
+  new setting is one optional field (missing = inherit global), one editor
+  row, and is resolved through the same shared per-field resolution helper.
+  Absent fields inherit, so adding fields never needs migration.
 - One shape for built-in and user presets. Built-ins live in a readonly
   constant in `src/llm/presets.ts`; user presets in settings.
 - Ref format unchanged: `builtin:<id>` / `user:<id>`.
