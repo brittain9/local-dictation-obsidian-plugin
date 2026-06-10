@@ -1,11 +1,22 @@
 import { vi } from 'vitest';
 
+import type { LlmPreset } from '../../src/llm/presets';
 import type { LlmProvider, LlmProviderId } from '../../src/llm/provider';
 import type {
   LlmRouter,
   LlmRouterCleanupOptions,
   LlmRouterCleanupResult,
 } from '../../src/llm/router';
+
+export function createUserPreset(overrides: Partial<LlmPreset> = {}): LlmPreset {
+  return {
+    id: 'user-preset-1',
+    label: 'My transform',
+    output: 'replace',
+    prompt: 'Rewrite the text.',
+    ...overrides,
+  };
+}
 
 export function createFakeLlmProvider(overrides: Partial<LlmProvider> = {}): LlmProvider {
   return {

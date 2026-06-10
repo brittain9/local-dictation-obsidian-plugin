@@ -6,10 +6,35 @@ export function isLlmPostprocessMode(value: unknown): value is LlmPostprocessMod
   return typeof value === 'string' && (LLM_POSTPROCESS_MODES as readonly string[]).includes(value);
 }
 
-export type LlmPresetMode = Exclude<LlmPostprocessMode, 'off'>;
+export type LlmPresetTiming = Exclude<LlmPostprocessMode, 'off'>;
 
-export function isLlmPresetMode(value: unknown): value is LlmPresetMode {
+export function isLlmPresetTiming(value: unknown): value is LlmPresetTiming {
   return value === 'per_utterance' || value === 'batch';
+}
+
+export const LLM_PRESET_OUTPUTS = ['replace', 'add_above', 'add_below'] as const;
+
+export type LlmPresetOutput = (typeof LLM_PRESET_OUTPUTS)[number];
+
+export function isLlmPresetOutput(value: unknown): value is LlmPresetOutput {
+  return typeof value === 'string' && (LLM_PRESET_OUTPUTS as readonly string[]).includes(value);
+}
+
+export interface LlmPresetOverrides {
+  minWords?: number;
+  temperature?: number;
+  useNoteContext?: boolean;
+}
+
+export interface LlmPreset {
+  id: string;
+  label: string;
+  description?: string;
+  prompt: string;
+  // undefined = either; presets with add_* output are always 'batch'.
+  timing?: LlmPresetTiming;
+  output: LlmPresetOutput;
+  overrides?: LlmPresetOverrides;
 }
 
 export type LlmBuiltinPresetId =
@@ -18,40 +43,11 @@ export type LlmBuiltinPresetId =
   | 'tldr'
   | 'markdown-formatting'
   | 'brain-dump'
-  | 'voice-commands';
+  | 'action-items';
 
-export interface LlmBuiltinPreset {
-  id: LlmBuiltinPresetId;
-  label: string;
-  description: string;
-  prompt: string;
-  mode?: LlmPresetMode;
-  minWords?: number;
-  temperature?: number;
-}
-
-export interface LlmUserPreset {
-  id: string;
-  label: string;
-  description: string;
-  prompt: string;
-  mode?: LlmPresetMode;
-  minWords?: number;
-  temperature?: number;
-}
-
-export type LlmStyleRef =
-  | { kind: 'builtin'; id: LlmBuiltinPresetId }
-  | { kind: 'user'; id: string };
-
-export interface LlmStyleOption {
-  description: string;
+export interface LlmPresetEntry {
   isBuiltin: boolean;
-  label: string;
-  mode?: LlmPresetMode;
-  minWords?: number;
-  temperature?: number;
-  prompt: string;
+  preset: LlmPreset;
   ref: string;
 }
 
@@ -62,7 +58,7 @@ const PROFESSIONAL_WRITING_PROMPT =
   'Rewrite dictated speech as concise professional prose. Active voice, no filler or hedging. Preserve every fact, name, and term. Use the reference context for spelling. Return only the rewritten text — no preamble, no commentary.';
 
 const TLDR_PROMPT =
-  "Output a TLDR summary, then a blank line, then the dictated transcript with light cleanup. TLDR: a 'TLDR' heading followed by 1-3 short bullets covering the key points. Light cleanup: fix filler, false starts, punctuation, and capitalization; preserve the speaker's voice and wording — do not rewrite or restructure. Return only the formatted output — no preamble, no commentary.";
+  "Write a TLDR summary of the dictated transcript: a 'TLDR' heading followed by 1-3 short bullets covering the key points. Return only the heading and bullets — do not repeat the transcript, no preamble, no commentary.";
 
 const MARKDOWN_FORMATTING_PROMPT =
   "Reformat dictated speech as well-structured Markdown. Add headings, bullet or numbered lists, bold, emphasis, and fenced code blocks where the content calls for it. Lightly clean filler, false starts, punctuation, and capitalization; preserve the speaker's wording, every fact, name, and term. Return only the Markdown — no preamble, no commentary.";
@@ -70,8 +66,8 @@ const MARKDOWN_FORMATTING_PROMPT =
 const BRAIN_DUMP_PROMPT =
   "Organize a free-form brain dump into clear structure. Cluster the speaker's points into themes with short headings, and surface action items, open questions, and decisions as separate sections where present. Drop pure filler. Preserve every fact, name, and term. Use the reference context only for spelling. Return only the organized Markdown — no preamble, no commentary.";
 
-const VOICE_COMMANDS_PROMPT =
-  "Interpret the dictated transcript as a mix of content and inline instructions to you. When the speaker gives a directive ('make this a list', 'summarize the above', 'rewrite that as a code block', 'remove the last part'), apply it to the surrounding text. Otherwise treat the speech as content to clean lightly. Preserve facts, names, and terms unless the speaker explicitly asks otherwise. Use the reference context only for spelling. Return only the final result — no preamble, no acknowledgment of the directives, no commentary.";
+const ACTION_ITEMS_PROMPT =
+  "Extract action items from the dictated transcript. Output an 'Action items' heading followed by a Markdown checklist of concrete tasks, naming an owner when the speaker mentions one. If the transcript contains no action items, return nothing. Return only the heading and checklist — do not repeat the transcript, no preamble, no commentary.";
 
 export const LLM_BUILTIN_PRESETS = [
   {
@@ -79,6 +75,7 @@ export const LLM_BUILTIN_PRESETS = [
     label: 'Clean up',
     description:
       'Fix transcription artifacts, filler, punctuation, and capitalization while preserving voice and meaning.',
+    output: 'replace',
     prompt: CLEAN_UP_PROMPT,
   },
   {
@@ -86,51 +83,58 @@ export const LLM_BUILTIN_PRESETS = [
     label: 'Professional writing',
     description:
       'Rewrite into concise, polished professional prose while preserving facts, names, decisions, and technical terms.',
+    output: 'replace',
     prompt: PROFESSIONAL_WRITING_PROMPT,
   },
   {
     id: 'tldr',
     label: 'TLDR',
-    description:
-      'Summary at the top, lightly cleaned transcript below. Designed for batch LLM transform at the end of a session.',
-    mode: 'batch',
+    description: 'Add a short TLDR summary above your untouched transcript.',
+    output: 'add_above',
     prompt: TLDR_PROMPT,
+    timing: 'batch',
   },
   {
     id: 'markdown-formatting',
     label: 'Markdown formatting',
     description:
-      'Reformat the session transcript as structured Markdown with headings, lists, and emphasis. Batch only.',
-    mode: 'batch',
+      'Reformat the session transcript as structured Markdown with headings, lists, and emphasis.',
+    output: 'replace',
     prompt: MARKDOWN_FORMATTING_PROMPT,
+    timing: 'batch',
   },
   {
     id: 'brain-dump',
     label: 'Brain dump organizer',
     description:
-      'Cluster a rambling brain dump into themes, action items, questions, and decisions. Batch only.',
-    mode: 'batch',
+      'Cluster a rambling brain dump into themes, action items, questions, and decisions.',
+    output: 'replace',
     prompt: BRAIN_DUMP_PROMPT,
+    timing: 'batch',
   },
   {
-    id: 'voice-commands',
-    label: 'Voice commands (experimental)',
-    description:
-      'Mix speech with inline directives ("make this a list", "summarize the above") and the model applies them. Batch only, experimental.',
-    mode: 'batch',
-    prompt: VOICE_COMMANDS_PROMPT,
+    id: 'action-items',
+    label: 'Action items',
+    description: 'Add an action-item checklist below your untouched transcript.',
+    output: 'add_below',
+    prompt: ACTION_ITEMS_PROMPT,
+    timing: 'batch',
   },
-] as const satisfies readonly LlmBuiltinPreset[];
+] as const satisfies readonly (LlmPreset & { id: LlmBuiltinPresetId })[];
 
 export const DEFAULT_LLM_BUILTIN_PRESET_ID: LlmBuiltinPresetId = 'clean-up';
 
-export function getLlmBuiltinPreset(id: LlmBuiltinPresetId): LlmBuiltinPreset {
+export function getLlmBuiltinPreset(id: LlmBuiltinPresetId): LlmPreset {
   const preset = LLM_BUILTIN_PRESETS.find((entry) => entry.id === id);
   if (!preset) {
     throw new Error(`Unknown LLM built-in preset id: ${id}`);
   }
   return preset;
 }
+
+export type LlmStyleRef =
+  | { kind: 'builtin'; id: LlmBuiltinPresetId }
+  | { kind: 'user'; id: string };
 
 const BUILTIN_REF_PREFIX = 'builtin:';
 const USER_REF_PREFIX = 'user:';
@@ -166,50 +170,95 @@ export function parseStyleRef(value: unknown): LlmStyleRef | null {
   return null;
 }
 
-export function listStyleOptions(userPresets: readonly LlmUserPreset[]): LlmStyleOption[] {
-  const toOption = (
-    preset: LlmBuiltinPreset | LlmUserPreset,
-    ref: LlmStyleRef,
-    isBuiltin: boolean,
-  ): LlmStyleOption => ({
-    description: preset.description,
-    isBuiltin,
-    label: preset.label,
-    ...(preset.mode !== undefined ? { mode: preset.mode } : {}),
-    ...(preset.minWords !== undefined ? { minWords: preset.minWords } : {}),
-    ...(preset.temperature !== undefined ? { temperature: preset.temperature } : {}),
-    prompt: preset.prompt,
-    ref: formatStyleRef(ref),
-  });
-
-  const builtinOptions = LLM_BUILTIN_PRESETS.map((preset) =>
-    toOption(preset, { kind: 'builtin', id: preset.id }, true),
-  );
-  const userOptions = userPresets.map((preset) =>
-    toOption(preset, { kind: 'user', id: preset.id }, false),
-  );
-
-  return [...builtinOptions, ...userOptions];
+export function listPresetEntries(userPresets: readonly LlmPreset[]): LlmPresetEntry[] {
+  return [
+    ...LLM_BUILTIN_PRESETS.map((preset) => ({
+      isBuiltin: true,
+      preset,
+      ref: formatStyleRef({ kind: 'builtin', id: preset.id }),
+    })),
+    ...userPresets.map((preset) => ({
+      isBuiltin: false,
+      preset,
+      ref: formatStyleRef({ kind: 'user', id: preset.id }),
+    })),
+  ];
 }
 
-export function resolveStyleOption(
+export function resolvePresetEntry(
   ref: string | null,
-  userPresets: readonly LlmUserPreset[],
-): LlmStyleOption | null {
+  userPresets: readonly LlmPreset[],
+): LlmPresetEntry | null {
   if (ref === null) {
     return null;
   }
-  return listStyleOptions(userPresets).find((option) => option.ref === ref) ?? null;
+  return listPresetEntries(userPresets).find((entry) => entry.ref === ref) ?? null;
 }
 
-export function findMatchingStyleRef(
-  prompt: string,
-  userPresets: readonly LlmUserPreset[],
-): string | null {
-  for (const option of listStyleOptions(userPresets)) {
-    if (option.prompt === prompt) {
-      return option.ref;
-    }
+export function resolveActivePresetEntry(
+  ref: string | null,
+  userPresets: readonly LlmPreset[],
+): LlmPresetEntry {
+  const resolved = resolvePresetEntry(ref, userPresets);
+  if (resolved !== null) {
+    return resolved;
   }
-  return null;
+  return {
+    isBuiltin: true,
+    preset: getLlmBuiltinPreset(DEFAULT_LLM_BUILTIN_PRESET_ID),
+    ref: formatStyleRef({ kind: 'builtin', id: DEFAULT_LLM_BUILTIN_PRESET_ID }),
+  };
+}
+
+export interface LlmTransformGlobals {
+  minWords: number;
+  temperature: number;
+  useNoteContext: boolean;
+}
+
+// The extension point for future per-preset overrides: add an optional field
+// to LlmPresetOverrides and resolve it here; absent fields inherit globals.
+export function resolveEffectiveLlmGlobals(
+  globals: LlmTransformGlobals,
+  preset: LlmPreset,
+): LlmTransformGlobals {
+  return {
+    minWords: preset.overrides?.minWords ?? globals.minWords,
+    temperature: preset.overrides?.temperature ?? globals.temperature,
+    useNoteContext: preset.overrides?.useNoteContext ?? globals.useNoteContext,
+  };
+}
+
+export function describePresetTiming(timing: LlmPresetTiming | undefined): string {
+  if (timing === 'per_utterance') {
+    return 'Runs after each phrase';
+  }
+  if (timing === 'batch') {
+    return 'Runs once on stop';
+  }
+  return 'Runs in either mode';
+}
+
+export function describePresetBehavior(preset: LlmPreset): string {
+  const output =
+    preset.output === 'add_above'
+      ? 'adds new content above the transcript'
+      : preset.output === 'add_below'
+        ? 'adds new content below the transcript'
+        : 'rewrites the dictated text';
+  const overridden: string[] = [];
+  if (preset.overrides?.minWords !== undefined) {
+    overridden.push('min words');
+  }
+  if (preset.overrides?.temperature !== undefined) {
+    overridden.push('temperature');
+  }
+  if (preset.overrides?.useNoteContext !== undefined) {
+    overridden.push('note context');
+  }
+  const parts = [describePresetTiming(preset.timing), output];
+  if (overridden.length > 0) {
+    parts.push(`overrides ${overridden.join(', ')}`);
+  }
+  return parts.join(' · ');
 }
