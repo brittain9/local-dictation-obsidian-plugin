@@ -28,8 +28,8 @@ export interface LlmRouter {
 
 // Routes each cleanup call to a provider by message size (see
 // `selectRouteProviderId`), resolves that provider's configured model, and
-// raises a typed `unknown_model` error when it is missing so callers surface a
-// cleanup failure (keep raw + banner) instead of a malformed request.
+// raises a typed `model_not_configured` error when it is missing so callers
+// surface a cleanup failure (keep raw + banner) instead of a malformed request.
 export function createLlmRouter(
   settings: PluginSettings,
   createProviderFn = createProvider,
@@ -52,7 +52,7 @@ export function createLlmRouter(
       if (model.length === 0) {
         throw new ProviderError(
           `${formatLlmProviderName(providerId)} model is not configured.`,
-          'unknown_model',
+          'model_not_configured',
         );
       }
 

@@ -450,7 +450,7 @@ export class LocalDictationView extends ItemView {
   }
 
   private renderUseNoteContextToggle(parent: HTMLElement, settings: PluginSettings): void {
-    new Setting(parent)
+    const setting = new Setting(parent)
       .setName('Use note as LLM context')
       .setDesc('Include the open note above the cursor in the LLM prompt.')
       .addToggle((toggle) => {
@@ -459,6 +459,7 @@ export class LocalDictationView extends ItemView {
           await this.saveField('useLlmNoteContext', value);
         });
       });
+    appendInfoTooltip(setting, 'Experimental: results vary with note length and model.');
   }
 
   private renderPromptEditor(parent: HTMLElement, settings: PluginSettings): void {
@@ -496,23 +497,25 @@ export class LocalDictationView extends ItemView {
       'Bounds on the context fed to the model, plus a word floor for skipping the transform.',
     );
 
-    this.addNumberSetting(
-      items,
-      'Total context cap',
-      'Hard cap on context chars',
-      settings.llmPostprocessTotalContextCap,
-      (value) => this.saveField('llmPostprocessTotalContextCap', value, { rerender: false }),
-      'Hard cap on total context characters across note and prior utterances.',
-    );
-
-    if (Math.ceil(settings.llmPostprocessTotalContextCap / 4) >= 4_000) {
-      items.createEl('p', {
-        cls: 'local-dictation-muted',
-        text: 'Large context windows can slow local models and reduce LLM transform quality.',
-      });
-    }
-
+    // The cap only governs per-utterance context (note text + prior utterances);
+    // batch context is bounded by "Note context chars" alone, so hide it there.
     if (settings.llmPostprocessMode !== 'batch') {
+      this.addNumberSetting(
+        items,
+        'Total context cap',
+        'Hard cap on context chars',
+        settings.llmPostprocessTotalContextCap,
+        (value) => this.saveField('llmPostprocessTotalContextCap', value, { rerender: false }),
+        'Hard cap on total context characters across note and prior utterances.',
+      );
+
+      if (Math.ceil(settings.llmPostprocessTotalContextCap / 4) >= 4_000) {
+        items.createEl('p', {
+          cls: 'local-dictation-muted',
+          text: 'Large context windows can slow local models and reduce LLM transform quality.',
+        });
+      }
+
       this.addNumberSetting(
         items,
         'Prior utterances',
@@ -520,6 +523,17 @@ export class LocalDictationView extends ItemView {
         settings.llmPostprocessPriorUtterancesN,
         (value) => this.saveField('llmPostprocessPriorUtterancesN', value, { rerender: false }),
         'Number of recent transcribed utterances included as conversation history.',
+      );
+    }
+
+    if (settings.llmRemoteFeaturesEnabled && settings.llmRouting !== 'local') {
+      this.addNumberSetting(
+        items,
+        'Remote timeout (seconds)',
+        'Give up on OpenRouter after this long',
+        settings.llmRemoteTimeoutSec,
+        (value) => this.saveField('llmRemoteTimeoutSec', value, { rerender: false }),
+        'Abort an OpenRouter transform request after this many seconds. The raw transcript is kept.',
       );
     }
 

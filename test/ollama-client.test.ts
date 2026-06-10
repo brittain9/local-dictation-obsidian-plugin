@@ -3,6 +3,8 @@ import http from 'node:http';
 import { afterEach, describe, expect, it } from 'vitest';
 
 import { createOllamaClient, type OllamaClientError } from '../src/llm/ollama-client';
+import { OllamaProvider } from '../src/llm/ollama-provider';
+import type { ProviderError } from '../src/llm/provider';
 
 const servers: http.Server[] = [];
 
@@ -136,6 +138,27 @@ describe('Ollama client', () => {
       code: 'invalid_response',
       name: 'OllamaClientError',
     } satisfies Partial<OllamaClientError>);
+  });
+
+  it('maps a missing-model 404 to unknown_model at the provider boundary', async () => {
+    const { port } = await startServer((_request, response) => {
+      response.statusCode = 404;
+      response.end(
+        JSON.stringify({ error: 'model "ghost:latest" not found, try pulling it first' }),
+      );
+    });
+
+    await expect(
+      new OllamaProvider(createOllamaClient({ port })).cleanup({
+        model: 'ghost:latest',
+        prompt: 'Clean this.',
+        temperature: 0.2,
+        userMessage: 'raw',
+      }),
+    ).rejects.toMatchObject({
+      code: 'unknown_model',
+      name: 'ProviderError',
+    } satisfies Partial<ProviderError>);
   });
 
   it('cleanup aborts via the supplied signal', async () => {

@@ -307,6 +307,13 @@ describe('resolvePluginSettings', () => {
     ).toBe(60_000);
   });
 
+  it('clamps the remote timeout at the settings boundary', () => {
+    expect(resolvePluginSettings({ llmRemoteTimeoutSec: 1 }).llmRemoteTimeoutSec).toBe(5);
+    expect(resolvePluginSettings({ llmRemoteTimeoutSec: 9_999 }).llmRemoteTimeoutSec).toBe(600);
+    expect(resolvePluginSettings({ llmRemoteTimeoutSec: 'soon' }).llmRemoteTimeoutSec).toBe(60);
+    expect(resolvePluginSettings({ llmRemoteTimeoutSec: 120 }).llmRemoteTimeoutSec).toBe(120);
+  });
+
   it('falls back to the default when useLlmNoteContext is not a boolean', () => {
     expect(resolvePluginSettings({ useLlmNoteContext: 'yes' }).useLlmNoteContext).toBe(false);
   });

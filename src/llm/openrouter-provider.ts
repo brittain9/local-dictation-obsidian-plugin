@@ -1,5 +1,5 @@
 import { isRecord } from '../shared/type-guards';
-import { fetchJson, PROBE_TIMEOUT_MS } from './http-shared';
+import { CLEANUP_TIMEOUT_MS, fetchJson, PROBE_TIMEOUT_MS } from './http-shared';
 import { outputTokenBudget } from './output-budget';
 import type {
   CleanupOptions,
@@ -15,16 +15,19 @@ const OPENROUTER_API_BASE_URL = 'https://openrouter.ai/api/v1';
 interface OpenRouterProviderOptions {
   apiKey: string;
   baseUrl?: string;
+  timeoutMs?: number;
 }
 
 export class OpenRouterProvider implements LlmProvider {
   readonly id = 'openrouter' as const;
   private readonly apiKey: string;
   private readonly baseUrl: string;
+  private readonly timeoutMs: number;
 
   constructor(options: OpenRouterProviderOptions) {
     this.apiKey = options.apiKey.trim();
     this.baseUrl = options.baseUrl ?? OPENROUTER_API_BASE_URL;
+    this.timeoutMs = options.timeoutMs ?? CLEANUP_TIMEOUT_MS;
   }
 
   async cleanup(options: CleanupOptions): Promise<string> {
@@ -54,7 +57,7 @@ export class OpenRouterProvider implements LlmProvider {
           },
           method: 'POST',
         },
-        { abortSignal: options.abortSignal },
+        { abortSignal: options.abortSignal, timeoutMs: this.timeoutMs },
       );
 
       return parseChatContent(response);
