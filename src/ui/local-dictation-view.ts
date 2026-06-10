@@ -450,7 +450,7 @@ export class LocalDictationView extends ItemView {
   }
 
   private renderUseNoteContextToggle(parent: HTMLElement, settings: PluginSettings): void {
-    new Setting(parent)
+    const setting = new Setting(parent)
       .setName('Use note as LLM context')
       .setDesc('Include the open note above the cursor in the LLM prompt.')
       .addToggle((toggle) => {
@@ -459,6 +459,7 @@ export class LocalDictationView extends ItemView {
           await this.saveField('useLlmNoteContext', value);
         });
       });
+    appendInfoTooltip(setting, 'Experimental: results vary with note length and model.');
   }
 
   private renderPromptEditor(parent: HTMLElement, settings: PluginSettings): void {
