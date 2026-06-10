@@ -98,6 +98,12 @@ describe('OpenRouterProvider', () => {
           },
           // No architecture data: kept rather than hidden.
           { id: 'a/model' },
+          // Empty modality arrays mean "unspecified", same as missing: kept.
+          {
+            id: 'e/model',
+            name: 'Empty Modalities',
+            architecture: { input_modalities: [], output_modalities: [] },
+          },
           // "~...-latest" alias: redirects to the newest model but exposes no
           // endpoints, so it is dropped even though it looks like a text model.
           {
@@ -131,6 +137,7 @@ describe('OpenRouterProvider', () => {
       }).listModels(),
     ).resolves.toEqual([
       { displayName: 'a/model', id: 'a/model' },
+      { displayName: 'Empty Modalities', id: 'e/model' },
       { displayName: 'Multi', id: 'm/vision' },
       { displayName: 'Zed', id: 'z/model', pricing: { input: 3, output: 15 } },
     ]);
@@ -205,7 +212,7 @@ describe('OpenRouterProvider', () => {
     controller.abort();
 
     await expect(promise).rejects.toMatchObject({
-      code: 'connection_failed',
+      code: 'aborted',
       name: 'ProviderError',
     } satisfies Partial<ProviderError>);
   });

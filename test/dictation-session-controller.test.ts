@@ -434,6 +434,42 @@ describe('DictationSessionController', () => {
     expect(sessions[0]?.dispose).toHaveBeenCalledTimes(1);
   });
 
+  it('keeps the raw utterance and reports failure when per-utterance cleanup returns empty text', async () => {
+    const sidecarConnection = new FakeSidecarConnection();
+    const sessions: FakeSession[] = [];
+    const onLlmCleanupFailure = vi.fn();
+    const controller = createController({
+      createSession: (session) => {
+        sessions.push(session);
+      },
+      getSettings: () =>
+        createSettings({
+          llmFeaturesEnabled: true,
+          llmPostprocessMode: 'per_utterance',
+          llmPostprocessSkipMinWords: 0,
+          selectedModel: createExternalModelSelection(),
+        }),
+      llmRouter: createFakeLlmRouter({
+        cleanup: vi.fn(async () => ({ model: 'm', providerId: 'ollama' as const, text: '   ' })),
+      }),
+      onLlmCleanupFailure,
+      sidecarConnection,
+    });
+
+    await controller.startDictation();
+    const sessionId = sidecarConnection.startSession.mock.calls[0]?.[0].sessionId ?? '';
+    sidecarConnection.emit(transcriptReady(sessionId, 'raw transcript'));
+
+    await vi.waitFor(() => {
+      expect(sessions[0]?.acceptTranscript).toHaveBeenCalledWith(
+        expect.objectContaining({ text: 'raw transcript' }),
+      );
+    });
+    expect(onLlmCleanupFailure).toHaveBeenCalledWith(
+      expect.objectContaining({ code: 'invalid_response' }),
+    );
+  });
+
   it('resolves the active preset prompt, overrides, and pinned timing into the snapshot', async () => {
     const sidecarConnection = new FakeSidecarConnection();
     const cleanup = vi.fn(

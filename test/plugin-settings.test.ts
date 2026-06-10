@@ -325,10 +325,32 @@ describe('llm preset migration', () => {
 
   it('re-points the ref when a legacy prompt matches another preset', () => {
     const settings = resolvePluginSettings({
-      llmPostprocessActivePresetRef: 'builtin:clean-up',
+      llmPostprocessActivePresetRef: null,
       llmPostprocessPrompt: getLlmBuiltinPreset('professional-writing').prompt,
     });
     expect(settings.llmPostprocessActivePresetRef).toBe('builtin:professional-writing');
+  });
+
+  it('trusts a valid builtin ref even when its prompt text changed across versions', () => {
+    // Pre-redesign vaults stored the builtin's old prompt as a mirror; the ref
+    // is the authoritative signal of user intent.
+    const settings = resolvePluginSettings({
+      llmPostprocessActivePresetRef: 'builtin:tldr',
+      llmPostprocessPrompt: 'old TLDR prompt text that no longer matches any preset',
+    });
+    expect(settings.llmPostprocessActivePresetRef).toBe('builtin:tldr');
+    expect(settings.llmPostprocessUserPresets).toHaveLength(0);
+  });
+
+  it('still preserves a custom prompt when the stored ref is a user preset with a different prompt', () => {
+    const settings = resolvePluginSettings({
+      llmPostprocessActivePresetRef: 'user:a',
+      llmPostprocessPrompt: 'diverged custom prompt',
+      llmPostprocessUserPresets: [makeUserPreset({ id: 'a' })],
+    });
+    const created = settings.llmPostprocessUserPresets[1];
+    expect(created).toMatchObject({ label: 'My preset', prompt: 'diverged custom prompt' });
+    expect(settings.llmPostprocessActivePresetRef).toBe(`user:${created?.id}`);
   });
 
   it('converts a custom legacy prompt into a "My preset" user preset', () => {

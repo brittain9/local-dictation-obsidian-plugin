@@ -82,14 +82,19 @@ export class OpenRouterProvider implements LlmProvider {
       return { kind: 'auth_invalid' };
     }
 
-    try {
-      await fetchJson(
+    // The key check and model fetch are independent; run them in parallel so
+    // the worst-case status latency is one probe timeout instead of two.
+    const [keyResult, modelsResult] = await Promise.allSettled([
+      fetchJson(
         `${this.baseUrl}/key`,
         { headers: { authorization: `Bearer ${this.apiKey}` } },
         { timeoutMs: PROBE_TIMEOUT_MS },
-      );
-    } catch (error) {
-      const mapped = mapOpenRouterError(error);
+      ),
+      this.listModels(),
+    ]);
+
+    if (keyResult.status === 'rejected') {
+      const mapped = mapOpenRouterError(keyResult.reason);
       switch (mapped.code) {
         case 'auth_invalid':
           return { kind: 'auth_invalid' };
@@ -103,17 +108,16 @@ export class OpenRouterProvider implements LlmProvider {
       }
     }
 
-    try {
-      const models = await this.listModels();
-      return models.length === 0
-        ? { kind: 'no_models' }
-        : { kind: 'ready', modelCount: models.length };
-    } catch (error) {
-      const mapped = mapOpenRouterError(error);
+    if (modelsResult.status === 'rejected') {
+      const mapped = mapOpenRouterError(modelsResult.reason);
       return mapped.code === 'connection_failed' || mapped.code === 'timeout'
         ? { kind: 'unreachable' }
         : { kind: 'unknown' };
     }
+
+    return modelsResult.value.length === 0
+      ? { kind: 'no_models' }
+      : { kind: 'ready', modelCount: modelsResult.value.length };
   }
 }
 
@@ -163,9 +167,10 @@ function isTextModel(entry: Record<string, unknown>): boolean {
     return true;
   }
   const { inputs, outputs } = readModalities(entry.architecture);
-  const acceptsText = inputs === null || inputs.includes('text');
+  // Empty modality arrays mean "unspecified", same as a missing field: keep.
+  const acceptsText = inputs === null || inputs.length === 0 || inputs.includes('text');
   const textOnlyOutput =
-    outputs === null || (outputs.length > 0 && outputs.every((modality) => modality === 'text'));
+    outputs === null || outputs.length === 0 || outputs.every((modality) => modality === 'text');
   return acceptsText && textOnlyOutput;
 }
 

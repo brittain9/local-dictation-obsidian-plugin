@@ -30,7 +30,12 @@ export class OllamaClientError extends Error {
 
   constructor(
     message: string,
-    public readonly code: 'connection_failed' | 'http_error' | 'invalid_response' | 'timeout',
+    public readonly code:
+      | 'aborted'
+      | 'connection_failed'
+      | 'http_error'
+      | 'invalid_response'
+      | 'timeout',
     options: { responseText?: string | undefined; status?: number | undefined } = {},
   ) {
     super(message);
@@ -252,7 +257,7 @@ function requestText(
     });
     request.on('error', (error) => {
       if (options.abortSignal?.aborted === true) {
-        reject(new OllamaClientError('Ollama request aborted.', 'connection_failed'));
+        reject(new OllamaClientError('Ollama request aborted.', 'aborted'));
         return;
       }
 

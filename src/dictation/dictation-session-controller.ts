@@ -686,6 +686,13 @@ export class DictationSessionController {
         return null;
       }
 
+      const cleanedText = result.text.trim();
+      if (cleanedText.length === 0) {
+        // An empty replacement would silently delete the spoken words from the
+        // note; keep the raw utterance and surface a failure instead.
+        throw new ProviderError('Provider returned empty cleaned text.', 'invalid_response');
+      }
+
       this.dependencies.onLlmCleanupSuccess?.();
 
       return {
@@ -702,14 +709,15 @@ export class DictationSessionController {
             status: { kind: 'ok' },
           }),
         ],
-        text: result.text.trim(),
+        text: cleanedText,
       };
     } catch (error) {
       if (abortController.signal.aborted || !this.sessions.has(event.sessionId)) {
         return null;
       }
 
-      const failure = this.handleProviderCleanupFailure(providerId, error);
+      const failedId = failedProviderId(error, providerId);
+      const failure = this.handleProviderCleanupFailure(failedId, error);
       this.maybeLogLlmStageFailure(entry, failure.message);
       return {
         ...baseRevision,
@@ -719,7 +727,7 @@ export class DictationSessionController {
             durationMs: Date.now() - startedAt,
             isFinal: event.isFinal,
             model: '',
-            providerId,
+            providerId: failedId,
             revision: event.revision,
             status: { error: failure.message, kind: 'failed' },
           }),
@@ -941,7 +949,7 @@ export class DictationSessionController {
         return;
       }
 
-      this.handleProviderCleanupFailure(providerId, error);
+      this.handleProviderCleanupFailure(failedProviderId(error, providerId), error);
       entry.session.clearSessionProcessingMark();
       this.disposeLocalSession(sessionId);
     } finally {
@@ -1167,6 +1175,15 @@ function createProviderStageOutcome(args: {
     stageId: 'llm_postprocess',
     status: args.status,
   };
+}
+
+// Prefer the provider the router actually used (attached to the thrown error)
+// over the caller's earlier selection, which can be stale when the remote kill
+// switch flips between selection and the cleanup call.
+function failedProviderId(error: unknown, fallback: LlmProviderId): LlmProviderId {
+  return error instanceof ProviderError && error.providerId !== undefined
+    ? error.providerId
+    : fallback;
 }
 
 function normalizeProviderError(error: unknown): ProviderError {

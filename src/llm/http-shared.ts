@@ -67,7 +67,7 @@ export async function fetchJson(
       throw new ProviderError(`Provider request timed out after ${timeoutMs}ms.`, 'timeout');
     }
     if (options.abortSignal?.aborted === true) {
-      throw new ProviderError('Provider request aborted.', 'connection_failed');
+      throw new ProviderError('Provider request aborted.', 'aborted');
     }
     throw new ProviderError(`Failed to reach provider: ${formatError(error)}`, 'connection_failed');
   } finally {

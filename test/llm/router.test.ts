@@ -1,8 +1,8 @@
 import { describe, expect, it, vi } from 'vitest';
-import type {
-  CleanupOptions,
-  LlmProvider,
-  LlmProviderId,
+import {
+  type CleanupOptions,
+  type LlmProvider,
+  type LlmProviderId,
   ProviderError,
 } from '../../src/llm/provider';
 import { createLlmRouter } from '../../src/llm/router';
@@ -148,6 +148,28 @@ describe('createLlmRouter', () => {
       message: expect.stringContaining('OpenRouter'),
       name: 'ProviderError',
     } satisfies Partial<ProviderError>);
+  });
+
+  it('attaches the routed provider id to errors thrown during cleanup', async () => {
+    const { router } = routerWithSpy(settings({ llmRouting: 'remote' }), async () => {
+      throw new ProviderError('boom', 'http_error');
+    });
+
+    await expect(router.cleanup(cleanupArgs('hi'))).rejects.toMatchObject({
+      code: 'http_error',
+      providerId: 'openrouter',
+    });
+  });
+
+  it('attaches the provider id to model_not_configured errors', async () => {
+    const { router } = routerWithSpy(
+      settings({ llmProviderModels: { ollama: '', openrouter: '' }, llmRouting: 'local' }),
+    );
+
+    await expect(router.cleanup(cleanupArgs('hi'))).rejects.toMatchObject({
+      code: 'model_not_configured',
+      providerId: 'ollama',
+    });
   });
 
   it('propagates the provider id and model on a successful cleanup', async () => {

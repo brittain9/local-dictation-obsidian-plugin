@@ -50,21 +50,33 @@ export function createLlmRouter(
       const providerId = selectProviderId(options.userMessage.length);
       const model = getProviderModel(settings, providerId);
       if (model.length === 0) {
-        throw new ProviderError(
+        const error = new ProviderError(
           `${formatLlmProviderName(providerId)} model is not configured.`,
           'model_not_configured',
         );
+        error.providerId = providerId;
+        throw error;
       }
 
-      const text = await createProviderFn(providerId, settings).cleanup({
-        ...(options.abortSignal !== undefined ? { abortSignal: options.abortSignal } : {}),
-        model,
-        prompt: options.prompt,
-        temperature: options.temperature,
-        userMessage: options.userMessage,
-      });
+      try {
+        const text = await createProviderFn(providerId, settings).cleanup({
+          ...(options.abortSignal !== undefined ? { abortSignal: options.abortSignal } : {}),
+          model,
+          prompt: options.prompt,
+          temperature: options.temperature,
+          userMessage: options.userMessage,
+        });
 
-      return { model, providerId, text };
+        return { model, providerId, text };
+      } catch (error) {
+        // Attribute the failure to the provider this call actually used; the
+        // caller's earlier selectProviderId result can be stale if the remote
+        // kill switch flipped in between.
+        if (error instanceof ProviderError && error.providerId === undefined) {
+          error.providerId = providerId;
+        }
+        throw error;
+      }
     },
     selectProviderId,
   };

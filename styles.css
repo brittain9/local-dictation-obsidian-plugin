@@ -786,10 +786,6 @@
   border-top: none;
 }
 
-.local-stt-hidden {
-  display: none;
-}
-
 /* --- OpenRouter model suggest secondary line ---------------------- */
 
 .local-dictation-suggest__top {

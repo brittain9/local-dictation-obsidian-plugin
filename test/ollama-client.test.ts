@@ -177,7 +177,7 @@ describe('Ollama client', () => {
     controller.abort();
 
     await expect(promise).rejects.toMatchObject({
-      code: 'connection_failed',
+      code: 'aborted',
       name: 'OllamaClientError',
     } satisfies Partial<OllamaClientError>);
   });

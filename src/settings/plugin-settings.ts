@@ -429,6 +429,13 @@ function migrateLlmPresetState(args: {
     return { activeRef: resolvedRef ?? fallbackRef, userPresets: args.userPresets };
   }
   if (resolvedRef !== null) {
+    // Pre-redesign code nulled the ref whenever the prompt diverged from the
+    // selected preset, so a stored builtin ref is an explicit user choice and
+    // the legacy prompt is just a stale mirror of that builtin's old text —
+    // trust the ref even when the builtin's prompt changed across versions.
+    if (resolvedRef.startsWith('builtin:')) {
+      return { activeRef: resolvedRef, userPresets: args.userPresets };
+    }
     const active = resolveActivePresetEntry(resolvedRef, args.userPresets);
     if (active.preset.prompt === prompt) {
       return { activeRef: resolvedRef, userPresets: args.userPresets };
@@ -441,6 +448,9 @@ function migrateLlmPresetState(args: {
     return { activeRef: matching.ref, userPresets: args.userPresets };
   }
   if (args.userPresets.length >= LLM_USER_PRESET_MAX_COUNT) {
+    console.warn(
+      '[Local Dictation] Custom LLM prompt could not be migrated into a preset: the preset limit is reached. The prompt was dropped.',
+    );
     return { activeRef: resolvedRef ?? fallbackRef, userPresets: args.userPresets };
   }
   const labels = new Set(

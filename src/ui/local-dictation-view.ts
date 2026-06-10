@@ -108,6 +108,10 @@ export class LocalDictationView extends ItemView {
     this.unsubscribeLlmCleanupFailure?.();
     this.unsubscribeLlmCleanupFailure = null;
     this.routingControls.dispose();
+    // Teardown fires blur on any focused input; without this reset that blur
+    // would schedule a refresh into the detached contentEl.
+    this.deferredRenderPending = false;
+    this.focusedInput = null;
   }
 
   private attachWidthObserver(): void {

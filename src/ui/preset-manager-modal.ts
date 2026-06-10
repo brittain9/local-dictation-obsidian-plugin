@@ -6,6 +6,7 @@ import { Modal, Notice, Setting } from 'obsidian';
 import {
   describePresetBehavior,
   formatStyleRef,
+  LLM_BUILTIN_PRESETS,
   type LlmPreset,
   type LlmPresetEntry,
   listPresetEntries,
@@ -37,6 +38,7 @@ type EditorState =
 
 export class PresetManagerModal extends Modal {
   private editor: EditorState | null = null;
+  private isOpen = false;
 
   constructor(
     app: App,
@@ -46,16 +48,23 @@ export class PresetManagerModal extends Modal {
   }
 
   override onOpen(): void {
+    this.isOpen = true;
     this.modalEl.addClass('local-stt-preset-manager');
     this.render();
   }
 
   override onClose(): void {
+    this.isOpen = false;
     this.contentEl.empty();
     this.editor = null;
   }
 
   private render(): void {
+    // Saves and deletes re-render after an await; skip if the modal was
+    // dismissed in the meantime.
+    if (!this.isOpen) {
+      return;
+    }
     this.contentEl.empty();
     if (this.editor === null) {
       this.titleEl.setText('Manage presets');
@@ -364,9 +373,17 @@ export class PresetManagerModal extends Modal {
   ): Promise<void> {
     const settings = this.deps.getSettings();
     const editedId = editor.kind === 'edit' ? editor.presetId : null;
-    const existingLabels = listPresetEntries(settings.llmPostprocessUserPresets)
-      .filter((entry) => entry.preset.id !== editedId)
-      .map((entry) => entry.preset.label);
+
+    const label = editor.draft.label.trim().toLowerCase();
+    if (LLM_BUILTIN_PRESETS.some((preset) => preset.label.toLowerCase() === label)) {
+      errorEl.setText('That name is used by a built-in preset — choose a different name.');
+      errorEl.removeClass('local-stt-hidden');
+      return;
+    }
+
+    const existingLabels = settings.llmPostprocessUserPresets
+      .filter((preset) => preset.id !== editedId)
+      .map((preset) => preset.label);
 
     const result = validatePresetDraft(editor.draft, existingLabels);
     if (result.kind === 'error') {
