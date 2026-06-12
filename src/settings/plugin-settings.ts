@@ -331,7 +331,6 @@ export function resolvePluginSettings(data: unknown): PluginSettings {
 export function resetLlmPostprocessDefaults(settings: PluginSettings): PluginSettings {
   return {
     ...settings,
-    llmPostprocessActivePresetRef: DEFAULT_PLUGIN_SETTINGS.llmPostprocessActivePresetRef,
     llmPostprocessLastEnabledMode: 'per_utterance',
     // Not the 'off' default: the reset button is only reachable while the
     // transform is on, and resetting should not silently disable it.

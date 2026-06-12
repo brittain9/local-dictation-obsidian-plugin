@@ -11,6 +11,7 @@ import {
   resolveActivePresetEntry,
 } from '../llm/presets';
 import type { LlmCleanupFailure } from '../llm/provider';
+import type { LlmPresetStateMutation } from '../settings/llm-preset-state';
 import { type PluginSettings, resetLlmPostprocessDefaults } from '../settings/plugin-settings';
 import {
   addNumberInputSetting,
@@ -41,9 +42,11 @@ interface LocalDictationViewDependencies {
   getSettings: () => PluginSettings;
   getLlmCleanupFailure?: () => LlmCleanupFailure | null;
   logger?: PluginLogger | undefined;
+  mutatePresetState: (mutation: LlmPresetStateMutation) => Promise<void>;
   notice?: (message: string) => void;
   saveSettings: (settings: PluginSettings) => Promise<void>;
   subscribeLlmCleanupFailure?: (callback: () => void) => () => void;
+  synchronizePresets: () => Promise<void>;
 }
 
 export class LocalDictationView extends ItemView {
@@ -173,6 +176,10 @@ export class LocalDictationView extends ItemView {
     this.renderDiagnosticsSection(advanced, settings);
   }
 
+  requestRefresh(): void {
+    this.scheduleRender();
+  }
+
   private renderCleanupToggle(parent: HTMLElement, settings: PluginSettings): void {
     const enabled = settings.llmPostprocessMode !== 'off';
     new Setting(parent)
@@ -243,7 +250,10 @@ export class LocalDictationView extends ItemView {
         }
         dropdown.setValue(active.ref);
         dropdown.onChange(async (value) => {
-          await this.saveField('llmPostprocessActivePresetRef', value);
+          await this.mutatePresetState((state) => ({
+            ...state,
+            activePresetRef: value,
+          }));
         });
       });
     appendInfoTooltip(setting, STYLE_PICKER_TOOLTIP);
@@ -252,14 +262,19 @@ export class LocalDictationView extends ItemView {
       button.setIcon('sliders-horizontal');
       button.setTooltip('Manage presets');
       button.onClick(() => {
-        new PresetManagerModal(this.app, {
-          getSettings: () => this.dependencies.getSettings(),
-          saveSettings: async (next) => {
-            await this.persistSettings(next);
-          },
-        }).open();
+        void this.openPresetManager();
       });
     });
+  }
+
+  private async openPresetManager(): Promise<void> {
+    await this.dependencies.synchronizePresets();
+    new PresetManagerModal(this.app, {
+      getSettings: () => this.dependencies.getSettings(),
+      mutatePresetState: async (mutation) => {
+        await this.mutatePresetState(mutation);
+      },
+    }).open();
   }
 
   private renderRuntimeFailureBanner(parent: HTMLElement): void {
@@ -437,6 +452,13 @@ export class LocalDictationView extends ItemView {
       confirmLabel: 'Reset',
       destructive: true,
       onConfirm: async () => {
+        await this.mutatePresetState(
+          (state) => ({
+            ...state,
+            activePresetRef: resolveActivePresetEntry(null, []).ref,
+          }),
+          { rerender: false },
+        );
         await this.persistSettings(resetLlmPostprocessDefaults(this.dependencies.getSettings()));
       },
     }).open();
@@ -526,6 +548,16 @@ export class LocalDictationView extends ItemView {
     await this.dependencies.saveSettings(nextSettings);
     if (options.rerender ?? true) {
       this.refresh();
+    }
+  }
+
+  private async mutatePresetState(
+    mutation: LlmPresetStateMutation,
+    options: { rerender?: boolean } = {},
+  ): Promise<void> {
+    await this.dependencies.mutatePresetState(mutation);
+    if (options.rerender ?? true) {
+      this.requestRefresh();
     }
   }
 }

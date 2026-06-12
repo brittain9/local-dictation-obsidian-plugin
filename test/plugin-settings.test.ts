@@ -575,7 +575,7 @@ describe('audio input device', () => {
 });
 
 describe('resetLlmPostprocessDefaults', () => {
-  it('resets editable LLM defaults, keeps the transform on, and preserves presets and provider models', () => {
+  it('resets editable LLM defaults while preserving preset state and provider models', () => {
     const presets = [makeUserPreset({ id: 'a', label: 'Keep me' })];
     const reset = resetLlmPostprocessDefaults({
       ...DEFAULT_PLUGIN_SETTINGS,
@@ -598,7 +598,7 @@ describe('resetLlmPostprocessDefaults', () => {
 
     expect(reset).toMatchObject({
       llmFeaturesEnabled: false,
-      llmPostprocessActivePresetRef: `builtin:${DEFAULT_LLM_BUILTIN_PRESET_ID}`,
+      llmPostprocessActivePresetRef: 'user:custom',
       llmPostprocessLastEnabledMode: 'per_utterance',
       llmPostprocessMode: 'per_utterance',
       llmPostprocessShowRawBelow: true,

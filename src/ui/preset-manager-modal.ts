@@ -12,6 +12,7 @@ import {
   listPresetEntries,
   resolveActivePresetEntry,
 } from '../llm/presets';
+import type { LlmPresetStateMutation } from '../settings/llm-preset-state';
 import {
   LLM_MIN_WORDS_MAX,
   LLM_TEMPERATURE_MAX,
@@ -31,7 +32,7 @@ import {
 
 interface PresetManagerModalDependencies {
   getSettings: () => PluginSettings;
-  saveSettings: (settings: PluginSettings) => Promise<void>;
+  mutatePresetState: (mutation: LlmPresetStateMutation) => Promise<void>;
 }
 
 type EditorState =
@@ -367,48 +368,47 @@ export class PresetManagerModal extends Modal {
       | { kind: 'edit'; draft: LlmPresetDraft; presetId: string },
     errorEl: HTMLElement,
   ): Promise<void> {
-    const settings = this.deps.getSettings();
     const editedId = editor.kind === 'edit' ? editor.presetId : null;
-
-    const label = editor.draft.label.trim().toLowerCase();
-    if (LLM_BUILTIN_PRESETS.some((preset) => preset.label.toLowerCase() === label)) {
-      errorEl.setText('That name is used by a built-in preset — choose a different name.');
-      errorEl.removeClass('local-stt-hidden');
-      return;
-    }
-
-    const existingLabels = settings.llmPostprocessUserPresets
-      .filter((preset) => preset.id !== editedId)
-      .map((preset) => preset.label);
-
-    const result = validatePresetDraft(editor.draft, existingLabels);
-    if (result.kind === 'error') {
-      errorEl.setText(result.message);
-      errorEl.removeClass('local-stt-hidden');
-      return;
-    }
-
-    if (editedId !== null) {
-      await this.deps.saveSettings({
-        ...settings,
-        llmPostprocessUserPresets: settings.llmPostprocessUserPresets.map((preset) =>
-          preset.id === editedId ? { ...result.preset, id: editedId } : preset,
-        ),
-      });
-    } else {
-      if (settings.llmPostprocessUserPresets.length >= LLM_USER_PRESET_MAX_COUNT) {
-        errorEl.setText(MAX_PRESETS_MESSAGE);
-        errorEl.removeClass('local-stt-hidden');
-        return;
+    let validationError: string | null = null;
+    await this.deps.mutatePresetState((state) => {
+      const label = editor.draft.label.trim().toLowerCase();
+      if (LLM_BUILTIN_PRESETS.some((preset) => preset.label.toLowerCase() === label)) {
+        validationError = 'That name is used by a built-in preset — choose a different name.';
+        return state;
       }
-      await this.deps.saveSettings({
-        ...settings,
-        llmPostprocessUserPresets: [
-          ...settings.llmPostprocessUserPresets,
-          { ...result.preset, id: randomUUID() },
-        ],
-      });
+
+      const existingLabels = state.userPresets
+        .filter((preset) => preset.id !== editedId)
+        .map((preset) => preset.label);
+      const result = validatePresetDraft(editor.draft, existingLabels);
+      if (result.kind === 'error') {
+        validationError = result.message;
+        return state;
+      }
+
+      if (editedId !== null) {
+        return {
+          ...state,
+          userPresets: state.userPresets.map((preset) =>
+            preset.id === editedId ? { ...result.preset, id: editedId } : preset,
+          ),
+        };
+      }
+      if (state.userPresets.length >= LLM_USER_PRESET_MAX_COUNT) {
+        validationError = MAX_PRESETS_MESSAGE;
+        return state;
+      }
+      return {
+        ...state,
+        userPresets: [...state.userPresets, { ...result.preset, id: randomUUID() }],
+      };
+    });
+    if (validationError !== null) {
+      errorEl.setText(validationError);
+      errorEl.removeClass('local-stt-hidden');
+      return;
     }
+
     this.editor = null;
     this.render();
   }
@@ -420,17 +420,16 @@ export class PresetManagerModal extends Modal {
       confirmLabel: 'Delete',
       destructive: true,
       onConfirm: async () => {
-        const settings = this.deps.getSettings();
         const ref = formatStyleRef({ kind: 'user', id: preset.id });
-        const wasActive = settings.llmPostprocessActivePresetRef === ref;
-        await this.deps.saveSettings({
-          ...settings,
-          llmPostprocessActivePresetRef: wasActive
-            ? resolveActivePresetEntry(null, []).ref
-            : settings.llmPostprocessActivePresetRef,
-          llmPostprocessUserPresets: settings.llmPostprocessUserPresets.filter(
-            (entry) => entry.id !== preset.id,
-          ),
+        let wasActive = false;
+        await this.deps.mutatePresetState((state) => {
+          wasActive = state.activePresetRef === ref;
+          return {
+            activePresetRef: wasActive
+              ? resolveActivePresetEntry(null, []).ref
+              : state.activePresetRef,
+            userPresets: state.userPresets.filter((entry) => entry.id !== preset.id),
+          };
         });
         if (wasActive) {
           new Notice(`"${preset.label}" was active — switched to Clean up.`);

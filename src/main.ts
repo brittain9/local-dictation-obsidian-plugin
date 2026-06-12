@@ -15,6 +15,7 @@ import { ManageModelsModal } from './models/manage-models-modal';
 import { ModelInstallManager } from './models/model-install-manager';
 import { Session } from './session/session';
 import { logAccelerationFallbacks } from './settings/acceleration-info';
+import { LlmPresetStateStore } from './settings/llm-preset-state';
 import {
   DEFAULT_PLUGIN_SETTINGS,
   type PluginSettings,
@@ -55,6 +56,7 @@ export default class LocalSttPlugin extends Plugin {
   private llmCleanupFailure: LlmCleanupFailure | null = null;
   private readonly llmCleanupFailureSubscribers = new Set<() => void>();
   private modelInstallManager: ModelInstallManager | null = null;
+  private presetStateStore: LlmPresetStateStore | null = null;
   private ribbonController: DictationRibbonController | null = null;
   private settings: PluginSettings = DEFAULT_PLUGIN_SETTINGS;
   private sidecarConnection: SidecarConnection | null = null;
@@ -62,6 +64,19 @@ export default class LocalSttPlugin extends Plugin {
 
   override async onload(): Promise<void> {
     this.settings = resolvePluginSettings(await this.loadData());
+    this.presetStateStore = new LlmPresetStateStore({
+      commit: async (nextSettings, options) => {
+        await this.applySettings(nextSettings, options);
+      },
+      getSettings: () => this.settings,
+      loadData: async () => this.loadData(),
+      onExternalChange: () => {
+        this.requestLocalDictationSidebarRefresh();
+      },
+      warn: (message, error) => {
+        this.logger.warn('settings', message, error);
+      },
+    });
 
     this.registerEditorExtension(dictationAnchorExtension());
     this.registerEditorExtension(noteSurfaceUpdateListenerExtension());
@@ -105,6 +120,12 @@ export default class LocalSttPlugin extends Plugin {
           },
           saveSettings: async (nextSettings) => {
             await this.updateSettings(nextSettings);
+          },
+          mutatePresetState: async (mutation) => {
+            await this.requirePresetStateStore().mutate(mutation);
+          },
+          synchronizePresets: async () => {
+            await this.requirePresetStateStore().synchronize();
           },
           subscribeLlmCleanupFailure: (callback) => {
             this.llmCleanupFailureSubscribers.add(callback);
@@ -410,9 +431,20 @@ export default class LocalSttPlugin extends Plugin {
   }
 
   private async updateSettings(nextSettings: PluginSettings): Promise<void> {
+    await this.applySettings(this.requirePresetStateStore().preserveCurrentState(nextSettings), {
+      persist: true,
+    });
+  }
+
+  private async applySettings(
+    nextSettings: PluginSettings,
+    options: { persist: boolean },
+  ): Promise<void> {
     const previousSettings = this.settings;
     this.settings = resolvePluginSettings(nextSettings);
-    await this.saveData(this.settings);
+    if (options.persist) {
+      await this.saveData(this.settings);
+    }
     if (previousSettings.llmFeaturesEnabled !== this.settings.llmFeaturesEnabled) {
       await this.syncLocalDictationSidebar();
       return;
@@ -422,6 +454,14 @@ export default class LocalSttPlugin extends Plugin {
         if (leaf.view instanceof LocalDictationView) {
           leaf.view.refresh();
         }
+      }
+    }
+  }
+
+  private requestLocalDictationSidebarRefresh(): void {
+    for (const leaf of this.app.workspace.getLeavesOfType(LOCAL_DICTATION_VIEW_TYPE)) {
+      if (leaf.view instanceof LocalDictationView) {
+        leaf.view.requestRefresh();
       }
     }
   }
@@ -438,6 +478,13 @@ export default class LocalSttPlugin extends Plugin {
     }
 
     return this.dictationController;
+  }
+
+  private requirePresetStateStore(): LlmPresetStateStore {
+    if (this.presetStateStore === null) {
+      throw new Error('Preset state store is not initialized');
+    }
+    return this.presetStateStore;
   }
 
   private requireSidecarConnection(): SidecarConnection {

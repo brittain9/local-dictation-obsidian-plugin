@@ -1,15 +1,14 @@
 import type { LlmPreset } from '../llm/presets';
-import {
-  type PluginSettings,
-  resolvePluginSettings,
-} from './plugin-settings';
+import { type PluginSettings, resolvePluginSettings } from './plugin-settings';
 
 export interface LlmPresetState {
   activePresetRef: string;
   userPresets: LlmPreset[];
 }
 
-interface LlmPresetStateStoreDependencies {
+export type LlmPresetStateMutation = (state: Readonly<LlmPresetState>) => LlmPresetState;
+
+export interface LlmPresetStateStoreDependencies {
   commit: (settings: PluginSettings, options: { persist: boolean }) => Promise<void>;
   getSettings: () => PluginSettings;
   loadData: () => Promise<unknown>;
@@ -35,10 +34,7 @@ export function withLlmPresetState(
   };
 }
 
-export function areLlmPresetStatesEqual(
-  left: LlmPresetState,
-  right: LlmPresetState,
-): boolean {
+export function areLlmPresetStatesEqual(left: LlmPresetState, right: LlmPresetState): boolean {
   if (
     left.activePresetRef !== right.activePresetRef ||
     left.userPresets.length !== right.userPresets.length
@@ -72,9 +68,7 @@ export class LlmPresetStateStore {
     return tracked;
   }
 
-  mutate(
-    mutation: (state: Readonly<LlmPresetState>) => LlmPresetState,
-  ): Promise<void> {
+  mutate(mutation: LlmPresetStateMutation): Promise<void> {
     return this.enqueue(async () => {
       await this.synchronizeNow();
 
@@ -95,10 +89,7 @@ export class LlmPresetStateStore {
   }
 
   preserveCurrentState(nextSettings: PluginSettings): PluginSettings {
-    return withLlmPresetState(
-      nextSettings,
-      readLlmPresetState(this.dependencies.getSettings()),
-    );
+    return withLlmPresetState(nextSettings, readLlmPresetState(this.dependencies.getSettings()));
   }
 
   private enqueue(operation: () => Promise<void>): Promise<void> {
