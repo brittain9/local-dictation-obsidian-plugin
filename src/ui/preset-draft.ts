@@ -1,12 +1,17 @@
-import type {
-  LlmPreset,
-  LlmPresetOutput,
-  LlmPresetOverrides,
-  LlmPresetTiming,
+import { randomUUID } from 'node:crypto';
+
+import {
+  LLM_BUILTIN_PRESETS,
+  type LlmPreset,
+  type LlmPresetOutput,
+  type LlmPresetOverrides,
+  type LlmPresetTiming,
 } from '../llm/presets';
+import type { LlmPresetState } from '../settings/llm-preset-state';
 import {
   LLM_MIN_WORDS_MAX,
   LLM_TEMPERATURE_MAX,
+  LLM_USER_PRESET_MAX_COUNT,
   LLM_USER_PRESET_MAX_DESCRIPTION_CHARS,
   LLM_USER_PRESET_MAX_LABEL_CHARS,
 } from '../settings/plugin-settings';
@@ -41,11 +46,20 @@ export function emptyPresetDraft(): LlmPresetDraft {
   };
 }
 
-// Truncate the base label first so the suffix survives the length cap;
-// slicing afterwards would silently reproduce the original name.
-export function duplicateLabel(label: string): string {
-  const suffix = ' (copy)';
-  return `${label.slice(0, LLM_USER_PRESET_MAX_LABEL_CHARS - suffix.length)}${suffix}`;
+// Pick the first free "Base (copy)" / "Base (copy N)" name. Duplicating a
+// copy numbers up from its base instead of stacking suffixes. The base label
+// is truncated first so the suffix survives the length cap; slicing
+// afterwards would silently reproduce an existing name.
+export function duplicateLabel(label: string, existingLabels: readonly string[]): string {
+  const taken = new Set(existingLabels.map((existing) => existing.trim().toLowerCase()));
+  const base = label.replace(/ \(copy(?: \d+)?\)$/, '');
+  for (let attempt = 1; ; attempt += 1) {
+    const suffix = attempt === 1 ? ' (copy)' : ` (copy ${attempt})`;
+    const candidate = `${base.slice(0, LLM_USER_PRESET_MAX_LABEL_CHARS - suffix.length)}${suffix}`;
+    if (!taken.has(candidate.toLowerCase())) {
+      return candidate;
+    }
+  }
 }
 
 export function draftFromPreset(preset: LlmPreset): LlmPresetDraft {
@@ -118,6 +132,62 @@ export function validatePresetDraft(
       ...(Object.keys(overrides).length > 0 ? { overrides } : {}),
       prompt: draft.prompt,
       ...(timing !== undefined ? { timing } : {}),
+    },
+  };
+}
+
+export const MAX_PRESETS_MESSAGE = `You can save up to ${LLM_USER_PRESET_MAX_COUNT} presets. Delete one first.`;
+
+export interface PresetSaveOutcome {
+  error: string | null;
+  state: LlmPresetState;
+}
+
+// The save contract for the preset editor: editing updates the preset in
+// place; if the edited preset no longer exists (deleted in another window),
+// the edits are saved back under the same id rather than dropped; name
+// collisions with built-ins or other user presets are rejected.
+export function applyPresetDraftSave(
+  state: Readonly<LlmPresetState>,
+  draft: LlmPresetDraft,
+  editedId: string | null,
+): PresetSaveOutcome {
+  const label = draft.label.trim().toLowerCase();
+  if (LLM_BUILTIN_PRESETS.some((preset) => preset.label.toLowerCase() === label)) {
+    return {
+      error: 'That name is used by a built-in preset — choose a different name.',
+      state,
+    };
+  }
+
+  const existingLabels = state.userPresets
+    .filter((preset) => preset.id !== editedId)
+    .map((preset) => preset.label);
+  const result = validatePresetDraft(draft, existingLabels);
+  if (result.kind === 'error') {
+    return { error: result.message, state };
+  }
+
+  if (editedId !== null && state.userPresets.some((preset) => preset.id === editedId)) {
+    return {
+      error: null,
+      state: {
+        ...state,
+        userPresets: state.userPresets.map((preset) =>
+          preset.id === editedId ? { ...result.preset, id: editedId } : preset,
+        ),
+      },
+    };
+  }
+
+  if (state.userPresets.length >= LLM_USER_PRESET_MAX_COUNT) {
+    return { error: MAX_PRESETS_MESSAGE, state };
+  }
+  return {
+    error: null,
+    state: {
+      ...state,
+      userPresets: [...state.userPresets, { ...result.preset, id: editedId ?? randomUUID() }],
     },
   };
 }

@@ -42,7 +42,6 @@ export type LlmBuiltinPresetId =
   | 'professional-writing'
   | 'tldr'
   | 'markdown-formatting'
-  | 'brain-dump'
   | 'action-items';
 
 export interface LlmPresetEntry {
@@ -62,9 +61,6 @@ const TLDR_PROMPT =
 
 const MARKDOWN_FORMATTING_PROMPT =
   "Reformat dictated speech as well-structured Markdown. Add headings, bullet or numbered lists, bold, emphasis, and fenced code blocks where the content calls for it. Lightly clean filler, false starts, punctuation, and capitalization; preserve the speaker's wording, every fact, name, and term. Return only the Markdown — no preamble, no commentary.";
-
-const BRAIN_DUMP_PROMPT =
-  "Organize a free-form brain dump into clear structure. Cluster the speaker's points into themes with short headings, and surface action items, open questions, and decisions as separate sections where present. Drop pure filler. Preserve every fact, name, and term. Use the reference context only for spelling. Return only the organized Markdown — no preamble, no commentary.";
 
 const ACTION_ITEMS_PROMPT =
   "Extract action items from the dictated transcript. Output an 'Action items' heading followed by a Markdown checklist of concrete tasks, naming an owner when the speaker mentions one. If the transcript contains no action items, return nothing. Return only the heading and checklist — do not repeat the transcript, no preamble, no commentary.";
@@ -101,15 +97,6 @@ export const LLM_BUILTIN_PRESETS = [
       'Reformat the session transcript as structured Markdown with headings, lists, and emphasis.',
     output: 'replace',
     prompt: MARKDOWN_FORMATTING_PROMPT,
-    timing: 'batch',
-  },
-  {
-    id: 'brain-dump',
-    label: 'Brain dump organizer',
-    description:
-      'Cluster a rambling brain dump into themes, action items, questions, and decisions.',
-    output: 'replace',
-    prompt: BRAIN_DUMP_PROMPT,
     timing: 'batch',
   },
   {

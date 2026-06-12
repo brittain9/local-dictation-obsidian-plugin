@@ -80,7 +80,7 @@ export const MAX_LLM_REMOTE_THRESHOLD_CHARS = 60_000;
 
 export const LLM_USER_PRESET_MAX_LABEL_CHARS = 60;
 export const LLM_USER_PRESET_MAX_DESCRIPTION_CHARS = 240;
-export const LLM_USER_PRESET_MAX_COUNT = 25;
+export const LLM_USER_PRESET_MAX_COUNT = 50;
 
 // Shared bounds for the min-words skip gate and sampling temperature, used by
 // the settings reader, the preset editor, and the preset draft validator.

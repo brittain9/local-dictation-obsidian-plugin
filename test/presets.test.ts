@@ -20,7 +20,6 @@ describe('LLM presets', () => {
       'professional-writing',
       'tldr',
       'markdown-formatting',
-      'brain-dump',
       'action-items',
     ]);
   });
@@ -50,8 +49,9 @@ describe('LLM presets', () => {
     expect(entries.at(-1)).toMatchObject({ isBuiltin: false, ref: 'user:abc' });
   });
 
-  it('resolvePresetEntry returns null for unknown refs (including removed voice-commands)', () => {
+  it('resolvePresetEntry returns null for unknown refs (including removed built-ins)', () => {
     expect(resolvePresetEntry('builtin:voice-commands', [])).toBeNull();
+    expect(resolvePresetEntry('builtin:brain-dump', [])).toBeNull();
     expect(resolvePresetEntry('user:missing', [])).toBeNull();
     expect(resolvePresetEntry(null, [])).toBeNull();
   });
