@@ -502,6 +502,24 @@
   margin-bottom: var(--size-4-2);
 }
 
+.local-stt-preset-manager .local-stt-preset-search {
+  width: 100%;
+  margin-bottom: var(--size-4-2);
+}
+
+.local-stt-preset-manager .local-stt-preset-empty {
+  color: var(--text-muted);
+  margin: var(--size-4-2) 0;
+}
+
+/* Highlight search matches like the core search pane instead of the theme's
+   bold/accent suggestion styling. */
+.local-stt-preset-manager .suggestion-highlight {
+  background-color: var(--text-highlight-bg);
+  color: inherit;
+  font-weight: inherit;
+}
+
 .local-stt-preset-editor__prompt textarea {
   width: 100%;
 }

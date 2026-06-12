@@ -1,10 +1,16 @@
 import { randomUUID } from 'node:crypto';
 
 import type { App, DropdownComponent } from 'obsidian';
-import { Modal, Notice, Setting } from 'obsidian';
+import {
+  Modal,
+  Notice,
+  prepareSimpleSearch,
+  renderMatches,
+  SearchComponent,
+  Setting,
+} from 'obsidian';
 
 import {
-  describePresetBehavior,
   formatStyleRef,
   LLM_BUILTIN_PRESETS,
   type LlmPreset,
@@ -29,6 +35,7 @@ import {
   type LlmPresetDraft,
   validatePresetDraft,
 } from './preset-draft';
+import { type PresetSearchHit, searchPresetEntries } from './preset-search';
 
 interface PresetManagerModalDependencies {
   getSettings: () => PluginSettings;
@@ -45,6 +52,7 @@ const MAX_PRESETS_MESSAGE = `You can save up to ${LLM_USER_PRESET_MAX_COUNT} pre
 export class PresetManagerModal extends Modal {
   private editor: EditorState | null = null;
   private isOpen = false;
+  private searchQuery = '';
 
   constructor(
     app: App,
@@ -94,11 +102,6 @@ export class PresetManagerModal extends Modal {
   // ------------------------------------------------------------------ list
 
   private renderList(): void {
-    const settings = this.deps.getSettings();
-    const activeRef = resolveActivePresetEntry(
-      settings.llmPostprocessActivePresetRef,
-      settings.llmPostprocessUserPresets,
-    ).ref;
     const reachedMaxCount = this.reachedMaxCount();
 
     new Setting(this.contentEl)
@@ -119,26 +122,67 @@ export class PresetManagerModal extends Modal {
         });
       });
 
-    const entries = listPresetEntries(settings.llmPostprocessUserPresets);
-    this.renderListSection(
-      'Built-in',
-      entries.filter((entry) => entry.isBuiltin),
-      activeRef,
+    const searchEl = this.contentEl.createDiv('search-input-container local-stt-preset-search');
+    const listEl = this.contentEl.createDiv();
+    new SearchComponent(searchEl)
+      .setPlaceholder('Search presets...')
+      .setValue(this.searchQuery)
+      .onChange((value) => {
+        // Re-render only the list so the search input keeps focus.
+        this.searchQuery = value;
+        this.renderListEntries(listEl);
+      });
+    this.renderListEntries(listEl);
+  }
+
+  private renderListEntries(listEl: HTMLElement): void {
+    listEl.empty();
+    const settings = this.deps.getSettings();
+    const activeRef = resolveActivePresetEntry(
+      settings.llmPostprocessActivePresetRef,
+      settings.llmPostprocessUserPresets,
+    ).ref;
+    const query = this.searchQuery.trim();
+    const hits = searchPresetEntries(
+      listPresetEntries(settings.llmPostprocessUserPresets),
+      query === '' ? null : prepareSimpleSearch(query),
     );
-    const userEntries = entries.filter((entry) => !entry.isBuiltin);
-    if (userEntries.length > 0) {
-      this.renderListSection('Your presets', userEntries, activeRef);
+    if (hits.length === 0) {
+      listEl.createEl('p', {
+        cls: 'local-stt-preset-empty',
+        text: 'No presets match your search.',
+      });
+      return;
+    }
+    const builtinHits = hits.filter((hit) => hit.entry.isBuiltin);
+    if (builtinHits.length > 0) {
+      this.renderListSection(listEl, 'Built-in', builtinHits, activeRef);
+    }
+    const userHits = hits.filter((hit) => !hit.entry.isBuiltin);
+    if (userHits.length > 0) {
+      this.renderListSection(listEl, 'Your presets', userHits, activeRef);
     }
   }
 
-  private renderListSection(heading: string, entries: LlmPresetEntry[], activeRef: string): void {
+  private renderListSection(
+    listEl: HTMLElement,
+    heading: string,
+    hits: PresetSearchHit[],
+    activeRef: string,
+  ): void {
     const reachedMaxCount = this.reachedMaxCount();
-    new Setting(this.contentEl).setName(heading).setHeading();
-    for (const entry of entries) {
+    new Setting(listEl).setName(heading).setHeading();
+    for (const hit of hits) {
+      const { entry } = hit;
       const { preset } = entry;
-      const setting = new Setting(this.contentEl)
-        .setName(entry.ref === activeRef ? `${preset.label} ✓` : preset.label)
-        .setDesc(preset.description ?? describePresetBehavior(preset));
+      const name = activeDocument.createDocumentFragment();
+      renderMatches(name, preset.label, hit.labelMatches);
+      if (entry.ref === activeRef) {
+        name.append(' ✓');
+      }
+      const description = activeDocument.createDocumentFragment();
+      renderMatches(description, hit.description, hit.descriptionMatches);
+      const setting = new Setting(listEl).setName(name).setDesc(description);
       setting.settingEl.addClass('local-stt-preset-row');
 
       setting.addExtraButton((button) => {
