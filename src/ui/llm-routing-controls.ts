@@ -143,26 +143,36 @@ export class LlmRoutingControls {
   // open, window focus, and routing changes — points where the outside world may
   // have changed — so it also retries providers whose last load left them
   // unhealthy (e.g. Ollama was started after the first probe).
-  refreshActiveProviders(): void {
+  refreshActiveProviders(options: { forceLocal?: boolean } = {}): Promise<void> {
     const settings = this.dependencies.getSettings();
+    const refreshes: Promise<void>[] = [];
     if (!settings.llmRemoteFeaturesEnabled) {
-      this.recheckModels('ollama');
-      return;
+      refreshes.push(
+        options.forceLocal === true
+          ? this.refreshModels('ollama', { silent: true })
+          : this.recheckModels('ollama'),
+      );
+      return Promise.all(refreshes).then(() => undefined);
     }
     if (settings.llmRouting === 'local' || settings.llmRouting === 'auto') {
-      this.recheckModels('ollama');
+      refreshes.push(
+        options.forceLocal === true
+          ? this.refreshModels('ollama', { silent: true })
+          : this.recheckModels('ollama'),
+      );
     }
     if (settings.llmRouting === 'remote' || settings.llmRouting === 'auto') {
-      this.recheckModels('openrouter');
+      refreshes.push(this.recheckModels('openrouter'));
     }
+    return Promise.all(refreshes).then(() => undefined);
   }
 
-  private recheckModels(providerId: LlmProviderId): void {
+  private recheckModels(providerId: LlmProviderId): Promise<void> {
     const state = this.providers[providerId];
     if (state.modelsLoaded && state.health.kind === 'ready') {
-      return;
+      return Promise.resolve();
     }
-    void this.refreshModels(providerId, { silent: true });
+    return this.refreshModels(providerId, { silent: true });
   }
 
   // Background warm: load a provider's catalog once. Unlike `recheckModels`,

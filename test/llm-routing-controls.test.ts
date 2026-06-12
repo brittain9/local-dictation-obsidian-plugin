@@ -59,6 +59,50 @@ describe('LlmRoutingControls.refreshActiveProviders', () => {
     await flushAsyncWork();
     expect(listModels).toHaveBeenCalledTimes(1);
   });
+
+  it('force-refreshes a healthy Ollama catalog after window focus', async () => {
+    const listModels = vi.fn().mockResolvedValue([{ displayName: 'llama3', id: 'llama3' }]);
+    createProviderMock.mockReturnValue(createFakeLlmProvider({ listModels }));
+    const { controls } = createControls();
+
+    await controls.refreshActiveProviders();
+    await controls.refreshActiveProviders({ forceLocal: true });
+
+    expect(listModels).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not refetch a healthy OpenRouter catalog during local focus refresh', async () => {
+    const listModels = vi
+      .fn()
+      .mockResolvedValue([{ displayName: 'Claude', id: 'anthropic/claude-sonnet-4.5' }]);
+    createProviderMock.mockReturnValue(createFakeLlmProvider({ listModels }));
+    const { controls } = createControls({ llmRouting: 'remote' });
+
+    await controls.refreshActiveProviders();
+    await controls.refreshActiveProviders({ forceLocal: true });
+
+    expect(listModels).toHaveBeenCalledTimes(1);
+  });
+
+  it('deduplicates concurrent forced local refreshes', async () => {
+    let resolveModels: ((models: Array<{ displayName: string; id: string }>) => void) | undefined;
+    const listModels = vi.fn(
+      () =>
+        new Promise<Array<{ displayName: string; id: string }>>((resolve) => {
+          resolveModels = resolve;
+        }),
+    );
+    createProviderMock.mockReturnValue(createFakeLlmProvider({ listModels }));
+    const { controls } = createControls();
+
+    const first = controls.refreshActiveProviders({ forceLocal: true });
+    const second = controls.refreshActiveProviders({ forceLocal: true });
+    await flushAsyncWork();
+    expect(listModels).toHaveBeenCalledTimes(1);
+
+    resolveModels?.([{ displayName: 'llama3', id: 'llama3' }]);
+    await Promise.all([first, second]);
+  });
 });
 
 describe('LlmRoutingControls.testOpenRouter', () => {

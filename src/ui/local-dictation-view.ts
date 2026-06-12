@@ -77,9 +77,7 @@ export class LocalDictationView extends ItemView {
     this.focusRefreshController = new FocusRefreshController({
       now: () => window.performance.now(),
       refreshPresets: () => this.dependencies.synchronizePresets(),
-      refreshProviders: async () => {
-        this.routingControls.refreshActiveProviders();
-      },
+      refreshProviders: () => this.routingControls.refreshActiveProviders({ forceLocal: true }),
     });
     this.routingControls.setInputTracker((element) => {
       this.trackInputFocus(element);
