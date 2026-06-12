@@ -1,5 +1,3 @@
-import { randomUUID } from 'node:crypto';
-
 import type { App, DropdownComponent } from 'obsidian';
 import {
   Modal,
@@ -29,11 +27,12 @@ import {
 } from '../settings/plugin-settings';
 import { ConfirmModal } from './confirm-modal';
 import {
+  applyPresetDraftSave,
   draftFromPreset,
   duplicateLabel,
   emptyPresetDraft,
   type LlmPresetDraft,
-  validatePresetDraft,
+  MAX_PRESETS_MESSAGE,
 } from './preset-draft';
 import { type PresetSearchHit, searchPresetEntries } from './preset-search';
 
@@ -46,8 +45,6 @@ type EditorState =
   | { kind: 'create'; draft: LlmPresetDraft }
   | { kind: 'edit'; draft: LlmPresetDraft; presetId: string }
   | { kind: 'view'; preset: LlmPreset };
-
-const MAX_PRESETS_MESSAGE = `You can save up to ${LLM_USER_PRESET_MAX_COUNT} presets. Delete one first.`;
 
 export class PresetManagerModal extends Modal {
   private editor: EditorState | null = null;
@@ -215,7 +212,13 @@ export class PresetManagerModal extends Modal {
       }
 
       setting.settingEl.addEventListener('click', (event) => {
-        if (event.target instanceof HTMLElement && event.target.closest('button') !== null) {
+        // Ignore clicks on the action icons (Obsidian extra buttons are
+        // divs, not <button>s) so edit/duplicate/delete don't also open
+        // the row.
+        if (
+          event.target instanceof HTMLElement &&
+          event.target.closest('.setting-item-control') !== null
+        ) {
           return;
         }
         this.openEntry(entry);
@@ -232,7 +235,10 @@ export class PresetManagerModal extends Modal {
 
   private openDuplicate(preset: LlmPreset): void {
     const draft = draftFromPreset(preset);
-    draft.label = duplicateLabel(preset.label);
+    draft.label = duplicateLabel(preset.label, [
+      ...LLM_BUILTIN_PRESETS.map((entry) => entry.label),
+      ...this.deps.getSettings().llmPostprocessUserPresets.map((entry) => entry.label),
+    ]);
     this.editor = { kind: 'create', draft };
     this.render();
   }
@@ -415,37 +421,9 @@ export class PresetManagerModal extends Modal {
     const editedId = editor.kind === 'edit' ? editor.presetId : null;
     let validationError: string | null = null;
     await this.deps.mutatePresetState((state) => {
-      const label = editor.draft.label.trim().toLowerCase();
-      if (LLM_BUILTIN_PRESETS.some((preset) => preset.label.toLowerCase() === label)) {
-        validationError = 'That name is used by a built-in preset — choose a different name.';
-        return state;
-      }
-
-      const existingLabels = state.userPresets
-        .filter((preset) => preset.id !== editedId)
-        .map((preset) => preset.label);
-      const result = validatePresetDraft(editor.draft, existingLabels);
-      if (result.kind === 'error') {
-        validationError = result.message;
-        return state;
-      }
-
-      if (editedId !== null) {
-        return {
-          ...state,
-          userPresets: state.userPresets.map((preset) =>
-            preset.id === editedId ? { ...result.preset, id: editedId } : preset,
-          ),
-        };
-      }
-      if (state.userPresets.length >= LLM_USER_PRESET_MAX_COUNT) {
-        validationError = MAX_PRESETS_MESSAGE;
-        return state;
-      }
-      return {
-        ...state,
-        userPresets: [...state.userPresets, { ...result.preset, id: randomUUID() }],
-      };
+      const outcome = applyPresetDraftSave(state, editor.draft, editedId);
+      validationError = outcome.error;
+      return outcome.state;
     });
     if (validationError !== null) {
       errorEl.setText(validationError);
