@@ -283,14 +283,24 @@ export class PresetManagerModal extends Modal {
       .setName('Prompt')
       .setDesc('Sent to the model as the system prompt.');
     promptSetting.settingEl.addClass('local-stt-preset-editor__prompt');
+    const updatePromptSize = (value: string) => {
+      promptSizeEl.setText(
+        `~${Math.ceil(value.length / 4)} tokens (${value.length} chars) — sent with every request`,
+      );
+    };
     promptSetting.addTextArea((text) => {
       text.setValue(draft.prompt);
       text.setDisabled(isBuiltinView);
       text.inputEl.rows = 8;
       text.onChange((value) => {
         draft.prompt = value;
+        updatePromptSize(value);
       });
     });
+    const promptSizeEl = this.contentEl.createEl('p', {
+      cls: 'local-stt-preset-editor__prompt-size',
+    });
+    updatePromptSize(draft.prompt);
 
     let timingDropdown: DropdownComponent | null = null;
     new Setting(this.contentEl)
