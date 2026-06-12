@@ -69,7 +69,10 @@ export default class LocalSttPlugin extends Plugin {
         await this.applySettings(nextSettings, options);
       },
       getSettings: () => this.settings,
-      loadData: async () => this.loadData(),
+      loadData: async (): Promise<unknown> => {
+        const data: unknown = await this.loadData();
+        return data;
+      },
       onExternalChange: () => {
         this.requestLocalDictationSidebarRefresh();
       },
@@ -431,9 +434,7 @@ export default class LocalSttPlugin extends Plugin {
   }
 
   private async updateSettings(nextSettings: PluginSettings): Promise<void> {
-    await this.applySettings(this.requirePresetStateStore().preserveCurrentState(nextSettings), {
-      persist: true,
-    });
+    await this.requirePresetStateStore().commitPreservingPresetState(nextSettings);
   }
 
   private async applySettings(

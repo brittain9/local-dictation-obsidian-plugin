@@ -6,20 +6,14 @@ import {
   readLlmPresetState,
   withLlmPresetState,
 } from '../src/settings/llm-preset-state';
-import {
-  DEFAULT_PLUGIN_SETTINGS,
-  type PluginSettings,
-} from '../src/settings/plugin-settings';
+import { DEFAULT_PLUGIN_SETTINGS, type PluginSettings } from '../src/settings/plugin-settings';
 import { createUserPreset } from './fixtures/llm';
 
 function settings(overrides: Partial<PluginSettings> = {}): PluginSettings {
   return { ...DEFAULT_PLUGIN_SETTINGS, ...overrides };
 }
 
-function createStore(args: {
-  current?: PluginSettings;
-  loadData?: () => Promise<unknown>;
-}) {
+function createStore(args: { current?: PluginSettings; loadData?: () => Promise<unknown> }) {
   let current = args.current ?? settings();
   const commit = vi.fn(async (next: PluginSettings) => {
     current = next;
@@ -76,12 +70,8 @@ describe('LLM preset state helpers', () => {
     const base = { activePresetRef: 'user:a', userPresets: [first, second] };
 
     expect(areLlmPresetStatesEqual(base, structuredClone(base))).toBe(true);
-    expect(
-      areLlmPresetStatesEqual(base, { ...base, activePresetRef: 'user:b' }),
-    ).toBe(false);
-    expect(
-      areLlmPresetStatesEqual(base, { ...base, userPresets: [second, first] }),
-    ).toBe(false);
+    expect(areLlmPresetStatesEqual(base, { ...base, activePresetRef: 'user:b' })).toBe(false);
+    expect(areLlmPresetStatesEqual(base, { ...base, userPresets: [second, first] })).toBe(false);
     expect(
       areLlmPresetStatesEqual(base, {
         ...base,
@@ -91,10 +81,7 @@ describe('LLM preset state helpers', () => {
     expect(
       areLlmPresetStatesEqual(base, {
         ...base,
-        userPresets: [
-          { ...first, overrides: { ...first.overrides, temperature: 0.5 } },
-          second,
-        ],
+        userPresets: [{ ...first, overrides: { ...first.overrides, temperature: 0.5 } }, second],
       }),
     ).toBe(false);
   });
@@ -234,6 +221,25 @@ describe('LlmPresetStateStore.synchronize', () => {
       expect.any(Error),
     );
   });
+
+  it('preserves current state when persisted data is not an object', async () => {
+    const current = settings({
+      llmPostprocessUserPresets: [createUserPreset({ id: 'keep' })],
+    });
+    const fixture = createStore({
+      current,
+      loadData: async () => '{ incomplete JSON write',
+    });
+
+    await fixture.store.synchronize();
+
+    expect(fixture.getCurrent()).toBe(current);
+    expect(fixture.commit).not.toHaveBeenCalled();
+    expect(fixture.warn).toHaveBeenCalledWith(
+      'Failed to synchronize presets from data.json',
+      expect.any(Error),
+    );
+  });
 });
 
 describe('LlmPresetStateStore.mutate', () => {
@@ -289,7 +295,7 @@ describe('LlmPresetStateStore.mutate', () => {
     });
   });
 
-  it('preserves current presets when an ordinary save starts from stale settings', () => {
+  it('preserves current presets when an ordinary save starts from stale settings', async () => {
     const currentPreset = createUserPreset({ id: 'current' });
     const fixture = createStore({
       current: settings({
@@ -303,12 +309,43 @@ describe('LlmPresetStateStore.mutate', () => {
       llmPostprocessUserPresets: [],
     });
 
-    const preserved = fixture.store.preserveCurrentState(stale);
+    await fixture.store.commitPreservingPresetState(stale);
 
-    expect(preserved.developerMode).toBe(true);
-    expect(readLlmPresetState(preserved)).toEqual({
+    expect(fixture.getCurrent().developerMode).toBe(true);
+    expect(readLlmPresetState(fixture.getCurrent())).toEqual({
       activePresetRef: 'user:current',
       userPresets: [currentPreset],
     });
+  });
+
+  it('serializes an ordinary save behind an active external synchronization', async () => {
+    const externalPreset = createUserPreset({ id: 'external' });
+    let resolveLoad: ((value: unknown) => void) | undefined;
+    const fixture = createStore({
+      loadData: async () =>
+        new Promise<unknown>((resolve) => {
+          resolveLoad = resolve;
+        }),
+    });
+
+    const synchronization = fixture.store.synchronize();
+    await Promise.resolve();
+    const ordinarySave = fixture.store.commitPreservingPresetState(
+      settings({ developerMode: true }),
+    );
+
+    resolveLoad?.({
+      ...DEFAULT_PLUGIN_SETTINGS,
+      llmPostprocessActivePresetRef: 'user:external',
+      llmPostprocessUserPresets: [externalPreset],
+    });
+    await Promise.all([synchronization, ordinarySave]);
+
+    expect(fixture.getCurrent().developerMode).toBe(true);
+    expect(readLlmPresetState(fixture.getCurrent())).toEqual({
+      activePresetRef: 'user:external',
+      userPresets: [externalPreset],
+    });
+    expect(fixture.commit).toHaveBeenLastCalledWith(expect.any(Object), { persist: true });
   });
 });

@@ -240,7 +240,7 @@ export class LlmRoutingControls {
       return;
     }
     await this.dependencies.persist({ ...this.dependencies.getSettings(), llmRouting: routing });
-    this.refreshActiveProviders();
+    void this.refreshActiveProviders();
   }
 
   private renderAutoControls(parent: HTMLElement, settings: PluginSettings): void {

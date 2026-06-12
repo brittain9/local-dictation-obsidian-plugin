@@ -1,4 +1,5 @@
 import type { LlmPreset } from '../llm/presets';
+import { isRecord } from '../shared/type-guards';
 import { type PluginSettings, resolvePluginSettings } from './plugin-settings';
 
 export interface LlmPresetState {
@@ -88,8 +89,14 @@ export class LlmPresetStateStore {
     });
   }
 
-  preserveCurrentState(nextSettings: PluginSettings): PluginSettings {
-    return withLlmPresetState(nextSettings, readLlmPresetState(this.dependencies.getSettings()));
+  commitPreservingPresetState(nextSettings: PluginSettings): Promise<void> {
+    return this.enqueue(async () => {
+      const next = withLlmPresetState(
+        nextSettings,
+        readLlmPresetState(this.dependencies.getSettings()),
+      );
+      await this.dependencies.commit(next, { persist: true });
+    });
   }
 
   private enqueue(operation: () => Promise<void>): Promise<void> {
@@ -103,7 +110,11 @@ export class LlmPresetStateStore {
 
   private async synchronizeNow(): Promise<void> {
     try {
-      const persisted = resolvePluginSettings(await this.dependencies.loadData());
+      const raw = await this.dependencies.loadData();
+      if (!isRecord(raw)) {
+        throw new Error('Persisted plugin data is not an object');
+      }
+      const persisted = resolvePluginSettings(raw);
       const persistedState = readLlmPresetState(persisted);
       const currentSettings = this.dependencies.getSettings();
       if (areLlmPresetStatesEqual(readLlmPresetState(currentSettings), persistedState)) {

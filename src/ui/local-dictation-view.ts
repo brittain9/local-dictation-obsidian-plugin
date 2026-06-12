@@ -77,7 +77,13 @@ export class LocalDictationView extends ItemView {
     this.focusRefreshController = new FocusRefreshController({
       now: () => window.performance.now(),
       refreshPresets: () => this.dependencies.synchronizePresets(),
-      refreshProviders: () => this.routingControls.refreshActiveProviders({ forceLocal: true }),
+      refreshProviders: () => {
+        const settings = this.dependencies.getSettings();
+        if (!settings.llmFeaturesEnabled || settings.llmPostprocessMode === 'off') {
+          return Promise.resolve();
+        }
+        return this.routingControls.refreshActiveProviders({ forceLocal: true });
+      },
     });
     this.routingControls.setInputTracker((element) => {
       this.trackInputFocus(element);
@@ -103,7 +109,7 @@ export class LocalDictationView extends ItemView {
       this.dependencies.subscribeLlmCleanupFailure?.(() => {
         this.refresh();
       }) ?? null;
-    this.routingControls.refreshActiveProviders();
+    void this.routingControls.refreshActiveProviders();
     this.registerDomEvent(this.contentEl.win, 'focus', () => {
       this.focusRefreshController.request();
     });
@@ -200,7 +206,9 @@ export class LocalDictationView extends ItemView {
             ...current,
             llmPostprocessMode: value ? current.llmPostprocessLastEnabledMode : 'off',
           });
-          this.routingControls.refreshActiveProviders();
+          if (value) {
+            void this.routingControls.refreshActiveProviders({ forceLocal: true });
+          }
         });
       });
   }
