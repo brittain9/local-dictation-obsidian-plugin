@@ -20,6 +20,7 @@ import {
 } from '../settings/setting-helpers';
 import type { PluginLogger } from '../shared/plugin-logger';
 import { ConfirmModal } from './confirm-modal';
+import { FocusRefreshController } from './focus-refresh-controller';
 import { formatCleanupFailureBanner } from './llm-provider-ui';
 import { LlmRoutingControls } from './llm-routing-controls';
 import { INLINE_STATUS_PRESENTATION } from './llm-status';
@@ -54,6 +55,7 @@ export class LocalDictationView extends ItemView {
   private focusedInput: HTMLElement | null = null;
   private narrowObserver: ResizeObserver | null = null;
   private deferredRenderPending = false;
+  private readonly focusRefreshController: FocusRefreshController;
   private readonly routingControls: LlmRoutingControls;
   private unsubscribeLlmCleanupFailure: (() => void) | null = null;
 
@@ -70,6 +72,13 @@ export class LocalDictationView extends ItemView {
       persist: (settings, options) => this.persistSettings(settings, options),
       requestRerender: () => {
         this.scheduleRender();
+      },
+    });
+    this.focusRefreshController = new FocusRefreshController({
+      now: () => window.performance.now(),
+      refreshPresets: () => this.dependencies.synchronizePresets(),
+      refreshProviders: async () => {
+        this.routingControls.refreshActiveProviders();
       },
     });
     this.routingControls.setInputTracker((element) => {
@@ -98,7 +107,7 @@ export class LocalDictationView extends ItemView {
       }) ?? null;
     this.routingControls.refreshActiveProviders();
     this.registerDomEvent(this.contentEl.win, 'focus', () => {
-      this.routingControls.refreshActiveProviders();
+      this.focusRefreshController.request();
     });
   }
 
