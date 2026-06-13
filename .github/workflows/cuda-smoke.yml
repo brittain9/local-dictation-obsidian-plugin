@@ -11,6 +11,12 @@ name: cuda-smoke
 # timing summary on the run page to compare experiments.
 on:
   workflow_dispatch:
+  # TEMPORARY (remove before merge): a new workflow_dispatch workflow isn't
+  # triggerable until it exists on the default branch, so during #143 validation
+  # this branch-scoped push trigger lets the smoke run fire on every push.
+  push:
+    branches:
+      - feat/faster-cuda-release-builds
 
 permissions:
   contents: read
