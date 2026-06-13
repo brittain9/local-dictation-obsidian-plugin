@@ -310,7 +310,14 @@ jobs:
         with:
           cuda: '13.2.0'
           method: network
-          sub-packages: '["nvcc", "cudart", "cublas", "cublas_dev", "cufft", "visual_studio_integration"]'
+          # CUDA 13 split the CRT headers out of cudart into a standalone `crt`
+          # subpackage, so `crt` is required for include/crt/host_config.h (which
+          # cuda_runtime.h pulls in) — without it CMake's CUDA compiler probe
+          # fails with C1083. `thrust` ships include/cccl (Thrust/CUB), which
+          # ggml-cuda's kernels include. Both were implicit under CUDA 12.9's
+          # cudart; keep the targeted list (Windows full-toolkit installs are
+          # slow) but don't drop crt/thrust. See #139.
+          sub-packages: '["nvcc", "crt", "cudart", "cublas", "cublas_dev", "cufft", "thrust", "visual_studio_integration"]'
 
       - name: Build sidecar
         shell: pwsh
