@@ -340,10 +340,11 @@ jobs:
           # Without them CMake's CUDA compiler probe fails (C1083 on host_config.h,
           # then "cannot find the path" for nvvm/bin). Keep the targeted list —
           # Windows full-toolkit installs are slow — but don't drop these. See #139.
-          # cuFFT is never linked by ggml/whisper and cublas_dev is redundant (the
-          # runtime cublas package supplies the import lib), so both are trimmed to
-          # shave the install step on every run. See #143.
-          sub-packages: '["nvcc", "crt", "nvvm", "cudart", "cublas", "thrust", "visual_studio_integration"]'
+          # cuFFT is never linked by ggml/whisper, so it's trimmed to shave the
+          # install step. cublas_dev stays: it ships cublas.lib/cublasLt.lib, the
+          # MSVC import libs the final link needs (LNK1181 without it — the runtime
+          # cublas package ships only the DLLs). See #143.
+          sub-packages: '["nvcc", "crt", "nvvm", "cudart", "cublas", "cublas_dev", "thrust", "visual_studio_integration"]'
 
       - name: Build sidecar
         shell: pwsh

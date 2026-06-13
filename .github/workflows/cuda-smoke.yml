@@ -91,19 +91,61 @@ jobs:
           cache-shared-key: sidecar-windows-x86_64-cuda
           cache-on-failure: 'false'
 
+      # Cache the EXTRACTED CUDA toolkit dir so we skip the ~3-5 min Jimver install
+      # on every warm run. CMake's CUDA language support only needs nvcc-on-PATH +
+      # CUDA_PATH; it never reads the VS BuildCustomizations .props the installer
+      # drops outside CUDA_PATH, so caching CUDA_PATH alone is sufficient. Key busts
+      # on toolkit version (env) OR sub-package set (the committed JSON). See #143.
+      - name: Restore CUDA toolkit
+        id: cuda-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v13.2
+          key: cuda-${{ runner.os }}-${{ env.CUDA_TOOLKIT_VERSION }}-${{ hashFiles('.github/cuda-windows-subpackages.json') }}
+
+      - name: Read CUDA sub-packages
+        if: steps.cuda-cache.outputs.cache-hit != 'true'
+        id: cuda-subpkgs
+        shell: pwsh
+        run: |
+          $json = (Get-Content -Raw .github/cuda-windows-subpackages.json) -replace '\s', ''
+          "list=$json" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+
       - name: Install CUDA toolkit
+        if: steps.cuda-cache.outputs.cache-hit != 'true'
         uses: Jimver/cuda-toolkit@v0.2.35
         with:
           cuda: ${{ env.CUDA_TOOLKIT_VERSION }}
           method: network
-          # Keep in sync with release.yml's Windows CUDA install. See #139, #143.
-          sub-packages: '["nvcc", "crt", "nvvm", "cudart", "cublas", "thrust", "visual_studio_integration"]'
+          sub-packages: ${{ steps.cuda-subpkgs.outputs.list }}
+
+      # On a hit we skip Jimver, so replicate the three env vars + PATH entry it
+      # would have exported (verified against Jimver/cuda-toolkit src/update-path.ts).
+      - name: Set CUDA env from cache
+        if: steps.cuda-cache.outputs.cache-hit == 'true'
+        shell: pwsh
+        run: |
+          $cudaPath = 'C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v13.2'
+          "CUDA_PATH=$cudaPath" | Out-File -FilePath $env:GITHUB_ENV -Append
+          "CUDA_PATH_V13_2=$cudaPath" | Out-File -FilePath $env:GITHUB_ENV -Append
+          "CUDA_PATH_VX_Y=CUDA_PATH_V13_2" | Out-File -FilePath $env:GITHUB_ENV -Append
+          "$cudaPath\bin" | Out-File -FilePath $env:GITHUB_PATH -Append
 
       - name: Build sidecar
         shell: pwsh
         env:
           CARGO_TIMINGS: '1'
         run: npm run build:sidecar:cuda:windows:release
+
+      # Save only after a green build, and only on a miss. Mirrors the build
+      # cache's cache-on-failure:false — a failed/partial install never poisons
+      # the (immutable-keyed) toolkit cache.
+      - name: Save CUDA toolkit
+        if: success() && steps.cuda-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v13.2
+          key: ${{ steps.cuda-cache.outputs.cache-primary-key }}
 
       - name: Upload cargo timings
         if: always()

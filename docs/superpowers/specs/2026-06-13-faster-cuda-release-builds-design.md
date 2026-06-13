@@ -98,13 +98,36 @@ must run bindgen — which is why `setup-sidecar-rust` configures `LIBCLANG_PATH
 Windows. This experiment is rejected.
 
 ### 7. Trim unused Windows CUDA sub-packages
-Drop `cufft` and `cublas_dev` from the `Jimver/cuda-toolkit` `sub-packages` list on the
-Windows CUDA leg (release + smoke). cuFFT is never linked by ggml/whisper (ggml-cuda
-links only `CUDA::cublas` + `CUDA::cublasLt`; `whisper-rs-sys` build.rs links
-`cublas`/`cublasLt`/`cudart`/`cuda`), and the runtime `cublas` package already supplies
-the import lib, making `cublas_dev` redundant. This shaves the toolkit-install step on
-**every** run (warm and cold) with zero runtime/perf impact. Validate via smoke: if the
-final link fails on a missing cublas import lib, restore `cublas_dev` only.
+Drop `cufft` from the `Jimver/cuda-toolkit` `sub-packages` list on the Windows CUDA leg
+(release + smoke). cuFFT is never linked by ggml/whisper (ggml-cuda links only
+`CUDA::cublas` + `CUDA::cublasLt`; `whisper-rs-sys` build.rs links
+`cublas`/`cublasLt`/`cudart`/`cuda`). This shaves the toolkit-install step on **every**
+run with zero runtime/perf impact.
+
+`cublas_dev` is **kept** (validated in smoke run 27471266165): dropping it broke the
+final link with `LNK1181: cannot open input file 'cublas.lib'`. On Windows the runtime
+`cublas` package ships only the DLLs; the MSVC import libs (`cublas.lib`,
+`cublasLt.lib`) come from `cublas_dev`, which the link references by bare name via the
+`CUDA\v13.2\lib\x64` `/LIBPATH`. The earlier "redundant" assumption was wrong.
+
+### 8. Cache the extracted Windows CUDA toolkit
+The toolkit-install step (`Jimver/cuda-toolkit`, ~170-327s, network-variable) became the
+dominant Windows cost once the build cache was healthy (warm build is ~87s). Cache the
+extracted `CUDA_PATH` dir (`C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v13.2`)
+with `actions/cache` and skip Jimver on a hit. CMake's CUDA language support only needs
+`nvcc` on PATH + `CUDA_PATH`; it never reads the VS BuildCustomizations `.props` the
+installer drops outside `CUDA_PATH`, so caching `CUDA_PATH` alone suffices (~2.5-3.5 GiB,
+well within the ~10 GiB repo budget with the dead-cache cleanup in place).
+
+Keying: `cuda-<os>-<CUDA_TOOLKIT_VERSION>-<hash of .github/cuda-windows-subpackages.json>`.
+The sub-package set lives in that committed JSON (single source of truth, also fed to
+Jimver's `sub-packages` input), so the key busts on a version **or** sub-package change —
+no invisible-version trap. Use the `restore`/`save` split, not bare `actions/cache@v4`:
+`save` is gated on `success()` + cache-miss so a failed/partial install never poisons the
+immutable-keyed toolkit cache (mirrors the build cache's `cache-on-failure: false`). On a
+hit, replay the three env vars + PATH entry Jimver would have set (verified against its
+`src/update-path.ts`). Prototyped in `cuda-smoke.yml` first; ported to release once the
+warm-hit install time is measured.
 
 ## Release timing analytics (new requirement)
 
