@@ -4,3 +4,7 @@
 declare module 'virtual:pcm-recorder-worklet-source' {
   export const PCM_RECORDER_WORKLET_SOURCE: string;
 }
+
+declare module 'virtual:build-mode' {
+  export const IS_PRODUCTION_BUILD: boolean;
+}

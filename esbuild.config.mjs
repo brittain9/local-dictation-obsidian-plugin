@@ -27,7 +27,7 @@ const mainBuildOptions = {
   treeShaking: true,
   outfile: 'main.js',
   external: externalModules,
-  plugins: [pcmRecorderWorkletSourcePlugin()],
+  plugins: [buildModePlugin(), pcmRecorderWorkletSourcePlugin()],
 };
 
 async function buildAll() {
@@ -50,6 +50,31 @@ main().catch((error) => {
   console.error(error);
   process.exitCode = 1;
 });
+
+function buildModePlugin() {
+  const buildModeId = 'virtual:build-mode';
+
+  return {
+    name: 'build-mode',
+    setup(buildContext) {
+      buildContext.onResolve({ filter: /^virtual:build-mode$/ }, () => ({
+        namespace: 'build-mode',
+        path: buildModeId,
+      }));
+
+      buildContext.onLoad(
+        {
+          filter: /^virtual:build-mode$/,
+          namespace: 'build-mode',
+        },
+        () => ({
+          contents: `export const IS_PRODUCTION_BUILD = ${JSON.stringify(isProduction)};`,
+          loader: 'js',
+        }),
+      );
+    },
+  };
+}
 
 function pcmRecorderWorkletSourcePlugin() {
   const workletSourceId = 'virtual:pcm-recorder-worklet-source';

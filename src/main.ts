@@ -1,5 +1,5 @@
 import { dirname, join } from 'node:path';
-
+import { IS_PRODUCTION_BUILD } from 'virtual:build-mode';
 import { FileSystemAdapter, Notice, Platform, Plugin } from 'obsidian';
 
 import { AudioCaptureStream } from './audio/audio-capture-stream';
@@ -25,7 +25,7 @@ import {
 } from './settings/plugin-settings';
 import { LocalSttSettingTab } from './settings/settings-tab';
 import {
-  openSidecarInstallModal,
+  openSidecarUpdateModal,
   type SidecarInstallActionDeps,
 } from './settings/sidecar-settings-section';
 import { SetupWizardModal } from './setup/setup-wizard-modal';
@@ -36,7 +36,6 @@ import { SidecarConnection } from './sidecar/sidecar-connection';
 import { formatSidecarExecutableName } from './sidecar/sidecar-executable';
 import { SidecarInstallManager } from './sidecar/sidecar-install-manager';
 import {
-  type ResolvedSidecarExecutable,
   type ResolveSidecarExecutablePathOptions,
   resolveSidecarExecutablePath,
   SidecarNotInstalledError,
@@ -579,71 +578,85 @@ export default class LocalSttPlugin extends Plugin {
   }
 
   /**
-   * On startup, compare the installed sidecar's recorded version against the
-   * current plugin version and prompt for a one-click reinstall when they
-   * differ. Obsidian updates the plugin files but never the separately-
-   * installed sidecar, so the two silently fall out of sync after an update.
-   * Self-contained: every failure path (including no sidecar installed) is
-   * swallowed so this can never disrupt startup.
+   * On startup, compare every release-installed sidecar against the current
+   * plugin version and prompt for a one-click update when any differ. Obsidian
+   * updates the plugin files but never the separately-installed sidecars, so
+   * they silently fall out of sync after an update. Self-contained: every
+   * failure path is swallowed so this can never disrupt startup.
    */
   private async checkSidecarVersionDrift(): Promise<void> {
-    let pluginDirectory: string;
-    let resolved: ResolvedSidecarExecutable;
-
-    try {
-      pluginDirectory = await this.resolvePluginDirectoryPath();
-      resolved = await resolveSidecarExecutablePath(
-        this.buildSidecarResolutionOptions(pluginDirectory),
-      );
-    } catch (error) {
-      // No installed sidecar (or an unreadable plugin dir): the setup and
-      // health paths own that case — there is no installed version to compare.
-      if (!(error instanceof SidecarNotInstalledError)) {
-        this.logger.error('sidecar', 'version drift check could not resolve sidecar', error);
-      }
+    if (!IS_PRODUCTION_BUILD) {
+      this.logger.debug('sidecar', 'version drift check skipped for development plugin build');
       return;
     }
 
-    // Only a release-installed sidecar carries an install.json version. Dev
-    // builds and explicit path overrides are intentionally exempt.
-    if (resolved.source !== 'installed' || resolved.variant === null) return;
+    // A custom executable is managed outside the plugin's installer. Installed
+    // bin/* variants may still exist, but prompting to update them would be
+    // unrelated to the executable the user chose.
+    if (this.settings.sidecarPathOverride.trim().length > 0) {
+      this.logger.debug('sidecar', 'version drift check skipped for sidecar path override');
+      return;
+    }
 
-    let drift: SidecarVersionDrift | null;
+    let pluginDirectory: string;
+    try {
+      pluginDirectory = await this.resolvePluginDirectoryPath();
+    } catch (error) {
+      this.logger.error('sidecar', 'version drift check could not resolve plugin directory', error);
+      return;
+    }
+
+    let drift: SidecarVersionDrift[];
     try {
       drift = await detectSidecarVersionDrift({
         pluginDirectory,
         pluginVersion: this.manifest.version,
-        variant: resolved.variant,
+        preferredVariant: this.settings.accelerationPreference === 'cpu_only' ? 'cpu' : 'cuda',
+        supportsCuda: !Platform.isMacOS,
       });
     } catch (error) {
       this.logger.error('sidecar', 'version drift check failed', error);
       return;
     }
 
-    if (drift === null) return;
+    if (drift.length === 0) return;
 
     this.logger.debug(
       'sidecar',
-      `sidecar version drift: installed ${drift.installedVersion}, plugin ${drift.pluginVersion}`,
+      `sidecar version drift: ${drift
+        .map((entry) => `${entry.variant} ${entry.installedVersion}`)
+        .join(', ')}, plugin ${this.manifest.version}`,
     );
     this.notifySidecarVersionDrift(drift, pluginDirectory);
   }
 
-  private notifySidecarVersionDrift(drift: SidecarVersionDrift, pluginDirectory: string): void {
+  private notifySidecarVersionDrift(
+    drift: readonly SidecarVersionDrift[],
+    pluginDirectory: string,
+  ): void {
+    const variants = drift.map((entry) => entry.variant);
+    const engineLabel =
+      variants.length === 2
+        ? 'CPU and CUDA speech engines are'
+        : variants[0] === 'cuda'
+          ? 'CUDA speech engine is'
+          : 'speech engine is';
     const notice = new Notice(
       createFragment((fragment) => {
         fragment.createDiv({
-          text: `Local Dictation updated to ${drift.pluginVersion}, but its speech engine is still ${drift.installedVersion}. Reinstall to keep them in sync.`,
+          text: `Local Dictation updated to ${this.manifest.version}, but the installed ${engineLabel} out of date. Update now to keep them in sync.`,
         });
         fragment
-          .createEl('a', { href: '#', text: 'Reinstall speech engine' })
+          .createEl('a', {
+            href: '#',
+            text: variants.length === 2 ? 'Update speech engines' : 'Update speech engine',
+          })
           .addEventListener('click', (event) => {
             event.preventDefault();
             notice.hide();
-            openSidecarInstallModal(this.buildSidecarInstallActionDeps(), {
-              intent: 'reinstall',
+            openSidecarUpdateModal(this.buildSidecarInstallActionDeps(), {
               pluginDirectory,
-              variant: drift.variant,
+              variants,
             });
           });
       }),

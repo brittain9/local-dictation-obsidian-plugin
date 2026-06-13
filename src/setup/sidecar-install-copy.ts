@@ -82,3 +82,24 @@ export function getInstallCopy(variant: SidecarInstallVariant, intent: InstallIn
   if (intent === 'reinstall') return CPU_REINSTALL;
   return CPU_INSTALL;
 }
+
+export function getSidecarUpdateCopy(variants: readonly SidecarInstallVariant[]): InstallCopy {
+  const hasCpu = variants.includes('cpu');
+  const hasCuda = variants.includes('cuda');
+  const engineLabel =
+    hasCpu && hasCuda
+      ? 'CPU and CUDA speech engines'
+      : hasCuda
+        ? 'CUDA speech engine'
+        : 'speech engine';
+  const plural = hasCpu && hasCuda;
+
+  return {
+    bodyText: `Download the current ${engineLabel} to match this version of Local Dictation. Existing installs are replaced in place.`,
+    primaryButtonText: plural ? 'Update speech engines' : 'Update speech engine',
+    successNotice: plural
+      ? 'Local Dictation speech engines updated and restarted.'
+      : 'Local Dictation speech engine updated and restarted.',
+    title: plural ? 'Update speech engines' : 'Update speech engine',
+  };
+}
