@@ -137,7 +137,7 @@ export class SidecarSettingsSection {
         name: 'CUDA library path',
         desc: 'Optional library search path for the sidecar (Flatpak, custom CUDA installs).',
         key: 'cudaLibraryPath',
-        placeholder: '/run/host/usr/local/cuda-12.9/targets/x86_64-linux/lib:/run/host/usr/lib64',
+        placeholder: '/run/host/usr/local/cuda-13.2/targets/x86_64-linux/lib:/run/host/usr/lib64',
       });
     }
 

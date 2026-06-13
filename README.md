@@ -24,7 +24,7 @@ Private, on-device speech-to-text for Obsidian. Dictate notes with Whisper or Co
 | Linux | CUDA for Whisper and Cohere on Turing-or-newer NVIDIA GPUs. Flatpak installs need a [GPU setup step](docs/guides/linux-flatpak-gpu-setup.md). |
 | Windows | CUDA for Whisper and Cohere on Turing-or-newer NVIDIA GPUs — see [Windows CUDA setup](docs/guides/windows-cuda-setup.md). |
 
-CPU works everywhere with no extra dependencies. CUDA acceleration requires an RTX 20-series / GTX 16-series or newer GPU with a driver compatible with CUDA 12.9; Cohere on CUDA also needs cuDNN 9 (falls back to CPU without it). Full details in [Platform Runtime Dependencies](docs/release/platform-runtime-dependencies.md).
+CPU works everywhere with no extra dependencies. CUDA acceleration requires an RTX 20-series / GTX 16-series or newer GPU with a driver compatible with CUDA 13.x (R580 or newer); Cohere on CUDA also needs cuDNN 9 for CUDA 13 (falls back to CPU without it). Full details in [Platform Runtime Dependencies](docs/release/platform-runtime-dependencies.md).
 
 > **Linux distro coverage.** macOS and Windows are the primary tested targets. On Linux, the plugin is regularly used on Fedora 44; other distributions (Arch, Ubuntu, Debian, etc.) should work but are not routinely verified. If you hit a problem on your distro, please open an issue with details.
 

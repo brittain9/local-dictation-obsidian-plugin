@@ -4,7 +4,7 @@
     "win32": ["onnxruntime_providers_shared.dll", "onnxruntime_providers_cuda.dll"]
   },
   "runtime": {
-    "linux": ["libcudart.so.12", "libcublas.so.12", "libcublasLt.so.12", "libcufft.so.11"],
-    "win32": ["cudart64_12.dll", "cublas64_12.dll", "cublasLt64_12.dll", "cufft64_11.dll"]
+    "linux": ["libcudart.so.13", "libcublas.so.13", "libcublasLt.so.13", "libcufft.so.12"],
+    "win32": ["cudart64_13.dll", "cublas64_13.dll", "cublasLt64_13.dll", "cufft64_12.dll"]
   }
 }

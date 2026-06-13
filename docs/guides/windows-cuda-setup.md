@@ -14,8 +14,8 @@ Windows is simpler than Linux Flatpak because there is no sandbox and no `LD_LIB
 ## Requirements
 
 - 64-bit Windows with desktop Obsidian
-- NVIDIA Turing-or-newer GPU with a driver compatible with CUDA 12.x
-- Published CUDA release archive, or CUDA Toolkit `12.9` with `nvcc` if building from source
+- NVIDIA Turing-or-newer GPU with a driver compatible with CUDA 13.x (R580 or newer)
+- Published CUDA release archive, or CUDA Toolkit `13.2` with `nvcc` if building from source
 - cuDNN 9.x runtime libraries if you want Cohere CUDA
 
 ### Cohere CUDA Runtime Requirements
@@ -27,12 +27,12 @@ Whisper CUDA and Cohere CUDA are not identical:
 
 Current ONNX Runtime CUDA binaries for this repo expect:
 
-- CUDA 12.x userspace libraries bundled in the published CUDA archive
+- CUDA 13.x userspace libraries bundled in the published CUDA archive
 - cuDNN 9.x userspace libraries
 
 If those libraries are missing or mismatched, the sidecar reports that explicitly in Settings and falls back to CPU for Cohere instead of silently pretending CUDA worked.
 
-CUDA 13 is not a drop-in replacement for source builds. The release archive avoids this by shipping the CUDA 12 runtime DLLs (`cudart64_12.dll`, `cublas64_12.dll`, etc.) next to the sidecar. If you build from source, install CUDA 12.9 alongside any newer toolkit; the two versions coexist.
+The release archive ships the CUDA 13 runtime DLLs (`cudart64_13.dll`, `cublas64_13.dll`, etc.) next to the sidecar, so release users do not need the CUDA Toolkit. If you build from source, you need CUDA Toolkit 13.2 with `nvcc` on the search path.
 
 ## Step 1: Verify Runtime Dependencies
 
@@ -50,14 +50,14 @@ where.exe cudnn64_9.dll
 
 ## Step 2: Verify The Toolkit For Source Builds
 
-Skip this step when using a published release archive. If you are building from source, open PowerShell and confirm CUDA Toolkit 12.9 is on the normal search path:
+Skip this step when using a published release archive. If you are building from source, open PowerShell and confirm CUDA Toolkit 13.2 is on the normal search path:
 
 ```powershell
 nvcc --version
-where.exe cudart64_12.dll
+where.exe cudart64_13.dll
 ```
 
-If `nvcc` or `cudart64_12.dll` cannot be found, fix the CUDA toolkit install before you build.
+If `nvcc` or `cudart64_13.dll` cannot be found, fix the CUDA toolkit install before you build.
 
 ## Step 3: Build The CUDA Sidecar From Source
 
@@ -101,7 +101,7 @@ The Cohere decoder still runs on CPU by design. That constraint comes from ONNX 
 The sidecar could not load the CUDA runtime or could not see a CUDA device. Check:
 
 - the CUDA release archive's runtime DLLs are still next to `local-dictation-sidecar.exe`
-- for source builds, `where.exe cudart64_12.dll`
+- for source builds, `where.exe cudart64_13.dll`
 - `nvidia-smi`
 - that the plugin is pointed at the CUDA sidecar, not the default CPU dev build
 
