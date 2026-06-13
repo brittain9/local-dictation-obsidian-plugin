@@ -82,9 +82,15 @@ re-deflates high-entropy data for ~zero gain. Set `compression-level: 0` (store)
 build jobs, so the release gate is unchanged — builds just start ~1-3 min sooner.
 
 ### 6. Windows/Linux build parity
-In `build-cuda.ps1`, set `WHISPER_DONT_GENERATE_BINDINGS=1`, `WHISPER_CCACHE=OFF`,
-`GGML_CCACHE=OFF` (and the matching `CMAKE_ARGS`) to match `build-cuda.sh`. Removes a
-bindgen/libclang dependency and a no-op ccache probe on Windows.
+In `build-cuda.ps1`, set `WHISPER_CCACHE=OFF`, `GGML_CCACHE=OFF` (and the matching
+`CMAKE_ARGS`) to match `build-cuda.sh`. Removes a no-op ccache probe on Windows.
+
+NOTE (validated in smoke run 27469732553): do **not** set
+`WHISPER_DONT_GENERATE_BINDINGS=1` on Windows, despite #143's "small cleanup" list
+suggesting it. whisper-rs-sys' vendored bindings are Linux-ABI; reusing them on Windows
+makes `bindings.rs`' compile-time struct-size assertions overflow (rustc E0080). Windows
+must run bindgen — which is why `setup-sidecar-rust` configures `LIBCLANG_PATH` only on
+Windows. This experiment is rejected.
 
 ## Release timing analytics (new requirement)
 

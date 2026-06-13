@@ -42,11 +42,15 @@ $env:CMAKE_BUILD_PARALLEL_LEVEL = "$jobs"
 # Pin the ONNX Runtime CUDA execution-provider major (see build-cuda.sh).
 if (-not $env:ORT_CUDA_VERSION) { $env:ORT_CUDA_VERSION = '13' }
 
-# Match build-cuda.sh: use whisper-rs-sys' vendored bindings instead of running
-# bindgen (no libclang dependency at build time), and disable the whisper/ggml
-# ccache probe (no ccache on the runner; the rust-cache target-cuda restore is
-# what makes warm builds fast, not ccache).
-$env:WHISPER_DONT_GENERATE_BINDINGS = '1'
+# Disable the whisper/ggml ccache probe (no ccache on the runner; the rust-cache
+# target-cuda restore is what makes warm builds fast, not ccache), matching
+# build-cuda.sh.
+#
+# NOTE: do NOT set WHISPER_DONT_GENERATE_BINDINGS=1 here. Unlike Linux, Windows
+# must run bindgen: whisper-rs-sys' vendored bindings are Linux-ABI, so reusing
+# them on Windows makes bindings.rs' compile-time struct-size assertions overflow
+# (rustc E0080, "attempt to compute N - M which would overflow"). LIBCLANG_PATH
+# is set up for Windows in setup-sidecar-rust precisely so bindgen can run here.
 $env:WHISPER_CCACHE = 'OFF'
 $env:GGML_CCACHE = 'OFF'
 $env:CMAKE_ARGS = (@($env:CMAKE_ARGS, '-DWHISPER_CCACHE=OFF', '-DGGML_CCACHE=OFF') |
