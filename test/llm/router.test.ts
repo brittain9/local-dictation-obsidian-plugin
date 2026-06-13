@@ -68,6 +68,23 @@ describe('createLlmRouter', () => {
     expect(calls).toEqual([{ model: 'openai/gpt-4.1', providerId: 'openrouter' }]);
   });
 
+  it('passes the resolved OpenRouter secret to the provider factory', async () => {
+    const createProvider = vi.fn(
+      (providerId: LlmProviderId, _settings: PluginSettings, _openRouterApiKey = '') =>
+        createFakeLlmProvider({ id: providerId }),
+    );
+    const router = createLlmRouter(
+      settings({ llmRouting: 'remote' }),
+      createProvider,
+      undefined,
+      () => 'sk-or-secure',
+    );
+
+    await router.cleanup(cleanupArgs('tiny'));
+
+    expect(createProvider).toHaveBeenCalledWith('openrouter', expect.any(Object), 'sk-or-secure');
+  });
+
   it.each([
     'remote',
     'auto',

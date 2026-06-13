@@ -96,13 +96,17 @@ export class ProviderError extends Error {
   }
 }
 
-export function createProvider(providerId: LlmProviderId, settings: PluginSettings): LlmProvider {
+export function createProvider(
+  providerId: LlmProviderId,
+  settings: PluginSettings,
+  openRouterApiKey = '',
+): LlmProvider {
   switch (providerId) {
     case 'ollama':
       return new OllamaProvider();
     case 'openrouter':
       return new OpenRouterProvider({
-        apiKey: settings.llmOpenRouterApiKey,
+        apiKey: openRouterApiKey,
         timeoutMs: settings.llmRemoteTimeoutSec * 1000,
       });
   }

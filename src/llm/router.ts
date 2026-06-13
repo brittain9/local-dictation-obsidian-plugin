@@ -40,6 +40,7 @@ export function createLlmRouter(
   settings: PluginSettings,
   createProviderFn = createProvider,
   isRemoteFeaturesEnabled: () => boolean = () => settings.llmRemoteFeaturesEnabled,
+  getOpenRouterApiKey: () => string = () => '',
 ): LlmRouter {
   // `isRemoteFeaturesEnabled` must read live state, not the snapshot captured in
   // `settings`, so the privacy kill switch takes effect mid-session; the default
@@ -62,7 +63,7 @@ export function createLlmRouter(
     if (existing !== undefined) {
       return existing;
     }
-    const created = createProviderFn(providerId, settings);
+    const created = createProviderFn(providerId, settings, getOpenRouterApiKey());
     providers.set(providerId, created);
     return created;
   };
