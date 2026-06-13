@@ -10,13 +10,14 @@ import { DEFAULT_PLUGIN_SETTINGS } from '../src/settings/plugin-settings';
 describe('OpenRouter secret storage', () => {
   it('moves a legacy plaintext key into Secret Storage and requests sanitized persistence', () => {
     const setSecret = vi.fn();
+    const getSecret = vi.fn(() => null);
 
     const result = loadPluginSettings(
       {
         llmOpenRouterApiKey: ' sk-or-legacy ',
         llmProviderModels: { ollama: '', openrouter: 'openai/gpt-4.1' },
       },
-      { setSecret },
+      { setSecret, getSecret },
     );
 
     expect(setSecret).toHaveBeenCalledWith(DEFAULT_OPENROUTER_SECRET_ID, 'sk-or-legacy');
@@ -32,25 +33,47 @@ describe('OpenRouter secret storage', () => {
 
   it('keeps an existing selected secret ID during migration', () => {
     const setSecret = vi.fn();
+    const getSecret = vi.fn(() => null);
 
     const result = loadPluginSettings(
       {
         llmOpenRouterApiKey: 'sk-or-legacy',
         llmOpenRouterSecretId: 'my-openrouter-key',
       },
-      { setSecret },
+      { setSecret, getSecret },
     );
 
     expect(setSecret).toHaveBeenCalledWith('my-openrouter-key', 'sk-or-legacy');
     expect(result.settings.llmOpenRouterSecretId).toBe('my-openrouter-key');
   });
 
+  it('does not overwrite a newer stored secret when the legacy field reappears', () => {
+    const setSecret = vi.fn();
+    const getSecret = vi.fn(() => 'sk-or-current');
+
+    const result = loadPluginSettings(
+      {
+        llmOpenRouterApiKey: 'sk-or-stale',
+        llmOpenRouterSecretId: DEFAULT_OPENROUTER_SECRET_ID,
+      },
+      { setSecret, getSecret },
+    );
+
+    expect(getSecret).toHaveBeenCalledWith(DEFAULT_OPENROUTER_SECRET_ID);
+    expect(setSecret).not.toHaveBeenCalled();
+    // The newer key survives, and the stale plaintext field is still stripped.
+    expect(result.shouldPersist).toBe(true);
+    expect(result.settings).not.toHaveProperty('llmOpenRouterApiKey');
+    expect(result.settings.llmOpenRouterSecretId).toBe(DEFAULT_OPENROUTER_SECRET_ID);
+  });
+
   it('does not request a settings rewrite when no legacy field exists', () => {
     const setSecret = vi.fn();
+    const getSecret = vi.fn(() => null);
 
     const result = loadPluginSettings(
       { llmOpenRouterSecretId: 'my-openrouter-key' },
-      { setSecret },
+      { setSecret, getSecret },
     );
 
     expect(setSecret).not.toHaveBeenCalled();
@@ -64,6 +87,7 @@ describe('OpenRouter secret storage', () => {
       loadPluginSettings(
         { llmOpenRouterApiKey: 'sk-or-legacy' },
         {
+          getSecret: () => null,
           setSecret: () => {
             throw error;
           },

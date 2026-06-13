@@ -14,7 +14,7 @@ export interface LoadedPluginSettings {
 
 export function loadPluginSettings(
   data: unknown,
-  secretStorage: Pick<SecretStorage, 'setSecret'>,
+  secretStorage: Pick<SecretStorage, 'getSecret' | 'setSecret'>,
 ): LoadedPluginSettings {
   const raw = isRecord(data) ? data : {};
   let settings = resolvePluginSettings(raw);
@@ -28,10 +28,19 @@ export function loadPluginSettings(
 
   if (legacyApiKey.length > 0) {
     const secretId = settings.llmOpenRouterSecretId || DEFAULT_OPENROUTER_SECRET_ID;
-    secretStorage.setSecret(secretId, legacyApiKey);
+    // Seed Secret Storage only when nothing is stored at this ID yet. A synced
+    // or restored data.json can reintroduce the legacy plaintext field after
+    // the user has entered a newer key through the UI; writing unconditionally
+    // would clobber that newer key with the stale legacy value on every load.
+    const hasStoredSecret = (secretStorage.getSecret(secretId)?.trim() ?? '').length > 0;
+    if (!hasStoredSecret) {
+      secretStorage.setSecret(secretId, legacyApiKey);
+    }
     settings = { ...settings, llmOpenRouterSecretId: secretId };
   }
 
+  // Persist regardless of whether the secret was (re)written so the stale
+  // plaintext field is always stripped from data.json.
   return { settings, shouldPersist: true };
 }
 

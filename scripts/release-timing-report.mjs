@@ -17,6 +17,8 @@ import { spawnSync } from 'node:child_process';
 import { appendFile, writeFile } from 'node:fs/promises';
 import process from 'node:process';
 
+import { requiredEnv } from './lib/required-env.mjs';
+
 const repo = requiredEnv('GITHUB_REPOSITORY');
 const runId = requiredEnv('GITHUB_RUN_ID');
 const summaryPath = process.env.GITHUB_STEP_SUMMARY;
@@ -173,12 +175,4 @@ function statusIcon(conclusion) {
     default:
       return conclusion;
   }
-}
-
-function requiredEnv(name) {
-  const value = process.env[name];
-  if (typeof value !== 'string' || value.length === 0) {
-    throw new Error(`Required environment variable ${name} is not set.`);
-  }
-  return value;
 }
