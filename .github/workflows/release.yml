@@ -27,6 +27,14 @@ env:
   # Build sidecar step) sees it when computing its key, otherwise stale
   # AVX-512-compiled artifacts get restored and silently re-shipped.
   GGML_NATIVE: 'OFF'
+  # Pin the ONNX Runtime CUDA execution-provider major (cu13). Set here at the
+  # workflow env level — not only in build-cuda.{sh,ps1} — for the same reason
+  # as GGML_NATIVE: Swatinem/rust-cache computes its key before the build step,
+  # so the value must be visible at cache time (via the ORT env-vars prefix in
+  # setup-sidecar-rust) for an ORT CUDA-major flip to bust the cache instead of
+  # silently restoring a stale cu12 provider. The build scripts keep a :-13
+  # fallback so local builds stay deterministic too.
+  ORT_CUDA_VERSION: '13'
   NODE_VERSION: 24.14.1
   RUST_TOOLCHAIN: 1.94.1
 
@@ -142,7 +150,7 @@ jobs:
       id-token: write
       attestations: write
     env:
-      # ggml's CUDA 12.9 default builds PTX/SASS for nine architecture variants,
+      # ggml's CUDA default builds PTX/SASS for many architecture variants,
       # which dominates release CUDA jobs (especially on Windows). Ship one
       # forward-compatible Turing PTX target instead. That requires a Turing-or-
       # newer NVIDIA GPU for CUDA acceleration; older GPUs use the CPU sidecar.
