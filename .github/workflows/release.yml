@@ -310,14 +310,16 @@ jobs:
         with:
           cuda: '13.2.0'
           method: network
-          # CUDA 13 split the CRT headers out of cudart into a standalone `crt`
-          # subpackage, so `crt` is required for include/crt/host_config.h (which
-          # cuda_runtime.h pulls in) — without it CMake's CUDA compiler probe
-          # fails with C1083. `thrust` ships include/cccl (Thrust/CUB), which
-          # ggml-cuda's kernels include. Both were implicit under CUDA 12.9's
-          # cudart; keep the targeted list (Windows full-toolkit installs are
-          # slow) but don't drop crt/thrust. See #139.
-          sub-packages: '["nvcc", "crt", "cudart", "cublas", "cublas_dev", "cufft", "thrust", "visual_studio_integration"]'
+          # CUDA 13 split the monolithic CUDA 12.x toolkit into granular Windows
+          # installer components, so the compiler toolchain now needs pieces that
+          # nvcc/cudart bundled implicitly under 12.9:
+          #   crt    -> include/crt/host_config.h (pulled in by cuda_runtime.h)
+          #   nvvm   -> the cicc device compiler + libdevice (nvvm/bin, nvvm/libdevice)
+          #   thrust -> include/cccl (Thrust/CUB) used by ggml-cuda kernels
+          # Without them CMake's CUDA compiler probe fails (C1083 on host_config.h,
+          # then "cannot find the path" for nvvm/bin). Keep the targeted list —
+          # Windows full-toolkit installs are slow — but don't drop these. See #139.
+          sub-packages: '["nvcc", "crt", "nvvm", "cudart", "cublas", "cublas_dev", "cufft", "thrust", "visual_studio_integration"]'
 
       - name: Build sidecar
         shell: pwsh
