@@ -28,8 +28,8 @@ The CUDA release archive additionally stages ONNX Runtime provider libraries and
 
 | Platform | Provider libraries | Bundled CUDA runtime libraries |
 |---|---|
-| Linux | `libonnxruntime_providers_shared.so`, `libonnxruntime_providers_cuda.so` | `libcudart.so.12`, `libcublas.so.12`, `libcublasLt.so.12`, `libcufft.so.11` |
-| Windows | `onnxruntime_providers_shared.dll`, `onnxruntime_providers_cuda.dll` | `cudart64_12.dll`, `cublas64_12.dll`, `cublasLt64_12.dll`, `cufft64_11.dll` |
+| Linux | `libonnxruntime_providers_shared.so`, `libonnxruntime_providers_cuda.so` | `libcudart.so.13`, `libcublas.so.13`, `libcublasLt.so.13`, `libcufft.so.12` |
+| Windows | `onnxruntime_providers_shared.dll`, `onnxruntime_providers_cuda.dll` | `cudart64_13.dll`, `cublas64_13.dll`, `cublasLt64_13.dll`, `cufft64_12.dll` |
 
 These are sidecar-owned release artifacts produced or collected during the build. They travel with the binary and do not need to be installed separately by release users. cuDNN is not bundled in this pass.
 
@@ -54,12 +54,12 @@ Cohere is CPU-only on macOS. The ONNX Runtime CUDA execution provider is Linux/W
 | Component | Requirement |
 |---|---|
 | **Shipped sidecar** | CUDA flavor (when GPU is desired) or CPU flavor |
-| **GPU driver** | NVIDIA Turing-or-newer GPU with a CUDA 12.x-compatible display driver (Game Ready or Studio) |
+| **GPU driver** | NVIDIA Turing-or-newer GPU with a CUDA 13.x-compatible (R580 or newer) display driver (Game Ready or Studio) |
 | **CUDA userspace** | Bundled in the CUDA release archive for Whisper CUDA |
-| **cuDNN** | cuDNN 9.x runtime libraries (for Cohere CUDA) |
+| **cuDNN** | cuDNN 9.x runtime libraries (for Cohere CUDA), built for CUDA 13 (9.20 or newer) |
 | **User configuration** | None in the intended shipped flow |
 
-Windows has no sandbox. CUDA release users do not need the CUDA Toolkit or `nvcc`; the archive ships the CUDA runtime DLLs the sidecar depends on. Cohere CUDA still requires cuDNN 9.x runtime DLLs to be resolvable from the normal Windows DLL search path. If cuDNN is missing, Cohere reports a CUDA fallback reason and runs on CPU.
+Windows has no sandbox. CUDA release users do not need the CUDA Toolkit or `nvcc`; the archive ships the CUDA runtime DLLs the sidecar depends on. Cohere CUDA still requires cuDNN 9.x runtime DLLs (`cudnn64_9.dll`, built for CUDA 13 — a CUDA-12 build of the same file name will be found but fail at runtime) to be resolvable from the normal Windows DLL search path. If cuDNN is missing, Cohere reports a CUDA fallback reason and runs on CPU.
 
 The intended packaging model bundles the sidecar-owned ONNX provider DLLs next to the executable. Users should not need to hand-edit paths. See [Windows CUDA setup](../guides/windows-cuda-setup.md) for the supported Windows CUDA setup flow.
 
@@ -70,10 +70,10 @@ The intended packaging model bundles the sidecar-owned ONNX provider DLLs next t
 | **Shipped sidecar** | CPU flavor (default) or CUDA flavor (opt-in) |
 | **GPU driver** | NVIDIA Turing-or-newer GPU with kernel driver + `libcuda.so.1` in the standard library path |
 | **CUDA userspace** | Bundled in the CUDA release archive for Whisper CUDA |
-| **cuDNN** | cuDNN 9.x (`libcudnn.so.9`) for Cohere CUDA |
+| **cuDNN** | cuDNN 9.x (`libcudnn.so.9`) for Cohere CUDA, built for CUDA 13 (9.20 or newer) |
 | **User configuration** | Usually none — host environment is inherited |
 
-On a native Linux install, the sidecar child process inherits the host library paths and the CUDA release binary uses `$ORIGIN` rpath so bundled CUDA runtime libraries next to the executable are found before host toolkit paths. Release users do not need the CUDA Toolkit. Cohere CUDA still requires cuDNN 9.x to be installed in a standard library path or supplied through the plugin's scoped `CUDA library path`.
+On a native Linux install, the sidecar child process inherits the host library paths and the CUDA release binary uses `$ORIGIN` rpath so bundled CUDA runtime libraries next to the executable are found before host toolkit paths. Release users do not need the CUDA Toolkit. Cohere CUDA still requires cuDNN 9.x built for CUDA 13 (a CUDA-12 build of `libcudnn.so.9` is found by name but fails at runtime) to be installed in a standard library path or supplied through the plugin's scoped `CUDA library path`.
 
 The `CUDA library path` plugin setting exists for non-standard installations but is not normally needed on native Linux.
 
@@ -91,7 +91,7 @@ The `CUDA library path` plugin setting exists for non-standard installations but
 Flatpak is the hardest packaging case. Three things make it different:
 
 1. **Host `/usr` is hidden.** The Flatpak runtime replaces the host OS tree. Host libraries are only visible under `/run/host/usr/` after adding `--filesystem=host-os`.
-2. **CUDA symlinks break across the sandbox boundary.** The library path must use resolved real paths (e.g., `/run/host/usr/local/cuda-12.9/...`), not the `/usr/local/cuda` symlink.
+2. **CUDA symlinks break across the sandbox boundary.** The library path must use resolved real paths (e.g., `/run/host/usr/local/cuda-13.2/...`), not the `/usr/local/cuda` symlink.
 3. **Global `LD_LIBRARY_PATH` breaks Electron audio.** Setting it on the whole Obsidian Flatpak causes Electron to load host PulseAudio/ALSA/PipeWire libraries instead of the Flatpak runtime versions. The plugin's `CUDA library path` setting scopes `LD_LIBRARY_PATH` to the sidecar child process only.
 
 The full Flatpak GPU setup procedure is documented in `docs/guides/linux-flatpak-gpu-setup.md`.

@@ -6,12 +6,12 @@
 - TypeScript `6.0.2`
 - Rust `1.94.1`
 - CMake and a platform C/C++ toolchain for native sidecar builds
-- CUDA Toolkit `12.9` with `nvcc` for Linux/Windows CUDA sidecar builds only
+- CUDA Toolkit `13.2` with `nvcc` for Linux/Windows CUDA sidecar builds only
 - cuDNN `9.x` runtime libraries for local Cohere CUDA verification only
 
 Versions are pinned in `package.json` (`engines`, `packageManager`) and `rust-toolchain.toml`. If you use [mise](https://mise.jdx.dev), `mise install` will set up the Node and Rust toolchains automatically.
 
-The CUDA Toolkit is a build-from-source dependency. Published Linux/Windows CUDA sidecar archives bundle the CUDA runtime libraries needed by Whisper CUDA; release users need only a Turing-or-newer NVIDIA GPU and a compatible NVIDIA driver. Cohere CUDA additionally needs cuDNN `9.x` runtime libraries installed until cuDNN redistribution is reviewed.
+The CUDA Toolkit is a build-from-source dependency. Published Linux/Windows CUDA sidecar archives bundle the CUDA runtime libraries needed by Whisper CUDA; release users need only a Turing-or-newer NVIDIA GPU and a driver compatible with CUDA 13.x (R580 or newer). Cohere CUDA additionally needs cuDNN `9.x` runtime libraries built for CUDA 13 (9.20 or newer) installed until cuDNN redistribution is reviewed.
 
 ## Setup
 
