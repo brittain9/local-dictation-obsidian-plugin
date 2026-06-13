@@ -47,6 +47,11 @@ partial** cache left behind by an earlier *failed* configure run.
 - **`--split-compile`, `GGML_CUDA_F16`**: rejected. The former needs lowering `-j` to
   avoid oversubscription for marginal benefit; the latter changes inference numeric
   precision and is a correctness decision, not a build-speed lever.
+- **`GGML_CUDA_NO_FA=ON`**: rejected. Dropping the flash-attention kernel family is the
+  single largest cold-build NVCC-fan-out saver, but it alters the *shipped binary's*
+  inference path (FA is a runtime attention optimization), risking a speed regression on
+  Turing GPUs. The mandate is maximum app performance, and the win is cold-build-only
+  (warm builds skip NVCC entirely). Not worth a runtime cost for a first-build-only gain.
 
 ## Changes
 
@@ -91,6 +96,15 @@ suggesting it. whisper-rs-sys' vendored bindings are Linux-ABI; reusing them on 
 makes `bindings.rs`' compile-time struct-size assertions overflow (rustc E0080). Windows
 must run bindgen — which is why `setup-sidecar-rust` configures `LIBCLANG_PATH` only on
 Windows. This experiment is rejected.
+
+### 7. Trim unused Windows CUDA sub-packages
+Drop `cufft` and `cublas_dev` from the `Jimver/cuda-toolkit` `sub-packages` list on the
+Windows CUDA leg (release + smoke). cuFFT is never linked by ggml/whisper (ggml-cuda
+links only `CUDA::cublas` + `CUDA::cublasLt`; `whisper-rs-sys` build.rs links
+`cublas`/`cublasLt`/`cudart`/`cuda`), and the runtime `cublas` package already supplies
+the import lib, making `cublas_dev` redundant. This shaves the toolkit-install step on
+**every** run (warm and cold) with zero runtime/perf impact. Validate via smoke: if the
+final link fails on a missing cublas import lib, restore `cublas_dev` only.
 
 ## Release timing analytics (new requirement)
 

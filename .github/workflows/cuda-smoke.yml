@@ -96,8 +96,8 @@ jobs:
         with:
           cuda: ${{ env.CUDA_TOOLKIT_VERSION }}
           method: network
-          # Keep in sync with release.yml's Windows CUDA install. See #139.
-          sub-packages: '["nvcc", "crt", "nvvm", "cudart", "cublas", "cublas_dev", "cufft", "thrust", "visual_studio_integration"]'
+          # Keep in sync with release.yml's Windows CUDA install. See #139, #143.
+          sub-packages: '["nvcc", "crt", "nvvm", "cudart", "cublas", "thrust", "visual_studio_integration"]'
 
       - name: Build sidecar
         shell: pwsh
