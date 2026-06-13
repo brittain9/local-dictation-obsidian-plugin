@@ -35,6 +35,12 @@ env:
   # silently restoring a stale cu12 provider. The build scripts keep a :-13
   # fallback so local builds stay deterministic too.
   ORT_CUDA_VERSION: '13'
+  # Single source of truth for the CUDA toolkit: drives the Jimver/cuda-toolkit
+  # install AND is hashed into the rust-cache key (the 'CUDA' env-vars prefix in
+  # setup-sidecar-rust). Set at workflow env so it's visible when rust-cache
+  # computes its key — before the toolkit is installed — so a toolkit bump forks
+  # target-cuda instead of silently restoring stale NVCC objects. See #143.
+  CUDA_TOOLKIT_VERSION: '13.2.0'
   NODE_VERSION: 24.14.1
   RUST_TOOLCHAIN: 1.94.1
 
@@ -142,9 +148,11 @@ jobs:
         run: npm run check:rust
 
   build-sidecar-posix:
+    # Depend on metadata only — not native-quality. The native build is the long
+    # pole, so start it as soon as the version/notes are validated. publish still
+    # requires native-quality, so the release gate is unchanged. See #143.
     needs:
       - metadata
-      - native-quality
     permissions:
       contents: read
       id-token: write
@@ -201,18 +209,22 @@ jobs:
           toolchain: ${{ env.RUST_TOOLCHAIN }}
           cache-workspaces: ${{ matrix.cache_workspaces }}
           cache-shared-key: ${{ matrix.asset_name }}
+          # Never save a cache from a failed build. A failed CUDA configure would
+          # otherwise persist a partial target-cuda tree under an immutable key
+          # that no later successful run can overwrite, permanently poisoning the
+          # warm-build path (the Windows-CUDA regression in #143).
+          cache-on-failure: 'false'
 
       - name: Install CUDA toolkit
         if: matrix.cuda
         uses: Jimver/cuda-toolkit@v0.2.35
         with:
-          cuda: '13.2.0'
+          cuda: ${{ env.CUDA_TOOLKIT_VERSION }}
           method: network
 
       - name: Build sidecar
         env:
           CARGO_TIMINGS: '1'
-          CMAKE_CUDA_FLAGS: '-t0'
         run: ${{ matrix.build_command }}
 
       - name: Upload cargo timings
@@ -246,11 +258,15 @@ jobs:
         with:
           name: ${{ matrix.asset_name }}
           path: dist/${{ matrix.archive_name }}
+          # The archive is already gzip-compressed; the default level-6 zip pass
+          # re-deflates high-entropy data for ~zero size gain. Store-only is a
+          # faster upload, which matters most for the large CUDA archive. See #143.
+          compression-level: 0
 
   build-sidecar-windows:
+    # See build-sidecar-posix: metadata-only dependency, publish keeps the gate.
     needs:
       - metadata
-      - native-quality
     permissions:
       contents: read
       id-token: write
@@ -303,12 +319,49 @@ jobs:
           toolchain: ${{ env.RUST_TOOLCHAIN }}
           cache-workspaces: ${{ matrix.cache_workspaces }}
           cache-shared-key: ${{ matrix.asset_name }}
+          # Never save a cache from a failed build. A failed CUDA configure would
+          # otherwise persist a partial target-cuda tree under an immutable key
+          # that no later successful run can overwrite, permanently poisoning the
+          # warm-build path (the Windows-CUDA regression in #143).
+          cache-on-failure: 'false'
+
+      # Resolve the toolkit install dir from CUDA_TOOLKIT_VERSION (Jimver installs
+      # to ...\CUDA\v<major>.<minor>). Derived, not hardcoded, so a toolkit bump
+      # moves the cache path in lockstep with the version-keyed cache below.
+      - name: Resolve CUDA install dir
+        if: matrix.cuda
+        shell: pwsh
+        run: |
+          $v = '${{ env.CUDA_TOOLKIT_VERSION }}'.Split('.')
+          $dir = "C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v$($v[0]).$($v[1])"
+          "CUDA_INSTALL_DIR=$dir" | Out-File -FilePath $env:GITHUB_ENV -Append
+
+      # Cache the EXTRACTED toolkit dir and skip the (network-variable, 3-9 min)
+      # Jimver install on a hit. CMake's CUDA language support only needs nvcc on
+      # PATH + CUDA_PATH; it never reads the VS BuildCustomizations .props the
+      # installer drops outside CUDA_PATH, so caching CUDA_PATH alone suffices.
+      # Key busts on toolkit version (env) OR sub-package set (committed JSON). See #143.
+      - name: Restore CUDA toolkit
+        if: matrix.cuda
+        id: cuda-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ env.CUDA_INSTALL_DIR }}
+          key: cuda-${{ runner.os }}-${{ env.CUDA_TOOLKIT_VERSION }}-${{ hashFiles('.github/cuda-windows-subpackages.json') }}
+
+      - name: Read CUDA sub-packages
+        if: matrix.cuda && steps.cuda-cache.outputs.cache-hit != 'true'
+        id: cuda-subpkgs
+        shell: pwsh
+        run: |
+          $json = (Get-Content -Raw .github/cuda-windows-subpackages.json) -replace '\s', ''
+          "list=$json" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
 
       - name: Install CUDA toolkit
-        if: matrix.cuda
+        if: matrix.cuda && steps.cuda-cache.outputs.cache-hit != 'true'
         uses: Jimver/cuda-toolkit@v0.2.35
         with:
-          cuda: '13.2.0'
+          cuda: ${{ env.CUDA_TOOLKIT_VERSION }}
           method: network
           # CUDA 13 split the monolithic CUDA 12.x toolkit into granular Windows
           # installer components, so the compiler toolchain now needs pieces that
@@ -317,16 +370,42 @@ jobs:
           #   nvvm   -> the cicc device compiler + libdevice (nvvm/bin, nvvm/libdevice)
           #   thrust -> include/cccl (Thrust/CUB) used by ggml-cuda kernels
           # Without them CMake's CUDA compiler probe fails (C1083 on host_config.h,
-          # then "cannot find the path" for nvvm/bin). Keep the targeted list —
-          # Windows full-toolkit installs are slow — but don't drop these. See #139.
-          sub-packages: '["nvcc", "crt", "nvvm", "cudart", "cublas", "cublas_dev", "cufft", "thrust", "visual_studio_integration"]'
+          # then "cannot find the path" for nvvm/bin). cuFFT is never linked by
+          # ggml/whisper, so it's trimmed; cublas_dev stays (ships cublas.lib /
+          # cublasLt.lib — the MSVC import libs the final link needs; LNK1181 without
+          # it, since the runtime cublas package ships only the DLLs). The set lives
+          # in .github/cuda-windows-subpackages.json so it also feeds the cache key.
+          # See #139, #143.
+          sub-packages: ${{ steps.cuda-subpkgs.outputs.list }}
+
+      # On a hit we skip Jimver, so replicate the env vars + PATH entry it would
+      # have exported (verified against Jimver/cuda-toolkit src/update-path.ts).
+      - name: Set CUDA env from cache
+        if: matrix.cuda && steps.cuda-cache.outputs.cache-hit == 'true'
+        shell: pwsh
+        run: |
+          $v = '${{ env.CUDA_TOOLKIT_VERSION }}'.Split('.')
+          $name = "CUDA_PATH_V$($v[0])_$($v[1])"
+          "CUDA_PATH=$env:CUDA_INSTALL_DIR" | Out-File -FilePath $env:GITHUB_ENV -Append
+          "$name=$env:CUDA_INSTALL_DIR" | Out-File -FilePath $env:GITHUB_ENV -Append
+          "CUDA_PATH_VX_Y=$name" | Out-File -FilePath $env:GITHUB_ENV -Append
+          "$env:CUDA_INSTALL_DIR\bin" | Out-File -FilePath $env:GITHUB_PATH -Append
 
       - name: Build sidecar
         shell: pwsh
         env:
           CARGO_TIMINGS: '1'
-          CMAKE_CUDA_FLAGS: '-t0'
         run: ${{ matrix.build_command }}
+
+      # Save only after a green build, and only on a miss. Mirrors the build cache's
+      # cache-on-failure:false — a failed/partial install never poisons the
+      # immutable-keyed toolkit cache.
+      - name: Save CUDA toolkit
+        if: success() && matrix.cuda && steps.cuda-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ env.CUDA_INSTALL_DIR }}
+          key: ${{ steps.cuda-cache.outputs.cache-primary-key }}
 
       - name: Upload cargo timings
         if: always()
@@ -355,10 +434,17 @@ jobs:
         with:
           name: ${{ matrix.asset_name }}
           path: dist/${{ matrix.archive_name }}
+          # The archive is already gzip-compressed; the default level-6 zip pass
+          # re-deflates high-entropy data for ~zero size gain. Store-only is a
+          # faster upload, which matters most for the large CUDA archive. See #143.
+          compression-level: 0
 
   publish:
     needs:
       - metadata
+      # native-quality is the release gate. The build jobs no longer depend on
+      # it (they start after metadata), so publish must require it explicitly.
+      - native-quality
       - plugin-bundle
       - build-sidecar-posix
       - build-sidecar-windows
@@ -414,3 +500,40 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ needs.metadata.outputs.version }}
         run: gh release edit "$TAG" --draft=false --repo "$GITHUB_REPOSITORY"
+
+  # At-a-glance timing analytics for the run: who took how long, and which steps
+  # dominated. Renders to the run's job summary and a release-report.md artifact
+  # from the jobs REST API (no per-job instrumentation). Peer of publish — it
+  # does NOT gate the release — and runs even on failure, since a slow/failed run
+  # is exactly when the breakdown is wanted. See #143.
+  release-report:
+    needs:
+      - metadata
+      - native-quality
+      - plugin-bundle
+      - build-sidecar-posix
+      - build-sidecar-windows
+    if: always()
+    permissions:
+      actions: read
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Node.js + npm
+        uses: ./.github/actions/setup-node-npm
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Render release timing report
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node scripts/release-timing-report.mjs
+
+      - name: Upload release timing report
+        uses: actions/upload-artifact@v7
+        with:
+          name: release-report
+          path: release-report.md
