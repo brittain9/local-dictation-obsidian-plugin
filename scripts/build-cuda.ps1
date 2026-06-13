@@ -39,6 +39,8 @@ foreach ($tool in 'cargo', 'nvcc') {
 $jobs = Read-PositiveInt 'BUILD_JOBS' ([Environment]::ProcessorCount)
 $env:CARGO_BUILD_JOBS = "$jobs"
 $env:CMAKE_BUILD_PARALLEL_LEVEL = "$jobs"
+# Pin the ONNX Runtime CUDA execution-provider major (see build-cuda.sh).
+if (-not $env:ORT_CUDA_VERSION) { $env:ORT_CUDA_VERSION = '13' }
 
 $cargoArgs = @(
   'build',
@@ -58,6 +60,7 @@ Invoke-TimedStep "CUDA sidecar preflight" {
   Write-Host "profile: $buildProfile"
   Write-Host "jobs: $jobs"
   Write-Host "CUDA_PATH: $env:CUDA_PATH"
+  Write-Host "ORT_CUDA_VERSION: $env:ORT_CUDA_VERSION"
   Write-Host "CMAKE_CUDA_ARCHITECTURES: $env:CMAKE_CUDA_ARCHITECTURES"
   Write-Host "CARGO_TIMINGS: $env:CARGO_TIMINGS"
   Write-Host "CARGO_VERBOSE: $env:CARGO_VERBOSE"
