@@ -35,7 +35,7 @@
     "check": "npm run check:js && npm run check:rust"
   },
   "devDependencies": {
-    "@biomejs/biome": "2.4.16",
+    "@biomejs/biome": "2.5.0",
     "@codemirror/state": "6.6.0",
     "@codemirror/view": "6.43.1",
     "@eslint/js": "^10.0.1",
