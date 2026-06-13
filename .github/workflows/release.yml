@@ -35,6 +35,12 @@ env:
   # silently restoring a stale cu12 provider. The build scripts keep a :-13
   # fallback so local builds stay deterministic too.
   ORT_CUDA_VERSION: '13'
+  # Single source of truth for the CUDA toolkit: drives the Jimver/cuda-toolkit
+  # install AND is hashed into the rust-cache key (the 'CUDA' env-vars prefix in
+  # setup-sidecar-rust). Set at workflow env so it's visible when rust-cache
+  # computes its key — before the toolkit is installed — so a toolkit bump forks
+  # target-cuda instead of silently restoring stale NVCC objects. See #143.
+  CUDA_TOOLKIT_VERSION: '13.2.0'
   NODE_VERSION: 24.14.1
   RUST_TOOLCHAIN: 1.94.1
 
@@ -142,9 +148,11 @@ jobs:
         run: npm run check:rust
 
   build-sidecar-posix:
+    # Depend on metadata only — not native-quality. The native build is the long
+    # pole, so start it as soon as the version/notes are validated. publish still
+    # requires native-quality, so the release gate is unchanged. See #143.
     needs:
       - metadata
-      - native-quality
     permissions:
       contents: read
       id-token: write
@@ -201,18 +209,22 @@ jobs:
           toolchain: ${{ env.RUST_TOOLCHAIN }}
           cache-workspaces: ${{ matrix.cache_workspaces }}
           cache-shared-key: ${{ matrix.asset_name }}
+          # Never save a cache from a failed build. A failed CUDA configure would
+          # otherwise persist a partial target-cuda tree under an immutable key
+          # that no later successful run can overwrite, permanently poisoning the
+          # warm-build path (the Windows-CUDA regression in #143).
+          cache-on-failure: 'false'
 
       - name: Install CUDA toolkit
         if: matrix.cuda
         uses: Jimver/cuda-toolkit@v0.2.35
         with:
-          cuda: '13.2.0'
+          cuda: ${{ env.CUDA_TOOLKIT_VERSION }}
           method: network
 
       - name: Build sidecar
         env:
           CARGO_TIMINGS: '1'
-          CMAKE_CUDA_FLAGS: '-t0'
         run: ${{ matrix.build_command }}
 
       - name: Upload cargo timings
@@ -246,11 +258,15 @@ jobs:
         with:
           name: ${{ matrix.asset_name }}
           path: dist/${{ matrix.archive_name }}
+          # The archive is already gzip-compressed; the default level-6 zip pass
+          # re-deflates high-entropy data for ~zero size gain. Store-only is a
+          # faster upload, which matters most for the large CUDA archive. See #143.
+          compression-level: 0
 
   build-sidecar-windows:
+    # See build-sidecar-posix: metadata-only dependency, publish keeps the gate.
     needs:
       - metadata
-      - native-quality
     permissions:
       contents: read
       id-token: write
@@ -303,12 +319,17 @@ jobs:
           toolchain: ${{ env.RUST_TOOLCHAIN }}
           cache-workspaces: ${{ matrix.cache_workspaces }}
           cache-shared-key: ${{ matrix.asset_name }}
+          # Never save a cache from a failed build. A failed CUDA configure would
+          # otherwise persist a partial target-cuda tree under an immutable key
+          # that no later successful run can overwrite, permanently poisoning the
+          # warm-build path (the Windows-CUDA regression in #143).
+          cache-on-failure: 'false'
 
       - name: Install CUDA toolkit
         if: matrix.cuda
         uses: Jimver/cuda-toolkit@v0.2.35
         with:
-          cuda: '13.2.0'
+          cuda: ${{ env.CUDA_TOOLKIT_VERSION }}
           method: network
           # CUDA 13 split the monolithic CUDA 12.x toolkit into granular Windows
           # installer components, so the compiler toolchain now needs pieces that
@@ -325,7 +346,6 @@ jobs:
         shell: pwsh
         env:
           CARGO_TIMINGS: '1'
-          CMAKE_CUDA_FLAGS: '-t0'
         run: ${{ matrix.build_command }}
 
       - name: Upload cargo timings
@@ -355,10 +375,17 @@ jobs:
         with:
           name: ${{ matrix.asset_name }}
           path: dist/${{ matrix.archive_name }}
+          # The archive is already gzip-compressed; the default level-6 zip pass
+          # re-deflates high-entropy data for ~zero size gain. Store-only is a
+          # faster upload, which matters most for the large CUDA archive. See #143.
+          compression-level: 0
 
   publish:
     needs:
       - metadata
+      # native-quality is the release gate. The build jobs no longer depend on
+      # it (they start after metadata), so publish must require it explicitly.
+      - native-quality
       - plugin-bundle
       - build-sidecar-posix
       - build-sidecar-windows
@@ -414,3 +441,40 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ needs.metadata.outputs.version }}
         run: gh release edit "$TAG" --draft=false --repo "$GITHUB_REPOSITORY"
+
+  # At-a-glance timing analytics for the run: who took how long, and which steps
+  # dominated. Renders to the run's job summary and a release-report.md artifact
+  # from the jobs REST API (no per-job instrumentation). Peer of publish — it
+  # does NOT gate the release — and runs even on failure, since a slow/failed run
+  # is exactly when the breakdown is wanted. See #143.
+  release-report:
+    needs:
+      - metadata
+      - native-quality
+      - plugin-bundle
+      - build-sidecar-posix
+      - build-sidecar-windows
+    if: always()
+    permissions:
+      actions: read
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Node.js + npm
+        uses: ./.github/actions/setup-node-npm
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Render release timing report
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node scripts/release-timing-report.mjs
+
+      - name: Upload release timing report
+        uses: actions/upload-artifact@v7
+        with:
+          name: release-report
+          path: release-report.md

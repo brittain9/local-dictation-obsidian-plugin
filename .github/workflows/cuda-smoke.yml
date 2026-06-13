@@ -1,0 +1,136 @@
+name: cuda-smoke
+
+# Fast iteration harness for the CUDA toolchain (#143). Builds ONLY the Windows
+# and Linux CUDA sidecar legs — no CPU/macOS/plugin-bundle/publish — so toolchain
+# and cache experiments can be measured without a full release run. Manual only.
+#
+# It reuses the same setup-sidecar-rust action, CUDA install, build commands, and
+# rust-cache shared-keys as release.yml, so cache hit/miss behavior mirrors the
+# real release path (cache-on-failure:false keeps a failed smoke run from
+# poisoning the shared target-cuda cache). Run it cold then warm and read the
+# timing summary on the run page to compare experiments.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cuda-smoke-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  GGML_NATIVE: 'OFF'
+  ORT_CUDA_VERSION: '13'
+  CUDA_TOOLKIT_VERSION: '13.2.0'
+  CMAKE_CUDA_ARCHITECTURES: '75-virtual'
+  NODE_VERSION: 24.14.1
+  RUST_TOOLCHAIN: 1.94.1
+
+jobs:
+  cuda-linux:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Node.js + npm
+        uses: ./.github/actions/setup-node-npm
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Setup Rust
+        uses: ./.github/actions/setup-sidecar-rust
+        with:
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
+          cache-workspaces: native -> target-cuda
+          cache-shared-key: sidecar-linux-x86_64-cuda
+          cache-on-failure: 'false'
+
+      - name: Install CUDA toolkit
+        uses: Jimver/cuda-toolkit@v0.2.35
+        with:
+          cuda: ${{ env.CUDA_TOOLKIT_VERSION }}
+          method: network
+
+      - name: Build sidecar
+        env:
+          CARGO_TIMINGS: '1'
+        run: npm run build:sidecar:cuda:release
+
+      - name: Upload cargo timings
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: timings-cuda-smoke-linux
+          path: native/target*/cargo-timings/*.html
+          if-no-files-found: ignore
+
+  cuda-windows:
+    runs-on: windows-2025
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Node.js + npm
+        uses: ./.github/actions/setup-node-npm
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Setup Rust
+        uses: ./.github/actions/setup-sidecar-rust
+        with:
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
+          cache-workspaces: native -> target-cuda
+          cache-shared-key: sidecar-windows-x86_64-cuda
+          cache-on-failure: 'false'
+
+      - name: Install CUDA toolkit
+        uses: Jimver/cuda-toolkit@v0.2.35
+        with:
+          cuda: ${{ env.CUDA_TOOLKIT_VERSION }}
+          method: network
+          # Keep in sync with release.yml's Windows CUDA install. See #139.
+          sub-packages: '["nvcc", "crt", "nvvm", "cudart", "cublas", "cublas_dev", "cufft", "thrust", "visual_studio_integration"]'
+
+      - name: Build sidecar
+        shell: pwsh
+        env:
+          CARGO_TIMINGS: '1'
+        run: npm run build:sidecar:cuda:windows:release
+
+      - name: Upload cargo timings
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: timings-cuda-smoke-windows
+          path: native/target*/cargo-timings/*.html
+          if-no-files-found: ignore
+
+  report:
+    needs:
+      - cuda-linux
+      - cuda-windows
+    if: always()
+    permissions:
+      actions: read
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Node.js + npm
+        uses: ./.github/actions/setup-node-npm
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Render timing report
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node scripts/release-timing-report.mjs
+
+      - name: Upload timing report
+        uses: actions/upload-artifact@v7
+        with:
+          name: cuda-smoke-report
+          path: release-report.md
