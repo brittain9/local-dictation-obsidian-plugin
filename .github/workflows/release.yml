@@ -325,8 +325,40 @@ jobs:
           # warm-build path (the Windows-CUDA regression in #143).
           cache-on-failure: 'false'
 
-      - name: Install CUDA toolkit
+      # Resolve the toolkit install dir from CUDA_TOOLKIT_VERSION (Jimver installs
+      # to ...\CUDA\v<major>.<minor>). Derived, not hardcoded, so a toolkit bump
+      # moves the cache path in lockstep with the version-keyed cache below.
+      - name: Resolve CUDA install dir
         if: matrix.cuda
+        shell: pwsh
+        run: |
+          $v = '${{ env.CUDA_TOOLKIT_VERSION }}'.Split('.')
+          $dir = "C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v$($v[0]).$($v[1])"
+          "CUDA_INSTALL_DIR=$dir" | Out-File -FilePath $env:GITHUB_ENV -Append
+
+      # Cache the EXTRACTED toolkit dir and skip the (network-variable, 3-9 min)
+      # Jimver install on a hit. CMake's CUDA language support only needs nvcc on
+      # PATH + CUDA_PATH; it never reads the VS BuildCustomizations .props the
+      # installer drops outside CUDA_PATH, so caching CUDA_PATH alone suffices.
+      # Key busts on toolkit version (env) OR sub-package set (committed JSON). See #143.
+      - name: Restore CUDA toolkit
+        if: matrix.cuda
+        id: cuda-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ env.CUDA_INSTALL_DIR }}
+          key: cuda-${{ runner.os }}-${{ env.CUDA_TOOLKIT_VERSION }}-${{ hashFiles('.github/cuda-windows-subpackages.json') }}
+
+      - name: Read CUDA sub-packages
+        if: matrix.cuda && steps.cuda-cache.outputs.cache-hit != 'true'
+        id: cuda-subpkgs
+        shell: pwsh
+        run: |
+          $json = (Get-Content -Raw .github/cuda-windows-subpackages.json) -replace '\s', ''
+          "list=$json" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+
+      - name: Install CUDA toolkit
+        if: matrix.cuda && steps.cuda-cache.outputs.cache-hit != 'true'
         uses: Jimver/cuda-toolkit@v0.2.35
         with:
           cuda: ${{ env.CUDA_TOOLKIT_VERSION }}
@@ -338,19 +370,42 @@ jobs:
           #   nvvm   -> the cicc device compiler + libdevice (nvvm/bin, nvvm/libdevice)
           #   thrust -> include/cccl (Thrust/CUB) used by ggml-cuda kernels
           # Without them CMake's CUDA compiler probe fails (C1083 on host_config.h,
-          # then "cannot find the path" for nvvm/bin). Keep the targeted list —
-          # Windows full-toolkit installs are slow — but don't drop these. See #139.
-          # cuFFT is never linked by ggml/whisper, so it's trimmed to shave the
-          # install step. cublas_dev stays: it ships cublas.lib/cublasLt.lib, the
-          # MSVC import libs the final link needs (LNK1181 without it — the runtime
-          # cublas package ships only the DLLs). See #143.
-          sub-packages: '["nvcc", "crt", "nvvm", "cudart", "cublas", "cublas_dev", "thrust", "visual_studio_integration"]'
+          # then "cannot find the path" for nvvm/bin). cuFFT is never linked by
+          # ggml/whisper, so it's trimmed; cublas_dev stays (ships cublas.lib /
+          # cublasLt.lib — the MSVC import libs the final link needs; LNK1181 without
+          # it, since the runtime cublas package ships only the DLLs). The set lives
+          # in .github/cuda-windows-subpackages.json so it also feeds the cache key.
+          # See #139, #143.
+          sub-packages: ${{ steps.cuda-subpkgs.outputs.list }}
+
+      # On a hit we skip Jimver, so replicate the env vars + PATH entry it would
+      # have exported (verified against Jimver/cuda-toolkit src/update-path.ts).
+      - name: Set CUDA env from cache
+        if: matrix.cuda && steps.cuda-cache.outputs.cache-hit == 'true'
+        shell: pwsh
+        run: |
+          $v = '${{ env.CUDA_TOOLKIT_VERSION }}'.Split('.')
+          $name = "CUDA_PATH_V$($v[0])_$($v[1])"
+          "CUDA_PATH=$env:CUDA_INSTALL_DIR" | Out-File -FilePath $env:GITHUB_ENV -Append
+          "$name=$env:CUDA_INSTALL_DIR" | Out-File -FilePath $env:GITHUB_ENV -Append
+          "CUDA_PATH_VX_Y=$name" | Out-File -FilePath $env:GITHUB_ENV -Append
+          "$env:CUDA_INSTALL_DIR\bin" | Out-File -FilePath $env:GITHUB_PATH -Append
 
       - name: Build sidecar
         shell: pwsh
         env:
           CARGO_TIMINGS: '1'
         run: ${{ matrix.build_command }}
+
+      # Save only after a green build, and only on a miss. Mirrors the build cache's
+      # cache-on-failure:false — a failed/partial install never poisons the
+      # immutable-keyed toolkit cache.
+      - name: Save CUDA toolkit
+        if: success() && matrix.cuda && steps.cuda-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ env.CUDA_INSTALL_DIR }}
+          key: ${{ steps.cuda-cache.outputs.cache-primary-key }}
 
       - name: Upload cargo timings
         if: always()

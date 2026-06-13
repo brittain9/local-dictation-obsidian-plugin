@@ -91,16 +91,24 @@ jobs:
           cache-shared-key: sidecar-windows-x86_64-cuda
           cache-on-failure: 'false'
 
-      # Cache the EXTRACTED CUDA toolkit dir so we skip the ~3-5 min Jimver install
-      # on every warm run. CMake's CUDA language support only needs nvcc-on-PATH +
-      # CUDA_PATH; it never reads the VS BuildCustomizations .props the installer
-      # drops outside CUDA_PATH, so caching CUDA_PATH alone is sufficient. Key busts
-      # on toolkit version (env) OR sub-package set (the committed JSON). See #143.
+      # Mirrors release.yml's Windows CUDA toolkit cache exactly so a smoke run
+      # validates the release logic. Cache the extracted toolkit dir and skip the
+      # (network-variable, 3-9 min) Jimver install on a hit. CMake's CUDA language
+      # support only needs nvcc on PATH + CUDA_PATH; it never reads the VS
+      # BuildCustomizations .props outside CUDA_PATH, so CUDA_PATH alone suffices.
+      # Key busts on toolkit version (env) OR sub-package set (committed JSON). See #143.
+      - name: Resolve CUDA install dir
+        shell: pwsh
+        run: |
+          $v = '${{ env.CUDA_TOOLKIT_VERSION }}'.Split('.')
+          $dir = "C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v$($v[0]).$($v[1])"
+          "CUDA_INSTALL_DIR=$dir" | Out-File -FilePath $env:GITHUB_ENV -Append
+
       - name: Restore CUDA toolkit
         id: cuda-cache
         uses: actions/cache/restore@v4
         with:
-          path: C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v13.2
+          path: ${{ env.CUDA_INSTALL_DIR }}
           key: cuda-${{ runner.os }}-${{ env.CUDA_TOOLKIT_VERSION }}-${{ hashFiles('.github/cuda-windows-subpackages.json') }}
 
       - name: Read CUDA sub-packages
@@ -119,17 +127,18 @@ jobs:
           method: network
           sub-packages: ${{ steps.cuda-subpkgs.outputs.list }}
 
-      # On a hit we skip Jimver, so replicate the three env vars + PATH entry it
-      # would have exported (verified against Jimver/cuda-toolkit src/update-path.ts).
+      # On a hit we skip Jimver, so replicate the env vars + PATH entry it would
+      # have exported (verified against Jimver/cuda-toolkit src/update-path.ts).
       - name: Set CUDA env from cache
         if: steps.cuda-cache.outputs.cache-hit == 'true'
         shell: pwsh
         run: |
-          $cudaPath = 'C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v13.2'
-          "CUDA_PATH=$cudaPath" | Out-File -FilePath $env:GITHUB_ENV -Append
-          "CUDA_PATH_V13_2=$cudaPath" | Out-File -FilePath $env:GITHUB_ENV -Append
-          "CUDA_PATH_VX_Y=CUDA_PATH_V13_2" | Out-File -FilePath $env:GITHUB_ENV -Append
-          "$cudaPath\bin" | Out-File -FilePath $env:GITHUB_PATH -Append
+          $v = '${{ env.CUDA_TOOLKIT_VERSION }}'.Split('.')
+          $name = "CUDA_PATH_V$($v[0])_$($v[1])"
+          "CUDA_PATH=$env:CUDA_INSTALL_DIR" | Out-File -FilePath $env:GITHUB_ENV -Append
+          "$name=$env:CUDA_INSTALL_DIR" | Out-File -FilePath $env:GITHUB_ENV -Append
+          "CUDA_PATH_VX_Y=$name" | Out-File -FilePath $env:GITHUB_ENV -Append
+          "$env:CUDA_INSTALL_DIR\bin" | Out-File -FilePath $env:GITHUB_PATH -Append
 
       - name: Build sidecar
         shell: pwsh
