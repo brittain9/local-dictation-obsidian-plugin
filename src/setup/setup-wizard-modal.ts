@@ -179,7 +179,7 @@ export class SetupWizardModal extends Modal {
         this.goNext();
       },
       pluginDirectory: this.deps.pluginDirectory,
-      variant: 'cpu',
+      variants: ['cpu'],
       version: this.deps.pluginVersion,
     });
     modal.open();

@@ -3,7 +3,11 @@ import { Notice, Platform, Setting } from 'obsidian';
 
 import type { ModelInstallManager } from '../models/model-install-manager';
 import { updateInstallProgressElement } from '../models/model-install-progress';
-import { getInstallCopy, type InstallIntent } from '../setup/sidecar-install-copy';
+import {
+  getInstallCopy,
+  getSidecarUpdateCopy,
+  type InstallIntent,
+} from '../setup/sidecar-install-copy';
 import { SidecarInstallModal } from '../setup/sidecar-install-modal';
 import { formatErrorMessage } from '../shared/format-utils';
 import type { PluginLogger } from '../shared/plugin-logger';
@@ -308,7 +312,41 @@ export function openSidecarInstallModal(
       deps.refreshSettingsTab();
     },
     pluginDirectory: opts.pluginDirectory,
-    variant: opts.variant,
+    variants: [opts.variant],
+    version: deps.pluginVersion,
+  }).open();
+}
+
+export function openSidecarUpdateModal(
+  deps: SidecarInstallActionDeps,
+  opts: {
+    pluginDirectory: string;
+    variants: readonly SidecarInstallVariant[];
+  },
+): void {
+  if (deps.isDictationBusy()) {
+    new Notice(
+      'Stop dictation before updating sidecars — the update restarts the engine. If a transcript is still processing, run "Cancel dictation" to stop it now.',
+    );
+    return;
+  }
+
+  new SidecarInstallModal(deps.app, {
+    beforeReplace: async () => {
+      await shutdownSidecarBeforeFileMutation(deps, 'sidecar update');
+    },
+    copy: getSidecarUpdateCopy(opts.variants),
+    manager: deps.sidecarInstallManager,
+    onInstalled: async () => {
+      await deps.restartSidecar();
+      await deps.modelInstallManager.init();
+      deps.refreshSettingsTab();
+    },
+    onVariantInstalled: async () => {
+      await deps.restartSidecar();
+    },
+    pluginDirectory: opts.pluginDirectory,
+    variants: opts.variants,
     version: deps.pluginVersion,
   }).open();
 }
@@ -328,9 +366,8 @@ async function uninstallSidecarVariantWithUx(
     return;
   }
 
-  await shutdownSidecarBeforeFileMutation(deps, `${variantLabel} uninstall`);
-
   try {
+    await shutdownSidecarBeforeFileMutation(deps, `${variantLabel} uninstall`);
     await uninstallSidecarVariant(pluginDirectory, variant);
   } catch (error) {
     deps.logger?.error('installer', `failed to uninstall ${variantLabel} sidecar`, error);
@@ -360,6 +397,12 @@ async function shutdownSidecarBeforeFileMutation(
   deps: SidecarInstallActionDeps,
   reason: string,
 ): Promise<void> {
+  if (deps.isDictationBusy()) {
+    throw new Error(
+      'Dictation became active before the sidecar files could be changed. Stop or cancel dictation, then retry.',
+    );
+  }
+
   // Windows holds DLL handles on the live sidecar process, so install and
   // uninstall paths must stop it before removing or replacing bin/*.
   try {

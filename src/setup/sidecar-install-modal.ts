@@ -23,8 +23,9 @@ export interface SidecarInstallModalOptions {
   copy: InstallCopy;
   manager: SidecarInstallManager;
   onInstalled: () => Promise<void>;
+  onVariantInstalled?: ((variant: SidecarInstallVariant) => Promise<void>) | undefined;
   pluginDirectory: string;
-  variant: SidecarInstallVariant;
+  variants: readonly SidecarInstallVariant[];
   version: string;
 }
 
@@ -103,9 +104,12 @@ export class SidecarInstallModal extends Modal {
   }
 
   private renderPreInstall(): void {
-    let asset: string;
+    let downloads: Array<{ asset: string; variant: SidecarInstallVariant }>;
     try {
-      asset = detectPlatformAssetForCurrentEnv(this.options.variant);
+      downloads = this.options.variants.map((variant) => ({
+        asset: detectPlatformAssetForCurrentEnv(variant),
+        variant,
+      }));
     } catch (error) {
       // Currently the only path here is Intel Mac (CUDA-on-macOS is unreachable
       // because callers gate the variant on platform). The unsupported view
@@ -123,13 +127,17 @@ export class SidecarInstallModal extends Modal {
       details.createEl('dd', { text: value });
     };
     const releaseTagUrl = `${DEFAULT_RELEASE_BASE_URL.replace(/\/download$/, '/tag')}/${this.options.version}`;
-    details.createEl('dt', { text: 'Download' });
-    const downloadDd = details.createEl('dd');
-    downloadDd.createEl('a', {
-      text: asset,
-      href: releaseTagUrl,
-      attr: { rel: 'noopener noreferrer', target: '_blank' },
-    });
+    for (const download of downloads) {
+      details.createEl('dt', {
+        text: downloads.length === 1 ? 'Download' : `${download.variant.toUpperCase()} download`,
+      });
+      const downloadDd = details.createEl('dd');
+      downloadDd.createEl('a', {
+        text: download.asset,
+        href: releaseTagUrl,
+        attr: { rel: 'noopener noreferrer', target: '_blank' },
+      });
+    }
     appendRow('Version', this.options.version);
 
     const buttons = this.contentEl.createDiv({ cls: 'local-stt-sidecar-install__buttons' });
@@ -197,12 +205,13 @@ export class SidecarInstallModal extends Modal {
 
   private startInstall(): void {
     try {
-      this.options.manager.install({
+      this.options.manager.installBatch({
         beforeReplace: this.options.beforeReplace,
         onInstalled: this.options.onInstalled,
+        onVariantInstalled: this.options.onVariantInstalled,
         pluginDirectory: this.options.pluginDirectory,
         successNotice: this.options.copy.successNotice,
-        variant: this.options.variant,
+        variants: this.options.variants,
         version: this.options.version,
       });
     } catch (error) {

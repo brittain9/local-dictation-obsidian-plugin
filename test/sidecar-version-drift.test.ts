@@ -7,6 +7,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { type SidecarInstallVariant, variantDirectoryPath } from '../src/sidecar/sidecar-installer';
 import {
   detectSidecarVersionDrift,
+  isDevelopmentSidecarVersion,
   isSidecarVersionDrifted,
 } from '../src/sidecar/sidecar-version-drift';
 
@@ -32,35 +33,133 @@ describe('isSidecarVersionDrifted', () => {
   });
 });
 
+describe('isDevelopmentSidecarVersion', () => {
+  it('identifies dev install manifests', () => {
+    expect(isDevelopmentSidecarVersion('dev-debug')).toBe(true);
+    expect(isDevelopmentSidecarVersion(' dev-release ')).toBe(true);
+    expect(isDevelopmentSidecarVersion('2026.5.23')).toBe(false);
+  });
+});
+
 describe('detectSidecarVersionDrift', () => {
-  it('returns null when the variant has no install manifest', async () => {
+  it('returns an empty list when no sidecar has an install manifest', async () => {
     const pluginDirectory = await createTempDirectory();
 
     await expect(
-      detectSidecarVersionDrift({ pluginDirectory, pluginVersion: '2026.5.23', variant: 'cpu' }),
-    ).resolves.toBeNull();
+      detectSidecarVersionDrift({
+        pluginDirectory,
+        pluginVersion: '2026.5.23',
+        preferredVariant: 'cuda',
+        supportsCuda: true,
+      }),
+    ).resolves.toEqual([]);
   });
 
-  it('returns null when the installed version matches the plugin version', async () => {
+  it('returns an empty list when installed versions match the plugin version', async () => {
     const pluginDirectory = await createTempDirectory();
     await writeInstallManifest(pluginDirectory, 'cpu', '2026.5.23');
+    await writeInstallManifest(pluginDirectory, 'cuda', '2026.5.23');
 
     await expect(
-      detectSidecarVersionDrift({ pluginDirectory, pluginVersion: '2026.5.23', variant: 'cpu' }),
-    ).resolves.toBeNull();
+      detectSidecarVersionDrift({
+        pluginDirectory,
+        pluginVersion: '2026.5.23',
+        preferredVariant: 'cuda',
+        supportsCuda: true,
+      }),
+    ).resolves.toEqual([]);
   });
 
-  it('reports drift when the installed version differs from the plugin version', async () => {
+  it('reports every stale installed variant with the preferred variant first', async () => {
     const pluginDirectory = await createTempDirectory();
+    await writeInstallManifest(pluginDirectory, 'cpu', '2026.5.18');
     await writeInstallManifest(pluginDirectory, 'cuda', '2026.5.19');
 
     await expect(
-      detectSidecarVersionDrift({ pluginDirectory, pluginVersion: '2026.5.23', variant: 'cuda' }),
-    ).resolves.toEqual({
-      installedVersion: '2026.5.19',
+      detectSidecarVersionDrift({
+        pluginDirectory,
+        pluginVersion: '2026.5.23',
+        preferredVariant: 'cuda',
+        supportsCuda: true,
+      }),
+    ).resolves.toEqual([
+      {
+        installedVersion: '2026.5.19',
+        pluginVersion: '2026.5.23',
+        variant: 'cuda',
+      },
+      {
+        installedVersion: '2026.5.18',
+        pluginVersion: '2026.5.23',
+        variant: 'cpu',
+      },
+    ]);
+  });
+
+  it('prioritizes CPU when the user selected CPU-only acceleration', async () => {
+    const pluginDirectory = await createTempDirectory();
+    await writeInstallManifest(pluginDirectory, 'cpu', '2026.5.18');
+    await writeInstallManifest(pluginDirectory, 'cuda', '2026.5.19');
+
+    const drift = await detectSidecarVersionDrift({
+      pluginDirectory,
       pluginVersion: '2026.5.23',
-      variant: 'cuda',
+      preferredVariant: 'cpu',
+      supportsCuda: true,
     });
+
+    expect(drift.map((entry) => entry.variant)).toEqual(['cpu', 'cuda']);
+  });
+
+  it('reports only stale variants when installed versions are mixed', async () => {
+    const pluginDirectory = await createTempDirectory();
+    await writeInstallManifest(pluginDirectory, 'cpu', '2026.5.23');
+    await writeInstallManifest(pluginDirectory, 'cuda', '2026.5.19');
+
+    await expect(
+      detectSidecarVersionDrift({
+        pluginDirectory,
+        pluginVersion: '2026.5.23',
+        preferredVariant: 'cuda',
+        supportsCuda: true,
+      }),
+    ).resolves.toEqual([
+      {
+        installedVersion: '2026.5.19',
+        pluginVersion: '2026.5.23',
+        variant: 'cuda',
+      },
+    ]);
+  });
+
+  it('ignores dev sidecars even when their versions differ from the plugin', async () => {
+    const pluginDirectory = await createTempDirectory();
+    await writeInstallManifest(pluginDirectory, 'cpu', 'dev-debug');
+    await writeInstallManifest(pluginDirectory, 'cuda', 'dev-release');
+
+    await expect(
+      detectSidecarVersionDrift({
+        pluginDirectory,
+        pluginVersion: '2026.5.23',
+        preferredVariant: 'cuda',
+        supportsCuda: true,
+      }),
+    ).resolves.toEqual([]);
+  });
+
+  it('does not inspect CUDA installs on platforms without CUDA sidecars', async () => {
+    const pluginDirectory = await createTempDirectory();
+    await writeInstallManifest(pluginDirectory, 'cpu', '2026.5.23');
+    await writeInstallManifest(pluginDirectory, 'cuda', '2026.5.19');
+
+    await expect(
+      detectSidecarVersionDrift({
+        pluginDirectory,
+        pluginVersion: '2026.5.23',
+        preferredVariant: 'cuda',
+        supportsCuda: false,
+      }),
+    ).resolves.toEqual([]);
   });
 });
 
