@@ -198,7 +198,7 @@ jobs:
         if: matrix.cuda
         uses: Jimver/cuda-toolkit@v0.2.35
         with:
-          cuda: '12.9.0'
+          cuda: '13.2.0'
           method: network
 
       - name: Build sidecar
@@ -294,7 +294,7 @@ jobs:
         if: matrix.cuda
         uses: Jimver/cuda-toolkit@v0.2.35
         with:
-          cuda: '12.9.0'
+          cuda: '13.2.0'
           method: network
           sub-packages: '["nvcc", "cudart", "cublas", "cublas_dev", "cufft", "visual_studio_integration"]'
 
