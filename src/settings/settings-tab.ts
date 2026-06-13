@@ -96,7 +96,7 @@ const TIMESTAMP_DENSITY_OPTIONS: ReadonlyArray<DropdownOption<TimestampDensity>>
 ];
 
 export class LocalSttSettingTab extends PluginSettingTab {
-  readonly icon = 'audio-lines';
+  override readonly icon = 'audio-lines';
 
   private readonly access: SettingAccess;
   private disposeEngineSection: (() => void) | null = null;

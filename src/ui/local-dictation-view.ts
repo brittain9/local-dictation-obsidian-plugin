@@ -40,6 +40,7 @@ const CLEANUP_MODE_OPTIONS: ReadonlyArray<{ label: string; value: LlmPresetTimin
 ];
 
 interface LocalDictationViewDependencies {
+  getOpenRouterApiKey: () => string;
   getSettings: () => PluginSettings;
   getLlmCleanupFailure?: () => LlmCleanupFailure | null;
   logger?: PluginLogger | undefined;
@@ -66,6 +67,7 @@ export class LocalDictationView extends ItemView {
     super(leaf);
     this.routingControls = new LlmRoutingControls({
       app: this.app,
+      getOpenRouterApiKey: () => this.dependencies.getOpenRouterApiKey(),
       getSettings: () => this.dependencies.getSettings(),
       logger: this.dependencies.logger,
       ...(this.dependencies.notice !== undefined ? { notice: this.dependencies.notice } : {}),

@@ -16,6 +16,19 @@ export abstract class AbstractInputSuggest<T> {
 // node environment; tests that exercise render paths need a real DOM stub.
 export class Setting {}
 
+export class SecretComponent {
+  constructor(
+    readonly app: unknown,
+    readonly containerEl: HTMLElement,
+  ) {}
+  setValue(_value: string): this {
+    return this;
+  }
+  onChange(_callback: (value: string) => unknown): this {
+    return this;
+  }
+}
+
 export const Platform = {
   isMacOS: false,
   isWin: false,

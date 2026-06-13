@@ -100,7 +100,7 @@ export interface PluginSettings {
   dictationAnchor: DictationAnchor;
   listeningMode: ListeningMode;
   llmFeaturesEnabled: boolean;
-  llmOpenRouterApiKey: string;
+  llmOpenRouterSecretId: string;
   llmRemoteFeaturesEnabled: boolean;
   llmPostprocessActivePresetRef: string;
   // The user's timing choice while the transform is enabled; survives the
@@ -120,7 +120,7 @@ export interface PluginSettings {
   llmRouting: LlmRouting;
   localTranscriptSidebarBootstrapped: boolean;
   modelStorePathOverride: string;
-  schemaVersion: 1;
+  schemaVersion: 2;
   selectedModel: SelectedModel | null;
   setupCompletedAt: string | null;
   sidecarPathOverride: string;
@@ -145,7 +145,7 @@ export const DEFAULT_PLUGIN_SETTINGS: PluginSettings = {
   dictationAnchor: 'at_cursor',
   listeningMode: 'always_on',
   llmFeaturesEnabled: true,
-  llmOpenRouterApiKey: '',
+  llmOpenRouterSecretId: '',
   llmRemoteFeaturesEnabled: true,
   llmPostprocessActivePresetRef: DEFAULT_LLM_ACTIVE_PRESET_REF,
   llmPostprocessLastEnabledMode: 'per_utterance',
@@ -166,7 +166,7 @@ export const DEFAULT_PLUGIN_SETTINGS: PluginSettings = {
   llmRouting: 'local',
   localTranscriptSidebarBootstrapped: false,
   modelStorePathOverride: '',
-  schemaVersion: 1,
+  schemaVersion: 2,
   selectedModel: null,
   setupCompletedAt: null,
   sidecarPathOverride: '',
@@ -207,9 +207,9 @@ export function resolvePluginSettings(data: unknown): PluginSettings {
       raw.llmFeaturesEnabled,
       DEFAULT_PLUGIN_SETTINGS.llmFeaturesEnabled,
     ),
-    llmOpenRouterApiKey: readString(
-      raw.llmOpenRouterApiKey,
-      DEFAULT_PLUGIN_SETTINGS.llmOpenRouterApiKey,
+    llmOpenRouterSecretId: readSecretId(
+      raw.llmOpenRouterSecretId,
+      DEFAULT_PLUGIN_SETTINGS.llmOpenRouterSecretId,
     ),
     llmRemoteFeaturesEnabled: readBoolean(
       raw.llmRemoteFeaturesEnabled,
@@ -279,7 +279,7 @@ export function resolvePluginSettings(data: unknown): PluginSettings {
       DEFAULT_PLUGIN_SETTINGS.modelStorePathOverride,
     ),
     // Bump `schemaVersion` and add a migration step when renaming a key or changing default semantics.
-    schemaVersion: 1,
+    schemaVersion: 2,
     selectedModel: readSelectedModel(raw.selectedModel),
     setupCompletedAt: readSetupCompletedAt(raw.setupCompletedAt),
     sidecarPathOverride: readString(
@@ -377,6 +377,11 @@ function readBoolean(value: unknown, fallback: boolean): boolean {
 
 function readString(value: unknown, fallback: string): string {
   return typeof value === 'string' ? value.trim() : fallback;
+}
+
+function readSecretId(value: unknown, fallback: string): string {
+  const id = readString(value, fallback);
+  return /^[a-z0-9-]+$/.test(id) ? id : fallback;
 }
 
 function readSetupCompletedAt(value: unknown): string | null {

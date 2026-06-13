@@ -3,6 +3,7 @@ import {
   type App,
   type ExtraButtonComponent,
   Notice,
+  SecretComponent,
   Setting,
   setIcon,
 } from 'obsidian';
@@ -27,6 +28,7 @@ import { deriveInlineStatus, INLINE_STATUS_PRESENTATION } from './llm-status';
 
 export interface LlmRoutingControlsDependencies {
   app: App;
+  getOpenRouterApiKey: () => string;
   getSettings: () => PluginSettings;
   logger?: PluginLogger | undefined;
   notice?: ((message: string) => void) | undefined;
@@ -335,20 +337,18 @@ export class LlmRoutingControls {
   private renderApiKey(parent: HTMLElement, settings: PluginSettings): void {
     new Setting(parent)
       .setName('OpenRouter API key')
-      .setDesc('Stored in plain text in your vault.')
-      .addText((text) => {
-        text.inputEl.type = 'password';
-        text.setPlaceholder('sk-or-...');
-        text.setValue(settings.llmOpenRouterApiKey);
-        this.onModelInput?.(text.inputEl);
-        text.onChange(async (value) => {
-          this.providers.openrouter = emptyProviderState();
-          await this.dependencies.persist(
-            { ...this.dependencies.getSettings(), llmOpenRouterApiKey: value.trim() },
-            { rerender: false },
-          );
-          this.scheduleApiKeyRefresh();
-        });
+      .setDesc('Stored securely by Obsidian.')
+      .addComponent((containerEl) => {
+        return new SecretComponent(this.dependencies.app, containerEl)
+          .setValue(settings.llmOpenRouterSecretId)
+          .onChange(async (secretId) => {
+            this.providers.openrouter = emptyProviderState();
+            await this.dependencies.persist(
+              { ...this.dependencies.getSettings(), llmOpenRouterSecretId: secretId.trim() },
+              { rerender: false },
+            );
+            this.scheduleApiKeyRefresh();
+          });
       });
   }
 
@@ -445,7 +445,7 @@ export class LlmRoutingControls {
     }
 
     try {
-      await createProvider('openrouter', settings).cleanup({
+      await this.createProvider('openrouter', settings).cleanup({
         // The budget floor, not a tiny cap: reasoning models spend hidden
         // output tokens before the visible reply and would trip a small limit.
         maxOutputTokens: MIN_OUTPUT_TOKENS,
@@ -496,7 +496,7 @@ export class LlmRoutingControls {
     if (modelId.length === 0) {
       return;
     }
-    const provider = createProvider(providerId, this.dependencies.getSettings());
+    const provider = this.createProvider(providerId);
     void provider.prewarmModel?.(modelId)?.catch((error: unknown) => {
       this.dependencies.logger?.warn(
         'llm',
@@ -512,7 +512,7 @@ export class LlmRoutingControls {
     }
     this.apiKeyRefreshTimerId = window.setTimeout(() => {
       this.apiKeyRefreshTimerId = null;
-      if (this.dependencies.getSettings().llmOpenRouterApiKey.length === 0) {
+      if (this.dependencies.getOpenRouterApiKey().length === 0) {
         this.dependencies.requestRerender();
         return;
       }
@@ -523,7 +523,7 @@ export class LlmRoutingControls {
   private async refreshProviderHealth(providerId: LlmProviderId): Promise<void> {
     const state = this.providers[providerId];
     try {
-      state.health = await createProvider(providerId, this.dependencies.getSettings()).probe();
+      state.health = await this.createProvider(providerId).probe();
     } catch (error) {
       state.health = providerHealthFromError(error);
     }
@@ -542,7 +542,7 @@ export class LlmRoutingControls {
     const state = this.providers[providerId];
     const providerName = formatLlmProviderName(providerId);
     try {
-      const models = await createProvider(providerId, this.dependencies.getSettings()).listModels();
+      const models = await this.createProvider(providerId).listModels();
       state.models = models;
       state.health =
         models.length === 0 ? { kind: 'no_models' } : { kind: 'ready', modelCount: models.length };
@@ -567,6 +567,13 @@ export class LlmRoutingControls {
       return;
     }
     new Notice(message);
+  }
+
+  private createProvider(
+    providerId: LlmProviderId,
+    settings = this.dependencies.getSettings(),
+  ): ReturnType<typeof createProvider> {
+    return createProvider(providerId, settings, this.dependencies.getOpenRouterApiKey());
   }
 }
 

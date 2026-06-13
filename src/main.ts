@@ -16,6 +16,7 @@ import { ModelInstallManager } from './models/model-install-manager';
 import { Session } from './session/session';
 import { logAccelerationFallbacks } from './settings/acceleration-info';
 import { LlmPresetStateStore } from './settings/llm-preset-state';
+import { getOpenRouterApiKey, loadPluginSettings } from './settings/openrouter-secret-storage';
 import {
   DEFAULT_PLUGIN_SETTINGS,
   type PluginSettings,
@@ -63,7 +64,11 @@ export default class LocalSttPlugin extends Plugin {
   private sidecarInstallManager: SidecarInstallManager | null = null;
 
   override async onload(): Promise<void> {
-    this.settings = resolvePluginSettings(await this.loadData());
+    const loadedSettings = loadPluginSettings(await this.loadData(), this.app.secretStorage);
+    this.settings = loadedSettings.settings;
+    if (loadedSettings.shouldPersist) {
+      await this.saveData(this.settings);
+    }
     this.presetStateStore = new LlmPresetStateStore({
       commit: async (nextSettings, options) => {
         await this.applySettings(nextSettings, options);
@@ -115,6 +120,7 @@ export default class LocalSttPlugin extends Plugin {
       LOCAL_DICTATION_VIEW_TYPE,
       (leaf) =>
         new LocalDictationView(leaf, {
+          getOpenRouterApiKey: () => this.getOpenRouterApiKey(),
           getSettings: () => this.settings,
           getLlmCleanupFailure: () => this.llmCleanupFailure,
           logger: this.logger,
@@ -155,7 +161,12 @@ export default class LocalSttPlugin extends Plugin {
           sessionId,
         }),
       createLlmRouter: (settings) =>
-        createLlmRouter(settings, undefined, () => this.settings.llmRemoteFeaturesEnabled),
+        createLlmRouter(
+          settings,
+          undefined,
+          () => this.settings.llmRemoteFeaturesEnabled,
+          () => this.getOpenRouterApiKey(),
+        ),
       getSettings: () => this.settings,
       logger: this.logger,
       notice: (message) => {
@@ -435,6 +446,10 @@ export default class LocalSttPlugin extends Plugin {
 
   private async updateSettings(nextSettings: PluginSettings): Promise<void> {
     await this.requirePresetStateStore().commitPreservingPresetState(nextSettings);
+  }
+
+  private getOpenRouterApiKey(): string {
+    return getOpenRouterApiKey(this.settings, this.app.secretStorage);
   }
 
   private async applySettings(

@@ -30,7 +30,7 @@ describe('resolvePluginSettings', () => {
   });
 
   it('defaults missing schemaVersion to the current settings schema', () => {
-    expect(resolvePluginSettings({}).schemaVersion).toBe(1);
+    expect(resolvePluginSettings({}).schemaVersion).toBe(2);
   });
 
   it('enables LLM capabilities but keeps transformation off by default', () => {
@@ -51,7 +51,7 @@ describe('resolvePluginSettings', () => {
         dictationAnchor: 'end_of_note',
         listeningMode: 'always_on',
         llmFeaturesEnabled: false,
-        llmOpenRouterApiKey: ' openrouter-key ',
+        llmOpenRouterSecretId: ' openrouter-secret ',
         llmRemoteFeaturesEnabled: false,
         llmPostprocessMode: 'batch',
         llmPostprocessNoteContextChars: 4000,
@@ -93,7 +93,7 @@ describe('resolvePluginSettings', () => {
       dictationAnchor: 'end_of_note',
       listeningMode: 'always_on',
       llmFeaturesEnabled: false,
-      llmOpenRouterApiKey: 'openrouter-key',
+      llmOpenRouterSecretId: 'openrouter-secret',
       llmRemoteFeaturesEnabled: false,
       // Seeded from the stored mode (no explicit value persisted).
       llmPostprocessLastEnabledMode: 'batch',
@@ -156,7 +156,7 @@ describe('resolvePluginSettings', () => {
         dictationAnchor: 'at_end',
         listeningMode: 'unsupported',
         llmFeaturesEnabled: 'yes',
-        llmOpenRouterApiKey: 456,
+        llmOpenRouterSecretId: 'Invalid secret ID',
         llmRemoteFeaturesEnabled: 'yes',
         llmPostprocessMode: 'later',
         llmPostprocessPrompt: '',

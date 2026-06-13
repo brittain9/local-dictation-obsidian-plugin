@@ -12,10 +12,11 @@ import { DEFAULT_PLUGIN_SETTINGS, type PluginSettings } from '../src/settings/pl
 import { LlmRoutingControls } from '../src/ui/llm-routing-controls';
 import { createFakeLlmProvider } from './fixtures/llm';
 
-function createControls(overrides: Partial<PluginSettings> = {}) {
+function createControls(overrides: Partial<PluginSettings> = {}, openRouterApiKey = '') {
   const requestRerender = vi.fn();
   const controls = new LlmRoutingControls({
     app: {} as App,
+    getOpenRouterApiKey: () => openRouterApiKey,
     getSettings: () => ({ ...DEFAULT_PLUGIN_SETTINGS, ...overrides }),
     persist: vi.fn(async () => {}),
     requestRerender,
@@ -107,16 +108,21 @@ describe('LlmRoutingControls.refreshActiveProviders', () => {
 
 describe('LlmRoutingControls.testOpenRouter', () => {
   const configured = {
-    llmOpenRouterApiKey: 'sk-or-test',
+    llmOpenRouterSecretId: 'openrouter-secret',
     llmProviderModels: { ollama: '', openrouter: 'anthropic/claude-sonnet-4.5' },
   };
 
   it('returns null when a minimal completion succeeds with the selected model', async () => {
     const cleanup = vi.fn(async () => 'OK');
     createProviderMock.mockReturnValue(createFakeLlmProvider({ cleanup }));
-    const { controls } = createControls(configured);
+    const { controls } = createControls(configured, 'sk-or-test');
 
     await expect(controls.testOpenRouter()).resolves.toBeNull();
+    expect(createProviderMock).toHaveBeenCalledWith(
+      'openrouter',
+      expect.objectContaining(configured),
+      'sk-or-test',
+    );
     expect(cleanup).toHaveBeenCalledWith(
       expect.objectContaining({ model: 'anthropic/claude-sonnet-4.5' }),
     );
@@ -128,7 +134,7 @@ describe('LlmRoutingControls.testOpenRouter', () => {
       throw new ProviderError('OpenRouter model was not found.', 'unknown_model');
     });
     createProviderMock.mockReturnValue(createFakeLlmProvider({ cleanup }));
-    const { controls } = createControls(configured);
+    const { controls } = createControls(configured, 'sk-or-test');
 
     await expect(controls.testOpenRouter()).resolves.toBe(
       'OpenRouter model not found. Pick another under Where it runs.',
@@ -138,10 +144,13 @@ describe('LlmRoutingControls.testOpenRouter', () => {
   it('reports an unconfigured model without calling the provider', async () => {
     const cleanup = vi.fn(async () => 'OK');
     createProviderMock.mockReturnValue(createFakeLlmProvider({ cleanup }));
-    const { controls } = createControls({
-      ...configured,
-      llmProviderModels: { ollama: '', openrouter: '' },
-    });
+    const { controls } = createControls(
+      {
+        ...configured,
+        llmProviderModels: { ollama: '', openrouter: '' },
+      },
+      'sk-or-test',
+    );
 
     await expect(controls.testOpenRouter()).resolves.toBe(
       'OpenRouter model is not configured. Pick one under Where it runs.',
