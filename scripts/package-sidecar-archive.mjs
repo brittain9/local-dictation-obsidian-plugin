@@ -14,6 +14,7 @@ import process from 'node:process';
 
 import { listCudaArtifacts } from './lib/cuda-artifacts.mjs';
 import { pickFirstExistingDir } from './lib/pick-existing-dir.mjs';
+import { requiredEnv } from './lib/required-env.mjs';
 
 const archiveName = requiredEnv('ARCHIVE_NAME');
 const assetName = requiredEnv('ASSET_NAME');
@@ -86,14 +87,6 @@ if (isLinux) {
 await createArchive(artifactDir, join(distDir, archiveName));
 
 console.log(`Packaged ${archiveName} from ${artifactDir}`);
-
-function requiredEnv(name) {
-  const value = process.env[name];
-  if (typeof value !== 'string' || value.length === 0) {
-    throw new Error(`Required environment variable ${name} is not set.`);
-  }
-  return value;
-}
 
 function linuxCudaLibDir() {
   const which = spawnSync('which', ['nvcc'], { encoding: 'utf8' });
