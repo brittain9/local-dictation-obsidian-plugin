@@ -276,12 +276,17 @@ jobs:
             cuda: true
             cuda_architectures: '75-virtual'
 
-    # windows-latest is the VS 2026 (v18) image. CUDA 13.2 is the first toolkit
-    # to support MSVC v18 as a host compiler, so the VS CUDA generator works
-    # here again. The rust-cache key is forked by VS product line (see
-    # setup-sidecar-rust) so a future runner-image VS bump can't poison the
-    # cache. See #139.
-    runs-on: windows-latest
+    # windows-2025 is the Windows Server 2025 image, which now ships Visual
+    # Studio 2026 (v18) by default. CUDA 13.2 is the first toolkit to support
+    # MSVC v18 as a host compiler, so the VS CUDA generator works here. We pin
+    # this OS label rather than windows-latest for determinism (it won't roll to
+    # a future Server major), and deliberately avoid the windows-2025-vs2026
+    # alias — that one is testing-only and collapses into windows-2025 after the
+    # June 2026 migration. The label still doesn't pin the VS *version* (GitHub
+    # migrates VS inside it, as in the 2022->2026 move), so the rust-cache key is
+    # forked by VS product line (see setup-sidecar-rust) to survive a future
+    # flip. See #139.
+    runs-on: windows-2025
 
     steps:
       - name: Checkout
