@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Render a human-readable timing breakdown for a release (or CUDA smoke) run.
+// Render a human-readable timing breakdown for a release run.
 //
 // GitHub's jobs REST API already records started_at/completed_at for every job
 // AND every step, so no per-job instrumentation or timing-artifact plumbing is
