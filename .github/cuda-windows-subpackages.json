@@ -1,1 +1,11 @@
-["nvcc", "crt", "nvvm", "cudart", "cublas", "cublas_dev", "thrust", "visual_studio_integration"]
+[
+  "nvcc",
+  "crt",
+  "nvvm",
+  "cudart",
+  "cublas",
+  "cublas_dev",
+  "cufft",
+  "thrust",
+  "visual_studio_integration"
+]

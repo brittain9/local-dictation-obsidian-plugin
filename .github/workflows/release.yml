@@ -370,11 +370,16 @@ jobs:
           #   nvvm   -> the cicc device compiler + libdevice (nvvm/bin, nvvm/libdevice)
           #   thrust -> include/cccl (Thrust/CUB) used by ggml-cuda kernels
           # Without them CMake's CUDA compiler probe fails (C1083 on host_config.h,
-          # then "cannot find the path" for nvvm/bin). cuFFT is never linked by
-          # ggml/whisper, so it's trimmed; cublas_dev stays (ships cublas.lib /
-          # cublasLt.lib — the MSVC import libs the final link needs; LNK1181 without
-          # it, since the runtime cublas package ships only the DLLs). The set lives
-          # in .github/cuda-windows-subpackages.json so it also feeds the cache key.
+          # then "cannot find the path" for nvvm/bin). cufft is NOT a build/link
+          # dependency (ggml/whisper never link it) but it ships cufft64_*.dll,
+          # which onnxruntime_providers_cuda.dll loads at runtime; we redistribute
+          # that DLL (native/cuda-artifacts.json), so its runtime package must be
+          # installed here for the packager to copy — dropping it breaks the
+          # release archive (Linux gets cufft free via its full-toolkit install).
+          # cublas_dev stays (ships cublas.lib / cublasLt.lib — the MSVC import
+          # libs the final link needs; LNK1181 without it, since the runtime cublas
+          # package ships only the DLLs). The set lives in
+          # .github/cuda-windows-subpackages.json so it also feeds the cache key.
           # See #139, #143.
           sub-packages: ${{ steps.cuda-subpkgs.outputs.list }}
 
