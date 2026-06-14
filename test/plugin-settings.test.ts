@@ -574,6 +574,24 @@ describe('audio input device', () => {
   });
 });
 
+describe('audio source', () => {
+  it('defaults to microphone when unset', () => {
+    expect(resolvePluginSettings({}).audioSource).toBe('microphone');
+  });
+
+  it('reads a valid audioSource', () => {
+    expect(resolvePluginSettings({ audioSource: 'system' }).audioSource).toBe('system');
+  });
+
+  it.each([
+    ['unknown string', 'speaker'],
+    ['wrong type', 42],
+    ['null', null],
+  ])('coerces invalid audioSource to microphone (%s)', (_label, raw) => {
+    expect(resolvePluginSettings({ audioSource: raw }).audioSource).toBe('microphone');
+  });
+});
+
 describe('resetLlmPostprocessDefaults', () => {
   it('resets editable LLM defaults while preserving preset state and provider models', () => {
     const presets = [makeUserPreset({ id: 'a', label: 'Keep me' })];

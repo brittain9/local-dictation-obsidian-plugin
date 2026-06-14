@@ -60,6 +60,7 @@ type ControllerSession = Pick<
 
 interface ActiveSessionSnapshot {
   accelerationPreference: PluginSettings['accelerationPreference'];
+  audioSource: PluginSettings['audioSource'];
   dictationAnchor: PluginSettings['dictationAnchor'];
   listeningMode: PluginSettings['listeningMode'];
   llmFeaturesEnabled: PluginSettings['llmFeaturesEnabled'];
@@ -275,6 +276,7 @@ export class DictationSessionController {
     try {
       await this.dependencies.sidecarConnection.startSession({
         accelerationPreference: snapshot.accelerationPreference,
+        audioSource: snapshot.audioSource,
         language: 'en',
         mode: snapshot.listeningMode,
         modelSelection: snapshot.modelSelection,
@@ -290,6 +292,15 @@ export class DictationSessionController {
         return;
       }
       entry.phase = 'active';
+
+      if (snapshot.audioSource === 'system') {
+        // The sidecar captures system audio natively and feeds the frames
+        // itself, so the renderer never opens a microphone stream.
+        if (this.activeSessionId === sessionId) {
+          this.applyUiState('listening');
+        }
+        return;
+      }
 
       // Read the saved deviceId at session-start time so a settings change
       // applies on the next dictation rather than mid-session.
@@ -522,11 +533,12 @@ export class DictationSessionController {
 
     this.applySessionStateToAnchor(entry, event.state);
 
-    if (
-      event.sessionId !== this.activeSessionId ||
-      entry.phase !== 'active' ||
-      !this.dependencies.captureStream.isCapturing()
-    ) {
+    // System-audio sessions have no renderer capture stream — the sidecar
+    // drives them — so `isCapturing()` is false yet their state changes are
+    // still real and should move the ribbon.
+    const audioActive =
+      entry.snapshot.audioSource === 'system' || this.dependencies.captureStream.isCapturing();
+    if (event.sessionId !== this.activeSessionId || entry.phase !== 'active' || !audioActive) {
       return;
     }
 
@@ -1100,6 +1112,7 @@ function createSessionSnapshot(
 
   return {
     accelerationPreference: settings.accelerationPreference,
+    audioSource: settings.audioSource,
     dictationAnchor: settings.dictationAnchor,
     listeningMode: settings.listeningMode,
     llmFeaturesEnabled: settings.llmFeaturesEnabled,

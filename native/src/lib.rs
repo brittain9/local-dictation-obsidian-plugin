@@ -12,6 +12,7 @@ pub mod protocol;
 pub mod runtimes;
 pub mod session;
 pub mod stages;
+pub mod system_audio;
 pub mod transcription;
 pub mod vad;
 pub mod worker;

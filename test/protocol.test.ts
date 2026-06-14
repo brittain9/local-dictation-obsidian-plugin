@@ -224,10 +224,11 @@ describe('FramedMessageParser fatal stream handling', () => {
 // Commands -------------------------------------------------------------------
 
 describe('command serialization', () => {
-  it('serializes start_session with accelerationPreference and sessionId', () => {
+  it('serializes start_session with accelerationPreference, audioSource, and sessionId', () => {
     const frame = encodeJsonFrame(
       createStartSessionCommand({
         accelerationPreference: 'auto',
+        audioSource: 'system',
         language: 'en',
         mode: 'always_on',
         modelSelection: externalModelSelection(),
@@ -239,6 +240,7 @@ describe('command serialization', () => {
     const payload = readPayload(frame) as Record<string, unknown>;
 
     expect(payload.accelerationPreference).toBe('auto');
+    expect(payload.audioSource).toBe('system');
     expect(payload.sessionId).toBe('session-gpu');
   });
 

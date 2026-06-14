@@ -45,3 +45,6 @@ gpu-ort-cuda = ["engine-cohere-transcribe", "ort/cuda"]
 lto = "thin"
 codegen-units = 1
 strip = "symbols"
+
+[target."cfg(windows)".dependencies]
+wasapi = "0.23.0"

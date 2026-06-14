@@ -15,15 +15,17 @@ use crate::model_store::{
     scan_installed_models,
 };
 use crate::protocol::{
-    AccelerationPreference, AudioFrame, Command, CompiledAdapterInfo, CompiledRuntimeInfo,
-    ContextWindow, Event, HealthStatus, ListeningMode, ModelInstallState, ModelProbeStatus,
-    QueueBackpressureTier, SelectedModel, SessionState, SessionStopReason, system_info_string,
+    AccelerationPreference, AudioFrame, AudioSource, Command, CompiledAdapterInfo,
+    CompiledRuntimeInfo, ContextWindow, Event, HealthStatus, ListeningMode, ModelInstallState,
+    ModelProbeStatus, QueueBackpressureTier, SelectedModel, SessionState, SessionStopReason,
+    system_info_string,
 };
 use crate::session::{
     FinalizedUtterance, ListeningSession, SessionAction, SessionBaseState, SessionConfig,
     SessionInitError,
 };
 use crate::stages::StageEnablement;
+use crate::system_audio::{AudioFrameSink, SystemAudioController};
 use crate::transcription::GpuConfig;
 use crate::worker::{SessionMetadata, TranscriptionWorker, WorkerCommand, WorkerEvent};
 
@@ -61,6 +63,7 @@ pub struct AppState {
     registry: Arc<EngineRegistry>,
     session_factory: SessionFactory,
     sidecar_version: String,
+    system_audio: SystemAudioController,
     transcription_worker: TranscriptionWorker,
 }
 
@@ -133,8 +136,16 @@ impl AppState {
             registry: Arc::clone(&registry),
             session_factory,
             sidecar_version: sidecar_version.into(),
+            system_audio: SystemAudioController::new(),
             transcription_worker: TranscriptionWorker::spawn(Arc::clone(&registry)),
         }
+    }
+
+    /// Install the sink native system-audio capture delivers frames to. The
+    /// host wires this to the same channel renderer audio frames arrive on, so
+    /// captured frames flow through the identical ingestion path.
+    pub fn set_system_audio_sink(&mut self, sink: AudioFrameSink) {
+        self.system_audio.set_sink(sink);
     }
 
     /// Drain all pending outputs the host should write before its next
@@ -370,6 +381,7 @@ impl AppState {
             }
             Command::StartSession {
                 acceleration_preference,
+                audio_source,
                 language,
                 mode,
                 model_selection,
@@ -486,6 +498,23 @@ impl AppState {
                                 transcription_active: false,
                             },
                         );
+
+                        // For system-audio sessions the sidecar produces the
+                        // frames itself. Start capture before announcing the
+                        // session so a device/platform failure surfaces as an
+                        // error instead of a started-then-silent session.
+                        if audio_source == AudioSource::System
+                            && let Err(error) = self.system_audio.start(session_id.clone())
+                        {
+                            self.tear_down_session(&session_id);
+                            events.push(Event::Error {
+                                code: error.code().to_string(),
+                                details: None,
+                                message: error.message(),
+                                session_id: Some(session_id),
+                            });
+                            return (ControlFlow::Continue, events);
+                        }
 
                         events.push(Event::SessionStarted {
                             mode,
@@ -625,18 +654,27 @@ impl AppState {
         }
     }
 
+    /// Remove a session and release everything it owns: cancel its worker,
+    /// end the worker session, and stop any native system-audio capture.
+    /// Emits no events; callers decide what to surface. Returns the removed
+    /// session, or `None` if it was already gone.
+    fn tear_down_session(&mut self, session_id: &str) -> Option<ActiveSession> {
+        let active_session = self.active_sessions.remove(session_id)?;
+        let _ = active_session.cancel_tx.send(true);
+        let _ = self.transcription_worker.send(WorkerCommand::EndSession {
+            session_id: session_id.to_owned(),
+        });
+        self.system_audio.stop(session_id);
+        Some(active_session)
+    }
+
     fn finish_session(
         &mut self,
         session_id: &str,
         reason: SessionStopReason,
     ) -> Option<Vec<Event>> {
-        let active_session = self.active_sessions.remove(session_id)?;
-        let _ = active_session.cancel_tx.send(true);
+        let active_session = self.tear_down_session(session_id)?;
         let session_id = active_session.session.config().session_id.clone();
-        let _ = self.transcription_worker.send(WorkerCommand::EndSession {
-            session_id: session_id.clone(),
-        });
-
         Some(vec![Event::SessionStopped { reason, session_id }])
     }
 
@@ -653,12 +691,8 @@ impl AppState {
 
         let active_session = self.active_sessions.get_mut(session_id)?;
         if !active_session.transcription_active {
-            let _ = active_session.cancel_tx.send(true);
             let session_id = active_session.session.config().session_id.clone();
-            self.active_sessions.remove(&session_id)?;
-            let _ = self.transcription_worker.send(WorkerCommand::EndSession {
-                session_id: session_id.clone(),
-            });
+            self.tear_down_session(&session_id)?;
             events.push(Event::SessionStopped { reason, session_id });
             return Some(events);
         }
@@ -697,13 +731,9 @@ impl AppState {
                 .unwrap_or(SessionStopReason::UserStop)
         };
 
-        let Some(active_session) = self.active_sessions.remove(session_id) else {
+        if self.tear_down_session(session_id).is_none() {
             return false;
-        };
-        let _ = active_session.cancel_tx.send(true);
-        let _ = self.transcription_worker.send(WorkerCommand::EndSession {
-            session_id: session_id.to_owned(),
-        });
+        }
         events.push(Event::SessionStopped {
             reason,
             session_id: session_id.to_owned(),
@@ -1341,9 +1371,9 @@ mod tests {
     use crate::engine::registry::EngineRegistry;
     use crate::engine::traits::{LoadedModel, ModelFamilyAdapter, Runtime};
     use crate::protocol::{
-        AccelerationPreference, Command, ContextWindow, ContextWindowSource, Event, HealthStatus,
-        ListeningMode, ModelProbeStatus, QueueBackpressureTier, SelectedModel, SessionState,
-        SessionStopReason, StageId, StageOutcome, StageStatus,
+        AccelerationPreference, AudioSource, Command, ContextWindow, ContextWindowSource, Event,
+        HealthStatus, ListeningMode, ModelProbeStatus, QueueBackpressureTier, SelectedModel,
+        SessionState, SessionStopReason, StageId, StageOutcome, StageStatus,
     };
     use crate::session::{FinalizedUtterance, ListeningSession, SessionInitError, SpeakingStyle};
     use crate::transcription::{
@@ -2473,6 +2503,7 @@ mod tests {
     fn start_session_command(session_id: &str, model_file_path: &std::path::Path) -> Command {
         Command::StartSession {
             acceleration_preference: AccelerationPreference::Auto,
+            audio_source: AudioSource::Microphone,
             language: "en".to_string(),
             mode: ListeningMode::AlwaysOn,
             model_selection: SelectedModel::ExternalFile {

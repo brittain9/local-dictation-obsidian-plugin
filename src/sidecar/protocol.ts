@@ -28,6 +28,11 @@ export const MAX_FRAME_PAYLOAD_BYTES = 16 * 1024 * 1024;
 export type AccelerationPreference = 'auto' | 'cpu_only';
 export type SpeakingStyle = 'responsive' | 'balanced' | 'patient';
 
+// Where a session's audio comes from. `microphone` is captured in the renderer
+// and streamed to the sidecar; `system` is captured natively by the sidecar
+// from this computer's audio output (loopback).
+export type AudioSource = 'microphone' | 'system';
+
 export const LISTENING_MODES = ['always_on', 'one_sentence'] as const;
 export type ListeningMode = (typeof LISTENING_MODES)[number];
 
@@ -106,6 +111,7 @@ export type HealthCommand = EnvelopeBase<'health'>;
 
 export interface StartSessionCommand extends EnvelopeBase<'start_session'> {
   accelerationPreference: AccelerationPreference;
+  audioSource: AudioSource;
   language: 'en';
   mode: ListeningMode;
   modelSelection: SelectedModel;

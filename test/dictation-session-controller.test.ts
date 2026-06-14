@@ -156,6 +156,25 @@ describe('DictationSessionController', () => {
     expect(controller.getState()).toBe('listening');
   });
 
+  it('does not open the microphone for a system-audio session; the sidecar produces the frames', async () => {
+    const captureStream = new FakeCaptureStream();
+    const sidecarConnection = new FakeSidecarConnection();
+    const controller = createController({
+      captureStream,
+      sidecarConnection,
+      getSettings: () =>
+        createSettings({ selectedModel: createExternalModelSelection(), audioSource: 'system' }),
+    });
+
+    await controller.startDictation();
+
+    const startPayload = sidecarConnection.startSession.mock.calls[0]?.[0];
+    expect(startPayload?.audioSource).toBe('system');
+    expect(captureStream.start).not.toHaveBeenCalled();
+    expect(captureStream.isCapturing()).toBe(false);
+    expect(controller.getState()).toBe('listening');
+  });
+
   it('surfaces the bare microphone-permission message when capture is denied, without the generic start-failure prefix', async () => {
     const captureStream = new FakeCaptureStream();
     captureStream.start.mockRejectedValueOnce(

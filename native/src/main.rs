@@ -1,5 +1,6 @@
 use std::io::{self, Write};
-use std::sync::mpsc::{self, Receiver};
+use std::sync::mpsc::{self, Sender};
+use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
 
@@ -25,8 +26,20 @@ fn main() -> Result<()> {
 fn run_stdio(catalog: ModelCatalog, sidecar_version: String) -> Result<()> {
     let stdout = io::stdout();
     let mut writer = io::BufWriter::new(stdout.lock());
-    let input_rx = spawn_input_reader();
+    let (input_tx, input_rx) = mpsc::channel();
+    spawn_input_reader(input_tx.clone());
     let mut app_state = AppState::new(sidecar_version, catalog);
+
+    // Native system-audio capture produces frames on its own threads; route them
+    // into the same channel the stdin reader feeds, so they flow through the
+    // identical command/audio dispatch path. `Sender` is `!Sync`, so a `Mutex`
+    // makes the sink satisfy the `Send + Sync` bound.
+    let sink_tx = Mutex::new(input_tx);
+    app_state.set_system_audio_sink(Arc::new(move |frame| {
+        if let Ok(tx) = sink_tx.lock() {
+            let _ = tx.send(InputMessage::Frame(IncomingFrame::Audio(frame)));
+        }
+    }));
 
     loop {
         write_events(&mut writer, app_state.drain_pending_outputs())?;
@@ -67,9 +80,7 @@ fn run_stdio(catalog: ModelCatalog, sidecar_version: String) -> Result<()> {
     Ok(())
 }
 
-fn spawn_input_reader() -> Receiver<InputMessage> {
-    let (tx, rx) = mpsc::channel();
-
+fn spawn_input_reader(tx: Sender<InputMessage>) {
     thread::spawn(move || {
         let stdin = io::stdin();
         let mut reader = stdin.lock();
@@ -96,8 +107,6 @@ fn spawn_input_reader() -> Receiver<InputMessage> {
             }
         }
     });
-
-    rx
 }
 
 fn write_events(writer: &mut impl Write, events: Vec<Event>) -> Result<()> {

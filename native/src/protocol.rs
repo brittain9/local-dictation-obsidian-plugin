@@ -80,6 +80,17 @@ pub enum AccelerationPreference {
     CpuOnly,
 }
 
+/// Where a session's audio comes from. `Microphone` (the default) is captured in
+/// the renderer and streamed in as audio frames; `System` is captured natively
+/// by the sidecar from this computer's audio output (loopback).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AudioSource {
+    #[default]
+    Microphone,
+    System,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum HealthStatus {
@@ -259,6 +270,8 @@ pub enum Command {
     StartSession {
         #[serde(default)]
         acceleration_preference: AccelerationPreference,
+        #[serde(default)]
+        audio_source: AudioSource,
         language: String,
         mode: ListeningMode,
         model_selection: SelectedModel,
@@ -596,11 +609,11 @@ fn read_exact_or_eof<R: Read>(reader: &mut R, buffer: &mut [u8]) -> Result<usize
 #[cfg(test)]
 mod tests {
     use super::{
-        AUDIO_FRAME_KIND, AccelerationPreference, AudioFrame, Command, Event, EventEnvelope,
-        FRAME_HEADER_LENGTH, IncomingFrame, JSON_FRAME_KIND, ListeningMode, MAX_FRAME_PAYLOAD,
-        ModelInstallState, ModelProbeStatus, PCM_BYTES_PER_FRAME, QueueBackpressureTier,
-        SelectedModel, SessionStopReason, SpeakingStyle, encode_audio_frame_envelope, read_frame,
-        write_event_frame, write_frame,
+        AUDIO_FRAME_KIND, AccelerationPreference, AudioFrame, AudioSource, Command, Event,
+        EventEnvelope, FRAME_HEADER_LENGTH, IncomingFrame, JSON_FRAME_KIND, ListeningMode,
+        MAX_FRAME_PAYLOAD, ModelInstallState, ModelProbeStatus, PCM_BYTES_PER_FRAME,
+        QueueBackpressureTier, SelectedModel, SessionStopReason, SpeakingStyle,
+        encode_audio_frame_envelope, read_frame, write_event_frame, write_frame,
     };
     use crate::engine::capabilities::{ModelFamilyId, RuntimeId};
     use uuid::Uuid;
@@ -632,6 +645,7 @@ mod tests {
             parsed,
             IncomingFrame::Command(Command::StartSession {
                 acceleration_preference: AccelerationPreference::Auto,
+                audio_source: AudioSource::Microphone,
                 language: "en".to_string(),
                 mode: ListeningMode::AlwaysOn,
                 model_selection: SelectedModel::ExternalFile {

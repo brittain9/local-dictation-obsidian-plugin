@@ -20,6 +20,7 @@ import { renderMicrophonePicker } from './microphone-picker';
 import { renderModelSection } from './model-settings-section';
 import {
   type DictationAnchor,
+  isAudioSource,
   isDictationAnchor,
   isListeningMode,
   isSpeakingStyle,
@@ -164,11 +165,43 @@ export class LocalSttSettingTab extends PluginSettingTab {
     // --- Transcription ---
     const transcriptionCard = createSettingGroup(containerEl, 'Transcription');
 
-    this.disposeMicrophoneSection = renderMicrophonePicker(transcriptionCard, {
-      access: this.access,
-      isDictationBusy: this.dependencies.isDictationBusy,
-      logger: this.dependencies.logger,
-    });
+    // Native system-audio capture lives in the sidecar and is Windows-only for
+    // now; elsewhere the source is always the microphone (route output through a
+    // virtual audio device to transcribe system audio — see the System audio guide).
+    const systemAudioSupported = Platform.isWin;
+    const audioSource = systemAudioSupported ? settings.audioSource : 'microphone';
+
+    if (systemAudioSupported) {
+      new Setting(transcriptionCard)
+        .setName('Audio source')
+        .setDesc("Transcribe your microphone, or this computer's audio output.")
+        .addDropdown((dropdown) => {
+          dropdown.addOption('microphone', 'Microphone');
+          dropdown.addOption('system', 'System audio');
+          dropdown.setValue(audioSource);
+          dropdown.onChange(async (value) => {
+            if (!isAudioSource(value) || value === settings.audioSource) {
+              return;
+            }
+            await this.access.persistOne('audioSource', value);
+            this.display();
+          });
+        });
+    }
+
+    if (audioSource === 'system') {
+      new Setting(transcriptionCard)
+        .setName('System audio')
+        .setDesc(
+          "Captures everything playing on this computer's default output device — meetings, calls, and videos. Your microphone isn't used.",
+        );
+    } else {
+      this.disposeMicrophoneSection = renderMicrophonePicker(transcriptionCard, {
+        access: this.access,
+        isDictationBusy: this.dependencies.isDictationBusy,
+        logger: this.dependencies.logger,
+      });
+    }
 
     addEnumSetting(transcriptionCard, this.access, {
       name: 'Listening mode',
