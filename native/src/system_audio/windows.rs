@@ -16,7 +16,8 @@ use std::time::Duration;
 
 use wasapi::{Direction, SampleType, StreamMode, WaveFormat, initialize_mta};
 
-use super::{AudioFrameSink, CaptureHandle, LoopbackFrameResampler, SystemAudioError};
+use super::resample::LoopbackFrameResampler;
+use super::{AudioFrameSink, CaptureHandle, SystemAudioError};
 use crate::protocol::AudioFrame;
 
 const POLL_INTERVAL: Duration = Duration::from_millis(5);
