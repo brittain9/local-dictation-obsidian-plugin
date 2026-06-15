@@ -1,0 +1,24 @@
+{
+  "$comment": "Reference corpus for the sidecar transcription quality suite. Each entry is a known-good audio clip plus the text it should produce. The suite (tests/transcription_e2e.rs) is data-driven over this file: add a clip + entry to extend coverage, no code change required. Keep clips small, 16 kHz mono 16-bit PCM WAV, and public-domain / permissively licensed (see ../README.md).",
+  "fixtures": [
+    {
+      "id": "jfk",
+      "file": "audio/jfk.wav",
+      "reference": "And so my fellow Americans, ask not what your country can do for you, ask what you can do for your country.",
+      "anchors": ["fellow", "americans", "country"],
+      "max_wer": 0.15,
+      "format": {
+        "sample_rate_hz": 16000,
+        "channels": 1,
+        "bits_per_sample": 16,
+        "approx_duration_ms": 11000
+      },
+      "source": {
+        "title": "John F. Kennedy — Inaugural Address (Jan 20, 1961), excerpt",
+        "url": "https://raw.githubusercontent.com/ggml-org/whisper.cpp/v1.7.5/samples/jfk.wav",
+        "license": "Public Domain (work of the U.S. federal government, 17 U.S.C. § 105)",
+        "sha256": "59dfb9a4acb36fe2a2affc14bacbee2920ff435cb13cc314a08c13f66ba7860e"
+      }
+    }
+  ]
+}

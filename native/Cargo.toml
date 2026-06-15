@@ -37,6 +37,26 @@ gpu-metal = ["whisper-rs/metal"]
 gpu-cuda = ["whisper-rs/cuda"]
 gpu-ort-cuda = ["engine-cohere-transcribe", "ort/cuda"]
 
+# Test/bench-only dependencies. These back the end-to-end quality suite under
+# `tests/` and `benches/`: WAV fixture decoding, catalog-driven model download
+# with integrity verification, and the Criterion benchmark harness. Versions
+# mirror the runtime dependencies above so Cargo unifies a single build.
+[dev-dependencies]
+criterion = { version = "0.5", default-features = false, features = ["cargo_bench_support"] }
+hound = "3.5"
+reqwest = { version = "0.12", default-features = false, features = ["blocking", "rustls-tls"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+sha2 = "0.11"
+uuid = { version = "1", features = ["v4"] }
+
+# End-to-end transcription benchmark (real-time factor). Uses the Criterion
+# harness rather than libtest, and is skipped automatically when no whisper
+# model is available (see benches/transcription.rs).
+[[bench]]
+name = "transcription"
+harness = false
+
 # Release profile tuned for distribution size + steady-state perf. `panic`
 # stays at the implicit default (`unwind`) because worker.rs and installer.rs
 # use `catch_unwind` to isolate panics from native whisper/ort code — aborting
