@@ -166,15 +166,22 @@ export class LocalSttSettingTab extends PluginSettingTab {
     const transcriptionCard = createSettingGroup(containerEl, 'Transcription');
 
     // Native system-audio capture lives in the sidecar and is Windows-only for
-    // now; elsewhere the source is always the microphone (route output through a
-    // virtual audio device to transcribe system audio — see the System audio guide).
+    // now. Elsewhere the source is the microphone (route output through a
+    // virtual audio device to transcribe system audio — see the System audio
+    // guide). The picker still appears on unsupported platforms when a synced
+    // 'system' value is stuck, so the user always has a way back to Microphone.
     const systemAudioSupported = Platform.isWin;
-    const audioSource = systemAudioSupported ? settings.audioSource : 'microphone';
+    const audioSource = settings.audioSource;
+    const showSourcePicker = systemAudioSupported || audioSource === 'system';
 
-    if (systemAudioSupported) {
+    if (showSourcePicker) {
       new Setting(transcriptionCard)
         .setName('Audio source')
-        .setDesc("Transcribe your microphone, or this computer's audio output.")
+        .setDesc(
+          systemAudioSupported
+            ? "Transcribe your microphone, or this computer's audio output."
+            : "System audio capture isn't available on this platform — switch to Microphone, or route output through a virtual device (see the System audio guide).",
+        )
         .addDropdown((dropdown) => {
           dropdown.addOption('microphone', 'Microphone');
           dropdown.addOption('system', 'System audio');
@@ -190,11 +197,15 @@ export class LocalSttSettingTab extends PluginSettingTab {
     }
 
     if (audioSource === 'system') {
-      new Setting(transcriptionCard)
-        .setName('System audio')
-        .setDesc(
-          "Captures everything playing on this computer's default output device — meetings, calls, and videos. Your microphone isn't used.",
-        );
+      if (systemAudioSupported) {
+        new Setting(transcriptionCard)
+          .setName('System audio')
+          .setDesc(
+            "Captures everything playing on this computer's default output device — meetings, calls, and videos. Your microphone isn't used.",
+          );
+      }
+      // On an unsupported platform the picker above is the way back to
+      // Microphone; no microphone picker is shown until they switch.
     } else {
       this.disposeMicrophoneSection = renderMicrophonePicker(transcriptionCard, {
         access: this.access,

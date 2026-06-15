@@ -22,6 +22,20 @@ use crate::protocol::AudioFrame;
 const POLL_INTERVAL: Duration = Duration::from_millis(5);
 const INIT_TIMEOUT: Duration = Duration::from_secs(10);
 
+/// Decodes one sample for one channel at `byte_offset` within the front of the
+/// capture queue, as a normalized f32 in `[-1.0, 1.0]`.
+type SampleDecoder = fn(&VecDeque<u8>, usize) -> f32;
+
+/// The device's negotiated capture format, parsed and validated once so the
+/// capture loop never re-derives it from the raw [`WaveFormat`].
+struct LoopbackFormat {
+    sample_rate: u32,
+    channels: usize,
+    bytes_per_sample: usize,
+    block_align: usize,
+    decode: SampleDecoder,
+}
+
 pub(crate) fn spawn_capture(
     session_id: String,
     sink: AudioFrameSink,
@@ -38,9 +52,14 @@ pub(crate) fn spawn_capture(
             let _ = join.join();
             Err(error)
         }
-        Err(_) => Err(SystemAudioError::Capture(
-            "timed out opening the audio device".into(),
-        )),
+        Err(_) => {
+            // The thread may have finished initializing in the race window after
+            // the timeout fired; signal it to stop so it can't run orphaned.
+            stop.store(true, Ordering::Relaxed);
+            Err(SystemAudioError::Capture(
+                "timed out opening the audio device".into(),
+            ))
+        }
     }
 }
 
@@ -54,25 +73,10 @@ fn capture_thread(
     // this thread; only a hard failure should abort capture.
     let _ = initialize_mta();
 
-    let setup = open_loopback_client();
-    let (client, capture, format) = match setup {
+    let (client, capture, format) = match open_loopback_client() {
         Ok(parts) => parts,
         Err(error) => {
             let _ = init_tx.send(Err(error));
-            return;
-        }
-    };
-
-    let sample_rate = format.get_samplespersec();
-    let channels = format.get_nchannels() as usize;
-    let bits_per_sample = format.get_bitspersample() as usize;
-    let block_align = (bits_per_sample / 8) * channels;
-    let sample_type = match format.get_subformat() {
-        Ok(sample_type) => sample_type,
-        Err(error) => {
-            let _ = init_tx.send(Err(SystemAudioError::Capture(format!(
-                "unsupported device format: {error}"
-            ))));
             return;
         }
     };
@@ -87,7 +91,7 @@ fn capture_thread(
         return;
     }
 
-    let mut resampler = LoopbackFrameResampler::new(sample_rate);
+    let mut resampler = LoopbackFrameResampler::new(format.sample_rate);
     let mut queue: VecDeque<u8> = VecDeque::new();
     let mut mono_samples: Vec<f32> = Vec::new();
 
@@ -98,17 +102,13 @@ fn capture_thread(
         }
 
         mono_samples.clear();
-        while queue.len() >= block_align {
+        while queue.len() >= format.block_align {
             let mut channel_sum = 0.0_f32;
-            for channel in 0..channels {
-                let offset = channel * (bits_per_sample / 8);
-                channel_sum += decode_sample(&queue, offset, bits_per_sample, sample_type);
+            for channel in 0..format.channels {
+                channel_sum += (format.decode)(&queue, channel * format.bytes_per_sample);
             }
-            mono_samples.push(channel_sum / channels as f32);
-
-            for _ in 0..block_align {
-                queue.pop_front();
-            }
+            mono_samples.push(channel_sum / format.channels as f32);
+            queue.drain(..format.block_align);
         }
 
         if !mono_samples.is_empty() {
@@ -127,10 +127,16 @@ fn capture_thread(
     let _ = client.stop_stream();
 }
 
-/// Opens the default render device's audio client in loopback-capture mode
-/// and returns it along with a capture client and the negotiated mix format.
-fn open_loopback_client()
--> Result<(wasapi::AudioClient, wasapi::AudioCaptureClient, WaveFormat), SystemAudioError> {
+/// Opens the default render device's audio client in loopback-capture mode and
+/// returns it along with a capture client and the parsed, validated format.
+fn open_loopback_client() -> Result<
+    (
+        wasapi::AudioClient,
+        wasapi::AudioCaptureClient,
+        LoopbackFormat,
+    ),
+    SystemAudioError,
+> {
     let enumerator =
         wasapi::DeviceEnumerator::new().map_err(|e| SystemAudioError::Capture(format!("{e}")))?;
     let device = enumerator
@@ -140,24 +146,10 @@ fn open_loopback_client()
         .get_iaudioclient()
         .map_err(|e| SystemAudioError::Capture(format!("{e}")))?;
 
-    let format = client
+    let wave_format = client
         .get_mixformat()
         .map_err(|e| SystemAudioError::Capture(format!("{e}")))?;
-
-    // Validate the sample type/bit depth up front so unsupported formats
-    // surface as a clear error rather than producing garbage audio.
-    let sample_type = format
-        .get_subformat()
-        .map_err(|e| SystemAudioError::Capture(format!("unsupported device format: {e}")))?;
-    let bits_per_sample = format.get_bitspersample();
-    match (sample_type, bits_per_sample) {
-        (SampleType::Float, 32) | (SampleType::Int, 16) | (SampleType::Int, 32) => {}
-        (sample_type, bits_per_sample) => {
-            return Err(SystemAudioError::Capture(format!(
-                "unsupported device format: {sample_type} {bits_per_sample}-bit"
-            )));
-        }
-    }
+    let format = parse_format(&wave_format)?;
 
     let (def_period, _min_period) = client
         .get_device_period()
@@ -165,7 +157,7 @@ fn open_loopback_client()
 
     client
         .initialize_client(
-            &format,
+            &wave_format,
             &Direction::Capture,
             &StreamMode::PollingShared {
                 autoconvert: false,
@@ -181,29 +173,52 @@ fn open_loopback_client()
     Ok((client, capture, format))
 }
 
-/// Decode one sample for one channel at `byte_offset` within `queue`'s front,
-/// returning it as a normalized f32 in `[-1.0, 1.0]`.
-fn decode_sample(
-    queue: &VecDeque<u8>,
-    byte_offset: usize,
-    bits_per_sample: usize,
-    sample_type: SampleType,
-) -> f32 {
-    match (sample_type, bits_per_sample) {
-        (SampleType::Float, 32) => {
-            let bytes = read_bytes::<4>(queue, byte_offset);
-            f32::from_le_bytes(bytes)
-        }
-        (SampleType::Int, 16) => {
-            let bytes = read_bytes::<2>(queue, byte_offset);
-            i16::from_le_bytes(bytes) as f32 / 0x8000 as f32
-        }
-        (SampleType::Int, 32) => {
-            let bytes = read_bytes::<4>(queue, byte_offset);
-            i32::from_le_bytes(bytes) as f32 / 0x8000_0000_u32 as f32
-        }
-        _ => 0.0,
+/// Parse and validate the device mix format once, selecting the per-sample
+/// decoder up front so the capture loop is a tight branch-free inner path.
+fn parse_format(wave_format: &WaveFormat) -> Result<LoopbackFormat, SystemAudioError> {
+    let sample_type = wave_format
+        .get_subformat()
+        .map_err(|e| SystemAudioError::Capture(format!("unsupported device format: {e}")))?;
+    let bits_per_sample = wave_format.get_bitspersample() as usize;
+    let channels = wave_format.get_nchannels() as usize;
+
+    if channels == 0 {
+        return Err(SystemAudioError::Capture(
+            "device reported zero channels".into(),
+        ));
     }
+
+    let decode: SampleDecoder = match (sample_type, bits_per_sample) {
+        (SampleType::Float, 32) => decode_f32,
+        (SampleType::Int, 16) => decode_i16,
+        (SampleType::Int, 32) => decode_i32,
+        (sample_type, bits_per_sample) => {
+            return Err(SystemAudioError::Capture(format!(
+                "unsupported device format: {sample_type} {bits_per_sample}-bit"
+            )));
+        }
+    };
+
+    let bytes_per_sample = bits_per_sample / 8;
+    Ok(LoopbackFormat {
+        sample_rate: wave_format.get_samplespersec(),
+        channels,
+        bytes_per_sample,
+        block_align: bytes_per_sample * channels,
+        decode,
+    })
+}
+
+fn decode_f32(queue: &VecDeque<u8>, byte_offset: usize) -> f32 {
+    f32::from_le_bytes(read_bytes::<4>(queue, byte_offset))
+}
+
+fn decode_i16(queue: &VecDeque<u8>, byte_offset: usize) -> f32 {
+    i16::from_le_bytes(read_bytes::<2>(queue, byte_offset)) as f32 / 0x8000 as f32
+}
+
+fn decode_i32(queue: &VecDeque<u8>, byte_offset: usize) -> f32 {
+    i32::from_le_bytes(read_bytes::<4>(queue, byte_offset)) as f32 / 0x8000_0000_u32 as f32
 }
 
 fn read_bytes<const N: usize>(queue: &VecDeque<u8>, byte_offset: usize) -> [u8; N] {
