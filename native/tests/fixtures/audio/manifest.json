@@ -5,11 +5,7 @@
       "id": "jfk",
       "file": "audio/jfk.wav",
       "reference": "And so my fellow Americans, ask not what your country can do for you, ask what you can do for your country.",
-      "anchors": [
-        "fellow",
-        "americans",
-        "country"
-      ],
+      "anchors": ["fellow", "americans", "country"],
       "max_wer": 0.15,
       "format": {
         "sample_rate_hz": 16000,
@@ -27,11 +23,7 @@
       "id": "3575-170457-0051",
       "file": "audio/3575-170457-0051.wav",
       "reference": "AT TEA TIME THEY WERE SAD AND SILENT AND THE MEAL WENT AWAY UNTOUCHED BY ANY OF THE THREE",
-      "anchors": [
-        "silent",
-        "meal",
-        "untouched"
-      ],
+      "anchors": ["silent", "meal", "untouched"],
       "max_wer": 0.15,
       "format": {
         "sample_rate_hz": 16000,
@@ -49,11 +41,7 @@
       "id": "1580-141084-0047",
       "file": "audio/1580-141084-0047.wav",
       "reference": "I HAVE A LETTER HERE MISTER SOAMES WHICH I WROTE TO YOU EARLY THIS MORNING IN THE MIDDLE OF A RESTLESS NIGHT",
-      "anchors": [
-        "letter",
-        "morning",
-        "restless"
-      ],
+      "anchors": ["letter", "morning", "restless"],
       "max_wer": 0.25,
       "format": {
         "sample_rate_hz": 16000,
@@ -71,11 +59,7 @@
       "id": "5683-32866-0024",
       "file": "audio/5683-32866-0024.wav",
       "reference": "I SHAN'T TROUBLE YOU ABOUT MY TRAIN OF THOUGHTS OR FANCIES BUT I BEGAN TO FEEL VERY LIKE A GENTLEMAN IN A GHOST STORY WATCHING EXPERIMENTALLY IN A HAUNTED CHAMBER",
-      "anchors": [
-        "gentleman",
-        "haunted",
-        "chamber"
-      ],
+      "anchors": ["gentleman", "haunted", "chamber"],
       "max_wer": 0.2,
       "format": {
         "sample_rate_hz": 16000,
@@ -93,11 +77,7 @@
       "id": "3729-6852-0040",
       "file": "audio/3729-6852-0040.wav",
       "reference": "FOR THE FIRST DAY SIR I THINK THAT WHAT YOU HAVE DONE GIVES GREAT HOPES OF YOU AND WITHOUT ANY DOUBT YOU WILL MAKE RAPID PROGRESS",
-      "anchors": [
-        "great",
-        "doubt",
-        "progress"
-      ],
+      "anchors": ["great", "doubt", "progress"],
       "max_wer": 0.2,
       "format": {
         "sample_rate_hz": 16000,
@@ -115,11 +95,7 @@
       "id": "7021-79740-0000",
       "file": "audio/7021-79740-0000.wav",
       "reference": "TO SUCH PERSONS THESE INDIRECT MODES OF TRAINING CHILDREN IN HABITS OF SUBORDINATION TO THEIR WILL OR RATHER OF YIELDING TO THEIR INFLUENCE ARE SPECIALLY USEFUL",
-      "anchors": [
-        "children",
-        "training",
-        "influence"
-      ],
+      "anchors": ["children", "training", "influence"],
       "max_wer": 0.2,
       "format": {
         "sample_rate_hz": 16000,
