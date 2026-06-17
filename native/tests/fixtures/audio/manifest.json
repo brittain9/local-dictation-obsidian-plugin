@@ -1,23 +1,136 @@
 {
-  "$comment": "Reference corpus for the sidecar transcription quality suite. Each entry is a known-good audio clip plus the text it should produce. The suite (tests/transcription_e2e.rs) is data-driven over this file: add a clip + entry to extend coverage, no code change required. Keep clips small, 16 kHz mono 16-bit PCM WAV, and public-domain / permissively licensed (see ../README.md).",
+  "$comment": "Reference corpus for the sidecar transcription quality suite. Each entry is a known-good audio clip plus the text it should produce; the suite (tests/transcription_e2e.rs) is data-driven over this file, so adding a clip + entry extends coverage with no code change. Clips are small, 16 kHz mono 16-bit PCM WAV, and public-domain / permissively licensed (see ../README.md). LibriSpeech references are the corpus's official transcripts, kept verbatim (uppercase, unpunctuated); the harness normalizes case and punctuation before scoring.",
   "fixtures": [
     {
       "id": "jfk",
       "file": "audio/jfk.wav",
       "reference": "And so my fellow Americans, ask not what your country can do for you, ask what you can do for your country.",
-      "anchors": ["fellow", "americans", "country"],
+      "anchors": [
+        "fellow",
+        "americans",
+        "country"
+      ],
       "max_wer": 0.15,
       "format": {
         "sample_rate_hz": 16000,
         "channels": 1,
-        "bits_per_sample": 16,
-        "approx_duration_ms": 11000
+        "bits_per_sample": 16
       },
       "source": {
         "title": "John F. Kennedy — Inaugural Address (Jan 20, 1961), excerpt",
         "url": "https://raw.githubusercontent.com/ggml-org/whisper.cpp/v1.7.5/samples/jfk.wav",
         "license": "Public Domain (work of the U.S. federal government, 17 U.S.C. § 105)",
         "sha256": "59dfb9a4acb36fe2a2affc14bacbee2920ff435cb13cc314a08c13f66ba7860e"
+      }
+    },
+    {
+      "id": "3575-170457-0051",
+      "file": "audio/3575-170457-0051.wav",
+      "reference": "AT TEA TIME THEY WERE SAD AND SILENT AND THE MEAL WENT AWAY UNTOUCHED BY ANY OF THE THREE",
+      "anchors": [
+        "silent",
+        "meal",
+        "untouched"
+      ],
+      "max_wer": 0.15,
+      "format": {
+        "sample_rate_hz": 16000,
+        "channels": 1,
+        "bits_per_sample": 16
+      },
+      "source": {
+        "title": "LibriSpeech ASR corpus (test-clean), utterance 3575-170457-0051, speaker 3575",
+        "url": "https://www.openslr.org/12/",
+        "license": "CC BY 4.0",
+        "sha256": "06072cea26b539b99a314b716cfd5a888ee79b832361d106bbfe9ba0cd1bda1c"
+      }
+    },
+    {
+      "id": "1580-141084-0047",
+      "file": "audio/1580-141084-0047.wav",
+      "reference": "I HAVE A LETTER HERE MISTER SOAMES WHICH I WROTE TO YOU EARLY THIS MORNING IN THE MIDDLE OF A RESTLESS NIGHT",
+      "anchors": [
+        "letter",
+        "morning",
+        "restless"
+      ],
+      "max_wer": 0.25,
+      "format": {
+        "sample_rate_hz": 16000,
+        "channels": 1,
+        "bits_per_sample": 16
+      },
+      "source": {
+        "title": "LibriSpeech ASR corpus (test-clean), utterance 1580-141084-0047, speaker 1580",
+        "url": "https://www.openslr.org/12/",
+        "license": "CC BY 4.0",
+        "sha256": "06c7526bfde07f4249c071133dd73e234ca2f9de8f599d6fed12810c2674e210"
+      }
+    },
+    {
+      "id": "5683-32866-0024",
+      "file": "audio/5683-32866-0024.wav",
+      "reference": "I SHAN'T TROUBLE YOU ABOUT MY TRAIN OF THOUGHTS OR FANCIES BUT I BEGAN TO FEEL VERY LIKE A GENTLEMAN IN A GHOST STORY WATCHING EXPERIMENTALLY IN A HAUNTED CHAMBER",
+      "anchors": [
+        "gentleman",
+        "haunted",
+        "chamber"
+      ],
+      "max_wer": 0.2,
+      "format": {
+        "sample_rate_hz": 16000,
+        "channels": 1,
+        "bits_per_sample": 16
+      },
+      "source": {
+        "title": "LibriSpeech ASR corpus (test-clean), utterance 5683-32866-0024, speaker 5683",
+        "url": "https://www.openslr.org/12/",
+        "license": "CC BY 4.0",
+        "sha256": "7012971dbc28f6a61ae0982aabfd1bab43c654fdf8c50f32c99088cd25560190"
+      }
+    },
+    {
+      "id": "3729-6852-0040",
+      "file": "audio/3729-6852-0040.wav",
+      "reference": "FOR THE FIRST DAY SIR I THINK THAT WHAT YOU HAVE DONE GIVES GREAT HOPES OF YOU AND WITHOUT ANY DOUBT YOU WILL MAKE RAPID PROGRESS",
+      "anchors": [
+        "great",
+        "doubt",
+        "progress"
+      ],
+      "max_wer": 0.2,
+      "format": {
+        "sample_rate_hz": 16000,
+        "channels": 1,
+        "bits_per_sample": 16
+      },
+      "source": {
+        "title": "LibriSpeech ASR corpus (test-clean), utterance 3729-6852-0040, speaker 3729",
+        "url": "https://www.openslr.org/12/",
+        "license": "CC BY 4.0",
+        "sha256": "7a0214b09e6c3657ebfb504a1882d22ccb369f8a9f1f16d37dfb4eda3e368577"
+      }
+    },
+    {
+      "id": "7021-79740-0000",
+      "file": "audio/7021-79740-0000.wav",
+      "reference": "TO SUCH PERSONS THESE INDIRECT MODES OF TRAINING CHILDREN IN HABITS OF SUBORDINATION TO THEIR WILL OR RATHER OF YIELDING TO THEIR INFLUENCE ARE SPECIALLY USEFUL",
+      "anchors": [
+        "children",
+        "training",
+        "influence"
+      ],
+      "max_wer": 0.2,
+      "format": {
+        "sample_rate_hz": 16000,
+        "channels": 1,
+        "bits_per_sample": 16
+      },
+      "source": {
+        "title": "LibriSpeech ASR corpus (test-clean), utterance 7021-79740-0000, speaker 7021",
+        "url": "https://www.openslr.org/12/",
+        "license": "CC BY 4.0",
+        "sha256": "d0d6bcf2e108dde9e7c1575ad843512213b1cff5ea77b9231e7f256591aa0986"
       }
     }
   ]
