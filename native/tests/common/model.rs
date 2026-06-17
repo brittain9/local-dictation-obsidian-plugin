@@ -107,19 +107,32 @@ fn download_verified(url: &str, expected_sha256: &str, dest: &Path) -> Result<()
     Ok(())
 }
 
-/// Hex sha256 of a file's contents. Used to verify fixture integrity against
-/// the manifest, and a cached model against the catalog.
+/// Hex sha256 of a file's contents, streamed so a large model file is never read
+/// fully into memory. Used to verify fixture integrity against the manifest, and
+/// a cached model against the catalog.
 pub fn file_sha256(path: &Path) -> Result<String, String> {
-    let bytes = std::fs::read(path).map_err(|error| format!("read {}: {error}", path.display()))?;
-    Ok(sha256_hex(&bytes))
+    use std::io::Read;
+
+    let mut file =
+        std::fs::File::open(path).map_err(|error| format!("open {}: {error}", path.display()))?;
+    let mut hasher = Sha256::new();
+    let mut buffer = [0_u8; 64 * 1024];
+    loop {
+        let read = file
+            .read(&mut buffer)
+            .map_err(|error| format!("read {}: {error}", path.display()))?;
+        if read == 0 {
+            break;
+        }
+        hasher.update(&buffer[..read]);
+    }
+    Ok(hex(&hasher.finalize()))
 }
 
 fn sha256_hex(bytes: &[u8]) -> String {
-    let mut hasher = Sha256::new();
-    hasher.update(bytes);
-    hasher
-        .finalize()
-        .iter()
-        .map(|byte| format!("{byte:02x}"))
-        .collect()
+    hex(&Sha256::digest(bytes))
+}
+
+fn hex(bytes: &[u8]) -> String {
+    bytes.iter().map(|byte| format!("{byte:02x}")).collect()
 }

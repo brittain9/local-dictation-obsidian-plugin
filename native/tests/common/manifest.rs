@@ -38,15 +38,13 @@ pub struct Format {
     pub sample_rate_hz: u32,
     pub channels: u16,
     pub bits_per_sample: u16,
-    #[serde(default)]
-    pub approx_duration_ms: u64,
 }
 
+/// Provenance block. The manifest's `source` object also carries human-facing
+/// `title` / `url` / `license` keys for attribution; the harness only needs the
+/// integrity hash, so serde ignores the rest.
 #[derive(Debug, Deserialize)]
 pub struct Source {
-    pub title: String,
-    pub url: String,
-    pub license: String,
     /// sha256 of the committed audio file, for integrity verification.
     pub sha256: String,
 }

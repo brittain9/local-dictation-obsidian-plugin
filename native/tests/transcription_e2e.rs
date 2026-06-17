@@ -14,7 +14,7 @@
 
 mod common;
 
-use common::{audio, driver, manifest::Corpus, model, text};
+use common::{audio, driver, manifest::Corpus, model, score, text};
 use local_dictation_sidecar::session::SpeakingStyle;
 
 /// Samples per millisecond at the sidecar's 16 kHz rate (16000 / 1000).
@@ -40,7 +40,6 @@ fn every_fixture_transcribes_within_quality_budget() {
         let outcome = driver::transcribe_in_process(&model_path, &frames, SpeakingStyle::Patient);
 
         let wer = text::word_error_rate(&fixture.reference, &outcome.text);
-        let missing = text::missing_anchors(&outcome.text, &fixture.anchors);
         let audio_ms = (samples.len() / SAMPLES_PER_MS).max(1) as f64;
         let real_time_factor = outcome.processing_ms as f64 / audio_ms;
 
@@ -56,30 +55,7 @@ fn every_fixture_transcribes_within_quality_budget() {
             outcome.text,
         );
 
-        if !outcome.errors.is_empty() {
-            failures.push(format!(
-                "{}: emitted errors {:?}",
-                fixture.id, outcome.errors
-            ));
-        }
-        if !outcome.stopped {
-            failures.push(format!(
-                "{}: session never reached session_stopped",
-                fixture.id
-            ));
-        }
-        if outcome.text.trim().is_empty() {
-            failures.push(format!("{}: produced an empty transcript", fixture.id));
-        }
-        if !missing.is_empty() {
-            failures.push(format!("{}: missing anchor words {missing:?}", fixture.id));
-        }
-        if wer > fixture.max_wer {
-            failures.push(format!(
-                "{}: WER {wer:.3} exceeded budget {:.3}",
-                fixture.id, fixture.max_wer
-            ));
-        }
+        failures.extend(score::budget_failures(fixture, &outcome));
     }
 
     assert!(

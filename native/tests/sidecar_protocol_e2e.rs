@@ -15,7 +15,7 @@
 
 mod common;
 
-use common::{audio, driver, manifest::Corpus, model, text};
+use common::{audio, driver, manifest::Corpus, model, score, text};
 use local_dictation_sidecar::session::SpeakingStyle;
 
 /// Path to the freshly built sidecar binary, provided by Cargo to integration
@@ -46,30 +46,11 @@ fn jfk_transcribes_through_the_wire_protocol() {
         wer, fixture.max_wer, outcome.stopped, outcome.utterance_count, outcome.text,
     );
 
+    let failures = score::budget_failures(fixture, &outcome);
     assert!(
-        outcome.errors.is_empty(),
-        "sidecar emitted errors over the wire: {:?}",
-        outcome.errors
-    );
-    assert!(
-        outcome.stopped,
-        "session never reached session_stopped over the wire"
-    );
-    assert!(
-        !outcome.text.trim().is_empty(),
-        "sidecar produced an empty transcript over the wire"
-    );
-
-    let missing = text::missing_anchors(&outcome.text, &fixture.anchors);
-    assert!(
-        missing.is_empty(),
-        "missing anchor words {missing:?} over the wire; got: {}",
-        outcome.text
-    );
-    assert!(
-        wer <= fixture.max_wer,
-        "wire WER {wer:.3} exceeded budget {:.3}; got: {}",
-        fixture.max_wer,
-        outcome.text
+        failures.is_empty(),
+        "transcription over the wire did not meet budget:\n  {}\n  got: {}",
+        failures.join("\n  "),
+        outcome.text,
     );
 }

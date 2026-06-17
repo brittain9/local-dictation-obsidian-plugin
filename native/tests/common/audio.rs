@@ -13,8 +13,9 @@ use local_dictation_sidecar::protocol::{
 
 /// Number of trailing silence frames appended after a clip's real audio so the
 /// VAD observes an end-of-speech gap and finalizes the utterance naturally.
-/// 75 frames = 1.5 s, comfortably past the `Balanced` preset's 1 s
-/// (`silence_end_frames`) threshold with margin for the `Patient` preset's 2 s.
+/// 100 frames = 2.0 s: enough to meet the strictest preset the suite drives,
+/// `Patient`, whose `silence_end_frames` is 100 (2.0 s), and well past the
+/// `Balanced` preset's 50-frame (1.0 s) threshold.
 pub const TRAILING_SILENCE_FRAMES: usize = 100;
 
 /// Decode a committed WAV fixture into i16 PCM samples, asserting the on-disk

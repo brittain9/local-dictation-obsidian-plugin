@@ -329,10 +329,7 @@ fn read_event_frame(reader: &mut impl Read) -> Option<serde_json::Value> {
     let len = u32::from_le_bytes([header[1], header[2], header[3], header[4]]) as usize;
     let mut payload = vec![0_u8; len];
     reader.read_exact(&mut payload).ok()?;
-    // Events are always JSON frames; ignore any other kind defensively.
-    if header[0] != JSON_FRAME_KIND {
-        return Some(serde_json::Value::Null);
-    }
+    // Events are always JSON frames; a malformed one yields None and ends the read.
     serde_json::from_slice(&payload).ok()
 }
 
