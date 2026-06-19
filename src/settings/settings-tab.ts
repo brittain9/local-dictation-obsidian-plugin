@@ -165,12 +165,13 @@ export class LocalSttSettingTab extends PluginSettingTab {
     // --- Transcription ---
     const transcriptionCard = createSettingGroup(containerEl, 'Transcription');
 
-    // Native system-audio capture lives in the sidecar and is Windows-only for
-    // now. Elsewhere the source is the microphone (route output through a
-    // virtual audio device to transcribe system audio — see the System audio
-    // guide). The picker still appears on unsupported platforms when a synced
-    // 'system' value is stuck, so the user always has a way back to Microphone.
-    const systemAudioSupported = Platform.isWin;
+    // Native system-audio capture lives in the sidecar and is available on
+    // Windows and Linux. Elsewhere (macOS) the source is the microphone (route
+    // output through a virtual audio device to transcribe system audio — see the
+    // System audio guide). The picker still appears on unsupported platforms when
+    // a synced 'system' value is stuck, so the user always has a way back to
+    // Microphone.
+    const systemAudioSupported = Platform.isWin || Platform.isLinux;
     const audioSource = settings.audioSource;
     const showSourcePicker = systemAudioSupported || audioSource === 'system';
 

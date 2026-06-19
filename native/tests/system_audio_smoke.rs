@@ -1,14 +1,18 @@
-//! Hardware smoke test for native system-audio (WASAPI loopback) capture.
+//! Hardware smoke test for native system-audio capture.
 //!
-//! Ignored by default: it opens the real default render endpoint, which a
-//! headless CI runner may not have. Run it manually on a machine with an active
-//! audio output device:
+//! Exercises the platform backend: WASAPI loopback of the default render
+//! endpoint on Windows, the default sink's PulseAudio/PipeWire monitor
+//! (`@DEFAULT_MONITOR@`) on Linux.
+//!
+//! Ignored by default: it opens a real audio device, which a headless CI runner
+//! may not have. Run it manually on a machine with an active audio output
+//! device:
 //!
 //! ```sh
 //! cargo test --test system_audio_smoke -- --ignored
 //! ```
 
-#![cfg(windows)]
+#![cfg(any(windows, target_os = "linux"))]
 
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -37,7 +41,7 @@ fn opens_default_loopback_and_emits_well_formed_frames() {
 
     controller
         .start("smoke".to_string())
-        .expect("default render endpoint should open in loopback mode");
+        .expect("the default output loopback/monitor should open for capture");
 
     // Give the capture loop time to run. Play audio during this window to see
     // a non-zero frame count; with silence the device still opens and runs.

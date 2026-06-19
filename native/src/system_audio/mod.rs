@@ -7,20 +7,31 @@
 //! transcription, and everything downstream stay unchanged.
 //!
 //! Capture is inherently per-OS. Windows uses WASAPI loopback of the default
-//! render endpoint (zero user setup). Other platforms have no native backend
-//! yet: [`SystemAudioController`] is a stub whose [`start`](SystemAudioController::start)
-//! returns [`SystemAudioError::Unsupported`], and users route output through a
-//! virtual audio device and pick it in the normal microphone list instead.
+//! render endpoint; Linux records the monitor of the default PulseAudio/PipeWire
+//! sink (`@DEFAULT_MONITOR@`). Both are zero user setup. macOS and other
+//! platforms have no native backend yet: [`SystemAudioController`] is a stub
+//! whose [`start`](SystemAudioController::start) returns
+//! [`SystemAudioError::Unsupported`], and users route output through a virtual
+//! audio device and pick it in the normal microphone list instead.
 //!
-//! The capture machinery (the resampler, [`CaptureHandle`], and the real
-//! controller) is therefore `#[cfg(windows)]`; elsewhere only the stub and the
-//! shared error type compile.
+//! The real controller and [`CaptureHandle`] therefore compile on Windows and
+//! Linux; elsewhere only the stub and the shared error type compile. (The
+//! resampler is Windows-only — the Linux backend asks PulseAudio for 16 kHz
+//! mono directly, so no client-side resampling is needed.)
 
 #[cfg(any(windows, test))]
 mod resample;
 
 #[cfg(windows)]
 mod windows;
+
+#[cfg(target_os = "linux")]
+mod linux;
+
+#[cfg(target_os = "linux")]
+use self::linux as backend;
+#[cfg(windows)]
+use self::windows as backend;
 
 use std::sync::Arc;
 
@@ -70,13 +81,13 @@ impl std::error::Error for SystemAudioError {}
 
 /// A running capture thread for one session. Dropping or stopping signals the
 /// thread to exit and joins it.
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "linux"))]
 pub(crate) struct CaptureHandle {
     stop: Arc<std::sync::atomic::AtomicBool>,
     join: Option<std::thread::JoinHandle<()>>,
 }
 
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "linux"))]
 impl CaptureHandle {
     /// Build a handle from a shared stop flag and the thread it controls. Used
     /// by platform backends after they spawn their capture loop.
@@ -101,13 +112,13 @@ impl CaptureHandle {
 /// Owns the active system-audio capture threads, keyed by session id, and the
 /// sink frames are delivered to. Captures stop when their session ends and when
 /// the controller is dropped (sidecar shutdown).
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "linux"))]
 pub struct SystemAudioController {
     sink: AudioFrameSink,
     captures: std::collections::HashMap<String, CaptureHandle>,
 }
 
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "linux"))]
 impl SystemAudioController {
     /// A controller with a no-op sink. The host installs the real sink with
     /// [`set_sink`](Self::set_sink) once its ingestion channel exists.
@@ -130,7 +141,7 @@ impl SystemAudioController {
         if self.captures.contains_key(&session_id) {
             return Ok(());
         }
-        let handle = windows::spawn_capture(session_id.clone(), Arc::clone(&self.sink))?;
+        let handle = backend::spawn_capture(session_id.clone(), Arc::clone(&self.sink))?;
         self.captures.insert(session_id, handle);
         Ok(())
     }
@@ -143,7 +154,7 @@ impl SystemAudioController {
     }
 }
 
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "linux"))]
 impl Drop for SystemAudioController {
     fn drop(&mut self) {
         for (_session_id, handle) in self.captures.drain() {
@@ -153,13 +164,13 @@ impl Drop for SystemAudioController {
 }
 
 /// Stub controller for platforms without a native loopback backend. The API
-/// matches the Windows controller so the host wires it identically; `start`
+/// matches the native controller so the host wires it identically; `start`
 /// reports the feature unavailable so callers fall back to the documented
 /// virtual-device method.
-#[cfg(not(windows))]
+#[cfg(not(any(windows, target_os = "linux")))]
 pub struct SystemAudioController;
 
-#[cfg(not(windows))]
+#[cfg(not(any(windows, target_os = "linux")))]
 impl SystemAudioController {
     pub fn new() -> Self {
         Self
@@ -180,7 +191,7 @@ impl Default for SystemAudioController {
     }
 }
 
-#[cfg(all(test, not(windows)))]
+#[cfg(all(test, not(any(windows, target_os = "linux"))))]
 mod tests {
     use super::{SystemAudioController, SystemAudioError};
 

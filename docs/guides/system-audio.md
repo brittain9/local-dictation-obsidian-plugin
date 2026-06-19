@@ -7,17 +7,22 @@ transcription pipeline as the microphone, so it stays fully local.
 
 There are two ways to get there:
 
-1. **Native "System audio" source (Windows).** Built in, zero setup. Pick it in
-   Settings and dictate.
+1. **Native "System audio" source (Windows and Linux).** Built in, zero setup.
+   Pick it in Settings and dictate.
 2. **Virtual audio device (any platform).** Route your system output through a
    loopback device that shows up as a microphone, then select it in the normal
-   microphone picker. Works on macOS and Linux today, and on Windows when you
-   want to capture a single app rather than the whole output.
+   microphone picker. This is the route on macOS today, and on Windows or Linux
+   when you want to capture a single app rather than the whole output.
 
-## Native System audio (Windows)
+## Native System audio (Windows and Linux)
 
-On Windows the sidecar captures the **default output device** directly via
-WASAPI loopback — whatever you hear through your speakers or headphones.
+The sidecar captures your **default output device** directly — whatever you hear
+through your speakers or headphones — with no extra setup:
+
+- **Windows:** WASAPI loopback of the default render endpoint.
+- **Linux:** the monitor of the default PulseAudio/PipeWire sink
+  (`@DEFAULT_MONITOR@`). Works on both PipeWire (via its PulseAudio-compatible
+  server) and PulseAudio.
 
 1. Open **Settings → Local Dictation → Transcription**.
 2. Set **Audio source** to **System audio**.
@@ -28,11 +33,14 @@ voice, set **Audio source** back to **Microphone**.
 
 Notes:
 
-- It captures the device that is the Windows *default output* when the session
-  starts. Switch your default output (or use the per-app method below) to
-  capture something else.
+- It captures whatever is the *system default output* when the session starts.
+  Switch your default output (or use the per-app method below) to capture
+  something else.
 - Nothing playing means nothing to transcribe — start your meeting or media
   first.
+- This is an optional capability. If your platform's audio stack is unavailable,
+  the source picker stays hidden (macOS) or capture reports a clear error and you
+  can fall back to the virtual-device method below — nothing else is affected.
 
 ## Virtual audio device (macOS, Linux, per-app on Windows)
 
@@ -51,6 +59,9 @@ Install [BlackHole](https://github.com/ExistentialAudio/BlackHole) (free) or
   BlackHole and your speakers — see BlackHole's README.)
 
 ### Linux (PipeWire / PulseAudio)
+
+The native source above already covers whole-output capture on Linux. Use this
+method only to capture a **single application** or a non-default device.
 
 Most modern distros run PipeWire with PulseAudio compatibility, so the monitor
 of your output already exists.
