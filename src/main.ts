@@ -3,7 +3,7 @@ import { IS_PRODUCTION_BUILD } from 'virtual:build-mode';
 import { FileSystemAdapter, Notice, Platform, Plugin } from 'obsidian';
 
 import { AudioCaptureStream } from './audio/audio-capture-stream';
-import { AudioVisualizerTap } from './audio/audio-visualizer-tap';
+import { SidecarAudioLevelMeter } from './audio/sidecar-audio-level-meter';
 import { registerCommands } from './commands/register-commands';
 import { DictationSessionController } from './dictation/dictation-session-controller';
 import { dictationAnchorExtension } from './editor/dictation-anchor-extension';
@@ -50,7 +50,7 @@ import { LOCAL_DICTATION_VIEW_TYPE, LocalDictationView } from './ui/local-dictat
 
 export default class LocalSttPlugin extends Plugin {
   private audioCaptureStream: AudioCaptureStream | null = null;
-  private audioVisualizerTap: AudioVisualizerTap | null = null;
+  private audioLevelMeter: SidecarAudioLevelMeter | null = null;
   private dictationController: DictationSessionController | null = null;
   private logger: PluginLogger = createPluginLogger(() => this.settings.developerMode);
   private llmCleanupFailure: LlmCleanupFailure | null = null;
@@ -93,13 +93,12 @@ export default class LocalSttPlugin extends Plugin {
       logger: this.logger,
       resolveLaunchSpec: async () => this.resolveSidecarLaunchSpec(),
     });
-    this.audioVisualizerTap = new AudioVisualizerTap();
+    this.audioLevelMeter = new SidecarAudioLevelMeter();
     this.audioCaptureStream = new AudioCaptureStream({
       logger: this.logger,
       onDeviceFallback: () => {
         new Notice('Saved microphone unavailable. Using the default input device.');
       },
-      visualizer: this.audioVisualizerTap,
     });
     this.modelInstallManager = new ModelInstallManager({
       getSettings: () => this.settings,
@@ -148,8 +147,9 @@ export default class LocalSttPlugin extends Plugin {
       void this.requireDictationController().toggleDictation();
     });
     this.ribbonController = new DictationRibbonController(ribbonElement);
-    this.ribbonController.setVisualizer(this.audioVisualizerTap);
+    this.ribbonController.setVisualizer(this.audioLevelMeter);
     this.dictationController = new DictationSessionController({
+      audioLevelMeter: this.audioLevelMeter,
       captureStream: this.audioCaptureStream,
       createSession: ({ callbacks, placement, rendererOptions, sessionId }) =>
         Session.createFromActiveEditor(this.app, {

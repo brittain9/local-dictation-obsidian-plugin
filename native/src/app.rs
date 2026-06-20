@@ -6,6 +6,7 @@ use std::time::{Duration, Instant};
 use tokio::sync::watch;
 use uuid::Uuid;
 
+use crate::audio_mixer::{AudioMixer, AudioMixerError, MixedAudioFrame};
 use crate::catalog::ModelCatalog;
 use crate::engine::capabilities::{AcceleratorId, ModelFamilyId, RuntimeId};
 use crate::engine::registry::EngineRegistry;
@@ -15,10 +16,9 @@ use crate::model_store::{
     scan_installed_models,
 };
 use crate::protocol::{
-    AccelerationPreference, AudioFrame, AudioSource, Command, CompiledAdapterInfo,
-    CompiledRuntimeInfo, ContextWindow, Event, HealthStatus, ListeningMode, ModelInstallState,
-    ModelProbeStatus, QueueBackpressureTier, SelectedModel, SessionState, SessionStopReason,
-    system_info_string,
+    AccelerationPreference, AudioFrame, Command, CompiledAdapterInfo, CompiledRuntimeInfo,
+    ContextWindow, Event, HealthStatus, ListeningMode, ModelInstallState, ModelProbeStatus,
+    QueueBackpressureTier, SelectedModel, SessionState, SessionStopReason, system_info_string,
 };
 use crate::session::{
     FinalizedUtterance, ListeningSession, SessionAction, SessionBaseState, SessionConfig,
@@ -40,6 +40,7 @@ const QUEUE_OVERLOAD_DEPTH: usize = 30;
 // 30-60 distinct terms.
 const CONTEXT_BUDGET_CHARS: u32 = 384;
 const CONTEXT_REQUEST_TIMEOUT: Duration = Duration::from_secs(2);
+const AUDIO_LEVEL_EVENT_INTERVAL: Duration = Duration::from_millis(50);
 const MAX_ACTIVE_SESSIONS: usize = 5;
 type SessionFactory = fn(SessionConfig) -> Result<ListeningSession, SessionInitError>;
 
@@ -68,6 +69,7 @@ pub struct AppState {
 }
 
 struct ActiveSession {
+    audio_mixer: AudioMixer,
     context_required: bool,
     context_budget_chars: u32,
     cancel_tx: watch::Sender<bool>,
@@ -75,6 +77,7 @@ struct ActiveSession {
     drain_reason: Option<SessionStopReason>,
     last_reported_queue_tier: QueueBackpressureTier,
     last_reported_state: Option<SessionState>,
+    last_reported_audio_level_at: Option<Instant>,
     overload_draining: bool,
     pending_context_requests: Vec<PendingContextRequest>,
     queued_utterances: usize,
@@ -203,13 +206,30 @@ impl AppState {
                 return events;
             }
 
+            let mixed = match active_session
+                .audio_mixer
+                .push_microphone_frame(audio_frame.frame_bytes)
+            {
+                Ok(Some(mixed)) => mixed,
+                Ok(None) => return events,
+                Err(error) => {
+                    events.push(invalid_audio_frame_event(&session_id, error));
+                    return events;
+                }
+            };
+            let audio_level_event = audio_level_event_if_due(active_session, &mixed);
+
             active_session
                 .session
-                .ingest_audio_frame(&audio_frame.frame_bytes)
+                .ingest_audio_frame(&mixed.frame_bytes)
+                .map(|actions| (actions, audio_level_event))
         };
 
         match result {
-            Ok(actions) => {
+            Ok((actions, audio_level_event)) => {
+                if let Some(event) = audio_level_event {
+                    events.push(event);
+                }
                 for action in actions {
                     self.handle_session_action(&session_id, action, &mut events);
                 }
@@ -224,6 +244,28 @@ impl AppState {
                     session_id: Some(session_id),
                 });
             }
+        }
+
+        events
+    }
+
+    pub fn handle_system_audio_frame(&mut self, audio_frame: AudioFrame) -> Vec<Event> {
+        let mut events = Vec::new();
+        let session_id = audio_frame.session_id;
+
+        let Some(active_session) = self.active_sessions.get_mut(&session_id) else {
+            return events;
+        };
+
+        if active_session.draining || active_session.overload_draining {
+            return events;
+        }
+
+        if let Err(error) = active_session
+            .audio_mixer
+            .push_system_frame(audio_frame.frame_bytes)
+        {
+            events.push(invalid_audio_frame_event(&session_id, error));
         }
 
         events
@@ -397,7 +439,7 @@ impl AppState {
             }
             Command::StartSession {
                 acceleration_preference,
-                audio_source,
+                include_system_audio,
                 language,
                 mode,
                 model_selection,
@@ -500,6 +542,11 @@ impl AppState {
                         self.active_sessions.insert(
                             session_id.clone(),
                             ActiveSession {
+                                audio_mixer: if include_system_audio {
+                                    AudioMixer::microphone_with_system(session_id.clone())
+                                } else {
+                                    AudioMixer::microphone_only(session_id.clone())
+                                },
                                 cancel_tx,
                                 context_budget_chars,
                                 context_required,
@@ -507,6 +554,7 @@ impl AppState {
                                 drain_reason: None,
                                 last_reported_queue_tier: QueueBackpressureTier::Normal,
                                 last_reported_state: None,
+                                last_reported_audio_level_at: None,
                                 overload_draining: false,
                                 pending_context_requests: Vec::new(),
                                 queued_utterances: 0,
@@ -519,7 +567,7 @@ impl AppState {
                         // frames itself. Start capture before announcing the
                         // session so a device/platform failure surfaces as an
                         // error instead of a started-then-silent session.
-                        if audio_source == AudioSource::System
+                        if include_system_audio
                             && let Err(error) = self.system_audio.start(session_id.clone())
                         {
                             self.tear_down_session(&session_id);
@@ -1265,6 +1313,38 @@ fn emit_queue_tier_if_changed(active_session: &mut ActiveSession, events: &mut V
     });
 }
 
+fn audio_level_event_if_due(
+    active_session: &mut ActiveSession,
+    mixed: &MixedAudioFrame,
+) -> Option<Event> {
+    let now = Instant::now();
+    if let Some(last_reported) = active_session.last_reported_audio_level_at
+        && now.duration_since(last_reported) < AUDIO_LEVEL_EVENT_INTERVAL
+    {
+        return None;
+    }
+
+    active_session.last_reported_audio_level_at = Some(now);
+    Some(Event::AudioLevel {
+        bands: mixed.bands,
+        peak: mixed.peak,
+        rms: mixed.rms,
+        session_id: mixed.session_id.clone(),
+    })
+}
+
+fn invalid_audio_frame_event(session_id: &str, error: AudioMixerError) -> Event {
+    Event::Error {
+        code: "invalid_audio_frame".to_string(),
+        details: Some(format!(
+            "expected {} bytes, received {}",
+            error.expected_bytes, error.actual_bytes
+        )),
+        message: "Audio frame size does not match the configured 20 ms PCM format.".to_string(),
+        session_id: Some(session_id.to_string()),
+    }
+}
+
 fn resolved_model_supports_initial_prompt(
     registry: &EngineRegistry,
     runtime_id: RuntimeId,
@@ -1387,10 +1467,9 @@ mod tests {
     use crate::engine::registry::EngineRegistry;
     use crate::engine::traits::{LoadedModel, ModelFamilyAdapter, Runtime};
     use crate::protocol::{
-        AccelerationPreference, AudioFrame, AudioSource, Command, ContextWindow,
-        ContextWindowSource, Event, HealthStatus, ListeningMode, ModelProbeStatus,
-        PCM_BYTES_PER_FRAME, QueueBackpressureTier, SelectedModel, SessionState, SessionStopReason,
-        StageId, StageOutcome, StageStatus,
+        AccelerationPreference, AudioFrame, Command, ContextWindow, ContextWindowSource, Event,
+        HealthStatus, ListeningMode, ModelProbeStatus, PCM_BYTES_PER_FRAME, QueueBackpressureTier,
+        SelectedModel, SessionState, SessionStopReason, StageId, StageOutcome, StageStatus,
     };
     use crate::session::{FinalizedUtterance, ListeningSession, SessionInitError, SpeakingStyle};
     use crate::system_audio::{AudioFrameSink, SystemAudioCapture, SystemAudioError};
@@ -1706,10 +1785,10 @@ mod tests {
         let system_audio = FakeSystemAudioState::default();
         let mut app = test_app_with_system_audio(system_audio.clone());
 
-        let (_, start_events) = app.handle_command(start_session_command_with_audio_source(
+        let (_, start_events) = app.handle_command(start_session_command_with_system_audio(
             "session-1",
             &model_file_path,
-            AudioSource::System,
+            true,
         ));
 
         assert!(start_events.contains(&Event::SessionStarted {
@@ -1734,16 +1813,35 @@ mod tests {
     }
 
     #[test]
+    fn microphone_only_session_does_not_start_system_audio_capture() {
+        let model_file_path = create_model_file();
+        let system_audio = FakeSystemAudioState::default();
+        let mut app = test_app_with_system_audio(system_audio.clone());
+
+        let (_, start_events) =
+            app.handle_command(start_session_command("session-1", &model_file_path));
+
+        assert!(start_events.contains(&Event::SessionStarted {
+            mode: ListeningMode::AlwaysOn,
+            session_id: "session-1".to_string(),
+        }));
+        assert!(
+            system_audio.starts().is_empty(),
+            "microphone-only sessions must not open loopback capture"
+        );
+    }
+
+    #[test]
     fn system_audio_start_failure_reports_error_without_announcing_session() {
         let model_file_path = create_model_file();
         let system_audio = FakeSystemAudioState::default();
         system_audio.fail_start(SystemAudioError::Capture("device unavailable".to_string()));
         let mut app = test_app_with_system_audio(system_audio.clone());
 
-        let (_, events) = app.handle_command(start_session_command_with_audio_source(
+        let (_, events) = app.handle_command(start_session_command_with_system_audio(
             "session-1",
             &model_file_path,
-            AudioSource::System,
+            true,
         ));
 
         assert_eq!(
@@ -1764,7 +1862,7 @@ mod tests {
     }
 
     #[test]
-    fn system_audio_sink_frames_can_enter_the_app_audio_frame_path() {
+    fn system_audio_sink_frames_queue_until_microphone_tick() {
         let model_file_path = create_model_file();
         let system_audio = FakeSystemAudioState::default();
         let mut app = test_app_with_system_audio(system_audio.clone());
@@ -1772,28 +1870,37 @@ mod tests {
         app.set_system_audio_sink(Arc::new(move |frame| {
             tx.send(frame).expect("test receiver should stay open");
         }));
-        let _ = app.handle_command(start_session_command_with_audio_source(
+        let _ = app.handle_command(start_session_command_with_system_audio(
             "session-1",
             &model_file_path,
-            AudioSource::System,
+            true,
         ));
 
         system_audio.emit(AudioFrame {
-            frame_bytes: vec![0_u8; PCM_BYTES_PER_FRAME - 1],
+            frame_bytes: vec![0_u8; PCM_BYTES_PER_FRAME],
             session_id: "session-1".to_string(),
         });
         let frame = rx
             .recv_timeout(Duration::from_millis(100))
             .expect("system-audio sink should receive frame");
-        let events = app.handle_audio_frame(frame);
+        let system_events = app.handle_system_audio_frame(frame);
+
+        assert!(
+            system_events.is_empty(),
+            "system audio must not advance the transcription timeline by itself"
+        );
+
+        let mic_events = app.handle_audio_frame(AudioFrame {
+            frame_bytes: vec![0_u8; PCM_BYTES_PER_FRAME],
+            session_id: "session-1".to_string(),
+        });
 
         assert!(matches!(
-            events.first(),
-            Some(Event::Error {
-                code,
-                session_id: Some(session_id),
+            mic_events.first(),
+            Some(Event::AudioLevel {
+                session_id,
                 ..
-            }) if code == "invalid_audio_frame" && session_id == "session-1"
+            }) if session_id == "session-1"
         ));
     }
 
@@ -2700,21 +2807,17 @@ mod tests {
     }
 
     fn start_session_command(session_id: &str, model_file_path: &std::path::Path) -> Command {
-        start_session_command_with_audio_source(
-            session_id,
-            model_file_path,
-            AudioSource::Microphone,
-        )
+        start_session_command_with_system_audio(session_id, model_file_path, false)
     }
 
-    fn start_session_command_with_audio_source(
+    fn start_session_command_with_system_audio(
         session_id: &str,
         model_file_path: &std::path::Path,
-        audio_source: AudioSource,
+        include_system_audio: bool,
     ) -> Command {
         Command::StartSession {
             acceleration_preference: AccelerationPreference::Auto,
-            audio_source,
+            include_system_audio,
             language: "en".to_string(),
             mode: ListeningMode::AlwaysOn,
             model_selection: SelectedModel::ExternalFile {

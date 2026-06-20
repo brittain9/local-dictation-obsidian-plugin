@@ -28,11 +28,6 @@ export const MAX_FRAME_PAYLOAD_BYTES = 16 * 1024 * 1024;
 export type AccelerationPreference = 'auto' | 'cpu_only';
 export type SpeakingStyle = 'responsive' | 'balanced' | 'patient';
 
-// Where a session's audio comes from. `microphone` is captured in the renderer
-// and streamed to the sidecar; `system` is captured natively by the sidecar
-// from this computer's audio output (loopback).
-export type AudioSource = 'microphone' | 'system';
-
 export const LISTENING_MODES = ['always_on', 'one_sentence'] as const;
 export type ListeningMode = (typeof LISTENING_MODES)[number];
 
@@ -111,7 +106,7 @@ export type HealthCommand = EnvelopeBase<'health'>;
 
 export interface StartSessionCommand extends EnvelopeBase<'start_session'> {
   accelerationPreference: AccelerationPreference;
-  audioSource: AudioSource;
+  includeSystemAudio: boolean;
   language: 'en';
   mode: ListeningMode;
   modelSelection: SelectedModel;
@@ -228,6 +223,13 @@ export interface SessionStateChangedEvent extends EnvelopeBase<'session_state_ch
   state: SessionState;
 }
 
+export interface AudioLevelEvent extends EnvelopeBase<'audio_level'> {
+  bands: [number, number, number, number, number, number];
+  peak: number;
+  rms: number;
+  sessionId: string;
+}
+
 export interface TranscriptReadyEvent extends EnvelopeBase<'transcript_ready'> {
   isFinal: boolean;
   pauseMsBeforeUtterance: number | null;
@@ -279,6 +281,7 @@ export interface ErrorEvent extends EnvelopeBase<'error'> {
 }
 
 export type SidecarEvent =
+  | AudioLevelEvent
   | ContextRequestEvent
   | ErrorEvent
   | HealthOkEvent
@@ -457,6 +460,7 @@ export interface AudioFrame {
 export type ParsedFrame<TEnvelope> = AudioFrame | JsonFrame<TEnvelope>;
 
 const SIDECAR_EVENT_TYPE_FLAGS = {
+  audio_level: 1,
   context_request: 1,
   error: 1,
   health_ok: 1,

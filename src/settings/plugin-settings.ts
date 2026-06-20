@@ -24,7 +24,6 @@ import {
 import { isRecord } from '../shared/type-guards';
 import {
   type AccelerationPreference,
-  type AudioSource,
   LISTENING_MODES,
   type ListeningMode,
   type SpeakingStyle,
@@ -96,7 +95,7 @@ export interface AudioInputDevice {
 export interface PluginSettings {
   accelerationPreference: AccelerationPreference;
   audioInputDevice: AudioInputDevice | null;
-  audioSource: AudioSource;
+  includeSystemAudio: boolean;
   cudaLibraryPath: string;
   developerMode: boolean;
   dictationAnchor: DictationAnchor;
@@ -142,7 +141,7 @@ export interface PluginSettings {
 export const DEFAULT_PLUGIN_SETTINGS: PluginSettings = {
   accelerationPreference: 'auto',
   audioInputDevice: null,
-  audioSource: 'microphone',
+  includeSystemAudio: false,
   cudaLibraryPath: '',
   developerMode: false,
   dictationAnchor: 'at_cursor',
@@ -200,7 +199,7 @@ export function resolvePluginSettings(data: unknown): PluginSettings {
   return {
     accelerationPreference: readAccelerationPreference(raw.accelerationPreference),
     audioInputDevice: readAudioInputDevice(raw.audioInputDevice),
-    audioSource: readAudioSource(raw.audioSource),
+    includeSystemAudio: readIncludeSystemAudio(raw),
     cudaLibraryPath: readString(raw.cudaLibraryPath, DEFAULT_PLUGIN_SETTINGS.cudaLibraryPath),
     developerMode: readBoolean(raw.developerMode, DEFAULT_PLUGIN_SETTINGS.developerMode),
     dictationAnchor: isDictationAnchor(raw.dictationAnchor)
@@ -375,8 +374,12 @@ function readAccelerationPreference(value: unknown): AccelerationPreference {
   return DEFAULT_PLUGIN_SETTINGS.accelerationPreference;
 }
 
-function readAudioSource(value: unknown): AudioSource {
-  return isAudioSource(value) ? value : DEFAULT_PLUGIN_SETTINGS.audioSource;
+function readIncludeSystemAudio(raw: Record<string, unknown>): boolean {
+  if (typeof raw.includeSystemAudio === 'boolean') {
+    return raw.includeSystemAudio;
+  }
+
+  return raw.audioSource === 'system';
 }
 
 function readBoolean(value: unknown, fallback: boolean): boolean {
@@ -642,10 +645,6 @@ export function isTimestampDensity(value: unknown): value is TimestampDensity {
 
 export function isListeningMode(value: unknown): value is ListeningMode {
   return typeof value === 'string' && (LISTENING_MODES as readonly string[]).includes(value);
-}
-
-export function isAudioSource(value: unknown): value is AudioSource {
-  return value === 'microphone' || value === 'system';
 }
 
 export { isLlmRouting };

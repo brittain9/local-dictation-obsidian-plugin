@@ -20,7 +20,6 @@ import { renderMicrophonePicker } from './microphone-picker';
 import { renderModelSection } from './model-settings-section';
 import {
   type DictationAnchor,
-  isAudioSource,
   isDictationAnchor,
   isListeningMode,
   isSpeakingStyle,
@@ -165,53 +164,19 @@ export class LocalSttSettingTab extends PluginSettingTab {
     // --- Transcription ---
     const transcriptionCard = createSettingGroup(containerEl, 'Transcription');
 
-    // Native system-audio capture lives in the sidecar and is available on
-    // Windows and Linux. Elsewhere (macOS) the source is the microphone (route
-    // output through a virtual audio device to transcribe system audio — see the
-    // System audio guide). The picker still appears on unsupported platforms when
-    // a synced 'system' value is stuck, so the user always has a way back to
-    // Microphone.
     const systemAudioSupported = Platform.isWin || Platform.isLinux;
-    const audioSource = settings.audioSource;
-    const showSourcePicker = systemAudioSupported || audioSource === 'system';
 
-    if (showSourcePicker) {
-      new Setting(transcriptionCard)
-        .setName('Audio source')
-        .setDesc(
-          systemAudioSupported
-            ? "Transcribe your microphone, or this computer's audio output."
-            : "System audio capture isn't available on this platform — switch to Microphone, or route output through a virtual device (see the System audio guide).",
-        )
-        .addDropdown((dropdown) => {
-          dropdown.addOption('microphone', 'Microphone');
-          dropdown.addOption('system', 'System audio');
-          dropdown.setValue(audioSource);
-          dropdown.onChange(async (value) => {
-            if (!isAudioSource(value) || value === settings.audioSource) {
-              return;
-            }
-            await this.access.persistOne('audioSource', value);
-            this.display();
-          });
-        });
-    }
+    this.disposeMicrophoneSection = renderMicrophonePicker(transcriptionCard, {
+      access: this.access,
+      isDictationBusy: this.dependencies.isDictationBusy,
+      logger: this.dependencies.logger,
+    });
 
-    if (audioSource === 'system') {
-      if (systemAudioSupported) {
-        new Setting(transcriptionCard)
-          .setName('System audio')
-          .setDesc(
-            "Captures everything playing on this computer's default output device — meetings, calls, and videos. Your microphone isn't used.",
-          );
-      }
-      // On an unsupported platform the picker above is the way back to
-      // Microphone; no microphone picker is shown until they switch.
-    } else {
-      this.disposeMicrophoneSection = renderMicrophonePicker(transcriptionCard, {
-        access: this.access,
-        isDictationBusy: this.dependencies.isDictationBusy,
-        logger: this.dependencies.logger,
+    if (systemAudioSupported) {
+      addToggleSetting(transcriptionCard, this.access, {
+        name: 'Include system audio',
+        desc: "Also capture this computer's default audio output for meetings, calls, and videos.",
+        key: 'includeSystemAudio',
       });
     }
 

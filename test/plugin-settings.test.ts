@@ -574,21 +574,26 @@ describe('audio input device', () => {
   });
 });
 
-describe('audio source', () => {
-  it('defaults to microphone when unset', () => {
-    expect(resolvePluginSettings({}).audioSource).toBe('microphone');
+describe('system audio inclusion', () => {
+  it('defaults to microphone-only capture when unset', () => {
+    expect(resolvePluginSettings({}).includeSystemAudio).toBe(false);
   });
 
-  it('reads a valid audioSource', () => {
-    expect(resolvePluginSettings({ audioSource: 'system' }).audioSource).toBe('system');
+  it('reads a valid includeSystemAudio value', () => {
+    expect(resolvePluginSettings({ includeSystemAudio: true }).includeSystemAudio).toBe(true);
+  });
+
+  it('migrates legacy system audio source to include system audio', () => {
+    expect(resolvePluginSettings({ audioSource: 'system' }).includeSystemAudio).toBe(true);
+    expect(resolvePluginSettings({ audioSource: 'microphone' }).includeSystemAudio).toBe(false);
   });
 
   it.each([
     ['unknown string', 'speaker'],
     ['wrong type', 42],
     ['null', null],
-  ])('coerces invalid audioSource to microphone (%s)', (_label, raw) => {
-    expect(resolvePluginSettings({ audioSource: raw }).audioSource).toBe('microphone');
+  ])('coerces invalid includeSystemAudio to false (%s)', (_label, raw) => {
+    expect(resolvePluginSettings({ includeSystemAudio: raw }).includeSystemAudio).toBe(false);
   });
 });
 

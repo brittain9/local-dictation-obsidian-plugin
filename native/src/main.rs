@@ -7,13 +7,16 @@ use std::time::Duration;
 use anyhow::{Context, Result};
 use local_dictation_sidecar::app::{AppState, ControlFlow};
 use local_dictation_sidecar::catalog::ModelCatalog;
-use local_dictation_sidecar::protocol::{Event, IncomingFrame, read_frame, write_event_frame};
+use local_dictation_sidecar::protocol::{
+    AudioFrame, Event, IncomingFrame, read_frame, write_event_frame,
+};
 use whisper_rs::install_logging_hooks;
 
 enum InputMessage {
     Eof,
     Frame(IncomingFrame),
     ProtocolError(String),
+    SystemAudio(AudioFrame),
 }
 
 fn main() -> Result<()> {
@@ -37,7 +40,7 @@ fn run_stdio(catalog: ModelCatalog, sidecar_version: String) -> Result<()> {
     let sink_tx = Mutex::new(input_tx);
     app_state.set_system_audio_sink(Arc::new(move |frame| {
         if let Ok(tx) = sink_tx.lock() {
-            let _ = tx.send(InputMessage::Frame(IncomingFrame::Audio(frame)));
+            let _ = tx.send(InputMessage::SystemAudio(frame));
         }
     }));
 
@@ -59,6 +62,12 @@ fn run_stdio(catalog: ModelCatalog, sidecar_version: String) -> Result<()> {
                 if control_flow == ControlFlow::Shutdown {
                     break;
                 }
+            }
+            Ok(InputMessage::SystemAudio(audio_frame)) => {
+                write_events(
+                    &mut writer,
+                    app_state.handle_system_audio_frame(audio_frame),
+                )?;
             }
             Ok(InputMessage::ProtocolError(details)) => {
                 write_events(

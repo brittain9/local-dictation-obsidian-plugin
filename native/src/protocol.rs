@@ -80,17 +80,6 @@ pub enum AccelerationPreference {
     CpuOnly,
 }
 
-/// Where a session's audio comes from. `Microphone` (the default) is captured in
-/// the renderer and streamed in as audio frames; `System` is captured natively
-/// by the sidecar from this computer's audio output (loopback).
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum AudioSource {
-    #[default]
-    Microphone,
-    System,
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum HealthStatus {
@@ -271,7 +260,7 @@ pub enum Command {
         #[serde(default)]
         acceleration_preference: AccelerationPreference,
         #[serde(default)]
-        audio_source: AudioSource,
+        include_system_audio: bool,
         language: String,
         mode: ListeningMode,
         model_selection: SelectedModel,
@@ -405,6 +394,12 @@ pub enum Event {
     SessionStateChanged {
         session_id: String,
         state: SessionState,
+    },
+    AudioLevel {
+        bands: [f32; 6],
+        peak: f32,
+        rms: f32,
+        session_id: String,
     },
     TranscriptReady {
         is_final: bool,
@@ -609,11 +604,11 @@ fn read_exact_or_eof<R: Read>(reader: &mut R, buffer: &mut [u8]) -> Result<usize
 #[cfg(test)]
 mod tests {
     use super::{
-        AUDIO_FRAME_KIND, AccelerationPreference, AudioFrame, AudioSource, Command, Event,
-        EventEnvelope, FRAME_HEADER_LENGTH, IncomingFrame, JSON_FRAME_KIND, ListeningMode,
-        MAX_FRAME_PAYLOAD, ModelInstallState, ModelProbeStatus, PCM_BYTES_PER_FRAME,
-        QueueBackpressureTier, SelectedModel, SessionStopReason, SpeakingStyle,
-        encode_audio_frame_envelope, read_frame, write_event_frame, write_frame,
+        AUDIO_FRAME_KIND, AccelerationPreference, AudioFrame, Command, Event, EventEnvelope,
+        FRAME_HEADER_LENGTH, IncomingFrame, JSON_FRAME_KIND, ListeningMode, MAX_FRAME_PAYLOAD,
+        ModelInstallState, ModelProbeStatus, PCM_BYTES_PER_FRAME, QueueBackpressureTier,
+        SelectedModel, SessionStopReason, SpeakingStyle, encode_audio_frame_envelope, read_frame,
+        write_event_frame, write_frame,
     };
     use crate::engine::capabilities::{ModelFamilyId, RuntimeId};
     use uuid::Uuid;
@@ -631,7 +626,8 @@ mod tests {
                 "filePath": "/tmp/model.bin"
             },
             "language": "en",
-            "sessionStartUnixMs": 1_700_000_000_000_u64
+            "sessionStartUnixMs": 1_700_000_000_000_u64,
+            "includeSystemAudio": true
         }))
         .expect("payload should serialize");
         let mut framed = Vec::new();
@@ -645,7 +641,7 @@ mod tests {
             parsed,
             IncomingFrame::Command(Command::StartSession {
                 acceleration_preference: AccelerationPreference::Auto,
-                audio_source: AudioSource::Microphone,
+                include_system_audio: true,
                 language: "en".to_string(),
                 mode: ListeningMode::AlwaysOn,
                 model_selection: SelectedModel::ExternalFile {
@@ -689,6 +685,22 @@ mod tests {
             parsed,
             IncomingFrame::Command(Command::StartSession { .. })
         ));
+    }
+
+    #[test]
+    fn audio_level_event_serializes_for_ribbon_metering() {
+        let event = Event::AudioLevel {
+            bands: [0.0, 0.1, 0.2, 0.3, 0.4, 1.0],
+            peak: 0.8,
+            rms: 0.25,
+            session_id: "session-1".to_string(),
+        };
+        let mut framed = Vec::new();
+        write_event_frame(&mut framed, &event).expect("event should write");
+        let payload = &framed[FRAME_HEADER_LENGTH..];
+        let parsed: EventEnvelope = serde_json::from_slice(payload).expect("event should parse");
+
+        assert_eq!(parsed.event, event);
     }
 
     #[test]
