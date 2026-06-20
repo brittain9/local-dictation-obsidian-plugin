@@ -25,7 +25,7 @@ use crate::session::{
     SessionInitError,
 };
 use crate::stages::StageEnablement;
-use crate::system_audio::{AudioFrameSink, SystemAudioController};
+use crate::system_audio::{AudioFrameSink, SystemAudioCapture, SystemAudioController};
 use crate::transcription::GpuConfig;
 use crate::worker::{SessionMetadata, TranscriptionWorker, WorkerCommand, WorkerEvent};
 
@@ -63,7 +63,7 @@ pub struct AppState {
     registry: Arc<EngineRegistry>,
     session_factory: SessionFactory,
     sidecar_version: String,
-    system_audio: SystemAudioController,
+    system_audio: Box<dyn SystemAudioCapture>,
     transcription_worker: TranscriptionWorker,
 }
 
@@ -122,6 +122,22 @@ impl AppState {
         registry: Arc<EngineRegistry>,
         session_factory: SessionFactory,
     ) -> Self {
+        Self::with_system_audio(
+            sidecar_version,
+            catalog,
+            registry,
+            session_factory,
+            Box::new(SystemAudioController::new()),
+        )
+    }
+
+    fn with_system_audio(
+        sidecar_version: impl Into<String>,
+        catalog: ModelCatalog,
+        registry: Arc<EngineRegistry>,
+        session_factory: SessionFactory,
+        system_audio: Box<dyn SystemAudioCapture>,
+    ) -> Self {
         let model_probe: Arc<ModelProbe> = {
             let registry = Arc::clone(&registry);
             Arc::new(move |runtime_id, family_id, path| {
@@ -136,7 +152,7 @@ impl AppState {
             registry: Arc::clone(&registry),
             session_factory,
             sidecar_version: sidecar_version.into(),
-            system_audio: SystemAudioController::new(),
+            system_audio,
             transcription_worker: TranscriptionWorker::spawn(Arc::clone(&registry)),
         }
     }
@@ -1352,7 +1368,7 @@ mod tests {
     use std::env::temp_dir;
     use std::fs::{create_dir_all, write};
     use std::path::PathBuf;
-    use std::sync::Arc;
+    use std::sync::{Arc, Mutex};
     use std::time::{SystemTime, UNIX_EPOCH};
 
     use std::time::{Duration, Instant};
@@ -1371,11 +1387,13 @@ mod tests {
     use crate::engine::registry::EngineRegistry;
     use crate::engine::traits::{LoadedModel, ModelFamilyAdapter, Runtime};
     use crate::protocol::{
-        AccelerationPreference, AudioSource, Command, ContextWindow, ContextWindowSource, Event,
-        HealthStatus, ListeningMode, ModelProbeStatus, QueueBackpressureTier, SelectedModel,
-        SessionState, SessionStopReason, StageId, StageOutcome, StageStatus,
+        AccelerationPreference, AudioFrame, AudioSource, Command, ContextWindow,
+        ContextWindowSource, Event, HealthStatus, ListeningMode, ModelProbeStatus,
+        PCM_BYTES_PER_FRAME, QueueBackpressureTier, SelectedModel, SessionState, SessionStopReason,
+        StageId, StageOutcome, StageStatus,
     };
     use crate::session::{FinalizedUtterance, ListeningSession, SessionInitError, SpeakingStyle};
+    use crate::system_audio::{AudioFrameSink, SystemAudioCapture, SystemAudioError};
     use crate::transcription::{
         EngineTranscriptOutput, GpuConfig, Transcript, TranscriptionError, TranscriptionRequest,
         validate_model_path,
@@ -1535,6 +1553,90 @@ mod tests {
         )
     }
 
+    fn test_app_with_system_audio(system_audio: FakeSystemAudioState) -> AppState {
+        AppState::with_system_audio(
+            "0.1.0",
+            sample_catalog(),
+            fake_registry(),
+            ListeningSession::new,
+            Box::new(FakeSystemAudio::new(system_audio)),
+        )
+    }
+
+    #[derive(Clone, Default)]
+    struct FakeSystemAudioState {
+        sink: Arc<Mutex<Option<AudioFrameSink>>>,
+        start_error: Arc<Mutex<Option<SystemAudioError>>>,
+        starts: Arc<Mutex<Vec<String>>>,
+        stops: Arc<Mutex<Vec<String>>>,
+    }
+
+    impl FakeSystemAudioState {
+        fn fail_start(&self, error: SystemAudioError) {
+            *self.start_error.lock().expect("start error lock") = Some(error);
+        }
+
+        fn emit(&self, frame: AudioFrame) {
+            let sink = self
+                .sink
+                .lock()
+                .expect("sink lock")
+                .clone()
+                .expect("system-audio sink should be installed");
+            sink(frame);
+        }
+
+        fn starts(&self) -> Vec<String> {
+            self.starts.lock().expect("starts lock").clone()
+        }
+
+        fn stops(&self) -> Vec<String> {
+            self.stops.lock().expect("stops lock").clone()
+        }
+    }
+
+    struct FakeSystemAudio {
+        state: FakeSystemAudioState,
+    }
+
+    impl FakeSystemAudio {
+        fn new(state: FakeSystemAudioState) -> Self {
+            Self { state }
+        }
+    }
+
+    impl SystemAudioCapture for FakeSystemAudio {
+        fn set_sink(&mut self, sink: AudioFrameSink) {
+            *self.state.sink.lock().expect("sink lock") = Some(sink);
+        }
+
+        fn start(&mut self, session_id: String) -> Result<(), SystemAudioError> {
+            self.state
+                .starts
+                .lock()
+                .expect("starts lock")
+                .push(session_id);
+            if let Some(error) = self
+                .state
+                .start_error
+                .lock()
+                .expect("start error lock")
+                .take()
+            {
+                return Err(error);
+            }
+            Ok(())
+        }
+
+        fn stop(&mut self, session_id: &str) {
+            self.state
+                .stops
+                .lock()
+                .expect("stops lock")
+                .push(session_id.to_owned());
+        }
+    }
+
     #[test]
     fn health_returns_ready_event() {
         let (control_flow, events) = test_app().handle_command(Command::Health);
@@ -1596,6 +1698,103 @@ mod tests {
                 },
             ]
         );
+    }
+
+    #[test]
+    fn system_audio_session_starts_capture_and_stops_with_session() {
+        let model_file_path = create_model_file();
+        let system_audio = FakeSystemAudioState::default();
+        let mut app = test_app_with_system_audio(system_audio.clone());
+
+        let (_, start_events) = app.handle_command(start_session_command_with_audio_source(
+            "session-1",
+            &model_file_path,
+            AudioSource::System,
+        ));
+
+        assert!(start_events.contains(&Event::SessionStarted {
+            mode: ListeningMode::AlwaysOn,
+            session_id: "session-1".to_string(),
+        }));
+        assert_eq!(system_audio.starts(), vec!["session-1"]);
+        assert!(system_audio.stops().is_empty());
+
+        let (_, stop_events) = app.handle_command(Command::StopSession {
+            session_id: "session-1".to_string(),
+        });
+
+        assert_eq!(
+            stop_events,
+            vec![Event::SessionStopped {
+                reason: SessionStopReason::UserStop,
+                session_id: "session-1".to_string(),
+            }]
+        );
+        assert_eq!(system_audio.stops(), vec!["session-1"]);
+    }
+
+    #[test]
+    fn system_audio_start_failure_reports_error_without_announcing_session() {
+        let model_file_path = create_model_file();
+        let system_audio = FakeSystemAudioState::default();
+        system_audio.fail_start(SystemAudioError::Capture("device unavailable".to_string()));
+        let mut app = test_app_with_system_audio(system_audio.clone());
+
+        let (_, events) = app.handle_command(start_session_command_with_audio_source(
+            "session-1",
+            &model_file_path,
+            AudioSource::System,
+        ));
+
+        assert_eq!(
+            events,
+            vec![Event::Error {
+                code: "system_audio_capture_failed".to_string(),
+                details: None,
+                message: "Could not start system-audio capture: device unavailable".to_string(),
+                session_id: Some("session-1".to_string()),
+            }]
+        );
+        assert_eq!(system_audio.starts(), vec!["session-1"]);
+        assert_eq!(system_audio.stops(), vec!["session-1"]);
+        assert!(
+            !app.active_sessions.contains_key("session-1"),
+            "failed system-audio start must tear down the partially-created session"
+        );
+    }
+
+    #[test]
+    fn system_audio_sink_frames_can_enter_the_app_audio_frame_path() {
+        let model_file_path = create_model_file();
+        let system_audio = FakeSystemAudioState::default();
+        let mut app = test_app_with_system_audio(system_audio.clone());
+        let (tx, rx) = std::sync::mpsc::channel();
+        app.set_system_audio_sink(Arc::new(move |frame| {
+            tx.send(frame).expect("test receiver should stay open");
+        }));
+        let _ = app.handle_command(start_session_command_with_audio_source(
+            "session-1",
+            &model_file_path,
+            AudioSource::System,
+        ));
+
+        system_audio.emit(AudioFrame {
+            frame_bytes: vec![0_u8; PCM_BYTES_PER_FRAME - 1],
+            session_id: "session-1".to_string(),
+        });
+        let frame = rx
+            .recv_timeout(Duration::from_millis(100))
+            .expect("system-audio sink should receive frame");
+        let events = app.handle_audio_frame(frame);
+
+        assert!(matches!(
+            events.first(),
+            Some(Event::Error {
+                code,
+                session_id: Some(session_id),
+                ..
+            }) if code == "invalid_audio_frame" && session_id == "session-1"
+        ));
     }
 
     #[test]
@@ -2501,9 +2700,21 @@ mod tests {
     }
 
     fn start_session_command(session_id: &str, model_file_path: &std::path::Path) -> Command {
+        start_session_command_with_audio_source(
+            session_id,
+            model_file_path,
+            AudioSource::Microphone,
+        )
+    }
+
+    fn start_session_command_with_audio_source(
+        session_id: &str,
+        model_file_path: &std::path::Path,
+        audio_source: AudioSource,
+    ) -> Command {
         Command::StartSession {
             acceleration_preference: AccelerationPreference::Auto,
-            audio_source: AudioSource::Microphone,
+            audio_source,
             language: "en".to_string(),
             mode: ListeningMode::AlwaysOn,
             model_selection: SelectedModel::ExternalFile {

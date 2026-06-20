@@ -15,3 +15,4 @@
 - [ ] `npm run check` (TS typecheck + lint + vitest + esbuild)
 - [ ] `cargo test` (+ `cargo clippy` if Rust changed)
 - [ ] Manual:
+<!-- For system-audio capture changes, include `npm run test:system-audio` on Windows/Linux with the result and captured frame count. -->

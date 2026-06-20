@@ -41,6 +41,13 @@ use crate::protocol::AudioFrame;
 /// thread. Wired by the host to the same ingestion path renderer audio uses.
 pub type AudioFrameSink = Arc<dyn Fn(AudioFrame) + Send + Sync>;
 
+/// Minimal control surface AppState needs from a native system-audio backend.
+pub trait SystemAudioCapture: Send {
+    fn set_sink(&mut self, sink: AudioFrameSink);
+    fn start(&mut self, session_id: String) -> Result<(), SystemAudioError>;
+    fn stop(&mut self, session_id: &str);
+}
+
 /// Why native system-audio capture could not start.
 #[derive(Debug)]
 pub enum SystemAudioError {
@@ -183,6 +190,20 @@ impl SystemAudioController {
     }
 
     pub fn stop(&mut self, _session_id: &str) {}
+}
+
+impl SystemAudioCapture for SystemAudioController {
+    fn set_sink(&mut self, sink: AudioFrameSink) {
+        SystemAudioController::set_sink(self, sink);
+    }
+
+    fn start(&mut self, session_id: String) -> Result<(), SystemAudioError> {
+        SystemAudioController::start(self, session_id)
+    }
+
+    fn stop(&mut self, session_id: &str) {
+        SystemAudioController::stop(self, session_id);
+    }
 }
 
 impl Default for SystemAudioController {
