@@ -7,16 +7,16 @@
 //! centroid by cosine similarity.
 //!
 //! Two guards keep the speaker count stable:
-//! - hysteresis: an utterance only spawns a *new* speaker when it is clearly
-//!   dissimilar from every known speaker, so borderline matches attach to the
-//!   nearest speaker instead of over-splitting.
+//! - a similarity threshold: an utterance only spawns a *new* speaker when it is
+//!   clearly dissimilar from every known speaker, so borderline matches attach
+//!   to the nearest speaker instead of over-splitting.
 //! - a short-utterance guard: very short utterances never spawn a new speaker,
 //!   because embeddings are unreliable on little audio.
 
-/// Cosine at/above which an utterance is the same speaker as a centroid.
-const SIMILARITY_THRESHOLD: f32 = 0.5;
-/// A new speaker is only created when the best match is below this (clearly a
-/// different voice). The gap to `SIMILARITY_THRESHOLD` is the hysteresis band.
+/// Cosine below which a long-enough utterance is treated as a brand-new voice.
+/// At or above it, the utterance attaches to its nearest existing speaker, so
+/// borderline matches consolidate onto the closest speaker rather than
+/// over-splitting into spurious ones.
 const NEW_SPEAKER_THRESHOLD: f32 = 0.4;
 /// Utterances with less voiced audio than this never spawn a new speaker.
 const MIN_NEW_SPEAKER_MS: u64 = 1_000;
@@ -45,11 +45,7 @@ impl SpeakerRegistry {
         let best = self.best_match(embedding);
 
         match best {
-            Some((idx, sim))
-                if sim >= SIMILARITY_THRESHOLD
-                    || sim >= NEW_SPEAKER_THRESHOLD
-                    || voiced_ms < MIN_NEW_SPEAKER_MS =>
-            {
+            Some((idx, sim)) if sim >= NEW_SPEAKER_THRESHOLD || voiced_ms < MIN_NEW_SPEAKER_MS => {
                 self.update_centroid(idx, embedding);
                 Assignment {
                     speaker_index: idx as u32,
@@ -168,15 +164,27 @@ mod tests {
     }
 
     #[test]
-    fn borderline_similarity_attaches_instead_of_splitting() {
+    fn similarity_just_above_threshold_attaches_instead_of_splitting() {
         let mut registry = SpeakerRegistry::new();
         registry.assign(&[1.0, 0.0], LONG);
-        // cosine ~0.45 — inside the hysteresis band, so no new speaker.
+        // cosine ~0.45 — above NEW_SPEAKER_THRESHOLD, so it consolidates onto the
+        // existing speaker rather than spawning a second one.
         let borderline = registry.assign(&[0.45, 0.89], LONG);
         assert!(borderline.similarity > NEW_SPEAKER_THRESHOLD);
-        assert!(borderline.similarity < SIMILARITY_THRESHOLD);
         assert!(!borderline.is_new_speaker);
         assert_eq!(borderline.speaker_count, 1);
+    }
+
+    #[test]
+    fn similarity_below_threshold_spawns_a_new_speaker() {
+        let mut registry = SpeakerRegistry::new();
+        registry.assign(&[1.0, 0.0], LONG);
+        // cosine ~0.32 — below NEW_SPEAKER_THRESHOLD and long enough to trust, so
+        // a clearly different voice becomes its own speaker.
+        let distinct = registry.assign(&[0.34, 1.0], LONG);
+        assert!(distinct.similarity < NEW_SPEAKER_THRESHOLD);
+        assert!(distinct.is_new_speaker);
+        assert_eq!(distinct.speaker_count, 2);
     }
 
     #[test]
