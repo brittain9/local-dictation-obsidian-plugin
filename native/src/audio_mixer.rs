@@ -21,10 +21,7 @@ const MAX_DB: f32 = -30.0;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct MixedAudioFrame {
-    pub bands: [f32; LEVEL_BANDS],
     pub frame_bytes: Vec<u8>,
-    pub peak: f32,
-    pub rms: f32,
     pub session_id: String,
 }
 
@@ -98,15 +95,19 @@ impl AudioMixer {
         self.system_frames.clear();
     }
 
-    fn build_output(&mut self, frame_bytes: Vec<u8>) -> MixedAudioFrame {
-        let (bands, rms, peak) = self.analyzer.analyze(&frame_bytes);
+    fn build_output(&self, frame_bytes: Vec<u8>) -> MixedAudioFrame {
         MixedAudioFrame {
-            bands,
             frame_bytes,
-            peak,
-            rms,
             session_id: self.session_id.clone(),
         }
+    }
+
+    /// Computes the six dB-companded spectral bands for an already-mixed frame.
+    /// Called lazily — only when an audio-level event is actually due — so the
+    /// per-frame mix path doesn't run an FFT it would just discard under the
+    /// emission throttle.
+    pub fn analyze_levels(&mut self, frame_bytes: &[u8]) -> [f32; LEVEL_BANDS] {
+        self.analyzer.analyze(frame_bytes)
     }
 }
 
@@ -161,22 +162,15 @@ impl LevelAnalyzer {
         }
     }
 
-    /// Returns `(bands, rms, peak)`. `bands` are dB-companded magnitudes in
-    /// [0, 1]; `rms`/`peak` stay linear full-scale for the event payload.
-    fn analyze(&mut self, frame_bytes: &[u8]) -> ([f32; LEVEL_BANDS], f32, f32) {
+    /// Returns the six dB-companded band magnitudes in [0, 1] for one frame.
+    fn analyze(&mut self, frame_bytes: &[u8]) -> [f32; LEVEL_BANDS] {
         let length = self.input.len();
-        let mut sum_squares = 0.0_f32;
-        let mut peak = 0.0_f32;
 
         for (index, sample_bytes) in frame_bytes.chunks_exact(2).take(length).enumerate() {
             let sample = i16::from_le_bytes([sample_bytes[0], sample_bytes[1]]) as f32
                 / i16::MAX as f32;
-            sum_squares += sample * sample;
-            peak = peak.max(sample.abs().min(1.0));
             self.input[index] = sample * self.window[index];
         }
-
-        let rms = (sum_squares / length as f32).sqrt().clamp(0.0, 1.0);
 
         self.fft
             .process(&mut self.input, &mut self.spectrum)
@@ -198,7 +192,7 @@ impl LevelAnalyzer {
             bands[band] = sum / (hi - lo) as f32;
         }
 
-        (bands, rms, peak)
+        bands
     }
 }
 

@@ -18,8 +18,6 @@ describe('SidecarAudioLevelMeter', () => {
 
     meter.update({
       bands: [0, 0.25, 0.5, 0.75, 1, 2],
-      peak: 1,
-      rms: 0.5,
       sessionId: SESSION_ID,
       type: 'audio_level',
     });
@@ -38,8 +36,6 @@ describe('SidecarAudioLevelMeter', () => {
     meter.bindSession(SESSION_ID);
     meter.update({
       bands: [1, 1, 1, 1, 1, 1],
-      peak: 1,
-      rms: 1,
       sessionId: SESSION_ID,
       type: 'audio_level',
     });
@@ -47,8 +43,6 @@ describe('SidecarAudioLevelMeter', () => {
 
     meter.update({
       bands: [0, 0, 0, 0, 0, 0],
-      peak: 0,
-      rms: 0,
       sessionId: crypto.randomUUID(),
       type: 'audio_level',
     });
@@ -65,8 +59,6 @@ describe('SidecarAudioLevelMeter', () => {
     meter.bindSession(SESSION_ID);
     meter.update({
       bands: [0, 0, 0.06, 0, 0, 0],
-      peak: 0.06,
-      rms: 0.04,
       sessionId: SESSION_ID,
       type: 'audio_level',
     });
@@ -85,8 +77,6 @@ describe('SidecarAudioLevelMeter', () => {
     meter.bindSession(SESSION_ID);
     meter.update({
       bands: [0.01, 0.01, 0.01, 0.01, 0.01, 0.01],
-      peak: 0.01,
-      rms: 0.01,
       sessionId: SESSION_ID,
       type: 'audio_level',
     });

@@ -397,8 +397,6 @@ pub enum Event {
     },
     AudioLevel {
         bands: [f32; 6],
-        peak: f32,
-        rms: f32,
         session_id: String,
     },
     TranscriptReady {
@@ -691,8 +689,6 @@ mod tests {
     fn audio_level_event_serializes_for_ribbon_metering() {
         let event = Event::AudioLevel {
             bands: [0.0, 0.1, 0.2, 0.3, 0.4, 1.0],
-            peak: 0.8,
-            rms: 0.25,
             session_id: "session-1".to_string(),
         };
         let mut framed = Vec::new();

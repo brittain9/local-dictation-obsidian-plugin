@@ -285,16 +285,12 @@ describe('event parsing', () => {
       parseEventFrame(
         JSON.stringify({
           bands: [0, 0.1, 0.2, 0.3, 0.4, 1],
-          peak: 0.8,
-          rms: 0.25,
           sessionId: SESSION_ID,
           type: 'audio_level',
         }),
       ),
     ).toEqual({
       bands: [0, 0.1, 0.2, 0.3, 0.4, 1],
-      peak: 0.8,
-      rms: 0.25,
       sessionId: SESSION_ID,
       type: 'audio_level',
     });

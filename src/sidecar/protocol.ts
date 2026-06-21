@@ -225,8 +225,6 @@ export interface SessionStateChangedEvent extends EnvelopeBase<'session_state_ch
 
 export interface AudioLevelEvent extends EnvelopeBase<'audio_level'> {
   bands: [number, number, number, number, number, number];
-  peak: number;
-  rms: number;
   sessionId: string;
 }
 

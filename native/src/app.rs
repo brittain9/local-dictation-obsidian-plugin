@@ -1325,10 +1325,12 @@ fn audio_level_event_if_due(
     }
 
     active_session.last_reported_audio_level_at = Some(now);
+    // The mix path runs every 20 ms frame, but emission is throttled to
+    // AUDIO_LEVEL_EVENT_INTERVAL — so analyze only the frames we actually report
+    // rather than computing an FFT that gets discarded on most frames.
+    let bands = active_session.audio_mixer.analyze_levels(&mixed.frame_bytes);
     Some(Event::AudioLevel {
-        bands: mixed.bands,
-        peak: mixed.peak,
-        rms: mixed.rms,
+        bands,
         session_id: mixed.session_id.clone(),
     })
 }

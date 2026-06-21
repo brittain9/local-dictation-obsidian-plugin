@@ -24,9 +24,8 @@ fn first_sample(frame: &MixedAudioFrame) -> i16 {
     i16::from_le_bytes([frame.frame_bytes[0], frame.frame_bytes[1]])
 }
 
-fn loudest_band(frame: &MixedAudioFrame) -> usize {
-    frame
-        .bands
+fn loudest_band(bands: &[f32]) -> usize {
+    bands
         .iter()
         .enumerate()
         .max_by(|a, b| a.1.partial_cmp(b.1).expect("band levels are finite"))
@@ -102,17 +101,16 @@ fn band_levels_localize_a_tone_to_its_frequency_band() {
         .push_microphone_frame(tone_frame(3000.0))
         .expect("frame should mix")
         .expect("mic frame should emit output");
+    let bands = mixer.analyze_levels(&output.frame_bytes);
 
     assert_eq!(
-        loudest_band(&output),
+        loudest_band(&bands),
         4,
-        "a 3 kHz tone should peak band 4; bands: {:?}",
-        output.bands,
+        "a 3 kHz tone should peak band 4; bands: {bands:?}",
     );
     assert!(
-        output.bands[4] > output.bands[0],
-        "the tone's band should exceed the silent low band; bands: {:?}",
-        output.bands,
+        bands[4] > bands[0],
+        "the tone's band should exceed the silent low band; bands: {bands:?}",
     );
 }
 
@@ -124,14 +122,12 @@ fn band_levels_report_silence_as_floor() {
         .push_microphone_frame(frame_with_sample(0))
         .expect("frame should mix")
         .expect("mic frame should emit output");
+    let bands = mixer.analyze_levels(&output.frame_bytes);
 
     assert!(
-        output.bands.iter().all(|&band| band == 0.0),
-        "silence must gate every band to zero; bands: {:?}",
-        output.bands,
+        bands.iter().all(|&band| band == 0.0),
+        "silence must gate every band to zero; bands: {bands:?}",
     );
-    assert_eq!(output.rms, 0.0);
-    assert_eq!(output.peak, 0.0);
 }
 
 #[test]

@@ -1,17 +1,15 @@
 import type { AudioLevelEvent } from '../sidecar/protocol';
-import type { AudioBandReader } from './audio-visualizer-tap';
-import { AudioVisualizerTap } from './audio-visualizer-tap';
+import { type AudioBandReader, BAND_COUNT } from './audio-bands';
 
-const BAND_COUNT = AudioVisualizerTap.BAND_COUNT;
 const STALE_AFTER_MS = 250;
 
 /**
- * Per-band peak AGC + ballistics, mirroring {@link AudioVisualizerTap}. The
- * sidecar now emits dB-companded spectral bands (it owns the mixed mic+system
- * stream the renderer can't see); this meter supplies the visual feel the old
- * client-side tap used to: each band self-calibrates against its own recent
- * peak so bars fill [0, 1] regardless of absolute loudness, with fast attack
- * and per-band release so onsets snap and tails glide.
+ * Per-band peak AGC + ballistics. The sidecar emits dB-companded spectral bands
+ * (it owns the mixed mic+system stream the renderer can't see); this meter
+ * supplies the visual feel the old client-side AnalyserNode tap used to: each
+ * band self-calibrates against its own recent peak so bars fill [0, 1]
+ * regardless of absolute loudness, with fast attack and per-band release so
+ * onsets snap and tails glide.
  *
  * Ballistics run per {@link readBands} call (the ribbon's ~60 fps render loop),
  * so `PEAK_DECAY_PER_FRAME`'s ~1 s time constant matches that cadence.
