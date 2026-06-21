@@ -59,6 +59,7 @@ export class TranscriptRenderer {
     input: TranscriptAppendInput,
     context: TranscriptRenderContext,
   ): TranscriptInsertProjection {
+    const speakerIndex = normalizeSpeakerIndex(input.speakerIndex);
     const boundary = this.formatBoundary(input, context);
     const sessionHeader = this.shouldEmitSessionHeader()
       ? `${formatSessionHeader(this.options.timestamps.sessionStartUnixMs)}\n`
@@ -74,15 +75,15 @@ export class TranscriptRenderer {
         }
       : null;
     const timestampPrefix = emittedTimestamp === null ? '' : `${emittedTimestamp.text} `;
-    const speakerPrefix = this.shouldEmitSpeakerLabel(input.speakerIndex)
-      ? `${formatSpeakerLabel(input.speakerIndex)} `
+    const speakerPrefix = this.shouldEmitSpeakerLabel(speakerIndex)
+      ? `${formatSpeakerLabel(speakerIndex)} `
       : '';
     const prefix = `${boundary}${sessionHeader}${timestampPrefix}${speakerPrefix}`;
     const textStartOffset = prefix.length;
     const projectedText = `${prefix}${input.text}`;
 
     return {
-      emittedSpeakerIndex: input.speakerIndex,
+      emittedSpeakerIndex: speakerIndex,
       emittedTimestamp,
       insertedText: input.text,
       projectedText,
@@ -102,8 +103,9 @@ export class TranscriptRenderer {
     // An unassigned utterance (null) carries no speaker, so it neither relabels
     // nor resets the running speaker — a later same-speaker utterance stays
     // suppressed across the gap.
-    if (projection.emittedSpeakerIndex !== null) {
-      this.lastRenderedSpeakerIndex = projection.emittedSpeakerIndex;
+    const speakerIndex = normalizeSpeakerIndex(projection.emittedSpeakerIndex);
+    if (speakerIndex !== null) {
+      this.lastRenderedSpeakerIndex = speakerIndex;
     }
   }
 
@@ -203,6 +205,12 @@ export function formatSessionHeader(sessionStartUnixMs: number): string {
 // Speaker indices are 0-based on the wire; the rendered label is 1-based.
 export function formatSpeakerLabel(speakerIndex: number): string {
   return `**Speaker ${speakerIndex + 1}:**`;
+}
+
+function normalizeSpeakerIndex(speakerIndex: number | null | undefined): number | null {
+  return typeof speakerIndex === 'number' && Number.isInteger(speakerIndex) && speakerIndex >= 0
+    ? speakerIndex
+    : null;
 }
 
 function padTwo(value: number): string {

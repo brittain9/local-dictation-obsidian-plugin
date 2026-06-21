@@ -454,6 +454,17 @@ describe('event parsing', () => {
     }
   });
 
+  it('normalizes a missing transcript_ready speaker index to null', () => {
+    const payload: Partial<TranscriptReadyEvent> = transcriptReadyPayload({ speakerIndex: 1 });
+    delete payload.speakerIndex;
+    const event = parseEventFrame(JSON.stringify(payload));
+
+    expect(event.type).toBe('transcript_ready');
+    if (event.type === 'transcript_ready') {
+      expect(event.speakerIndex).toBeNull();
+    }
+  });
+
   it('parses transcript_ready carrying a non-empty stageResults history', () => {
     const stageResults: TranscriptReadyEvent['stageResults'] = [
       {

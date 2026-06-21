@@ -261,6 +261,22 @@ describe('TranscriptRenderer speaker labels', () => {
     );
   });
 
+  it('never labels invalid speaker indexes', () => {
+    const renderer = new TranscriptRenderer({
+      timestamps: timestamps(),
+      transcriptFormatting: 'space',
+    });
+
+    expect(planAndCommit(renderer, { speakerIndex: Number.NaN, text: 'nan' }).projectedText).toBe(
+      'nan',
+    );
+    const missingSpeaker = {
+      speakerIndex: undefined,
+      text: 'missing',
+    } as unknown as Partial<TranscriptAppendInput> & { text: string };
+    expect(planAndCommit(renderer, missingSpeaker, 't').projectedText).toBe(' missing');
+  });
+
   it('keeps same-speaker suppression across an unassigned utterance', () => {
     const renderer = new TranscriptRenderer({
       timestamps: timestamps(),

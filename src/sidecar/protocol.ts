@@ -581,7 +581,18 @@ export function parseEventFrame(jsonText: string): SidecarEvent {
     throw new Error(`Unsupported sidecar event type: ${String(parsedValue.type)}`);
   }
 
+  if (parsedValue.type === 'transcript_ready') {
+    return {
+      ...parsedValue,
+      speakerIndex: normalizeSpeakerIndex(parsedValue.speakerIndex),
+    } as unknown as SidecarEvent;
+  }
+
   return parsedValue as unknown as SidecarEvent;
+}
+
+function normalizeSpeakerIndex(value: unknown): number | null {
+  return typeof value === 'number' && Number.isInteger(value) && value >= 0 ? value : null;
 }
 
 function createEnvelope<TType extends SidecarCommand['type']>(
