@@ -33,6 +33,7 @@
     "check:frontend": "npm run typecheck && npm run lint && npm run lint:obsidian && npm run test && npm run build:frontend",
     "check:js": "npm run check:frontend && npm run build:sidecar && npm run verify:build-output",
     "check:rust": "node scripts/check-rust.mjs",
+    "test:sidecar:e2e": "cargo test --manifest-path native/Cargo.toml --release --test transcription_e2e --test sidecar_protocol_e2e -- --ignored --nocapture",
     "check": "npm run check:js && npm run check:rust"
   },
   "devDependencies": {
@@ -42,14 +43,14 @@
     "@eslint/js": "^10.0.1",
     "@eslint/json": "^2.0.0",
     "@types/node": "25.9.3",
-    "@typescript-eslint/parser": "^8.61.0",
+    "@typescript-eslint/parser": "^8.61.1",
     "esbuild": "0.28.1",
     "eslint": "^10.4.1",
     "eslint-plugin-obsidianmd": "^0.3.0",
     "obsidian": "1.11.4",
     "tslib": "2.8.1",
     "typescript": "6.0.3",
-    "typescript-eslint": "^8.61.0",
-    "vitest": "4.1.8"
+    "typescript-eslint": "^8.61.1",
+    "vitest": "4.1.9"
   }
 }

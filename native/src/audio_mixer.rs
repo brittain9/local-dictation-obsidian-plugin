@@ -167,8 +167,8 @@ impl LevelAnalyzer {
         let length = self.input.len();
 
         for (index, sample_bytes) in frame_bytes.chunks_exact(2).take(length).enumerate() {
-            let sample = i16::from_le_bytes([sample_bytes[0], sample_bytes[1]]) as f32
-                / i16::MAX as f32;
+            let sample =
+                i16::from_le_bytes([sample_bytes[0], sample_bytes[1]]) as f32 / i16::MAX as f32;
             self.input[index] = sample * self.window[index];
         }
 

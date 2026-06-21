@@ -344,7 +344,7 @@ jobs:
       - name: Restore CUDA toolkit
         if: matrix.cuda
         id: cuda-cache
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v5
         with:
           path: ${{ env.CUDA_INSTALL_DIR }}
           key: cuda-${{ runner.os }}-${{ env.CUDA_TOOLKIT_VERSION }}-${{ hashFiles('.github/cuda-windows-subpackages.json') }}
@@ -407,7 +407,7 @@ jobs:
       # immutable-keyed toolkit cache.
       - name: Save CUDA toolkit
         if: success() && matrix.cuda && steps.cuda-cache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@v5
         with:
           path: ${{ env.CUDA_INSTALL_DIR }}
           key: ${{ steps.cuda-cache.outputs.cache-primary-key }}

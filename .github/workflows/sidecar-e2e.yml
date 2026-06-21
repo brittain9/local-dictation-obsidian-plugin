@@ -1,0 +1,63 @@
+name: sidecar-e2e
+
+# Heavy, model-backed quality suite for the Rust sidecar: runs known audio
+# fixtures through the full pipeline and asserts the transcript (accuracy +
+# wire-protocol). Kept out of the per-PR `ci` workflow because it downloads a
+# whisper model and runs real inference. Triggered manually, plus a weekly run
+# to catch drift.
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 6 * * 1' # Mondays 06:00 UTC
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sidecar-e2e-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  NODE_VERSION: 24.14.1
+  RUST_TOOLCHAIN: 1.94.1
+  MODEL_CACHE_DIR: ${{ github.workspace }}/.test-models
+
+jobs:
+  transcription-e2e:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Node.js + npm
+        uses: ./.github/actions/setup-node-npm
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'true'
+          upgrade-npm: 'true'
+
+      - name: Setup Rust
+        uses: ./.github/actions/setup-sidecar-rust
+        with:
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
+          components: rustfmt, clippy
+          cache-workspaces: native -> target
+          cache-shared-key: sidecar-e2e
+
+      # Persist the downloaded whisper model across runs so we only pay the
+      # download once. The key is stable: the model is pinned in the catalog.
+      - name: Cache whisper test model
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.MODEL_CACHE_DIR }}
+          key: whisper-test-model-tiny-en-q8_0
+
+      - name: Install JavaScript dependencies
+        run: npm ci
+
+      - name: Run sidecar e2e quality suite
+        env:
+          STT_TEST_MODEL_DIR: ${{ env.MODEL_CACHE_DIR }}
+        run: npm run test:sidecar:e2e
