@@ -1,10 +1,9 @@
-import type { OllamaModelOption } from '../llm/ollama-client';
-
-export type OllamaHealth =
-  | { kind: 'unknown' }
-  | { kind: 'unreachable' }
-  | { kind: 'no_models' }
-  | { kind: 'ready'; modelCount: number };
+import {
+  formatLlmProviderName,
+  type LlmProviderId,
+  type ModelOption,
+  type ProviderHealth,
+} from '../llm/provider';
 
 export type InlineStatusVariant = 'warning' | 'info';
 
@@ -21,38 +20,51 @@ export const INLINE_STATUS_PRESENTATION: Record<
   info: { icon: 'info', className: 'local-dictation-status--info' },
 };
 
-export function formatOllamaHealth(health: OllamaHealth): string {
-  switch (health.kind) {
-    case 'unknown':
-      return 'Status unknown.';
-    case 'unreachable':
-      return 'Not running.';
-    case 'no_models':
-      return 'Running, but no chat models installed.';
-    case 'ready':
-      return `Ready (${health.modelCount} chat model${health.modelCount === 1 ? '' : 's'}).`;
-  }
-}
-
 export function deriveInlineStatus(args: {
-  health: OllamaHealth;
-  models: ReadonlyArray<OllamaModelOption>;
+  health: ProviderHealth;
+  models: ReadonlyArray<ModelOption>;
+  providerId: LlmProviderId;
   selectedModel: string;
 }): InlineStatus | null {
+  const providerName = formatLlmProviderName(args.providerId);
+
   switch (args.health.kind) {
     case 'unknown':
+      if (args.selectedModel === '') {
+        return { text: `Select ${providerArticle(providerName)} model below.`, variant: 'info' };
+      }
       return null;
     case 'unreachable':
-      return { text: 'Ollama is not running.', variant: 'warning' };
+      return {
+        text:
+          args.providerId === 'ollama'
+            ? 'Ollama is not running.'
+            : `${providerName} is unreachable.`,
+        variant: 'warning',
+      };
+    case 'auth_invalid':
+      return { text: `${providerName} API key rejected.`, variant: 'warning' };
+    case 'rate_limited':
+      return { text: `${providerName} rate limit hit.`, variant: 'warning' };
     case 'no_models':
-      return { text: 'No chat models installed in Ollama.', variant: 'warning' };
+      return {
+        text:
+          args.providerId === 'ollama'
+            ? 'No chat models installed in Ollama.'
+            : `No usable ${providerName} models found.`,
+        variant: 'warning',
+      };
     case 'ready':
       if (args.selectedModel === '') {
-        return { text: 'Select an Ollama model below.', variant: 'info' };
+        return { text: `Select ${providerArticle(providerName)} model below.`, variant: 'info' };
       }
-      if (!args.models.some((model) => model.id === args.selectedModel)) {
+      if (args.models.length > 0 && !args.models.some((model) => model.id === args.selectedModel)) {
         return { text: 'Selected model is unavailable.', variant: 'warning' };
       }
       return null;
   }
+}
+
+function providerArticle(providerName: string): string {
+  return /^[AEIOU]/u.test(providerName) ? `an ${providerName}` : `a ${providerName}`;
 }

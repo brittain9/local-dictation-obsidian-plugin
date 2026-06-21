@@ -169,7 +169,6 @@ pub enum StageId {
     Diarization,
     Engine,
     HallucinationFilter,
-    LlmPostprocess,
     Punctuation,
     UserRules,
 }
@@ -208,18 +207,12 @@ pub struct EngineStagePayload {
 pub enum ContextWindowSource {
     #[serde(rename_all = "camelCase")]
     NoteGlossary { text: String, truncated: bool },
-    #[serde(rename_all = "camelCase")]
-    NoteText { text: String, truncated: bool },
-    #[serde(rename_all = "camelCase")]
-    PriorUtterance { text: String, truncated: bool },
 }
 
 impl ContextWindowSource {
     pub fn text(&self) -> &str {
         match self {
-            Self::NoteGlossary { text, .. }
-            | Self::NoteText { text, .. }
-            | Self::PriorUtterance { text, .. } => text,
+            Self::NoteGlossary { text, .. } => text,
         }
     }
 }
@@ -231,20 +224,6 @@ pub struct ContextWindow {
     pub sources: Vec<ContextWindowSource>,
     pub text: String,
     pub truncated: bool,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct LlmPostprocessConfig {
-    pub keep_alive: String,
-    pub model: String,
-    pub note_context_chars: u32,
-    pub prior_utterances_n: u32,
-    pub prompt: String,
-    pub show_raw_below: bool,
-    pub skip_min_words: u32,
-    pub temperature: f32,
-    pub total_context_cap: u32,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -283,9 +262,9 @@ pub enum Command {
         acceleration_preference: AccelerationPreference,
         #[serde(default)]
         diarization_enabled: bool,
-        language: String,
         #[serde(default)]
-        llm_postprocess: Option<Box<LlmPostprocessConfig>>,
+        include_system_audio: bool,
+        language: String,
         mode: ListeningMode,
         model_selection: SelectedModel,
         #[serde(default)]
@@ -337,12 +316,6 @@ pub enum Command {
     },
     CancelSession {
         session_id: String,
-    },
-    RunBatchCleanup {
-        session_id: String,
-        transcript_text: String,
-        config: LlmPostprocessConfig,
-        note_context: Option<String>,
     },
     Shutdown,
 }
@@ -425,9 +398,12 @@ pub enum Event {
         session_id: String,
         state: SessionState,
     },
+    AudioLevel {
+        bands: [f32; 6],
+        session_id: String,
+    },
     TranscriptReady {
         is_final: bool,
-        llm_postprocess_raw_text: Option<String>,
         pause_ms_before_utterance: Option<u64>,
         processing_duration_ms: u64,
         revision: u32,
@@ -466,12 +442,6 @@ pub enum Event {
     SessionStopped {
         reason: SessionStopReason,
         session_id: String,
-    },
-    BatchCleanupReady {
-        session_id: String,
-        clean_text: String,
-        raw_text: String,
-        stage_results: Vec<StageOutcome>,
     },
     Error {
         code: String,
@@ -639,8 +609,8 @@ mod tests {
         AUDIO_FRAME_KIND, AccelerationPreference, AudioFrame, Command, Event, EventEnvelope,
         FRAME_HEADER_LENGTH, IncomingFrame, JSON_FRAME_KIND, ListeningMode, MAX_FRAME_PAYLOAD,
         ModelInstallState, ModelProbeStatus, PCM_BYTES_PER_FRAME, QueueBackpressureTier,
-        SelectedModel, SessionStopReason, SpeakingStyle, StageId, encode_audio_frame_envelope,
-        read_frame, write_event_frame, write_frame,
+        SelectedModel, SessionStopReason, SpeakingStyle, encode_audio_frame_envelope, read_frame,
+        write_event_frame, write_frame,
     };
     use crate::engine::capabilities::{ModelFamilyId, RuntimeId};
     use uuid::Uuid;
@@ -658,7 +628,8 @@ mod tests {
                 "filePath": "/tmp/model.bin"
             },
             "language": "en",
-            "sessionStartUnixMs": 1_700_000_000_000_u64
+            "sessionStartUnixMs": 1_700_000_000_000_u64,
+            "includeSystemAudio": true
         }))
         .expect("payload should serialize");
         let mut framed = Vec::new();
@@ -673,6 +644,7 @@ mod tests {
             IncomingFrame::Command(Command::StartSession {
                 acceleration_preference: AccelerationPreference::Auto,
                 diarization_enabled: false,
+                include_system_audio: true,
                 language: "en".to_string(),
                 mode: ListeningMode::AlwaysOn,
                 model_selection: SelectedModel::ExternalFile {
@@ -680,20 +652,11 @@ mod tests {
                     family_id: ModelFamilyId::Whisper,
                     file_path: "/tmp/model.bin".to_string(),
                 },
-                llm_postprocess: None,
                 model_store_path_override: None,
                 session_start_unix_ms: 1_700_000_000_000,
                 session_id: "session-1".to_string(),
                 speaking_style: SpeakingStyle::Balanced,
             })
-        );
-    }
-
-    #[test]
-    fn stage_id_llm_postprocess_serializes_as_snake_case() {
-        assert_eq!(
-            serde_json::to_value(StageId::LlmPostprocess).unwrap(),
-            serde_json::json!("llm_postprocess")
         );
     }
 
@@ -725,6 +688,20 @@ mod tests {
             parsed,
             IncomingFrame::Command(Command::StartSession { .. })
         ));
+    }
+
+    #[test]
+    fn audio_level_event_serializes_for_ribbon_metering() {
+        let event = Event::AudioLevel {
+            bands: [0.0, 0.1, 0.2, 0.3, 0.4, 1.0],
+            session_id: "session-1".to_string(),
+        };
+        let mut framed = Vec::new();
+        write_event_frame(&mut framed, &event).expect("event should write");
+        let payload = &framed[FRAME_HEADER_LENGTH..];
+        let parsed: EventEnvelope = serde_json::from_slice(payload).expect("event should parse");
+
+        assert_eq!(parsed.event, event);
     }
 
     #[test]
@@ -858,7 +835,6 @@ mod tests {
         let utterance_id = Uuid::new_v4();
         let make_event = |pause: Option<u64>| Event::TranscriptReady {
             is_final: true,
-            llm_postprocess_raw_text: None,
             pause_ms_before_utterance: pause,
             processing_duration_ms: 12,
             revision: 0,
@@ -916,7 +892,6 @@ mod tests {
     fn transcript_ready_serializes_empty_warnings_as_empty_array() {
         let event = Event::TranscriptReady {
             is_final: true,
-            llm_postprocess_raw_text: None,
             pause_ms_before_utterance: None,
             processing_duration_ms: 12,
             revision: 0,

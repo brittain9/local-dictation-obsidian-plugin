@@ -1,12 +1,10 @@
 import http from 'node:http';
 
 import { isRecord } from '../shared/type-guards';
+import { CLEANUP_TIMEOUT_MS, MAX_RESPONSE_BYTES, PROBE_TIMEOUT_MS } from './http-shared';
 
 const OLLAMA_HOST = '127.0.0.1';
 const OLLAMA_PORT = 11434;
-const PREFLIGHT_TIMEOUT_MS = 3_000;
-const CLEANUP_TIMEOUT_MS = 60_000;
-const MAX_RESPONSE_BYTES = 2 * 1024 * 1024;
 export const OLLAMA_KEEP_ALIVE = '30m';
 const NON_CHAT_MODEL_PATTERN = /embed|embedding|bge|nomic|clip/i;
 
@@ -26,12 +24,27 @@ export interface OllamaModelOption {
 }
 
 export class OllamaClientError extends Error {
+  readonly responseText?: string;
+  readonly status?: number;
+
   constructor(
     message: string,
-    public readonly code: 'connection_failed' | 'http_error' | 'invalid_response' | 'timeout',
+    public readonly code:
+      | 'aborted'
+      | 'connection_failed'
+      | 'http_error'
+      | 'invalid_response'
+      | 'timeout',
+    options: { responseText?: string | undefined; status?: number | undefined } = {},
   ) {
     super(message);
     this.name = 'OllamaClientError';
+    if (options.responseText !== undefined) {
+      this.responseText = options.responseText;
+    }
+    if (options.status !== undefined) {
+      this.status = options.status;
+    }
   }
 }
 
@@ -44,6 +57,8 @@ export interface OllamaClient {
 
 export interface OllamaCleanupOptions {
   abortSignal?: AbortSignal;
+  /** Output-token cap computed by the router (see output-budget). */
+  maxOutputTokens: number;
   model: string;
   prompt: string;
   temperature: number;
@@ -123,7 +138,10 @@ async function cleanup(
         { content: cleanupOptions.userMessage, role: 'user' },
       ],
       model: cleanupOptions.model,
-      options: { num_predict: 512, temperature: cleanupOptions.temperature },
+      options: {
+        num_predict: cleanupOptions.maxOutputTokens,
+        temperature: cleanupOptions.temperature,
+      },
       stream: false,
       think: false,
     },
@@ -142,6 +160,13 @@ async function cleanup(
 
   if (typeof response.message.content !== 'string') {
     throw new OllamaClientError('Ollama returned an invalid chat message.', 'invalid_response');
+  }
+
+  if (response.done_reason === 'length') {
+    throw new OllamaClientError(
+      'Ollama stopped because the transformed text exceeded the output limit.',
+      'invalid_response',
+    );
   }
 
   return response.message.content.trim();
@@ -187,7 +212,7 @@ function requestText(
         path,
         port: options.port ?? OLLAMA_PORT,
         signal: options.abortSignal,
-        timeout: options.timeoutMs ?? PREFLIGHT_TIMEOUT_MS,
+        timeout: options.timeoutMs ?? PROBE_TIMEOUT_MS,
       },
       (response) => {
         const chunks: Buffer[] = [];
@@ -213,7 +238,12 @@ function requestText(
           if (exceeded) return;
           const statusCode = response.statusCode ?? 0;
           if (statusCode < 200 || statusCode >= 300) {
-            reject(new OllamaClientError(`Ollama returned HTTP ${statusCode}.`, 'http_error'));
+            reject(
+              new OllamaClientError(`Ollama returned HTTP ${statusCode}.`, 'http_error', {
+                responseText: Buffer.concat(chunks).toString('utf8'),
+                status: statusCode,
+              }),
+            );
             return;
           }
           resolve(Buffer.concat(chunks).toString('utf8'));
@@ -226,7 +256,7 @@ function requestText(
     });
     request.on('error', (error) => {
       if (options.abortSignal?.aborted === true) {
-        reject(new OllamaClientError('Ollama request aborted.', 'connection_failed'));
+        reject(new OllamaClientError('Ollama request aborted.', 'aborted'));
         return;
       }
 

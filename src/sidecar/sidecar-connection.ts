@@ -14,7 +14,6 @@ import {
   createListModelCatalogCommand,
   createProbeModelSelectionCommand,
   createRemoveModelCommand,
-  createRunBatchCleanupCommand,
   createStartSessionCommand,
   createStopSessionCommand,
   type ErrorEvent,
@@ -62,7 +61,7 @@ interface PendingEventWaiter {
   rejectOnError: (event: ErrorEvent) => boolean;
   reject: (error: Error) => void;
   resolve: (event: SidecarEvent) => void;
-  timeoutHandle: ReturnType<typeof globalThis.setTimeout>;
+  timeoutHandle: number;
 }
 
 interface SidecarProcessLike {
@@ -281,14 +280,6 @@ export class SidecarConnection {
     this.process.write(encodeJsonFrame(createStopSessionCommand(sessionId)));
   }
 
-  requestBatchCleanup(payload: Parameters<typeof createRunBatchCleanupCommand>[0]): void {
-    if (!this.process.isRunning()) {
-      return;
-    }
-
-    this.process.write(encodeJsonFrame(createRunBatchCleanupCommand(payload)));
-  }
-
   async restart(startupTimeoutMs = this.options.getRequestTimeoutMs()): Promise<HealthOkEvent> {
     await this.shutdown();
     await this.ensureStarted();
@@ -358,7 +349,7 @@ export class SidecarConnection {
       try {
         this.process.write(encodeJsonFrame(command));
       } catch (error) {
-        globalThis.clearTimeout(waiter.timeoutHandle);
+        window.clearTimeout(waiter.timeoutHandle);
         this.pendingWaiters.delete(waiter);
         reject(asError(error, `Failed to write sidecar command: ${command.type}`));
       }
@@ -379,7 +370,7 @@ export class SidecarConnection {
       reject,
       rejectOnError: rejectOnError ?? (() => true),
       resolve,
-      timeoutHandle: globalThis.setTimeout(() => {
+      timeoutHandle: window.setTimeout(() => {
         this.pendingWaiters.delete(waiter);
         waiter.reject(new Error(`Timed out waiting for sidecar event: ${description}`));
       }, timeoutMs),
@@ -434,14 +425,14 @@ export class SidecarConnection {
 
     for (const waiter of [...this.pendingWaiters]) {
       if (waiter.matches(event)) {
-        globalThis.clearTimeout(waiter.timeoutHandle);
+        window.clearTimeout(waiter.timeoutHandle);
         this.pendingWaiters.delete(waiter);
         waiter.resolve(event);
         continue;
       }
 
       if (event.type === 'error' && waiter.rejectOnError(event)) {
-        globalThis.clearTimeout(waiter.timeoutHandle);
+        window.clearTimeout(waiter.timeoutHandle);
         this.pendingWaiters.delete(waiter);
         waiter.reject(new SidecarError(event));
       }
@@ -450,7 +441,7 @@ export class SidecarConnection {
 
   private rejectPendingWaiters(error: Error): void {
     for (const waiter of [...this.pendingWaiters]) {
-      globalThis.clearTimeout(waiter.timeoutHandle);
+      window.clearTimeout(waiter.timeoutHandle);
       this.pendingWaiters.delete(waiter);
       waiter.reject(error);
     }
@@ -463,7 +454,6 @@ function shouldLogProtocolEvent(event: SidecarEvent): boolean {
     case 'session_started':
     case 'session_state_changed':
     case 'session_stopped':
-    case 'batch_cleanup_ready':
     case 'transcript_ready':
     case 'warning':
       return true;
@@ -484,8 +474,6 @@ function summarizeProtocolEvent(event: SidecarEvent): string {
       return `event: session_state_changed (${event.sessionId}, ${event.state})`;
     case 'session_stopped':
       return `event: session_stopped (${event.sessionId}, ${event.reason})`;
-    case 'batch_cleanup_ready':
-      return `event: batch_cleanup_ready (${event.sessionId}, ${event.cleanText.length} chars)`;
     case 'transcript_ready':
       return `event: transcript_ready (${event.sessionId}, ${event.text.length} chars)`;
     case 'warning':

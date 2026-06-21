@@ -95,9 +95,9 @@ export function renderMicrophonePicker(
     if (detectButtonEl === null) {
       return;
     }
-    const mediaDevices = globalThis.navigator?.mediaDevices;
+    const mediaDevices = window.navigator?.mediaDevices;
     if (mediaDevices?.getUserMedia === undefined) {
-      detectButtonEl.style.display = 'none';
+      detectButtonEl.addClass('local-stt-hidden');
       return;
     }
     // Show the button whenever no enumerated device has a usable label. That
@@ -105,12 +105,12 @@ export function renderMicrophonePicker(
     // the labels-look-empty cases (permission not yet granted, or label is
     // only a VID:PID suffix that formatDeviceLabel strips to '').
     const hasLabeledDevice = devices.some((device) => formatDeviceLabel(device.label).length > 0);
-    detectButtonEl.style.display = hasLabeledDevice ? 'none' : '';
+    detectButtonEl.toggleClass('local-stt-hidden', hasLabeledDevice);
   }
 
   async function enumerate(): Promise<void> {
     const version = ++enumerateVersion;
-    const mediaDevices = globalThis.navigator?.mediaDevices;
+    const mediaDevices = window.navigator?.mediaDevices;
     if (mediaDevices?.enumerateDevices === undefined) {
       devices = [];
       repopulate();
@@ -197,7 +197,7 @@ export function renderMicrophonePicker(
       return;
     }
 
-    const mediaDevices = globalThis.navigator?.mediaDevices;
+    const mediaDevices = window.navigator?.mediaDevices;
     if (mediaDevices?.getUserMedia === undefined) {
       new Notice('Microphone access is not available in this runtime.');
       return;
@@ -220,18 +220,18 @@ export function renderMicrophonePicker(
     }
   }
 
-  let debounceHandle: ReturnType<typeof setTimeout> | null = null;
+  let debounceHandle: number | null = null;
   const onDeviceChange = (): void => {
     if (debounceHandle !== null) {
-      clearTimeout(debounceHandle);
+      window.clearTimeout(debounceHandle);
     }
-    debounceHandle = setTimeout(() => {
+    debounceHandle = window.setTimeout(() => {
       debounceHandle = null;
       void enumerate();
     }, DEVICE_CHANGE_DEBOUNCE_MS);
   };
 
-  const mediaDevices = globalThis.navigator?.mediaDevices;
+  const mediaDevices = window.navigator?.mediaDevices;
   mediaDevices?.addEventListener?.('devicechange', onDeviceChange);
 
   void enumerate();
@@ -239,7 +239,7 @@ export function renderMicrophonePicker(
   return () => {
     disposed = true;
     if (debounceHandle !== null) {
-      clearTimeout(debounceHandle);
+      window.clearTimeout(debounceHandle);
       debounceHandle = null;
     }
     mediaDevices?.removeEventListener?.('devicechange', onDeviceChange);

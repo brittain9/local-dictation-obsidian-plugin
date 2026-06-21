@@ -8,7 +8,6 @@ import {
   createCancelSessionCommand,
   createContextResponseCommand,
   createHealthCommand,
-  createRunBatchCleanupCommand,
   createStartSessionCommand,
   createStopSessionCommand,
   decodeAudioFrameEnvelope,
@@ -39,7 +38,6 @@ function transcriptReadyPayload(
 ): TranscriptReadyEvent {
   return {
     isFinal: true,
-    llmPostprocessRawText: null,
     pauseMsBeforeUtterance: null,
     processingDurationMs: 125,
     revision: 0,
@@ -66,20 +64,6 @@ function externalModelSelection() {
     kind: 'external_file',
     runtimeId: 'whisper_cpp',
   } as const;
-}
-
-function llmPostprocessConfig() {
-  return {
-    keepAlive: '30m',
-    model: 'llama3.2:latest',
-    noteContextChars: 3000,
-    priorUtterancesN: 2,
-    prompt: 'Clean it.',
-    showRawBelow: true,
-    skipMinWords: 4,
-    temperature: 0.2,
-    totalContextCap: 7000,
-  };
 }
 
 // Framing --------------------------------------------------------------------
@@ -241,11 +225,12 @@ describe('FramedMessageParser fatal stream handling', () => {
 // Commands -------------------------------------------------------------------
 
 describe('command serialization', () => {
-  it('serializes start_session with accelerationPreference and sessionId', () => {
+  it('serializes start_session with accelerationPreference, includeSystemAudio, and sessionId', () => {
     const frame = encodeJsonFrame(
       createStartSessionCommand({
         accelerationPreference: 'auto',
         diarizationEnabled: true,
+        includeSystemAudio: true,
         language: 'en',
         mode: 'always_on',
         modelSelection: externalModelSelection(),
@@ -258,26 +243,9 @@ describe('command serialization', () => {
 
     expect(payload.accelerationPreference).toBe('auto');
     expect(payload.diarizationEnabled).toBe(true);
+    expect(payload.includeSystemAudio).toBe(true);
+    expect(payload).not.toHaveProperty('audioSource');
     expect(payload.sessionId).toBe('session-gpu');
-  });
-
-  it('serializes start_session with the llmPostprocess config nested verbatim', () => {
-    const command = createStartSessionCommand({
-      accelerationPreference: 'auto',
-      diarizationEnabled: false,
-      language: 'en',
-      llmPostprocess: llmPostprocessConfig(),
-      mode: 'always_on',
-      modelSelection: externalModelSelection(),
-      sessionStartUnixMs: 1_700_000_000_000,
-      sessionId: 'session-llm',
-      speakingStyle: 'balanced',
-    });
-
-    expect(readPayload(encodeJsonFrame(command))).toMatchObject({
-      llmPostprocess: llmPostprocessConfig(),
-      type: 'start_session',
-    });
   });
 
   it('encodes session-addressed lifecycle commands with sessionId echoed in the payload', () => {
@@ -289,28 +257,12 @@ describe('command serialization', () => {
       sessionId: SESSION_ID,
       type: 'cancel_session',
     });
-    expect(
-      readPayload(
-        encodeJsonFrame(
-          createRunBatchCleanupCommand({
-            config: llmPostprocessConfig(),
-            noteContext: null,
-            sessionId: SESSION_ID,
-            transcriptText: 'raw',
-          }),
-        ),
-      ),
-    ).toMatchObject({
-      sessionId: SESSION_ID,
-      transcriptText: 'raw',
-      type: 'run_batch_cleanup',
-    });
   });
 
   it('serializes context_response carrying a context window or explicit null', () => {
     const window: ContextWindow = {
       budgetChars: 512,
-      sources: [{ kind: 'prior_utterance', text: 'hello', truncated: false }],
+      sources: [{ kind: 'note_glossary', text: 'hello', truncated: false }],
       text: 'hello',
       truncated: false,
     };
@@ -331,6 +283,22 @@ describe('command serialization', () => {
 // Event parsing --------------------------------------------------------------
 
 describe('event parsing', () => {
+  it('parses audio_level events for ribbon metering', () => {
+    expect(
+      parseEventFrame(
+        JSON.stringify({
+          bands: [0, 0.1, 0.2, 0.3, 0.4, 1],
+          sessionId: SESSION_ID,
+          type: 'audio_level',
+        }),
+      ),
+    ).toEqual({
+      bands: [0, 0.1, 0.2, 0.3, 0.4, 1],
+      sessionId: SESSION_ID,
+      type: 'audio_level',
+    });
+  });
+
   it('parses system_info preserving compiled runtime and adapter shapes', () => {
     const runtimeCapabilities = {
       acceleratorDetails: {

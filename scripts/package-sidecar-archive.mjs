@@ -7,11 +7,14 @@
 // Optional env: CUDA=true to copy CUDA provider+runtime libs alongside
 
 import { spawnSync } from 'node:child_process';
+import { existsSync } from 'node:fs';
 import { copyFile, mkdir, realpath } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import process from 'node:process';
 
 import { listCudaArtifacts } from './lib/cuda-artifacts.mjs';
+import { pickFirstExistingDir } from './lib/pick-existing-dir.mjs';
+import { requiredEnv } from './lib/required-env.mjs';
 
 const archiveName = requiredEnv('ARCHIVE_NAME');
 const assetName = requiredEnv('ASSET_NAME');
@@ -49,7 +52,15 @@ if (isCuda) {
   // forward-compatible), so ship them next to the binary. On Linux the lib
   // dir is derived from nvcc's location, on Windows it lives under CUDA_PATH.
   const runtimeFiles = await listCudaArtifacts('runtime', platformKey);
-  const runtimeSourceDir = isWindows ? join(requiredEnv('CUDA_PATH'), 'bin') : linuxCudaLibDir();
+  // CUDA 13 may relocate the Windows runtime DLLs from %CUDA_PATH%\bin to
+  // %CUDA_PATH%\bin\x64 (unconfirmed in NVIDIA docs), so try x64 first and fall
+  // back to the historical location. Linux derives its lib dir from nvcc.
+  const runtimeSourceDir = isWindows
+    ? pickFirstExistingDir(
+        [join(requiredEnv('CUDA_PATH'), 'bin', 'x64'), join(requiredEnv('CUDA_PATH'), 'bin')],
+        existsSync,
+      )
+    : linuxCudaLibDir();
 
   for (const runtimeFile of runtimeFiles) {
     const src = join(runtimeSourceDir, runtimeFile);
@@ -76,14 +87,6 @@ if (isLinux) {
 await createArchive(artifactDir, join(distDir, archiveName));
 
 console.log(`Packaged ${archiveName} from ${artifactDir}`);
-
-function requiredEnv(name) {
-  const value = process.env[name];
-  if (typeof value !== 'string' || value.length === 0) {
-    throw new Error(`Required environment variable ${name} is not set.`);
-  }
-  return value;
-}
 
 function linuxCudaLibDir() {
   const which = spawnSync('which', ['nvcc'], { encoding: 'utf8' });

@@ -72,22 +72,11 @@ export type TimestampSource = (typeof TIMESTAMP_SOURCES)[number];
 export const TIMESTAMP_GRANULARITIES = ['segment', 'utterance', 'word'] as const;
 export type TimestampGranularity = (typeof TIMESTAMP_GRANULARITIES)[number];
 
-export type ContextWindowSource =
-  | {
-      kind: 'note_glossary';
-      text: string;
-      truncated: boolean;
-    }
-  | {
-      kind: 'note_text';
-      text: string;
-      truncated: boolean;
-    }
-  | {
-      kind: 'prior_utterance';
-      text: string;
-      truncated: boolean;
-    };
+export interface ContextWindowSource {
+  kind: 'note_glossary';
+  text: string;
+  truncated: boolean;
+}
 
 export interface ContextWindow {
   budgetChars: number;
@@ -113,25 +102,13 @@ interface EnvelopeBase<TType extends string> {
   type: TType;
 }
 
-export interface HealthCommand extends EnvelopeBase<'health'> {}
-
-export interface LlmPostprocessConfig {
-  keepAlive: string;
-  model: string;
-  noteContextChars: number;
-  priorUtterancesN: number;
-  prompt: string;
-  showRawBelow: boolean;
-  skipMinWords: number;
-  temperature: number;
-  totalContextCap: number;
-}
+export type HealthCommand = EnvelopeBase<'health'>;
 
 export interface StartSessionCommand extends EnvelopeBase<'start_session'> {
   accelerationPreference: AccelerationPreference;
   diarizationEnabled: boolean;
+  includeSystemAudio: boolean;
   language: 'en';
-  llmPostprocess?: LlmPostprocessConfig;
   mode: ListeningMode;
   modelSelection: SelectedModel;
   modelStorePathOverride?: string;
@@ -149,7 +126,7 @@ export interface GetModelStoreCommand extends EnvelopeBase<'get_model_store'> {
   modelStorePathOverride?: string;
 }
 
-export interface ListModelCatalogCommand extends EnvelopeBase<'list_model_catalog'> {}
+export type ListModelCatalogCommand = EnvelopeBase<'list_model_catalog'>;
 
 export interface ListInstalledModelsCommand extends EnvelopeBase<'list_installed_models'> {
   modelStorePathOverride?: string;
@@ -187,16 +164,9 @@ export interface CancelSessionCommand extends EnvelopeBase<'cancel_session'> {
   sessionId: string;
 }
 
-export interface RunBatchCleanupCommand extends EnvelopeBase<'run_batch_cleanup'> {
-  config: LlmPostprocessConfig;
-  noteContext: string | null;
-  sessionId: string;
-  transcriptText: string;
-}
+export type ShutdownCommand = EnvelopeBase<'shutdown'>;
 
-export interface ShutdownCommand extends EnvelopeBase<'shutdown'> {}
-
-export interface GetSystemInfoCommand extends EnvelopeBase<'get_system_info'> {}
+export type GetSystemInfoCommand = EnvelopeBase<'get_system_info'>;
 
 export type SidecarCommand =
   | CancelModelInstallCommand
@@ -210,7 +180,6 @@ export type SidecarCommand =
   | ListModelCatalogCommand
   | ProbeModelSelectionCommand
   | RemoveModelCommand
-  | RunBatchCleanupCommand
   | ShutdownCommand
   | StartSessionCommand
   | StopSessionCommand;
@@ -255,9 +224,13 @@ export interface SessionStateChangedEvent extends EnvelopeBase<'session_state_ch
   state: SessionState;
 }
 
+export interface AudioLevelEvent extends EnvelopeBase<'audio_level'> {
+  bands: [number, number, number, number, number, number];
+  sessionId: string;
+}
+
 export interface TranscriptReadyEvent extends EnvelopeBase<'transcript_ready'> {
   isFinal: boolean;
-  llmPostprocessRawText: string | null;
   pauseMsBeforeUtterance: number | null;
   processingDurationMs: number;
   revision: number;
@@ -300,13 +273,6 @@ export interface SessionStoppedEvent extends EnvelopeBase<'session_stopped'> {
   sessionId: string;
 }
 
-export interface BatchCleanupReadyEvent extends EnvelopeBase<'batch_cleanup_ready'> {
-  cleanText: string;
-  rawText: string;
-  sessionId: string;
-  stageResults: StageOutcome[];
-}
-
 export interface ErrorEvent extends EnvelopeBase<'error'> {
   code: string;
   details?: string;
@@ -315,7 +281,7 @@ export interface ErrorEvent extends EnvelopeBase<'error'> {
 }
 
 export type SidecarEvent =
-  | BatchCleanupReadyEvent
+  | AudioLevelEvent
   | ContextRequestEvent
   | ErrorEvent
   | HealthOkEvent
@@ -418,15 +384,6 @@ export function createCancelSessionCommand(sessionId: string): CancelSessionComm
   };
 }
 
-export function createRunBatchCleanupCommand(
-  payload: Omit<RunBatchCleanupCommand, 'type'>,
-): RunBatchCleanupCommand {
-  return {
-    ...createEnvelope('run_batch_cleanup'),
-    ...payload,
-  };
-}
-
 export function createShutdownCommand(): ShutdownCommand {
   return createEnvelope('shutdown');
 }
@@ -495,7 +452,7 @@ export interface JsonFrame<TEnvelope> {
 }
 
 export interface AudioFrame {
-  frameBytes: Uint8Array<ArrayBufferLike>;
+  frameBytes: Uint8Array;
   kind: typeof AUDIO_FRAME_KIND;
   sessionId: string;
 }
@@ -503,7 +460,7 @@ export interface AudioFrame {
 export type ParsedFrame<TEnvelope> = AudioFrame | JsonFrame<TEnvelope>;
 
 const SIDECAR_EVENT_TYPE_FLAGS = {
-  batch_cleanup_ready: 1,
+  audio_level: 1,
   context_request: 1,
   error: 1,
   health_ok: 1,
@@ -536,7 +493,7 @@ export interface PushChunkResult<TEnvelope> {
 }
 
 export class FramedMessageParser<TEnvelope> {
-  private buffered: Uint8Array<ArrayBufferLike> = new Uint8Array(0);
+  private buffered: Uint8Array = new Uint8Array(0);
 
   constructor(private readonly parseJsonEnvelope: (jsonText: string) => TEnvelope) {}
 
@@ -544,7 +501,7 @@ export class FramedMessageParser<TEnvelope> {
     this.buffered = new Uint8Array(0);
   }
 
-  pushChunk(chunk: Uint8Array<ArrayBufferLike>): PushChunkResult<TEnvelope> {
+  pushChunk(chunk: Uint8Array): PushChunkResult<TEnvelope> {
     this.buffered = concatBytes(this.buffered, chunk);
 
     const frames: ParsedFrame<TEnvelope>[] = [];
@@ -644,10 +601,7 @@ function encodeFrame(kind: number, payload: Uint8Array): Uint8Array {
   return frame;
 }
 
-function concatBytes(
-  left: Uint8Array<ArrayBufferLike>,
-  right: Uint8Array<ArrayBufferLike>,
-): Uint8Array<ArrayBufferLike> {
+function concatBytes(left: Uint8Array, right: Uint8Array): Uint8Array {
   const concatenated = new Uint8Array(left.byteLength + right.byteLength);
   concatenated.set(left, 0);
   concatenated.set(right, left.byteLength);

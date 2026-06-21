@@ -22,7 +22,7 @@ Three things are different under Flatpak:
 ## Requirements
 
 - NVIDIA Turing-or-newer GPU and driver installed on the host
-- Published CUDA release archive, or CUDA Toolkit `12.9` with `nvcc` if building from source
+- Published CUDA release archive, or CUDA Toolkit `13.2` with `nvcc` if building from source
 - cuDNN 9.x runtime libraries on the host if you want Cohere CUDA
 - Obsidian installed via Flatpak (`md.obsidian.Obsidian`)
 - CUDA sidecar release archive extracted, or sidecar built with `bash scripts/build-cuda.sh`
@@ -36,7 +36,7 @@ Whisper CUDA and Cohere CUDA are not identical:
 
 Current ONNX Runtime CUDA binaries for this repo expect:
 
-- CUDA 12.x userspace libraries bundled in the published CUDA archive
+- CUDA 13.x userspace libraries bundled in the published CUDA archive
 - cuDNN 9.x userspace libraries
 
 If those libraries are missing or mismatched, the sidecar now reports that explicitly in Settings and falls back to CPU for Cohere instead of silently pretending CUDA worked.
@@ -52,7 +52,7 @@ find /usr -name "libcuda.so.1" 2>/dev/null
 
 Typical results:
 
-- CUDA toolkit root: `/usr/local/cuda-12.9`
+- CUDA toolkit root: `/usr/local/cuda-13.2`
 - driver library directory: `/usr/lib64` or `/usr/lib/x86_64-linux-gnu`
 
 Build the colon-separated library path you will paste into plugin settings. For a published CUDA release archive, it usually needs the sidecar directory containing the bundled CUDA runtime files plus the driver and cuDNN library directories. For source builds, include toolkit paths as well.
@@ -65,7 +65,7 @@ Build the colon-separated library path you will paste into plugin settings. For 
 Example:
 
 ```text
-/run/host/usr/local/cuda-12.9/targets/x86_64-linux/lib:/run/host/usr/local/cuda-12.9/lib64:/run/host/usr/lib64
+/run/host/usr/local/cuda-13.2/targets/x86_64-linux/lib:/run/host/usr/local/cuda-13.2/lib64:/run/host/usr/lib64
 ```
 
 ## Step 2: Build the CUDA Sidecar From Source
@@ -110,7 +110,7 @@ Before launching Obsidian, confirm the paths resolve inside the sandbox:
 
 ```sh
 flatpak run --command=sh md.obsidian.Obsidian -c '
-  ls /run/host/usr/local/cuda-12.9/targets/x86_64-linux/lib/libcudart.so* 2>&1
+  ls /run/host/usr/local/cuda-13.2/targets/x86_64-linux/lib/libcudart.so* 2>&1
   ls /run/host/usr/lib64/libcuda.so.1 2>&1
 '
 ```
@@ -119,7 +119,7 @@ For a stricter check, run `ldd` with the same library path you plan to paste int
 
 ```sh
 flatpak run --command=sh md.obsidian.Obsidian -c '
-  export LD_LIBRARY_PATH=/run/host/usr/local/cuda-12.9/targets/x86_64-linux/lib:/run/host/usr/local/cuda-12.9/lib64:/run/host/usr/lib64
+  export LD_LIBRARY_PATH=/run/host/usr/local/cuda-13.2/targets/x86_64-linux/lib:/run/host/usr/local/cuda-13.2/lib64:/run/host/usr/lib64
   ldd /absolute/path/to/native/target-cuda/debug/local-dictation-sidecar | grep -E "cuda|cudnn|cublas|not found"
 '
 ```
@@ -149,7 +149,7 @@ Check:
 
 - the Flatpak has `--filesystem=host-os`
 - release archives include their bundled CUDA runtime files next to the sidecar binary
-- source-build paths use the resolved toolkit directory (`cuda-12.x`), not `/usr/local/cuda`
+- source-build paths use the resolved toolkit directory (`cuda-13.x`), not `/usr/local/cuda`
 - the driver library directory is included in `CUDA library path`
 
 ### `NotReadableError: Could not start audio source`
@@ -170,7 +170,7 @@ Then use only the plugin’s `CUDA library path` setting.
 
 The sidecar successfully started, but ONNX Runtime could not register the CUDA execution provider. Common causes:
 
-- bundled CUDA 12.x userspace libraries are not available in the sandbox, or source-build toolkit paths are wrong
+- bundled CUDA 13.x userspace libraries are not available in the sandbox, or source-build toolkit paths are wrong
 - cuDNN 9.x is missing
 - the library path points at the wrong host directory
 - the host driver and userspace runtime do not match

@@ -37,7 +37,11 @@ export class SetupWizardModal extends Modal {
     super(deps.app);
   }
 
-  override async onOpen(): Promise<void> {
+  override onOpen(): void {
+    void this.openAsync();
+  }
+
+  private async openAsync(): Promise<void> {
     this.modalEl.addClass('local-stt-setup-wizard');
     this.sidecarReady = await this.deps.isSidecarInstalled();
     this.modelReady = this.deps.hasSelectedModel();
@@ -175,7 +179,7 @@ export class SetupWizardModal extends Modal {
         this.goNext();
       },
       pluginDirectory: this.deps.pluginDirectory,
-      variant: 'cpu',
+      variants: ['cpu'],
       version: this.deps.pluginVersion,
     });
     modal.open();
@@ -266,9 +270,11 @@ export class SetupWizardModal extends Modal {
     const actions = this.contentEl.createDiv({ cls: 'local-stt-wizard-actions' });
     actions.createEl('button', { text: 'Back' }).addEventListener('click', () => this.goBack());
     const done = actions.createEl('button', { cls: 'mod-cta', text: 'Done' });
-    done.addEventListener('click', async () => {
-      await this.deps.onCompleted();
-      this.close();
+    done.addEventListener('click', () => {
+      void (async () => {
+        await this.deps.onCompleted();
+        this.close();
+      })();
     });
   }
 

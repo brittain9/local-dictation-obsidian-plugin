@@ -96,7 +96,7 @@ const TIMESTAMP_DENSITY_OPTIONS: ReadonlyArray<DropdownOption<TimestampDensity>>
 ];
 
 export class LocalSttSettingTab extends PluginSettingTab {
-  readonly icon = 'audio-lines';
+  override readonly icon = 'audio-lines';
 
   private readonly access: SettingAccess;
   private disposeEngineSection: (() => void) | null = null;
@@ -130,7 +130,6 @@ export class LocalSttSettingTab extends PluginSettingTab {
     const settings = this.dependencies.getSettings();
 
     containerEl.empty();
-    containerEl.createEl('h2', { text: 'Local Dictation' });
 
     const missingSidecarGroup = containerEl.createDiv({ cls: 'setting-group' });
     this.disposeMissingSidecarBanner = this.renderMissingSidecarBanner(missingSidecarGroup);
@@ -165,11 +164,21 @@ export class LocalSttSettingTab extends PluginSettingTab {
     // --- Transcription ---
     const transcriptionCard = createSettingGroup(containerEl, 'Transcription');
 
+    const systemAudioSupported = Platform.isWin || Platform.isLinux;
+
     this.disposeMicrophoneSection = renderMicrophonePicker(transcriptionCard, {
       access: this.access,
       isDictationBusy: this.dependencies.isDictationBusy,
       logger: this.dependencies.logger,
     });
+
+    if (systemAudioSupported) {
+      addToggleSetting(transcriptionCard, this.access, {
+        name: 'Include system audio',
+        desc: "Also capture this computer's default audio output for meetings, calls, and videos.",
+        key: 'includeSystemAudio',
+      });
+    }
 
     addEnumSetting(transcriptionCard, this.access, {
       name: 'Listening mode',
@@ -215,6 +224,24 @@ export class LocalSttSettingTab extends PluginSettingTab {
     const timestampsCard = createSettingGroup(containerEl, 'Timestamps');
     this.renderTimestampSettings(timestampsCard, settings);
 
+    const llmCard = createSettingGroup(containerEl, 'LLM transformation');
+    const enableLlmSetting = new Setting(llmCard)
+      .setName('Enable LLM features')
+      .setDesc('Make LLM transformations available. Turn transformation on or off in the sidebar.');
+    enableLlmSetting.addToggle((toggle) => {
+      toggle.setValue(settings.llmFeaturesEnabled);
+      toggle.onChange(async (value) => {
+        await this.access.persistOne('llmFeaturesEnabled', value);
+        this.display();
+      });
+    });
+
+    addToggleSetting(llmCard, this.access, {
+      name: 'Enable remote LLM',
+      desc: 'Allow transcript text and included note context to be sent to OpenRouter. Audio is never sent.',
+      key: 'llmRemoteFeaturesEnabled',
+    });
+
     // --- Engine options ---
     // Built inline (rather than via createSettingGroup) so renderEngineOptions
     // can hide the whole card when no rows apply (e.g. macOS + a model with
@@ -246,17 +273,6 @@ export class LocalSttSettingTab extends PluginSettingTab {
       desc: 'Custom folder for managed model downloads.',
       key: 'modelStorePathOverride',
       placeholder: 'Use the shared default model store',
-    });
-
-    const enableLlmSetting = new Setting(advancedSection)
-      .setName('Enable LLM features')
-      .setDesc('Show the LLM transformation sidebar.');
-    enableLlmSetting.addToggle((toggle) => {
-      toggle.setValue(this.dependencies.getSettings().llmFeaturesEnabled);
-      toggle.onChange(async (value) => {
-        await this.access.persistOne('llmFeaturesEnabled', value);
-        this.display();
-      });
     });
 
     new Setting(advancedSection)
@@ -456,7 +472,7 @@ export class LocalSttSettingTab extends PluginSettingTab {
       rendered += 1;
     }
 
-    group.style.display = rendered === 0 ? 'none' : '';
+    group.toggleClass('local-stt-hidden', rendered === 0);
   }
 
   private renderMissingSidecarBanner(group: HTMLDivElement): () => void {
@@ -476,12 +492,12 @@ export class LocalSttSettingTab extends PluginSettingTab {
       if (disposed || !group.isConnected) return;
 
       const activeInstall = this.dependencies.sidecarInstallManager.getState().activeInstall;
-      if (cpuManifest !== null || cudaManifest !== null) {
-        group.style.display = 'none';
+      const sidecarInstalled = cpuManifest !== null || cudaManifest !== null;
+      group.toggleClass('local-stt-hidden', sidecarInstalled);
+      if (sidecarInstalled) {
         return;
       }
 
-      group.style.display = '';
       const items = group.createDiv({ cls: 'setting-items' });
 
       if (activeInstall !== null) {

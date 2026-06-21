@@ -1,6 +1,6 @@
 # Local Dictation
 
-Private, on-device speech-to-text for Obsidian. Dictate notes with Whisper or Cohere Transcribe; clean up with a local Ollama model.
+Private, on-device speech-to-text for Obsidian. Dictate notes with Whisper or Cohere Transcribe; transform the text with a local LLM (Ollama), or route oversized jobs to OpenRouter.
 
 [![GitHub release](https://img.shields.io/github/v/release/brittain9/local-dictation-obsidian-plugin?style=flat-square)](https://github.com/brittain9/local-dictation-obsidian-plugin/releases/latest)
 [![GitHub stars](https://img.shields.io/github/stars/brittain9/local-dictation-obsidian-plugin?style=flat-square)](https://github.com/brittain9/local-dictation-obsidian-plugin/stargazers)
@@ -12,7 +12,8 @@ Private, on-device speech-to-text for Obsidian. Dictate notes with Whisper or Co
 - **Whisper** — mature offline transcription with a range of size/speed options.
 - **Silero v6 VAD** — [enterprise-grade neural voice activity detection](https://github.com/snakers4/silero-vad) for real-time speech boundary detection.
 - **Speaker diarization** — optionally label who is speaking (Speaker 1, Speaker 2, …) for interviews, meetings, and conversations. Runs fully on-device; speaker data stays in memory for the session and is never persisted.
-- **Optional Ollama LLM cleanup** — polish dictated text with a local LLM.
+- **System audio capture** — transcribe meetings, calls, and videos from this computer's output, not just your microphone. Built in on Windows and Linux; [virtual-device setup](docs/guides/system-audio.md) covers macOS.
+- **Optional LLM transformation** — clean up, rewrite, or summarize dictated text with a local model (Ollama) or OpenRouter. Keep everything local, or auto-route a job to OpenRouter once it outgrows your machine.
 - **One-click model management** — browse, download, and remove models from inside the plugin.
 - **Hardware acceleration** — Metal on macOS, CUDA on Linux/Windows (Turing-or-newer NVIDIA GPUs).
 - **Private and offline** — transcription stays on-device. No cloud, no telemetry, no account. Only model downloads need a network.
@@ -25,7 +26,7 @@ Private, on-device speech-to-text for Obsidian. Dictate notes with Whisper or Co
 | Linux | CUDA for Whisper and Cohere on Turing-or-newer NVIDIA GPUs. Flatpak installs need a [GPU setup step](docs/guides/linux-flatpak-gpu-setup.md). |
 | Windows | CUDA for Whisper and Cohere on Turing-or-newer NVIDIA GPUs — see [Windows CUDA setup](docs/guides/windows-cuda-setup.md). |
 
-CPU works everywhere with no extra dependencies. CUDA acceleration requires an RTX 20-series / GTX 16-series or newer GPU with a driver compatible with CUDA 12.9; Cohere on CUDA also needs cuDNN 9 (falls back to CPU without it). Full details in [Platform Runtime Dependencies](docs/release/platform-runtime-dependencies.md).
+CPU works everywhere with no extra dependencies. CUDA acceleration requires an RTX 20-series / GTX 16-series or newer GPU with a driver compatible with CUDA 13.x (R580 or newer); Cohere on CUDA also needs cuDNN 9 for CUDA 13 (falls back to CPU without it). Full details in [Platform Runtime Dependencies](docs/release/platform-runtime-dependencies.md).
 
 > **Linux distro coverage.** macOS and Windows are the primary tested targets. On Linux, the plugin is regularly used on Fedora 44; other distributions (Arch, Ubuntu, Debian, etc.) should work but are not routinely verified. If you hit a problem on your distro, please open an issue with details.
 
@@ -47,14 +48,15 @@ Where things live:
 
 ## 🔒 Privacy
 
-Local Dictation is built to be private. Your audio and your notes never leave your machine. There is no account, no cloud service, no telemetry, and no background network traffic.
+Local Dictation is built to be private. By default, your audio and notes never leave your machine — no account, no telemetry, no background network traffic, and transcription always runs on-device. The only way text leaves your machine is the optional OpenRouter transform, and only when you turn it on.
 
 To make local transcription work, the plugin does a few things:
 
 - **Installs a helper program.** A small native "sidecar" is downloaded once from this repository's GitHub Releases and stored inside the plugin's folder. The plugin runs this helper locally to do the actual transcription.
 - **Stores model files on disk.** Whisper and voice-activity models are cached outside your vault so they aren't duplicated per-vault. You can browse and remove them from the plugin's model manager.
-- **Uses the network only for downloads.** The sidecar archive and model files are fetched from their official sources on demand. Nothing else is sent anywhere.
+- **Uses the network only for downloads — and OpenRouter, if you opt in.** The sidecar archive and model files are fetched from their official sources on demand. Nothing else is sent anywhere unless you enable OpenRouter transformation.
 - **Keeps speaker data in memory only.** With speaker diarization enabled, the voice embeddings used to tell speakers apart exist only for the duration of a session and are discarded when it ends. No voiceprints are written to disk.
+- **Optional OpenRouter transformation (off by default).** LLM transformation is opt-in and runs locally through Ollama by default. If you choose OpenRouter as the transform provider — or turn on automatic routing of large jobs — the transcript text and any note context you include are sent to OpenRouter for that step only; your audio is never sent. You can scope your OpenRouter key to privacy-respecting endpoints, and you set the size threshold above which jobs are routed.
 
 ## 🤝 Contributing
 

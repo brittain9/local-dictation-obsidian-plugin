@@ -17,7 +17,7 @@ export function renderActiveInstallCard(
   opts: ActiveInstallCardOptions,
 ): { progressEl: HTMLDivElement } {
   const progressEl = createInstallProgressElement(opts.progressState);
-  const fragment = document.createDocumentFragment();
+  const fragment = activeDocument.createDocumentFragment();
   fragment.append(progressEl);
 
   const setting = new Setting(container).setName(opts.name).setDesc(fragment);

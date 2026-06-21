@@ -1,14 +1,21 @@
+import { randomUUID } from 'node:crypto';
+
 import {
   DEFAULT_LLM_BUILTIN_PRESET_ID,
-  findMatchingStyleRef,
   formatStyleRef,
-  getLlmBuiltinPreset,
   isLlmPostprocessMode,
-  isLlmPresetMode,
+  isLlmPresetOutput,
+  isLlmPresetTiming,
+  LLM_BUILTIN_PRESETS,
   type LlmPostprocessMode,
-  type LlmUserPreset,
-  resolveStyleOption,
+  type LlmPreset,
+  type LlmPresetOverrides,
+  type LlmPresetTiming,
+  listPresetEntries,
+  resolveActivePresetEntry,
+  resolvePresetEntry,
 } from '../llm/presets';
+import { isLlmRouting, type LlmProviderModels, type LlmRouting } from '../llm/provider';
 import {
   isSelectedModel,
   normalizeSelectedModel,
@@ -48,13 +55,10 @@ export const SPEAKING_STYLES = [
   'patient',
 ] as const satisfies readonly SpeakingStyle[];
 
-const DEFAULT_LLM_PRESET = getLlmBuiltinPreset(DEFAULT_LLM_BUILTIN_PRESET_ID);
 const DEFAULT_LLM_ACTIVE_PRESET_REF = formatStyleRef({
   kind: 'builtin',
   id: DEFAULT_LLM_BUILTIN_PRESET_ID,
 });
-
-export const DEFAULT_LLM_POSTPROCESS_PROMPT = DEFAULT_LLM_PRESET.prompt;
 
 export const DEFAULT_LLM_POSTPROCESS_CONTEXT = {
   noteContextChars: 3_000,
@@ -70,9 +74,18 @@ export const DEFAULT_LLM_POSTPROCESS_SKIP = {
   minWords: 4,
 } as const;
 
+export const DEFAULT_LLM_REMOTE_THRESHOLD_CHARS = 6_000;
+export const MIN_LLM_REMOTE_THRESHOLD_CHARS = 500;
+export const MAX_LLM_REMOTE_THRESHOLD_CHARS = 60_000;
+
 export const LLM_USER_PRESET_MAX_LABEL_CHARS = 60;
 export const LLM_USER_PRESET_MAX_DESCRIPTION_CHARS = 240;
-export const LLM_USER_PRESET_MAX_COUNT = 25;
+export const LLM_USER_PRESET_MAX_COUNT = 50;
+
+// Shared bounds for the min-words skip gate and sampling temperature, used by
+// the settings reader, the preset editor, and the preset draft validator.
+export const LLM_MIN_WORDS_MAX = 50;
+export const LLM_TEMPERATURE_MAX = 2;
 
 export interface AudioInputDevice {
   deviceId: string;
@@ -82,26 +95,34 @@ export interface AudioInputDevice {
 export interface PluginSettings {
   accelerationPreference: AccelerationPreference;
   audioInputDevice: AudioInputDevice | null;
+  includeSystemAudio: boolean;
   cudaLibraryPath: string;
   developerMode: boolean;
   diarizationEnabled: boolean;
   dictationAnchor: DictationAnchor;
   listeningMode: ListeningMode;
   llmFeaturesEnabled: boolean;
-  llmPostprocessActivePresetRef: string | null;
+  llmOpenRouterSecretId: string;
+  llmRemoteFeaturesEnabled: boolean;
+  llmPostprocessActivePresetRef: string;
+  // The user's timing choice while the transform is enabled; survives the
+  // mode being set to 'off' so re-enabling restores it across restarts.
+  llmPostprocessLastEnabledMode: LlmPresetTiming;
   llmPostprocessMode: LlmPostprocessMode;
-  llmPostprocessModel: string;
   llmPostprocessNoteContextChars: number;
   llmPostprocessPriorUtterancesN: number;
-  llmPostprocessPrompt: string;
   llmPostprocessShowRawBelow: boolean;
   llmPostprocessSkipMinWords: number;
   llmPostprocessTemperature: number;
   llmPostprocessTotalContextCap: number;
-  llmPostprocessUserPresets: LlmUserPreset[];
+  llmPostprocessUserPresets: LlmPreset[];
+  llmProviderModels: LlmProviderModels;
+  llmRemoteThresholdChars: number;
+  llmRemoteTimeoutSec: number;
+  llmRouting: LlmRouting;
   localTranscriptSidebarBootstrapped: boolean;
   modelStorePathOverride: string;
-  schemaVersion: 1;
+  schemaVersion: 2;
   selectedModel: SelectedModel | null;
   setupCompletedAt: string | null;
   sidecarPathOverride: string;
@@ -121,26 +142,35 @@ export interface PluginSettings {
 export const DEFAULT_PLUGIN_SETTINGS: PluginSettings = {
   accelerationPreference: 'auto',
   audioInputDevice: null,
+  includeSystemAudio: false,
   cudaLibraryPath: '',
   developerMode: false,
   diarizationEnabled: false,
   dictationAnchor: 'at_cursor',
   listeningMode: 'always_on',
-  llmFeaturesEnabled: false,
+  llmFeaturesEnabled: true,
+  llmOpenRouterSecretId: '',
+  llmRemoteFeaturesEnabled: true,
   llmPostprocessActivePresetRef: DEFAULT_LLM_ACTIVE_PRESET_REF,
-  llmPostprocessMode: 'per_utterance',
-  llmPostprocessModel: '',
+  llmPostprocessLastEnabledMode: 'per_utterance',
+  llmPostprocessMode: 'off',
   llmPostprocessNoteContextChars: DEFAULT_LLM_POSTPROCESS_CONTEXT.noteContextChars,
   llmPostprocessPriorUtterancesN: DEFAULT_LLM_POSTPROCESS_CONTEXT.priorUtterancesN,
-  llmPostprocessPrompt: DEFAULT_LLM_POSTPROCESS_PROMPT,
   llmPostprocessShowRawBelow: false,
   llmPostprocessSkipMinWords: DEFAULT_LLM_POSTPROCESS_SKIP.minWords,
   llmPostprocessTemperature: DEFAULT_LLM_POSTPROCESS_GENERATION.temperature,
   llmPostprocessTotalContextCap: DEFAULT_LLM_POSTPROCESS_CONTEXT.totalContextCap,
   llmPostprocessUserPresets: [],
+  llmProviderModels: {
+    ollama: '',
+    openrouter: '',
+  },
+  llmRemoteThresholdChars: DEFAULT_LLM_REMOTE_THRESHOLD_CHARS,
+  llmRemoteTimeoutSec: 60,
+  llmRouting: 'local',
   localTranscriptSidebarBootstrapped: false,
   modelStorePathOverride: '',
-  schemaVersion: 1,
+  schemaVersion: 2,
   selectedModel: null,
   setupCompletedAt: null,
   sidecarPathOverride: '',
@@ -159,17 +189,19 @@ export const DEFAULT_PLUGIN_SETTINGS: PluginSettings = {
 
 export function resolvePluginSettings(data: unknown): PluginSettings {
   const raw = isRecord(data) ? data : {};
-  const userPresets = readUserPresets(raw.llmPostprocessUserPresets);
-  const llmPostprocessPrompt = readPrompt(raw.llmPostprocessPrompt, DEFAULT_LLM_POSTPROCESS_PROMPT);
-  const llmPostprocessActivePresetRef = readActivePresetRef(
-    raw.llmPostprocessActivePresetRef,
-    llmPostprocessPrompt,
-    userPresets,
-  );
+  const { activeRef, userPresets } = migrateLlmPresetState({
+    legacyPrompt: raw.llmPostprocessPrompt,
+    storedRef: raw.llmPostprocessActivePresetRef,
+    userPresets: readUserPresets(raw.llmPostprocessUserPresets),
+  });
+  const legacyModel =
+    typeof raw.llmPostprocessModel === 'string' ? raw.llmPostprocessModel.trim() : '';
+  const llmProviderModels = readLlmProviderModels(raw.llmProviderModels, legacyModel);
 
   return {
     accelerationPreference: readAccelerationPreference(raw.accelerationPreference),
     audioInputDevice: readAudioInputDevice(raw.audioInputDevice),
+    includeSystemAudio: readIncludeSystemAudio(raw),
     cudaLibraryPath: readString(raw.cudaLibraryPath, DEFAULT_PLUGIN_SETTINGS.cudaLibraryPath),
     developerMode: readBoolean(raw.developerMode, DEFAULT_PLUGIN_SETTINGS.developerMode),
     diarizationEnabled: readBoolean(
@@ -184,12 +216,20 @@ export function resolvePluginSettings(data: unknown): PluginSettings {
       raw.llmFeaturesEnabled,
       DEFAULT_PLUGIN_SETTINGS.llmFeaturesEnabled,
     ),
-    llmPostprocessActivePresetRef,
-    llmPostprocessMode: readLlmPostprocessMode(raw.llmPostprocessMode),
-    llmPostprocessModel: readString(
-      raw.llmPostprocessModel,
-      DEFAULT_PLUGIN_SETTINGS.llmPostprocessModel,
+    llmOpenRouterSecretId: readSecretId(
+      raw.llmOpenRouterSecretId,
+      DEFAULT_PLUGIN_SETTINGS.llmOpenRouterSecretId,
     ),
+    llmRemoteFeaturesEnabled: readBoolean(
+      raw.llmRemoteFeaturesEnabled,
+      DEFAULT_PLUGIN_SETTINGS.llmRemoteFeaturesEnabled,
+    ),
+    llmPostprocessActivePresetRef: activeRef,
+    llmPostprocessLastEnabledMode: readLastEnabledMode(
+      raw.llmPostprocessLastEnabledMode,
+      raw.llmPostprocessMode,
+    ),
+    llmPostprocessMode: readLlmPostprocessMode(raw.llmPostprocessMode),
     llmPostprocessNoteContextChars: readClampedInteger(
       raw.llmPostprocessNoteContextChars,
       DEFAULT_PLUGIN_SETTINGS.llmPostprocessNoteContextChars,
@@ -202,7 +242,6 @@ export function resolvePluginSettings(data: unknown): PluginSettings {
       0,
       5,
     ),
-    llmPostprocessPrompt,
     llmPostprocessShowRawBelow: readBoolean(
       raw.llmPostprocessShowRawBelow,
       DEFAULT_PLUGIN_SETTINGS.llmPostprocessShowRawBelow,
@@ -211,13 +250,13 @@ export function resolvePluginSettings(data: unknown): PluginSettings {
       raw.llmPostprocessSkipMinWords,
       DEFAULT_PLUGIN_SETTINGS.llmPostprocessSkipMinWords,
       0,
-      50,
+      LLM_MIN_WORDS_MAX,
     ),
     llmPostprocessTemperature: readClampedNumber(
       raw.llmPostprocessTemperature,
       DEFAULT_PLUGIN_SETTINGS.llmPostprocessTemperature,
       0,
-      2,
+      LLM_TEMPERATURE_MAX,
     ),
     llmPostprocessTotalContextCap: readClampedInteger(
       raw.llmPostprocessTotalContextCap,
@@ -226,6 +265,20 @@ export function resolvePluginSettings(data: unknown): PluginSettings {
       30_000,
     ),
     llmPostprocessUserPresets: userPresets,
+    llmProviderModels,
+    llmRemoteThresholdChars: readClampedInteger(
+      raw.llmRemoteThresholdChars,
+      DEFAULT_PLUGIN_SETTINGS.llmRemoteThresholdChars,
+      MIN_LLM_REMOTE_THRESHOLD_CHARS,
+      MAX_LLM_REMOTE_THRESHOLD_CHARS,
+    ),
+    llmRemoteTimeoutSec: readClampedInteger(
+      raw.llmRemoteTimeoutSec,
+      DEFAULT_PLUGIN_SETTINGS.llmRemoteTimeoutSec,
+      5,
+      600,
+    ),
+    llmRouting: resolveLlmRouting(raw),
     localTranscriptSidebarBootstrapped: readBoolean(
       raw.localTranscriptSidebarBootstrapped,
       DEFAULT_PLUGIN_SETTINGS.localTranscriptSidebarBootstrapped,
@@ -235,7 +288,7 @@ export function resolvePluginSettings(data: unknown): PluginSettings {
       DEFAULT_PLUGIN_SETTINGS.modelStorePathOverride,
     ),
     // Bump `schemaVersion` and add a migration step when renaming a key or changing default semantics.
-    schemaVersion: 1,
+    schemaVersion: 2,
     selectedModel: readSelectedModel(raw.selectedModel),
     setupCompletedAt: readSetupCompletedAt(raw.setupCompletedAt),
     sidecarPathOverride: readString(
@@ -287,16 +340,21 @@ export function resolvePluginSettings(data: unknown): PluginSettings {
 export function resetLlmPostprocessDefaults(settings: PluginSettings): PluginSettings {
   return {
     ...settings,
-    llmPostprocessActivePresetRef: DEFAULT_PLUGIN_SETTINGS.llmPostprocessActivePresetRef,
-    llmPostprocessMode: DEFAULT_PLUGIN_SETTINGS.llmPostprocessMode,
+    llmPostprocessLastEnabledMode: 'per_utterance',
+    // Not the 'off' default: the reset button is only reachable while the
+    // transform is on, and resetting should not silently disable it.
+    llmPostprocessMode: 'per_utterance',
     llmPostprocessNoteContextChars: DEFAULT_PLUGIN_SETTINGS.llmPostprocessNoteContextChars,
     llmPostprocessPriorUtterancesN: DEFAULT_PLUGIN_SETTINGS.llmPostprocessPriorUtterancesN,
-    llmPostprocessPrompt: DEFAULT_PLUGIN_SETTINGS.llmPostprocessPrompt,
     llmPostprocessSkipMinWords: DEFAULT_PLUGIN_SETTINGS.llmPostprocessSkipMinWords,
     llmPostprocessTemperature: DEFAULT_PLUGIN_SETTINGS.llmPostprocessTemperature,
     llmPostprocessTotalContextCap: DEFAULT_PLUGIN_SETTINGS.llmPostprocessTotalContextCap,
     useLlmNoteContext: DEFAULT_PLUGIN_SETTINGS.useLlmNoteContext,
   };
+}
+
+export function shouldRefreshLlmSidebar(previous: PluginSettings, next: PluginSettings): boolean {
+  return previous.llmRemoteFeaturesEnabled !== next.llmRemoteFeaturesEnabled;
 }
 
 function readAudioInputDevice(value: unknown): AudioInputDevice | null {
@@ -322,12 +380,25 @@ function readAccelerationPreference(value: unknown): AccelerationPreference {
   return DEFAULT_PLUGIN_SETTINGS.accelerationPreference;
 }
 
+function readIncludeSystemAudio(raw: Record<string, unknown>): boolean {
+  if (typeof raw.includeSystemAudio === 'boolean') {
+    return raw.includeSystemAudio;
+  }
+
+  return raw.audioSource === 'system';
+}
+
 function readBoolean(value: unknown, fallback: boolean): boolean {
   return typeof value === 'boolean' ? value : fallback;
 }
 
 function readString(value: unknown, fallback: string): string {
   return typeof value === 'string' ? value.trim() : fallback;
+}
+
+function readSecretId(value: unknown, fallback: string): string {
+  const id = readString(value, fallback);
+  return /^[a-z0-9-]+$/.test(id) ? id : fallback;
 }
 
 function readSetupCompletedAt(value: unknown): string | null {
@@ -348,19 +419,11 @@ function readPositiveInteger(value: unknown, fallback: number): number {
 }
 
 function readClampedInteger(value: unknown, fallback: number, min: number, max: number): number {
-  if (typeof value !== 'number' || !Number.isFinite(value) || !Number.isInteger(value)) {
-    return fallback;
-  }
-
-  return Math.min(max, Math.max(min, value));
+  return readOptionalClampedInteger(value, min, max) ?? fallback;
 }
 
 function readClampedNumber(value: unknown, fallback: number, min: number, max: number): number {
-  if (typeof value !== 'number' || !Number.isFinite(value)) {
-    return fallback;
-  }
-
-  return Math.min(max, Math.max(min, value));
+  return readOptionalClampedNumber(value, min, max) ?? fallback;
 }
 
 function readOptionalClampedInteger(value: unknown, min: number, max: number): number | undefined {
@@ -377,26 +440,71 @@ function readOptionalClampedNumber(value: unknown, min: number, max: number): nu
   return Math.min(max, Math.max(min, value));
 }
 
-function readActivePresetRef(
-  value: unknown,
-  prompt: string,
-  userPresets: readonly LlmUserPreset[],
-): string | null {
-  if (typeof value === 'string' && resolveStyleOption(value, userPresets) !== null) {
-    return value;
+// Tolerant reads (schemaVersion stays 1): unknown refs fall back to the default
+// preset, and a customized legacy llmPostprocessPrompt becomes a user preset so
+// pre-redesign custom prompts survive the removal of the prompt setting.
+function migrateLlmPresetState(args: {
+  legacyPrompt: unknown;
+  storedRef: unknown;
+  userPresets: LlmPreset[];
+}): { activeRef: string; userPresets: LlmPreset[] } {
+  const storedRef = typeof args.storedRef === 'string' ? args.storedRef : null;
+  const resolvedRef = resolvePresetEntry(storedRef, args.userPresets)?.ref ?? null;
+  const fallbackRef = resolveActivePresetEntry(null, args.userPresets).ref;
+  const prompt = typeof args.legacyPrompt === 'string' ? args.legacyPrompt.trim() : '';
+
+  if (prompt.length === 0) {
+    return { activeRef: resolvedRef ?? fallbackRef, userPresets: args.userPresets };
   }
-  if (value === null) {
-    return null;
+  if (resolvedRef !== null) {
+    // Pre-redesign code nulled the ref whenever the prompt diverged from the
+    // selected preset, so a stored builtin ref is an explicit user choice and
+    // the legacy prompt is just a stale mirror of that builtin's old text —
+    // trust the ref even when the builtin's prompt changed across versions.
+    if (resolvedRef.startsWith('builtin:')) {
+      return { activeRef: resolvedRef, userPresets: args.userPresets };
+    }
+    const active = resolveActivePresetEntry(resolvedRef, args.userPresets);
+    if (active.preset.prompt === prompt) {
+      return { activeRef: resolvedRef, userPresets: args.userPresets };
+    }
   }
-  return findMatchingStyleRef(prompt, userPresets);
+  const matching = listPresetEntries(args.userPresets).find(
+    (entry) => entry.preset.prompt === prompt,
+  );
+  if (matching !== undefined) {
+    return { activeRef: matching.ref, userPresets: args.userPresets };
+  }
+  if (args.userPresets.length >= LLM_USER_PRESET_MAX_COUNT) {
+    console.warn(
+      '[Local Dictation] Custom LLM prompt could not be migrated into a preset: the preset limit is reached. The prompt was dropped.',
+    );
+    return { activeRef: resolvedRef ?? fallbackRef, userPresets: args.userPresets };
+  }
+  const labels = new Set(
+    [...LLM_BUILTIN_PRESETS, ...args.userPresets].map((preset) => preset.label.toLowerCase()),
+  );
+  let label = 'My preset';
+  for (let n = 2; labels.has(label.toLowerCase()); n += 1) {
+    label = `My preset ${n}`;
+  }
+  const migrated: LlmPreset = { id: randomUUID(), label, output: 'replace', prompt };
+  return {
+    activeRef: formatStyleRef({ kind: 'user', id: migrated.id }),
+    userPresets: [...args.userPresets, migrated],
+  };
 }
 
-function readPrompt(value: unknown, fallback: string): string {
-  if (typeof value !== 'string') {
-    return fallback;
+// Seeds from the stored mode for vaults that predate the field, so an
+// already-enabled batch user keeps batch on their first disable/enable cycle.
+function readLastEnabledMode(value: unknown, storedMode: unknown): LlmPresetTiming {
+  if (isLlmPresetTiming(value)) {
+    return value;
   }
-
-  return value.trim().length > 0 ? value : fallback;
+  if (isLlmPresetTiming(storedMode)) {
+    return storedMode;
+  }
+  return DEFAULT_PLUGIN_SETTINGS.llmPostprocessLastEnabledMode;
 }
 
 function readLlmPostprocessMode(value: unknown): LlmPostprocessMode {
@@ -407,12 +515,45 @@ function readLlmPostprocessMode(value: unknown): LlmPostprocessMode {
   return DEFAULT_PLUGIN_SETTINGS.llmPostprocessMode;
 }
 
-function readUserPresets(value: unknown): LlmUserPreset[] {
+// Resolve routing from a valid `llmRouting`, else map the legacy `llmProvider`
+// enum (ollama→local, openrouter→remote, gemini→local since Gemini is gone),
+// else fall back to the default. schemaVersion stays 1: these are tolerant reads.
+function resolveLlmRouting(raw: Record<string, unknown>): LlmRouting {
+  if (isLlmRouting(raw.llmRouting)) {
+    return raw.llmRouting;
+  }
+  switch (raw.llmProvider) {
+    case 'ollama':
+      return 'local';
+    case 'openrouter':
+      return 'remote';
+    case 'gemini':
+      return 'local';
+    default:
+      return DEFAULT_PLUGIN_SETTINGS.llmRouting;
+  }
+}
+
+function readLlmProviderModels(value: unknown, legacyOllamaModel: string): LlmProviderModels {
+  if (!isRecord(value)) {
+    return {
+      ...DEFAULT_PLUGIN_SETTINGS.llmProviderModels,
+      ollama: legacyOllamaModel,
+    };
+  }
+
+  return {
+    ollama: readString(value.ollama, DEFAULT_PLUGIN_SETTINGS.llmProviderModels.ollama),
+    openrouter: readString(value.openrouter, DEFAULT_PLUGIN_SETTINGS.llmProviderModels.openrouter),
+  };
+}
+
+function readUserPresets(value: unknown): LlmPreset[] {
   if (!Array.isArray(value)) {
     return [];
   }
 
-  const accepted: LlmUserPreset[] = [];
+  const accepted: LlmPreset[] = [];
   const seenIds = new Set<string>();
 
   for (const entry of value) {
@@ -434,19 +575,51 @@ function readUserPresets(value: unknown): LlmUserPreset[] {
       continue;
     }
 
-    const description = typeof entry.description === 'string' ? entry.description : '';
-    const mode = isLlmPresetMode(entry.mode) ? entry.mode : undefined;
-    const minWords = readOptionalClampedInteger(entry.minWords, 0, 50);
-    const temperature = readOptionalClampedNumber(entry.temperature, 0, 2);
+    const prompt =
+      typeof entry.prompt === 'string' && entry.prompt.trim().length > 0 ? entry.prompt : null;
+    if (prompt === null) {
+      continue;
+    }
 
-    accepted.push({
-      description: description.slice(0, LLM_USER_PRESET_MAX_DESCRIPTION_CHARS),
-      id,
-      label: label.slice(0, LLM_USER_PRESET_MAX_LABEL_CHARS),
-      ...(mode !== undefined ? { mode } : {}),
+    const description = typeof entry.description === 'string' ? entry.description.trim() : '';
+    const output = isLlmPresetOutput(entry.output) ? entry.output : 'replace';
+    // Pre-redesign presets stored timing under `mode`.
+    const legacyTiming = isLlmPresetTiming(entry.timing)
+      ? entry.timing
+      : isLlmPresetTiming(entry.mode)
+        ? entry.mode
+        : undefined;
+    const timing = output === 'replace' ? legacyTiming : 'batch';
+    // Pre-redesign presets stored minWords/temperature at the top level.
+    const overridesRaw = isRecord(entry.overrides) ? entry.overrides : {};
+    const minWords = readOptionalClampedInteger(
+      overridesRaw.minWords ?? entry.minWords,
+      0,
+      LLM_MIN_WORDS_MAX,
+    );
+    const temperature = readOptionalClampedNumber(
+      overridesRaw.temperature ?? entry.temperature,
+      0,
+      LLM_TEMPERATURE_MAX,
+    );
+    const useNoteContext =
+      typeof overridesRaw.useNoteContext === 'boolean' ? overridesRaw.useNoteContext : undefined;
+    const overrides: LlmPresetOverrides = {
       ...(minWords !== undefined ? { minWords } : {}),
       ...(temperature !== undefined ? { temperature } : {}),
-      prompt: readPrompt(entry.prompt, DEFAULT_PLUGIN_SETTINGS.llmPostprocessPrompt),
+      ...(useNoteContext !== undefined ? { useNoteContext } : {}),
+    };
+
+    accepted.push({
+      ...(description.length > 0
+        ? { description: description.slice(0, LLM_USER_PRESET_MAX_DESCRIPTION_CHARS) }
+        : {}),
+      id,
+      label: label.slice(0, LLM_USER_PRESET_MAX_LABEL_CHARS),
+      output,
+      ...(Object.keys(overrides).length > 0 ? { overrides } : {}),
+      prompt,
+      ...(timing !== undefined ? { timing } : {}),
     });
     seenIds.add(id);
   }
@@ -479,6 +652,8 @@ export function isTimestampDensity(value: unknown): value is TimestampDensity {
 export function isListeningMode(value: unknown): value is ListeningMode {
   return typeof value === 'string' && (LISTENING_MODES as readonly string[]).includes(value);
 }
+
+export { isLlmRouting };
 
 function readSelectedModel(selectedModel: unknown): SelectedModel | null {
   if (isSelectedModel(selectedModel)) {

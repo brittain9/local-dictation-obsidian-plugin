@@ -3,6 +3,8 @@ import http from 'node:http';
 import { afterEach, describe, expect, it } from 'vitest';
 
 import { createOllamaClient, type OllamaClientError } from '../src/llm/ollama-client';
+import { OllamaProvider } from '../src/llm/ollama-provider';
+import type { ProviderError } from '../src/llm/provider';
 
 const servers: http.Server[] = [];
 
@@ -97,6 +99,7 @@ describe('Ollama client', () => {
 
     await expect(
       createOllamaClient({ port }).cleanup({
+        maxOutputTokens: 4096,
         model: 'llama3.2:latest',
         prompt: 'Clean this.',
         temperature: 0.2,
@@ -111,11 +114,54 @@ describe('Ollama client', () => {
           { content: '<session_transcript>raw</session_transcript>', role: 'user' },
         ],
         model: 'llama3.2:latest',
-        options: { num_predict: 512, temperature: 0.2 },
+        options: { num_predict: 4096, temperature: 0.2 },
         stream: false,
         think: false,
       },
     ]);
+  });
+
+  it('rejects truncated cleanup output instead of returning partial text', async () => {
+    const { port } = await startServer((_request, response) => {
+      response.end(
+        JSON.stringify({ done_reason: 'length', message: { content: 'Partial cleaned text' } }),
+      );
+    });
+
+    await expect(
+      createOllamaClient({ port }).cleanup({
+        maxOutputTokens: 4096,
+        model: 'llama3.2:latest',
+        prompt: 'Clean this.',
+        temperature: 0.2,
+        userMessage: '<session_transcript>raw</session_transcript>',
+      }),
+    ).rejects.toMatchObject({
+      code: 'invalid_response',
+      name: 'OllamaClientError',
+    } satisfies Partial<OllamaClientError>);
+  });
+
+  it('maps a missing-model 404 to unknown_model at the provider boundary', async () => {
+    const { port } = await startServer((_request, response) => {
+      response.statusCode = 404;
+      response.end(
+        JSON.stringify({ error: 'model "ghost:latest" not found, try pulling it first' }),
+      );
+    });
+
+    await expect(
+      new OllamaProvider(createOllamaClient({ port })).cleanup({
+        maxOutputTokens: 4096,
+        model: 'ghost:latest',
+        prompt: 'Clean this.',
+        temperature: 0.2,
+        userMessage: 'raw',
+      }),
+    ).rejects.toMatchObject({
+      code: 'unknown_model',
+      name: 'ProviderError',
+    } satisfies Partial<ProviderError>);
   });
 
   it('cleanup aborts via the supplied signal', async () => {
@@ -125,6 +171,7 @@ describe('Ollama client', () => {
     const controller = new AbortController();
     const promise = createOllamaClient({ port }).cleanup({
       abortSignal: controller.signal,
+      maxOutputTokens: 4096,
       model: 'llama3.2:latest',
       prompt: 'Clean this.',
       temperature: 0.2,
@@ -134,7 +181,7 @@ describe('Ollama client', () => {
     controller.abort();
 
     await expect(promise).rejects.toMatchObject({
-      code: 'connection_failed',
+      code: 'aborted',
       name: 'OllamaClientError',
     } satisfies Partial<OllamaClientError>);
   });

@@ -1,7 +1,6 @@
 import { asError } from '../shared/error-utils';
 import { PCM_BYTES_PER_FRAME, PCM_CHANNEL_COUNT } from '../shared/pcm-format';
 import type { PluginLogger } from '../shared/plugin-logger';
-import type { AudioVisualizerAttachable } from './audio-visualizer-tap';
 import { PCM_RECORDER_WORKLET_NAME } from './pcm-recorder-worklet-shared';
 import { PCM_RECORDER_WORKLET_SOURCE } from './pcm-recorder-worklet-source';
 
@@ -13,7 +12,6 @@ interface AudioCaptureStreamOptions {
   // to the OS default. Lets the wiring layer (main.ts) surface a Notice without
   // pulling Obsidian UI imports into this module.
   onDeviceFallback?: () => void;
-  visualizer?: AudioVisualizerAttachable;
 }
 
 export interface AudioCaptureStartOptions {
@@ -42,7 +40,7 @@ export class AudioCaptureStream {
       throw new Error('Audio capture is already active.');
     }
 
-    const mediaDevices = globalThis.navigator?.mediaDevices;
+    const mediaDevices = window.navigator?.mediaDevices;
 
     if (mediaDevices?.getUserMedia === undefined) {
       throw new Error('Microphone capture is not available in this Obsidian runtime.');
@@ -86,7 +84,6 @@ export class AudioCaptureStream {
       sourceNode.connect(recorderNode);
       recorderNode.connect(muteNode);
       muteNode.connect(audioContext.destination);
-      this.options.visualizer?.attach(audioContext, sourceNode);
 
       this.audioContext = audioContext;
       this.frameListener = frameListener;
@@ -97,7 +94,6 @@ export class AudioCaptureStream {
       this.options.logger?.debug('audio', 'capture started');
     } catch (error) {
       this.options.logger?.error('audio', 'failed to initialize streaming audio capture', error);
-      this.options.visualizer?.detach();
       await stopMediaStream(mediaStream);
 
       if (audioContext !== null) {
@@ -174,7 +170,6 @@ export class AudioCaptureStream {
     this.sourceNode = null;
 
     try {
-      this.options.visualizer?.detach();
       recorderNode?.disconnect();
       sourceNode?.disconnect();
       muteNode?.disconnect();
@@ -214,8 +209,8 @@ function isDeviceConstraintError(error: unknown): boolean {
 }
 
 function getAudioContextConstructor(): typeof AudioContext {
-  if (globalThis.AudioContext !== undefined) {
-    return globalThis.AudioContext;
+  if (window.AudioContext !== undefined) {
+    return window.AudioContext;
   }
 
   throw new Error('AudioContext is not available in this Obsidian runtime.');

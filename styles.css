@@ -492,10 +492,48 @@
   }
 }
 
-/* --- Preset delete icon ------------------------------------------- */
+/* --- Preset manager modal ------------------------------------------ */
 
-.local-stt-preset-delete:hover {
-  color: var(--text-error, var(--text-normal));
+.local-stt-preset-manager .local-stt-preset-row {
+  cursor: pointer;
+}
+
+.local-stt-preset-manager .local-stt-preset-back {
+  margin-bottom: var(--size-4-2);
+}
+
+.local-stt-preset-manager .local-stt-preset-search {
+  width: 100%;
+  margin-bottom: var(--size-4-2);
+}
+
+.local-stt-preset-manager .local-stt-preset-empty {
+  color: var(--text-muted);
+  margin: var(--size-4-2) 0;
+}
+
+/* Highlight search matches like the core search pane instead of the theme's
+   bold/accent suggestion styling. */
+.local-stt-preset-manager .suggestion-highlight {
+  background-color: var(--text-highlight-bg);
+  color: inherit;
+  font-weight: inherit;
+}
+
+.local-stt-preset-editor__prompt textarea {
+  width: 100%;
+}
+
+.local-stt-preset-editor__prompt-size {
+  margin: var(--size-2-2) 0 var(--size-4-2);
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+  text-align: right;
+}
+
+.local-stt-preset-editor__error {
+  color: var(--text-error);
+  margin: var(--size-2-2) 0;
 }
 
 /* --- Batch LLM processing pulse ----------------------------------- */
@@ -692,8 +730,124 @@
   color: var(--text-muted);
 }
 
-.local-stt-hidden {
-  display: none;
+/* --- LLM routing control ------------------------------------------ */
+
+.local-dictation-route-field {
+  padding: var(--size-4-2) var(--size-4-3) var(--size-4-3);
+}
+
+.local-dictation-route-field__hint {
+  margin-top: var(--size-4-2);
+  font-size: var(--font-ui-smaller);
+  color: var(--text-muted);
+}
+
+.local-dictation-segmented {
+  display: flex;
+  width: 100%;
+  gap: 3px;
+  padding: 3px;
+  border-radius: var(--radius-m, 8px);
+  background: var(--background-modifier-border, rgba(128, 128, 128, 0.15));
+}
+
+.local-dictation-segmented__option {
+  flex: 1;
+  appearance: none;
+  border: none;
+  box-shadow: none;
+  cursor: pointer;
+  padding: 5px 12px;
+  border-radius: var(--radius-s, 6px);
+  background: transparent;
+  color: var(--text-muted);
+  font-size: var(--font-ui-small);
+  font-weight: 500;
+  transition:
+    background-color 120ms ease,
+    color 120ms ease,
+    box-shadow 120ms ease;
+}
+
+.local-dictation-segmented__option:hover {
+  color: var(--text-normal);
+}
+
+.local-dictation-segmented__option:focus-visible {
+  outline: 2px solid var(--interactive-accent);
+  outline-offset: 1px;
+}
+
+.local-dictation-segmented__option.is-active {
+  background: var(--background-primary);
+  box-shadow: var(--shadow-s, 0 1px 2px rgba(0, 0, 0, 0.15));
+  color: var(--text-normal);
+  font-weight: 600;
+}
+
+.local-dictation-route-leg {
+  display: flex;
+  align-items: center;
+  gap: var(--size-4-2);
+  padding: var(--size-4-3) 0 var(--size-4-1);
+  font-size: var(--font-ui-smaller);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+/* Trailing hairline so the leg label reads as a section divider instead of a
+   stray caption between setting rows. */
+.local-dictation-route-leg::after {
+  content: "";
+  flex: 1;
+  border-top: 1px solid var(--background-modifier-border);
+}
+
+/* The labeled divider replaces the built-in row separator, so drop the
+   following setting row's own border to avoid a doubled line. */
+.local-dictation-route-leg + .setting-item {
+  border-top: none;
+}
+
+/* --- OpenRouter model suggest secondary line ---------------------- */
+
+.local-dictation-suggest__top {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--size-4-2);
+}
+
+.local-dictation-suggest__primary {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.local-dictation-suggest__secondary {
+  display: block;
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+}
+
+.local-dictation-price {
+  flex-shrink: 0;
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.03em;
+}
+
+.local-dictation-price--free {
+  color: var(--text-success, #2e8b57);
+}
+
+.local-dictation-price--premium {
+  color: var(--text-warning, var(--color-orange));
 }
 
 .local-stt-version-chip {
@@ -800,4 +954,10 @@
   gap: 8px;
   justify-content: flex-end;
   margin-top: 18px;
+}
+
+/* Visibility utility toggled in place of inline `style.display`, so show/hide
+   state lives in CSS (themeable, overridable) instead of element styles. */
+.local-stt-hidden {
+  display: none;
 }

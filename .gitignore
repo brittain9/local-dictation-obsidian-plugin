@@ -11,6 +11,10 @@ native/**/target-cuda/
 
 *.wav
 *.pcm
+# Committed audio fixtures for the sidecar transcription quality suite are an
+# exception to the *.wav / *.pcm ignore above.
+!native/tests/fixtures/audio/*.wav
+!native/tests/fixtures/audio/*.pcm
 *.tmp
 data.json
 
@@ -19,6 +23,7 @@ data.json
 .vscode/
 .worktrees/
 .claude/
+.superpowers/
 AGENTS.md
 CLAUDE.md
 PLANS.md

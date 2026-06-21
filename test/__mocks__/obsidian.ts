@@ -1,5 +1,34 @@
 import { vi } from 'vitest';
 
+export abstract class AbstractInputSuggest<T> {
+  abstract getSuggestions(query: string): T[] | Promise<T[]>;
+  abstract renderSuggestion(value: T, el: HTMLElement): void;
+  abstract selectSuggestion(value: T, evt: MouseEvent | KeyboardEvent): void;
+  limit = 100;
+  setValue(_value: string): void {}
+  getValue(): string {
+    return '';
+  }
+  close(): void {}
+}
+
+// Export-resolution stub so modules importing `Setting` load under vitest's
+// node environment; tests that exercise render paths need a real DOM stub.
+export class Setting {}
+
+export class SecretComponent {
+  constructor(
+    readonly app: unknown,
+    readonly containerEl: HTMLElement,
+  ) {}
+  setValue(_value: string): this {
+    return this;
+  }
+  onChange(_callback: (value: string) => unknown): this {
+    return this;
+  }
+}
+
 export const Platform = {
   isMacOS: false,
   isWin: false,

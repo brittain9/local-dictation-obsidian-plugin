@@ -6,12 +6,12 @@
 - TypeScript `6.0.2`
 - Rust `1.94.1`
 - CMake and a platform C/C++ toolchain for native sidecar builds
-- CUDA Toolkit `12.9` with `nvcc` for Linux/Windows CUDA sidecar builds only
+- CUDA Toolkit `13.2` with `nvcc` for Linux/Windows CUDA sidecar builds only
 - cuDNN `9.x` runtime libraries for local Cohere CUDA verification only
 
 Versions are pinned in `package.json` (`engines`, `packageManager`) and `rust-toolchain.toml`. If you use [mise](https://mise.jdx.dev), `mise install` will set up the Node and Rust toolchains automatically.
 
-The CUDA Toolkit is a build-from-source dependency. Published Linux/Windows CUDA sidecar archives bundle the CUDA runtime libraries needed by Whisper CUDA; release users need only a Turing-or-newer NVIDIA GPU and a compatible NVIDIA driver. Cohere CUDA additionally needs cuDNN `9.x` runtime libraries installed until cuDNN redistribution is reviewed.
+The CUDA Toolkit is a build-from-source dependency. Published Linux/Windows CUDA sidecar archives bundle the CUDA runtime libraries needed by Whisper CUDA; release users need only a Turing-or-newer NVIDIA GPU and a driver compatible with CUDA 13.x (R580 or newer). Cohere CUDA additionally needs cuDNN `9.x` runtime libraries built for CUDA 13 (9.20 or newer) installed until cuDNN redistribution is reviewed.
 
 ## Setup
 
@@ -92,6 +92,23 @@ Examples: `feat/punctuation-stage`, `fix/cohere-segments`, `chore/ci-caching`.
 
 Keep PRs small and focused. One concern per PR.
 
+## Versioning
+
+Releases use calendar versioning in the form `YYYY.M.MICRO`:
+
+- `YYYY` — four-digit year
+- `M` — month, no leading zero
+- `MICRO` — release counter within that month, starting at `1`
+
+`2026.7.2` is the second release of July 2026. The third number is **not** a day-of-month; multiple releases on the same day just increment the counter.
+
+Rules:
+
+- Every new version must sort above all previously published versions (Obsidian's updater compares versions numerically), so the four-digit year is permanent — a two-digit year like `26.x` would read as a downgrade and existing installs would stop receiving updates.
+- Versions up to and including `2026.6.9` used day-of-month numbering, so June 2026 counters continue from `2026.6.10`. From July 2026 onward the counter starts at `1` each month.
+
+A version bump touches `manifest.json`, `package.json` + `package-lock.json`, `versions.json`, and `native/Cargo.toml` + `native/Cargo.lock`.
+
 ## Scripts
 
 **Build:**
@@ -108,6 +125,7 @@ npm run install:dev -- --vault <vault> --sidecars --enable
 **Test and check:**
 ```sh
 npm run test             # TypeScript unit tests
+npm run test:system-audio # Manual hardware smoke for native system audio
 npm run typecheck        # type checking
 npm run lint             # Biome linting
 npm run check            # full quality gate (TS + Rust)

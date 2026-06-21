@@ -1,0 +1,66 @@
+name: cache-cleanup
+
+# Keep the ~10 GiB Actions cache budget full of USEFUL caches by deleting dead
+# weight, rather than keeping the cache small. Two triggers (#143):
+#   - On PR close/merge: a PR's caches live under refs/pull/<N>/merge and can
+#     never be restored by any future run once the PR closes — pure dead weight.
+#   - Weekly: sweep caches whose branch ref no longer exists (deleted feature
+#     branches) and that the size-cap LRU would otherwise let squat until it
+#     evicts a still-useful cache instead.
+on:
+  pull_request:
+    types: [closed]
+  schedule:
+    # Mondays 04:17 UTC. Off-peak; minute offset avoids the top-of-hour rush.
+    - cron: '17 4 * * 1'
+  workflow_dispatch:
+
+permissions:
+  actions: write
+  contents: read
+
+jobs:
+  cleanup-pr-caches:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Delete caches for the closed PR
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          REF: refs/pull/${{ github.event.pull_request.number }}/merge
+        run: |
+          echo "Deleting caches scoped to $REF"
+          ids=$(gh cache list --repo "$REPO" --ref "$REF" --limit 100 --json id --jq '.[].id')
+          if [ -z "$ids" ]; then
+            echo "No caches for $REF"
+            exit 0
+          fi
+          for id in $ids; do
+            gh cache delete "$id" --repo "$REPO" && echo "  deleted $id"
+          done
+
+  sweep-orphan-caches:
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Delete caches whose branch ref no longer exists
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          # A cache on refs/heads/<branch> is unreachable once <branch> is gone.
+          # Keep the default branch and any live branch; drop the rest. PR merge
+          # refs are handled on PR close, but sweep stragglers here too.
+          live=$(gh api "repos/$REPO/branches" --paginate --jq '.[].name' | sed 's#^#refs/heads/#')
+          default="refs/heads/$(gh repo view "$REPO" --json defaultBranchRef --jq .defaultBranchRef.name)"
+          gh cache list --repo "$REPO" --limit 100 --json id,ref --jq '.[] | [.id, .ref] | @tsv' |
+            while IFS=$(printf '\t') read -r id ref; do
+              case "$ref" in
+                "$default") continue ;;
+              esac
+              if printf '%s\n' $live | grep -qxF "$ref"; then
+                continue
+              fi
+              gh cache delete "$id" --repo "$REPO" && echo "deleted orphan cache $id ($ref)"
+            done

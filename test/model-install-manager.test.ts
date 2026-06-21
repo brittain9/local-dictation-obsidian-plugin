@@ -211,7 +211,9 @@ describe('ModelInstallManager', () => {
 
     it('reverts phase to installing when the cancel command itself fails', async () => {
       emitInstallUpdate(harness);
-      harness.sidecarConnection.cancelModelInstall.mockRejectedValueOnce(new Error('write failed'));
+      harness.sidecarConnection.cancelModelInstall.mockImplementationOnce(() => {
+        throw new Error('write failed');
+      });
 
       await expect(harness.manager.cancel()).rejects.toThrow('write failed');
       expect(harness.manager.getState().activeInstall?.phase).toBe('installing');
@@ -630,7 +632,7 @@ function createManagerHarness(settingsOverride?: Partial<PluginSettings>): Manag
 
 function createSidecarConnectionStub(listeners: Set<(event: SidecarEvent) => void>) {
   return {
-    cancelModelInstall: vi.fn(async () => {}),
+    cancelModelInstall: vi.fn(() => {}),
     getModelStore: vi.fn(),
     getSystemInfo: vi.fn(),
     installModel: vi.fn(),

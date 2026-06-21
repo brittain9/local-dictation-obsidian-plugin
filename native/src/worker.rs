@@ -10,7 +10,6 @@ use tokio::runtime::{Builder, Runtime};
 use tokio::sync::watch;
 use uuid::Uuid;
 
-use crate::audio_metadata::VoiceActivityEvidence;
 use crate::diarize::SessionDiarizer;
 use crate::engine::capabilities::{
     ModelFamilyCapabilities, ModelFamilyId, RequestWarning, RuntimeId,
@@ -18,14 +17,10 @@ use crate::engine::capabilities::{
 use crate::engine::registry::{EngineRegistry, apply_capability_gates, missing_adapter_error};
 use crate::engine::traits::LoadedModel;
 use crate::panic_util::format_panic_message;
-use crate::protocol::{
-    ContextWindow, ContextWindowSource, EngineStagePayload, LlmPostprocessConfig, StageId,
-    StageOutcome, StageStatus, TimestampGranularity, TimestampSource, TranscriptSegment,
-};
+use crate::protocol::{ContextWindow, EngineStagePayload, StageId, StageOutcome, StageStatus};
 use crate::session::FinalizedUtterance;
 use crate::stages::{
-    StageContext, StageEnablement, StageProcessor, llm_postprocess_processor,
-    post_engine_processors, run_post_engine,
+    StageContext, StageEnablement, StageProcessor, post_engine_processors, run_post_engine,
 };
 use crate::transcription::{
     EngineTranscriptOutput, GpuConfig, Transcript, TranscriptionError, TranscriptionRequest,
@@ -38,7 +33,6 @@ pub struct SessionMetadata {
     pub gpu_config: GpuConfig,
     pub diarization_enabled: bool,
     pub language: String,
-    pub llm_postprocess: Option<LlmPostprocessConfig>,
     pub model_file_path: PathBuf,
     pub cancel_rx: watch::Receiver<bool>,
     pub session_start_unix_ms: u64,
@@ -52,12 +46,6 @@ pub enum WorkerCommand {
     EndSession {
         session_id: String,
     },
-    RunBatchCleanup {
-        config: LlmPostprocessConfig,
-        note_context: Option<String>,
-        session_id: String,
-        transcript_text: String,
-    },
     Shutdown,
     TranscribeUtterance {
         context: Option<ContextWindow>,
@@ -69,12 +57,6 @@ pub enum WorkerCommand {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum WorkerEvent {
-    BatchCleanupReady {
-        clean_text: String,
-        raw_text: String,
-        session_id: String,
-        stage_results: Vec<StageOutcome>,
-    },
     SessionError {
         code: String,
         details: Option<String>,
@@ -228,41 +210,6 @@ fn worker_main(
             WorkerCommand::EndSession { session_id } => {
                 sessions.remove(&session_id);
             }
-            WorkerCommand::RunBatchCleanup {
-                config,
-                note_context,
-                session_id,
-                transcript_text,
-            } => {
-                let result = panic::catch_unwind(AssertUnwindSafe(|| {
-                    run_batch_cleanup(
-                        &tokio_runtime,
-                        session_id.clone(),
-                        transcript_text,
-                        config,
-                        note_context,
-                    )
-                }));
-
-                match result {
-                    Ok(event) => {
-                        let _ = event_tx.send(event);
-                    }
-                    Err(payload) => {
-                        let message = format_panic_message(
-                            payload.as_ref(),
-                            "Worker thread panicked during batch cleanup",
-                        );
-                        let _ = event_tx.send(WorkerEvent::SessionError {
-                            code: "worker_panic".to_string(),
-                            details: None,
-                            message,
-                            session_id,
-                            utterance_id: None,
-                        });
-                    }
-                }
-            }
             WorkerCommand::Shutdown => break,
             WorkerCommand::TranscribeUtterance {
                 context,
@@ -321,7 +268,6 @@ fn worker_main(
                             stage_enablement: &session.metadata.stage_enablement,
                             processors: &session.processors,
                             tokio_runtime: &tokio_runtime,
-                            llm_postprocess: session.metadata.llm_postprocess.as_ref(),
                             cancel_rx: &session.metadata.cancel_rx,
                         });
                         let speaker_index = diarize_utterance(
@@ -383,7 +329,6 @@ struct TranscriptAssembly<'a> {
     stage_enablement: &'a StageEnablement,
     processors: &'a [Box<dyn StageProcessor>],
     tokio_runtime: &'a Runtime,
-    llm_postprocess: Option<&'a LlmPostprocessConfig>,
     cancel_rx: &'a watch::Receiver<bool>,
 }
 
@@ -473,7 +418,6 @@ fn assemble_transcript(input: TranscriptAssembly<'_>) -> Transcript {
         stage_enabled: input.stage_enablement,
         is_final: input.is_final,
         tokio_runtime: input.tokio_runtime,
-        llm_postprocess: input.llm_postprocess,
         cancel_rx: input.cancel_rx,
         pause_ms_before_utterance: input.pause_ms_before_utterance,
         segment_diagnostics: &diagnostics,
@@ -483,92 +427,6 @@ fn assemble_transcript(input: TranscriptAssembly<'_>) -> Transcript {
     run_post_engine(&mut transcript, input.processors, &ctx);
 
     transcript
-}
-
-fn run_batch_cleanup(
-    tokio_runtime: &Runtime,
-    session_id: String,
-    transcript_text: String,
-    config: LlmPostprocessConfig,
-    note_context: Option<String>,
-) -> WorkerEvent {
-    let trimmed_input = transcript_text.trim().to_string();
-    let utterance_duration_ms = 1_000;
-    let context = note_context
-        .filter(|text| !text.trim().is_empty())
-        .map(|text| ContextWindow {
-            budget_chars: text.chars().count().min(u32::MAX as usize) as u32,
-            sources: vec![ContextWindowSource::NoteText {
-                text: text.clone(),
-                truncated: false,
-            }],
-            text,
-            truncated: false,
-        });
-    let voice_activity = VoiceActivityEvidence {
-        audio_start_ms: 0,
-        audio_end_ms: utterance_duration_ms,
-        speech_start_ms: 0,
-        speech_end_ms: utterance_duration_ms,
-        voiced_ms: utterance_duration_ms,
-        unvoiced_ms: 0,
-        mean_probability: 1.0,
-        max_probability: 1.0,
-    };
-    let (_cancel_tx, cancel_rx) = watch::channel(false);
-    let processors = vec![llm_postprocess_processor()];
-    let mut transcript = Transcript {
-        revision: 0,
-        segments: vec![TranscriptSegment {
-            end_ms: utterance_duration_ms,
-            start_ms: 0,
-            text: trimmed_input.clone(),
-            timestamp_granularity: TimestampGranularity::Utterance,
-            timestamp_source: TimestampSource::None,
-        }],
-        stage_history: Vec::new(),
-        utterance_id: Uuid::new_v4(),
-    };
-    let family_capabilities = ModelFamilyCapabilities::unknown();
-    let stage_enablement = StageEnablement::default();
-    let ctx = StageContext {
-        cancel_rx: &cancel_rx,
-        context: context.as_ref(),
-        family_capabilities: &family_capabilities,
-        is_final: true,
-        llm_postprocess: Some(&config),
-        pause_ms_before_utterance: None,
-        segment_diagnostics: &[],
-        stage_enabled: &stage_enablement,
-        tokio_runtime,
-        vad_probabilities: &[],
-        voice_activity: &voice_activity,
-    };
-
-    run_post_engine(&mut transcript, &processors, &ctx);
-
-    let last_stage = transcript.stage_history.last();
-    if !matches!(last_stage.map(|stage| &stage.status), Some(StageStatus::Ok)) {
-        let error = match last_stage.map(|stage| &stage.status) {
-            Some(StageStatus::Failed { error }) => error.clone(),
-            Some(StageStatus::Skipped { reason }) => format!("batch cleanup skipped: {reason}"),
-            Some(StageStatus::Ok) | None => "batch cleanup did not produce a result".to_string(),
-        };
-        return WorkerEvent::SessionError {
-            code: "batch_cleanup_failed".to_string(),
-            details: Some(error.clone()),
-            message: "Batch LLM cleanup failed; raw transcript was kept.".to_string(),
-            session_id,
-            utterance_id: None,
-        };
-    }
-
-    WorkerEvent::BatchCleanupReady {
-        clean_text: transcript.joined_text(),
-        raw_text: trimmed_input,
-        session_id,
-        stage_results: transcript.stage_history,
-    }
 }
 
 #[cfg(test)]
@@ -669,7 +527,6 @@ mod tests {
             engine_output: engine_output(),
             family_capabilities: &whisper_caps(),
             is_final: true,
-            llm_postprocess: None,
             pause_ms_before_utterance: None,
             processors: &[],
             stage_enablement: &StageEnablement::default(),
@@ -708,7 +565,6 @@ mod tests {
             engine_output: engine_output(),
             family_capabilities: &whisper_caps(),
             is_final: true,
-            llm_postprocess: None,
             pause_ms_before_utterance: None,
             processors: &processors,
             stage_enablement: &StageEnablement::default(),
@@ -740,7 +596,6 @@ mod tests {
             engine_output: engine_output(),
             family_capabilities: &whisper_caps(),
             is_final: true,
-            llm_postprocess: None,
             pause_ms_before_utterance: Some(420),
             processors: &[],
             stage_enablement: &StageEnablement::default(),
@@ -776,7 +631,6 @@ mod tests {
             engine_output: engine_output(),
             family_capabilities: &whisper_caps(),
             is_final: true,
-            llm_postprocess: None,
             pause_ms_before_utterance: Some(150),
             processors: &processors,
             stage_enablement: &StageEnablement::default(),
@@ -810,7 +664,6 @@ mod tests {
             engine_output: engine_output(),
             family_capabilities: &whisper_caps(),
             is_final: true,
-            llm_postprocess: None,
             pause_ms_before_utterance: None,
             processors: &processors,
             stage_enablement: &StageEnablement::default(),
@@ -844,7 +697,6 @@ mod tests {
             engine_output: engine_output(),
             family_capabilities: &whisper_caps(),
             is_final: true,
-            llm_postprocess: None,
             pause_ms_before_utterance: None,
             processors: &processors,
             stage_enablement: &StageEnablement::default(),

@@ -151,13 +151,13 @@ async function waitForSpawn(child: ChildProcessWithoutNullStreams): Promise<void
 
 async function waitForExit(child: ChildProcessWithoutNullStreams): Promise<void> {
   await new Promise<void>((resolve) => {
-    const timeoutHandle = globalThis.setTimeout(() => {
+    const timeoutHandle = window.setTimeout(() => {
       child.kill();
       resolve();
     }, 2_000);
 
     child.once('exit', () => {
-      globalThis.clearTimeout(timeoutHandle);
+      window.clearTimeout(timeoutHandle);
       resolve();
     });
   });

@@ -1,8 +1,7 @@
 import { setIcon } from 'obsidian';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import type { AudioBandReader } from '../src/audio/audio-visualizer-tap';
-import { AudioVisualizerTap } from '../src/audio/audio-visualizer-tap';
+import { type AudioBandReader, BAND_COUNT } from '../src/audio/audio-bands';
 import { DictationRibbonController } from '../src/ui/dictation-ribbon';
 
 class FakeMediaQueryList {
@@ -253,7 +252,7 @@ function stubRaf(): Array<() => void> {
 }
 
 function silentBandReader(): AudioBandReader {
-  return { readBands: () => new Float32Array(AudioVisualizerTap.BAND_COUNT) };
+  return { readBands: () => new Float32Array(BAND_COUNT) };
 }
 
 describe('DictationRibbonController bar rendering', () => {
@@ -271,7 +270,7 @@ describe('DictationRibbonController bar rendering', () => {
     // At silence every bar must equal BAR_FLOOR exactly — without an idle
     // drift path the value is deterministic; this pin catches accidental
     // re-introduction of noise mixing.
-    for (let i = 1; i <= AudioVisualizerTap.BAND_COUNT; i++) {
+    for (let i = 1; i <= BAND_COUNT; i++) {
       expect(element.styleProps[`--local-stt-bar-${i}`]).toBe('0.25');
     }
   });

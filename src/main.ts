@@ -1,27 +1,31 @@
 import { dirname, join } from 'node:path';
-
+import { IS_PRODUCTION_BUILD } from 'virtual:build-mode';
 import { FileSystemAdapter, Notice, Platform, Plugin } from 'obsidian';
 
 import { AudioCaptureStream } from './audio/audio-capture-stream';
-import { AudioVisualizerTap } from './audio/audio-visualizer-tap';
+import { SidecarAudioLevelMeter } from './audio/sidecar-audio-level-meter';
 import { registerCommands } from './commands/register-commands';
 import { DictationSessionController } from './dictation/dictation-session-controller';
 import { dictationAnchorExtension } from './editor/dictation-anchor-extension';
 import { noteSurfaceUpdateListenerExtension } from './editor/note-surface';
 import { sessionProcessingExtension } from './editor/session-processing-extension';
-import { createOllamaClient } from './llm/ollama-client';
+import type { LlmCleanupFailure } from './llm/provider';
+import { createLlmRouter } from './llm/router';
 import { ManageModelsModal } from './models/manage-models-modal';
 import { ModelInstallManager } from './models/model-install-manager';
 import { Session } from './session/session';
 import { logAccelerationFallbacks } from './settings/acceleration-info';
+import { LlmPresetStateStore } from './settings/llm-preset-state';
+import { getOpenRouterApiKey, loadPluginSettings } from './settings/openrouter-secret-storage';
 import {
   DEFAULT_PLUGIN_SETTINGS,
   type PluginSettings,
   resolvePluginSettings,
+  shouldRefreshLlmSidebar,
 } from './settings/plugin-settings';
 import { LocalSttSettingTab } from './settings/settings-tab';
 import {
-  openSidecarInstallModal,
+  openSidecarUpdateModal,
   type SidecarInstallActionDeps,
 } from './settings/sidecar-settings-section';
 import { SetupWizardModal } from './setup/setup-wizard-modal';
@@ -32,7 +36,6 @@ import { SidecarConnection } from './sidecar/sidecar-connection';
 import { formatSidecarExecutableName } from './sidecar/sidecar-executable';
 import { SidecarInstallManager } from './sidecar/sidecar-install-manager';
 import {
-  type ResolvedSidecarExecutable,
   type ResolveSidecarExecutablePathOptions,
   resolveSidecarExecutablePath,
   SidecarNotInstalledError,
@@ -47,17 +50,40 @@ import { LOCAL_DICTATION_VIEW_TYPE, LocalDictationView } from './ui/local-dictat
 
 export default class LocalSttPlugin extends Plugin {
   private audioCaptureStream: AudioCaptureStream | null = null;
-  private audioVisualizerTap: AudioVisualizerTap | null = null;
+  private audioLevelMeter: SidecarAudioLevelMeter | null = null;
   private dictationController: DictationSessionController | null = null;
   private logger: PluginLogger = createPluginLogger(() => this.settings.developerMode);
+  private llmCleanupFailure: LlmCleanupFailure | null = null;
+  private readonly llmCleanupFailureSubscribers = new Set<() => void>();
   private modelInstallManager: ModelInstallManager | null = null;
+  private presetStateStore: LlmPresetStateStore | null = null;
   private ribbonController: DictationRibbonController | null = null;
   private settings: PluginSettings = DEFAULT_PLUGIN_SETTINGS;
   private sidecarConnection: SidecarConnection | null = null;
   private sidecarInstallManager: SidecarInstallManager | null = null;
 
   override async onload(): Promise<void> {
-    this.settings = resolvePluginSettings(await this.loadData());
+    const loadedSettings = loadPluginSettings(await this.loadData(), this.app.secretStorage);
+    this.settings = loadedSettings.settings;
+    if (loadedSettings.shouldPersist) {
+      await this.saveData(this.settings);
+    }
+    this.presetStateStore = new LlmPresetStateStore({
+      commit: async (nextSettings, options) => {
+        await this.applySettings(nextSettings, options);
+      },
+      getSettings: () => this.settings,
+      loadData: async (): Promise<unknown> => {
+        const data: unknown = await this.loadData();
+        return data;
+      },
+      onExternalChange: () => {
+        this.requestLocalDictationSidebarRefresh();
+      },
+      warn: (message, error) => {
+        this.logger.warn('settings', message, error);
+      },
+    });
 
     this.registerEditorExtension(dictationAnchorExtension());
     this.registerEditorExtension(noteSurfaceUpdateListenerExtension());
@@ -67,15 +93,13 @@ export default class LocalSttPlugin extends Plugin {
       logger: this.logger,
       resolveLaunchSpec: async () => this.resolveSidecarLaunchSpec(),
     });
-    this.audioVisualizerTap = new AudioVisualizerTap();
+    this.audioLevelMeter = new SidecarAudioLevelMeter();
     this.audioCaptureStream = new AudioCaptureStream({
       logger: this.logger,
       onDeviceFallback: () => {
         new Notice('Saved microphone unavailable. Using the default input device.');
       },
-      visualizer: this.audioVisualizerTap,
     });
-    const ollamaClient = createOllamaClient();
     this.modelInstallManager = new ModelInstallManager({
       getSettings: () => this.settings,
       logger: this.logger,
@@ -94,14 +118,27 @@ export default class LocalSttPlugin extends Plugin {
       LOCAL_DICTATION_VIEW_TYPE,
       (leaf) =>
         new LocalDictationView(leaf, {
+          getOpenRouterApiKey: () => this.getOpenRouterApiKey(),
           getSettings: () => this.settings,
+          getLlmCleanupFailure: () => this.llmCleanupFailure,
           logger: this.logger,
           notice: (message) => {
             new Notice(message);
           },
-          ollamaClient,
           saveSettings: async (nextSettings) => {
             await this.updateSettings(nextSettings);
+          },
+          mutatePresetState: async (mutation) => {
+            await this.requirePresetStateStore().mutate(mutation);
+          },
+          synchronizePresets: async () => {
+            await this.requirePresetStateStore().synchronize();
+          },
+          subscribeLlmCleanupFailure: (callback) => {
+            this.llmCleanupFailureSubscribers.add(callback);
+            return () => {
+              this.llmCleanupFailureSubscribers.delete(callback);
+            };
           },
         }),
     );
@@ -110,8 +147,9 @@ export default class LocalSttPlugin extends Plugin {
       void this.requireDictationController().toggleDictation();
     });
     this.ribbonController = new DictationRibbonController(ribbonElement);
-    this.ribbonController.setVisualizer(this.audioVisualizerTap);
+    this.ribbonController.setVisualizer(this.audioLevelMeter);
     this.dictationController = new DictationSessionController({
+      audioLevelMeter: this.audioLevelMeter,
       captureStream: this.audioCaptureStream,
       createSession: ({ callbacks, placement, rendererOptions, sessionId }) =>
         Session.createFromActiveEditor(this.app, {
@@ -121,10 +159,27 @@ export default class LocalSttPlugin extends Plugin {
           rendererOptions,
           sessionId,
         }),
+      createLlmRouter: (settings) =>
+        createLlmRouter(
+          settings,
+          undefined,
+          () => this.settings.llmRemoteFeaturesEnabled,
+          () => this.getOpenRouterApiKey(),
+        ),
       getSettings: () => this.settings,
       logger: this.logger,
       notice: (message) => {
         new Notice(message);
+      },
+      onLlmCleanupFailure: (failure) => {
+        this.llmCleanupFailure = failure;
+        this.notifyLlmCleanupFailureSubscribers();
+      },
+      onLlmCleanupSuccess: () => {
+        if (this.llmCleanupFailure !== null) {
+          this.llmCleanupFailure = null;
+          this.notifyLlmCleanupFailureSubscribers();
+        }
       },
       onModelMissing: () => {
         void this.openModelPicker();
@@ -312,7 +367,11 @@ export default class LocalSttPlugin extends Plugin {
     }
   }
 
-  override async onunload(): Promise<void> {
+  override onunload(): void {
+    void this.disposeAll();
+  }
+
+  private async disposeAll(): Promise<void> {
     try {
       this.modelInstallManager?.dispose();
     } catch (error) {
@@ -385,11 +444,46 @@ export default class LocalSttPlugin extends Plugin {
   }
 
   private async updateSettings(nextSettings: PluginSettings): Promise<void> {
-    const previousLlmFeaturesEnabled = this.settings.llmFeaturesEnabled;
+    await this.requirePresetStateStore().commitPreservingPresetState(nextSettings);
+  }
+
+  private getOpenRouterApiKey(): string {
+    return getOpenRouterApiKey(this.settings, this.app.secretStorage);
+  }
+
+  private async applySettings(
+    nextSettings: PluginSettings,
+    options: { persist: boolean },
+  ): Promise<void> {
+    const previousSettings = this.settings;
     this.settings = resolvePluginSettings(nextSettings);
-    await this.saveData(this.settings);
-    if (previousLlmFeaturesEnabled !== this.settings.llmFeaturesEnabled) {
+    if (options.persist) {
+      await this.saveData(this.settings);
+    }
+    if (previousSettings.llmFeaturesEnabled !== this.settings.llmFeaturesEnabled) {
       await this.syncLocalDictationSidebar();
+      return;
+    }
+    if (shouldRefreshLlmSidebar(previousSettings, this.settings)) {
+      for (const leaf of this.app.workspace.getLeavesOfType(LOCAL_DICTATION_VIEW_TYPE)) {
+        if (leaf.view instanceof LocalDictationView) {
+          leaf.view.refresh();
+        }
+      }
+    }
+  }
+
+  private requestLocalDictationSidebarRefresh(): void {
+    for (const leaf of this.app.workspace.getLeavesOfType(LOCAL_DICTATION_VIEW_TYPE)) {
+      if (leaf.view instanceof LocalDictationView) {
+        leaf.view.requestRefresh();
+      }
+    }
+  }
+
+  private notifyLlmCleanupFailureSubscribers(): void {
+    for (const subscriber of this.llmCleanupFailureSubscribers) {
+      subscriber();
     }
   }
 
@@ -399,6 +493,13 @@ export default class LocalSttPlugin extends Plugin {
     }
 
     return this.dictationController;
+  }
+
+  private requirePresetStateStore(): LlmPresetStateStore {
+    if (this.presetStateStore === null) {
+      throw new Error('Preset state store is not initialized');
+    }
+    return this.presetStateStore;
   }
 
   private requireSidecarConnection(): SidecarConnection {
@@ -477,71 +578,85 @@ export default class LocalSttPlugin extends Plugin {
   }
 
   /**
-   * On startup, compare the installed sidecar's recorded version against the
-   * current plugin version and prompt for a one-click reinstall when they
-   * differ. Obsidian updates the plugin files but never the separately-
-   * installed sidecar, so the two silently fall out of sync after an update.
-   * Self-contained: every failure path (including no sidecar installed) is
-   * swallowed so this can never disrupt startup.
+   * On startup, compare every release-installed sidecar against the current
+   * plugin version and prompt for a one-click update when any differ. Obsidian
+   * updates the plugin files but never the separately-installed sidecars, so
+   * they silently fall out of sync after an update. Self-contained: every
+   * failure path is swallowed so this can never disrupt startup.
    */
   private async checkSidecarVersionDrift(): Promise<void> {
-    let pluginDirectory: string;
-    let resolved: ResolvedSidecarExecutable;
-
-    try {
-      pluginDirectory = await this.resolvePluginDirectoryPath();
-      resolved = await resolveSidecarExecutablePath(
-        this.buildSidecarResolutionOptions(pluginDirectory),
-      );
-    } catch (error) {
-      // No installed sidecar (or an unreadable plugin dir): the setup and
-      // health paths own that case — there is no installed version to compare.
-      if (!(error instanceof SidecarNotInstalledError)) {
-        this.logger.error('sidecar', 'version drift check could not resolve sidecar', error);
-      }
+    if (!IS_PRODUCTION_BUILD) {
+      this.logger.debug('sidecar', 'version drift check skipped for development plugin build');
       return;
     }
 
-    // Only a release-installed sidecar carries an install.json version. Dev
-    // builds and explicit path overrides are intentionally exempt.
-    if (resolved.source !== 'installed' || resolved.variant === null) return;
+    // A custom executable is managed outside the plugin's installer. Installed
+    // bin/* variants may still exist, but prompting to update them would be
+    // unrelated to the executable the user chose.
+    if (this.settings.sidecarPathOverride.trim().length > 0) {
+      this.logger.debug('sidecar', 'version drift check skipped for sidecar path override');
+      return;
+    }
 
-    let drift: SidecarVersionDrift | null;
+    let pluginDirectory: string;
+    try {
+      pluginDirectory = await this.resolvePluginDirectoryPath();
+    } catch (error) {
+      this.logger.error('sidecar', 'version drift check could not resolve plugin directory', error);
+      return;
+    }
+
+    let drift: SidecarVersionDrift[];
     try {
       drift = await detectSidecarVersionDrift({
         pluginDirectory,
         pluginVersion: this.manifest.version,
-        variant: resolved.variant,
+        preferredVariant: this.settings.accelerationPreference === 'cpu_only' ? 'cpu' : 'cuda',
+        supportsCuda: !Platform.isMacOS,
       });
     } catch (error) {
       this.logger.error('sidecar', 'version drift check failed', error);
       return;
     }
 
-    if (drift === null) return;
+    if (drift.length === 0) return;
 
     this.logger.debug(
       'sidecar',
-      `sidecar version drift: installed ${drift.installedVersion}, plugin ${drift.pluginVersion}`,
+      `sidecar version drift: ${drift
+        .map((entry) => `${entry.variant} ${entry.installedVersion}`)
+        .join(', ')}, plugin ${this.manifest.version}`,
     );
     this.notifySidecarVersionDrift(drift, pluginDirectory);
   }
 
-  private notifySidecarVersionDrift(drift: SidecarVersionDrift, pluginDirectory: string): void {
+  private notifySidecarVersionDrift(
+    drift: readonly SidecarVersionDrift[],
+    pluginDirectory: string,
+  ): void {
+    const variants = drift.map((entry) => entry.variant);
+    const engineLabel =
+      variants.length === 2
+        ? 'CPU and CUDA speech engines are'
+        : variants[0] === 'cuda'
+          ? 'CUDA speech engine is'
+          : 'speech engine is';
     const notice = new Notice(
       createFragment((fragment) => {
         fragment.createDiv({
-          text: `Local Dictation updated to ${drift.pluginVersion}, but its speech engine is still ${drift.installedVersion}. Reinstall to keep them in sync.`,
+          text: `Local Dictation updated to ${this.manifest.version}, but the installed ${engineLabel} out of date. Update now to keep them in sync.`,
         });
         fragment
-          .createEl('a', { href: '#', text: 'Reinstall speech engine' })
+          .createEl('a', {
+            href: '#',
+            text: variants.length === 2 ? 'Update speech engines' : 'Update speech engine',
+          })
           .addEventListener('click', (event) => {
             event.preventDefault();
             notice.hide();
-            openSidecarInstallModal(this.buildSidecarInstallActionDeps(), {
-              intent: 'reinstall',
+            openSidecarUpdateModal(this.buildSidecarInstallActionDeps(), {
               pluginDirectory,
-              variant: drift.variant,
+              variants,
             });
           });
       }),

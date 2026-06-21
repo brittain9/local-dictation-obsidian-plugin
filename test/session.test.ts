@@ -5,6 +5,7 @@ import { describe, expect, it, vi } from 'vitest';
 import type {
   AppendResult,
   NotePlacementOptions,
+  PreservedSpan,
   ProjectedSpan,
   ReplaceResult,
   RewriteRange,
@@ -30,6 +31,7 @@ class FakeSurface {
   }> = [];
   public readonly rewriteCalls: Array<{
     newText: string;
+    preservedSpans: PreservedSpan[];
     range: RewriteRange;
   }> = [];
   public readonly dispose = vi.fn();
@@ -119,8 +121,12 @@ class FakeSurface {
     return this.documentText.slice(range.from, range.to);
   }
 
-  rewriteRegion(range: RewriteRange, newText: string): RewriteResult {
-    this.rewriteCalls.push({ newText, range });
+  rewriteRegion(
+    range: RewriteRange,
+    newText: string,
+    preservedSpans: PreservedSpan[],
+  ): RewriteResult {
+    this.rewriteCalls.push({ newText, preservedSpans, range });
 
     if (this.nextRewriteResult !== null) {
       return this.nextRewriteResult;
@@ -322,7 +328,11 @@ describe('Session', () => {
     expect(session.replaceSessionRangeWithCleaned('Polished tail.')).toBe(true);
 
     expect(surface.rewriteCalls).toEqual([
-      { newText: 'Polished tail.', range: { from: 0, to: 'polished tail'.length } },
+      {
+        newText: 'Polished tail.',
+        preservedSpans: [{ utteranceId: 'u1' }, { utteranceId: 'u2' }],
+        range: { from: 0, to: 'polished tail'.length },
+      },
     ]);
     expect(surface.documentText).toBe('Polished tail.');
   });
@@ -335,7 +345,11 @@ describe('Session', () => {
 
     expect(session.replaceSessionRangeWithCleaned('Cleaned words.')).toBe(true);
     expect(surface.rewriteCalls).toEqual([
-      { newText: 'Cleaned words.', range: { from: 0, to: 'raw words'.length } },
+      {
+        newText: 'Cleaned words.',
+        preservedSpans: [{ utteranceId: 'u1' }],
+        range: { from: 0, to: 'raw words'.length },
+      },
     ]);
     expect(surface.documentText).toBe('Cleaned words. tail');
   });
@@ -351,6 +365,37 @@ describe('Session', () => {
       }),
     ).toBe(true);
     expect(surface.documentText).toBe('Cleaned words.\n\n> [!note]- raw\n> raw words');
+  });
+
+  it('insertAdjacentToSessionRange prepends above the untouched session range', () => {
+    const { session, surface } = createSessionHarness();
+
+    session.acceptTranscript(transcript({ text: 'hello world', utteranceId: 'u1' }));
+
+    expect(session.insertAdjacentToSessionRange('TLDR\n- point', 'above')).toBe(true);
+    expect(surface.rewriteCalls).toEqual([
+      {
+        newText: 'TLDR\n- point\n\nhello world',
+        preservedSpans: [{ utteranceId: 'u1' }],
+        range: { from: 0, to: 'hello world'.length },
+      },
+    ]);
+    expect(surface.documentText).toBe('TLDR\n- point\n\nhello world');
+  });
+
+  it('insertAdjacentToSessionRange appends below the session range', () => {
+    const { session, surface } = createSessionHarness();
+
+    session.acceptTranscript(transcript({ text: 'hello world', utteranceId: 'u1' }));
+
+    expect(session.insertAdjacentToSessionRange('Action items', 'below')).toBe(true);
+    expect(surface.documentText).toBe('hello world\n\nAction items');
+  });
+
+  it('insertAdjacentToSessionRange returns false with no session entries', () => {
+    const { session } = createSessionHarness();
+
+    expect(session.insertAdjacentToSessionRange('x', 'above')).toBe(false);
   });
 
   it('preserves the first insertion boundary when replacing a batch-cleaned range', () => {

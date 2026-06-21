@@ -10,8 +10,10 @@ import {
 export type SidecarInstallPhase = 'canceling' | 'installing';
 
 export interface ActiveSidecarInstall {
+  currentVariantNumber: number;
   phase: SidecarInstallPhase;
   progress: InstallProgress;
+  totalVariants: number;
   variant: SidecarInstallVariant;
 }
 
@@ -27,6 +29,11 @@ export interface SidecarInstallOptions {
   successNotice: string;
   variant: SidecarInstallVariant;
   version: string;
+}
+
+export interface SidecarInstallBatchOptions extends Omit<SidecarInstallOptions, 'variant'> {
+  onVariantInstalled?: ((variant: SidecarInstallVariant) => Promise<void>) | undefined;
+  variants: readonly SidecarInstallVariant[];
 }
 
 interface SidecarInstallManagerDependencies {
@@ -63,21 +70,29 @@ export class SidecarInstallManager {
   }
 
   install(options: SidecarInstallOptions): void {
+    const { variant, ...batchOptions } = options;
+    this.installBatch({ ...batchOptions, variants: [variant] });
+  }
+
+  installBatch(options: SidecarInstallBatchOptions): void {
     if (this.activeInstall !== null) {
       throw new Error('Another sidecar is already being installed.');
     }
 
+    const variants = normalizeVariants(options.variants);
     const controller = new AbortController();
     this.abortController = controller;
     this.lastError = null;
     this.activeInstall = {
+      currentVariantNumber: 1,
       phase: 'installing',
       progress: INITIAL_PROGRESS,
-      variant: options.variant,
+      totalVariants: variants.length,
+      variant: variants[0],
     };
     this.notify();
 
-    void this.runInstall(options, controller.signal);
+    void this.runInstallBatch({ ...options, variants }, controller.signal);
   }
 
   cancel(): void {
@@ -99,19 +114,48 @@ export class SidecarInstallManager {
     this.listeners.clear();
   }
 
-  private async runInstall(options: SidecarInstallOptions, signal: AbortSignal): Promise<void> {
+  private async runInstallBatch(
+    options: SidecarInstallBatchOptions,
+    signal: AbortSignal,
+  ): Promise<void> {
     try {
-      await installSidecar({
-        beforeReplace: options.beforeReplace,
-        logger: this.deps.logger,
-        onProgress: (progress) => {
-          this.updateProgress(progress);
-        },
-        pluginDirectory: options.pluginDirectory,
-        signal,
-        variant: options.variant,
-        version: options.version,
-      });
+      for (const [index, variant] of options.variants.entries()) {
+        this.activeInstall = {
+          currentVariantNumber: index + 1,
+          phase: 'installing',
+          progress: INITIAL_PROGRESS,
+          totalVariants: options.variants.length,
+          variant,
+        };
+        this.notify();
+
+        await installSidecar({
+          beforeReplace: options.beforeReplace,
+          logger: this.deps.logger,
+          onProgress: (progress) => {
+            this.updateProgress(progress);
+          },
+          pluginDirectory: options.pluginDirectory,
+          signal,
+          variant,
+          version: options.version,
+        });
+
+        const hasMoreVariants = index + 1 < options.variants.length;
+        if (hasMoreVariants && options.onVariantInstalled !== undefined) {
+          try {
+            // Best effort only: an automatic resolver may still select another
+            // stale variant until the whole batch has been replaced.
+            await options.onVariantInstalled(variant);
+          } catch (error) {
+            this.deps.logger?.warn(
+              'installer',
+              `intermediate restart after ${variant} sidecar update failed; continuing batch`,
+              error,
+            );
+          }
+        }
+      }
 
       await options.onInstalled();
       this.deps.notice(options.successNotice);
@@ -153,11 +197,16 @@ export class SidecarInstallManager {
 }
 
 export function buildSidecarProgressState(active: ActiveSidecarInstall): InstallProgressState {
+  const variantProgress =
+    active.totalVariants > 1
+      ? ` ${active.variant.toUpperCase()} sidecar (${String(active.currentVariantNumber)} of ${String(active.totalVariants)})`
+      : '';
+
   return {
     details: null,
     downloadedBytes: active.progress.bytesDownloaded,
     isCancelling: active.phase === 'canceling',
-    message: formatProgressMessage(active.progress.phase),
+    message: `${formatProgressMessage(active.progress.phase)}${variantProgress}`,
     state: 'downloading',
     totalBytes: active.progress.totalBytes,
   };
@@ -176,4 +225,16 @@ function formatProgressMessage(phase: InstallProgress['phase']): string {
 
 function isAbortError(error: unknown): boolean {
   return error instanceof Error && error.name === 'AbortError';
+}
+
+function normalizeVariants(
+  variants: readonly SidecarInstallVariant[],
+): [SidecarInstallVariant, ...SidecarInstallVariant[]] {
+  const uniqueVariants = [...new Set(variants)];
+
+  if (uniqueVariants.length === 0) {
+    throw new Error('At least one sidecar variant is required.');
+  }
+
+  return uniqueVariants as [SidecarInstallVariant, ...SidecarInstallVariant[]];
 }
