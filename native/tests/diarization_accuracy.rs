@@ -189,11 +189,19 @@ fn distinct_voices_each_get_their_own_speaker() {
     );
 }
 
+/// The deliberately-confusable fixtures, mined from LibriSpeech test-clean as
+/// the corpus's closest cross-speaker pair: two female voices whose clean
+/// embedding cosine (~0.38) sits just under the 0.4 new-speaker threshold. They
+/// make the clean gates harder (the model must still split a near-threshold
+/// pair). The noise gate excludes them on purpose: a pair this close is at the
+/// model's discrimination limit, so any perturbation can tip it over — that is
+/// out of scope for "noise must not break *distinguishable* voices", and is
+/// documented instead by [`the_most_confusable_voices_still_separate_when_clean`].
+const CONFUSABLE_FIXTURE_IDS: [&str; 2] = ["4446-2271-0004", "4992-23283-0005"];
+
 /// Signal-to-noise ratio (dB) for the noise-robustness gate. 10 dB is audibly
 /// noisy but still clearly intelligible speech — a realistic floor for a usable
 /// microphone or system-audio capture, well below the studio-clean fixtures.
-/// The model clusters perfectly well past this, so the gate has margin and acts
-/// as a regression guard rather than a knife-edge.
 const NOISE_SNR_DB: f32 = 10.0;
 
 /// Clustering budget under noise. Embeddings degrade as SNR drops, so this is
@@ -202,9 +210,40 @@ const NOISE_SNR_DB: f32 = 10.0;
 const NOISY_CLUSTERING_BUDGET: f64 = 0.90;
 
 #[test]
+fn the_most_confusable_voices_still_separate_when_clean() {
+    let pair: Vec<Utterance> = diarize::speaker_sources()
+        .into_iter()
+        .filter(|source| CONFUSABLE_FIXTURE_IDS.contains(&source.speaker.as_str()))
+        .collect();
+    assert_eq!(
+        pair.len(),
+        CONFUSABLE_FIXTURE_IDS.len(),
+        "both confusable fixtures must be present in the corpus"
+    );
+
+    let result = diarize::diarize_scenario(&pair);
+    // The second assignment's similarity is the cross-speaker cosine — the
+    // margin to the 0.4 threshold this gate protects.
+    eprintln!(
+        "[diarization:confusable] cross_speaker_cosine={:.3}\n{}",
+        result.similarity[1],
+        result.trace(),
+    );
+
+    assert_eq!(
+        result.predicted_speaker_count(),
+        2,
+        "the corpus's closest pair (~0.38 cosine) must stay distinct in clean audio",
+    );
+}
+
+#[test]
 fn distinct_speakers_still_separate_under_moderate_noise() {
+    // Representative, distinguishable voices only — the near-threshold confusable
+    // pair is excluded (see CONFUSABLE_FIXTURE_IDS).
     let noisy: Vec<Utterance> = diarize::speaker_sources()
         .into_iter()
+        .filter(|source| !CONFUSABLE_FIXTURE_IDS.contains(&source.speaker.as_str()))
         .map(|source| Utterance {
             samples: diarize::with_white_noise(&source.samples, NOISE_SNR_DB),
             speaker: source.speaker,
