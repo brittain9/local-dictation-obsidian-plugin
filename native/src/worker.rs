@@ -348,7 +348,7 @@ fn diarize_utterance(
 
     let revision = transcript.revision;
     let started_at = Instant::now();
-    let outcome = match diarizer.assign(samples) {
+    match diarizer.assign(samples) {
         Ok(assignment) => {
             let speaker_index = assignment.speaker_index;
             transcript.stage_history.push(StageOutcome {
@@ -365,20 +365,21 @@ fn diarize_utterance(
                 stage_id: StageId::Diarization,
                 status: StageStatus::Ok,
             });
-            return Some(speaker_index);
+            Some(speaker_index)
         }
-        Err(error) => StageOutcome {
-            duration_ms: started_at.elapsed().as_millis() as u64,
-            is_final: true,
-            payload: None,
-            revision_in: revision,
-            revision_out: None,
-            stage_id: StageId::Diarization,
-            status: StageStatus::Failed { error },
-        },
-    };
-    transcript.stage_history.push(outcome);
-    None
+        Err(error) => {
+            transcript.stage_history.push(StageOutcome {
+                duration_ms: started_at.elapsed().as_millis() as u64,
+                is_final: true,
+                payload: None,
+                revision_in: revision,
+                revision_out: None,
+                stage_id: StageId::Diarization,
+                status: StageStatus::Failed { error },
+            });
+            None
+        }
+    }
 }
 
 fn assemble_transcript(input: TranscriptAssembly<'_>) -> Transcript {

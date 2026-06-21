@@ -142,14 +142,16 @@ fn mel_filterbank() -> Array2<f32> {
     let mel_low = hz_to_mel(LOW_FREQ);
     let mel_high = hz_to_mel(HIGH_FREQ);
     let mel_delta = (mel_high - mel_low) / (NUM_MEL_BINS as f32 + 1.0);
+    let fft_bin_mels: Vec<f32> = (0..NUM_FFT_BINS)
+        .map(|k| hz_to_mel(k as f32 * SAMPLE_RATE / FFT_SIZE as f32))
+        .collect();
 
     for m in 0..NUM_MEL_BINS {
         let left = mel_low + m as f32 * mel_delta;
         let center = mel_low + (m as f32 + 1.0) * mel_delta;
         let right = mel_low + (m as f32 + 2.0) * mel_delta;
 
-        for k in 0..NUM_FFT_BINS {
-            let mel = hz_to_mel(k as f32 * SAMPLE_RATE / FFT_SIZE as f32);
+        for (k, &mel) in fft_bin_mels.iter().enumerate() {
             if mel > left && mel < right {
                 filters[[m, k]] = if mel <= center {
                     (mel - left) / (center - left)

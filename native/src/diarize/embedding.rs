@@ -8,7 +8,10 @@
 use ort::session::Session;
 use ort::value::TensorRef;
 
-use crate::diarize::fbank::{FbankComputer, NUM_MEL_BINS};
+use crate::diarize::{
+    fbank::{FbankComputer, NUM_MEL_BINS},
+    l2_normalize,
+};
 
 const MODEL_BYTES: &[u8] = include_bytes!("../../models/speaker_embedding.onnx");
 
@@ -56,15 +59,6 @@ impl EmbeddingExtractor {
         let mut embedding = embedding.to_vec();
         l2_normalize(&mut embedding);
         Ok(embedding)
-    }
-}
-
-fn l2_normalize(v: &mut [f32]) {
-    let norm = v.iter().map(|x| x * x).sum::<f32>().sqrt();
-    if norm > 0.0 {
-        for x in v {
-            *x /= norm;
-        }
     }
 }
 

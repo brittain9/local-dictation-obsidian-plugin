@@ -13,6 +13,8 @@
 //! - a short-utterance guard: very short utterances never spawn a new speaker,
 //!   because embeddings are unreliable on little audio.
 
+use super::{l2_norm, l2_normalize};
+
 /// Cosine below which a long-enough utterance is treated as a brand-new voice.
 /// At or above it, the utterance attaches to its nearest existing speaker, so
 /// borderline matches consolidate onto the closest speaker rather than
@@ -31,8 +33,12 @@ pub struct Assignment {
 
 #[derive(Default)]
 pub struct SpeakerRegistry {
-    centroids: Vec<Vec<f32>>,
-    counts: Vec<u32>,
+    speakers: Vec<SpeakerCluster>,
+}
+
+struct SpeakerCluster {
+    centroid: Vec<f32>,
+    count: u32,
 }
 
 impl SpeakerRegistry {
@@ -51,7 +57,7 @@ impl SpeakerRegistry {
                     speaker_index: idx as u32,
                     similarity: sim,
                     is_new_speaker: false,
-                    speaker_count: self.centroids.len(),
+                    speaker_count: self.speakers.len(),
                 }
             }
             other => {
@@ -61,59 +67,49 @@ impl SpeakerRegistry {
                     speaker_index: idx as u32,
                     similarity,
                     is_new_speaker: true,
-                    speaker_count: self.centroids.len(),
+                    speaker_count: self.speakers.len(),
                 }
             }
         }
     }
 
     fn best_match(&self, embedding: &[f32]) -> Option<(usize, f32)> {
-        self.centroids
+        self.speakers
             .iter()
             .enumerate()
-            .map(|(idx, centroid)| (idx, cosine(centroid, embedding)))
+            .map(|(idx, speaker)| (idx, cosine(&speaker.centroid, embedding)))
             .max_by(|a, b| a.1.total_cmp(&b.1))
     }
 
     fn add_speaker(&mut self, embedding: &[f32]) -> usize {
         let mut centroid = embedding.to_vec();
-        normalize(&mut centroid);
-        self.centroids.push(centroid);
-        self.counts.push(1);
-        self.centroids.len() - 1
+        l2_normalize(&mut centroid);
+        self.speakers.push(SpeakerCluster { centroid, count: 1 });
+        self.speakers.len() - 1
     }
 
     fn update_centroid(&mut self, idx: usize, embedding: &[f32]) {
         let mut normalized = embedding.to_vec();
-        normalize(&mut normalized);
+        l2_normalize(&mut normalized);
 
-        let count = self.counts[idx] as f32;
-        let centroid = &mut self.centroids[idx];
-        for (c, e) in centroid.iter_mut().zip(normalized.iter()) {
+        let speaker = &mut self.speakers[idx];
+        let count = speaker.count as f32;
+        for (c, e) in speaker.centroid.iter_mut().zip(&normalized) {
             *c = (*c * count + *e) / (count + 1.0);
         }
-        normalize(centroid);
-        self.counts[idx] += 1;
+        l2_normalize(&mut speaker.centroid);
+        speaker.count += 1;
     }
 }
 
 fn cosine(a: &[f32], b: &[f32]) -> f32 {
     let dot: f32 = a.iter().zip(b).map(|(x, y)| x * y).sum();
-    let norm_a = a.iter().map(|x| x * x).sum::<f32>().sqrt();
-    let norm_b = b.iter().map(|x| x * x).sum::<f32>().sqrt();
+    let norm_a = l2_norm(a);
+    let norm_b = l2_norm(b);
     if norm_a == 0.0 || norm_b == 0.0 {
         return 0.0;
     }
     dot / (norm_a * norm_b)
-}
-
-fn normalize(v: &mut [f32]) {
-    let norm = v.iter().map(|x| x * x).sum::<f32>().sqrt();
-    if norm > 0.0 {
-        for x in v {
-            *x /= norm;
-        }
-    }
 }
 
 #[cfg(test)]

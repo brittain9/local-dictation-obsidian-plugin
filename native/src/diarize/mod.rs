@@ -17,6 +17,19 @@ use registry::SpeakerRegistry;
 
 const SAMPLE_RATE: u64 = 16_000;
 
+fn l2_norm(v: &[f32]) -> f32 {
+    v.iter().map(|x| x * x).sum::<f32>().sqrt()
+}
+
+fn l2_normalize(v: &mut [f32]) {
+    let norm = l2_norm(v);
+    if norm > 0.0 {
+        for x in v {
+            *x /= norm;
+        }
+    }
+}
+
 pub struct SessionDiarizer {
     extractor: EmbeddingExtractor,
     registry: SpeakerRegistry,
