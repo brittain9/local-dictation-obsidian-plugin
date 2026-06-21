@@ -574,6 +574,29 @@ describe('audio input device', () => {
   });
 });
 
+describe('system audio inclusion', () => {
+  it('defaults to microphone-only capture when unset', () => {
+    expect(resolvePluginSettings({}).includeSystemAudio).toBe(false);
+  });
+
+  it('reads a valid includeSystemAudio value', () => {
+    expect(resolvePluginSettings({ includeSystemAudio: true }).includeSystemAudio).toBe(true);
+  });
+
+  it('migrates legacy system audio source to include system audio', () => {
+    expect(resolvePluginSettings({ audioSource: 'system' }).includeSystemAudio).toBe(true);
+    expect(resolvePluginSettings({ audioSource: 'microphone' }).includeSystemAudio).toBe(false);
+  });
+
+  it.each([
+    ['unknown string', 'speaker'],
+    ['wrong type', 42],
+    ['null', null],
+  ])('coerces invalid includeSystemAudio to false (%s)', (_label, raw) => {
+    expect(resolvePluginSettings({ includeSystemAudio: raw }).includeSystemAudio).toBe(false);
+  });
+});
+
 describe('resetLlmPostprocessDefaults', () => {
   it('resets editable LLM defaults while preserving preset state and provider models', () => {
     const presets = [makeUserPreset({ id: 'a', label: 'Keep me' })];

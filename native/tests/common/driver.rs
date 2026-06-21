@@ -138,6 +138,7 @@ fn apply_events(app: &mut AppState, events: Vec<Event>, outcome: &mut Transcript
 fn start_session_command(session_id: &str, model_path: &Path, style: SpeakingStyle) -> Command {
     Command::StartSession {
         acceleration_preference: AccelerationPreference::CpuOnly,
+        include_system_audio: false,
         language: "en".to_string(),
         mode: ListeningMode::AlwaysOn,
         model_selection: SelectedModel::ExternalFile {

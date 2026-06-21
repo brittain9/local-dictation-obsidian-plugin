@@ -1,18 +1,22 @@
 use std::io::{self, Write};
-use std::sync::mpsc::{self, Receiver};
+use std::sync::mpsc::{self, Sender};
+use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
 
 use anyhow::{Context, Result};
 use local_dictation_sidecar::app::{AppState, ControlFlow};
 use local_dictation_sidecar::catalog::ModelCatalog;
-use local_dictation_sidecar::protocol::{Event, IncomingFrame, read_frame, write_event_frame};
+use local_dictation_sidecar::protocol::{
+    AudioFrame, Event, IncomingFrame, read_frame, write_event_frame,
+};
 use whisper_rs::install_logging_hooks;
 
 enum InputMessage {
     Eof,
     Frame(IncomingFrame),
     ProtocolError(String),
+    SystemAudio(AudioFrame),
 }
 
 fn main() -> Result<()> {
@@ -25,8 +29,20 @@ fn main() -> Result<()> {
 fn run_stdio(catalog: ModelCatalog, sidecar_version: String) -> Result<()> {
     let stdout = io::stdout();
     let mut writer = io::BufWriter::new(stdout.lock());
-    let input_rx = spawn_input_reader();
+    let (input_tx, input_rx) = mpsc::channel();
+    spawn_input_reader(input_tx.clone());
     let mut app_state = AppState::new(sidecar_version, catalog);
+
+    // Native system-audio capture produces frames on its own threads; route them
+    // into the same channel the stdin reader feeds, so they flow through the
+    // identical command/audio dispatch path. `Sender` is `!Sync`, so a `Mutex`
+    // makes the sink satisfy the `Send + Sync` bound.
+    let sink_tx = Mutex::new(input_tx);
+    app_state.set_system_audio_sink(Arc::new(move |frame| {
+        if let Ok(tx) = sink_tx.lock() {
+            let _ = tx.send(InputMessage::SystemAudio(frame));
+        }
+    }));
 
     loop {
         write_events(&mut writer, app_state.drain_pending_outputs())?;
@@ -46,6 +62,12 @@ fn run_stdio(catalog: ModelCatalog, sidecar_version: String) -> Result<()> {
                 if control_flow == ControlFlow::Shutdown {
                     break;
                 }
+            }
+            Ok(InputMessage::SystemAudio(audio_frame)) => {
+                write_events(
+                    &mut writer,
+                    app_state.handle_system_audio_frame(audio_frame),
+                )?;
             }
             Ok(InputMessage::ProtocolError(details)) => {
                 write_events(
@@ -67,9 +89,7 @@ fn run_stdio(catalog: ModelCatalog, sidecar_version: String) -> Result<()> {
     Ok(())
 }
 
-fn spawn_input_reader() -> Receiver<InputMessage> {
-    let (tx, rx) = mpsc::channel();
-
+fn spawn_input_reader(tx: Sender<InputMessage>) {
     thread::spawn(move || {
         let stdin = io::stdin();
         let mut reader = stdin.lock();
@@ -96,8 +116,6 @@ fn spawn_input_reader() -> Receiver<InputMessage> {
             }
         }
     });
-
-    rx
 }
 
 fn write_events(writer: &mut impl Write, events: Vec<Event>) -> Result<()> {

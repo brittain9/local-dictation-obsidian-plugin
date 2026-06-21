@@ -125,6 +125,7 @@ npm run install:dev -- --vault <vault> --sidecars --enable
 **Test and check:**
 ```sh
 npm run test             # TypeScript unit tests
+npm run test:system-audio # Manual hardware smoke for native system audio
 npm run typecheck        # type checking
 npm run lint             # Biome linting
 npm run check            # full quality gate (TS + Rust)

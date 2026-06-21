@@ -259,6 +259,8 @@ pub enum Command {
     StartSession {
         #[serde(default)]
         acceleration_preference: AccelerationPreference,
+        #[serde(default)]
+        include_system_audio: bool,
         language: String,
         mode: ListeningMode,
         model_selection: SelectedModel,
@@ -392,6 +394,10 @@ pub enum Event {
     SessionStateChanged {
         session_id: String,
         state: SessionState,
+    },
+    AudioLevel {
+        bands: [f32; 6],
+        session_id: String,
     },
     TranscriptReady {
         is_final: bool,
@@ -618,7 +624,8 @@ mod tests {
                 "filePath": "/tmp/model.bin"
             },
             "language": "en",
-            "sessionStartUnixMs": 1_700_000_000_000_u64
+            "sessionStartUnixMs": 1_700_000_000_000_u64,
+            "includeSystemAudio": true
         }))
         .expect("payload should serialize");
         let mut framed = Vec::new();
@@ -632,6 +639,7 @@ mod tests {
             parsed,
             IncomingFrame::Command(Command::StartSession {
                 acceleration_preference: AccelerationPreference::Auto,
+                include_system_audio: true,
                 language: "en".to_string(),
                 mode: ListeningMode::AlwaysOn,
                 model_selection: SelectedModel::ExternalFile {
@@ -675,6 +683,20 @@ mod tests {
             parsed,
             IncomingFrame::Command(Command::StartSession { .. })
         ));
+    }
+
+    #[test]
+    fn audio_level_event_serializes_for_ribbon_metering() {
+        let event = Event::AudioLevel {
+            bands: [0.0, 0.1, 0.2, 0.3, 0.4, 1.0],
+            session_id: "session-1".to_string(),
+        };
+        let mut framed = Vec::new();
+        write_event_frame(&mut framed, &event).expect("event should write");
+        let payload = &framed[FRAME_HEADER_LENGTH..];
+        let parsed: EventEnvelope = serde_json::from_slice(payload).expect("event should parse");
+
+        assert_eq!(parsed.event, event);
     }
 
     #[test]

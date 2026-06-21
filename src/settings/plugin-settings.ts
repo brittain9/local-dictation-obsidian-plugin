@@ -95,6 +95,7 @@ export interface AudioInputDevice {
 export interface PluginSettings {
   accelerationPreference: AccelerationPreference;
   audioInputDevice: AudioInputDevice | null;
+  includeSystemAudio: boolean;
   cudaLibraryPath: string;
   developerMode: boolean;
   dictationAnchor: DictationAnchor;
@@ -140,6 +141,7 @@ export interface PluginSettings {
 export const DEFAULT_PLUGIN_SETTINGS: PluginSettings = {
   accelerationPreference: 'auto',
   audioInputDevice: null,
+  includeSystemAudio: false,
   cudaLibraryPath: '',
   developerMode: false,
   dictationAnchor: 'at_cursor',
@@ -197,6 +199,7 @@ export function resolvePluginSettings(data: unknown): PluginSettings {
   return {
     accelerationPreference: readAccelerationPreference(raw.accelerationPreference),
     audioInputDevice: readAudioInputDevice(raw.audioInputDevice),
+    includeSystemAudio: readIncludeSystemAudio(raw),
     cudaLibraryPath: readString(raw.cudaLibraryPath, DEFAULT_PLUGIN_SETTINGS.cudaLibraryPath),
     developerMode: readBoolean(raw.developerMode, DEFAULT_PLUGIN_SETTINGS.developerMode),
     dictationAnchor: isDictationAnchor(raw.dictationAnchor)
@@ -369,6 +372,14 @@ function readAccelerationPreference(value: unknown): AccelerationPreference {
   }
 
   return DEFAULT_PLUGIN_SETTINGS.accelerationPreference;
+}
+
+function readIncludeSystemAudio(raw: Record<string, unknown>): boolean {
+  if (typeof raw.includeSystemAudio === 'boolean') {
+    return raw.includeSystemAudio;
+  }
+
+  return raw.audioSource === 'system';
 }
 
 function readBoolean(value: unknown, fallback: boolean): boolean {

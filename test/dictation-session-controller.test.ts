@@ -134,6 +134,12 @@ class FakeSidecarConnection {
   }
 }
 
+class FakeAudioLevelMeter {
+  public readonly bindSession = vi.fn((_sessionId: string) => {});
+  public readonly clearSession = vi.fn((_sessionId: string) => {});
+  public readonly update = vi.fn((_event: Extract<SidecarEvent, { type: 'audio_level' }>) => {});
+}
+
 describe('DictationSessionController', () => {
   it('starts a bare-UUID session and tags audio frames with that session id', async () => {
     const captureStream = new FakeCaptureStream();
@@ -154,6 +160,58 @@ describe('DictationSessionController', () => {
 
     expect(sidecarConnection.sendAudioFrame).toHaveBeenCalledWith(startPayload?.sessionId, frame);
     expect(controller.getState()).toBe('listening');
+  });
+
+  it('includes system audio without skipping microphone capture', async () => {
+    const captureStream = new FakeCaptureStream();
+    const sidecarConnection = new FakeSidecarConnection();
+    const controller = createController({
+      captureStream,
+      sidecarConnection,
+      getSettings: () =>
+        createSettings({ includeSystemAudio: true, selectedModel: createExternalModelSelection() }),
+    });
+
+    await controller.startDictation();
+
+    const startPayload = sidecarConnection.startSession.mock.calls[0]?.[0];
+    expect(startPayload).toMatchObject({ includeSystemAudio: true });
+    expect(captureStream.start).toHaveBeenCalledTimes(1);
+    expect(captureStream.isCapturing()).toBe(true);
+
+    const frame = new Uint8Array(640).fill(7);
+    captureStream.emitFrame(frame);
+
+    expect(sidecarConnection.sendAudioFrame).toHaveBeenCalledWith(startPayload?.sessionId, frame);
+    expect(controller.getState()).toBe('listening');
+  });
+
+  it('binds ribbon audio levels to the active session and ignores stale level events', async () => {
+    const audioLevelMeter = new FakeAudioLevelMeter();
+    const sidecarConnection = new FakeSidecarConnection();
+    const controller = createController({ audioLevelMeter, sidecarConnection });
+
+    await controller.startDictation();
+
+    const sessionId = sidecarConnection.startSession.mock.calls[0]?.[0].sessionId ?? '';
+    const event = {
+      bands: [0, 0.1, 0.2, 0.3, 0.4, 1] as [number, number, number, number, number, number],
+      peak: 0.9,
+      rms: 0.25,
+      sessionId,
+      type: 'audio_level' as const,
+    };
+    expect(audioLevelMeter.bindSession).toHaveBeenCalledWith(sessionId);
+
+    sidecarConnection.emit({ ...event, sessionId: crypto.randomUUID() });
+    sidecarConnection.emit(event);
+
+    expect(audioLevelMeter.update).toHaveBeenCalledTimes(1);
+    expect(audioLevelMeter.update).toHaveBeenCalledWith(event);
+
+    sidecarConnection.emit({ reason: 'user_stop', sessionId, type: 'session_stopped' });
+
+    expect(audioLevelMeter.clearSession).toHaveBeenCalledWith(sessionId);
   });
 
   it('surfaces the bare microphone-permission message when capture is denied, without the generic start-failure prefix', async () => {
@@ -869,6 +927,7 @@ describe('DictationSessionController', () => {
 });
 
 function createController({
+  audioLevelMeter = new FakeAudioLevelMeter(),
   captureStream = new FakeCaptureStream(),
   createSession,
   llmRouter = createFakeLlmRouter(),
@@ -879,6 +938,7 @@ function createController({
   onLlmCleanupFailure,
   onLlmCleanupSuccess,
 }: {
+  audioLevelMeter?: FakeAudioLevelMeter;
   captureStream?: FakeCaptureStream;
   createSession?: (session: FakeSession) => void;
   getSettings?: () => PluginSettings;
@@ -891,6 +951,7 @@ function createController({
 } = {}): DictationSessionController {
   return new DictationSessionController({
     captureStream,
+    audioLevelMeter,
     createSession: (_options: {
       callbacks: {
         onLockedNoteClosed: () => void;

@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 
 import type { AudioCaptureStream } from '../audio/audio-capture-stream';
 import { formatMicrophonePermissionDeniedMessage } from '../audio/microphone-permission-message';
+import type { SidecarAudioLevelMeter } from '../audio/sidecar-audio-level-meter';
 import type { NotePlacementOptions } from '../editor/note-surface';
 import {
   type LlmPostprocessMode,
@@ -60,6 +61,7 @@ type ControllerSession = Pick<
 
 interface ActiveSessionSnapshot {
   accelerationPreference: PluginSettings['accelerationPreference'];
+  includeSystemAudio: PluginSettings['includeSystemAudio'];
   dictationAnchor: PluginSettings['dictationAnchor'];
   listeningMode: PluginSettings['listeningMode'];
   llmFeaturesEnabled: PluginSettings['llmFeaturesEnabled'];
@@ -99,6 +101,7 @@ interface ManagedSession {
 }
 
 interface DictationSessionControllerDependencies {
+  audioLevelMeter: Pick<SidecarAudioLevelMeter, 'bindSession' | 'clearSession' | 'update'>;
   captureStream: Pick<AudioCaptureStream, 'isCapturing' | 'start' | 'stop'>;
   createSession: (options: {
     callbacks: {
@@ -270,11 +273,13 @@ export class DictationSessionController {
     };
     this.sessions.set(sessionId, entry);
     this.activeSessionId = sessionId;
+    this.dependencies.audioLevelMeter.bindSession(sessionId);
     this.dependencies.logger?.debug('session', `starting dictation session ${sessionId}`);
 
     try {
       await this.dependencies.sidecarConnection.startSession({
         accelerationPreference: snapshot.accelerationPreference,
+        includeSystemAudio: snapshot.includeSystemAudio,
         language: 'en',
         mode: snapshot.listeningMode,
         modelSelection: snapshot.modelSelection,
@@ -402,6 +407,7 @@ export class DictationSessionController {
       return;
     }
     this.activeSessionId = null;
+    this.dependencies.audioLevelMeter.clearSession(sessionId);
     this.applyUiState('idle');
     this.resetQueueTier();
     if (this.dependencies.captureStream.isCapturing()) {
@@ -432,6 +438,7 @@ export class DictationSessionController {
 
     if (this.activeSessionId === sessionId) {
       this.activeSessionId = null;
+      this.dependencies.audioLevelMeter.clearSession(sessionId);
       this.applyUiState('idle');
       this.resetQueueTier();
     }
@@ -486,6 +493,10 @@ export class DictationSessionController {
         this.handleSessionStateChanged(event);
         return;
 
+      case 'audio_level':
+        this.handleAudioLevel(event);
+        return;
+
       case 'transcript_ready':
         await this.handleTranscriptReady(event);
         return;
@@ -522,11 +533,8 @@ export class DictationSessionController {
 
     this.applySessionStateToAnchor(entry, event.state);
 
-    if (
-      event.sessionId !== this.activeSessionId ||
-      entry.phase !== 'active' ||
-      !this.dependencies.captureStream.isCapturing()
-    ) {
+    const audioActive = this.dependencies.captureStream.isCapturing();
+    if (event.sessionId !== this.activeSessionId || entry.phase !== 'active' || !audioActive) {
       return;
     }
 
@@ -808,6 +816,7 @@ export class DictationSessionController {
 
     if (event.sessionId === this.activeSessionId) {
       this.activeSessionId = null;
+      this.dependencies.audioLevelMeter.clearSession(event.sessionId);
       this.applyUiState('idle');
       this.resetQueueTier();
     }
@@ -833,6 +842,17 @@ export class DictationSessionController {
     if (this.sessions.get(sessionId) === entry) {
       this.disposeLocalSession(sessionId);
     }
+  }
+
+  private handleAudioLevel(event: Extract<SidecarEvent, { type: 'audio_level' }>): void {
+    if (event.sessionId !== this.activeSessionId) {
+      return;
+    }
+    const entry = this.sessions.get(event.sessionId);
+    if (entry === undefined || entry.phase !== 'active') {
+      return;
+    }
+    this.dependencies.audioLevelMeter.update(event);
   }
 
   private async runBatchCleanup(sessionId: string, entry: ManagedSession): Promise<void> {
@@ -1100,6 +1120,7 @@ function createSessionSnapshot(
 
   return {
     accelerationPreference: settings.accelerationPreference,
+    includeSystemAudio: settings.includeSystemAudio,
     dictationAnchor: settings.dictationAnchor,
     listeningMode: settings.listeningMode,
     llmFeaturesEnabled: settings.llmFeaturesEnabled,

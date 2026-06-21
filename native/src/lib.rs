@@ -1,6 +1,7 @@
 pub mod adapters;
 pub mod app;
 pub mod audio_metadata;
+pub mod audio_mixer;
 pub mod catalog;
 pub mod engine;
 pub mod installer;
@@ -12,6 +13,7 @@ pub mod protocol;
 pub mod runtimes;
 pub mod session;
 pub mod stages;
+pub mod system_audio;
 pub mod transcription;
 pub mod vad;
 pub mod worker;

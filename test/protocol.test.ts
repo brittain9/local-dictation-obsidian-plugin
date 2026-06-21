@@ -224,10 +224,11 @@ describe('FramedMessageParser fatal stream handling', () => {
 // Commands -------------------------------------------------------------------
 
 describe('command serialization', () => {
-  it('serializes start_session with accelerationPreference and sessionId', () => {
+  it('serializes start_session with accelerationPreference, includeSystemAudio, and sessionId', () => {
     const frame = encodeJsonFrame(
       createStartSessionCommand({
         accelerationPreference: 'auto',
+        includeSystemAudio: true,
         language: 'en',
         mode: 'always_on',
         modelSelection: externalModelSelection(),
@@ -239,6 +240,8 @@ describe('command serialization', () => {
     const payload = readPayload(frame) as Record<string, unknown>;
 
     expect(payload.accelerationPreference).toBe('auto');
+    expect(payload.includeSystemAudio).toBe(true);
+    expect(payload).not.toHaveProperty('audioSource');
     expect(payload.sessionId).toBe('session-gpu');
   });
 
@@ -277,6 +280,22 @@ describe('command serialization', () => {
 // Event parsing --------------------------------------------------------------
 
 describe('event parsing', () => {
+  it('parses audio_level events for ribbon metering', () => {
+    expect(
+      parseEventFrame(
+        JSON.stringify({
+          bands: [0, 0.1, 0.2, 0.3, 0.4, 1],
+          sessionId: SESSION_ID,
+          type: 'audio_level',
+        }),
+      ),
+    ).toEqual({
+      bands: [0, 0.1, 0.2, 0.3, 0.4, 1],
+      sessionId: SESSION_ID,
+      type: 'audio_level',
+    });
+  });
+
   it('parses system_info preserving compiled runtime and adapter shapes', () => {
     const runtimeCapabilities = {
       acceleratorDetails: {

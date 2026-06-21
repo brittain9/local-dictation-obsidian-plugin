@@ -1,7 +1,6 @@
 import { setIcon } from 'obsidian';
 
-import type { AudioBandReader } from '../audio/audio-visualizer-tap';
-import { AudioVisualizerTap } from '../audio/audio-visualizer-tap';
+import { type AudioBandReader, BAND_COUNT } from '../audio/audio-bands';
 import type { DictationControllerState } from '../dictation/dictation-session-controller';
 import type { QueueBackpressureTier } from '../sidecar/protocol';
 
@@ -19,8 +18,8 @@ type RibbonIcon = 'audio-lines' | 'mic' | 'loader' | 'mic-off';
  */
 const BAR_FLOOR = 0.25;
 const BAR_CEILINGS: readonly number[] = [1.6, 1.3, 1.4, 1.8, 1.7, 2.8];
-if (BAR_CEILINGS.length !== AudioVisualizerTap.BAND_COUNT) {
-  throw new Error('BAR_CEILINGS length must match AudioVisualizerTap.BAND_COUNT.');
+if (BAR_CEILINGS.length !== BAND_COUNT) {
+  throw new Error('BAR_CEILINGS length must match BAND_COUNT.');
 }
 const REDUCED_MOTION_QUERY = '(prefers-reduced-motion: reduce)';
 
@@ -209,7 +208,7 @@ export class DictationRibbonController {
   }
 
   private applyBands(bands: Readonly<Float32Array>): void {
-    for (let i = 0; i < AudioVisualizerTap.BAND_COUNT; i++) {
+    for (let i = 0; i < BAND_COUNT; i++) {
       const level = clamp01(bands[i] as number);
       const ceiling = BAR_CEILINGS[i] as number;
       const scale = BAR_FLOOR + (ceiling - BAR_FLOOR) * level;
@@ -218,7 +217,7 @@ export class DictationRibbonController {
   }
 
   private resetBars(): void {
-    for (let i = 0; i < AudioVisualizerTap.BAND_COUNT; i++) {
+    for (let i = 0; i < BAND_COUNT; i++) {
       this.element.style.removeProperty(`--local-stt-bar-${i + 1}`);
     }
   }

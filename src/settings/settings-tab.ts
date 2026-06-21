@@ -164,11 +164,21 @@ export class LocalSttSettingTab extends PluginSettingTab {
     // --- Transcription ---
     const transcriptionCard = createSettingGroup(containerEl, 'Transcription');
 
+    const systemAudioSupported = Platform.isWin || Platform.isLinux;
+
     this.disposeMicrophoneSection = renderMicrophonePicker(transcriptionCard, {
       access: this.access,
       isDictationBusy: this.dependencies.isDictationBusy,
       logger: this.dependencies.logger,
     });
+
+    if (systemAudioSupported) {
+      addToggleSetting(transcriptionCard, this.access, {
+        name: 'Include system audio',
+        desc: "Also capture this computer's default audio output for meetings, calls, and videos.",
+        key: 'includeSystemAudio',
+      });
+    }
 
     addEnumSetting(transcriptionCard, this.access, {
       name: 'Listening mode',

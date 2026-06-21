@@ -11,6 +11,7 @@ Private, on-device speech-to-text for Obsidian. Dictate notes with Whisper or Co
 - **Cohere Transcribe** — a [Hugging Face Open ASR Leaderboard](https://huggingface.co/spaces/hf-audio/open_asr_leaderboard)-topping engine, running locally.
 - **Whisper** — mature offline transcription with a range of size/speed options.
 - **Silero v6 VAD** — [enterprise-grade neural voice activity detection](https://github.com/snakers4/silero-vad) for real-time speech boundary detection.
+- **System audio capture** — transcribe meetings, calls, and videos from this computer's output, not just your microphone. Built in on Windows and Linux; [virtual-device setup](docs/guides/system-audio.md) covers macOS.
 - **Optional LLM transformation** — clean up, rewrite, or summarize dictated text with a local model (Ollama) or OpenRouter. Keep everything local, or auto-route a job to OpenRouter once it outgrows your machine.
 - **One-click model management** — browse, download, and remove models from inside the plugin.
 - **Hardware acceleration** — Metal on macOS, CUDA on Linux/Windows (Turing-or-newer NVIDIA GPUs).
