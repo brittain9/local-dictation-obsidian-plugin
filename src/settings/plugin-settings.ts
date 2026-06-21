@@ -204,10 +204,7 @@ export function resolvePluginSettings(data: unknown): PluginSettings {
     includeSystemAudio: readIncludeSystemAudio(raw),
     cudaLibraryPath: readString(raw.cudaLibraryPath, DEFAULT_PLUGIN_SETTINGS.cudaLibraryPath),
     developerMode: readBoolean(raw.developerMode, DEFAULT_PLUGIN_SETTINGS.developerMode),
-    diarizationEnabled: readBoolean(
-      raw.diarizationEnabled,
-      DEFAULT_PLUGIN_SETTINGS.diarizationEnabled,
-    ),
+    diarizationEnabled: readDiarizationEnabled(raw),
     dictationAnchor: isDictationAnchor(raw.dictationAnchor)
       ? raw.dictationAnchor
       : DEFAULT_PLUGIN_SETTINGS.dictationAnchor,
@@ -386,6 +383,14 @@ function readIncludeSystemAudio(raw: Record<string, unknown>): boolean {
   }
 
   return raw.audioSource === 'system';
+}
+
+function readDiarizationEnabled(raw: Record<string, unknown>): boolean {
+  if (typeof raw.diarizationEnabled === 'boolean') {
+    return raw.diarizationEnabled;
+  }
+
+  return readBoolean(raw.speakerLabelsEnabled, DEFAULT_PLUGIN_SETTINGS.diarizationEnabled);
 }
 
 function readBoolean(value: unknown, fallback: boolean): boolean {

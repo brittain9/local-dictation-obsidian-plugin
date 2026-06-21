@@ -49,6 +49,14 @@ describe('resolvePluginSettings', () => {
     expect(resolvePluginSettings({ diarizationEnabled: 'yes' }).diarizationEnabled).toBe(false);
   });
 
+  it('migrates legacy speaker label setting to diarization', () => {
+    expect(resolvePluginSettings({ speakerLabelsEnabled: true }).diarizationEnabled).toBe(true);
+    expect(
+      resolvePluginSettings({ diarizationEnabled: false, speakerLabelsEnabled: true })
+        .diarizationEnabled,
+    ).toBe(false);
+  });
+
   it('merges valid persisted values', () => {
     expect(
       resolvePluginSettings({
