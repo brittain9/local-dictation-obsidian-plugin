@@ -140,6 +140,16 @@ class FakeAudioLevelMeter {
   public readonly update = vi.fn((_event: Extract<SidecarEvent, { type: 'audio_level' }>) => {});
 }
 
+interface CreatedSessionOptions {
+  callbacks: {
+    onLockedNoteClosed: () => void;
+    onLockedNoteDeleted: () => void;
+  };
+  placement: NotePlacementOptions;
+  rendererOptions: TranscriptRenderOptions;
+  sessionId: string;
+}
+
 describe('DictationSessionController', () => {
   it('starts a bare-UUID session and tags audio frames with that session id', async () => {
     const captureStream = new FakeCaptureStream();
@@ -184,6 +194,30 @@ describe('DictationSessionController', () => {
 
     expect(sidecarConnection.sendAudioFrame).toHaveBeenCalledWith(startPayload?.sessionId, frame);
     expect(controller.getState()).toBe('listening');
+  });
+
+  it('passes transcript output settings into the session renderer', async () => {
+    const createdSessions: Array<{
+      rendererOptions: TranscriptRenderOptions;
+    }> = [];
+    const controller = createController({
+      createSession: (_session, options) => {
+        createdSessions.push({ rendererOptions: options.rendererOptions });
+      },
+      getSettings: () =>
+        createSettings({
+          selectedModel: createExternalModelSelection(),
+          speakerLabelsEnabled: true,
+          transcriptFormatting: 'smart',
+        }),
+    });
+
+    await controller.startDictation();
+
+    expect(createdSessions[0]?.rendererOptions).toMatchObject({
+      speakerLabelsEnabled: true,
+      transcriptFormatting: 'smart',
+    });
   });
 
   it('binds ribbon audio levels to the active session and ignores stale level events', async () => {
@@ -940,7 +974,7 @@ function createController({
 }: {
   audioLevelMeter?: FakeAudioLevelMeter;
   captureStream?: FakeCaptureStream;
-  createSession?: (session: FakeSession) => void;
+  createSession?: (session: FakeSession, options: CreatedSessionOptions) => void;
   getSettings?: () => PluginSettings;
   llmRouter?: LlmRouter;
   logger?: FakeLogger;
@@ -952,17 +986,9 @@ function createController({
   return new DictationSessionController({
     captureStream,
     audioLevelMeter,
-    createSession: (_options: {
-      callbacks: {
-        onLockedNoteClosed: () => void;
-        onLockedNoteDeleted: () => void;
-      };
-      placement: NotePlacementOptions;
-      rendererOptions: TranscriptRenderOptions;
-      sessionId: string;
-    }) => {
+    createSession: (_options: CreatedSessionOptions) => {
       const session = new FakeSession();
-      createSession?.(session);
+      createSession?.(session, _options);
       return session;
     },
     createLlmRouter: () => llmRouter,

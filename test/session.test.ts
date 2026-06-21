@@ -168,6 +168,68 @@ describe('Session', () => {
     ]);
   });
 
+  it('projects a clean speaker label when a single speaker is present and labels are enabled', () => {
+    const { session, surface } = createSessionHarness({
+      rendererOptions: renderOptions({ speakerLabelsEnabled: true }),
+    });
+
+    session.acceptTranscript(
+      transcript({
+        segments: [
+          {
+            endMs: 100,
+            speaker: 'SPEAKER_00',
+            startMs: 0,
+            text: 'hello',
+            timestampGranularity: 'segment',
+            timestampSource: 'engine',
+          },
+        ],
+        text: 'hello',
+        utteranceId: 'u1',
+      }),
+    );
+
+    expect(surface.documentText).toBe('Speaker 1: hello');
+    expect(surface.appendCalls[0]?.projection).toMatchObject({
+      insertedText: 'hello',
+      projectedText: 'Speaker 1: hello',
+    });
+  });
+
+  it('omits speaker labels when an utterance carries mixed speakers', () => {
+    const { session, surface } = createSessionHarness({
+      rendererOptions: renderOptions({ speakerLabelsEnabled: true }),
+    });
+
+    session.acceptTranscript(
+      transcript({
+        segments: [
+          {
+            endMs: 50,
+            speaker: 'SPEAKER_00',
+            startMs: 0,
+            text: 'hello',
+            timestampGranularity: 'segment',
+            timestampSource: 'engine',
+          },
+          {
+            endMs: 100,
+            speaker: 'SPEAKER_01',
+            startMs: 50,
+            text: 'there',
+            timestampGranularity: 'segment',
+            timestampSource: 'engine',
+          },
+        ],
+        text: 'hello there',
+        utteranceId: 'u1',
+      }),
+    );
+
+    expect(surface.documentText).toBe('hello there');
+  });
+
   it('does not project duplicate or stale revisions', () => {
     const { session, surface } = createSessionHarness();
 

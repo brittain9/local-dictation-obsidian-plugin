@@ -127,6 +127,7 @@ export interface PluginSettings {
   sidecarPathOverride: string;
   sidecarRequestTimeoutSeconds: number;
   sidecarStartupTimeoutSeconds: number;
+  speakerLabelsEnabled: boolean;
   speakingStyle: SpeakingStyle;
   timestampClock: TimestampClock;
   timestampDensity: TimestampDensity;
@@ -174,6 +175,7 @@ export const DEFAULT_PLUGIN_SETTINGS: PluginSettings = {
   sidecarPathOverride: '',
   sidecarRequestTimeoutSeconds: 300,
   sidecarStartupTimeoutSeconds: 4,
+  speakerLabelsEnabled: false,
   speakingStyle: 'balanced',
   timestampClock: 'elapsed',
   timestampDensity: 'sparse',
@@ -296,6 +298,10 @@ export function resolvePluginSettings(data: unknown): PluginSettings {
     sidecarStartupTimeoutSeconds: readPositiveInteger(
       raw.sidecarStartupTimeoutSeconds,
       DEFAULT_PLUGIN_SETTINGS.sidecarStartupTimeoutSeconds,
+    ),
+    speakerLabelsEnabled: readBoolean(
+      raw.speakerLabelsEnabled,
+      DEFAULT_PLUGIN_SETTINGS.speakerLabelsEnabled,
     ),
     speakingStyle: isSpeakingStyle(raw.speakingStyle)
       ? raw.speakingStyle

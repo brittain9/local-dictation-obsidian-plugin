@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   formatLandmark,
+  formatSpeakerLabel,
   SMART_PARAGRAPH_PAUSE_MS,
   type TranscriptAppendInput,
   TranscriptRenderer,
@@ -26,6 +27,21 @@ describe('formatLandmark', () => {
 
   it('formats wall-clock landmarks without seconds', () => {
     expect(formatLandmark(65_000, DEFAULT_SESSION_START_MS, 'wallclock')).toBe('(14:33)');
+  });
+});
+
+describe('formatSpeakerLabel', () => {
+  it.each([
+    ['SPEAKER_00', 'Speaker 1'],
+    ['speaker-02', 'Speaker 3'],
+    ['  Alice:  ', 'Alice'],
+    ['Ava\nChen', 'Ava Chen'],
+  ])('formats %s as %s', (raw, expected) => {
+    expect(formatSpeakerLabel(raw)).toBe(expected);
+  });
+
+  it('drops empty speaker labels', () => {
+    expect(formatSpeakerLabel('   ')).toBeNull();
   });
 });
 
@@ -216,6 +232,7 @@ describe('TranscriptRenderer', () => {
 
   it('uses wall-clock inline landmarks', () => {
     const renderer = new TranscriptRenderer({
+      speakerLabelsEnabled: false,
       timestamps: timestamps({ clock: 'wallclock', enabled: true, header: false }),
       transcriptFormatting: 'space',
     });
@@ -223,6 +240,36 @@ describe('TranscriptRenderer', () => {
     const first = planAndCommit(renderer, { text: 'first', utteranceStartMsInSession: 60_000 });
 
     expect(first.projectedText).toBe('(14:33) first');
+  });
+
+  it('prefixes text with a speaker label when speaker labels are enabled', () => {
+    const renderer = new TranscriptRenderer({
+      speakerLabelsEnabled: true,
+      timestamps: timestamps({ enabled: true, header: false }),
+      transcriptFormatting: 'space',
+    });
+
+    const first = planAndCommit(renderer, {
+      speaker: 'SPEAKER_00',
+      text: 'hello there',
+      utteranceStartMsInSession: 0,
+    });
+
+    expect(first.projectedText).toBe('(0:00) Speaker 1: hello there');
+    expect(first.insertedText).toBe('hello there');
+    expect(first.textStartOffset).toBe('(0:00) Speaker 1: '.length);
+  });
+
+  it('ignores speaker metadata when speaker labels are disabled', () => {
+    const renderer = new TranscriptRenderer({
+      speakerLabelsEnabled: false,
+      timestamps: timestamps(),
+      transcriptFormatting: 'space',
+    });
+
+    expect(planAndCommit(renderer, { speaker: 'SPEAKER_00', text: 'hello' }).projectedText).toBe(
+      'hello',
+    );
   });
 });
 

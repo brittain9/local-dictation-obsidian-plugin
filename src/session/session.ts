@@ -16,6 +16,7 @@ import {
 import type { PluginLogger } from '../shared/plugin-logger';
 import { truncateLeadingText } from '../shared/text-truncation';
 import {
+  formatSpeakerLabel,
   type TranscriptInsertProjection,
   TranscriptRenderer,
   type TranscriptRenderOptions,
@@ -335,6 +336,7 @@ export class Session {
     const projection = this.renderer.planAppend(
       {
         pauseMsBeforeUtterance: revision.pauseMsBeforeUtterance,
+        speaker: resolveRevisionSpeaker(revision),
         text: revision.text,
         utteranceId: revision.utteranceId,
         utteranceStartMsInSession: revision.utteranceStartMsInSession,
@@ -642,6 +644,26 @@ function formatRawPostprocessCallout(rawText: string): string {
     .join('\n');
 
   return `> [!note]- raw\n${quoted}`;
+}
+
+function resolveRevisionSpeaker(revision: TranscriptRevision): string | null {
+  const labels = new Set<string>();
+
+  for (const segment of revision.segments) {
+    if (segment.text.trim().length === 0) {
+      continue;
+    }
+    const label = formatSpeakerLabel(segment.speaker);
+    if (label !== null) {
+      labels.add(label);
+    }
+  }
+
+  if (labels.size !== 1) {
+    return null;
+  }
+
+  return labels.values().next().value ?? null;
 }
 
 function missingNewlines(tailContent: string, requiredTrailingNewlines: number): string {
