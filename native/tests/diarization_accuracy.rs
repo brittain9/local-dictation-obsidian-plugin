@@ -189,6 +189,58 @@ fn distinct_voices_each_get_their_own_speaker() {
     );
 }
 
+/// Signal-to-noise ratio (dB) for the noise-robustness gate. 10 dB is audibly
+/// noisy but still clearly intelligible speech — a realistic floor for a usable
+/// microphone or system-audio capture, well below the studio-clean fixtures.
+/// The model clusters perfectly well past this, so the gate has margin and acts
+/// as a regression guard rather than a knife-edge.
+const NOISE_SNR_DB: f32 = 10.0;
+
+/// Clustering budget under noise. Embeddings degrade as SNR drops, so this is
+/// looser than the clean budget; the gate still demands the right speaker count
+/// and a strong majority of utterances attributed correctly from both sides.
+const NOISY_CLUSTERING_BUDGET: f64 = 0.90;
+
+#[test]
+fn distinct_speakers_still_separate_under_moderate_noise() {
+    let noisy: Vec<Utterance> = diarize::speaker_sources()
+        .into_iter()
+        .map(|source| Utterance {
+            samples: diarize::with_white_noise(&source.samples, NOISE_SNR_DB),
+            speaker: source.speaker,
+        })
+        .collect();
+    let expected = noisy.len();
+
+    let result = diarize::diarize_scenario(&noisy);
+    eprintln!(
+        "[diarization:noise] snr={NOISE_SNR_DB}dB speakers={}/{} purity={:.3} coverage={:.3} (budget {:.3})\n{}",
+        result.predicted_speaker_count(),
+        expected,
+        result.purity(),
+        result.coverage(),
+        NOISY_CLUSTERING_BUDGET,
+        result.trace(),
+    );
+
+    assert_eq!(
+        result.predicted_speaker_count(),
+        expected,
+        "under {NOISE_SNR_DB} dB noise the diarizer found {} speakers, expected {expected}",
+        result.predicted_speaker_count(),
+    );
+    assert!(
+        result.purity() >= NOISY_CLUSTERING_BUDGET,
+        "noisy purity {:.3} fell below budget {NOISY_CLUSTERING_BUDGET:.3}",
+        result.purity(),
+    );
+    assert!(
+        result.coverage() >= NOISY_CLUSTERING_BUDGET,
+        "noisy coverage {:.3} fell below budget {NOISY_CLUSTERING_BUDGET:.3}",
+        result.coverage(),
+    );
+}
+
 /// The true end-to-end gate: real audio in, transcript text *and* a speaker
 /// label out, through the whole sidecar (VAD → whisper → diarization) in one
 /// session. The hermetic tests above isolate the clustering; this proves the

@@ -72,6 +72,34 @@ pub fn split(samples: &[f32], parts: usize) -> Vec<Vec<f32>> {
         .collect()
 }
 
+/// Add reproducible white noise to `samples` at the requested signal-to-noise
+/// ratio (dB), simulating a noisier-than-studio capture (background hum, fan,
+/// room tone) — the conditions real microphone and system-audio captures hit,
+/// not the pristine read speech the clean gates use. The noise is a fixed-seed
+/// deterministic sequence so the test is stable run to run.
+pub fn with_white_noise(samples: &[f32], snr_db: f32) -> Vec<f32> {
+    if samples.is_empty() {
+        return Vec::new();
+    }
+    let signal_power = samples.iter().map(|s| s * s).sum::<f32>() / samples.len() as f32;
+    let noise_power = signal_power / 10f32.powf(snr_db / 10.0);
+    // Uniform noise on [-amplitude, amplitude] has variance amplitude²/3.
+    let amplitude = (3.0 * noise_power).sqrt();
+
+    let mut state: u32 = 0x9E37_79B9;
+    samples
+        .iter()
+        .map(|&sample| {
+            // xorshift32 — a tiny deterministic PRNG, no extra dependency.
+            state ^= state << 13;
+            state ^= state >> 17;
+            state ^= state << 5;
+            let unit = (state as f32 / u32::MAX as f32) * 2.0 - 1.0;
+            sample + unit * amplitude
+        })
+        .collect()
+}
+
 /// Outcome of diarizing an ordered scenario: per-utterance ground-truth label,
 /// predicted speaker index, and the cosine similarity of the winning match.
 pub struct ScenarioResult {
