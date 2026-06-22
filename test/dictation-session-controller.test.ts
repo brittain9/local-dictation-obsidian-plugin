@@ -241,7 +241,7 @@ describe('DictationSessionController', () => {
 
     await controller.startDictation();
 
-    expect(notice).toHaveBeenCalledWith(expect.stringContaining('No microphone found'));
+    expect(notice).toHaveBeenCalledWith(expect.stringContaining('No microphone detected'));
     expect(notice).not.toHaveBeenCalledWith(
       expect.stringContaining('Failed to start the dictation session'),
     );
@@ -268,7 +268,7 @@ describe('DictationSessionController', () => {
 
     await controller.startDictation();
 
-    expect(notice).toHaveBeenCalledWith(expect.stringContaining('No microphone found'));
+    expect(notice).toHaveBeenCalledWith(expect.stringContaining('No microphone detected'));
     expect(sidecarConnection.ensureStarted).not.toHaveBeenCalled();
     expect(sidecarConnection.startSession).not.toHaveBeenCalled();
     expect(captureStream.start).not.toHaveBeenCalled();

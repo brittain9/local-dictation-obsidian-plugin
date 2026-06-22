@@ -23,7 +23,7 @@ export function formatMicrophoneCaptureErrorMessage(error: unknown): string | nu
       // getUserMedia found zero input devices, distinct from permission denial.
       // On Linux this is usually no mic connected/enabled, or the audio service
       // not seeing PipeWire/PulseAudio inputs.
-      return 'No microphone found. Obsidian sees no audio input device. Connect or enable a microphone in your OS sound settings, then try again.';
+      return 'No microphone detected. Plug in a microphone or USB headset, or enable an input device in your OS sound settings, then try again.';
     case 'NotReadableError':
       // The device exists but the OS refused to open it (hardware error or held
       // exclusively by another process).
