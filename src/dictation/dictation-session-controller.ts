@@ -1087,7 +1087,6 @@ export class DictationSessionController {
   }
 
   private handleError(message: string, error: unknown): void {
-    this.dependencies.logger?.error('session', message, error);
     this.applyUiState('error');
 
     // Microphone-capture failures get specific, actionable copy that stands on
@@ -1095,10 +1094,12 @@ export class DictationSessionController {
     // the instructions. The Settings mic picker shows the same copy for parity.
     const microphoneMessage = formatMicrophoneCaptureErrorMessage(error);
     if (microphoneMessage !== null) {
+      this.dependencies.logger?.warn('session', message, formatErrorMessage(error));
       this.dependencies.notice(microphoneMessage);
       return;
     }
 
+    this.dependencies.logger?.error('session', message, error);
     this.dependencies.notice(`${message}: ${formatErrorMessage(error)}`);
   }
 }

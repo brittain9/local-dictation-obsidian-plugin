@@ -235,8 +235,9 @@ describe('DictationSessionController', () => {
     captureStream.start.mockRejectedValueOnce(
       Object.assign(new Error('Requested device not found'), { name: 'NotFoundError' }),
     );
+    const logger = new FakeLogger();
     const notice = vi.fn();
-    const controller = createController({ captureStream, notice });
+    const controller = createController({ captureStream, logger, notice });
 
     await controller.startDictation();
 
@@ -244,15 +245,23 @@ describe('DictationSessionController', () => {
     expect(notice).not.toHaveBeenCalledWith(
       expect.stringContaining('Failed to start the dictation session'),
     );
+    expect(logger.warn).toHaveBeenCalledWith(
+      'session',
+      'Failed to start the dictation session',
+      'Requested device not found',
+    );
+    expect(logger.error).not.toHaveBeenCalled();
   });
 
   it('does not start the sidecar session when device enumeration finds no microphone', async () => {
     const captureStream = new FakeCaptureStream();
+    const logger = new FakeLogger();
     const sidecarConnection = new FakeSidecarConnection();
     const notice = vi.fn();
     const controller = createController({
       captureStream,
       countAudioInputDevices: async () => 0,
+      logger,
       notice,
       sidecarConnection,
     });
@@ -264,6 +273,12 @@ describe('DictationSessionController', () => {
     expect(sidecarConnection.startSession).not.toHaveBeenCalled();
     expect(captureStream.start).not.toHaveBeenCalled();
     expect(controller.getState()).toBe('error');
+    expect(logger.warn).toHaveBeenCalledWith(
+      'session',
+      'Failed to start the dictation session',
+      'No audio input devices found.',
+    );
+    expect(logger.error).not.toHaveBeenCalled();
   });
 
   it('accepts late transcript events from a stopped session after a new session starts', async () => {
