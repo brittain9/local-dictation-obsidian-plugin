@@ -8,6 +8,7 @@ import type {
 export const SMART_PARAGRAPH_PAUSE_MS = 3000;
 
 export interface TranscriptRenderOptions {
+  readonly speakerLabelsEnabled?: boolean;
   readonly timestamps: TranscriptTimestampRenderOptions;
   readonly transcriptFormatting: TranscriptFormattingMode;
 }
@@ -23,6 +24,7 @@ export interface TranscriptTimestampRenderOptions {
 
 export interface TranscriptAppendInput {
   readonly pauseMsBeforeUtterance: number | null;
+  readonly speaker?: string | null;
   readonly text: string;
   readonly utteranceId: UtteranceId;
   readonly utteranceStartMsInSession: number;
@@ -71,7 +73,10 @@ export class TranscriptRenderer {
         }
       : null;
     const timestampPrefix = emittedTimestamp === null ? '' : `${emittedTimestamp.text} `;
-    const prefix = `${boundary}${sessionHeader}${timestampPrefix}`;
+    const speakerPrefix = this.options.speakerLabelsEnabled
+      ? formatSpeakerPrefix(input.speaker)
+      : '';
+    const prefix = `${boundary}${sessionHeader}${timestampPrefix}${speakerPrefix}`;
     const textStartOffset = prefix.length;
     const projectedText = `${prefix}${input.text}`;
 
@@ -179,8 +184,32 @@ export function formatSessionHeader(sessionStartUnixMs: number): string {
   )}:${padTwo(date.getMinutes())}]`;
 }
 
+export function formatSpeakerLabel(speaker: string | null | undefined): string | null {
+  const normalized = speaker?.trim().replace(/\s+/gu, ' ').replace(/:+$/u, '').trim() ?? '';
+  if (normalized.length === 0) {
+    return null;
+  }
+
+  const zeroIndexedMatch = /^speaker[_-]0*(\d+)$/iu.exec(normalized);
+  if (zeroIndexedMatch !== null) {
+    return `Speaker ${Number.parseInt(zeroIndexedMatch[1] ?? '0', 10) + 1}`;
+  }
+
+  const numberedMatch = /^speaker 0*(\d+)$/iu.exec(normalized);
+  if (numberedMatch !== null) {
+    return `Speaker ${Number.parseInt(numberedMatch[1] ?? '0', 10)}`;
+  }
+
+  return normalized;
+}
+
 function padTwo(value: number): string {
   return value.toString().padStart(2, '0');
+}
+
+function formatSpeakerPrefix(speaker: string | null | undefined): string {
+  const label = formatSpeakerLabel(speaker);
+  return label === null ? '' : `${label}: `;
 }
 
 function spaceIfTailAbutsText(tailContent: string): string {

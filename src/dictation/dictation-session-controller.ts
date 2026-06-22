@@ -78,6 +78,7 @@ interface ActiveSessionSnapshot {
   modelSelection: NonNullable<PluginSettings['selectedModel']>;
   modelStorePathOverride: string;
   sessionStartUnixMs: number;
+  speakerLabelsEnabled: PluginSettings['speakerLabelsEnabled'];
   speakingStyle: PluginSettings['speakingStyle'];
   timestamps: TranscriptRenderOptions['timestamps'];
   transcriptFormatting: PluginSettings['transcriptFormatting'];
@@ -251,6 +252,7 @@ export class DictationSessionController {
         },
         placement: { anchor: snapshot.dictationAnchor },
         rendererOptions: {
+          speakerLabelsEnabled: snapshot.speakerLabelsEnabled,
           timestamps: snapshot.timestamps,
           transcriptFormatting: snapshot.transcriptFormatting,
         },
@@ -1137,6 +1139,7 @@ function createSessionSnapshot(
     modelSelection: selectedModel,
     modelStorePathOverride: settings.modelStorePathOverride,
     sessionStartUnixMs,
+    speakerLabelsEnabled: settings.speakerLabelsEnabled,
     speakingStyle: settings.speakingStyle,
     timestamps: {
       clock: settings.timestampClock,

@@ -161,26 +161,26 @@ export class LocalSttSettingTab extends PluginSettingTab {
       onModelInfo: this.buildModelInfoCallback(manager, settings),
     });
 
-    // --- Transcription ---
-    const transcriptionCard = createSettingGroup(containerEl, 'Transcription');
+    // --- Capture ---
+    const captureCard = createSettingGroup(containerEl, 'Capture');
 
     const systemAudioSupported = Platform.isWin || Platform.isLinux;
 
-    this.disposeMicrophoneSection = renderMicrophonePicker(transcriptionCard, {
+    this.disposeMicrophoneSection = renderMicrophonePicker(captureCard, {
       access: this.access,
       isDictationBusy: this.dependencies.isDictationBusy,
       logger: this.dependencies.logger,
     });
 
     if (systemAudioSupported) {
-      addToggleSetting(transcriptionCard, this.access, {
+      addToggleSetting(captureCard, this.access, {
         name: 'Include system audio',
         desc: "Also capture this computer's default audio output for meetings, calls, and videos.",
         key: 'includeSystemAudio',
       });
     }
 
-    addEnumSetting(transcriptionCard, this.access, {
+    addEnumSetting(captureCard, this.access, {
       name: 'Listening mode',
       desc: 'Continuous, or stop after one sentence.',
       key: 'listeningMode',
@@ -188,7 +188,7 @@ export class LocalSttSettingTab extends PluginSettingTab {
       isValid: isListeningMode,
     });
 
-    addEnumSetting(transcriptionCard, this.access, {
+    addEnumSetting(captureCard, this.access, {
       name: 'Speaking style',
       desc: "How quickly the engine decides you've stopped speaking.",
       tooltip:
@@ -198,7 +198,8 @@ export class LocalSttSettingTab extends PluginSettingTab {
       isValid: isSpeakingStyle,
     });
 
-    addEnumSetting(transcriptionCard, this.access, {
+    const outputCard = createSettingGroup(containerEl, 'Transcript output');
+    addEnumSetting(outputCard, this.access, {
       name: 'Insert text',
       desc: 'Where dictated text appears.',
       key: 'dictationAnchor',
@@ -206,13 +207,21 @@ export class LocalSttSettingTab extends PluginSettingTab {
       isValid: isDictationAnchor,
     });
 
-    addEnumSetting(transcriptionCard, this.access, {
+    addEnumSetting(outputCard, this.access, {
       name: 'Transcript formatting',
       desc: 'How phrases are joined together.',
       tooltip: 'Smart paragraphs use longer pauses as paragraph breaks.',
       key: 'transcriptFormatting',
       options: TRANSCRIPT_FORMATTING_OPTIONS,
       isValid: isTranscriptFormattingMode,
+    });
+
+    addToggleSetting(outputCard, this.access, {
+      name: 'Speaker labels',
+      desc: 'Prefix phrases with speaker names when the engine provides them.',
+      tooltip:
+        'This only formats speaker metadata that a compatible local engine sends; it does not enable diarization by itself.',
+      key: 'speakerLabelsEnabled',
     });
 
     const timestampsCard = createSettingGroup(containerEl, 'Timestamps');
