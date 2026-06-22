@@ -1,7 +1,9 @@
 import { randomUUID } from 'node:crypto';
 
+import { Platform } from 'obsidian';
+
 import type { AudioCaptureStream } from '../audio/audio-capture-stream';
-import { formatMicrophonePermissionDeniedMessage } from '../audio/microphone-permission-message';
+import { formatMicrophoneCaptureErrorMessage } from '../audio/microphone-permission-message';
 import type { SidecarAudioLevelMeter } from '../audio/sidecar-audio-level-meter';
 import type { NotePlacementOptions } from '../editor/note-surface';
 import {
@@ -121,6 +123,7 @@ interface DictationSessionControllerDependencies {
   onLlmCleanupSuccess?: () => void;
   onModelMissing?: () => void;
   onSidecarMissing?: () => void;
+  countAudioInputDevices?: () => Promise<number | null>;
   setRibbonQueueTier: (tier: QueueBackpressureTier) => void;
   setRibbonState: (state: DictationControllerState) => void;
   sidecarConnection: Pick<
@@ -211,6 +214,21 @@ export class DictationSessionController {
 
     this.applyUiState('starting');
 
+    const settings = this.dependencies.getSettings();
+    if (settings.selectedModel === null) {
+      this.dependencies.logger?.debug('session', 'no model selected; prompting model picker');
+      this.applyUiState('idle');
+      this.dependencies.onModelMissing?.();
+      return;
+    }
+
+    try {
+      await this.assertMicrophoneInputAvailable();
+    } catch (error) {
+      this.handleError('Failed to start the dictation session', error);
+      return;
+    }
+
     try {
       await this.dependencies.sidecarConnection.ensureStarted();
     } catch (error) {
@@ -221,14 +239,6 @@ export class DictationSessionController {
         return;
       }
       this.handleError('Failed to start the dictation session', error);
-      return;
-    }
-
-    const settings = this.dependencies.getSettings();
-    if (settings.selectedModel === null) {
-      this.dependencies.logger?.debug('session', 'no model selected; prompting model picker');
-      this.applyUiState('idle');
-      this.dependencies.onModelMissing?.();
       return;
     }
 
@@ -385,6 +395,20 @@ export class DictationSessionController {
       await this.cancelSession(sessionId);
     }
     this.handleError('Failed to start the dictation session', error);
+  }
+
+  private async assertMicrophoneInputAvailable(): Promise<void> {
+    if (!Platform.isLinux) {
+      return;
+    }
+
+    const countAudioInputDevices =
+      this.dependencies.countAudioInputDevices ?? countBrowserAudioInputDevices;
+    const audioInputCount = await countAudioInputDevices();
+
+    if (audioInputCount === 0) {
+      throw createMicrophoneNotFoundError();
+    }
   }
 
   private async cancelSession(sessionId: string): Promise<void> {
@@ -1066,24 +1090,17 @@ export class DictationSessionController {
     this.dependencies.logger?.error('session', message, error);
     this.applyUiState('error');
 
-    // The microphone-permission copy is a complete, actionable sentence on its
-    // own; prefixing it with the generic start-failure message just buries the
-    // instructions. The Settings mic picker shows it bare for the same reason.
-    if (isMicrophonePermissionDeniedError(error)) {
-      this.dependencies.notice(formatMicrophonePermissionDeniedMessage());
+    // Microphone-capture failures get specific, actionable copy that stands on
+    // its own; prefixing it with the generic start-failure message just buries
+    // the instructions. The Settings mic picker shows the same copy for parity.
+    const microphoneMessage = formatMicrophoneCaptureErrorMessage(error);
+    if (microphoneMessage !== null) {
+      this.dependencies.notice(microphoneMessage);
       return;
     }
 
     this.dependencies.notice(`${message}: ${formatErrorMessage(error)}`);
   }
-}
-
-function isMicrophonePermissionDeniedError(error: unknown): boolean {
-  return (
-    typeof error === 'object' &&
-    error !== null &&
-    (error as { name?: unknown }).name === 'NotAllowedError'
-  );
 }
 
 function createSessionId(): string {
@@ -1092,6 +1109,26 @@ function createSessionId(): string {
 
 function isCapacityExceededStartError(error: unknown): boolean {
   return error instanceof SidecarError && error.code === 'session_capacity_exceeded';
+}
+
+async function countBrowserAudioInputDevices(): Promise<number | null> {
+  if (typeof window === 'undefined') {
+    return null;
+  }
+
+  const mediaDevices = window.navigator?.mediaDevices;
+  if (mediaDevices?.enumerateDevices === undefined) {
+    return null;
+  }
+
+  const devices = await mediaDevices.enumerateDevices();
+  return devices.filter((device) => device.kind === 'audioinput').length;
+}
+
+function createMicrophoneNotFoundError(): Error {
+  const error = new Error('No audio input devices found.');
+  error.name = 'NotFoundError';
+  return error;
 }
 
 function createSessionSnapshot(

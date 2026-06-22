@@ -230,6 +230,42 @@ describe('DictationSessionController', () => {
     );
   });
 
+  it('surfaces a descriptive no-microphone message when capture finds no input device', async () => {
+    const captureStream = new FakeCaptureStream();
+    captureStream.start.mockRejectedValueOnce(
+      Object.assign(new Error('Requested device not found'), { name: 'NotFoundError' }),
+    );
+    const notice = vi.fn();
+    const controller = createController({ captureStream, notice });
+
+    await controller.startDictation();
+
+    expect(notice).toHaveBeenCalledWith(expect.stringContaining('No microphone found'));
+    expect(notice).not.toHaveBeenCalledWith(
+      expect.stringContaining('Failed to start the dictation session'),
+    );
+  });
+
+  it('does not start the sidecar session when device enumeration finds no microphone', async () => {
+    const captureStream = new FakeCaptureStream();
+    const sidecarConnection = new FakeSidecarConnection();
+    const notice = vi.fn();
+    const controller = createController({
+      captureStream,
+      countAudioInputDevices: async () => 0,
+      notice,
+      sidecarConnection,
+    });
+
+    await controller.startDictation();
+
+    expect(notice).toHaveBeenCalledWith(expect.stringContaining('No microphone found'));
+    expect(sidecarConnection.ensureStarted).not.toHaveBeenCalled();
+    expect(sidecarConnection.startSession).not.toHaveBeenCalled();
+    expect(captureStream.start).not.toHaveBeenCalled();
+    expect(controller.getState()).toBe('error');
+  });
+
   it('accepts late transcript events from a stopped session after a new session starts', async () => {
     const sidecarConnection = new FakeSidecarConnection();
     const sessions: FakeSession[] = [];
@@ -844,7 +880,9 @@ describe('DictationSessionController', () => {
     const controller = createController({ captureStream, sidecarConnection });
 
     const startPromise = controller.startDictation();
-    await Promise.resolve();
+    await vi.waitFor(() => {
+      expect(sidecarConnection.startSession).toHaveBeenCalledTimes(1);
+    });
     const sessionId = sidecarConnection.startSession.mock.calls[0]?.[0].sessionId ?? '';
     await controller.stopDictation();
 
@@ -929,6 +967,7 @@ describe('DictationSessionController', () => {
 function createController({
   audioLevelMeter = new FakeAudioLevelMeter(),
   captureStream = new FakeCaptureStream(),
+  countAudioInputDevices,
   createSession,
   llmRouter = createFakeLlmRouter(),
   getSettings = () => createSettings({ selectedModel: createExternalModelSelection() }),
@@ -940,6 +979,7 @@ function createController({
 }: {
   audioLevelMeter?: FakeAudioLevelMeter;
   captureStream?: FakeCaptureStream;
+  countAudioInputDevices?: () => Promise<number | null>;
   createSession?: (session: FakeSession) => void;
   getSettings?: () => PluginSettings;
   llmRouter?: LlmRouter;
@@ -952,6 +992,7 @@ function createController({
   return new DictationSessionController({
     captureStream,
     audioLevelMeter,
+    ...(countAudioInputDevices !== undefined ? { countAudioInputDevices } : {}),
     createSession: (_options: {
       callbacks: {
         onLockedNoteClosed: () => void;

@@ -1,6 +1,6 @@
 import { Notice, Setting } from 'obsidian';
 
-import { formatMicrophonePermissionDeniedMessage } from '../audio/microphone-permission-message';
+import { formatMicrophoneCaptureErrorMessage } from '../audio/microphone-permission-message';
 import type { PluginLogger } from '../shared/plugin-logger';
 import type { AudioInputDevice } from './plugin-settings';
 import type { SettingAccess } from './setting-helpers';
@@ -210,12 +210,10 @@ export function renderMicrophonePicker(
       }
       await enumerate();
     } catch (error) {
-      const name = (error as { name?: unknown }).name;
-      if (name === 'NotAllowedError') {
-        new Notice(formatMicrophonePermissionDeniedMessage());
-      } else {
-        new Notice('Could not detect microphones. Check your system audio settings.');
-      }
+      new Notice(
+        formatMicrophoneCaptureErrorMessage(error) ??
+          'Could not detect microphones. Check your system audio settings.',
+      );
       deps.logger?.warn('audio', 'priming microphone permission failed', error);
     }
   }
