@@ -848,7 +848,7 @@ checksum = "92daf443525c4cce67b150400bc2316076100ce0b3686209eb8cf3c31612e6f0"
 
 [[package]]
 name = "local-dictation-sidecar"
-version = "2026.6.11"
+version = "2026.6.23"
 dependencies = [
  "anyhow",
  "criterion",
