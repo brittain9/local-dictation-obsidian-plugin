@@ -31,7 +31,7 @@ import type {
 } from '../sidecar/protocol';
 import { type SidecarConnection, SidecarError } from '../sidecar/sidecar-connection';
 import { SidecarNotInstalledError } from '../sidecar/sidecar-paths';
-import type { TranscriptRenderOptions } from '../transcript/renderer';
+import { buildSpeakerSpans, type TranscriptRenderOptions } from '../transcript/renderer';
 
 export interface ProviderContextSource {
   kind: 'note_text' | 'prior_utterance';
@@ -694,7 +694,15 @@ export class DictationSessionController {
   ): Promise<TranscriptRevision | null> {
     const baseRevision = toTranscriptRevision(event);
 
-    if (!shouldRunProviderPerUtteranceCleanup(entry.snapshot, event)) {
+    // A single-text rewrite cannot be re-attributed across speakers without
+    // losing who-said-what, so per-utterance cleanup is skipped when diarization
+    // splits an utterance into multiple speaker spans; the labelled raw spans are
+    // rendered and batch whole-session cleanup still applies. Single-speaker
+    // utterances clean as before.
+    if (
+      !shouldRunProviderPerUtteranceCleanup(entry.snapshot, event) ||
+      baseRevision.spans.length > 1
+    ) {
       return baseRevision;
     }
 
@@ -733,6 +741,7 @@ export class DictationSessionController {
       return {
         ...baseRevision,
         llmPostprocessRawText: entry.snapshot.llmPostprocessShowRawBelow ? rawText : null,
+        spans: buildSpeakerSpans(baseRevision.segments, cleanedText, baseRevision.speakerIndex),
         stageResults: [
           ...baseRevision.stageResults,
           createProviderStageOutcome({
@@ -1221,6 +1230,7 @@ function shouldRunProviderPerUtteranceCleanup(
 function toTranscriptRevision(event: TranscriptReadyEvent): TranscriptRevision {
   // RAW-BELOW is TS-only now: the success path in resolveTranscriptRevision sets
   // llmPostprocessRawText when a cleanup ran and showRawBelow is on.
+  const text = event.text.trim();
   return {
     isFinal: event.isFinal,
     llmPostprocessRawText: null,
@@ -1229,8 +1239,9 @@ function toTranscriptRevision(event: TranscriptReadyEvent): TranscriptRevision {
     segments: event.segments,
     sessionId: event.sessionId,
     speakerIndex: event.speakerIndex,
+    spans: buildSpeakerSpans(event.segments, text, event.speakerIndex),
     stageResults: event.stageResults,
-    text: event.text.trim(),
+    text,
     utteranceEndMsInSession: event.utteranceEndMsInSession,
     utteranceId: event.utteranceId,
     utteranceIndex: event.utteranceIndex,

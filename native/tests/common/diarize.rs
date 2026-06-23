@@ -14,7 +14,7 @@
 use std::collections::HashMap;
 use std::hash::Hash;
 
-use local_dictation_sidecar::diarize::SessionDiarizer;
+use local_dictation_sidecar::diarize::{SessionDiarizer, SpeakerTurn};
 
 use super::audio::decode_wav_16k_mono;
 use super::manifest::Corpus;
@@ -100,32 +100,45 @@ pub fn with_white_noise(samples: &[f32], snr_db: f32) -> Vec<f32> {
         .collect()
 }
 
-/// Outcome of diarizing an ordered scenario: per-utterance ground-truth label,
-/// predicted speaker index, and the cosine similarity of the winning match.
+/// Outcome of diarizing an ordered scenario: per-utterance ground-truth label
+/// and the predicted (dominant) speaker index.
 pub struct ScenarioResult {
     pub truth: Vec<String>,
     pub predicted: Vec<u32>,
-    pub similarity: Vec<f32>,
 }
 
 /// Run an ordered list of utterances through a single session diarizer, in
-/// arrival order, exactly as the worker does on finalized utterances live.
+/// arrival order, exactly as the worker does on finalized utterances live. Each
+/// utterance is reduced to its dominant speaker (the one credited with the most
+/// audio across its turns) so the existing clustering metrics still apply.
 pub fn diarize_scenario(utterances: &[Utterance]) -> ScenarioResult {
-    let mut diarizer = SessionDiarizer::new().expect("bundled embedding model should load");
+    let mut diarizer = SessionDiarizer::new().expect("bundled diarization models should load");
     let mut result = ScenarioResult {
         truth: Vec::with_capacity(utterances.len()),
         predicted: Vec::with_capacity(utterances.len()),
-        similarity: Vec::with_capacity(utterances.len()),
     };
     for utterance in utterances {
-        let assignment = diarizer
-            .assign(&utterance.samples)
-            .expect("embedding should succeed on real speech");
+        let turns = diarizer
+            .diarize(&utterance.samples)
+            .expect("diarization should succeed on real speech");
+        let speaker = dominant_speaker(&turns).expect("real speech must yield at least one turn");
         result.truth.push(utterance.speaker.clone());
-        result.predicted.push(assignment.speaker_index);
-        result.similarity.push(assignment.similarity);
+        result.predicted.push(speaker);
     }
     result
+}
+
+/// The speaker credited with the most audio across an utterance's turns.
+fn dominant_speaker(turns: &[SpeakerTurn]) -> Option<u32> {
+    let mut duration_by_speaker: HashMap<u32, u64> = HashMap::new();
+    for turn in turns {
+        *duration_by_speaker.entry(turn.speaker_index).or_default() +=
+            turn.end_ms.saturating_sub(turn.start_ms).max(1);
+    }
+    duration_by_speaker
+        .into_iter()
+        .max_by_key(|&(_, duration)| duration)
+        .map(|(speaker, _)| speaker)
 }
 
 impl ScenarioResult {
@@ -176,8 +189,8 @@ impl ScenarioResult {
         let mut out = String::new();
         for i in 0..self.len() {
             out.push_str(&format!(
-                "  [{i:>2}] truth={:<16} pred=S{} sim={:.3}\n",
-                self.truth[i], self.predicted[i], self.similarity[i]
+                "  [{i:>2}] truth={:<16} pred=S{}\n",
+                self.truth[i], self.predicted[i]
             ));
         }
         out

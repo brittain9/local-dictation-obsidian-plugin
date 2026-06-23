@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  buildSpeakerSpans,
   formatLandmark,
   SMART_PARAGRAPH_PAUSE_MS,
-  type TranscriptAppendInput,
   TranscriptRenderer,
 } from '../src/transcript/renderer';
 import {
@@ -270,10 +270,7 @@ describe('TranscriptRenderer speaker labels', () => {
     expect(planAndCommit(renderer, { speakerIndex: Number.NaN, text: 'nan' }).projectedText).toBe(
       'nan',
     );
-    const missingSpeaker = {
-      speakerIndex: undefined,
-      text: 'missing',
-    } as unknown as Partial<TranscriptAppendInput> & { text: string };
+    const missingSpeaker = { text: 'missing' };
     expect(planAndCommit(renderer, missingSpeaker, 't').projectedText).toBe(' missing');
   });
 
@@ -303,8 +300,7 @@ describe('TranscriptRenderer speaker labels', () => {
     const planned = renderer.planAppend(
       {
         pauseMsBeforeUtterance: null,
-        speakerIndex: 0,
-        text: 'a',
+        spans: [{ speakerIndex: 0, text: 'a' }],
         utteranceId: 'u',
         utteranceStartMsInSession: 0,
       },
@@ -313,8 +309,7 @@ describe('TranscriptRenderer speaker labels', () => {
     const replanned = renderer.planAppend(
       {
         pauseMsBeforeUtterance: null,
-        speakerIndex: 0,
-        text: 'a',
+        spans: [{ speakerIndex: 0, text: 'a' }],
         utteranceId: 'u',
         utteranceStartMsInSession: 0,
       },
@@ -362,18 +357,131 @@ describe('TranscriptRenderer speaker labels', () => {
   });
 });
 
-function planAndCommit(
-  renderer: TranscriptRenderer,
-  input: Partial<TranscriptAppendInput> & { text: string },
-  tailContent = '',
-) {
+interface PlanAndCommitInput {
+  pauseMsBeforeUtterance?: number | null;
+  speakerIndex?: number | null;
+  text: string;
+  utteranceId?: string;
+  utteranceStartMsInSession?: number;
+}
+
+describe('TranscriptRenderer multi-speaker utterances', () => {
+  const labelOptions = () => ({ timestamps: timestamps(), transcriptFormatting: 'space' as const });
+
+  it('renders each speaker turn on its own labelled line', () => {
+    const renderer = new TranscriptRenderer(labelOptions());
+
+    const projection = renderer.planAppend(
+      {
+        pauseMsBeforeUtterance: null,
+        spans: [
+          { speakerIndex: 0, text: 'hello there' },
+          { speakerIndex: 1, text: 'hi back' },
+          { speakerIndex: 0, text: 'how are you' },
+        ],
+        utteranceId: 'u',
+        utteranceStartMsInSession: 0,
+      },
+      { tailContent: '' },
+    );
+
+    expect(projection.projectedText).toBe(
+      '**Speaker 1:** hello there\n**Speaker 2:** hi back\n**Speaker 1:** how are you',
+    );
+    expect(projection.insertedText).toBe(projection.projectedText);
+    expect(projection.emittedSpeakerIndex).toBe(0);
+  });
+
+  it('suppresses the leading label when the first turn continues the previous speaker', () => {
+    const renderer = new TranscriptRenderer(labelOptions());
+
+    renderer.commitAppend(
+      renderer.planAppend(
+        {
+          pauseMsBeforeUtterance: null,
+          spans: [{ speakerIndex: 0, text: 'one' }],
+          utteranceId: 'a',
+          utteranceStartMsInSession: 0,
+        },
+        { tailContent: '' },
+      ),
+    );
+
+    const next = renderer.planAppend(
+      {
+        pauseMsBeforeUtterance: null,
+        spans: [
+          { speakerIndex: 0, text: 'still me' },
+          { speakerIndex: 1, text: 'now you' },
+        ],
+        utteranceId: 'b',
+        utteranceStartMsInSession: 0,
+      },
+      { tailContent: 'one' },
+    );
+
+    expect(next.projectedText).toBe(' still me\n**Speaker 2:** now you');
+    expect(next.precedingSpeakerIndex).toBe(0);
+  });
+
+  it('recomposes a replacement body with the captured preceding speaker', () => {
+    const renderer = new TranscriptRenderer(labelOptions());
+    const spans = [
+      { speakerIndex: 0, text: 'a' },
+      { speakerIndex: 1, text: 'b' },
+    ];
+
+    expect(renderer.composeReplacementBody(spans, null)).toBe('**Speaker 1:** a\n**Speaker 2:** b');
+    // When the previous line was already speaker 0, the first label is suppressed.
+    expect(renderer.composeReplacementBody(spans, 0)).toBe('a\n**Speaker 2:** b');
+  });
+});
+
+describe('buildSpeakerSpans', () => {
+  const segment = (speaker: number | null, text: string) => ({
+    endMs: 0,
+    speaker,
+    startMs: 0,
+    text,
+    timestampGranularity: 'segment' as const,
+    timestampSource: 'engine' as const,
+  });
+
+  it('collapses to one span carrying the fallback text when single-speaker', () => {
+    // Lets LLM-cleaned text flow through for single-speaker utterances.
+    expect(buildSpeakerSpans([segment(0, 'a'), segment(0, 'b')], 'cleaned a b', 0)).toEqual([
+      { speakerIndex: 0, text: 'cleaned a b' },
+    ]);
+  });
+
+  it('groups consecutive same-speaker segments when multi-speaker', () => {
+    expect(
+      buildSpeakerSpans(
+        [segment(0, 'hello'), segment(0, 'there'), segment(1, 'hi'), segment(0, 'bye')],
+        'ignored joined text',
+        0,
+      ),
+    ).toEqual([
+      { speakerIndex: 0, text: 'hello there' },
+      { speakerIndex: 1, text: 'hi' },
+      { speakerIndex: 0, text: 'bye' },
+    ]);
+  });
+
+  it('uses the fallback span when diarization is off', () => {
+    expect(buildSpeakerSpans([segment(null, 'a')], 'a', null)).toEqual([
+      { speakerIndex: null, text: 'a' },
+    ]);
+  });
+});
+
+function planAndCommit(renderer: TranscriptRenderer, input: PlanAndCommitInput, tailContent = '') {
   const projection = renderer.planAppend(
     {
-      pauseMsBeforeUtterance: null,
-      speakerIndex: null,
-      utteranceId: 'utt',
-      utteranceStartMsInSession: 0,
-      ...input,
+      pauseMsBeforeUtterance: input.pauseMsBeforeUtterance ?? null,
+      spans: [{ speakerIndex: input.speakerIndex ?? null, text: input.text }],
+      utteranceId: input.utteranceId ?? 'utt',
+      utteranceStartMsInSession: input.utteranceStartMsInSession ?? 0,
     },
     { tailContent },
   );

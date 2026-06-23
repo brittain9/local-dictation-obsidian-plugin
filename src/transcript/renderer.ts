@@ -1,4 +1,4 @@
-import type { UtteranceId } from '../session/session-journal';
+import type { TranscriptSegment, TranscriptSpan, UtteranceId } from '../session/session-journal';
 import type {
   TimestampClock,
   TimestampDensity,
@@ -23,8 +23,10 @@ export interface TranscriptTimestampRenderOptions {
 
 export interface TranscriptAppendInput {
   readonly pauseMsBeforeUtterance: number | null;
-  readonly speakerIndex: number | null;
-  readonly text: string;
+  /** Speaker spans to render, in order. One span renders exactly as the old
+   * single-speaker path (label in the prefix, replaceable text body); several
+   * spans render as a labelled, newline-separated exchange. */
+  readonly spans: readonly TranscriptSpan[];
   readonly utteranceId: UtteranceId;
   readonly utteranceStartMsInSession: number;
 }
@@ -42,6 +44,9 @@ export interface TranscriptInsertProjection {
   readonly emittedSpeakerIndex: number | null;
   readonly emittedTimestamp: EmittedTimestamp | null;
   readonly insertedText: string;
+  /** The last speaker rendered before this utterance, so a later in-place
+   * re-render of a multi-speaker block reproduces the same label suppression. */
+  readonly precedingSpeakerIndex: number | null;
   readonly projectedText: string;
   readonly replacementPrefix: string;
   readonly textEndOffset: number;
@@ -59,7 +64,7 @@ export class TranscriptRenderer {
     input: TranscriptAppendInput,
     context: TranscriptRenderContext,
   ): TranscriptInsertProjection {
-    const speakerIndex = normalizeSpeakerIndex(input.speakerIndex);
+    const spans = input.spans.length > 0 ? input.spans : [{ speakerIndex: null, text: '' }];
     const boundary = this.formatBoundary(input, context);
     const sessionHeader = this.shouldEmitSessionHeader()
       ? `${formatSessionHeader(this.options.timestamps.sessionStartUnixMs)}\n`
@@ -75,22 +80,56 @@ export class TranscriptRenderer {
         }
       : null;
     const timestampPrefix = emittedTimestamp === null ? '' : `${emittedTimestamp.text} `;
-    const speakerPrefix = this.shouldEmitSpeakerLabel(speakerIndex)
-      ? `${formatSpeakerLabel(speakerIndex)} `
-      : '';
-    const prefix = `${boundary}${sessionHeader}${timestampPrefix}${speakerPrefix}`;
+    const precedingSpeakerIndex = this.lastRenderedSpeakerIndex;
+
+    // Single span keeps the legacy layout exactly: the speaker label lives in the
+    // prefix and the body is just the (replaceable) text, so an in-place LLM
+    // replace swaps the words without disturbing the label.
+    if (spans.length === 1) {
+      const span = spans[0] ?? { speakerIndex: null, text: '' };
+      const speakerIndex = normalizeSpeakerIndex(span.speakerIndex);
+      const speakerPrefix = this.shouldEmitSpeakerLabel(speakerIndex)
+        ? `${formatSpeakerLabel(speakerIndex)} `
+        : '';
+      const prefix = `${boundary}${sessionHeader}${timestampPrefix}${speakerPrefix}`;
+      const textStartOffset = prefix.length;
+
+      return {
+        emittedSpeakerIndex: speakerIndex,
+        emittedTimestamp,
+        insertedText: span.text,
+        precedingSpeakerIndex,
+        projectedText: `${prefix}${span.text}`,
+        replacementPrefix: boundary,
+        textEndOffset: textStartOffset + span.text.length,
+        textStartOffset,
+      };
+    }
+
+    // Multiple speakers in one utterance: a labelled, newline-separated exchange.
+    const composed = composeSpeakerSpans(spans, precedingSpeakerIndex);
+    const prefix = `${boundary}${sessionHeader}${timestampPrefix}`;
     const textStartOffset = prefix.length;
-    const projectedText = `${prefix}${input.text}`;
 
     return {
-      emittedSpeakerIndex: speakerIndex,
+      emittedSpeakerIndex: composed.trailingSpeakerIndex,
       emittedTimestamp,
-      insertedText: input.text,
-      projectedText,
+      insertedText: composed.body,
+      precedingSpeakerIndex,
+      projectedText: `${prefix}${composed.body}`,
       replacementPrefix: boundary,
-      textEndOffset: textStartOffset + input.text.length,
+      textEndOffset: textStartOffset + composed.body.length,
       textStartOffset,
     };
+  }
+
+  // Recompose a multi-speaker body for an in-place replace, reusing the speaker
+  // context captured when the block was first rendered.
+  composeReplacementBody(
+    spans: readonly TranscriptSpan[],
+    precedingSpeakerIndex: number | null,
+  ): string {
+    return composeSpeakerSpans(spans, precedingSpeakerIndex).body;
   }
 
   commitAppend(projection: TranscriptInsertProjection): void {
@@ -205,6 +244,72 @@ export function formatSessionHeader(sessionStartUnixMs: number): string {
 // Speaker indices are 0-based on the wire; the rendered label is 1-based.
 export function formatSpeakerLabel(speakerIndex: number): string {
   return `**Speaker ${speakerIndex + 1}:**`;
+}
+
+// Group an utterance's segments into renderable speaker spans. With zero or one
+// distinct speaker the whole utterance is one span carrying `fallbackText` (which
+// may be LLM-cleaned), so single-speaker output is unchanged. With several
+// speakers, consecutive same-speaker segments merge into a span carrying the
+// engine segment text, so a multi-speaker utterance reads as a labelled exchange.
+export function buildSpeakerSpans(
+  segments: readonly TranscriptSegment[],
+  fallbackText: string,
+  fallbackSpeakerIndex: number | null,
+): TranscriptSpan[] {
+  const distinct = new Set<number>();
+  for (const segment of segments) {
+    const speakerIndex = normalizeSpeakerIndex(segment.speaker);
+    if (speakerIndex !== null) {
+      distinct.add(speakerIndex);
+    }
+  }
+
+  if (distinct.size <= 1) {
+    const [only] = [...distinct];
+    const speakerIndex = only !== undefined ? only : normalizeSpeakerIndex(fallbackSpeakerIndex);
+    return [{ speakerIndex, text: fallbackText }];
+  }
+
+  const spans: TranscriptSpan[] = [];
+  for (const segment of segments) {
+    const text = segment.text.trim();
+    if (text.length === 0) {
+      continue;
+    }
+    const speakerIndex = normalizeSpeakerIndex(segment.speaker);
+    const last = spans.at(-1);
+    if (last !== undefined && last.speakerIndex === speakerIndex) {
+      last.text = `${last.text} ${text}`;
+    } else {
+      spans.push({ speakerIndex, text });
+    }
+  }
+
+  return spans.length > 0
+    ? spans
+    : [{ speakerIndex: normalizeSpeakerIndex(fallbackSpeakerIndex), text: fallbackText }];
+}
+
+// Compose speaker spans into one rendered body: a `**Speaker N:**` label whenever
+// the speaker differs from the previously rendered one (across spans and across
+// utterances), spans separated by newlines. Returns the trailing speaker so the
+// caller can advance its running label state.
+function composeSpeakerSpans(
+  spans: readonly TranscriptSpan[],
+  precedingSpeakerIndex: number | null,
+): { body: string; trailingSpeakerIndex: number | null } {
+  let last = precedingSpeakerIndex;
+  const parts: string[] = [];
+  for (const span of spans) {
+    const speakerIndex = normalizeSpeakerIndex(span.speakerIndex);
+    const label =
+      speakerIndex !== null && speakerIndex !== last ? `${formatSpeakerLabel(speakerIndex)} ` : '';
+    parts.push(`${label}${span.text}`);
+    if (speakerIndex !== null) {
+      last = speakerIndex;
+    }
+  }
+  return { body: parts.join('\n'), trailingSpeakerIndex: last };
 }
 
 function normalizeSpeakerIndex(speakerIndex: number | null | undefined): number | null {

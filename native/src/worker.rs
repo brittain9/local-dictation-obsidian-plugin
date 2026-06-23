@@ -10,14 +10,16 @@ use tokio::runtime::{Builder, Runtime};
 use tokio::sync::watch;
 use uuid::Uuid;
 
-use crate::diarize::SessionDiarizer;
+use crate::diarize::{SessionDiarizer, SpeakerTurn};
 use crate::engine::capabilities::{
     ModelFamilyCapabilities, ModelFamilyId, RequestWarning, RuntimeId,
 };
 use crate::engine::registry::{EngineRegistry, apply_capability_gates, missing_adapter_error};
 use crate::engine::traits::LoadedModel;
 use crate::panic_util::format_panic_message;
-use crate::protocol::{ContextWindow, EngineStagePayload, StageId, StageOutcome, StageStatus};
+use crate::protocol::{
+    ContextWindow, EngineStagePayload, StageId, StageOutcome, StageStatus, TranscriptSegment,
+};
 use crate::session::FinalizedUtterance;
 use crate::stages::{
     StageContext, StageEnablement, StageProcessor, post_engine_processors, run_post_engine,
@@ -332,10 +334,12 @@ struct TranscriptAssembly<'a> {
     cancel_rx: &'a watch::Receiver<bool>,
 }
 
-/// Run diarization on a finalized utterance after the text stages. Returns the
-/// session-stable speaker index, or `None` when diarization is disabled, the
-/// utterance has no surviving text, or embedding failed. Records a
-/// `Diarization` stage outcome whenever it runs so the timeline reflects it.
+/// Run diarization on a finalized utterance after the text stages. Splits the
+/// utterance into speaker turns, attributes each transcript segment to the turn
+/// it overlaps most, and returns the utterance's *dominant* speaker (the one
+/// credited with the most audio) for the back-compat utterance-level field.
+/// Returns `None` when diarization is disabled or the utterance has no surviving
+/// text. Records a `Diarization` stage outcome whenever it runs.
 fn diarize_utterance(
     diarizer: Option<&mut SessionDiarizer>,
     transcript: &mut Transcript,
@@ -348,24 +352,28 @@ fn diarize_utterance(
 
     let revision = transcript.revision;
     let started_at = Instant::now();
-    match diarizer.assign(samples) {
-        Ok(assignment) => {
-            let speaker_index = assignment.speaker_index;
+    match diarizer.diarize(samples) {
+        Ok(turns) => {
+            let dominant = assign_segment_speakers(&mut transcript.segments, &turns);
+            let speaker_count = turns
+                .iter()
+                .map(|turn| turn.speaker_index)
+                .collect::<std::collections::HashSet<_>>()
+                .len();
             transcript.stage_history.push(StageOutcome {
                 duration_ms: started_at.elapsed().as_millis() as u64,
                 is_final: true,
                 payload: Some(serde_json::json!({
-                    "speakerIndex": assignment.speaker_index,
-                    "similarity": assignment.similarity,
-                    "isNewSpeaker": assignment.is_new_speaker,
-                    "speakerCount": assignment.speaker_count,
+                    "speakerIndex": dominant,
+                    "turnCount": turns.len(),
+                    "speakerCount": speaker_count,
                 })),
                 revision_in: revision,
                 revision_out: Some(revision),
                 stage_id: StageId::Diarization,
                 status: StageStatus::Ok,
             });
-            Some(speaker_index)
+            dominant
         }
         Err(error) => {
             transcript.stage_history.push(StageOutcome {
@@ -380,6 +388,58 @@ fn diarize_utterance(
             None
         }
     }
+}
+
+/// Attribute each transcript segment to the speaker of the turn it overlaps
+/// most; a segment overlapping no turn falls back to the nearest turn by
+/// midpoint, so every segment is labelled whenever any turn exists. Returns the
+/// dominant speaker (most attributed audio) for the utterance-level field.
+fn assign_segment_speakers(
+    segments: &mut [TranscriptSegment],
+    turns: &[SpeakerTurn],
+) -> Option<u32> {
+    if turns.is_empty() {
+        return None;
+    }
+
+    let mut duration_by_speaker: HashMap<u32, u64> = HashMap::new();
+    for segment in segments.iter_mut() {
+        let speaker =
+            best_overlap_speaker(segment, turns).or_else(|| nearest_turn_speaker(segment, turns));
+        segment.speaker = speaker;
+        if let Some(speaker) = speaker {
+            *duration_by_speaker.entry(speaker).or_default() +=
+                segment.end_ms.saturating_sub(segment.start_ms).max(1);
+        }
+    }
+
+    duration_by_speaker
+        .into_iter()
+        .max_by_key(|&(_, duration)| duration)
+        .map(|(speaker, _)| speaker)
+}
+
+fn best_overlap_speaker(segment: &TranscriptSegment, turns: &[SpeakerTurn]) -> Option<u32> {
+    turns
+        .iter()
+        .filter_map(|turn| {
+            let overlap = overlap_ms(segment.start_ms, segment.end_ms, turn.start_ms, turn.end_ms);
+            (overlap > 0).then_some((overlap, turn.speaker_index))
+        })
+        .max_by_key(|&(overlap, _)| overlap)
+        .map(|(_, speaker)| speaker)
+}
+
+fn nearest_turn_speaker(segment: &TranscriptSegment, turns: &[SpeakerTurn]) -> Option<u32> {
+    let midpoint = (segment.start_ms + segment.end_ms) / 2;
+    turns
+        .iter()
+        .min_by_key(|turn| ((turn.start_ms + turn.end_ms) / 2).abs_diff(midpoint))
+        .map(|turn| turn.speaker_index)
+}
+
+fn overlap_ms(a_start: u64, a_end: u64, b_start: u64, b_end: u64) -> u64 {
+    a_end.min(b_end).saturating_sub(a_start.max(b_start))
 }
 
 fn assemble_transcript(input: TranscriptAssembly<'_>) -> Transcript {
@@ -723,6 +783,7 @@ mod tests {
             segments: vec![TranscriptSegment {
                 start_ms: 0,
                 end_ms: 1_000,
+                speaker: None,
                 text: "hello".to_string(),
                 timestamp_granularity: TimestampGranularity::Segment,
                 timestamp_source: TimestampSource::Engine,
@@ -766,6 +827,7 @@ mod tests {
             vec![TranscriptSegment {
                 start_ms: 0,
                 end_ms: 1_000,
+                speaker: None,
                 text: text.to_string(),
                 timestamp_granularity: TimestampGranularity::Segment,
                 timestamp_source: TimestampSource::Engine,

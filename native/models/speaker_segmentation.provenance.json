@@ -1,0 +1,29 @@
+{
+  "verified_at": "2026-06-22",
+  "source": {
+    "upstream_project": "pyannote (segmentation-3.0), ONNX export by k2-fsa/sherpa-onnx",
+    "model": "pyannote-segmentation-3.0",
+    "release_url": "https://github.com/k2-fsa/sherpa-onnx/releases/tag/speaker-segmentation-models",
+    "download_url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/speaker-segmentation-models/sherpa-onnx-pyannote-segmentation-3-0.tar.bz2",
+    "license": "MIT (Copyright (c) 2022 CNRS)",
+    "model_card": "https://huggingface.co/pyannote/segmentation-3.0"
+  },
+  "artifact": {
+    "filename": "speaker_segmentation.onnx",
+    "original_filename": "model.onnx",
+    "sha256": "220ad67ca923bef2fa91f2390c786097bf305bceb5e261d4af67b38e938e1079",
+    "size_bytes": 5992913,
+    "input": "x: float32[N, 1, T] — raw 16 kHz mono waveform; processed in 160000-sample (10 s) windows",
+    "output": "y: float32[N, num_frames, 7] — per-frame powerset logits over 3 local speakers, max 2 concurrent",
+    "metadata": {
+      "window_size": 160000,
+      "receptive_field_size": 991,
+      "receptive_field_shift": 270,
+      "num_speakers": 3,
+      "powerset_max_classes": 2,
+      "num_classes": 7,
+      "sample_rate": 16000
+    }
+  },
+  "notes": "Speaker-segmentation model for turn splitting in the diarization stage, run via ort. Powerset output is argmax-decoded to per-frame local-speaker activity, then turns are embedded (src/diarize/embedding.rs) and clustered by the online registry for session-stable global identity. Bundled (include_bytes!) so diarization works fully offline."
+}

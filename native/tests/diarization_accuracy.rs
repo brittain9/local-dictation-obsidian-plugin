@@ -222,11 +222,9 @@ fn the_most_confusable_voices_still_separate_when_clean() {
     );
 
     let result = diarize::diarize_scenario(&pair);
-    // The second assignment's similarity is the cross-speaker cosine — the
-    // margin to the 0.4 threshold this gate protects.
     eprintln!(
-        "[diarization:confusable] cross_speaker_cosine={:.3}\n{}",
-        result.similarity[1],
+        "[diarization:confusable] predicted_speakers={}\n{}",
+        result.predicted_speaker_count(),
         result.trace(),
     );
 

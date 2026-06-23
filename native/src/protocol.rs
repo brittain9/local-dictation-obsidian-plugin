@@ -140,6 +140,11 @@ pub enum ModelInstallState {
 #[serde(rename_all = "camelCase")]
 pub struct TranscriptSegment {
     pub end_ms: u64,
+    /// Session-stable speaker for this segment, assigned by the diarization
+    /// stage. `None` when diarization is off or no turn could be attributed.
+    /// 0-based; serialized as `null` rather than omitted.
+    #[serde(default)]
+    pub speaker: Option<u32>,
     pub start_ms: u64,
     pub text: String,
     pub timestamp_granularity: TimestampGranularity,

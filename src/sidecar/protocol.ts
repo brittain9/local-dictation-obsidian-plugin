@@ -60,6 +60,7 @@ export type QueueBackpressureTier = (typeof QUEUE_BACKPRESSURE_TIERS)[number];
 
 export interface TranscriptSegment {
   endMs: number;
+  speaker: number | null;
   startMs: number;
   text: string;
   timestampGranularity: TimestampGranularity;

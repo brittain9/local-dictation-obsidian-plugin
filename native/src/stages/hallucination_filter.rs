@@ -527,6 +527,7 @@ mod tests {
     fn segment(text: &str) -> TranscriptSegment {
         TranscriptSegment {
             end_ms: 1_000,
+            speaker: None,
             start_ms: 0,
             text: text.to_string(),
             timestamp_granularity: TimestampGranularity::Segment,
@@ -957,6 +958,7 @@ mod tests {
     fn payload_carries_reason_index_text_timing_and_signals() {
         let segment = TranscriptSegment {
             end_ms: 900,
+            speaker: None,
             start_ms: 100,
             text: "Thank you for watching.".to_string(),
             timestamp_granularity: TimestampGranularity::Segment,
@@ -1045,6 +1047,7 @@ mod tests {
             segments: vec![
                 TranscriptSegment {
                     end_ms: 500,
+                    speaker: None,
                     start_ms: 0,
                     text: "[music]".to_string(),
                     timestamp_granularity: TimestampGranularity::Segment,
@@ -1052,6 +1055,7 @@ mod tests {
                 },
                 TranscriptSegment {
                     end_ms: 1_000,
+                    speaker: None,
                     start_ms: 500,
                     text: "Hello world.".to_string(),
                     timestamp_granularity: TimestampGranularity::Segment,

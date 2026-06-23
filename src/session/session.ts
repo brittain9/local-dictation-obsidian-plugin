@@ -37,7 +37,12 @@ interface MarkdownLeafLike {
 
 type ProjectionState =
   | { kind: 'unprojected' }
-  | { kind: 'projected'; lastRevision: number; projectedText: string }
+  | {
+      kind: 'projected';
+      lastRevision: number;
+      precedingSpeakerIndex: number | null;
+      projectedText: string;
+    }
   | { kind: 'latched' }
   | { kind: 'denied' };
 
@@ -335,8 +340,7 @@ export class Session {
     const projection = this.renderer.planAppend(
       {
         pauseMsBeforeUtterance: revision.pauseMsBeforeUtterance,
-        speakerIndex: revision.speakerIndex,
-        text: revision.text,
+        spans: revision.spans,
         utteranceId: revision.utteranceId,
         utteranceStartMsInSession: revision.utteranceStartMsInSession,
       },
@@ -352,6 +356,7 @@ export class Session {
       this.projectionByUtterance.set(revision.utteranceId, {
         kind: 'projected',
         lastRevision: revision.revision,
+        precedingSpeakerIndex: projection.precedingSpeakerIndex,
         projectedText: projection.insertedText,
       });
       this.recordRawSessionAppend(revision, projection);
@@ -381,6 +386,7 @@ export class Session {
       emittedSpeakerIndex: null,
       emittedTimestamp: null,
       insertedText: callout,
+      precedingSpeakerIndex: null,
       projectedText: `${boundary}${callout}`,
       replacementPrefix: boundary,
       textEndOffset: boundary.length + callout.length,
@@ -404,9 +410,18 @@ export class Session {
       return;
     }
 
+    // A multi-speaker utterance carries labels interleaved in its body, so it
+    // must be recomposed (not swapped for the plain joined text) to preserve
+    // attribution. Single-speaker stays plain so the label in the prefix is
+    // untouched.
+    const replacementText =
+      revision.spans.length > 1
+        ? this.renderer.composeReplacementBody(revision.spans, state.precedingSpeakerIndex)
+        : revision.text;
+
     const result = this.surface?.replaceAnchor(
       revision.utteranceId,
-      revision.text,
+      replacementText,
       state.projectedText,
     );
 
@@ -418,7 +433,8 @@ export class Session {
       this.projectionByUtterance.set(revision.utteranceId, {
         kind: 'projected',
         lastRevision: revision.revision,
-        projectedText: revision.text,
+        precedingSpeakerIndex: state.precedingSpeakerIndex,
+        projectedText: replacementText,
       });
       this.recordRawSessionReplace(revision);
       return;

@@ -258,6 +258,7 @@ mod tests {
             revision: 0,
             segments: vec![TranscriptSegment {
                 end_ms: 1_000,
+                speaker: None,
                 start_ms: 0,
                 text: "hello".to_string(),
                 timestamp_granularity: TimestampGranularity::Segment,
@@ -400,6 +401,7 @@ mod tests {
             result: || StageProcess::Ok {
                 segments: vec![TranscriptSegment {
                     end_ms: 1_000,
+                    speaker: None,
                     start_ms: 0,
                     text: "filtered".to_string(),
                     timestamp_granularity: TimestampGranularity::Segment,
@@ -594,6 +596,7 @@ mod tests {
             result: || StageProcess::Ok {
                 segments: vec![TranscriptSegment {
                     end_ms: 5_000,
+                    speaker: None,
                     start_ms: 0,
                     text: "overrun".to_string(),
                     timestamp_granularity: TimestampGranularity::Segment,
@@ -637,6 +640,7 @@ mod tests {
             result: || StageProcess::Ok {
                 segments: vec![TranscriptSegment {
                     end_ms: 800,
+                    speaker: None,
                     start_ms: 0,
                     text: "shrunk".to_string(),
                     timestamp_granularity: TimestampGranularity::Segment,
@@ -665,6 +669,7 @@ mod tests {
             segments: vec![
                 TranscriptSegment {
                     end_ms: 500,
+                    speaker: None,
                     start_ms: 0,
                     text: "first".to_string(),
                     timestamp_granularity: TimestampGranularity::Segment,
@@ -672,6 +677,7 @@ mod tests {
                 },
                 TranscriptSegment {
                     end_ms: 1_000,
+                    speaker: None,
                     start_ms: 500,
                     text: "second".to_string(),
                     timestamp_granularity: TimestampGranularity::Segment,
@@ -693,6 +699,7 @@ mod tests {
             result: || StageProcess::Ok {
                 segments: vec![TranscriptSegment {
                     end_ms: 500,
+                    speaker: None,
                     start_ms: 0,
                     text: "first".to_string(),
                     timestamp_granularity: TimestampGranularity::Segment,
@@ -718,6 +725,7 @@ mod tests {
             segments: vec![
                 TranscriptSegment {
                     end_ms: 400,
+                    speaker: None,
                     start_ms: 0,
                     text: "first".to_string(),
                     timestamp_granularity: TimestampGranularity::Segment,
@@ -725,6 +733,7 @@ mod tests {
                 },
                 TranscriptSegment {
                     end_ms: 1_000,
+                    speaker: None,
                     start_ms: 400,
                     text: "second".to_string(),
                     timestamp_granularity: TimestampGranularity::Segment,
@@ -738,6 +747,7 @@ mod tests {
                 result: || StageProcess::Ok {
                     segments: vec![TranscriptSegment {
                         end_ms: 1_000,
+                        speaker: None,
                         start_ms: 0,
                         text: "collapsed".to_string(),
                         timestamp_granularity: TimestampGranularity::Utterance,

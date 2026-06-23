@@ -55,6 +55,13 @@ pub struct TranscriptionOutcome {
     /// when diarization is disabled or the embedding step did not assign one.
     /// Parallel to the utterances counted by `utterance_count`.
     pub speakers: Vec<Option<u32>>,
+    /// Per-utterance `(speaker, text)` in arrival order, so a diarization probe
+    /// can print which words each predicted speaker was credited with.
+    pub utterances: Vec<(Option<u32>, String)>,
+    /// Per-*segment* `(speaker, text)` flattened across all utterances, in order.
+    /// Segment-level attribution is the point of turn diarization: one VAD
+    /// utterance can carry several speaker-labelled segments.
+    pub labeled_segments: Vec<(Option<u32>, String)>,
     /// Sum of engine `processingDurationMs` across utterances (for RTF).
     pub processing_ms: u64,
     /// Whether the session reached `session_stopped` before the timeout.
@@ -151,8 +158,17 @@ fn apply_events(app: &mut AppState, events: Vec<Event>, outcome: &mut Transcript
                 text,
                 processing_duration_ms,
                 speaker_index,
+                segments,
                 ..
             } => {
+                for segment in &segments {
+                    let trimmed = segment.text.trim();
+                    if !trimmed.is_empty() {
+                        outcome
+                            .labeled_segments
+                            .push((segment.speaker, trimmed.to_string()));
+                    }
+                }
                 push_transcript(outcome, &text, speaker_index);
                 outcome.processing_ms += processing_duration_ms;
             }
@@ -335,6 +351,9 @@ fn push_transcript(outcome: &mut TranscriptionOutcome, text: &str, speaker_index
     outcome.text.push_str(trimmed);
     outcome.utterance_count += 1;
     outcome.speakers.push(speaker_index);
+    outcome
+        .utterances
+        .push((speaker_index, trimmed.to_string()));
 }
 
 fn speaking_style_wire(style: SpeakingStyle) -> &'static str {
