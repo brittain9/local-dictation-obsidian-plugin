@@ -108,6 +108,42 @@
         "license": "CC BY 4.0",
         "sha256": "d0d6bcf2e108dde9e7c1575ad843512213b1cff5ea77b9231e7f256591aa0986"
       }
+    },
+    {
+      "id": "4446-2271-0004",
+      "file": "audio/4446-2271-0004.wav",
+      "reference": "DO YOU KNOW ALEXANDER MAINHALL LOOKED WITH PERPLEXITY UP INTO THE TOP OF THE HANSOM AND RUBBED HIS PINK CHEEK WITH HIS GLOVED FINGER DO YOU KNOW I SOMETIMES THINK OF TAKING TO CRITICISM SERIOUSLY MYSELF",
+      "anchors": ["alexander", "cheek", "criticism"],
+      "max_wer": 0.2,
+      "format": {
+        "sample_rate_hz": 16000,
+        "channels": 1,
+        "bits_per_sample": 16
+      },
+      "source": {
+        "title": "LibriSpeech ASR corpus (test-clean), utterance 4446-2271-0004, speaker 4446",
+        "url": "https://www.openslr.org/12/",
+        "license": "CC BY 4.0",
+        "sha256": "d31ade516cc862222a513144abe111b433b174c85f9c459b51ef6baf89982e07"
+      }
+    },
+    {
+      "id": "4992-23283-0005",
+      "file": "audio/4992-23283-0005.wav",
+      "reference": "NOT THAT I KNOW OF NOT ONE MORE THAT I KNOW OF HE REPLIED WITH ASTONISHMENT AT WHAT SHE HAD INSINUATED AND YET WITH A PERFECT ASSURANCE THAT SHE WAS IN THE WRONG",
+      "anchors": ["astonishment", "assurance", "wrong"],
+      "max_wer": 0.2,
+      "format": {
+        "sample_rate_hz": 16000,
+        "channels": 1,
+        "bits_per_sample": 16
+      },
+      "source": {
+        "title": "LibriSpeech ASR corpus (test-clean), utterance 4992-23283-0005, speaker 4992",
+        "url": "https://www.openslr.org/12/",
+        "license": "CC BY 4.0",
+        "sha256": "33c99d26a96223b45de99daf38fd476ada492a1b05e13a08a70c9ff26dfcbee9"
+      }
     }
   ]
 }

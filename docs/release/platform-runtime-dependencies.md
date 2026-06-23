@@ -24,7 +24,10 @@ The community-plugin package includes only Obsidian's plugin files:
 
 The recorder worklet is bundled into `main.js`. The model catalog is sidecar-owned and shipped with the sidecar binary, not as a separate community-plugin file.
 
-The CUDA release archive additionally stages ONNX Runtime provider libraries and the CUDA runtime libraries that the sidecar ships:
+Every sidecar archive contains the native executable and
+`THIRD_PARTY_NOTICES.md` for the models embedded in that executable. The CUDA
+release archive additionally stages ONNX Runtime provider libraries and the
+CUDA runtime libraries that the sidecar ships:
 
 | Platform | Provider libraries | Bundled CUDA runtime libraries |
 |---|---|

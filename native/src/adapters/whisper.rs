@@ -98,6 +98,7 @@ impl LoadedModel for LoadedWhisperModel {
             diagnostics.push(whisper_segment_diagnostics(&segment));
             segments.push(TranscriptSegment {
                 end_ms: whisper_timestamp_to_millis(segment.end_timestamp()),
+                speaker: None,
                 start_ms: whisper_timestamp_to_millis(segment.start_timestamp()),
                 text: segment_text.trim().to_string(),
                 timestamp_granularity: TimestampGranularity::Segment,

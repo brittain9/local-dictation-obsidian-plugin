@@ -199,6 +199,7 @@ export class LocalSttSettingTab extends PluginSettingTab {
     });
 
     const outputCard = createSettingGroup(containerEl, 'Transcript output');
+
     addEnumSetting(outputCard, this.access, {
       name: 'Insert text',
       desc: 'Where dictated text appears.',
@@ -217,11 +218,9 @@ export class LocalSttSettingTab extends PluginSettingTab {
     });
 
     addToggleSetting(outputCard, this.access, {
-      name: 'Speaker labels',
-      desc: 'Prefix phrases with speaker names when the engine provides them.',
-      tooltip:
-        'This only formats speaker metadata that a compatible local engine sends; it does not enable diarization by itself.',
-      key: 'speakerLabelsEnabled',
+      name: 'Speaker labels (diarization)',
+      desc: 'Label each utterance with a detected speaker (Speaker 1, Speaker 2, …). Runs fully on-device; no audio leaves your machine.',
+      key: 'diarizationEnabled',
     });
 
     const timestampsCard = createSettingGroup(containerEl, 'Timestamps');

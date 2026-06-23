@@ -98,6 +98,7 @@ export interface PluginSettings {
   includeSystemAudio: boolean;
   cudaLibraryPath: string;
   developerMode: boolean;
+  diarizationEnabled: boolean;
   dictationAnchor: DictationAnchor;
   listeningMode: ListeningMode;
   llmFeaturesEnabled: boolean;
@@ -127,7 +128,6 @@ export interface PluginSettings {
   sidecarPathOverride: string;
   sidecarRequestTimeoutSeconds: number;
   sidecarStartupTimeoutSeconds: number;
-  speakerLabelsEnabled: boolean;
   speakingStyle: SpeakingStyle;
   timestampClock: TimestampClock;
   timestampDensity: TimestampDensity;
@@ -145,6 +145,7 @@ export const DEFAULT_PLUGIN_SETTINGS: PluginSettings = {
   includeSystemAudio: false,
   cudaLibraryPath: '',
   developerMode: false,
+  diarizationEnabled: false,
   dictationAnchor: 'at_cursor',
   listeningMode: 'always_on',
   llmFeaturesEnabled: true,
@@ -175,7 +176,6 @@ export const DEFAULT_PLUGIN_SETTINGS: PluginSettings = {
   sidecarPathOverride: '',
   sidecarRequestTimeoutSeconds: 300,
   sidecarStartupTimeoutSeconds: 4,
-  speakerLabelsEnabled: false,
   speakingStyle: 'balanced',
   timestampClock: 'elapsed',
   timestampDensity: 'sparse',
@@ -204,6 +204,7 @@ export function resolvePluginSettings(data: unknown): PluginSettings {
     includeSystemAudio: readIncludeSystemAudio(raw),
     cudaLibraryPath: readString(raw.cudaLibraryPath, DEFAULT_PLUGIN_SETTINGS.cudaLibraryPath),
     developerMode: readBoolean(raw.developerMode, DEFAULT_PLUGIN_SETTINGS.developerMode),
+    diarizationEnabled: readDiarizationEnabled(raw),
     dictationAnchor: isDictationAnchor(raw.dictationAnchor)
       ? raw.dictationAnchor
       : DEFAULT_PLUGIN_SETTINGS.dictationAnchor,
@@ -299,10 +300,6 @@ export function resolvePluginSettings(data: unknown): PluginSettings {
       raw.sidecarStartupTimeoutSeconds,
       DEFAULT_PLUGIN_SETTINGS.sidecarStartupTimeoutSeconds,
     ),
-    speakerLabelsEnabled: readBoolean(
-      raw.speakerLabelsEnabled,
-      DEFAULT_PLUGIN_SETTINGS.speakerLabelsEnabled,
-    ),
     speakingStyle: isSpeakingStyle(raw.speakingStyle)
       ? raw.speakingStyle
       : DEFAULT_PLUGIN_SETTINGS.speakingStyle,
@@ -386,6 +383,14 @@ function readIncludeSystemAudio(raw: Record<string, unknown>): boolean {
   }
 
   return raw.audioSource === 'system';
+}
+
+function readDiarizationEnabled(raw: Record<string, unknown>): boolean {
+  if (typeof raw.diarizationEnabled === 'boolean') {
+    return raw.diarizationEnabled;
+  }
+
+  return readBoolean(raw.speakerLabelsEnabled, DEFAULT_PLUGIN_SETTINGS.diarizationEnabled);
 }
 
 function readBoolean(value: unknown, fallback: boolean): boolean {

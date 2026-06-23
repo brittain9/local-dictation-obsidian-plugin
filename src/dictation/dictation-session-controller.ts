@@ -1,7 +1,9 @@
 import { randomUUID } from 'node:crypto';
 
+import { Platform } from 'obsidian';
+
 import type { AudioCaptureStream } from '../audio/audio-capture-stream';
-import { formatMicrophonePermissionDeniedMessage } from '../audio/microphone-permission-message';
+import { formatMicrophoneCaptureErrorMessage } from '../audio/microphone-permission-message';
 import type { SidecarAudioLevelMeter } from '../audio/sidecar-audio-level-meter';
 import type { NotePlacementOptions } from '../editor/note-surface';
 import {
@@ -29,7 +31,7 @@ import type {
 } from '../sidecar/protocol';
 import { type SidecarConnection, SidecarError } from '../sidecar/sidecar-connection';
 import { SidecarNotInstalledError } from '../sidecar/sidecar-paths';
-import type { TranscriptRenderOptions } from '../transcript/renderer';
+import { buildSpeakerSpans, type TranscriptRenderOptions } from '../transcript/renderer';
 
 export interface ProviderContextSource {
   kind: 'note_text' | 'prior_utterance';
@@ -61,6 +63,7 @@ type ControllerSession = Pick<
 
 interface ActiveSessionSnapshot {
   accelerationPreference: PluginSettings['accelerationPreference'];
+  diarizationEnabled: PluginSettings['diarizationEnabled'];
   includeSystemAudio: PluginSettings['includeSystemAudio'];
   dictationAnchor: PluginSettings['dictationAnchor'];
   listeningMode: PluginSettings['listeningMode'];
@@ -78,7 +81,6 @@ interface ActiveSessionSnapshot {
   modelSelection: NonNullable<PluginSettings['selectedModel']>;
   modelStorePathOverride: string;
   sessionStartUnixMs: number;
-  speakerLabelsEnabled: PluginSettings['speakerLabelsEnabled'];
   speakingStyle: PluginSettings['speakingStyle'];
   timestamps: TranscriptRenderOptions['timestamps'];
   transcriptFormatting: PluginSettings['transcriptFormatting'];
@@ -121,6 +123,7 @@ interface DictationSessionControllerDependencies {
   onLlmCleanupSuccess?: () => void;
   onModelMissing?: () => void;
   onSidecarMissing?: () => void;
+  countAudioInputDevices?: () => Promise<number | null>;
   setRibbonQueueTier: (tier: QueueBackpressureTier) => void;
   setRibbonState: (state: DictationControllerState) => void;
   sidecarConnection: Pick<
@@ -211,6 +214,21 @@ export class DictationSessionController {
 
     this.applyUiState('starting');
 
+    const settings = this.dependencies.getSettings();
+    if (settings.selectedModel === null) {
+      this.dependencies.logger?.debug('session', 'no model selected; prompting model picker');
+      this.applyUiState('idle');
+      this.dependencies.onModelMissing?.();
+      return;
+    }
+
+    try {
+      await this.assertMicrophoneInputAvailable();
+    } catch (error) {
+      this.handleError('Failed to start the dictation session', error);
+      return;
+    }
+
     try {
       await this.dependencies.sidecarConnection.ensureStarted();
     } catch (error) {
@@ -221,14 +239,6 @@ export class DictationSessionController {
         return;
       }
       this.handleError('Failed to start the dictation session', error);
-      return;
-    }
-
-    const settings = this.dependencies.getSettings();
-    if (settings.selectedModel === null) {
-      this.dependencies.logger?.debug('session', 'no model selected; prompting model picker');
-      this.applyUiState('idle');
-      this.dependencies.onModelMissing?.();
       return;
     }
 
@@ -252,7 +262,6 @@ export class DictationSessionController {
         },
         placement: { anchor: snapshot.dictationAnchor },
         rendererOptions: {
-          speakerLabelsEnabled: snapshot.speakerLabelsEnabled,
           timestamps: snapshot.timestamps,
           transcriptFormatting: snapshot.transcriptFormatting,
         },
@@ -281,6 +290,7 @@ export class DictationSessionController {
     try {
       await this.dependencies.sidecarConnection.startSession({
         accelerationPreference: snapshot.accelerationPreference,
+        diarizationEnabled: snapshot.diarizationEnabled,
         includeSystemAudio: snapshot.includeSystemAudio,
         language: 'en',
         mode: snapshot.listeningMode,
@@ -385,6 +395,20 @@ export class DictationSessionController {
       await this.cancelSession(sessionId);
     }
     this.handleError('Failed to start the dictation session', error);
+  }
+
+  private async assertMicrophoneInputAvailable(): Promise<void> {
+    if (!Platform.isLinux) {
+      return;
+    }
+
+    const countAudioInputDevices =
+      this.dependencies.countAudioInputDevices ?? countBrowserAudioInputDevices;
+    const audioInputCount = await countAudioInputDevices();
+
+    if (audioInputCount === 0) {
+      throw createMicrophoneNotFoundError();
+    }
   }
 
   private async cancelSession(sessionId: string): Promise<void> {
@@ -670,7 +694,15 @@ export class DictationSessionController {
   ): Promise<TranscriptRevision | null> {
     const baseRevision = toTranscriptRevision(event);
 
-    if (!shouldRunProviderPerUtteranceCleanup(entry.snapshot, event)) {
+    // A single-text rewrite cannot be re-attributed across speakers without
+    // losing who-said-what, so per-utterance cleanup is skipped when diarization
+    // splits an utterance into multiple speaker spans; the labelled raw spans are
+    // rendered and batch whole-session cleanup still applies. Single-speaker
+    // utterances clean as before.
+    if (
+      !shouldRunProviderPerUtteranceCleanup(entry.snapshot, event) ||
+      baseRevision.spans.length > 1
+    ) {
       return baseRevision;
     }
 
@@ -709,6 +741,7 @@ export class DictationSessionController {
       return {
         ...baseRevision,
         llmPostprocessRawText: entry.snapshot.llmPostprocessShowRawBelow ? rawText : null,
+        spans: buildSpeakerSpans(baseRevision.segments, cleanedText, baseRevision.speakerIndex),
         stageResults: [
           ...baseRevision.stageResults,
           createProviderStageOutcome({
@@ -1063,27 +1096,21 @@ export class DictationSessionController {
   }
 
   private handleError(message: string, error: unknown): void {
-    this.dependencies.logger?.error('session', message, error);
     this.applyUiState('error');
 
-    // The microphone-permission copy is a complete, actionable sentence on its
-    // own; prefixing it with the generic start-failure message just buries the
-    // instructions. The Settings mic picker shows it bare for the same reason.
-    if (isMicrophonePermissionDeniedError(error)) {
-      this.dependencies.notice(formatMicrophonePermissionDeniedMessage());
+    // Microphone-capture failures get specific, actionable copy that stands on
+    // its own; prefixing it with the generic start-failure message just buries
+    // the instructions. The Settings mic picker shows the same copy for parity.
+    const microphoneMessage = formatMicrophoneCaptureErrorMessage(error);
+    if (microphoneMessage !== null) {
+      this.dependencies.logger?.warn('session', message, formatErrorMessage(error));
+      this.dependencies.notice(microphoneMessage);
       return;
     }
 
+    this.dependencies.logger?.error('session', message, error);
     this.dependencies.notice(`${message}: ${formatErrorMessage(error)}`);
   }
-}
-
-function isMicrophonePermissionDeniedError(error: unknown): boolean {
-  return (
-    typeof error === 'object' &&
-    error !== null &&
-    (error as { name?: unknown }).name === 'NotAllowedError'
-  );
 }
 
 function createSessionId(): string {
@@ -1092,6 +1119,26 @@ function createSessionId(): string {
 
 function isCapacityExceededStartError(error: unknown): boolean {
   return error instanceof SidecarError && error.code === 'session_capacity_exceeded';
+}
+
+async function countBrowserAudioInputDevices(): Promise<number | null> {
+  if (typeof window === 'undefined') {
+    return null;
+  }
+
+  const mediaDevices = window.navigator?.mediaDevices;
+  if (mediaDevices?.enumerateDevices === undefined) {
+    return null;
+  }
+
+  const devices = await mediaDevices.enumerateDevices();
+  return devices.filter((device) => device.kind === 'audioinput').length;
+}
+
+function createMicrophoneNotFoundError(): Error {
+  const error = new Error('No audio input devices found.');
+  error.name = 'NotFoundError';
+  return error;
 }
 
 function createSessionSnapshot(
@@ -1122,6 +1169,7 @@ function createSessionSnapshot(
 
   return {
     accelerationPreference: settings.accelerationPreference,
+    diarizationEnabled: settings.diarizationEnabled,
     includeSystemAudio: settings.includeSystemAudio,
     dictationAnchor: settings.dictationAnchor,
     listeningMode: settings.listeningMode,
@@ -1139,7 +1187,6 @@ function createSessionSnapshot(
     modelSelection: selectedModel,
     modelStorePathOverride: settings.modelStorePathOverride,
     sessionStartUnixMs,
-    speakerLabelsEnabled: settings.speakerLabelsEnabled,
     speakingStyle: settings.speakingStyle,
     timestamps: {
       clock: settings.timestampClock,
@@ -1183,6 +1230,7 @@ function shouldRunProviderPerUtteranceCleanup(
 function toTranscriptRevision(event: TranscriptReadyEvent): TranscriptRevision {
   // RAW-BELOW is TS-only now: the success path in resolveTranscriptRevision sets
   // llmPostprocessRawText when a cleanup ran and showRawBelow is on.
+  const text = event.text.trim();
   return {
     isFinal: event.isFinal,
     llmPostprocessRawText: null,
@@ -1190,8 +1238,10 @@ function toTranscriptRevision(event: TranscriptReadyEvent): TranscriptRevision {
     revision: event.revision,
     segments: event.segments,
     sessionId: event.sessionId,
+    speakerIndex: event.speakerIndex,
+    spans: buildSpeakerSpans(event.segments, text, event.speakerIndex),
     stageResults: event.stageResults,
-    text: event.text.trim(),
+    text,
     utteranceEndMsInSession: event.utteranceEndMsInSession,
     utteranceId: event.utteranceId,
     utteranceIndex: event.utteranceIndex,

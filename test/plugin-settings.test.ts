@@ -43,6 +43,20 @@ describe('resolvePluginSettings', () => {
     });
   });
 
+  it('defaults speaker diarization off and honors a persisted boolean', () => {
+    expect(DEFAULT_PLUGIN_SETTINGS.diarizationEnabled).toBe(false);
+    expect(resolvePluginSettings({ diarizationEnabled: true }).diarizationEnabled).toBe(true);
+    expect(resolvePluginSettings({ diarizationEnabled: 'yes' }).diarizationEnabled).toBe(false);
+  });
+
+  it('migrates legacy speaker label setting to diarization', () => {
+    expect(resolvePluginSettings({ speakerLabelsEnabled: true }).diarizationEnabled).toBe(true);
+    expect(
+      resolvePluginSettings({ diarizationEnabled: false, speakerLabelsEnabled: true })
+        .diarizationEnabled,
+    ).toBe(false);
+  });
+
   it('merges valid persisted values', () => {
     expect(
       resolvePluginSettings({
@@ -77,7 +91,6 @@ describe('resolvePluginSettings', () => {
         sidecarPathOverride: ' /tmp/sidecar ',
         sidecarRequestTimeoutSeconds: 12,
         sidecarStartupTimeoutSeconds: 6,
-        speakerLabelsEnabled: true,
         speakingStyle: 'patient',
         timestampClock: 'wallclock',
         timestampDensity: 'every_utterance',
@@ -122,7 +135,6 @@ describe('resolvePluginSettings', () => {
       sidecarPathOverride: '/tmp/sidecar',
       sidecarRequestTimeoutSeconds: 12,
       sidecarStartupTimeoutSeconds: 6,
-      speakerLabelsEnabled: true,
       speakingStyle: 'patient',
       timestampClock: 'wallclock',
       timestampDensity: 'every_utterance',
@@ -170,7 +182,6 @@ describe('resolvePluginSettings', () => {
         sidecarPathOverride: 12,
         sidecarRequestTimeoutSeconds: -1,
         sidecarStartupTimeoutSeconds: 'fast',
-        speakerLabelsEnabled: 'yes',
         timestampClock: 'date',
         timestampDensity: 'always',
         timestampsEnabled: 'yes',

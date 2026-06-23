@@ -60,6 +60,7 @@ export type QueueBackpressureTier = (typeof QUEUE_BACKPRESSURE_TIERS)[number];
 
 export interface TranscriptSegment {
   endMs: number;
+  speaker: number | null;
   startMs: number;
   text: string;
   timestampGranularity: TimestampGranularity;
@@ -106,6 +107,7 @@ export type HealthCommand = EnvelopeBase<'health'>;
 
 export interface StartSessionCommand extends EnvelopeBase<'start_session'> {
   accelerationPreference: AccelerationPreference;
+  diarizationEnabled: boolean;
   includeSystemAudio: boolean;
   language: 'en';
   mode: ListeningMode;
@@ -235,6 +237,7 @@ export interface TranscriptReadyEvent extends EnvelopeBase<'transcript_ready'> {
   revision: number;
   segments: TranscriptSegment[];
   sessionId: string;
+  speakerIndex: number | null;
   stageResults: StageOutcome[];
   text: string;
   utteranceDurationMs: number;
@@ -579,7 +582,18 @@ export function parseEventFrame(jsonText: string): SidecarEvent {
     throw new Error(`Unsupported sidecar event type: ${String(parsedValue.type)}`);
   }
 
+  if (parsedValue.type === 'transcript_ready') {
+    return {
+      ...parsedValue,
+      speakerIndex: normalizeSpeakerIndex(parsedValue.speakerIndex),
+    } as unknown as SidecarEvent;
+  }
+
   return parsedValue as unknown as SidecarEvent;
+}
+
+function normalizeSpeakerIndex(value: unknown): number | null {
+  return typeof value === 'number' && Number.isInteger(value) && value >= 0 ? value : null;
 }
 
 function createEnvelope<TType extends SidecarCommand['type']>(

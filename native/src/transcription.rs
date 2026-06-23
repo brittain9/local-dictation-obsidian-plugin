@@ -221,6 +221,7 @@ mod tests {
             segments: vec![
                 TranscriptSegment {
                     end_ms: 0,
+                    speaker: None,
                     start_ms: 0,
                     text: " Hello".to_string(),
                     timestamp_granularity: TimestampGranularity::Segment,
@@ -228,6 +229,7 @@ mod tests {
                 },
                 TranscriptSegment {
                     end_ms: 0,
+                    speaker: None,
                     start_ms: 0,
                     text: "world ".to_string(),
                     timestamp_granularity: TimestampGranularity::Segment,
@@ -248,6 +250,7 @@ mod tests {
             segments: vec![
                 TranscriptSegment {
                     end_ms: 0,
+                    speaker: None,
                     start_ms: 0,
                     text: "Hello".to_string(),
                     timestamp_granularity: TimestampGranularity::Segment,
@@ -255,6 +258,7 @@ mod tests {
                 },
                 TranscriptSegment {
                     end_ms: 0,
+                    speaker: None,
                     start_ms: 0,
                     text: "   ".to_string(),
                     timestamp_granularity: TimestampGranularity::Segment,
@@ -262,6 +266,7 @@ mod tests {
                 },
                 TranscriptSegment {
                     end_ms: 0,
+                    speaker: None,
                     start_ms: 0,
                     text: "world".to_string(),
                     timestamp_granularity: TimestampGranularity::Segment,
