@@ -140,6 +140,11 @@ pub enum ModelInstallState {
 #[serde(rename_all = "camelCase")]
 pub struct TranscriptSegment {
     pub end_ms: u64,
+    /// Session-stable speaker for this segment, assigned by the diarization
+    /// stage. `None` when diarization is off or no turn could be attributed.
+    /// 0-based; serialized as `null` rather than omitted.
+    #[serde(default)]
+    pub speaker: Option<u32>,
     pub start_ms: u64,
     pub text: String,
     pub timestamp_granularity: TimestampGranularity,
@@ -166,6 +171,7 @@ pub enum TimestampGranularity {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum StageId {
+    Diarization,
     Engine,
     HallucinationFilter,
     Punctuation,
@@ -259,6 +265,8 @@ pub enum Command {
     StartSession {
         #[serde(default)]
         acceleration_preference: AccelerationPreference,
+        #[serde(default)]
+        diarization_enabled: bool,
         #[serde(default)]
         include_system_audio: bool,
         language: String,
@@ -406,6 +414,7 @@ pub enum Event {
         revision: u32,
         segments: Vec<TranscriptSegment>,
         session_id: String,
+        speaker_index: Option<u32>,
         stage_results: Vec<StageOutcome>,
         text: String,
         utterance_duration_ms: u64,
@@ -639,6 +648,7 @@ mod tests {
             parsed,
             IncomingFrame::Command(Command::StartSession {
                 acceleration_preference: AccelerationPreference::Auto,
+                diarization_enabled: false,
                 include_system_audio: true,
                 language: "en".to_string(),
                 mode: ListeningMode::AlwaysOn,
@@ -835,6 +845,7 @@ mod tests {
             revision: 0,
             segments: Vec::new(),
             session_id: "session-1".to_string(),
+            speaker_index: None,
             stage_results: Vec::new(),
             text: "hello".to_string(),
             utterance_duration_ms: 1000,
@@ -891,6 +902,7 @@ mod tests {
             revision: 0,
             segments: Vec::new(),
             session_id: "session-1".to_string(),
+            speaker_index: None,
             stage_results: Vec::new(),
             text: "hello".to_string(),
             utterance_duration_ms: 1000,

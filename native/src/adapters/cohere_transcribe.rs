@@ -155,6 +155,7 @@ impl LoadedModel for LoadedCohereModel {
             let duration_ms = (request.audio_samples.len() as u64 * 1_000) / SAMPLE_RATE as u64;
             vec![TranscriptSegment {
                 end_ms: duration_ms,
+                speaker: None,
                 start_ms: 0,
                 text: trimmed,
                 timestamp_granularity: TimestampGranularity::Utterance,
