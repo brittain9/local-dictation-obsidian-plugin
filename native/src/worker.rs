@@ -576,6 +576,21 @@ mod tests {
         }
     }
 
+    fn assert_payload_with_measured_duration(
+        payload: &Option<serde_json::Value>,
+        expected: serde_json::Value,
+    ) {
+        let mut actual = payload.clone().expect("processor should emit payload");
+        let duration = actual
+            .as_object_mut()
+            .expect("processor payload should be an object")
+            .remove("durationMs")
+            .expect("processor payload should include measured duration");
+
+        assert!(duration.is_u64());
+        assert_eq!(actual, expected);
+    }
+
     #[test]
     fn assemble_transcript_includes_voice_activity_in_engine_payload() {
         let voice_activity = voice_activity();
@@ -635,13 +650,12 @@ mod tests {
             voice_activity,
         });
 
-        assert_eq!(
-            transcript.stage_history[1].payload,
-            Some(serde_json::json!({
+        assert_payload_with_measured_duration(
+            &transcript.stage_history[1].payload,
+            serde_json::json!({
                 "audioStartMs": voice_activity.audio_start_ms,
-                "durationMs": 0,
                 "voicedMs": voice_activity.voiced_ms,
-            }))
+            }),
         );
     }
 
@@ -701,9 +715,9 @@ mod tests {
             voice_activity: voice_activity(),
         });
 
-        assert_eq!(
-            transcript.stage_history[1].payload,
-            Some(serde_json::json!({ "durationMs": 0, "pauseMsBeforeUtterance": 150 }))
+        assert_payload_with_measured_duration(
+            &transcript.stage_history[1].payload,
+            serde_json::json!({ "pauseMsBeforeUtterance": 150 }),
         );
     }
 
@@ -734,14 +748,9 @@ mod tests {
             voice_activity,
         });
 
-        let payload = transcript.stage_history[1]
-            .payload
-            .as_ref()
-            .expect("processor should emit payload")
-            .clone();
-        assert_eq!(
-            payload,
-            serde_json::json!({ "durationMs": 0, "voicedFraction": 0.7_f32 })
+        assert_payload_with_measured_duration(
+            &transcript.stage_history[1].payload,
+            serde_json::json!({ "voicedFraction": 0.7_f32 }),
         );
     }
 
@@ -767,13 +776,12 @@ mod tests {
             voice_activity: voice_activity(),
         });
 
-        assert_eq!(
-            transcript.stage_history[1].payload,
-            Some(serde_json::json!({
-                "durationMs": 0,
+        assert_payload_with_measured_duration(
+            &transcript.stage_history[1].payload,
+            serde_json::json!({
                 "supportsInitialPrompt": true,
                 "supportsLanguageSelection": false,
-            }))
+            }),
         );
     }
 
