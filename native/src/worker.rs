@@ -10,13 +10,16 @@ use tokio::runtime::{Builder, Runtime};
 use tokio::sync::watch;
 use uuid::Uuid;
 
+use crate::diarize::{SessionDiarizer, SpeakerTurn};
 use crate::engine::capabilities::{
     ModelFamilyCapabilities, ModelFamilyId, RequestWarning, RuntimeId,
 };
 use crate::engine::registry::{EngineRegistry, apply_capability_gates, missing_adapter_error};
 use crate::engine::traits::LoadedModel;
 use crate::panic_util::format_panic_message;
-use crate::protocol::{ContextWindow, EngineStagePayload, StageId, StageOutcome, StageStatus};
+use crate::protocol::{
+    ContextWindow, EngineStagePayload, StageId, StageOutcome, StageStatus, TranscriptSegment,
+};
 use crate::session::FinalizedUtterance;
 use crate::stages::{
     StageContext, StageEnablement, StageProcessor, post_engine_processors, run_post_engine,
@@ -30,6 +33,7 @@ pub struct SessionMetadata {
     pub runtime_id: RuntimeId,
     pub family_id: ModelFamilyId,
     pub gpu_config: GpuConfig,
+    pub diarization_enabled: bool,
     pub language: String,
     pub model_file_path: PathBuf,
     pub cancel_rx: watch::Receiver<bool>,
@@ -66,6 +70,7 @@ pub enum WorkerEvent {
         pause_ms_before_utterance: Option<u64>,
         processing_duration_ms: u64,
         session_id: String,
+        speaker_index: Option<u32>,
         transcript: Transcript,
         utterance_duration_ms: u64,
         utterance_end_ms_in_session: u64,
@@ -112,6 +117,7 @@ struct WorkerSession {
     family_capabilities: ModelFamilyCapabilities,
     loaded_model: Box<dyn LoadedModel>,
     processors: Vec<Box<dyn StageProcessor>>,
+    diarizer: Option<SessionDiarizer>,
 }
 
 struct LoadedSessionResources {
@@ -155,6 +161,19 @@ fn worker_main(
 
                 match load_result {
                     Ok(Ok(resources)) => {
+                        let diarizer = if metadata.diarization_enabled {
+                            match SessionDiarizer::new() {
+                                Ok(diarizer) => Some(diarizer),
+                                Err(error) => {
+                                    eprintln!(
+                                        "diarization disabled for session: failed to load speaker-embedding model: {error}"
+                                    );
+                                    None
+                                }
+                            }
+                        } else {
+                            None
+                        };
                         sessions.insert(
                             metadata.session_id.clone(),
                             WorkerSession {
@@ -162,6 +181,7 @@ fn worker_main(
                                 family_capabilities: resources.family_capabilities,
                                 loaded_model: resources.loaded_model,
                                 processors: post_engine_processors(),
+                                diarizer,
                             },
                         );
                     }
@@ -237,7 +257,7 @@ fn worker_main(
 
                 match result {
                     Ok(Ok(engine_output)) => {
-                        let transcript = assemble_transcript(TranscriptAssembly {
+                        let mut transcript = assemble_transcript(TranscriptAssembly {
                             utterance_id,
                             engine_output,
                             engine_duration_ms,
@@ -252,10 +272,16 @@ fn worker_main(
                             tokio_runtime: &tokio_runtime,
                             cancel_rx: &session.metadata.cancel_rx,
                         });
+                        let speaker_index = diarize_utterance(
+                            session.diarizer.as_mut(),
+                            &mut transcript,
+                            &request.audio_samples,
+                        );
                         let _ = event_tx.send(WorkerEvent::TranscriptReady {
                             pause_ms_before_utterance,
                             processing_duration_ms: started_at.elapsed().as_millis() as u64,
                             session_id,
+                            speaker_index,
                             transcript,
                             utterance_duration_ms,
                             utterance_end_ms_in_session,
@@ -306,6 +332,114 @@ struct TranscriptAssembly<'a> {
     processors: &'a [Box<dyn StageProcessor>],
     tokio_runtime: &'a Runtime,
     cancel_rx: &'a watch::Receiver<bool>,
+}
+
+/// Run diarization on a finalized utterance after the text stages. Splits the
+/// utterance into speaker turns, attributes each transcript segment to the turn
+/// it overlaps most, and returns the utterance's *dominant* speaker (the one
+/// credited with the most audio) for the back-compat utterance-level field.
+/// Returns `None` when diarization is disabled or the utterance has no surviving
+/// text. Records a `Diarization` stage outcome whenever it runs.
+fn diarize_utterance(
+    diarizer: Option<&mut SessionDiarizer>,
+    transcript: &mut Transcript,
+    samples: &[f32],
+) -> Option<u32> {
+    let diarizer = diarizer?;
+    if transcript.joined_text().is_empty() {
+        return None;
+    }
+
+    let revision = transcript.revision;
+    let started_at = Instant::now();
+    match diarizer.diarize(samples) {
+        Ok(turns) => {
+            let dominant = assign_segment_speakers(&mut transcript.segments, &turns);
+            let speaker_count = turns
+                .iter()
+                .map(|turn| turn.speaker_index)
+                .collect::<std::collections::HashSet<_>>()
+                .len();
+            transcript.stage_history.push(StageOutcome {
+                duration_ms: started_at.elapsed().as_millis() as u64,
+                is_final: true,
+                payload: Some(serde_json::json!({
+                    "speakerIndex": dominant,
+                    "turnCount": turns.len(),
+                    "speakerCount": speaker_count,
+                })),
+                revision_in: revision,
+                revision_out: Some(revision),
+                stage_id: StageId::Diarization,
+                status: StageStatus::Ok,
+            });
+            dominant
+        }
+        Err(error) => {
+            transcript.stage_history.push(StageOutcome {
+                duration_ms: started_at.elapsed().as_millis() as u64,
+                is_final: true,
+                payload: None,
+                revision_in: revision,
+                revision_out: None,
+                stage_id: StageId::Diarization,
+                status: StageStatus::Failed { error },
+            });
+            None
+        }
+    }
+}
+
+/// Attribute each transcript segment to the speaker of the turn it overlaps
+/// most; a segment overlapping no turn falls back to the nearest turn by
+/// midpoint, so every segment is labelled whenever any turn exists. Returns the
+/// dominant speaker (most attributed audio) for the utterance-level field.
+fn assign_segment_speakers(
+    segments: &mut [TranscriptSegment],
+    turns: &[SpeakerTurn],
+) -> Option<u32> {
+    if turns.is_empty() {
+        return None;
+    }
+
+    let mut duration_by_speaker: HashMap<u32, u64> = HashMap::new();
+    for segment in segments.iter_mut() {
+        let speaker =
+            best_overlap_speaker(segment, turns).or_else(|| nearest_turn_speaker(segment, turns));
+        segment.speaker = speaker;
+        if let Some(speaker) = speaker {
+            *duration_by_speaker.entry(speaker).or_default() +=
+                segment.end_ms.saturating_sub(segment.start_ms).max(1);
+        }
+    }
+
+    duration_by_speaker
+        .into_iter()
+        .max_by_key(|&(_, duration)| duration)
+        .map(|(speaker, _)| speaker)
+}
+
+fn best_overlap_speaker(segment: &TranscriptSegment, turns: &[SpeakerTurn]) -> Option<u32> {
+    turns
+        .iter()
+        .filter_map(|turn| {
+            let overlap = overlap_ms(segment.start_ms, segment.end_ms, turn.start_ms, turn.end_ms);
+            (overlap > 0).then_some((overlap, turn.speaker_index))
+        })
+        .max_by_key(|&(overlap, _)| overlap)
+        .map(|(_, speaker)| speaker)
+}
+
+fn nearest_turn_speaker(segment: &TranscriptSegment, turns: &[SpeakerTurn]) -> Option<u32> {
+    let midpoint = (segment.start_ms + segment.end_ms) / 2;
+    turns
+        .iter()
+        .min_by_key(|turn| ((turn.start_ms + turn.end_ms) / 2).abs_diff(midpoint))
+        .map(|turn| turn.speaker_index)
+}
+
+fn overlap_ms(a_start: u64, a_end: u64, b_start: u64, b_end: u64) -> u64 {
+    a_end.min(b_end).saturating_sub(a_start.max(b_start))
 }
 
 fn assemble_transcript(input: TranscriptAssembly<'_>) -> Transcript {
@@ -442,6 +576,21 @@ mod tests {
         }
     }
 
+    fn assert_payload_with_measured_duration(
+        payload: &Option<serde_json::Value>,
+        expected: serde_json::Value,
+    ) {
+        let mut actual = payload.clone().expect("processor should emit payload");
+        let duration = actual
+            .as_object_mut()
+            .expect("processor payload should be an object")
+            .remove("durationMs")
+            .expect("processor payload should include measured duration");
+
+        assert!(duration.is_u64());
+        assert_eq!(actual, expected);
+    }
+
     #[test]
     fn assemble_transcript_includes_voice_activity_in_engine_payload() {
         let voice_activity = voice_activity();
@@ -501,13 +650,12 @@ mod tests {
             voice_activity,
         });
 
-        assert_eq!(
-            transcript.stage_history[1].payload,
-            Some(serde_json::json!({
+        assert_payload_with_measured_duration(
+            &transcript.stage_history[1].payload,
+            serde_json::json!({
                 "audioStartMs": voice_activity.audio_start_ms,
-                "durationMs": 0,
                 "voicedMs": voice_activity.voiced_ms,
-            }))
+            }),
         );
     }
 
@@ -567,9 +715,9 @@ mod tests {
             voice_activity: voice_activity(),
         });
 
-        assert_eq!(
-            transcript.stage_history[1].payload,
-            Some(serde_json::json!({ "durationMs": 0, "pauseMsBeforeUtterance": 150 }))
+        assert_payload_with_measured_duration(
+            &transcript.stage_history[1].payload,
+            serde_json::json!({ "pauseMsBeforeUtterance": 150 }),
         );
     }
 
@@ -600,14 +748,9 @@ mod tests {
             voice_activity,
         });
 
-        let payload = transcript.stage_history[1]
-            .payload
-            .as_ref()
-            .expect("processor should emit payload")
-            .clone();
-        assert_eq!(
-            payload,
-            serde_json::json!({ "durationMs": 0, "voicedFraction": 0.7_f32 })
+        assert_payload_with_measured_duration(
+            &transcript.stage_history[1].payload,
+            serde_json::json!({ "voicedFraction": 0.7_f32 }),
         );
     }
 
@@ -633,13 +776,12 @@ mod tests {
             voice_activity: voice_activity(),
         });
 
-        assert_eq!(
-            transcript.stage_history[1].payload,
-            Some(serde_json::json!({
-                "durationMs": 0,
+        assert_payload_with_measured_duration(
+            &transcript.stage_history[1].payload,
+            serde_json::json!({
                 "supportsInitialPrompt": true,
                 "supportsLanguageSelection": false,
-            }))
+            }),
         );
     }
 
@@ -649,6 +791,7 @@ mod tests {
             segments: vec![TranscriptSegment {
                 start_ms: 0,
                 end_ms: 1_000,
+                speaker: None,
                 text: "hello".to_string(),
                 timestamp_granularity: TimestampGranularity::Segment,
                 timestamp_source: TimestampSource::Engine,
@@ -683,5 +826,101 @@ mod tests {
             max_audio_duration_secs: None,
             produces_punctuation: true,
         }
+    }
+
+    fn diarize_transcript(text: &str) -> Transcript {
+        let segments = if text.is_empty() {
+            Vec::new()
+        } else {
+            vec![TranscriptSegment {
+                start_ms: 0,
+                end_ms: 1_000,
+                speaker: None,
+                text: text.to_string(),
+                timestamp_granularity: TimestampGranularity::Segment,
+                timestamp_source: TimestampSource::Engine,
+            }]
+        };
+        Transcript {
+            utterance_id: Uuid::nil(),
+            revision: 0,
+            segments,
+            stage_history: Vec::new(),
+        }
+    }
+
+    fn speech_like(samples: usize) -> Vec<f32> {
+        (0..samples)
+            .map(|n| (2.0 * std::f32::consts::PI * 180.0 * n as f32 / 16_000.0).sin() * 0.4)
+            .collect()
+    }
+
+    #[test]
+    fn diarize_utterance_returns_none_when_disabled() {
+        let mut transcript = diarize_transcript("hello there");
+        let speaker = diarize_utterance(None, &mut transcript, &speech_like(16_000));
+        assert_eq!(speaker, None);
+        assert!(
+            !transcript
+                .stage_history
+                .iter()
+                .any(|stage| stage.stage_id == StageId::Diarization),
+            "no diarization stage should be recorded when disabled"
+        );
+    }
+
+    #[test]
+    fn diarize_utterance_skips_empty_text_without_recording_a_stage() {
+        let mut diarizer = SessionDiarizer::new().expect("model should load");
+        let mut transcript = diarize_transcript("");
+        let speaker = diarize_utterance(Some(&mut diarizer), &mut transcript, &speech_like(16_000));
+        assert_eq!(speaker, None);
+        assert!(
+            !transcript
+                .stage_history
+                .iter()
+                .any(|stage| stage.stage_id == StageId::Diarization),
+            "a fully-filtered utterance must not register a speaker"
+        );
+    }
+
+    #[test]
+    fn diarize_utterance_assigns_first_speaker_and_records_stage() {
+        let mut diarizer = SessionDiarizer::new().expect("model should load");
+        let mut transcript = diarize_transcript("hello there");
+        let speaker = diarize_utterance(Some(&mut diarizer), &mut transcript, &speech_like(16_000));
+        assert_eq!(speaker, Some(0));
+        let stage = transcript
+            .stage_history
+            .iter()
+            .find(|stage| stage.stage_id == StageId::Diarization)
+            .expect("a diarization stage should be recorded");
+        assert_eq!(stage.status, StageStatus::Ok);
+        assert_eq!(
+            stage
+                .payload
+                .as_ref()
+                .and_then(|payload| payload.get("speakerIndex")),
+            Some(&serde_json::json!(0))
+        );
+    }
+
+    #[test]
+    fn diarize_utterance_records_embedding_failure_in_stage_history() {
+        let mut diarizer = SessionDiarizer::new().expect("model should load");
+        let mut transcript = diarize_transcript("hello there");
+        let speaker = diarize_utterance(Some(&mut diarizer), &mut transcript, &[0.0; 100]);
+
+        assert_eq!(speaker, None);
+        let stage = transcript
+            .stage_history
+            .iter()
+            .find(|stage| stage.stage_id == StageId::Diarization)
+            .expect("a failed diarization stage should be recorded");
+        assert!(matches!(
+            &stage.status,
+            StageStatus::Failed { error } if error.contains("speaker embedding failed")
+        ));
+        assert_eq!(stage.revision_out, None);
     }
 }

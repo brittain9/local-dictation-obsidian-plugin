@@ -11,6 +11,7 @@ Private, on-device speech-to-text for Obsidian. Dictate notes with Whisper or Co
 - **Cohere Transcribe** — a [Hugging Face Open ASR Leaderboard](https://huggingface.co/spaces/hf-audio/open_asr_leaderboard)-topping engine, running locally.
 - **Whisper** — mature offline transcription with a range of size/speed options.
 - **Silero v6 VAD** — [enterprise-grade neural voice activity detection](https://github.com/snakers4/silero-vad) for real-time speech boundary detection.
+- **Speaker diarization** — optionally label who is speaking (Speaker 1, Speaker 2, …) for interviews, meetings, and conversations. Runs fully on-device; speaker data stays in memory for the session and is never persisted.
 - **System audio capture** — transcribe meetings, calls, and videos from this computer's output, not just your microphone. Built in on Windows and Linux; [virtual-device setup](docs/guides/system-audio.md) covers macOS.
 - **Optional LLM transformation** — clean up, rewrite, or summarize dictated text with a local model (Ollama) or OpenRouter. Keep everything local, or auto-route a job to OpenRouter once it outgrows your machine.
 - **One-click model management** — browse, download, and remove models from inside the plugin.
@@ -54,6 +55,7 @@ To make local transcription work, the plugin does a few things:
 - **Installs a helper program.** A small native "sidecar" is downloaded once from this repository's GitHub Releases and stored inside the plugin's folder. The plugin runs this helper locally to do the actual transcription.
 - **Stores model files on disk.** Whisper and voice-activity models are cached outside your vault so they aren't duplicated per-vault. You can browse and remove them from the plugin's model manager.
 - **Uses the network only for downloads — and OpenRouter, if you opt in.** The sidecar archive and model files are fetched from their official sources on demand. Nothing else is sent anywhere unless you enable OpenRouter transformation.
+- **Keeps speaker data in memory only.** With speaker diarization enabled, the voice embeddings used to tell speakers apart exist only for the duration of a session and are discarded when it ends. No voiceprints are written to disk.
 - **Optional OpenRouter transformation (off by default).** LLM transformation is opt-in and runs locally through Ollama by default. If you choose OpenRouter as the transform provider — or turn on automatic routing of large jobs — the transcript text and any note context you include are sent to OpenRouter for that step only; your audio is never sent. You can scope your OpenRouter key to privacy-respecting endpoints, and you set the size threshold above which jobs are routed.
 
 ## 🤝 Contributing
@@ -63,3 +65,10 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for prerequisites, setup, scripts, branch
 ## 📄 License
 
 MIT. See [LICENSE](LICENSE).
+
+The bundled speaker-embedding model (`wespeaker_en_voxceleb_resnet34_LM`, used for speaker diarization) is derived from [WeSpeaker](https://github.com/wenet-e2e/wespeaker) and distributed under [CC-BY-4.0](https://creativecommons.org/licenses/by/4.0/).
+
+The bundled speaker-segmentation model (`pyannote/segmentation-3.0`) is
+Copyright (c) 2023 CNRS and distributed under the MIT License. Published
+sidecar archives include `THIRD_PARTY_NOTICES.md` with the applicable model
+attributions and license notice.

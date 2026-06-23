@@ -9,6 +9,7 @@ export function transcript(
     segments: [
       {
         endMs: 100,
+        speaker: null,
         startMs: 0,
         text: overrides.text,
         timestampGranularity: 'segment',
@@ -17,6 +18,8 @@ export function transcript(
     ],
     pauseMsBeforeUtterance: null,
     sessionId: 'session-1',
+    speakerIndex: null,
+    spans: [{ speakerIndex: null, text: overrides.text }],
     stageResults: [
       {
         durationMs: 10,
