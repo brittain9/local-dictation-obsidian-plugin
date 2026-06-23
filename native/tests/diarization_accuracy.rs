@@ -338,3 +338,41 @@ fn full_pipeline_separates_distinct_speakers_in_one_session() {
         "full pipeline distinguished {distinct} speakers across the session, expected {expected_speakers}",
     );
 }
+
+/// Spawn the real sidecar and exercise the exact framed command/event contract
+/// used by the TypeScript plugin. This catches command parsing or event
+/// serialization regressions that the in-process AppState driver cannot.
+#[test]
+#[ignore = "spawns the built binary + real inference; run with --ignored"]
+fn spawned_sidecar_honors_diarization_enabled_over_the_wire() {
+    let model_path = model::require_whisper_model();
+    let corpus = Corpus::load();
+    let fixture = corpus.fixtures.first().expect("corpus has a fixture");
+    let samples = audio::decode_wav_16k_mono(&fixture.audio_path())
+        .unwrap_or_else(|error| panic!("decoding fixture {}: {error}", fixture.id));
+    let frames = audio::fixture_frames_with_trailing_silence(&samples);
+
+    let outcome = driver::diarize_via_process(
+        env!("CARGO_BIN_EXE_local-dictation-sidecar"),
+        &model_path,
+        &frames,
+        SpeakingStyle::Patient,
+    );
+
+    assert!(
+        outcome.errors.is_empty(),
+        "session emitted errors: {:?}",
+        outcome.errors
+    );
+    assert!(outcome.stopped, "session never reached session_stopped");
+    assert_eq!(outcome.utterance_count, 1);
+    assert_eq!(outcome.speakers, vec![Some(0)]);
+    assert!(
+        outcome
+            .labeled_segments
+            .iter()
+            .all(|(speaker, _)| speaker.is_some()),
+        "wire event contained unassigned segments: {:?}",
+        outcome.labeled_segments
+    );
+}

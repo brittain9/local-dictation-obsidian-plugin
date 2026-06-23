@@ -67,3 +67,8 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for prerequisites, setup, scripts, branch
 MIT. See [LICENSE](LICENSE).
 
 The bundled speaker-embedding model (`wespeaker_en_voxceleb_resnet34_LM`, used for speaker diarization) is derived from [WeSpeaker](https://github.com/wenet-e2e/wespeaker) and distributed under [CC-BY-4.0](https://creativecommons.org/licenses/by/4.0/).
+
+The bundled speaker-segmentation model (`pyannote/segmentation-3.0`) is
+Copyright (c) 2023 CNRS and distributed under the MIT License. Published
+sidecar archives include `THIRD_PARTY_NOTICES.md` with the applicable model
+attributions and license notice.

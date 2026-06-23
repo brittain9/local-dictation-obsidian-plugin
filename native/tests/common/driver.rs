@@ -210,12 +210,35 @@ fn start_session_command(
 // ---------------------------------------------------------------------------
 
 /// Drive a clip through the actual sidecar binary over its stdin/stdout wire
-/// protocol. `bin` is typically `env!("CARGO_BIN_EXE_local-dictation-sidecar")`.
+/// protocol with diarization disabled. `bin` is typically
+/// `env!("CARGO_BIN_EXE_local-dictation-sidecar")`.
 pub fn transcribe_via_process(
     bin: &str,
     model_path: &Path,
     frames: &[Vec<u8>],
     style: SpeakingStyle,
+) -> TranscriptionOutcome {
+    run_via_process(bin, model_path, frames, style, false)
+}
+
+/// Like [`transcribe_via_process`] but enables diarization on the framed
+/// `start_session` command and collects segment-level speaker labels from the
+/// serialized `transcript_ready` events.
+pub fn diarize_via_process(
+    bin: &str,
+    model_path: &Path,
+    frames: &[Vec<u8>],
+    style: SpeakingStyle,
+) -> TranscriptionOutcome {
+    run_via_process(bin, model_path, frames, style, true)
+}
+
+fn run_via_process(
+    bin: &str,
+    model_path: &Path,
+    frames: &[Vec<u8>],
+    style: SpeakingStyle,
+    diarization_enabled: bool,
 ) -> TranscriptionOutcome {
     let session_id = Uuid::new_v4().to_string();
     let mut child = ProcessCommand::new(bin)
@@ -242,7 +265,7 @@ pub fn transcribe_via_process(
 
     write_command_frame(
         &mut stdin,
-        &start_session_json(&session_id, model_path, style),
+        &start_session_json(&session_id, model_path, style, diarization_enabled),
     );
     for frame in frames {
         write_audio_frame(&mut stdin, &session_id, frame);
@@ -292,6 +315,24 @@ fn apply_json_event(
             }
         }
         Some("transcript_ready") => {
+            if let Some(segments) = event.get("segments").and_then(serde_json::Value::as_array) {
+                for segment in segments {
+                    let Some(text) = segment.get("text").and_then(serde_json::Value::as_str) else {
+                        continue;
+                    };
+                    let trimmed = text.trim();
+                    if trimmed.is_empty() {
+                        continue;
+                    }
+                    let speaker = segment
+                        .get("speaker")
+                        .and_then(serde_json::Value::as_u64)
+                        .map(|index| index as u32);
+                    outcome
+                        .labeled_segments
+                        .push((speaker, trimmed.to_string()));
+                }
+            }
             if let Some(text) = event.get("text").and_then(|v| v.as_str()) {
                 let speaker_index = event
                     .get("speakerIndex")
@@ -318,6 +359,7 @@ fn start_session_json(
     session_id: &str,
     model_path: &Path,
     style: SpeakingStyle,
+    diarization_enabled: bool,
 ) -> serde_json::Value {
     serde_json::json!({
         "type": "start_session",
@@ -325,6 +367,7 @@ fn start_session_json(
         "mode": "always_on",
         "language": "en",
         "accelerationPreference": "cpu_only",
+        "diarizationEnabled": diarization_enabled,
         "speakingStyle": speaking_style_wire(style),
         "modelSelection": {
             "kind": "external_file",

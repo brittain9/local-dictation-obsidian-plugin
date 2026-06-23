@@ -88,10 +88,15 @@ impl SessionDiarizer {
             }
             // The turn's audio is already speaker-active (Tier 0: we never embed
             // whole-utterance silence/music), so embed it directly.
-            let embedding = match self.extractor.embed(&samples[start..end]) {
-                Ok(embedding) => embedding,
-                Err(_) => continue,
-            };
+            let embedding = self
+                .extractor
+                .embed(&samples[start..end])
+                .map_err(|error| {
+                    format!(
+                        "speaker embedding failed for turn {}-{} ms: {error}",
+                        local.start_ms, local.end_ms
+                    )
+                })?;
             let voiced_ms = local.end_ms.saturating_sub(local.start_ms);
             let assignment = self.registry.assign(&embedding, voiced_ms);
             turns.push(SpeakerTurn {
@@ -103,5 +108,23 @@ impl SessionDiarizer {
 
         turns.sort_by_key(|turn| turn.start_ms);
         Ok(turns)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn reports_embedding_failure_instead_of_returning_no_turns() {
+        let mut diarizer = SessionDiarizer::new().expect("bundled models should load");
+        let error = diarizer
+            .diarize(&[0.0; 100])
+            .expect_err("audio shorter than one filterbank frame cannot be embedded");
+
+        assert!(
+            error.contains("speaker embedding failed"),
+            "unexpected error: {error}"
+        );
     }
 }

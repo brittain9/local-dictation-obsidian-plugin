@@ -1,4 +1,4 @@
-//! Investigative diarization probe (not a CI gate).
+//! End-to-end diarization probes that require a Whisper model.
 //!
 //! Runs hard, multi-speaker audio through the *real* pipeline
 //! (VAD → whisper → online diarization) via [`driver::diarize_in_process`] and
@@ -6,8 +6,8 @@
 //! current per-utterance diarizer's behaviour on conversational audio, where
 //! many speaker turns share one VAD utterance.
 //!
-//! Both tests are `#[ignore]`d: they need a whisper model and are diagnostics,
-//! not assertions. Run them explicitly:
+//! Both tests are `#[ignore]`d because they need a whisper model. Run them
+//! explicitly:
 //!
 //! ```sh
 //! STT_TEST_WHISPER_MODEL=/path/to/ggml-tiny.en.bin \
@@ -88,13 +88,13 @@ fn probe_realworld_clip() {
     }
 }
 
-/// Controlled causal proof: the *same* set of distinct speakers, interleaved as
-/// turns, separated by either a generous gap (VAD finalises one utterance per
-/// turn) or a tight gap (turns merge into one utterance). Ground truth is exact
-/// — each turn is a known corpus speaker — so the collapse is unambiguous.
+/// Controlled causal proof for segment-level diarization: tight gaps cause VAD
+/// to merge several known-speaker turns into fewer utterances, but the
+/// segmentation + embedding pipeline must still recover every speaker from the
+/// transcript segments.
 #[test]
-#[ignore = "investigative probe; needs a whisper model"]
-fn probe_gap_sweep() {
+#[ignore = "needs a whisper model + real inference; run with --ignored"]
+fn tight_gap_conversation_recovers_all_speakers_at_segment_level() {
     let model_path = model::require_whisper_model();
     let corpus = Corpus::load();
     let speakers: Vec<(String, Vec<i16>)> = corpus
@@ -119,32 +119,46 @@ fn probe_gap_sweep() {
         })
         .collect();
 
-    for (label, gap_frames) in [("generous_2.0s_gap", 100usize), ("tight_0.3s_gap", 15usize)] {
-        let mut samples: Vec<i16> = Vec::new();
-        let mut truth: Vec<String> = Vec::new();
-        for turn in 0..2 {
-            for (id, chunks) in &halves {
-                samples.extend_from_slice(&chunks[turn]);
-                samples.extend(std::iter::repeat_n(0i16, gap_frames * SAMPLES_PER_FRAME));
-                truth.push(id.clone());
-            }
+    let gap_frames = 15usize; // 0.3 s: below the balanced VAD finalization gap.
+    let mut samples: Vec<i16> = Vec::new();
+    let mut truth: Vec<String> = Vec::new();
+    for turn in 0..2 {
+        for (id, chunks) in &halves {
+            samples.extend_from_slice(&chunks[turn]);
+            samples.extend(std::iter::repeat_n(0i16, gap_frames * SAMPLES_PER_FRAME));
+            truth.push(id.clone());
         }
-        let frames = audio::samples_to_frames(&samples);
-        let outcome = driver::diarize_in_process(&model_path, &frames, SpeakingStyle::Balanced);
-
-        let segment_distinct = outcome
-            .labeled_segments
-            .iter()
-            .filter_map(|(speaker, _)| *speaker)
-            .collect::<HashSet<_>>()
-            .len();
-        eprintln!(
-            "\n[{label}] true_speakers={true_speaker_count} true_turns={} \
-             produced_utterances={} utterance_distinct={} SEGMENT_distinct={segment_distinct}",
-            truth.len(),
-            outcome.utterance_count,
-            distinct_speakers(&outcome.speakers),
-        );
-        eprintln!("  per-utterance dominant sequence: {:?}", outcome.speakers);
     }
+    let frames = audio::samples_to_frames(&samples);
+    let outcome = driver::diarize_in_process(&model_path, &frames, SpeakingStyle::Balanced);
+
+    let segment_distinct = outcome
+        .labeled_segments
+        .iter()
+        .filter_map(|(speaker, _)| *speaker)
+        .collect::<HashSet<_>>()
+        .len();
+    eprintln!(
+        "\n[tight_0.3s_gap] true_speakers={true_speaker_count} true_turns={} \
+         produced_utterances={} utterance_distinct={} segment_distinct={segment_distinct}",
+        truth.len(),
+        outcome.utterance_count,
+        distinct_speakers(&outcome.speakers),
+    );
+    eprintln!("  per-utterance dominant sequence: {:?}", outcome.speakers);
+
+    assert!(
+        outcome.errors.is_empty(),
+        "session emitted errors: {:?}",
+        outcome.errors
+    );
+    assert!(outcome.stopped, "session never reached session_stopped");
+    assert!(
+        outcome.utterance_count < truth.len(),
+        "test precondition failed: tight gaps did not merge turns into fewer VAD utterances"
+    );
+    assert_eq!(
+        segment_distinct, true_speaker_count,
+        "segment-level diarization recovered {segment_distinct} speakers, expected {true_speaker_count}"
+    );
 }

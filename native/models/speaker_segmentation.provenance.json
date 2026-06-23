@@ -5,7 +5,7 @@
     "model": "pyannote-segmentation-3.0",
     "release_url": "https://github.com/k2-fsa/sherpa-onnx/releases/tag/speaker-segmentation-models",
     "download_url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/speaker-segmentation-models/sherpa-onnx-pyannote-segmentation-3-0.tar.bz2",
-    "license": "MIT (Copyright (c) 2022 CNRS)",
+    "license": "MIT (Copyright (c) 2023 CNRS)",
     "model_card": "https://huggingface.co/pyannote/segmentation-3.0"
   },
   "artifact": {

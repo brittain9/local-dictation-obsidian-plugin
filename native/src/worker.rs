@@ -896,4 +896,23 @@ mod tests {
             Some(&serde_json::json!(0))
         );
     }
+
+    #[test]
+    fn diarize_utterance_records_embedding_failure_in_stage_history() {
+        let mut diarizer = SessionDiarizer::new().expect("model should load");
+        let mut transcript = diarize_transcript("hello there");
+        let speaker = diarize_utterance(Some(&mut diarizer), &mut transcript, &[0.0; 100]);
+
+        assert_eq!(speaker, None);
+        let stage = transcript
+            .stage_history
+            .iter()
+            .find(|stage| stage.stage_id == StageId::Diarization)
+            .expect("a failed diarization stage should be recorded");
+        assert!(matches!(
+            &stage.status,
+            StageStatus::Failed { error } if error.contains("speaker embedding failed")
+        ));
+        assert_eq!(stage.revision_out, None);
+    }
 }
