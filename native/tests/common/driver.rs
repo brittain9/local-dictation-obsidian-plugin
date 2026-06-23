@@ -51,6 +51,17 @@ pub struct TranscriptionOutcome {
     pub text: String,
     /// How many non-empty `transcript_ready` events were emitted.
     pub utterance_count: usize,
+    /// The speaker index attached to each non-empty utterance, in order. `None`
+    /// when diarization is disabled or the embedding step did not assign one.
+    /// Parallel to the utterances counted by `utterance_count`.
+    pub speakers: Vec<Option<u32>>,
+    /// Per-utterance `(speaker, text)` in arrival order, so a diarization probe
+    /// can print which words each predicted speaker was credited with.
+    pub utterances: Vec<(Option<u32>, String)>,
+    /// Per-*segment* `(speaker, text)` flattened across all utterances, in order.
+    /// Segment-level attribution is the point of turn diarization: one VAD
+    /// utterance can carry several speaker-labelled segments.
+    pub labeled_segments: Vec<(Option<u32>, String)>,
     /// Sum of engine `processingDurationMs` across utterances (for RTF).
     pub processing_ms: u64,
     /// Whether the session reached `session_stopped` before the timeout.
@@ -63,18 +74,43 @@ pub struct TranscriptionOutcome {
 // In-process driver
 // ---------------------------------------------------------------------------
 
-/// Drive a clip through an in-process [`AppState`], CPU-only for determinism.
+/// Drive a clip through an in-process [`AppState`], CPU-only for determinism,
+/// with speaker diarization disabled (the transcription-accuracy path).
 pub fn transcribe_in_process(
     model_path: &Path,
     frames: &[Vec<u8>],
     style: SpeakingStyle,
+) -> TranscriptionOutcome {
+    run_in_process(model_path, frames, style, false)
+}
+
+/// Like [`transcribe_in_process`] but with diarization on, so each utterance in
+/// the returned outcome carries the speaker index the worker assigned.
+pub fn diarize_in_process(
+    model_path: &Path,
+    frames: &[Vec<u8>],
+    style: SpeakingStyle,
+) -> TranscriptionOutcome {
+    run_in_process(model_path, frames, style, true)
+}
+
+fn run_in_process(
+    model_path: &Path,
+    frames: &[Vec<u8>],
+    style: SpeakingStyle,
+    diarization_enabled: bool,
 ) -> TranscriptionOutcome {
     let catalog = ModelCatalog::load_bundled().expect("bundled catalog should load");
     let mut app = AppState::new("e2e-test", catalog);
     let session_id = Uuid::new_v4().to_string();
     let mut outcome = TranscriptionOutcome::default();
 
-    let (_flow, events) = app.handle_command(start_session_command(&session_id, model_path, style));
+    let (_flow, events) = app.handle_command(start_session_command(
+        &session_id,
+        model_path,
+        style,
+        diarization_enabled,
+    ));
     apply_events(&mut app, events, &mut outcome);
 
     for frame in frames {
@@ -121,9 +157,19 @@ fn apply_events(app: &mut AppState, events: Vec<Event>, outcome: &mut Transcript
             Event::TranscriptReady {
                 text,
                 processing_duration_ms,
+                speaker_index,
+                segments,
                 ..
             } => {
-                push_transcript(outcome, &text);
+                for segment in &segments {
+                    let trimmed = segment.text.trim();
+                    if !trimmed.is_empty() {
+                        outcome
+                            .labeled_segments
+                            .push((segment.speaker, trimmed.to_string()));
+                    }
+                }
+                push_transcript(outcome, &text, speaker_index);
                 outcome.processing_ms += processing_duration_ms;
             }
             Event::SessionStopped { .. } => outcome.stopped = true,
@@ -135,9 +181,15 @@ fn apply_events(app: &mut AppState, events: Vec<Event>, outcome: &mut Transcript
     }
 }
 
-fn start_session_command(session_id: &str, model_path: &Path, style: SpeakingStyle) -> Command {
+fn start_session_command(
+    session_id: &str,
+    model_path: &Path,
+    style: SpeakingStyle,
+    diarization_enabled: bool,
+) -> Command {
     Command::StartSession {
         acceleration_preference: AccelerationPreference::CpuOnly,
+        diarization_enabled,
         include_system_audio: false,
         language: "en".to_string(),
         mode: ListeningMode::AlwaysOn,
@@ -158,12 +210,35 @@ fn start_session_command(session_id: &str, model_path: &Path, style: SpeakingSty
 // ---------------------------------------------------------------------------
 
 /// Drive a clip through the actual sidecar binary over its stdin/stdout wire
-/// protocol. `bin` is typically `env!("CARGO_BIN_EXE_local-dictation-sidecar")`.
+/// protocol with diarization disabled. `bin` is typically
+/// `env!("CARGO_BIN_EXE_local-dictation-sidecar")`.
 pub fn transcribe_via_process(
     bin: &str,
     model_path: &Path,
     frames: &[Vec<u8>],
     style: SpeakingStyle,
+) -> TranscriptionOutcome {
+    run_via_process(bin, model_path, frames, style, false)
+}
+
+/// Like [`transcribe_via_process`] but enables diarization on the framed
+/// `start_session` command and collects segment-level speaker labels from the
+/// serialized `transcript_ready` events.
+pub fn diarize_via_process(
+    bin: &str,
+    model_path: &Path,
+    frames: &[Vec<u8>],
+    style: SpeakingStyle,
+) -> TranscriptionOutcome {
+    run_via_process(bin, model_path, frames, style, true)
+}
+
+fn run_via_process(
+    bin: &str,
+    model_path: &Path,
+    frames: &[Vec<u8>],
+    style: SpeakingStyle,
+    diarization_enabled: bool,
 ) -> TranscriptionOutcome {
     let session_id = Uuid::new_v4().to_string();
     let mut child = ProcessCommand::new(bin)
@@ -190,7 +265,7 @@ pub fn transcribe_via_process(
 
     write_command_frame(
         &mut stdin,
-        &start_session_json(&session_id, model_path, style),
+        &start_session_json(&session_id, model_path, style, diarization_enabled),
     );
     for frame in frames {
         write_audio_frame(&mut stdin, &session_id, frame);
@@ -240,8 +315,30 @@ fn apply_json_event(
             }
         }
         Some("transcript_ready") => {
+            if let Some(segments) = event.get("segments").and_then(serde_json::Value::as_array) {
+                for segment in segments {
+                    let Some(text) = segment.get("text").and_then(serde_json::Value::as_str) else {
+                        continue;
+                    };
+                    let trimmed = text.trim();
+                    if trimmed.is_empty() {
+                        continue;
+                    }
+                    let speaker = segment
+                        .get("speaker")
+                        .and_then(serde_json::Value::as_u64)
+                        .map(|index| index as u32);
+                    outcome
+                        .labeled_segments
+                        .push((speaker, trimmed.to_string()));
+                }
+            }
             if let Some(text) = event.get("text").and_then(|v| v.as_str()) {
-                push_transcript(outcome, text);
+                let speaker_index = event
+                    .get("speakerIndex")
+                    .and_then(serde_json::Value::as_u64)
+                    .map(|index| index as u32);
+                push_transcript(outcome, text, speaker_index);
             }
             outcome.processing_ms += event
                 .get("processingDurationMs")
@@ -262,6 +359,7 @@ fn start_session_json(
     session_id: &str,
     model_path: &Path,
     style: SpeakingStyle,
+    diarization_enabled: bool,
 ) -> serde_json::Value {
     serde_json::json!({
         "type": "start_session",
@@ -269,6 +367,7 @@ fn start_session_json(
         "mode": "always_on",
         "language": "en",
         "accelerationPreference": "cpu_only",
+        "diarizationEnabled": diarization_enabled,
         "speakingStyle": speaking_style_wire(style),
         "modelSelection": {
             "kind": "external_file",
@@ -284,7 +383,7 @@ fn start_session_json(
 // Shared helpers
 // ---------------------------------------------------------------------------
 
-fn push_transcript(outcome: &mut TranscriptionOutcome, text: &str) {
+fn push_transcript(outcome: &mut TranscriptionOutcome, text: &str, speaker_index: Option<u32>) {
     let trimmed = text.trim();
     if trimmed.is_empty() {
         return;
@@ -294,6 +393,10 @@ fn push_transcript(outcome: &mut TranscriptionOutcome, text: &str) {
     }
     outcome.text.push_str(trimmed);
     outcome.utterance_count += 1;
+    outcome.speakers.push(speaker_index);
+    outcome
+        .utterances
+        .push((speaker_index, trimmed.to_string()));
 }
 
 fn speaking_style_wire(style: SpeakingStyle) -> &'static str {

@@ -8,11 +8,13 @@
 //! Responsibilities are split by concern (SRP): [`audio`] decodes WAV fixtures
 //! into the sidecar's PCM frame format, [`text`] scores transcripts, [`manifest`]
 //! loads the reference corpus, [`model`] acquires a whisper model, [`driver`]
-//! runs audio through the sidecar (in-process and as a real subprocess), and
-//! [`score`] judges an outcome against a fixture's quality budget.
+//! runs audio through the sidecar (in-process and as a real subprocess),
+//! [`score`] judges an outcome against a fixture's quality budget, and
+//! [`diarize`] builds multi-speaker scenarios and scores speaker clustering.
 #![allow(dead_code)]
 
 pub mod audio;
+pub mod diarize;
 pub mod driver;
 pub mod manifest;
 pub mod model;

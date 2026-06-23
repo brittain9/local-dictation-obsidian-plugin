@@ -3,6 +3,7 @@ pub mod app;
 pub mod audio_metadata;
 pub mod audio_mixer;
 pub mod catalog;
+pub mod diarize;
 pub mod engine;
 pub mod installer;
 #[cfg(feature = "engine-cohere-transcribe")]

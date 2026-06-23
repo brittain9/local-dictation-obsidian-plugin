@@ -16,7 +16,6 @@ import {
 import type { PluginLogger } from '../shared/plugin-logger';
 import { truncateLeadingText } from '../shared/text-truncation';
 import {
-  formatSpeakerLabel,
   type TranscriptInsertProjection,
   TranscriptRenderer,
   type TranscriptRenderOptions,
@@ -38,7 +37,12 @@ interface MarkdownLeafLike {
 
 type ProjectionState =
   | { kind: 'unprojected' }
-  | { kind: 'projected'; lastRevision: number; projectedText: string }
+  | {
+      kind: 'projected';
+      lastRevision: number;
+      precedingSpeakerIndex: number | null;
+      projectedText: string;
+    }
   | { kind: 'latched' }
   | { kind: 'denied' };
 
@@ -336,8 +340,7 @@ export class Session {
     const projection = this.renderer.planAppend(
       {
         pauseMsBeforeUtterance: revision.pauseMsBeforeUtterance,
-        speaker: resolveRevisionSpeaker(revision),
-        text: revision.text,
+        spans: revision.spans,
         utteranceId: revision.utteranceId,
         utteranceStartMsInSession: revision.utteranceStartMsInSession,
       },
@@ -353,6 +356,7 @@ export class Session {
       this.projectionByUtterance.set(revision.utteranceId, {
         kind: 'projected',
         lastRevision: revision.revision,
+        precedingSpeakerIndex: projection.precedingSpeakerIndex,
         projectedText: projection.insertedText,
       });
       this.recordRawSessionAppend(revision, projection);
@@ -379,8 +383,10 @@ export class Session {
     const callout = formatRawPostprocessCallout(rawText);
     const boundary = missingNewlines(context.tailContent, 2);
     const projection: TranscriptInsertProjection = {
+      emittedSpeakerIndex: null,
       emittedTimestamp: null,
       insertedText: callout,
+      precedingSpeakerIndex: null,
       projectedText: `${boundary}${callout}`,
       replacementPrefix: boundary,
       textEndOffset: boundary.length + callout.length,
@@ -404,9 +410,18 @@ export class Session {
       return;
     }
 
+    // A multi-speaker utterance carries labels interleaved in its body, so it
+    // must be recomposed (not swapped for the plain joined text) to preserve
+    // attribution. Single-speaker stays plain so the label in the prefix is
+    // untouched.
+    const replacementText =
+      revision.spans.length > 1
+        ? this.renderer.composeReplacementBody(revision.spans, state.precedingSpeakerIndex)
+        : revision.text;
+
     const result = this.surface?.replaceAnchor(
       revision.utteranceId,
-      revision.text,
+      replacementText,
       state.projectedText,
     );
 
@@ -418,7 +433,8 @@ export class Session {
       this.projectionByUtterance.set(revision.utteranceId, {
         kind: 'projected',
         lastRevision: revision.revision,
-        projectedText: revision.text,
+        precedingSpeakerIndex: state.precedingSpeakerIndex,
+        projectedText: replacementText,
       });
       this.recordRawSessionReplace(revision);
       return;
@@ -644,26 +660,6 @@ function formatRawPostprocessCallout(rawText: string): string {
     .join('\n');
 
   return `> [!note]- raw\n${quoted}`;
-}
-
-function resolveRevisionSpeaker(revision: TranscriptRevision): string | null {
-  const labels = new Set<string>();
-
-  for (const segment of revision.segments) {
-    if (segment.text.trim().length === 0) {
-      continue;
-    }
-    const label = formatSpeakerLabel(segment.speaker);
-    if (label !== null) {
-      labels.add(label);
-    }
-  }
-
-  if (labels.size !== 1) {
-    return null;
-  }
-
-  return labels.values().next().value ?? null;
 }
 
 function missingNewlines(tailContent: string, requiredTrailingNewlines: number): string {

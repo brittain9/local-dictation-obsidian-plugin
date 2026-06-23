@@ -28,7 +28,6 @@ export function renderOptions(
   overrides: Partial<TranscriptRenderOptions> = {},
 ): TranscriptRenderOptions {
   return {
-    speakerLabelsEnabled: false,
     timestamps: timestamps(),
     transcriptFormatting: 'space',
     ...overrides,

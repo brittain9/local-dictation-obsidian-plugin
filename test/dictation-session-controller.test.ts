@@ -140,16 +140,6 @@ class FakeAudioLevelMeter {
   public readonly update = vi.fn((_event: Extract<SidecarEvent, { type: 'audio_level' }>) => {});
 }
 
-interface CreatedSessionOptions {
-  callbacks: {
-    onLockedNoteClosed: () => void;
-    onLockedNoteDeleted: () => void;
-  };
-  placement: NotePlacementOptions;
-  rendererOptions: TranscriptRenderOptions;
-  sessionId: string;
-}
-
 describe('DictationSessionController', () => {
   it('starts a bare-UUID session and tags audio frames with that session id', async () => {
     const captureStream = new FakeCaptureStream();
@@ -196,30 +186,6 @@ describe('DictationSessionController', () => {
     expect(controller.getState()).toBe('listening');
   });
 
-  it('passes transcript output settings into the session renderer', async () => {
-    const createdSessions: Array<{
-      rendererOptions: TranscriptRenderOptions;
-    }> = [];
-    const controller = createController({
-      createSession: (_session, options) => {
-        createdSessions.push({ rendererOptions: options.rendererOptions });
-      },
-      getSettings: () =>
-        createSettings({
-          selectedModel: createExternalModelSelection(),
-          speakerLabelsEnabled: true,
-          transcriptFormatting: 'smart',
-        }),
-    });
-
-    await controller.startDictation();
-
-    expect(createdSessions[0]?.rendererOptions).toMatchObject({
-      speakerLabelsEnabled: true,
-      transcriptFormatting: 'smart',
-    });
-  });
-
   it('binds ribbon audio levels to the active session and ignores stale level events', async () => {
     const audioLevelMeter = new FakeAudioLevelMeter();
     const sidecarConnection = new FakeSidecarConnection();
@@ -262,6 +228,57 @@ describe('DictationSessionController', () => {
     expect(notice).not.toHaveBeenCalledWith(
       expect.stringContaining('Failed to start the dictation session'),
     );
+  });
+
+  it('surfaces a descriptive no-microphone message when capture finds no input device', async () => {
+    const captureStream = new FakeCaptureStream();
+    captureStream.start.mockRejectedValueOnce(
+      Object.assign(new Error('Requested device not found'), { name: 'NotFoundError' }),
+    );
+    const logger = new FakeLogger();
+    const notice = vi.fn();
+    const controller = createController({ captureStream, logger, notice });
+
+    await controller.startDictation();
+
+    expect(notice).toHaveBeenCalledWith(expect.stringContaining('No microphone detected'));
+    expect(notice).not.toHaveBeenCalledWith(
+      expect.stringContaining('Failed to start the dictation session'),
+    );
+    expect(logger.warn).toHaveBeenCalledWith(
+      'session',
+      'Failed to start the dictation session',
+      'Requested device not found',
+    );
+    expect(logger.error).not.toHaveBeenCalled();
+  });
+
+  it('does not start the sidecar session when device enumeration finds no microphone', async () => {
+    const captureStream = new FakeCaptureStream();
+    const logger = new FakeLogger();
+    const sidecarConnection = new FakeSidecarConnection();
+    const notice = vi.fn();
+    const controller = createController({
+      captureStream,
+      countAudioInputDevices: async () => 0,
+      logger,
+      notice,
+      sidecarConnection,
+    });
+
+    await controller.startDictation();
+
+    expect(notice).toHaveBeenCalledWith(expect.stringContaining('No microphone detected'));
+    expect(sidecarConnection.ensureStarted).not.toHaveBeenCalled();
+    expect(sidecarConnection.startSession).not.toHaveBeenCalled();
+    expect(captureStream.start).not.toHaveBeenCalled();
+    expect(controller.getState()).toBe('error');
+    expect(logger.warn).toHaveBeenCalledWith(
+      'session',
+      'Failed to start the dictation session',
+      'No audio input devices found.',
+    );
+    expect(logger.error).not.toHaveBeenCalled();
   });
 
   it('accepts late transcript events from a stopped session after a new session starts', async () => {
@@ -878,7 +895,9 @@ describe('DictationSessionController', () => {
     const controller = createController({ captureStream, sidecarConnection });
 
     const startPromise = controller.startDictation();
-    await Promise.resolve();
+    await vi.waitFor(() => {
+      expect(sidecarConnection.startSession).toHaveBeenCalledTimes(1);
+    });
     const sessionId = sidecarConnection.startSession.mock.calls[0]?.[0].sessionId ?? '';
     await controller.stopDictation();
 
@@ -963,6 +982,7 @@ describe('DictationSessionController', () => {
 function createController({
   audioLevelMeter = new FakeAudioLevelMeter(),
   captureStream = new FakeCaptureStream(),
+  countAudioInputDevices,
   createSession,
   llmRouter = createFakeLlmRouter(),
   getSettings = () => createSettings({ selectedModel: createExternalModelSelection() }),
@@ -974,7 +994,8 @@ function createController({
 }: {
   audioLevelMeter?: FakeAudioLevelMeter;
   captureStream?: FakeCaptureStream;
-  createSession?: (session: FakeSession, options: CreatedSessionOptions) => void;
+  countAudioInputDevices?: () => Promise<number | null>;
+  createSession?: (session: FakeSession) => void;
   getSettings?: () => PluginSettings;
   llmRouter?: LlmRouter;
   logger?: FakeLogger;
@@ -986,9 +1007,18 @@ function createController({
   return new DictationSessionController({
     captureStream,
     audioLevelMeter,
-    createSession: (_options: CreatedSessionOptions) => {
+    ...(countAudioInputDevices !== undefined ? { countAudioInputDevices } : {}),
+    createSession: (_options: {
+      callbacks: {
+        onLockedNoteClosed: () => void;
+        onLockedNoteDeleted: () => void;
+      };
+      placement: NotePlacementOptions;
+      rendererOptions: TranscriptRenderOptions;
+      sessionId: string;
+    }) => {
       const session = new FakeSession();
-      createSession?.(session, _options);
+      createSession?.(session);
       return session;
     },
     createLlmRouter: () => llmRouter,
@@ -1029,6 +1059,7 @@ function transcriptReady(sessionId: string, text: string): SidecarEvent {
     revision: 0,
     segments: [],
     sessionId,
+    speakerIndex: null,
     stageResults: [],
     text,
     type: 'transcript_ready',

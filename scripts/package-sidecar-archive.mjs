@@ -8,11 +8,12 @@
 
 import { spawnSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
-import { copyFile, mkdir, realpath } from 'node:fs/promises';
+import { copyFile, realpath } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import process from 'node:process';
 
 import { listCudaArtifacts } from './lib/cuda-artifacts.mjs';
+import { stageSidecarBaseFiles } from './lib/package-sidecar-base-files.mjs';
 import { pickFirstExistingDir } from './lib/pick-existing-dir.mjs';
 import { requiredEnv } from './lib/required-env.mjs';
 
@@ -30,8 +31,11 @@ const distDir = 'dist';
 const artifactDir = join(distDir, assetName);
 const buildDir = dirname(binaryPath);
 
-await mkdir(artifactDir, { recursive: true });
-await copyFile(binaryPath, join(artifactDir, binaryName));
+await stageSidecarBaseFiles({
+  artifactDirectory: artifactDir,
+  binaryName,
+  binaryPath,
+});
 
 if (isCuda) {
   // ORT provider .so/.dll files land next to the binary during the build.
