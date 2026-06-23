@@ -35,6 +35,8 @@ describe('stageSidecarBaseFiles', () => {
     expect(notices).toContain('WeSpeaker');
     expect(notices).toContain('CC BY 4.0');
     expect(notices).toContain('Copyright (c) 2023 CNRS');
+    expect(notices).toContain('Silero VAD');
+    expect(notices).toContain('Copyright (c) 2020-present Silero Team');
     expect(notices).toContain('MIT License');
   });
 });
