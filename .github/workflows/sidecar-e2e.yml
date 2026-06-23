@@ -29,7 +29,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Setup Node.js + npm
         uses: ./.github/actions/setup-node-npm
@@ -49,7 +49,7 @@ jobs:
       # Persist the downloaded whisper model across runs so we only pay the
       # download once. The key is stable: the model is pinned in the catalog.
       - name: Cache whisper test model
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ${{ env.MODEL_CACHE_DIR }}
           key: whisper-test-model-tiny-en-q8_0
