@@ -12,7 +12,7 @@
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
-const RELEASE_NOTES_DIR = join('docs', 'release-notes');
+const RELEASE_NOTES_DIR = join('docs', 'release', 'notes');
 
 const version = readFlagValue('--version');
 

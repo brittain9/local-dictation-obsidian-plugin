@@ -1,19 +1,23 @@
 # Contributing
 
+A TypeScript Obsidian plugin (`src/`) paired with a native Rust sidecar (`native/`) that handles inference. Audio crosses the boundary as 16 kHz mono PCM over stdin in a framed binary protocol; transcripts come back on stdout as JSON events. The sidecar owns everything between "audio in" and "transcript out"; the plugin renders and inserts that transcript.
+
+See [docs/system-architecture.md](docs/system-architecture.md) for the pipeline stages, the engine registry, and the wire protocol.
+
 ## Prerequisites
 
 - Node.js `24.14.1`, npm `11.12.1`
-- TypeScript `6.0.2`
+- TypeScript `6.0.3`
 - Rust `1.94.1`
 - CMake and a platform C/C++ toolchain for native sidecar builds
 - CUDA Toolkit `13.2` with `nvcc` for Linux/Windows CUDA sidecar builds only
 - cuDNN `9.x` runtime libraries for local Cohere CUDA verification only
 
-Versions are pinned in `package.json` (`engines`, `packageManager`) and `rust-toolchain.toml`. If you use [mise](https://mise.jdx.dev), `mise install` will set up the Node and Rust toolchains automatically.
+Versions are pinned in `package.json` (`engines`, `packageManager`) and `rust-toolchain.toml`. If you use [mise](https://mise.jdx.dev), `mise install` sets up the Node and Rust toolchains automatically.
 
 The CUDA Toolkit is a build-from-source dependency. Published Linux/Windows CUDA sidecar archives bundle the CUDA runtime libraries needed by Whisper CUDA; release users need only a Turing-or-newer NVIDIA GPU and a driver compatible with CUDA 13.x (R580 or newer). Cohere CUDA additionally needs cuDNN `9.x` runtime libraries built for CUDA 13 (9.20 or newer) installed until cuDNN redistribution is reviewed.
 
-## Setup
+## Getting it running
 
 Install dependencies:
 
@@ -49,66 +53,6 @@ npm run install:dev -- --vault ~/Documents/test-vault-stt --sidecars --enable
 
 For macOS testing, `npm run build:sidecar` builds the Metal-capable sidecar automatically.
 
-## Architecture Overview
-
-The repository has two runtime boundaries:
-
-- **TypeScript plugin** (`src/`) — Obsidian UX, settings, microphone capture, editor insertion, orchestration.
-- **Rust sidecar** (`native/`) — inference (via a three-layer engine registry: runtime / model family adapter / loaded model), audio-domain processing (VAD, diarization), and all post-transcript enrichment (hallucination filter, punctuation, user rules, render).
-
-Audio crosses the boundary as 16 kHz mono PCM over stdin in a framed binary protocol; transcripts come back on stdout as JSON events. The sidecar owns everything between "audio in" and "finished text out".
-
-For the full picture — current architecture, planned post-transcript enrichment pipeline, and per-stage detail — see [docs/system-architecture.md](docs/system-architecture.md).
-
-## Workflow
-
-We use **trunk-based development**. `main` stays releasable at all times.
-
-- All meaningful work happens on short-lived branches merged via PR.
-- Branches should live days, not weeks.
-- CI must pass before merge. Squash-merge preferred for single-concern PRs.
-- Direct pushes to `main` are acceptable only for trivial fixes (typos, comment corrections).
-
-### Branch Naming
-
-Use a prefix that describes the type of change:
-
-| Prefix | Use |
-|---|---|
-| `feat/` | New feature or capability |
-| `fix/` | Bug fix |
-| `refactor/` | Code restructuring without behavior change |
-| `docs/` | Documentation only |
-| `chore/` | Build, CI, tooling, or repo maintenance |
-
-Examples: `feat/punctuation-stage`, `fix/cohere-segments`, `chore/ci-caching`.
-
-### Pull Requests
-
-1. Create a PR against `main`.
-2. Fill out the PR template.
-3. Wait for CI to pass (`npm run check` runs typecheck, lint, test, build, cargo fmt, clippy, cargo test).
-4. Merge when green.
-
-Keep PRs small and focused. One concern per PR.
-
-## Versioning
-
-Releases use calendar versioning in the form `YYYY.M.MICRO`:
-
-- `YYYY` — four-digit year
-- `M` — month, no leading zero
-- `MICRO` — release counter within that month, starting at `1`
-
-`2026.7.2` is the second release of July 2026. The third number is **not** a day-of-month; multiple releases on the same day just increment the counter.
-
-Rules:
-
-- Every new version must sort above all previously published versions (Obsidian's updater compares versions numerically), so the four-digit year is permanent — a two-digit year like `26.x` would read as a downgrade and existing installs would stop receiving updates.
-- Versions up to and including `2026.6.9` used day-of-month numbering, so June 2026 counters continue from `2026.6.10`. From July 2026 onward the counter starts at `1` each month.
-
-A version bump touches `manifest.json`, `package.json` + `package-lock.json`, `versions.json`, and `native/Cargo.toml` + `native/Cargo.lock`.
-
 ## Scripts
 
 **Build:**
@@ -136,7 +80,7 @@ npm run check            # full quality gate (TS + Rust)
 npm run format           # auto-format with Biome
 ```
 
-## Quality Gates
+## Quality gates
 
 `npm run check` is the single quality gate. It runs:
 
@@ -144,3 +88,52 @@ npm run format           # auto-format with Biome
 - **Rust:** `cargo build`, `cargo fmt --check`, `cargo clippy`, `cargo test`
 
 Do not merge with failing CI.
+
+## Workflow
+
+Trunk-based development. `main` stays releasable at all times.
+
+- All meaningful work happens on short-lived branches merged via PR.
+- Branches should live days, not weeks.
+- CI must pass before merge. Squash-merge preferred for single-concern PRs.
+- Direct pushes to `main` are acceptable only for trivial fixes (typos, comment corrections).
+
+### Branch naming
+
+Use a prefix that describes the type of change:
+
+| Prefix | Use |
+|---|---|
+| `feat/` | New feature or capability |
+| `fix/` | Bug fix |
+| `refactor/` | Code restructuring without behavior change |
+| `docs/` | Documentation only |
+| `chore/` | Build, CI, tooling, or repo maintenance |
+
+Examples: `feat/punctuation-stage`, `fix/cohere-segments`, `chore/ci-caching`.
+
+### Pull requests
+
+1. Create a PR against `main`.
+2. Fill out the PR template.
+3. Wait for CI to pass (`npm run check` runs typecheck, lint, test, build, cargo fmt, clippy, cargo test).
+4. Merge when green.
+
+Keep PRs small and focused. One concern per PR.
+
+## Versioning
+
+Releases use calendar versioning in the form `YYYY.M.MICRO`:
+
+- `YYYY` — four-digit year
+- `M` — month, no leading zero
+- `MICRO` — release counter within that month, starting at `1`
+
+`2026.7.2` is the second release of July 2026. The third number is **not** a day-of-month; multiple releases on the same day just increment the counter.
+
+Rules:
+
+- Every new version must sort above all previously published versions (Obsidian's updater compares versions numerically), so the four-digit year is permanent — a two-digit year like `26.x` would read as a downgrade and existing installs would stop receiving updates.
+- Versions up to and including `2026.6.9` used day-of-month numbering, so June 2026 counters continue from `2026.6.10`. From July 2026 onward the counter starts at `1` each month.
+
+A version bump touches `manifest.json`, `package.json` + `package-lock.json`, `versions.json`, and `native/Cargo.toml` + `native/Cargo.lock`.
