@@ -1,7 +1,6 @@
 # Cutting a Release
 
-Operational runbook for shipping a new plugin release. For the higher-level
-distribution contract and readiness state, see [release-planning.md](release-planning.md).
+Operational runbook for shipping a new plugin release.
 
 ## Versioning: `YYYY.M.MICRO`
 
@@ -29,7 +28,7 @@ fails at the CI metadata gate:
 | `native/Cargo.toml` | `version` of the `local-dictation-sidecar` crate. **Easiest one to forget — it's the Rust sidecar.** |
 | `native/Cargo.lock` | the `version` under `[[package]] name = "local-dictation-sidecar"`. Keep in lock-step or the `--locked` build legs fail. |
 | `versions.json` | add `"<version>": "<minAppVersion>"`. (Obsidian's min-app map; not checked by the version validator, but required by the store.) |
-| `docs/release-notes/<version>.md` | new, non-empty, curated. Sections in order, omit empty: `## Highlights`, `## Fixes`, `## Performance`, `## Internal`. User-facing, plain language, one bold lead per bullet. |
+| `docs/release/notes/<version>.md` | new, non-empty, curated. Sections in order, omit empty: `## Highlights`, `## Fixes`, `## Performance`, `## Internal`. User-facing, plain language, one bold lead per bullet. |
 
 `minAppVersion` and the `obsidian` devDependency are independent on purpose: the
 floor can sit one patch above the typings (e.g. floor `1.11.5` for encryption at
@@ -71,6 +70,39 @@ the body, then un-drafts it) → `release-report` (timing summary).
 gh run watch <run-id> --exit-status   # do NOT pipe through `tail`/`head` — that masks the run's exit code
 gh release view <version>             # confirm it published with sidecar assets attached
 ```
+
+## What ships, and where it lands
+
+A release is one GitHub Release tagged `<version>`, carrying the plugin files and
+the sidecar archives:
+
+- `main.js`, `manifest.json`, `styles.css` — what Obsidian's updater fetches.
+- `sidecar-macos-arm64.tar.gz` — Whisper Metal + Cohere CPU.
+- `sidecar-linux-x86_64-cpu.tar.gz`, `sidecar-linux-x86_64-cuda.tar.gz`.
+- `sidecar-windows-x86_64-cpu.tar.gz`, `sidecar-windows-x86_64-cuda.tar.gz`.
+- `checksums.txt` — SHA-256 of every sidecar archive, exactly five lines, sorted.
+
+CUDA archives also bundle the ONNX Runtime provider libraries and the reviewed
+CUDA runtime libraries declared in `native/cuda-artifacts.json`. The macOS sidecar
+is ad-hoc signed before packaging.
+
+CUDA release builds target one forward-compatible Turing PTX target
+(`CMAKE_CUDA_ARCHITECTURES=75-virtual`), and all release jobs set `GGML_NATIVE=OFF`
+so sidecars don't inherit runner-only CPU SIMD. On licensing: the ONNX Runtime
+provider libraries are MIT and safe to bundle; the bundled CUDA runtime libraries
+ship after CUDA EULA review; cuDNN is NVIDIA-licensed and is **not** bundled, so
+Cohere CUDA users supply it themselves.
+
+Obsidian's updater only replaces `main.js`/`manifest.json`/`styles.css`, so the
+plugin installs the sidecar itself: it downloads the archive matching
+`manifest.version`, verifies it against `checksums.txt`, and unpacks into
+`<vault>/.obsidian/plugins/local-dictation/bin/cpu/` or `bin/cuda/`.
+`resolveSidecarExecutablePath()` then picks the binary in order — `sidecarPathOverride`,
+then plugin-local `bin/cpu`/`bin/cuda` (by acceleration preference and host
+support), then a dev build under `native/target[-cuda]/debug`. Because the updater
+never touches the installed sidecar, the plugin compares its recorded version
+(`bin/<variant>/install.json`) against `manifest.version` on startup and offers a
+one-click reinstall when they drift.
 
 ## Recovery
 

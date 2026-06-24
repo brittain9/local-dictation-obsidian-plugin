@@ -1,74 +1,47 @@
 # Local Dictation
 
-Private, on-device speech-to-text for Obsidian. Dictate notes with Whisper or Cohere Transcribe; transform the text with a local LLM (Ollama), or route oversized jobs to OpenRouter.
+On-device dictation plugin for Obsidian. Talk directly into your notes with fast accurate transcription from top models running on your CPU or GPU.
 
 [![GitHub release](https://img.shields.io/github/v/release/brittain9/local-dictation-obsidian-plugin?style=flat-square)](https://github.com/brittain9/local-dictation-obsidian-plugin/releases/latest)
 [![GitHub stars](https://img.shields.io/github/stars/brittain9/local-dictation-obsidian-plugin?style=flat-square)](https://github.com/brittain9/local-dictation-obsidian-plugin/stargazers)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=flat-square)](LICENSE)
 
-## ✨ Features
+Transcription runs entirely on your device. No accounts or cloud required. A fast rust sidecar handles the inference and all models can be downloaded directly in the settings.
 
-- **Cohere Transcribe** — a [Hugging Face Open ASR Leaderboard](https://huggingface.co/spaces/hf-audio/open_asr_leaderboard)-topping engine, running locally.
-- **Whisper** — mature offline transcription with a range of size/speed options.
-- **Silero v6 VAD** — [enterprise-grade neural voice activity detection](https://github.com/snakers4/silero-vad) for real-time speech boundary detection.
-- **Speaker diarization** — optionally label who is speaking (Speaker 1, Speaker 2, …) for interviews, meetings, and conversations. Runs fully on-device; speaker data stays in memory for the session and is never persisted.
-- **System audio capture** — transcribe meetings, calls, and videos from this computer's output, not just your microphone. Built in on Windows and Linux; [virtual-device setup](docs/guides/system-audio.md) covers macOS.
-- **Optional LLM transformation** — clean up, rewrite, or summarize dictated text with a local model (Ollama) or OpenRouter. Keep everything local, or auto-route a job to OpenRouter once it outgrows your machine.
-- **One-click model management** — browse, download, and remove models from inside the plugin.
-- **Hardware acceleration** — Metal on macOS, CUDA on Linux/Windows (Turing-or-newer NVIDIA GPUs).
-- **Private and offline** — transcription stays on-device. No cloud, no telemetry, no account. Only model downloads need a network.
+## Features
 
-## 💻 Platform Support
+- **Top models, run locally.** Whisper or Cohere Transcribe, on CPU or GPU. Cohere Transcribe currently tops the [Open ASR Leaderboard](https://huggingface.co/spaces/hf-audio/open_asr_leaderboard).
+- **Speaker labels.** Optional on-device diarization tags who's talking — for interviews, meetings, and calls. Nothing is stored; voiceprints live in memory for the session only.
+- **System audio.** Transcribe your computer's output — meetings, calls, videos — not just your mic. Available on Windows and Linux.
+- **Timestamps.** Optionally stamp phrases with elapsed or wall-clock time — handy for meetings and interviews.
+- **LLM presets.** Clean up, summarize, pull out action items, or reshape a transcript with built-in or custom presets, run through a local model (Ollama) or OpenRouter.
+- **Auto routing.** Keep cleanup fully local, or have only oversized transcripts route automatically to OpenRouter for a bigger model and larger context window.
+- **Runs on your hardware.** Metal on macOS, CUDA on recent NVIDIA GPUs, CPU everywhere else.
 
-| Platform | Hardware Acceleration |
-|---|---|
-| macOS | Metal for Whisper (automatic via system frameworks). |
-| Linux | CUDA for Whisper and Cohere on Turing-or-newer NVIDIA GPUs. Flatpak installs need a [GPU setup step](docs/guides/linux-flatpak-gpu-setup.md). |
-| Windows | CUDA for Whisper and Cohere on Turing-or-newer NVIDIA GPUs — see [Windows CUDA setup](docs/guides/windows-cuda-setup.md). |
+## 🚀 Getting started
 
-CPU works everywhere with no extra dependencies. CUDA acceleration requires an RTX 20-series / GTX 16-series or newer GPU with a driver compatible with CUDA 13.x (R580 or newer); Cohere on CUDA also needs cuDNN 9 for CUDA 13 (falls back to CPU without it). Full details in [Platform Runtime Dependencies](docs/release/platform-runtime-dependencies.md).
+Install **Local Dictation** from Obsidian's Community Plugins. A setup wizard downloads the engine and a starter model on first launch.
 
-> **Linux distro coverage.** macOS and Windows are the primary tested targets. On Linux, the plugin is regularly used on Fedora 44; other distributions (Arch, Ubuntu, Debian, etc.) should work but are not routinely verified. If you hit a problem on your distro, please open an issue with details.
+Then click the microphone in the ribbon, or bind a hotkey to **Local Dictation: Toggle dictation**, and start talking. Text lands at your cursor.
 
-> **macOS Voice Isolation.** If transcription quality drops on macOS, open Control Center → Mic Mode and set it to **Standard**. Voice Isolation and Wide Spectrum are applied by Core Audio at the system level and can clip sibilants in ways the plugin can't override.
+## Platform support
 
-## 🚀 Quick Start
+CPU works everywhere with no extra setup. Hardware acceleration is available for faster transcription — use Metal (macOS, automatic) or CUDA on a recent NVIDIA GPU (RTX 20-series / GTX 16-series or newer, with a current driver). See the [CUDA setup guide](docs/guides/cuda-setup.md) to enable it.
 
-Install Local Dictation from Obsidian's Community Plugins. On first run, a **setup wizard** walks you through downloading the speech engine and picking a transcription model — that's the easiest path.
-
-If you'd rather do it manually, open `Settings → Local Dictation`: install the sidecar from the sidecar section, then click **Manage models** to download a model. Either way, once setup finishes you can dictate from the mic in the ribbon, or bind a hotkey to the `Local Dictation: Toggle dictation` command.
-
-Where things live:
-
-- **Sidecar binary:** inside the plugin folder, under `.obsidian/plugins/local-dictation/bin/`.
-- **Models:** stored outside your vault, in your user data directory, so they aren't duplicated per-vault:
-  - Windows: `%LOCALAPPDATA%\obsidian-local-stt\models`
-  - macOS: `~/Library/Application Support/obsidian-local-stt/models`
-  - Linux: `~/.local/share/obsidian-local-stt/models`
+macOS and Windows are the primary tested targets. On Linux, the plugin is used daily on Fedora 44 (native and Flatpak); other distributions should work but aren't routinely verified. If something breaks on yours, [open an issue](https://github.com/brittain9/local-dictation-obsidian-plugin/issues).
 
 ## 🔒 Privacy
 
-Local Dictation is built to be private. By default, your audio and notes never leave your machine — no account, no telemetry, no background network traffic, and transcription always runs on-device. The only way text leaves your machine is the optional OpenRouter transform, and only when you turn it on.
+Your audio never leaves your device — transcription is always local. The sidecar and models download once from GitHub Releases, and model files live outside your vault.
 
-To make local transcription work, the plugin does a few things:
+Local LLMs are limited in capability, so you can route your transcribed text to OpenRouter for frontier models and much larger context windows. Restrict it to ZDR endpoints and approved providers in OpenRouter to match your own privacy standards. Remote LLM features turn off with a single toggle, and a second toggle disables all LLM features in the plugin.
 
-- **Installs a helper program.** A small native "sidecar" is downloaded once from this repository's GitHub Releases and stored inside the plugin's folder. The plugin runs this helper locally to do the actual transcription.
-- **Stores model files on disk.** Whisper and voice-activity models are cached outside your vault so they aren't duplicated per-vault. You can browse and remove them from the plugin's model manager.
-- **Uses the network only for downloads — and OpenRouter, if you opt in.** The sidecar archive and model files are fetched from their official sources on demand. Nothing else is sent anywhere unless you enable OpenRouter transformation.
-- **Keeps speaker data in memory only.** With speaker diarization enabled, the voice embeddings used to tell speakers apart exist only for the duration of a session and are discarded when it ends. No voiceprints are written to disk.
-- **Optional OpenRouter transformation (off by default).** LLM transformation is opt-in and runs locally through Ollama by default. If you choose OpenRouter as the transform provider — or turn on automatic routing of large jobs — the transcript text and any note context you include are sent to OpenRouter for that step only; your audio is never sent. You can scope your OpenRouter key to privacy-respecting endpoints, and you set the size threshold above which jobs are routed.
+## Contributing
 
-## 🤝 Contributing
+A TypeScript plugin paired with a rust sidecar for inference. See [CONTRIBUTING.md](CONTRIBUTING.md) for the architecture, setup, and workflow.
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for prerequisites, setup, scripts, branching conventions, PR workflow, and architecture overview.
+## License
 
-## 📄 License
+Local Dictation is MIT-licensed — see [LICENSE](LICENSE).
 
-MIT. See [LICENSE](LICENSE).
-
-The bundled speaker-embedding model (`wespeaker_en_voxceleb_resnet34_LM`, used for speaker diarization) is derived from [WeSpeaker](https://github.com/wenet-e2e/wespeaker) and distributed under [CC-BY-4.0](https://creativecommons.org/licenses/by/4.0/).
-
-The bundled speaker-segmentation model (`pyannote/segmentation-3.0`) is
-Copyright (c) 2023 CNRS and distributed under the MIT License. Published
-sidecar archives include `THIRD_PARTY_NOTICES.md` with the applicable model
-attributions and license notice.
+The models bundled in the sidecar are openly licensed too: Silero VAD (MIT) for voice activity detection, plus the diarization models WeSpeaker (CC-BY-4.0) and pyannote segmentation (MIT). Full attributions are in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
