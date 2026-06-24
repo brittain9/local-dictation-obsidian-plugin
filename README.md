@@ -2,10 +2,6 @@
 
 On-device dictation plugin for Obsidian. Talk directly into your notes with fast accurate transcription from top models running on your CPU or GPU.
 
-[![GitHub release](https://img.shields.io/github/v/release/brittain9/local-dictation-obsidian-plugin?style=flat-square)](https://github.com/brittain9/local-dictation-obsidian-plugin/releases/latest)
-[![GitHub stars](https://img.shields.io/github/stars/brittain9/local-dictation-obsidian-plugin?style=flat-square)](https://github.com/brittain9/local-dictation-obsidian-plugin/stargazers)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=flat-square)](LICENSE)
-
 Transcription runs entirely on your device. No accounts or cloud required. A fast rust sidecar handles the inference and all models can be downloaded directly in the settings.
 
 ## Features
@@ -44,4 +40,8 @@ A TypeScript plugin paired with a rust sidecar for inference. See [CONTRIBUTING.
 
 Local Dictation is MIT-licensed — see [LICENSE](LICENSE).
 
-The models bundled in the sidecar are openly licensed too: Silero VAD (MIT) for voice activity detection, plus the diarization models WeSpeaker (CC-BY-4.0) and pyannote segmentation (MIT). Full attributions are in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+The models bundled in the sidecar are openly licensed too: Silero VAD (MIT) for voice activity detection, plus the diarization models WeSpeaker (CC-BY-4.0) and pyannote segmentation (MIT). See Full attributions [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+
+[![GitHub release](https://img.shields.io/github/v/release/brittain9/local-dictation-obsidian-plugin?style=flat-square)](https://github.com/brittain9/local-dictation-obsidian-plugin/releases/latest)
+[![GitHub stars](https://img.shields.io/github/stars/brittain9/local-dictation-obsidian-plugin?style=flat-square)](https://github.com/brittain9/local-dictation-obsidian-plugin/stargazers)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=flat-square)](LICENSE)
