@@ -5,8 +5,8 @@ const args = new Set(process.argv.slice(2));
 
 const features =
   process.platform === 'darwin'
-    ? 'engine-whisper,engine-cohere-transcribe,gpu-metal'
-    : 'engine-whisper,engine-cohere-transcribe';
+    ? 'engine-whisper,engine-cohere-transcribe,engine-moonshine,gpu-metal'
+    : 'engine-whisper,engine-cohere-transcribe,engine-moonshine';
 
 const cargoArgs = [
   'build',

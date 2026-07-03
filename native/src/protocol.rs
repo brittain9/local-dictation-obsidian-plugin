@@ -589,6 +589,9 @@ pub fn system_info_string() -> String {
     #[cfg(feature = "engine-cohere-transcribe")]
     parts.push("cohere-transcribe: enabled".to_string());
 
+    #[cfg(feature = "engine-moonshine")]
+    parts.push("moonshine: enabled".to_string());
+
     parts.join(" | ")
 }
 

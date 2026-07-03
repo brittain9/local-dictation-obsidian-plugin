@@ -4,7 +4,7 @@ export const RUNTIME_IDS = ['onnx_runtime', 'whisper_cpp'] as const;
 
 export type RuntimeId = (typeof RUNTIME_IDS)[number];
 
-export const MODEL_FAMILY_IDS = ['cohere_transcribe', 'whisper'] as const;
+export const MODEL_FAMILY_IDS = ['cohere_transcribe', 'moonshine', 'whisper'] as const;
 
 export type ModelFamilyId = (typeof MODEL_FAMILY_IDS)[number];
 
@@ -33,6 +33,7 @@ export interface ModelFamilyCapabilitiesRecord {
   supportsSegmentTimestamps: boolean;
   supportsWordTimestamps: boolean;
   supportsInitialPrompt: boolean;
+  supportsStreaming: boolean;
   supportsLanguageSelection: boolean;
   supportedLanguages: LanguageSupport;
   maxAudioDurationSecs: number | null;

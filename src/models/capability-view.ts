@@ -51,6 +51,7 @@ export function buildCapabilityLabels(caps: EngineCapabilitiesRecord): string[] 
   if (caps.family.supportsSegmentTimestamps) labels.push('Segment timestamps');
   if (caps.family.supportsWordTimestamps) labels.push('Word timestamps');
   if (caps.family.supportsInitialPrompt) labels.push('Initial prompt');
+  if (caps.family.supportsStreaming) labels.push('Streaming');
   if (caps.family.producesPunctuation) labels.push('Punctuation');
 
   const languageLabel = describeLanguageSupport(caps.family);

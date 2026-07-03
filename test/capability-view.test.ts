@@ -19,6 +19,7 @@ const FAMILY_CAPS_DEFAULT: ModelFamilyCapabilitiesRecord = {
   producesPunctuation: false,
   supportedLanguages: { kind: 'all' },
   supportsInitialPrompt: false,
+  supportsStreaming: false,
   supportsLanguageSelection: false,
   supportsSegmentTimestamps: false,
   supportsWordTimestamps: false,
@@ -112,6 +113,7 @@ describe('buildCapabilityLabels', () => {
         family: {
           producesPunctuation: true,
           supportsInitialPrompt: true,
+          supportsStreaming: true,
           supportsSegmentTimestamps: true,
           supportsWordTimestamps: true,
         },
@@ -123,6 +125,7 @@ describe('buildCapabilityLabels', () => {
         'Segment timestamps',
         'Word timestamps',
         'Initial prompt',
+        'Streaming',
         'Punctuation',
       ]),
     );
@@ -134,6 +137,7 @@ describe('buildCapabilityLabels', () => {
     expect(labels).not.toContain('Segment timestamps');
     expect(labels).not.toContain('Word timestamps');
     expect(labels).not.toContain('Initial prompt');
+    expect(labels).not.toContain('Streaming');
     expect(labels).not.toContain('Punctuation');
   });
 
