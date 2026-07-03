@@ -16,6 +16,9 @@ import {
   sampleInstalledModel,
   sampleInstallUpdate,
   sampleModelStore,
+  sampleMoonshineInstalledModel,
+  sampleMoonshineInstallUpdate,
+  sampleMoonshineSelection,
   sampleSelection,
 } from './fixtures/models';
 
@@ -90,11 +93,16 @@ describe('ModelInstallManager', () => {
         loadError: null,
         loadStatus: 'ready',
       });
-      expect(state.catalog.models).toHaveLength(2);
+      expect(state.catalog.models).toHaveLength(3);
       expect(state.installedModels).toHaveLength(1);
       expect(state.modelStore.path).toBe('/models');
-      expect(state.compiledRuntimes.map((r) => r.runtimeId)).toEqual(['whisper_cpp']);
+      expect(state.compiledRuntimes.map((r) => r.runtimeId)).toEqual([
+        'onnx_runtime',
+        'whisper_cpp',
+      ]);
       expect(state.compiledAdapters.map((a) => `${a.runtimeId}:${a.familyId}`)).toEqual([
+        'onnx_runtime:cohere_transcribe',
+        'onnx_runtime:moonshine',
         'whisper_cpp:whisper',
       ]);
     });
@@ -134,6 +142,62 @@ describe('ModelInstallManager', () => {
           runtimeId: 'whisper_cpp',
         }),
       );
+    });
+
+    it('supports the managed install, select, and remove lifecycle for Moonshine', async () => {
+      const installedModel = sampleMoonshineInstalledModel();
+      const installUpdate = sampleMoonshineInstallUpdate();
+      const selection = sampleMoonshineSelection();
+
+      harness.sidecarConnection.installModel.mockResolvedValueOnce({
+        ...installUpdate,
+        state: 'queued',
+      });
+
+      await harness.manager.install(selection);
+
+      expect(harness.sidecarConnection.installModel).toHaveBeenCalledWith(
+        expect.objectContaining({
+          familyId: selection.familyId,
+          modelId: selection.modelId,
+          runtimeId: selection.runtimeId,
+        }),
+      );
+
+      harness.sidecarConnection.listInstalledModels.mockResolvedValueOnce({
+        models: [sampleInstalledModel(), installedModel],
+      });
+      harness.sidecarConnection.probeModelSelection.mockResolvedValueOnce(
+        sampleReadyProbeResult(selection),
+      );
+      emitInstallUpdate(harness, { ...installUpdate, state: 'downloading' });
+      emitInstallUpdate(harness, { ...installUpdate, state: 'completed' });
+
+      await vi.waitFor(() => {
+        expect(harness.getSettings().selectedModel).toEqual(selection);
+        expect(
+          harness.manager
+            .getState()
+            .installedModels.some((model) => model.modelId === selection.modelId),
+        ).toBe(true);
+      });
+
+      await harness.manager.clearSelection();
+      harness.sidecarConnection.removeModel.mockResolvedValueOnce({ removed: true });
+      await harness.manager.remove(selection);
+
+      expect(harness.sidecarConnection.removeModel).toHaveBeenCalledWith(
+        expect.objectContaining({
+          familyId: selection.familyId,
+          modelId: selection.modelId,
+          runtimeId: selection.runtimeId,
+        }),
+      );
+      expect(
+        harness.manager
+          .getState()
+          .installedModels.some((model) => model.modelId === selection.modelId),
+      ).toBe(false);
     });
 
     it('rejects a second install while one is active', async () => {
@@ -710,6 +774,36 @@ function sampleSystemInfo() {
   return {
     compiledAdapters: [
       {
+        displayName: 'Cohere Transcribe',
+        familyCapabilities: {
+          maxAudioDurationSecs: null,
+          producesPunctuation: true,
+          supportedLanguages: { kind: 'all' as const },
+          supportsInitialPrompt: false,
+          supportsStreaming: false,
+          supportsLanguageSelection: true,
+          supportsSegmentTimestamps: true,
+          supportsWordTimestamps: false,
+        },
+        familyId: 'cohere_transcribe' as const,
+        runtimeId: 'onnx_runtime' as const,
+      },
+      {
+        displayName: 'Moonshine',
+        familyCapabilities: {
+          maxAudioDurationSecs: null,
+          producesPunctuation: true,
+          supportedLanguages: { kind: 'english_only' as const },
+          supportsInitialPrompt: false,
+          supportsStreaming: true,
+          supportsLanguageSelection: false,
+          supportsSegmentTimestamps: false,
+          supportsWordTimestamps: false,
+        },
+        familyId: 'moonshine' as const,
+        runtimeId: 'onnx_runtime' as const,
+      },
+      {
         displayName: 'Whisper',
         familyCapabilities: {
           maxAudioDurationSecs: null,
@@ -726,6 +820,17 @@ function sampleSystemInfo() {
       },
     ],
     compiledRuntimes: [
+      {
+        displayName: 'ONNX Runtime',
+        runtimeCapabilities: {
+          acceleratorDetails: {
+            cpu: { available: true, unavailableReason: null },
+          },
+          availableAccelerators: ['cpu' as const],
+          supportedModelFormats: ['onnx' as const],
+        },
+        runtimeId: 'onnx_runtime' as const,
+      },
       {
         displayName: 'Whisper.cpp',
         runtimeCapabilities: {
@@ -769,19 +874,37 @@ function sampleMergedCapabilities(): EngineCapabilitiesRecord {
 }
 
 function sampleReadyProbeResult(selection: CatalogModelSelection = sampleSelection()) {
+  const isMoonshine = selection.familyId === 'moonshine';
+  const mergedCapabilities = sampleMergedCapabilities();
+
   return {
     available: true,
     details: null,
-    displayName: 'Whisper Large V3 Turbo Q8_0',
+    displayName: isMoonshine ? 'Moonshine Small Streaming' : 'Whisper Large V3 Turbo Q8_0',
     familyId: selection.familyId,
     installed: true,
-    mergedCapabilities: sampleMergedCapabilities(),
+    mergedCapabilities: {
+      ...mergedCapabilities,
+      family: {
+        ...mergedCapabilities.family,
+        supportsInitialPrompt: !isMoonshine,
+        supportsStreaming: isMoonshine,
+      },
+      familyId: selection.familyId,
+      runtime: {
+        ...mergedCapabilities.runtime,
+        supportedModelFormats: isMoonshine ? (['onnx'] as const) : ['ggml'],
+      },
+      runtimeId: selection.runtimeId,
+    },
     message: 'Model selection is ready.',
     modelId: 'modelId' in selection ? selection.modelId : null,
-    resolvedPath: '/models/whisper_cpp/whisper_large_v3_turbo_q8_0/model.bin',
+    resolvedPath: isMoonshine
+      ? '/models/onnx_runtime/moonshine_small_streaming_en/frontend.ort'
+      : '/models/whisper_cpp/whisper_large_v3_turbo_q8_0/model.bin',
     runtimeId: selection.runtimeId,
     selection,
-    sizeBytes: 900,
+    sizeBytes: isMoonshine ? 700 : 900,
     status: 'ready' as const,
   };
 }

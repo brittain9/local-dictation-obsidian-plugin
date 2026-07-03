@@ -1,13 +1,20 @@
 import { describe, expect, it } from 'vitest';
 import type { ActiveInstallInfo, ModelManagerState } from '../src/models/model-install-manager';
-import type { SelectedModel } from '../src/models/model-management-types';
+import { getTotalModelSize, type SelectedModel } from '../src/models/model-management-types';
 import {
   deriveCurrentModelDisplay,
+  deriveModelFamilyTabs,
   deriveModelRowStates,
   type ModelRowState,
 } from '../src/models/model-row-state';
 import { sampleCatalog } from './fixtures/catalog';
-import { sampleInstalledModel, sampleInstallUpdate } from './fixtures/models';
+import {
+  MOONSHINE_MODEL_ID,
+  sampleInstalledModel,
+  sampleInstallUpdate,
+  sampleMoonshineInstalledModel,
+  sampleMoonshineSelection,
+} from './fixtures/models';
 
 // ---------------------------------------------------------------------------
 // Fixtures (test-local; shared model/install fixtures live in fixtures/models.ts)
@@ -56,6 +63,45 @@ function getRow(rows: ModelRowState[], modelId: string): ModelRowState {
   return row;
 }
 
+function compiledAdapter(
+  familyId: ModelManagerState['compiledAdapters'][number]['familyId'],
+  runtimeId: ModelManagerState['compiledAdapters'][number]['runtimeId'],
+): ModelManagerState['compiledAdapters'][number] {
+  return {
+    displayName: familyId,
+    familyCapabilities: {
+      maxAudioDurationSecs: null,
+      producesPunctuation: true,
+      supportedLanguages: { kind: 'english_only' },
+      supportsInitialPrompt: false,
+      supportsLanguageSelection: false,
+      supportsSegmentTimestamps: false,
+      supportsStreaming: familyId === 'moonshine',
+      supportsWordTimestamps: false,
+    },
+    familyId,
+    runtimeId,
+  };
+}
+
+describe('deriveModelFamilyTabs', () => {
+  it('uses catalog family order even when compiled adapters arrive in native wire order', () => {
+    const state = buildState({
+      compiledAdapters: [
+        compiledAdapter('cohere_transcribe', 'onnx_runtime'),
+        compiledAdapter('moonshine', 'onnx_runtime'),
+        compiledAdapter('whisper', 'whisper_cpp'),
+      ],
+    });
+
+    expect(deriveModelFamilyTabs(state).map((tab) => tab.familyId)).toEqual([
+      'whisper',
+      'cohere_transcribe',
+      'moonshine',
+    ]);
+  });
+});
+
 // ---------------------------------------------------------------------------
 // deriveModelRowStates
 // ---------------------------------------------------------------------------
@@ -66,8 +112,34 @@ describe('deriveModelRowStates', () => {
 
     expect(rows.map((r) => r.model.modelId)).toEqual([
       'whisper_small_en_q5_1',
+      MOONSHINE_MODEL_ID,
       'whisper_large_v3_turbo_q8_0',
     ]);
+  });
+
+  it('derives installed and selected state for a multi-artifact Moonshine catalog model', () => {
+    const row = getRow(
+      deriveModelRowStates(
+        buildState({
+          installedModels: [sampleMoonshineInstalledModel()],
+          selectedModel: sampleMoonshineSelection(),
+        }),
+      ),
+      MOONSHINE_MODEL_ID,
+    );
+
+    expect(row).toMatchObject({ installed: true, isSelected: true });
+    expect(row.allowedActions).toEqual(['selected', 'details']);
+    expect(row.model).toMatchObject({
+      familyId: 'moonshine',
+      licenseLabel: 'MIT',
+      runtimeId: 'onnx_runtime',
+    });
+    expect(row.model.artifacts).toHaveLength(7);
+    expect(getTotalModelSize(row.model)).toBe(700);
+    expect(
+      row.model.artifacts.filter((artifact) => artifact.role === 'transcription_model'),
+    ).toEqual([expect.objectContaining({ filename: 'frontend.ort', required: true })]);
   });
 
   describe('per-row allowed actions', () => {
@@ -246,6 +318,24 @@ describe('deriveCurrentModelDisplay', () => {
       installedLabel: 'Not installed',
       resolvedPath: null,
       sizeBytes: 100,
+    });
+  });
+
+  it('hydrates a managed Moonshine selection from its catalog and installed records', () => {
+    const display = deriveCurrentModelDisplay(
+      buildState({
+        installedModels: [sampleMoonshineInstalledModel()],
+        selectedModel: sampleMoonshineSelection(),
+      }),
+    );
+
+    expect(display).toMatchObject({
+      displayName: 'Moonshine Small Streaming',
+      engineLabel: 'Moonshine',
+      installedLabel: 'Installed',
+      resolvedPath: `/models/onnx_runtime/${MOONSHINE_MODEL_ID}/frontend.ort`,
+      sizeBytes: 700,
+      sourceLabel: 'Managed download',
     });
   });
 

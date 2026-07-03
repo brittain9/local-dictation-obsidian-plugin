@@ -27,6 +27,12 @@ export interface ModelRowState {
   allowedActions: ModelRowAction[];
 }
 
+export interface ModelFamilyTab {
+  displayName: string;
+  familyId: ModelFamilyId;
+  runtimeId: RuntimeId;
+}
+
 export interface CurrentModelDisplay {
   displayName: string;
   engineLabel: string;
@@ -36,6 +42,27 @@ export interface CurrentModelDisplay {
   sizeBytes: number | null;
   installLocation: string | null;
   resolvedPath: string | null;
+}
+
+export function deriveModelFamilyTabs(
+  state: Pick<ModelManagerState, 'catalog' | 'compiledAdapters'>,
+): ModelFamilyTab[] {
+  return state.catalog.families.flatMap((family) => {
+    const adapter = state.compiledAdapters.find(
+      (candidate) =>
+        candidate.runtimeId === family.runtimeId && candidate.familyId === family.familyId,
+    );
+
+    return adapter === undefined
+      ? []
+      : [
+          {
+            displayName: adapter.displayName,
+            familyId: adapter.familyId,
+            runtimeId: adapter.runtimeId,
+          },
+        ];
+  });
 }
 
 // ---------------------------------------------------------------------------

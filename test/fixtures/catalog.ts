@@ -36,6 +36,43 @@ export function sampleCatalogModel(input: {
   };
 }
 
+export function sampleMoonshineCatalogModel(): CatalogModelRecord {
+  const artifacts = [
+    ['frontend', 'frontend.ort', 'transcription_model'],
+    ['encoder', 'encoder.ort', 'supporting_file'],
+    ['adapter', 'adapter.ort', 'supporting_file'],
+    ['cross_kv', 'cross_kv.ort', 'supporting_file'],
+    ['decoder_kv', 'decoder_kv.ort', 'supporting_file'],
+    ['streaming_config', 'streaming_config.json', 'supporting_file'],
+    ['tokenizer', 'tokenizer.bin', 'supporting_file'],
+  ] as const;
+
+  return {
+    artifacts: artifacts.map(([artifactId, filename, role]) => ({
+      artifactId,
+      downloadUrl: `https://download.example.com/moonshine/${filename}`,
+      filename,
+      required: true,
+      role,
+      sha256: '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef',
+      sizeBytes: 100,
+    })),
+    collectionId: 'moonshine_streaming',
+    displayName: 'Moonshine Small Streaming',
+    familyId: 'moonshine',
+    languageTags: ['en'],
+    licenseLabel: 'MIT',
+    licenseUrl: 'https://example.com/moonshine/license',
+    modelCardUrl: 'https://example.com/moonshine/model-card',
+    modelId: 'moonshine_small_streaming_en',
+    notes: ['English-only streaming model using quantized (int8) precision.'],
+    runtimeId: 'onnx_runtime',
+    sourceUrl: 'https://example.com/moonshine',
+    summary: 'Test Moonshine streaming model',
+    uxTags: ['balanced', 'starter'],
+  };
+}
+
 export function sampleCatalog(): ModelCatalogRecord {
   return {
     catalogVersion: 1,
@@ -45,12 +82,29 @@ export function sampleCatalog(): ModelCatalogRecord {
         displayName: 'English CPU First',
         summary: 'summary',
       },
+      {
+        collectionId: 'moonshine_streaming',
+        displayName: 'Moonshine Streaming',
+        summary: 'summary',
+      },
     ],
     families: [
       {
         displayName: 'Whisper',
         familyId: 'whisper',
         runtimeId: 'whisper_cpp',
+        summary: 'summary',
+      },
+      {
+        displayName: 'Cohere Transcribe',
+        familyId: 'cohere_transcribe',
+        runtimeId: 'onnx_runtime',
+        summary: 'summary',
+      },
+      {
+        displayName: 'Moonshine',
+        familyId: 'moonshine',
+        runtimeId: 'onnx_runtime',
         summary: 'summary',
       },
     ],
@@ -65,6 +119,7 @@ export function sampleCatalog(): ModelCatalogRecord {
         modelId: 'whisper_small_en_q5_1',
         sizeBytes: 100,
       }),
+      sampleMoonshineCatalogModel(),
     ],
   };
 }
