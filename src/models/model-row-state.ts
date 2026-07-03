@@ -219,7 +219,17 @@ function resolveFamilyDisplayName(
   familyId: ModelFamilyId,
 ): string {
   const record = catalog.families.find((f) => f.runtimeId === runtimeId && f.familyId === familyId);
-  return record?.displayName ?? familyId;
+  if (record !== undefined) {
+    return record.displayName;
+  }
+  switch (familyId) {
+    case 'cohere_transcribe':
+      return 'Cohere Transcribe';
+    case 'moonshine':
+      return 'Moonshine';
+    case 'whisper':
+      return 'Whisper';
+  }
 }
 
 function compareCatalogModels(left: CatalogModelRecord, right: CatalogModelRecord): number {

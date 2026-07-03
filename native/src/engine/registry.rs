@@ -349,6 +349,16 @@ mod tests {
         assert!(details.contains("whisper"));
     }
 
+    #[test]
+    fn moonshine_without_compiled_adapter_reports_unsupported_engine() {
+        let err = missing_adapter_error(RuntimeId::OnnxRuntime, ModelFamilyId::Moonshine);
+
+        assert_eq!(err.code, "unsupported_engine");
+        let details = err.details.expect("details set");
+        assert!(details.contains("onnx_runtime"));
+        assert!(details.contains("moonshine"));
+    }
+
     fn capabilities(supports_initial_prompt: bool) -> ModelFamilyCapabilities {
         ModelFamilyCapabilities {
             supports_segment_timestamps: true,

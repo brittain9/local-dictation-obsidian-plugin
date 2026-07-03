@@ -374,6 +374,41 @@ describe('ModelInstallManager', () => {
       expect(harness.getSettings().selectedModel).toEqual(sampleSelection());
     });
 
+    it('validates and selects Moonshine through the external-file path', async () => {
+      const selection = {
+        familyId: 'moonshine' as const,
+        filePath: '/models/moonshine/frontend.ort',
+        kind: 'external_file' as const,
+        runtimeId: 'onnx_runtime' as const,
+      };
+      harness.sidecarConnection.probeModelSelection.mockResolvedValueOnce({
+        ...sampleReadyProbeResult(),
+        displayName: 'frontend.ort',
+        familyId: selection.familyId,
+        mergedCapabilities: {
+          ...sampleMergedCapabilities(),
+          family: {
+            ...sampleMergedCapabilities().family,
+            supportsInitialPrompt: false,
+            supportsStreaming: true,
+          },
+          familyId: selection.familyId,
+          runtimeId: selection.runtimeId,
+        },
+        modelId: null,
+        resolvedPath: selection.filePath,
+        runtimeId: selection.runtimeId,
+        selection,
+      });
+
+      await harness.manager.validateAndSelectExternalFile(selection.filePath, selection);
+
+      expect(harness.sidecarConnection.probeModelSelection).toHaveBeenCalledWith(
+        expect.objectContaining({ modelSelection: selection }),
+      );
+      expect(harness.getSettings().selectedModel).toEqual(selection);
+    });
+
     it('refuses to persist when the probe reports the model as unavailable', async () => {
       harness.sidecarConnection.probeModelSelection.mockResolvedValueOnce({
         ...sampleReadyProbeResult(),
