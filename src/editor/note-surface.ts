@@ -191,11 +191,7 @@ export class NoteSurface {
       }
     }
 
-    if (latchedUtteranceIds.length > 0) {
-      this.view.dispatch({
-        effects: clearProvisionalTranscriptEffect.of(latchedUtteranceIds),
-      });
-    }
+    this.clearProvisional(latchedUtteranceIds);
   }
 
   readProjectionContext(): NoteProjectionContext {
@@ -260,7 +256,7 @@ export class NoteSurface {
 
     if (currentText !== expectedOldText || currentText !== span.projectedText) {
       span.latched = 'span_mismatch';
-      this.view.dispatch({ effects: clearProvisionalTranscriptEffect.of([utteranceId]) });
+      this.clearProvisional([utteranceId]);
       return {
         kind: 'denied',
         reason: { currentText, kind: 'span_mismatch' },
@@ -344,11 +340,7 @@ export class NoteSurface {
     for (const span of spansInRange) {
       this.spans.delete(span.utteranceId);
     }
-    if (spansInRange.length > 0) {
-      this.view.dispatch({
-        effects: clearProvisionalTranscriptEffect.of(spansInRange.map((span) => span.utteranceId)),
-      });
-    }
+    this.clearProvisional(spansInRange.map((span) => span.utteranceId));
     this.pendingInitialPrefix = '';
 
     return { kind: 'rewritten', range };
@@ -370,11 +362,7 @@ export class NoteSurface {
         latchedUtteranceIds.push(span.utteranceId);
       }
     }
-    if (latchedUtteranceIds.length > 0) {
-      this.view.dispatch({
-        effects: clearProvisionalTranscriptEffect.of(latchedUtteranceIds),
-      });
-    }
+    this.clearProvisional(latchedUtteranceIds);
   }
 
   setAnchorMode(mode: DictationAnchorMode): void {
@@ -396,7 +384,7 @@ export class NoteSurface {
     }
     const span = this.spans.get(utteranceId);
     if (!provisional || span === undefined || span.latched !== undefined) {
-      this.view.dispatch({ effects: clearProvisionalTranscriptEffect.of([utteranceId]) });
+      this.clearProvisional([utteranceId]);
       return;
     }
     this.view.dispatch({
@@ -470,6 +458,12 @@ export class NoteSurface {
     }
 
     return true;
+  }
+
+  private clearProvisional(utteranceIds: readonly UtteranceId[]): void {
+    if (utteranceIds.length > 0) {
+      this.view.dispatch({ effects: clearProvisionalTranscriptEffect.of(utteranceIds) });
+    }
   }
 
   private hasOtherLiveSibling(): boolean {

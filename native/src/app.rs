@@ -857,11 +857,7 @@ impl AppState {
                     utterance_id,
                     utterance_index,
                 });
-                if active_session.transcription_active {
-                    active_session.queued_utterances += 1;
-                } else {
-                    active_session.transcription_active = true;
-                }
+                mark_transcription_enqueued(active_session);
                 (
                     WorkerCommand::BeginStreamingUtterance {
                         session_id: session_id.to_string(),
@@ -1021,11 +1017,7 @@ impl AppState {
             let open = active_session.streaming_open.take();
             let utterance_id = open.map_or_else(Uuid::new_v4, |open| open.utterance_id);
             if open.is_none() {
-                if active_session.transcription_active {
-                    active_session.queued_utterances += 1;
-                } else {
-                    active_session.transcription_active = true;
-                }
+                mark_transcription_enqueued(active_session);
             }
             let send_result =
                 self.transcription_worker
@@ -1062,16 +1054,11 @@ impl AppState {
             return;
         }
 
-        let was_transcribing = active_session.transcription_active;
         let utterance_id = Uuid::new_v4();
         let correlation_id = Uuid::new_v4();
         let deadline = Instant::now() + CONTEXT_REQUEST_TIMEOUT;
 
-        if was_transcribing {
-            active_session.queued_utterances += 1;
-        } else {
-            active_session.transcription_active = true;
-        }
+        mark_transcription_enqueued(active_session);
 
         let pending = PendingContextRequest {
             correlation_id,
@@ -1408,6 +1395,14 @@ fn advance_transcription_queue(active_session: &mut ActiveSession) {
         active_session.transcription_active = true;
     } else {
         active_session.transcription_active = false;
+    }
+}
+
+fn mark_transcription_enqueued(active_session: &mut ActiveSession) {
+    if active_session.transcription_active {
+        active_session.queued_utterances += 1;
+    } else {
+        active_session.transcription_active = true;
     }
 }
 

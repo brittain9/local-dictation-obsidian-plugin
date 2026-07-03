@@ -154,15 +154,11 @@ const PARTIAL_CADENCE_MS: u64 = 500;
 const PARTIAL_CADENCE_SAMPLES: usize = 8_000;
 
 struct OpenStreamingUtterance {
-    accepted_samples: Vec<i16>,
     cadence: PartialCadence,
     last_emitted_text: String,
     next_revision: u32,
-    pause_ms_before_utterance: Option<u64>,
+    utterance: LiveUtterance,
     utterance_id: Uuid,
-    utterance_index: u64,
-    vad_probabilities: Vec<f32>,
-    voice_activity: crate::audio_metadata::VoiceActivityEvidence,
 }
 
 struct PartialCadence {
@@ -478,15 +474,11 @@ fn begin_streaming_utterance(
     model.accept_audio(&utterance.samples)?;
     let initial_samples = utterance.samples.len();
     *open = Some(OpenStreamingUtterance {
-        accepted_samples: utterance.samples,
         cadence: PartialCadence::new(now_ms, initial_samples),
         last_emitted_text: String::new(),
         next_revision: 0,
-        pause_ms_before_utterance: utterance.pause_ms_before_utterance,
+        utterance,
         utterance_id,
-        utterance_index: utterance.utterance_index,
-        vad_probabilities: utterance.vad_probabilities,
-        voice_activity: utterance.voice_activity,
     });
     Ok(())
 }
@@ -518,7 +510,7 @@ fn stream_audio(
     };
 
     model.accept_audio(samples)?;
-    open.accepted_samples.extend_from_slice(samples);
+    open.utterance.samples.extend_from_slice(samples);
     open.cadence.observe(samples.len());
     if !open.cadence.take_if_due(now_ms) {
         return Ok(());
@@ -535,11 +527,11 @@ fn stream_audio(
     let revision = open.next_revision;
     open.next_revision = open.next_revision.saturating_add(1);
     open.last_emitted_text = text;
-    let utterance_duration_ms = (open.accepted_samples.len() as u64 * 1_000) / 16_000;
-    let utterance_start_ms_in_session = open.voice_activity.audio_start_ms;
+    let utterance_duration_ms = (open.utterance.samples.len() as u64 * 1_000) / 16_000;
+    let utterance_start_ms_in_session = open.utterance.voice_activity.audio_start_ms;
     let utterance_end_ms_in_session =
         utterance_start_ms_in_session.saturating_add(utterance_duration_ms);
-    let mut voice_activity = open.voice_activity;
+    let mut voice_activity = open.utterance.voice_activity;
     voice_activity.audio_end_ms = utterance_end_ms_in_session;
 
     let transcript = offset_transcript_revision(
@@ -548,8 +540,8 @@ fn stream_audio(
             engine_output,
             engine_duration_ms,
             is_final: false,
-            pause_ms_before_utterance: open.pause_ms_before_utterance,
-            vad_probabilities: &open.vad_probabilities,
+            pause_ms_before_utterance: open.utterance.pause_ms_before_utterance,
+            vad_probabilities: &open.utterance.vad_probabilities,
             voice_activity,
             context: None,
             family_capabilities: &session.family_capabilities,
@@ -562,14 +554,14 @@ fn stream_audio(
     );
 
     let _ = event_tx.send(WorkerEvent::TranscriptReady {
-        pause_ms_before_utterance: open.pause_ms_before_utterance,
+        pause_ms_before_utterance: open.utterance.pause_ms_before_utterance,
         processing_duration_ms: started_at.elapsed().as_millis() as u64,
         session_id: session_id.to_string(),
         speaker_index: None,
         transcript,
         utterance_duration_ms,
         utterance_end_ms_in_session,
-        utterance_index: open.utterance_index,
+        utterance_index: open.utterance.utterance_index,
         utterance_start_ms_in_session,
         warnings: session.warnings.clone(),
     });
@@ -609,7 +601,7 @@ fn finalize_streaming_utterance(
     let revision = open.as_ref().map_or(0, |open| open.next_revision);
     if open
         .as_ref()
-        .is_none_or(|open| open.utterance_id != utterance_id || open.accepted_samples != samples)
+        .is_none_or(|open| open.utterance_id != utterance_id || open.utterance.samples != samples)
     {
         model.reset_utterance();
         model.accept_audio(&samples)?;

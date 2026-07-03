@@ -539,7 +539,7 @@
 /* --- Batch LLM processing pulse ----------------------------------- */
 
 .local-stt-transcript-provisional {
-  opacity: 0.68;
+  opacity: 0.85;
   transition: opacity 120ms ease;
 }
 
