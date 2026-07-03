@@ -17,7 +17,7 @@ import {
   matchesModelTriple,
   type RuntimeId,
 } from './model-management-types';
-import { deriveModelRowStates, type ModelRowState } from './model-row-state';
+import { deriveModelFamilyTabs, deriveModelRowStates, type ModelRowState } from './model-row-state';
 
 // ---------------------------------------------------------------------------
 // Dependencies
@@ -140,18 +140,7 @@ export class ManageModelsModal extends Modal {
     // compiled sidecar AND the catalog — compiled alone doesn't guarantee any
     // downloadable models, and catalog alone doesn't guarantee the sidecar can
     // run them.
-    const adapters = state.compiledAdapters
-      .filter((adapter) =>
-        state.catalog.families.some(
-          (family) =>
-            family.runtimeId === adapter.runtimeId && family.familyId === adapter.familyId,
-        ),
-      )
-      .map((adapter) => ({
-        displayName: adapter.displayName,
-        runtimeId: adapter.runtimeId,
-        familyId: adapter.familyId,
-      }));
+    const adapters = deriveModelFamilyTabs(state);
 
     if (
       this.activeTab === null ||

@@ -658,7 +658,7 @@ impl AppState {
     }
 
     fn build_system_info_event(&self) -> Event {
-        let compiled_runtimes: Vec<CompiledRuntimeInfo> = self
+        let mut compiled_runtimes: Vec<CompiledRuntimeInfo> = self
             .registry
             .runtimes()
             .map(|runtime| CompiledRuntimeInfo {
@@ -667,8 +667,9 @@ impl AppState {
                 runtime_capabilities: runtime.capabilities().clone(),
             })
             .collect();
+        compiled_runtimes.sort_by_key(|runtime| runtime.runtime_id.as_str());
 
-        let compiled_adapters: Vec<CompiledAdapterInfo> = self
+        let mut compiled_adapters: Vec<CompiledAdapterInfo> = self
             .registry
             .adapters()
             .map(|adapter| CompiledAdapterInfo {
@@ -678,6 +679,8 @@ impl AppState {
                 family_capabilities: adapter.capabilities().clone(),
             })
             .collect();
+        compiled_adapters
+            .sort_by_key(|adapter| (adapter.runtime_id.as_str(), adapter.family_id.as_str()));
 
         Event::SystemInfo {
             sidecar_version: self.sidecar_version.clone(),
@@ -1606,6 +1609,7 @@ mod tests {
     use crate::worker::WorkerEvent;
 
     struct FakeRuntime {
+        id: RuntimeId,
         capabilities: RuntimeCapabilities,
     }
 
@@ -1620,6 +1624,7 @@ mod tests {
                 },
             );
             Self {
+                id: RuntimeId::WhisperCpp,
                 capabilities: RuntimeCapabilities {
                     available_accelerators: vec![AcceleratorId::Cpu],
                     accelerator_details,
@@ -1645,6 +1650,7 @@ mod tests {
                 },
             );
             Self {
+                id: RuntimeId::WhisperCpp,
                 capabilities: RuntimeCapabilities {
                     available_accelerators: vec![AcceleratorId::Cpu, AcceleratorId::Cuda],
                     accelerator_details,
@@ -1652,11 +1658,18 @@ mod tests {
                 },
             }
         }
+
+        fn onnx() -> Self {
+            let mut runtime = Self::cpu_only();
+            runtime.id = RuntimeId::OnnxRuntime;
+            runtime.capabilities.supported_model_formats = vec![ModelFormat::Onnx];
+            runtime
+        }
     }
 
     impl Runtime for FakeRuntime {
         fn id(&self) -> RuntimeId {
-            RuntimeId::WhisperCpp
+            self.id
         }
 
         fn capabilities(&self) -> &RuntimeCapabilities {
@@ -1665,6 +1678,8 @@ mod tests {
     }
 
     struct FakeAdapter {
+        family_id: ModelFamilyId,
+        runtime_id: RuntimeId,
         capabilities: ModelFamilyCapabilities,
     }
 
@@ -1675,6 +1690,8 @@ mod tests {
 
         fn with_initial_prompt(supports_initial_prompt: bool) -> Self {
             Self {
+                family_id: ModelFamilyId::Whisper,
+                runtime_id: RuntimeId::WhisperCpp,
                 capabilities: ModelFamilyCapabilities {
                     supports_segment_timestamps: true,
                     supports_word_timestamps: false,
@@ -1686,6 +1703,13 @@ mod tests {
                     produces_punctuation: true,
                 },
             }
+        }
+
+        fn for_family(runtime_id: RuntimeId, family_id: ModelFamilyId) -> Self {
+            let mut adapter = Self::new();
+            adapter.runtime_id = runtime_id;
+            adapter.family_id = family_id;
+            adapter
         }
     }
 
@@ -1705,11 +1729,11 @@ mod tests {
 
     impl ModelFamilyAdapter for FakeAdapter {
         fn runtime_id(&self) -> RuntimeId {
-            RuntimeId::WhisperCpp
+            self.runtime_id
         }
 
         fn family_id(&self) -> ModelFamilyId {
-            ModelFamilyId::Whisper
+            self.family_id
         }
 
         fn capabilities(&self) -> &ModelFamilyCapabilities {
@@ -1747,6 +1771,25 @@ mod tests {
         let mut registry = EngineRegistry::default();
         registry.register_runtime(Box::new(FakeRuntime::with_cuda()));
         registry.register_adapter(Box::new(FakeAdapter::new()));
+        Arc::new(registry)
+    }
+
+    fn fake_registry_with_all_engines() -> Arc<EngineRegistry> {
+        let mut registry = EngineRegistry::default();
+        registry.register_runtime(Box::new(FakeRuntime::cpu_only()));
+        registry.register_runtime(Box::new(FakeRuntime::onnx()));
+        registry.register_adapter(Box::new(FakeAdapter::for_family(
+            RuntimeId::WhisperCpp,
+            ModelFamilyId::Whisper,
+        )));
+        registry.register_adapter(Box::new(FakeAdapter::for_family(
+            RuntimeId::OnnxRuntime,
+            ModelFamilyId::Moonshine,
+        )));
+        registry.register_adapter(Box::new(FakeAdapter::for_family(
+            RuntimeId::OnnxRuntime,
+            ModelFamilyId::CohereTranscribe,
+        )));
         Arc::new(registry)
     }
 
@@ -1859,7 +1902,13 @@ mod tests {
 
     #[test]
     fn get_system_info_returns_compiled_runtimes_and_adapters() {
-        let (control_flow, events) = test_app().handle_command(Command::GetSystemInfo);
+        let mut app = AppState::with_registry(
+            "0.1.0",
+            sample_catalog(),
+            fake_registry_with_all_engines(),
+            ListeningSession::new,
+        );
+        let (control_flow, events) = app.handle_command(Command::GetSystemInfo);
 
         assert_eq!(control_flow, ControlFlow::Continue);
         assert_eq!(events.len(), 1);
@@ -1871,15 +1920,24 @@ mod tests {
                 system_info: _,
             } => {
                 assert_eq!(sidecar_version, "0.1.0");
-                assert!(
+                assert_eq!(
                     compiled_runtimes
                         .iter()
-                        .any(|runtime| runtime.runtime_id == RuntimeId::WhisperCpp)
+                        .map(|runtime| runtime.runtime_id)
+                        .collect::<Vec<_>>(),
+                    vec![RuntimeId::OnnxRuntime, RuntimeId::WhisperCpp]
                 );
-                assert!(compiled_adapters.iter().any(|adapter| {
-                    adapter.runtime_id == RuntimeId::WhisperCpp
-                        && adapter.family_id == ModelFamilyId::Whisper
-                }));
+                assert_eq!(
+                    compiled_adapters
+                        .iter()
+                        .map(|adapter| (adapter.runtime_id, adapter.family_id))
+                        .collect::<Vec<_>>(),
+                    vec![
+                        (RuntimeId::OnnxRuntime, ModelFamilyId::CohereTranscribe),
+                        (RuntimeId::OnnxRuntime, ModelFamilyId::Moonshine),
+                        (RuntimeId::WhisperCpp, ModelFamilyId::Whisper),
+                    ]
+                );
             }
             other => panic!("expected SystemInfo event, got {other:?}"),
         }
