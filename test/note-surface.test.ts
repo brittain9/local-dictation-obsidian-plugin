@@ -479,16 +479,20 @@ describe('NoteSurface', () => {
     });
 
     it.each([
-      ['acronyms', 'We use NVIDIA GPU acceleration with STT.', 'Glossary: NVIDIA, GPU, STT'],
+      [
+        'acronyms',
+        'We use NVIDIA GPU acceleration with STT.',
+        'The notes mention NVIDIA, GPU, STT.',
+      ],
       [
         'mixed-case identifiers',
         'See writingRegionTail and TranscriptionRequest for details.',
-        'Glossary: writingRegionTail, TranscriptionRequest',
+        'The notes mention writingRegionTail, TranscriptionRequest.',
       ],
       [
         'hyphenated, underscored, and dotted identifiers',
         'Files: note-surface, set_initial_prompt, whisper.cpp, Object.keys.',
-        'Glossary: note-surface, set_initial_prompt, whisper.cpp, Object.keys',
+        'The notes mention note-surface, set_initial_prompt, whisper.cpp, Object.keys.',
       ],
     ] as const)('extracts %s', (_label, text, expected) => {
       const { surface } = createSurface({
@@ -509,7 +513,7 @@ describe('NoteSurface', () => {
       });
 
       expect(surface.readNoteGlossary(384)).toEqual({
-        text: 'Glossary: Sidecar',
+        text: 'The notes mention Sidecar.',
         truncated: false,
       });
     });
@@ -521,7 +525,7 @@ describe('NoteSurface', () => {
       });
 
       expect(surface.readNoteGlossary(384)).toEqual({
-        text: 'Glossary: Claude, Alex',
+        text: 'The notes mention Claude, Alex.',
         truncated: false,
       });
     });
@@ -533,7 +537,7 @@ describe('NoteSurface', () => {
       });
 
       expect(surface.readNoteGlossary(384)).toEqual({
-        text: 'Glossary: NVIDIA',
+        text: 'The notes mention NVIDIA.',
         truncated: false,
       });
     });
@@ -548,7 +552,7 @@ describe('NoteSurface', () => {
 
       expect(result?.truncated).toBe(true);
       expect(result?.text.length).toBeLessThanOrEqual(30);
-      expect(result?.text.startsWith('Glossary: ')).toBe(true);
+      expect(result?.text).toBe('The notes mention NVIDIA.');
     });
 
     it('scans the whole note, including text after the writing tail', () => {
@@ -557,7 +561,7 @@ describe('NoteSurface', () => {
       view.dispatch({ changes: { from: 7, insert: 'after CUDA' } });
 
       expect(surface.readNoteGlossary(384)).toEqual({
-        text: 'Glossary: NVIDIA, CUDA',
+        text: 'The notes mention NVIDIA, CUDA.',
         truncated: false,
       });
     });

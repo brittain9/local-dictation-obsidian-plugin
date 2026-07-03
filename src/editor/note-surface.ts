@@ -451,11 +451,8 @@ export class NoteSurface {
     return span === undefined ? undefined : cloneSpan(span);
   }
 
-  // Whisper's `initial_prompt` is style-imitative — "Transcripts follow the
-  // style of the prompt" (OpenAI Whisper Prompting Guide). Feeding raw note
-  // prose causes whisper to continue in that voice instead of transcribing.
-  // A `Glossary: t1, t2, ...` shape has no narrative voice to imitate; it
-  // only nudges spelling for proper nouns and uncommon terms.
+  // Whisper's `initial_prompt` is style-imitative, so present spelling hints
+  // as sentence-cased transcript prose instead of a Title-Case glossary list.
   readNoteGlossary(maxChars: number): { text: string; truncated: boolean } | null {
     if (this.disposed || maxChars <= 0) {
       return null;
@@ -683,14 +680,17 @@ function isAtSentenceStart(noteText: string, offset: number): boolean {
   return previous === '.' || previous === '!' || previous === '?';
 }
 
-// Build `Glossary: t1, t2, ...` from the note in a single pass, deduped
+// Keep this prompt prefix in sync with `is_prompt_leak` in
+// `native/src/stages/hallucination_filter.rs`.
+// Build sentence-cased prompt prose from the note in a single pass, deduped
 // case-insensitively (first-seen casing wins) and bounded by `maxChars`.
-// Stops scanning at the first token that would overflow the budget.
+// Stops scanning at the first token that would overflow the budget, including
+// the terminal period.
 function buildGlossary(
   noteText: string,
   maxChars: number,
 ): { text: string; truncated: boolean } | null {
-  const prefix = 'Glossary: ';
+  const prefix = 'The notes mention ';
 
   if (prefix.length >= maxChars) {
     return null;
@@ -719,7 +719,7 @@ function buildGlossary(
 
     const candidate = appended === 0 ? `${text}${token}` : `${text}, ${token}`;
 
-    if (candidate.length > maxChars) {
+    if (candidate.length + 1 > maxChars) {
       truncated = true;
       break;
     }
@@ -732,5 +732,5 @@ function buildGlossary(
     return null;
   }
 
-  return { text, truncated };
+  return { text: `${text}.`, truncated };
 }

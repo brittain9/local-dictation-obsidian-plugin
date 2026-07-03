@@ -305,12 +305,12 @@ describe('Session', () => {
   it('proxies readNoteGlossary to the active surface', () => {
     const { session, surface } = createSessionHarness();
     surface.readNoteGlossary.mockReturnValueOnce({
-      text: 'Glossary: NVIDIA',
+      text: 'The notes mention NVIDIA.',
       truncated: true,
     });
 
     expect(session.readNoteGlossary(256)).toEqual({
-      text: 'Glossary: NVIDIA',
+      text: 'The notes mention NVIDIA.',
       truncated: true,
     });
     expect(surface.readNoteGlossary).toHaveBeenCalledWith(256);
