@@ -68,12 +68,7 @@ function compiledAdapter(
   runtimeId: ModelManagerState['compiledAdapters'][number]['runtimeId'],
 ): ModelManagerState['compiledAdapters'][number] {
   return {
-    displayName:
-      familyId === 'cohere_transcribe'
-        ? 'Cohere Transcribe'
-        : familyId === 'moonshine'
-          ? 'Moonshine'
-          : 'Whisper',
+    displayName: familyId,
     familyCapabilities: {
       maxAudioDurationSecs: null,
       producesPunctuation: true,
@@ -99,10 +94,10 @@ describe('deriveModelFamilyTabs', () => {
       ],
     });
 
-    expect(deriveModelFamilyTabs(state).map((tab) => tab.displayName)).toEqual([
-      'Whisper',
-      'Cohere Transcribe',
-      'Moonshine',
+    expect(deriveModelFamilyTabs(state).map((tab) => tab.familyId)).toEqual([
+      'whisper',
+      'cohere_transcribe',
+      'moonshine',
     ]);
   });
 });

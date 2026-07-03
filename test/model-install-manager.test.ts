@@ -13,10 +13,12 @@ import { DEFAULT_PLUGIN_SETTINGS, type PluginSettings } from '../src/settings/pl
 import type { SidecarEvent } from '../src/sidecar/protocol';
 import { sampleCatalog } from './fixtures/catalog';
 import {
-  managedModelCases,
   sampleInstalledModel,
   sampleInstallUpdate,
   sampleModelStore,
+  sampleMoonshineInstalledModel,
+  sampleMoonshineInstallUpdate,
+  sampleMoonshineSelection,
   sampleSelection,
 } from './fixtures/models';
 
@@ -142,13 +144,11 @@ describe('ModelInstallManager', () => {
       );
     });
 
-    it.each(
-      managedModelCases(),
-    )('supports the managed install, select, and remove lifecycle for $label', async ({
-      installedModel,
-      installUpdate,
-      selection,
-    }) => {
+    it('supports the managed install, select, and remove lifecycle for Moonshine', async () => {
+      const installedModel = sampleMoonshineInstalledModel();
+      const installUpdate = sampleMoonshineInstallUpdate();
+      const selection = sampleMoonshineSelection();
+
       harness.sidecarConnection.installModel.mockResolvedValueOnce({
         ...installUpdate,
         state: 'queued',

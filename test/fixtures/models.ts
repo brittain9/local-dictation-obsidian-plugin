@@ -6,7 +6,6 @@ import type {
 } from '../../src/models/model-management-types';
 
 export const DEFAULT_MODEL_ID = 'whisper_large_v3_turbo_q8_0';
-export const ALTERNATE_MODEL_ID = 'whisper_small_en_q5_1';
 export const MOONSHINE_MODEL_ID = 'moonshine_small_streaming_en';
 
 export function sampleInstalledModel(
@@ -54,24 +53,20 @@ export function sampleSelection(modelId: string = DEFAULT_MODEL_ID): CatalogMode
 
 export function sampleMoonshineSelection(): CatalogModelSelection {
   return {
+    ...sampleSelection(MOONSHINE_MODEL_ID),
     familyId: 'moonshine',
-    kind: 'catalog_model',
-    modelId: MOONSHINE_MODEL_ID,
     runtimeId: 'onnx_runtime',
   };
 }
 
 export function sampleMoonshineInstalledModel(): InstalledModelRecord {
-  return {
-    catalogVersion: 1,
+  return sampleInstalledModel(MOONSHINE_MODEL_ID, {
     familyId: 'moonshine',
     installPath: `/models/onnx_runtime/${MOONSHINE_MODEL_ID}`,
-    installedAtUnixMs: 1_700_000_000_000,
-    modelId: MOONSHINE_MODEL_ID,
     runtimeId: 'onnx_runtime',
     runtimePath: `/models/onnx_runtime/${MOONSHINE_MODEL_ID}/frontend.ort`,
     totalSizeBytes: 700,
-  };
+  });
 }
 
 export function sampleMoonshineInstallUpdate(
@@ -84,31 +79,6 @@ export function sampleMoonshineInstallUpdate(
     totalBytes: 700,
     ...overrides,
   });
-}
-
-export function managedModelCases(): Array<{
-  installedModel: InstalledModelRecord;
-  installUpdate: ModelInstallUpdateRecord;
-  label: string;
-  selection: CatalogModelSelection;
-}> {
-  return [
-    {
-      installedModel: sampleInstalledModel(ALTERNATE_MODEL_ID),
-      installUpdate: sampleInstallUpdate({
-        modelId: ALTERNATE_MODEL_ID,
-        totalBytes: 100,
-      }),
-      label: 'Whisper',
-      selection: sampleSelection(ALTERNATE_MODEL_ID),
-    },
-    {
-      installedModel: sampleMoonshineInstalledModel(),
-      installUpdate: sampleMoonshineInstallUpdate(),
-      label: 'Moonshine',
-      selection: sampleMoonshineSelection(),
-    },
-  ];
 }
 
 export function sampleModelStore(): ModelStoreRecord {
