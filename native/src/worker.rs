@@ -15,12 +15,12 @@ use crate::engine::capabilities::{
     ModelFamilyCapabilities, ModelFamilyId, RequestWarning, RuntimeId,
 };
 use crate::engine::registry::{EngineRegistry, apply_capability_gates, missing_adapter_error};
-use crate::engine::traits::LoadedModel;
+use crate::engine::traits::{LoadedModel, StreamingModel};
 use crate::panic_util::format_panic_message;
 use crate::protocol::{
     ContextWindow, EngineStagePayload, StageId, StageOutcome, StageStatus, TranscriptSegment,
 };
-use crate::session::FinalizedUtterance;
+use crate::session::{FinalizedUtterance, LiveUtterance};
 use crate::stages::{
     StageContext, StageEnablement, StageProcessor, post_engine_processors, run_post_engine,
 };
@@ -44,11 +44,26 @@ pub struct SessionMetadata {
 
 #[derive(Debug)]
 pub enum WorkerCommand {
+    BeginStreamingUtterance {
+        session_id: String,
+        utterance: LiveUtterance,
+        utterance_id: Uuid,
+    },
     BeginSession(SessionMetadata),
     EndSession {
         session_id: String,
     },
     Shutdown,
+    StreamAudio {
+        samples: Vec<i16>,
+        session_id: String,
+        utterance_id: Uuid,
+    },
+    FinalizeStreamingUtterance {
+        session_id: String,
+        utterance: FinalizedUtterance,
+        utterance_id: Uuid,
+    },
     TranscribeUtterance {
         context: Option<ContextWindow>,
         session_id: String,
@@ -62,6 +77,7 @@ pub enum WorkerEvent {
     SessionError {
         code: String,
         details: Option<String>,
+        finalizes_utterance: bool,
         message: String,
         session_id: String,
         utterance_id: Option<Uuid>,
@@ -115,14 +131,64 @@ impl TranscriptionWorker {
 struct WorkerSession {
     metadata: SessionMetadata,
     family_capabilities: ModelFamilyCapabilities,
-    loaded_model: Box<dyn LoadedModel>,
+    model: SessionModel,
     processors: Vec<Box<dyn StageProcessor>>,
     diarizer: Option<SessionDiarizer>,
+    warnings: Vec<RequestWarning>,
+}
+
+enum SessionModel {
+    Batch(Box<dyn LoadedModel>),
+    Streaming {
+        model: Box<dyn StreamingModel>,
+        utterance: Option<OpenStreamingUtterance>,
+    },
 }
 
 struct LoadedSessionResources {
     family_capabilities: ModelFamilyCapabilities,
-    loaded_model: Box<dyn LoadedModel>,
+    model: SessionModel,
+}
+
+const PARTIAL_CADENCE_MS: u64 = 500;
+const PARTIAL_CADENCE_SAMPLES: usize = 8_000;
+
+struct OpenStreamingUtterance {
+    cadence: PartialCadence,
+    last_emitted_text: String,
+    next_revision: u32,
+    utterance: LiveUtterance,
+    utterance_id: Uuid,
+}
+
+struct PartialCadence {
+    last_decode_wall_ms: u64,
+    samples_since_decode: usize,
+}
+
+impl PartialCadence {
+    fn new(now_ms: u64, initial_samples: usize) -> Self {
+        Self {
+            last_decode_wall_ms: now_ms,
+            samples_since_decode: initial_samples,
+        }
+    }
+
+    fn observe(&mut self, samples: usize) {
+        self.samples_since_decode = self.samples_since_decode.saturating_add(samples);
+    }
+
+    fn take_if_due(&mut self, now_ms: u64) -> bool {
+        if self.samples_since_decode < PARTIAL_CADENCE_SAMPLES
+            || now_ms.saturating_sub(self.last_decode_wall_ms) < PARTIAL_CADENCE_MS
+        {
+            return false;
+        }
+
+        self.samples_since_decode = 0;
+        self.last_decode_wall_ms = now_ms;
+        true
+    }
 }
 
 fn load_session_resources(
@@ -133,11 +199,18 @@ fn load_session_resources(
         .adapter(metadata.runtime_id, metadata.family_id)
         .ok_or_else(|| missing_adapter_error(metadata.runtime_id, metadata.family_id))?;
     let family_capabilities = adapter.capabilities().clone();
-    let loaded_model = adapter.load(&metadata.model_file_path, metadata.gpu_config)?;
+    let model = if family_capabilities.supports_streaming {
+        SessionModel::Streaming {
+            model: adapter.load_streaming(&metadata.model_file_path, metadata.gpu_config)?,
+            utterance: None,
+        }
+    } else {
+        SessionModel::Batch(adapter.load(&metadata.model_file_path, metadata.gpu_config)?)
+    };
 
     Ok(LoadedSessionResources {
         family_capabilities,
-        loaded_model,
+        model,
     })
 }
 
@@ -151,9 +224,23 @@ fn worker_main(
         .enable_all()
         .build()
         .expect("worker tokio runtime should build");
+    let worker_started_at = Instant::now();
 
     while let Ok(command) = command_rx.recv() {
         match command {
+            WorkerCommand::BeginStreamingUtterance {
+                session_id,
+                utterance,
+                utterance_id,
+            } => {
+                let now_ms = worker_started_at.elapsed().as_millis() as u64;
+                if let Some(session) = sessions.get_mut(&session_id)
+                    && let Err(error) =
+                        begin_streaming_utterance(session, utterance, utterance_id, now_ms)
+                {
+                    send_worker_error(&event_tx, session_id, Some(utterance_id), false, error);
+                }
+            }
             WorkerCommand::BeginSession(metadata) => {
                 let load_result = panic::catch_unwind(AssertUnwindSafe(|| {
                     load_session_resources(registry.as_ref(), &metadata)
@@ -161,7 +248,10 @@ fn worker_main(
 
                 match load_result {
                     Ok(Ok(resources)) => {
-                        let diarizer = if metadata.diarization_enabled {
+                        let streaming = resources.family_capabilities.supports_streaming;
+                        let warnings =
+                            session_request_warnings(streaming, metadata.diarization_enabled);
+                        let diarizer = if metadata.diarization_enabled && !streaming {
                             match SessionDiarizer::new() {
                                 Ok(diarizer) => Some(diarizer),
                                 Err(error) => {
@@ -179,9 +269,10 @@ fn worker_main(
                             WorkerSession {
                                 metadata,
                                 family_capabilities: resources.family_capabilities,
-                                loaded_model: resources.loaded_model,
+                                model: resources.model,
                                 processors: post_engine_processors(),
                                 diarizer,
+                                warnings,
                             },
                         );
                     }
@@ -189,6 +280,7 @@ fn worker_main(
                         let _ = event_tx.send(WorkerEvent::SessionError {
                             code: error.code.to_string(),
                             details: error.details,
+                            finalizes_utterance: false,
                             message: error.message.to_string(),
                             session_id: metadata.session_id,
                             utterance_id: None,
@@ -202,6 +294,7 @@ fn worker_main(
                         let _ = event_tx.send(WorkerEvent::SessionError {
                             code: "worker_panic".to_string(),
                             details: None,
+                            finalizes_utterance: false,
                             message,
                             session_id: metadata.session_id,
                             utterance_id: None,
@@ -213,6 +306,44 @@ fn worker_main(
                 sessions.remove(&session_id);
             }
             WorkerCommand::Shutdown => break,
+            WorkerCommand::StreamAudio {
+                samples,
+                session_id,
+                utterance_id,
+            } => {
+                let now_ms = worker_started_at.elapsed().as_millis() as u64;
+                if let Some(session) = sessions.get_mut(&session_id)
+                    && let Err(error) = stream_audio(
+                        session,
+                        &event_tx,
+                        &tokio_runtime,
+                        &session_id,
+                        utterance_id,
+                        &samples,
+                        now_ms,
+                    )
+                {
+                    send_worker_error(&event_tx, session_id, Some(utterance_id), false, error);
+                }
+            }
+            WorkerCommand::FinalizeStreamingUtterance {
+                session_id,
+                utterance,
+                utterance_id,
+            } => {
+                if let Some(session) = sessions.get_mut(&session_id)
+                    && let Err(error) = finalize_streaming_utterance(
+                        session,
+                        &event_tx,
+                        &tokio_runtime,
+                        &session_id,
+                        utterance,
+                        utterance_id,
+                    )
+                {
+                    send_worker_error(&event_tx, session_id, Some(utterance_id), true, error);
+                }
+            }
             WorkerCommand::TranscribeUtterance {
                 context,
                 session_id,
@@ -250,8 +381,11 @@ fn worker_main(
                 let warnings = apply_capability_gates(&session.family_capabilities, &mut request);
 
                 let started_at = Instant::now();
-                let result = panic::catch_unwind(AssertUnwindSafe(|| {
-                    session.loaded_model.transcribe(&request)
+                let result = panic::catch_unwind(AssertUnwindSafe(|| match &mut session.model {
+                    SessionModel::Batch(model) => model.transcribe(&request),
+                    SessionModel::Streaming { .. } => Err(TranscriptionError::unsupported_engine(
+                        "streaming model received a batch transcription command".to_string(),
+                    )),
                 }));
                 let engine_duration_ms = started_at.elapsed().as_millis() as u64;
 
@@ -294,6 +428,7 @@ fn worker_main(
                         let _ = event_tx.send(WorkerEvent::SessionError {
                             code: error.code.to_string(),
                             details: error.details,
+                            finalizes_utterance: true,
                             message: error.message.to_string(),
                             session_id,
                             utterance_id: Some(utterance_id),
@@ -307,6 +442,7 @@ fn worker_main(
                         let _ = event_tx.send(WorkerEvent::SessionError {
                             code: "worker_panic".to_string(),
                             details: None,
+                            finalizes_utterance: true,
                             message,
                             session_id,
                             utterance_id: Some(utterance_id),
@@ -316,6 +452,251 @@ fn worker_main(
             }
         }
     }
+}
+
+fn begin_streaming_utterance(
+    session: &mut WorkerSession,
+    utterance: LiveUtterance,
+    utterance_id: Uuid,
+    now_ms: u64,
+) -> Result<(), TranscriptionError> {
+    let SessionModel::Streaming {
+        model,
+        utterance: open,
+    } = &mut session.model
+    else {
+        return Err(TranscriptionError::unsupported_engine(
+            "batch model received streaming audio".to_string(),
+        ));
+    };
+
+    model.reset_utterance();
+    model.accept_audio(&utterance.samples)?;
+    let initial_samples = utterance.samples.len();
+    *open = Some(OpenStreamingUtterance {
+        cadence: PartialCadence::new(now_ms, initial_samples),
+        last_emitted_text: String::new(),
+        next_revision: 0,
+        utterance,
+        utterance_id,
+    });
+    Ok(())
+}
+
+fn stream_audio(
+    session: &mut WorkerSession,
+    event_tx: &Sender<WorkerEvent>,
+    tokio_runtime: &Runtime,
+    session_id: &str,
+    utterance_id: Uuid,
+    samples: &[i16],
+    now_ms: u64,
+) -> Result<(), TranscriptionError> {
+    let started_at = Instant::now();
+    let SessionModel::Streaming {
+        model,
+        utterance: open,
+    } = &mut session.model
+    else {
+        return Err(TranscriptionError::unsupported_engine(
+            "batch model received streaming audio".to_string(),
+        ));
+    };
+    let Some(open) = open
+        .as_mut()
+        .filter(|open| open.utterance_id == utterance_id)
+    else {
+        return Ok(());
+    };
+
+    model.accept_audio(samples)?;
+    open.utterance.samples.extend_from_slice(samples);
+    open.cadence.observe(samples.len());
+    if !open.cadence.take_if_due(now_ms) {
+        return Ok(());
+    }
+
+    let engine_started_at = Instant::now();
+    let engine_output = model.partial()?;
+    let engine_duration_ms = engine_started_at.elapsed().as_millis() as u64;
+    let text = joined_engine_text(&engine_output);
+    if text == open.last_emitted_text {
+        return Ok(());
+    }
+
+    let revision = open.next_revision;
+    open.next_revision = open.next_revision.saturating_add(1);
+    open.last_emitted_text = text;
+    let utterance_duration_ms = (open.utterance.samples.len() as u64 * 1_000) / 16_000;
+    let utterance_start_ms_in_session = open.utterance.voice_activity.audio_start_ms;
+    let utterance_end_ms_in_session =
+        utterance_start_ms_in_session.saturating_add(utterance_duration_ms);
+    let mut voice_activity = open.utterance.voice_activity;
+    voice_activity.audio_end_ms = utterance_end_ms_in_session;
+
+    let transcript = offset_transcript_revision(
+        assemble_transcript(TranscriptAssembly {
+            utterance_id,
+            engine_output,
+            engine_duration_ms,
+            is_final: false,
+            pause_ms_before_utterance: open.utterance.pause_ms_before_utterance,
+            vad_probabilities: &open.utterance.vad_probabilities,
+            voice_activity,
+            context: None,
+            family_capabilities: &session.family_capabilities,
+            stage_enablement: &session.metadata.stage_enablement,
+            processors: &[],
+            tokio_runtime,
+            cancel_rx: &session.metadata.cancel_rx,
+        }),
+        revision,
+    );
+
+    let _ = event_tx.send(WorkerEvent::TranscriptReady {
+        pause_ms_before_utterance: open.utterance.pause_ms_before_utterance,
+        processing_duration_ms: started_at.elapsed().as_millis() as u64,
+        session_id: session_id.to_string(),
+        speaker_index: None,
+        transcript,
+        utterance_duration_ms,
+        utterance_end_ms_in_session,
+        utterance_index: open.utterance.utterance_index,
+        utterance_start_ms_in_session,
+        warnings: session.warnings.clone(),
+    });
+    Ok(())
+}
+
+fn finalize_streaming_utterance(
+    session: &mut WorkerSession,
+    event_tx: &Sender<WorkerEvent>,
+    tokio_runtime: &Runtime,
+    session_id: &str,
+    utterance: FinalizedUtterance,
+    utterance_id: Uuid,
+) -> Result<(), TranscriptionError> {
+    let started_at = Instant::now();
+    let utterance_duration_ms = utterance.duration_ms();
+    let utterance_end_ms_in_session = utterance.utterance_end_ms_in_session();
+    let utterance_start_ms_in_session = utterance.utterance_start_ms_in_session();
+    let FinalizedUtterance {
+        pause_ms_before_utterance,
+        samples,
+        utterance_index,
+        vad_probabilities,
+        voice_activity,
+    } = utterance;
+
+    let SessionModel::Streaming {
+        model,
+        utterance: open,
+    } = &mut session.model
+    else {
+        return Err(TranscriptionError::unsupported_engine(
+            "batch model received a streaming final".to_string(),
+        ));
+    };
+    let open = open.take();
+    let revision = open.as_ref().map_or(0, |open| open.next_revision);
+    if open
+        .as_ref()
+        .is_none_or(|open| open.utterance_id != utterance_id || open.utterance.samples != samples)
+    {
+        model.reset_utterance();
+        model.accept_audio(&samples)?;
+    }
+
+    let engine_started_at = Instant::now();
+    let engine_output = model.finalize_utterance()?;
+    let engine_duration_ms = engine_started_at.elapsed().as_millis() as u64;
+    let transcript = offset_transcript_revision(
+        assemble_transcript(TranscriptAssembly {
+            utterance_id,
+            engine_output,
+            engine_duration_ms,
+            is_final: true,
+            pause_ms_before_utterance,
+            vad_probabilities: &vad_probabilities,
+            voice_activity,
+            context: None,
+            family_capabilities: &session.family_capabilities,
+            stage_enablement: &session.metadata.stage_enablement,
+            processors: &session.processors,
+            tokio_runtime,
+            cancel_rx: &session.metadata.cancel_rx,
+        }),
+        revision,
+    );
+
+    let _ = event_tx.send(WorkerEvent::TranscriptReady {
+        pause_ms_before_utterance,
+        processing_duration_ms: started_at.elapsed().as_millis() as u64,
+        session_id: session_id.to_string(),
+        speaker_index: None,
+        transcript,
+        utterance_duration_ms,
+        utterance_end_ms_in_session,
+        utterance_index,
+        utterance_start_ms_in_session,
+        warnings: session.warnings.clone(),
+    });
+    Ok(())
+}
+
+fn send_worker_error(
+    event_tx: &Sender<WorkerEvent>,
+    session_id: String,
+    utterance_id: Option<Uuid>,
+    finalizes_utterance: bool,
+    error: TranscriptionError,
+) {
+    let _ = event_tx.send(WorkerEvent::SessionError {
+        code: error.code.to_string(),
+        details: error.details,
+        finalizes_utterance,
+        message: error.message.to_string(),
+        session_id,
+        utterance_id,
+    });
+}
+
+fn session_request_warnings(streaming: bool, diarization_enabled: bool) -> Vec<RequestWarning> {
+    if streaming && diarization_enabled {
+        vec![RequestWarning {
+            field: "diarizationEnabled".to_string(),
+            reason:
+                "diarization dropped because streaming sessions do not support speaker attribution"
+                    .to_string(),
+        }]
+    } else {
+        Vec::new()
+    }
+}
+
+fn joined_engine_text(output: &EngineTranscriptOutput) -> String {
+    output
+        .segments
+        .iter()
+        .map(|segment| segment.text.trim())
+        .filter(|text| !text.is_empty())
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+fn offset_transcript_revision(mut transcript: Transcript, offset: u32) -> Transcript {
+    if offset == 0 {
+        return transcript;
+    }
+
+    transcript.revision = transcript.revision.saturating_add(offset);
+    for stage in &mut transcript.stage_history {
+        stage.revision_in = stage.revision_in.saturating_add(offset);
+        stage.revision_out = stage
+            .revision_out
+            .map(|revision| revision.saturating_add(offset));
+    }
+    transcript
 }
 
 struct TranscriptAssembly<'a> {
@@ -495,8 +876,267 @@ mod tests {
     use super::*;
     use crate::audio_metadata::voiced_fraction;
     use crate::engine::capabilities::LanguageSupport;
-    use crate::protocol::{TimestampGranularity, TimestampSource, TranscriptSegment};
+    use crate::protocol::{
+        ListeningMode, TimestampGranularity, TimestampSource, TranscriptSegment,
+    };
+    use crate::session::{
+        ListeningSession, SessionAction, SessionConfig, SpeakingStyle, VoiceActivityDetector,
+        VoiceActivityError,
+    };
     use crate::stages::StageProcess;
+
+    #[test]
+    fn streaming_simulation_emits_monotonic_partials_and_batch_equivalent_final() {
+        let fixture = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("tests/fixtures/audio/7021-79740-0000.wav");
+        let mut reader = hound::WavReader::open(fixture).unwrap();
+        let samples: Vec<i16> = reader.samples::<i16>().map(Result::unwrap).collect();
+        assert!(samples.len() > PARTIAL_CADENCE_SAMPLES * 2);
+        let frames: Vec<Vec<i16>> = samples
+            .chunks(320)
+            .map(|chunk| {
+                let mut frame = chunk.to_vec();
+                frame.resize(320, 0);
+                frame
+            })
+            .collect();
+
+        let (_cancel_tx, cancel_rx) = watch::channel(false);
+        let metadata = SessionMetadata {
+            runtime_id: RuntimeId::OnnxRuntime,
+            family_id: ModelFamilyId::Moonshine,
+            gpu_config: GpuConfig::default(),
+            diarization_enabled: false,
+            language: "en".to_string(),
+            model_file_path: PathBuf::from("/tmp/frontend.ort"),
+            cancel_rx,
+            session_start_unix_ms: 0,
+            session_id: "streaming-test".to_string(),
+            stage_enablement: StageEnablement::default(),
+        };
+        let mut worker_session = WorkerSession {
+            metadata,
+            family_capabilities: streaming_caps(),
+            model: SessionModel::Streaming {
+                model: Box::new(FixtureStreamingModel::default()),
+                utterance: None,
+            },
+            processors: post_engine_processors(),
+            diarizer: None,
+            warnings: Vec::new(),
+        };
+        let utterance_id = Uuid::new_v4();
+        let mut listening_session = ListeningSession::with_vad(
+            SessionConfig {
+                mode: ListeningMode::AlwaysOn,
+                session_start_unix_ms: 0,
+                session_id: "streaming-test".to_string(),
+                style: SpeakingStyle::Balanced,
+            },
+            FixtureVad {
+                calls: 0,
+                speech_frames: frames.len(),
+            },
+        );
+        let runtime = test_runtime();
+        let (event_tx, event_rx) = mpsc::channel();
+        let mut opened = false;
+        let mut finalized_samples = None;
+
+        for index in 0..frames.len() + 50 {
+            let frame = frames.get(index).cloned().unwrap_or_else(|| vec![0; 320]);
+            let frame_bytes: Vec<u8> = frame
+                .iter()
+                .flat_map(|sample| sample.to_le_bytes())
+                .collect();
+            let actions = listening_session.ingest_audio_frame(&frame_bytes).unwrap();
+            for action in actions {
+                if let SessionAction::FinalizeUtterance(utterance) = action {
+                    finalized_samples = Some(utterance.samples.clone());
+                    finalize_streaming_utterance(
+                        &mut worker_session,
+                        &event_tx,
+                        &runtime,
+                        "streaming-test",
+                        utterance,
+                        utterance_id,
+                    )
+                    .unwrap();
+                }
+            }
+
+            let Some(live) = listening_session.live_utterance() else {
+                continue;
+            };
+            if opened {
+                stream_audio(
+                    &mut worker_session,
+                    &event_tx,
+                    &runtime,
+                    "streaming-test",
+                    utterance_id,
+                    &frame,
+                    ((index + 1) * 20) as u64,
+                )
+                .unwrap();
+            } else {
+                begin_streaming_utterance(
+                    &mut worker_session,
+                    live,
+                    utterance_id,
+                    ((index + 1) * 20) as u64,
+                )
+                .unwrap();
+                opened = true;
+            }
+        }
+
+        let finalized_samples = finalized_samples.expect("VAD should finalize the fixture");
+        let mut expected_model = FixtureStreamingModel::default();
+        expected_model.accept_audio(&finalized_samples).unwrap();
+        let expected_final = joined_engine_text(&expected_model.finalize_utterance().unwrap());
+
+        let events: Vec<WorkerEvent> = event_rx.try_iter().collect();
+        let transcripts: Vec<&Transcript> = events
+            .iter()
+            .filter_map(|event| match event {
+                WorkerEvent::TranscriptReady { transcript, .. } => Some(transcript),
+                WorkerEvent::SessionError { .. } => None,
+            })
+            .collect();
+        assert!(transcripts.len() >= 3);
+        assert!(
+            transcripts
+                .windows(2)
+                .all(|window| window[0].revision < window[1].revision)
+        );
+
+        let partial_events: Vec<&WorkerEvent> = events
+            .iter()
+            .filter(|event| {
+                matches!(
+                    event,
+                    WorkerEvent::TranscriptReady { transcript, .. } if !transcript.is_final()
+                )
+            })
+            .collect();
+        assert!(partial_events.len() >= 2);
+        let partial_durations: Vec<u64> = partial_events
+            .iter()
+            .filter_map(|event| match event {
+                WorkerEvent::TranscriptReady {
+                    transcript,
+                    utterance_duration_ms,
+                    ..
+                } => {
+                    assert_eq!(transcript.stage_history.len(), 1);
+                    assert_eq!(transcript.stage_history[0].stage_id, StageId::Engine);
+                    assert!(!transcript.stage_history[0].is_final);
+                    Some(*utterance_duration_ms)
+                }
+                WorkerEvent::SessionError { .. } => None,
+            })
+            .collect();
+        assert!(
+            partial_durations
+                .windows(2)
+                .all(|window| (500..=520).contains(&window[1].saturating_sub(window[0])))
+        );
+
+        let final_transcript = transcripts.last().unwrap();
+        assert!(final_transcript.is_final());
+        assert!(final_transcript.stage_history.len() > 1);
+        assert_eq!(final_transcript.joined_text(), expected_final);
+    }
+
+    #[test]
+    fn streaming_session_warns_when_diarization_is_requested() {
+        assert_eq!(
+            session_request_warnings(true, true),
+            vec![RequestWarning {
+                field: "diarizationEnabled".to_string(),
+                reason: "diarization dropped because streaming sessions do not support speaker attribution"
+                    .to_string(),
+            }]
+        );
+        assert!(session_request_warnings(false, true).is_empty());
+        assert!(session_request_warnings(true, false).is_empty());
+    }
+
+    #[derive(Default)]
+    struct FixtureStreamingModel {
+        samples: Vec<i16>,
+    }
+
+    struct FixtureVad {
+        calls: usize,
+        speech_frames: usize,
+    }
+
+    impl VoiceActivityDetector for FixtureVad {
+        fn speech_probability(&mut self, _frame: &[i16]) -> Result<f32, VoiceActivityError> {
+            let probability = if self.calls < self.speech_frames {
+                1.0
+            } else {
+                0.0
+            };
+            self.calls += 1;
+            Ok(probability)
+        }
+
+        fn reset(&mut self) {}
+    }
+
+    impl StreamingModel for FixtureStreamingModel {
+        fn accept_audio(&mut self, samples: &[i16]) -> Result<(), TranscriptionError> {
+            self.samples.extend_from_slice(samples);
+            Ok(())
+        }
+
+        fn partial(&mut self) -> Result<EngineTranscriptOutput, TranscriptionError> {
+            Ok(fixture_output(format!(
+                "fixture partial {}",
+                self.samples.len() / PARTIAL_CADENCE_SAMPLES
+            )))
+        }
+
+        fn finalize_utterance(&mut self) -> Result<EngineTranscriptOutput, TranscriptionError> {
+            let output = fixture_output("fixture final.".to_string());
+            self.samples.clear();
+            Ok(output)
+        }
+
+        fn reset_utterance(&mut self) {
+            self.samples.clear();
+        }
+    }
+
+    fn fixture_output(text: String) -> EngineTranscriptOutput {
+        EngineTranscriptOutput {
+            diagnostics: Vec::new(),
+            segments: vec![TranscriptSegment {
+                start_ms: 0,
+                end_ms: 1_000,
+                speaker: None,
+                text,
+                timestamp_granularity: TimestampGranularity::Utterance,
+                timestamp_source: TimestampSource::Vad,
+            }],
+        }
+    }
+
+    fn streaming_caps() -> ModelFamilyCapabilities {
+        ModelFamilyCapabilities {
+            supports_segment_timestamps: false,
+            supports_word_timestamps: false,
+            supports_initial_prompt: false,
+            supports_streaming: true,
+            supports_language_selection: false,
+            supported_languages: LanguageSupport::EnglishOnly,
+            max_audio_duration_secs: None,
+            produces_punctuation: true,
+        }
+    }
 
     struct VoiceActivityReadingProcessor;
 
@@ -821,6 +1461,7 @@ mod tests {
             supports_segment_timestamps: true,
             supports_word_timestamps: false,
             supports_initial_prompt: true,
+            supports_streaming: false,
             supports_language_selection: false,
             supported_languages: LanguageSupport::EnglishOnly,
             max_audio_duration_secs: None,

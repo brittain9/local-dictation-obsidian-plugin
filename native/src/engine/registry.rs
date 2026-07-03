@@ -29,17 +29,18 @@ impl EngineRegistry {
             registry.register_adapter(Box::new(crate::adapters::whisper::WhisperAdapter));
         }
 
-        // OnnxRuntime is registered inside the Cohere gate because Cohere is the
-        // only ONNX family today. When a second ONNX family lands, lift the
-        // runtime registration to `#[cfg(any(engine-cohere-transcribe, engine-<new>))]`
-        // so it registers once regardless of which ONNX families are enabled.
+        #[cfg(any(feature = "engine-cohere-transcribe", feature = "engine-moonshine"))]
+        registry.register_runtime(Box::new(crate::runtimes::onnx::OnnxRuntime::probe()));
+
         #[cfg(feature = "engine-cohere-transcribe")]
         {
-            registry.register_runtime(Box::new(crate::runtimes::onnx::OnnxRuntime::probe()));
             registry.register_adapter(Box::new(
                 crate::adapters::cohere_transcribe::CohereTranscribeAdapter,
             ));
         }
+
+        #[cfg(feature = "engine-moonshine")]
+        registry.register_adapter(Box::new(crate::adapters::moonshine::MoonshineAdapter));
 
         registry
     }
@@ -236,6 +237,7 @@ mod tests {
             supports_segment_timestamps: true,
             supports_word_timestamps: false,
             supports_initial_prompt: true,
+            supports_streaming: false,
             supports_language_selection: false,
             supported_languages: LanguageSupport::EnglishOnly,
             max_audio_duration_secs: None,
@@ -347,11 +349,22 @@ mod tests {
         assert!(details.contains("whisper"));
     }
 
+    #[test]
+    fn moonshine_without_compiled_adapter_reports_unsupported_engine() {
+        let err = missing_adapter_error(RuntimeId::OnnxRuntime, ModelFamilyId::Moonshine);
+
+        assert_eq!(err.code, "unsupported_engine");
+        let details = err.details.expect("details set");
+        assert!(details.contains("onnx_runtime"));
+        assert!(details.contains("moonshine"));
+    }
+
     fn capabilities(supports_initial_prompt: bool) -> ModelFamilyCapabilities {
         ModelFamilyCapabilities {
             supports_segment_timestamps: true,
             supports_word_timestamps: false,
             supports_initial_prompt,
+            supports_streaming: false,
             supports_language_selection: true,
             supported_languages: LanguageSupport::All,
             max_audio_duration_secs: None,

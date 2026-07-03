@@ -1,4 +1,4 @@
-#[cfg(feature = "engine-cohere-transcribe")]
+#[cfg(any(feature = "engine-cohere-transcribe", feature = "engine-moonshine"))]
 pub mod onnx;
 
 #[cfg(feature = "engine-whisper")]

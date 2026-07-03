@@ -24,6 +24,18 @@ pub trait ModelFamilyAdapter: Send + Sync {
     fn probe_model(&self, path: &Path) -> Result<(), TranscriptionError>;
     fn load(&self, path: &Path, gpu: GpuConfig)
     -> Result<Box<dyn LoadedModel>, TranscriptionError>;
+
+    fn load_streaming(
+        &self,
+        path: &Path,
+        gpu: GpuConfig,
+    ) -> Result<Box<dyn StreamingModel>, TranscriptionError> {
+        let _ = (path, gpu);
+        Err(TranscriptionError::unsupported_engine(format!(
+            "{} does not support streaming",
+            self.family_id().as_str()
+        )))
+    }
 }
 
 /// Per-session inference state. Holds session/context/tokenizer whatever the
@@ -35,4 +47,13 @@ pub trait LoadedModel: Send {
         &mut self,
         request: &TranscriptionRequest,
     ) -> Result<EngineTranscriptOutput, TranscriptionError>;
+}
+
+/// Per-utterance incremental inference state. Implementations accept 16 kHz
+/// mono PCM and reset after `finalize_utterance`.
+pub trait StreamingModel: Send {
+    fn accept_audio(&mut self, samples: &[i16]) -> Result<(), TranscriptionError>;
+    fn partial(&mut self) -> Result<EngineTranscriptOutput, TranscriptionError>;
+    fn finalize_utterance(&mut self) -> Result<EngineTranscriptOutput, TranscriptionError>;
+    fn reset_utterance(&mut self);
 }

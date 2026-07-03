@@ -33,9 +33,10 @@ whisper-rs = "0.16.0"
 default = ["engine-whisper"]
 engine-whisper = []
 engine-cohere-transcribe = ["half", "ort/half"]
+engine-moonshine = []
 gpu-metal = ["whisper-rs/metal"]
 gpu-cuda = ["whisper-rs/cuda"]
-gpu-ort-cuda = ["engine-cohere-transcribe", "ort/cuda"]
+gpu-ort-cuda = ["engine-cohere-transcribe", "engine-moonshine", "ort/cuda"]
 
 # Test/bench-only dependencies for the end-to-end quality suite under `tests/`
 # and `benches/`. Runtime `[dependencies]` above (serde, serde_json, sha2, uuid,

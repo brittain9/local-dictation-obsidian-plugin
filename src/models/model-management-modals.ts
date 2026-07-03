@@ -7,6 +7,7 @@ import type { ModelInstallManager } from './model-install-manager';
 import {
   type CatalogModelRecord,
   type EngineCapabilitiesRecord,
+  type ExternalFileModelSelection,
   getTotalModelSize,
 } from './model-management-types';
 
@@ -15,7 +16,22 @@ interface ExternalModelFileModalDependencies {
   onChanged: () => Promise<void>;
 }
 
+const EXTERNAL_FILE_ENGINES: Array<{
+  label: string;
+  selection: Pick<ExternalFileModelSelection, 'familyId' | 'runtimeId'>;
+}> = [
+  {
+    label: 'Moonshine (ONNX Runtime)',
+    selection: { familyId: 'moonshine', runtimeId: 'onnx_runtime' },
+  },
+  {
+    label: 'Whisper (whisper.cpp)',
+    selection: { familyId: 'whisper', runtimeId: 'whisper_cpp' },
+  },
+];
+
 export class ExternalModelFileModal extends Modal {
+  private engine: Pick<ExternalFileModelSelection, 'familyId' | 'runtimeId'>;
   private inputEl: HTMLInputElement | null = null;
 
   constructor(
@@ -24,6 +40,7 @@ export class ExternalModelFileModal extends Modal {
     private readonly dependencies: ExternalModelFileModalDependencies,
   ) {
     super(app);
+    this.engine = this.initialEngine();
   }
 
   override onOpen(): void {
@@ -34,8 +51,26 @@ export class ExternalModelFileModal extends Modal {
     });
 
     new Setting(this.contentEl)
+      .setName('Model family')
+      .setDesc('Choose the runtime and graph format for the external model.')
+      .addDropdown((dropdown) => {
+        for (const option of EXTERNAL_FILE_ENGINES) {
+          dropdown.addOption(engineKey(option.selection), option.label);
+        }
+        dropdown.setValue(engineKey(this.engine));
+        dropdown.onChange((value) => {
+          const option = EXTERNAL_FILE_ENGINES.find(
+            (candidate) => engineKey(candidate.selection) === value,
+          );
+          if (option !== undefined) {
+            this.engine = option.selection;
+          }
+        });
+      });
+
+    new Setting(this.contentEl)
       .setName('Model file path')
-      .setDesc('Enter an absolute whisper.cpp-compatible model file path.')
+      .setDesc('Enter the absolute path to the primary model artifact.')
       .addText((text) => {
         text.setPlaceholder('/absolute/path/to/ggml-small.en-q5_1.bin');
         text.setValue(this.currentPath);
@@ -52,7 +87,7 @@ export class ExternalModelFileModal extends Modal {
           const nextPath = this.inputEl?.value.trim() ?? '';
 
           try {
-            await this.dependencies.manager.validateAndSelectExternalFile(nextPath);
+            await this.dependencies.manager.validateAndSelectExternalFile(nextPath, this.engine);
             await this.dependencies.onChanged();
             new Notice('Local Dictation: External model file validated and selected.');
             this.close();
@@ -62,6 +97,29 @@ export class ExternalModelFileModal extends Modal {
         });
     });
   }
+
+  private initialEngine(): Pick<ExternalFileModelSelection, 'familyId' | 'runtimeId'> {
+    const selected = this.dependencies.manager.getState().selectedModel;
+    if (selected?.kind === 'external_file') {
+      const selectedKey = engineKey(selected);
+      const option = EXTERNAL_FILE_ENGINES.find(
+        (candidate) => engineKey(candidate.selection) === selectedKey,
+      );
+      if (option !== undefined) {
+        return option.selection;
+      }
+    }
+    return (
+      EXTERNAL_FILE_ENGINES[1]?.selection ?? {
+        familyId: 'whisper',
+        runtimeId: 'whisper_cpp',
+      }
+    );
+  }
+}
+
+function engineKey(selection: Pick<ExternalFileModelSelection, 'familyId' | 'runtimeId'>): string {
+  return `${selection.runtimeId}:${selection.familyId}`;
 }
 
 export class ModelDetailsModal extends Modal {

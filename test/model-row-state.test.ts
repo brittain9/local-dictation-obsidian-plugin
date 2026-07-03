@@ -282,4 +282,21 @@ describe('deriveCurrentModelDisplay', () => {
       sourceLabel: 'External file',
     });
   });
+
+  it('labels an external Moonshine selection without a catalog family entry', () => {
+    const state = buildState({
+      selectedModel: {
+        familyId: 'moonshine',
+        filePath: '/models/moonshine/frontend.ort',
+        kind: 'external_file',
+        runtimeId: 'onnx_runtime',
+      },
+    });
+
+    expect(deriveCurrentModelDisplay(state)).toMatchObject({
+      displayName: 'frontend.ort',
+      engineLabel: 'Moonshine',
+      sourceLabel: 'External file',
+    });
+  });
 });

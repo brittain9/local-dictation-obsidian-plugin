@@ -8,4 +8,4 @@ pub use capabilities::{
     RuntimeId,
 };
 pub use registry::{EngineRegistry, apply_capability_gates, missing_adapter_error};
-pub use traits::{LoadedModel, ModelFamilyAdapter, Runtime};
+pub use traits::{LoadedModel, ModelFamilyAdapter, Runtime, StreamingModel};

@@ -11,6 +11,7 @@ import type {
 import type { SidecarConnection } from '../sidecar/sidecar-connection';
 import {
   type CatalogModelSelection,
+  type ExternalFileModelSelection,
   type InstalledModelRecord,
   type ModelCatalogRecord,
   type ModelInstallUpdateRecord,
@@ -430,12 +431,18 @@ export class ModelInstallManager {
     this.notify();
   }
 
-  async validateAndSelectExternalFile(filePath: string): Promise<ModelProbeResultEvent> {
-    const selection: SelectedModel = {
+  async validateAndSelectExternalFile(
+    filePath: string,
+    engine: Pick<ExternalFileModelSelection, 'familyId' | 'runtimeId'> = {
       familyId: 'whisper',
+      runtimeId: 'whisper_cpp',
+    },
+  ): Promise<ModelProbeResultEvent> {
+    const selection: SelectedModel = {
+      familyId: engine.familyId,
       filePath: filePath.trim(),
       kind: 'external_file',
-      runtimeId: 'whisper_cpp',
+      runtimeId: engine.runtimeId,
     };
     return this.select(selection);
   }

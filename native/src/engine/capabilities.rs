@@ -31,6 +31,7 @@ impl RuntimeId {
 #[serde(rename_all = "snake_case")]
 pub enum ModelFamilyId {
     CohereTranscribe,
+    Moonshine,
     Whisper,
 }
 
@@ -38,6 +39,7 @@ impl ModelFamilyId {
     pub fn as_str(self) -> &'static str {
         match self {
             Self::CohereTranscribe => "cohere_transcribe",
+            Self::Moonshine => "moonshine",
             Self::Whisper => "whisper",
         }
     }
@@ -45,6 +47,7 @@ impl ModelFamilyId {
     pub fn display_name(self) -> &'static str {
         match self {
             Self::CohereTranscribe => "Cohere Transcribe",
+            Self::Moonshine => "Moonshine",
             Self::Whisper => "Whisper",
         }
     }
@@ -149,6 +152,8 @@ pub struct ModelFamilyCapabilities {
     pub supports_word_timestamps: bool,
     #[serde(rename = "supportsInitialPrompt")]
     pub supports_initial_prompt: bool,
+    #[serde(rename = "supportsStreaming")]
+    pub supports_streaming: bool,
     #[serde(rename = "supportsLanguageSelection")]
     pub supports_language_selection: bool,
     #[serde(rename = "supportedLanguages")]
@@ -168,6 +173,7 @@ impl ModelFamilyCapabilities {
             supports_segment_timestamps: false,
             supports_word_timestamps: false,
             supports_initial_prompt: false,
+            supports_streaming: false,
             supports_language_selection: false,
             supported_languages: LanguageSupport::Unknown,
             max_audio_duration_secs: None,
@@ -187,6 +193,7 @@ mod tests {
         assert!(!unknown.supports_segment_timestamps);
         assert!(!unknown.supports_word_timestamps);
         assert!(!unknown.supports_initial_prompt);
+        assert!(!unknown.supports_streaming);
         assert!(!unknown.supports_language_selection);
         assert!(!unknown.produces_punctuation);
         assert!(unknown.max_audio_duration_secs.is_none());
@@ -206,6 +213,15 @@ mod tests {
             json["maxAudioDurationSecs"].is_null(),
             "maxAudioDurationSecs must serialize as JSON null, not be omitted: {json}"
         );
+    }
+
+    #[test]
+    fn model_family_capabilities_serializes_streaming_flag() {
+        let unknown = ModelFamilyCapabilities::unknown();
+        let json = serde_json::to_value(&unknown).expect("capabilities should serialize");
+
+        assert_eq!(json["supportsStreaming"], false);
+        assert!(json.get("supports_streaming").is_none());
     }
 
     #[test]

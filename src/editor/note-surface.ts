@@ -13,6 +13,10 @@ import {
   setAnchorModeEffect,
 } from './dictation-anchor-extension';
 import {
+  clearProvisionalTranscriptEffect,
+  setProvisionalTranscriptEffect,
+} from './provisional-transcript-extension';
+import {
   bypassSessionProcessingLock,
   type SessionProcessingRange,
   setSessionProcessingEffect,
@@ -166,6 +170,7 @@ export class NoteSurface {
     }
 
     const spansBefore = [...this.spans.values()].map(cloneSpan);
+    const latchedUtteranceIds: string[] = [];
 
     this.mapSpans(update);
 
@@ -182,8 +187,11 @@ export class NoteSurface {
 
       if (changeIntersectsSpan(update, before)) {
         current.latched = 'user_edited';
+        latchedUtteranceIds.push(current.utteranceId);
       }
     }
+
+    this.clearProvisional(latchedUtteranceIds);
   }
 
   readProjectionContext(): NoteProjectionContext {
@@ -248,6 +256,7 @@ export class NoteSurface {
 
     if (currentText !== expectedOldText || currentText !== span.projectedText) {
       span.latched = 'span_mismatch';
+      this.clearProvisional([utteranceId]);
       return {
         kind: 'denied',
         reason: { currentText, kind: 'span_mismatch' },
@@ -255,14 +264,16 @@ export class NoteSurface {
       };
     }
 
+    const replacementStart = newText.length === 0 ? span.start : span.textStart;
     this.view.dispatch({
-      changes: { from: span.textStart, to: span.textEnd, insert: newText },
-      effects: this.ownerAnchorEffects(span.textStart + newText.length),
+      changes: { from: replacementStart, to: span.textEnd, insert: newText },
+      effects: this.ownerAnchorEffects(replacementStart + newText.length),
     });
 
-    const delta = newText.length - span.projectedText.length;
-    span.textEnd = span.textStart + newText.length;
-    span.end += delta;
+    const removedLength = span.textEnd - replacementStart;
+    span.textStart = replacementStart;
+    span.textEnd = replacementStart + newText.length;
+    span.end -= removedLength - newText.length;
     span.projectedText = newText;
 
     return { kind: 'replaced', span: cloneSpan(span) };
@@ -329,6 +340,7 @@ export class NoteSurface {
     for (const span of spansInRange) {
       this.spans.delete(span.utteranceId);
     }
+    this.clearProvisional(spansInRange.map((span) => span.utteranceId));
     this.pendingInitialPrefix = '';
 
     return { kind: 'rewritten', range };
@@ -339,6 +351,7 @@ export class NoteSurface {
       return;
     }
 
+    const latchedUtteranceIds: string[] = [];
     for (const span of this.spans.values()) {
       if (span.latched !== undefined) {
         continue;
@@ -346,8 +359,10 @@ export class NoteSurface {
 
       if (this.view.state.doc.sliceString(span.textStart, span.textEnd) !== span.projectedText) {
         span.latched = 'span_mismatch';
+        latchedUtteranceIds.push(span.utteranceId);
       }
     }
+    this.clearProvisional(latchedUtteranceIds);
   }
 
   setAnchorMode(mode: DictationAnchorMode): void {
@@ -361,6 +376,24 @@ export class NoteSurface {
       return;
     }
     this.view.dispatch({ effects: setSessionProcessingEffect.of(range) });
+  }
+
+  setProvisional(utteranceId: UtteranceId, provisional: boolean): void {
+    if (this.disposed) {
+      return;
+    }
+    const span = this.spans.get(utteranceId);
+    if (!provisional || span === undefined || span.latched !== undefined) {
+      this.clearProvisional([utteranceId]);
+      return;
+    }
+    this.view.dispatch({
+      effects: setProvisionalTranscriptEffect.of({
+        from: span.textStart,
+        to: span.textEnd,
+        utteranceId,
+      }),
+    });
   }
 
   trimPendingInitialPrefix(): void {
@@ -387,6 +420,7 @@ export class NoteSurface {
 
   dispose(): void {
     this.trimPendingInitialPrefix();
+    const provisionalUtteranceIds = [...this.spans.keys()];
     this.disposed = true;
     unregisterNoteSurface(this);
     // The anchor is a single shared widget. Only clear it when no other live
@@ -394,7 +428,10 @@ export class NoteSurface {
     // the newer session's cursor. The processing range is a single shared field
     // too, but only the session currently draining ever shows the flash, so the
     // disposing session always clears it.
-    const effects = [setSessionProcessingEffect.of(null)];
+    const effects = [
+      setSessionProcessingEffect.of(null),
+      clearProvisionalTranscriptEffect.of(provisionalUtteranceIds),
+    ];
     if (!this.hasOtherLiveSibling()) {
       effects.push(clearAnchorEffect.of(null));
     }
@@ -421,6 +458,12 @@ export class NoteSurface {
     }
 
     return true;
+  }
+
+  private clearProvisional(utteranceIds: readonly UtteranceId[]): void {
+    if (utteranceIds.length > 0) {
+      this.view.dispatch({ effects: clearProvisionalTranscriptEffect.of(utteranceIds) });
+    }
   }
 
   private hasOtherLiveSibling(): boolean {
