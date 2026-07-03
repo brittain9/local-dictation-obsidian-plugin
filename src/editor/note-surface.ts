@@ -255,14 +255,16 @@ export class NoteSurface {
       };
     }
 
+    const replacementStart = newText.length === 0 ? span.start : span.textStart;
     this.view.dispatch({
-      changes: { from: span.textStart, to: span.textEnd, insert: newText },
-      effects: this.ownerAnchorEffects(span.textStart + newText.length),
+      changes: { from: replacementStart, to: span.textEnd, insert: newText },
+      effects: this.ownerAnchorEffects(replacementStart + newText.length),
     });
 
-    const delta = newText.length - span.projectedText.length;
-    span.textEnd = span.textStart + newText.length;
-    span.end += delta;
+    const removedLength = span.textEnd - replacementStart;
+    span.textStart = replacementStart;
+    span.textEnd = replacementStart + newText.length;
+    span.end -= removedLength - newText.length;
     span.projectedText = newText;
 
     return { kind: 'replaced', span: cloneSpan(span) };

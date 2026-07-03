@@ -192,6 +192,24 @@ describe('NoteSurface', () => {
     expect(doc(view)).toBe('(0:00) first\n\n(1:10) SECOND');
   });
 
+  it('removes an empty finalized utterance together with its boundary and timestamp prefix', () => {
+    const { surface, view } = createSurface({ doc: 'Existing', selectionHead: 8 });
+    const renderer = new TranscriptRenderer({
+      timestamps: timestamps({ enabled: true, header: false }),
+      transcriptFormatting: 'space',
+    });
+
+    expect(
+      appendWithRenderer(surface, renderer, 'u1', 'live words', {
+        utteranceStartMsInSession: 10_000,
+      }).kind,
+    ).toBe('appended');
+    expect(doc(view)).toBe('Existing (0:10) live words');
+
+    expect(surface.replaceAnchor('u1', '', 'live words').kind).toBe('replaced');
+    expect(doc(view)).toBe('Existing');
+  });
+
   it('renders the session header with inline landmarks', () => {
     const { surface, view } = createSurface();
     const renderer = new TranscriptRenderer({

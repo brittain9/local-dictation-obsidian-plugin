@@ -373,6 +373,62 @@ describe('DictationSessionController', () => {
     expect(onLlmCleanupSuccess).toHaveBeenCalledTimes(1);
   });
 
+  it('does not run per-utterance cleanup for partial revisions and runs it on the final', async () => {
+    const sidecarConnection = new FakeSidecarConnection();
+    const sessions: FakeSession[] = [];
+    const cleanup = vi.fn(async () => ({
+      model: 'm',
+      providerId: 'ollama' as const,
+      text: 'Clean final.',
+    }));
+    const controller = createController({
+      createSession: (session) => {
+        sessions.push(session);
+      },
+      getSettings: () =>
+        createSettings({
+          llmFeaturesEnabled: true,
+          llmPostprocessMode: 'per_utterance',
+          llmPostprocessSkipMinWords: 0,
+          selectedModel: createExternalModelSelection(),
+        }),
+      llmRouter: createFakeLlmRouter({ cleanup }),
+      sidecarConnection,
+    });
+
+    await controller.startDictation();
+    const sessionId = sidecarConnection.startSession.mock.calls[0]?.[0].sessionId ?? '';
+    const utteranceId = crypto.randomUUID();
+    sidecarConnection.emit(
+      transcriptReady(sessionId, 'live partial', {
+        isFinal: false,
+        revision: 0,
+        utteranceId,
+      }),
+    );
+
+    await vi.waitFor(() => {
+      expect(sessions[0]?.acceptTranscript).toHaveBeenCalledWith(
+        expect.objectContaining({ isFinal: false, text: 'live partial' }),
+      );
+    });
+    expect(cleanup).not.toHaveBeenCalled();
+
+    sidecarConnection.emit(
+      transcriptReady(sessionId, 'final words', {
+        isFinal: true,
+        revision: 1,
+        utteranceId,
+      }),
+    );
+    await vi.waitFor(() => {
+      expect(cleanup).toHaveBeenCalledTimes(1);
+      expect(sessions[0]?.acceptTranscript).toHaveBeenCalledWith(
+        expect.objectContaining({ isFinal: true, text: 'Clean final.' }),
+      );
+    });
+  });
+
   it('accepts cleaned per-utterance revisions in utterance order despite out-of-order completions', async () => {
     const sidecarConnection = new FakeSidecarConnection();
     const sessions: FakeSession[] = [];
@@ -1051,7 +1107,11 @@ function createExternalModelSelection(): NonNullable<PluginSettings['selectedMod
   };
 }
 
-function transcriptReady(sessionId: string, text: string): SidecarEvent {
+function transcriptReady(
+  sessionId: string,
+  text: string,
+  overrides: Partial<Extract<SidecarEvent, { type: 'transcript_ready' }>> = {},
+): SidecarEvent {
   return {
     isFinal: true,
     pauseMsBeforeUtterance: null,
@@ -1069,5 +1129,6 @@ function transcriptReady(sessionId: string, text: string): SidecarEvent {
     utteranceIndex: 0,
     utteranceStartMsInSession: 0,
     warnings: [],
+    ...overrides,
   };
 }
