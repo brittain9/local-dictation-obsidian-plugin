@@ -13,6 +13,10 @@ import {
   setAnchorModeEffect,
 } from './dictation-anchor-extension';
 import {
+  clearProvisionalTranscriptEffect,
+  setProvisionalTranscriptEffect,
+} from './provisional-transcript-extension';
+import {
   bypassSessionProcessingLock,
   type SessionProcessingRange,
   setSessionProcessingEffect,
@@ -166,6 +170,7 @@ export class NoteSurface {
     }
 
     const spansBefore = [...this.spans.values()].map(cloneSpan);
+    const latchedUtteranceIds: string[] = [];
 
     this.mapSpans(update);
 
@@ -182,7 +187,14 @@ export class NoteSurface {
 
       if (changeIntersectsSpan(update, before)) {
         current.latched = 'user_edited';
+        latchedUtteranceIds.push(current.utteranceId);
       }
+    }
+
+    if (latchedUtteranceIds.length > 0) {
+      this.view.dispatch({
+        effects: clearProvisionalTranscriptEffect.of(latchedUtteranceIds),
+      });
     }
   }
 
@@ -248,6 +260,7 @@ export class NoteSurface {
 
     if (currentText !== expectedOldText || currentText !== span.projectedText) {
       span.latched = 'span_mismatch';
+      this.view.dispatch({ effects: clearProvisionalTranscriptEffect.of([utteranceId]) });
       return {
         kind: 'denied',
         reason: { currentText, kind: 'span_mismatch' },
@@ -331,6 +344,11 @@ export class NoteSurface {
     for (const span of spansInRange) {
       this.spans.delete(span.utteranceId);
     }
+    if (spansInRange.length > 0) {
+      this.view.dispatch({
+        effects: clearProvisionalTranscriptEffect.of(spansInRange.map((span) => span.utteranceId)),
+      });
+    }
     this.pendingInitialPrefix = '';
 
     return { kind: 'rewritten', range };
@@ -341,6 +359,7 @@ export class NoteSurface {
       return;
     }
 
+    const latchedUtteranceIds: string[] = [];
     for (const span of this.spans.values()) {
       if (span.latched !== undefined) {
         continue;
@@ -348,7 +367,13 @@ export class NoteSurface {
 
       if (this.view.state.doc.sliceString(span.textStart, span.textEnd) !== span.projectedText) {
         span.latched = 'span_mismatch';
+        latchedUtteranceIds.push(span.utteranceId);
       }
+    }
+    if (latchedUtteranceIds.length > 0) {
+      this.view.dispatch({
+        effects: clearProvisionalTranscriptEffect.of(latchedUtteranceIds),
+      });
     }
   }
 
@@ -363,6 +388,24 @@ export class NoteSurface {
       return;
     }
     this.view.dispatch({ effects: setSessionProcessingEffect.of(range) });
+  }
+
+  setProvisional(utteranceId: UtteranceId, provisional: boolean): void {
+    if (this.disposed) {
+      return;
+    }
+    const span = this.spans.get(utteranceId);
+    if (!provisional || span === undefined || span.latched !== undefined) {
+      this.view.dispatch({ effects: clearProvisionalTranscriptEffect.of([utteranceId]) });
+      return;
+    }
+    this.view.dispatch({
+      effects: setProvisionalTranscriptEffect.of({
+        from: span.textStart,
+        to: span.textEnd,
+        utteranceId,
+      }),
+    });
   }
 
   trimPendingInitialPrefix(): void {
@@ -389,6 +432,7 @@ export class NoteSurface {
 
   dispose(): void {
     this.trimPendingInitialPrefix();
+    const provisionalUtteranceIds = [...this.spans.keys()];
     this.disposed = true;
     unregisterNoteSurface(this);
     // The anchor is a single shared widget. Only clear it when no other live
@@ -396,7 +440,10 @@ export class NoteSurface {
     // the newer session's cursor. The processing range is a single shared field
     // too, but only the session currently draining ever shows the flash, so the
     // disposing session always clears it.
-    const effects = [setSessionProcessingEffect.of(null)];
+    const effects = [
+      setSessionProcessingEffect.of(null),
+      clearProvisionalTranscriptEffect.of(provisionalUtteranceIds),
+    ];
     if (!this.hasOtherLiveSibling()) {
       effects.push(clearAnchorEffect.of(null));
     }

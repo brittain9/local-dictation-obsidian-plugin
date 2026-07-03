@@ -85,6 +85,7 @@ interface NoteSurfaceLike {
   ): RewriteResult;
   setAnchorMode(mode: DictationAnchorMode): void;
   setProcessingRange(range: { from: number; to: number } | null): void;
+  setProvisional(utteranceId: UtteranceId, provisional: boolean): void;
   validateExternalModification(): void;
 }
 
@@ -359,6 +360,7 @@ export class Session {
         precedingSpeakerIndex: projection.precedingSpeakerIndex,
         projectedText: projection.insertedText,
       });
+      this.surface?.setProvisional(revision.utteranceId, !revision.isFinal);
       this.recordRawSessionAppend(revision, projection);
       this.renderer.commitAppend(projection);
       this.applyRawPostprocessCallout(revision);
@@ -436,6 +438,7 @@ export class Session {
         precedingSpeakerIndex: state.precedingSpeakerIndex,
         projectedText: replacementText,
       });
+      this.surface?.setProvisional(revision.utteranceId, !revision.isFinal);
       this.recordRawSessionReplace(revision);
       return;
     }
@@ -445,6 +448,7 @@ export class Session {
     } else {
       this.projectionByUtterance.set(revision.utteranceId, { kind: 'denied' });
     }
+    this.surface?.setProvisional(revision.utteranceId, false);
     this.dependencies.logger?.debug('session', `projection replace denied: ${result.reason.kind}`);
   }
 

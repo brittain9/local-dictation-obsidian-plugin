@@ -45,6 +45,9 @@ class FakeSurface {
   public readonly setProcessingRange = vi.fn(
     (_range: { from: number; to: number } | null): void => undefined,
   );
+  public readonly setProvisional = vi.fn(
+    (_utteranceId: string, _provisional: boolean): void => undefined,
+  );
   public readonly validateExternalModification = vi.fn();
   public documentText = '';
   public nextAppendResult: AppendResult | null = null;
@@ -164,6 +167,8 @@ describe('Session', () => {
     expect(surface.replaceCalls).toEqual([
       { expectedOldText: 'live words', newText: 'final words.', utteranceId: 'u1' },
     ]);
+    expect(surface.setProvisional).toHaveBeenNthCalledWith(1, 'u1', true);
+    expect(surface.setProvisional).toHaveBeenNthCalledWith(2, 'u1', false);
   });
 
   it('keeps a user-edited partial latched while recording later partials and the final', () => {
@@ -185,6 +190,7 @@ describe('Session', () => {
     );
 
     expect(surface.replaceCalls).toHaveLength(1);
+    expect(surface.setProvisional).toHaveBeenLastCalledWith('u1', false);
     expect(session.readPriorUtterances(1, 100)).toEqual([
       { text: 'final words.', truncated: false },
     ]);

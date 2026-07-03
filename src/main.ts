@@ -8,6 +8,7 @@ import { registerCommands } from './commands/register-commands';
 import { DictationSessionController } from './dictation/dictation-session-controller';
 import { dictationAnchorExtension } from './editor/dictation-anchor-extension';
 import { noteSurfaceUpdateListenerExtension } from './editor/note-surface';
+import { provisionalTranscriptExtension } from './editor/provisional-transcript-extension';
 import { sessionProcessingExtension } from './editor/session-processing-extension';
 import type { LlmCleanupFailure } from './llm/provider';
 import { createLlmRouter } from './llm/router';
@@ -87,6 +88,7 @@ export default class LocalSttPlugin extends Plugin {
 
     this.registerEditorExtension(dictationAnchorExtension());
     this.registerEditorExtension(noteSurfaceUpdateListenerExtension());
+    this.registerEditorExtension(provisionalTranscriptExtension());
     this.registerEditorExtension(sessionProcessingExtension());
     this.sidecarConnection = new SidecarConnection({
       getRequestTimeoutMs: () => this.settings.sidecarRequestTimeoutSeconds * 1000,

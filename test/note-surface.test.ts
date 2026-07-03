@@ -12,6 +12,10 @@ import {
   dictationAnchorStateField,
 } from '../src/editor/dictation-anchor-extension';
 import { NoteSurface } from '../src/editor/note-surface';
+import {
+  provisionalTranscriptDecorationsField,
+  provisionalTranscriptExtension,
+} from '../src/editor/provisional-transcript-extension';
 import type { DictationAnchor } from '../src/settings/plugin-settings';
 import { TranscriptRenderer, type TranscriptRenderOptions } from '../src/transcript/renderer';
 import { renderOptions, timestamps } from './helpers/render-options';
@@ -68,6 +72,14 @@ function createSurface({
   const surface = new NoteSurface(view as unknown as EditorView, { anchor });
 
   return { surface, view };
+}
+
+function provisionalDecorationCount(state: EditorState): number {
+  let count = 0;
+  state.field(provisionalTranscriptDecorationsField).between(0, state.doc.length, () => {
+    count += 1;
+  });
+  return count;
 }
 
 function append(
@@ -208,6 +220,40 @@ describe('NoteSurface', () => {
 
     expect(surface.replaceAnchor('u1', '', 'live words').kind).toBe('replaced');
     expect(doc(view)).toBe('Existing');
+  });
+
+  it('applies provisional styling and clears it on final replacement', () => {
+    const { surface, view } = createSurface({ extensions: provisionalTranscriptExtension() });
+
+    expect(append(surface, 'u1', 'live words').kind).toBe('appended');
+    surface.setProvisional('u1', true);
+    expect(provisionalDecorationCount(view.state)).toBe(1);
+
+    expect(surface.replaceAnchor('u1', 'final words', 'live words').kind).toBe('replaced');
+    surface.setProvisional('u1', false);
+    expect(provisionalDecorationCount(view.state)).toBe(0);
+  });
+
+  it('clears provisional styling on a user edit and session teardown', () => {
+    const { surface, view } = createSurface({ extensions: provisionalTranscriptExtension() });
+
+    expect(append(surface, 'u1', 'live words').kind).toBe('appended');
+    surface.setProvisional('u1', true);
+    expect(provisionalDecorationCount(view.state)).toBe(1);
+
+    surface.observeTransaction(
+      view.apply({
+        annotations: Transaction.userEvent.of('input.type'),
+        changes: { from: 1, to: 2, insert: 'I' },
+      }),
+    );
+    expect(provisionalDecorationCount(view.state)).toBe(0);
+
+    expect(append(surface, 'u2', 'more words').kind).toBe('appended');
+    surface.setProvisional('u2', true);
+    expect(provisionalDecorationCount(view.state)).toBe(1);
+    surface.dispose();
+    expect(provisionalDecorationCount(view.state)).toBe(0);
   });
 
   it('renders the session header with inline landmarks', () => {
