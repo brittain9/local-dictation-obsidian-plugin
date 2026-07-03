@@ -92,6 +92,15 @@ pub struct FinalizedUtterance {
     pub voice_activity: VoiceActivityEvidence,
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub struct LiveUtterance {
+    pub pause_ms_before_utterance: Option<u64>,
+    pub samples: Vec<i16>,
+    pub utterance_index: u64,
+    pub vad_probabilities: Vec<f32>,
+    pub voice_activity: VoiceActivityEvidence,
+}
+
 impl FinalizedUtterance {
     pub fn utterance_start_ms_in_session(&self) -> u64 {
         self.voice_activity.audio_start_ms
@@ -224,6 +233,36 @@ impl<TVad: VoiceActivityDetector> ListeningSession<TVad> {
 
     pub fn config(&self) -> &SessionConfig {
         &self.config
+    }
+
+    pub fn live_utterance(&self) -> Option<LiveUtterance> {
+        if !self.speech_started || self.utterance_frames.is_empty() {
+            return None;
+        }
+
+        let flattened = flatten_frames(&self.utterance_frames);
+        let pause_ms_before_utterance = if self.next_utterance_is_continuation {
+            None
+        } else {
+            self.last_final_speech_end_ms.map(|previous_end| {
+                flattened
+                    .voice_activity
+                    .speech_start_ms
+                    .saturating_sub(previous_end)
+            })
+        };
+
+        Some(LiveUtterance {
+            pause_ms_before_utterance,
+            samples: flattened.samples,
+            utterance_index: self.next_utterance_index,
+            vad_probabilities: flattened.vad_probabilities,
+            voice_activity: flattened.voice_activity,
+        })
+    }
+
+    pub fn live_utterance_index(&self) -> Option<u64> {
+        self.speech_started.then_some(self.next_utterance_index)
     }
 
     pub fn ingest_audio_frame(

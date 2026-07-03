@@ -394,6 +394,10 @@ impl<I: MoonshineInference> StreamingModel for LoadedMoonshineModel<I> {
         self.inference.reset();
         result
     }
+
+    fn reset_utterance(&mut self) {
+        self.inference.reset();
+    }
 }
 
 fn engine_output(decoded: DecodedTranscript, sample_count: usize) -> EngineTranscriptOutput {

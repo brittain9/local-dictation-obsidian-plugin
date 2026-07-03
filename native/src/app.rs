@@ -82,7 +82,15 @@ struct ActiveSession {
     pending_context_requests: Vec<PendingContextRequest>,
     queued_utterances: usize,
     session: ListeningSession,
+    streaming: bool,
+    streaming_open: Option<StreamingOpenUtterance>,
     transcription_active: bool,
+}
+
+#[derive(Clone, Copy)]
+struct StreamingOpenUtterance {
+    utterance_id: Uuid,
+    utterance_index: u64,
 }
 
 struct PendingContextRequest {
@@ -218,21 +226,23 @@ impl AppState {
                 }
             };
             let audio_level_event = audio_level_event_if_due(active_session, &mixed);
+            let streaming_frame = mixed.frame_bytes.clone();
 
             active_session
                 .session
                 .ingest_audio_frame(&mixed.frame_bytes)
-                .map(|actions| (actions, audio_level_event))
+                .map(|actions| (actions, audio_level_event, streaming_frame))
         };
 
         match result {
-            Ok((actions, audio_level_event)) => {
+            Ok((actions, audio_level_event, streaming_frame)) => {
                 if let Some(event) = audio_level_event {
                     events.push(event);
                 }
                 for action in actions {
                     self.handle_session_action(&session_id, action, &mut events);
                 }
+                self.dispatch_streaming_audio(&session_id, &streaming_frame, &mut events);
 
                 self.emit_state_if_changed(&session_id, &mut events);
             }
@@ -515,6 +525,10 @@ impl AppState {
                             0
                         };
                         let context_required = engine_context_supported;
+                        let streaming = self
+                            .registry
+                            .adapter(resolved_model.runtime_id, resolved_model.family_id)
+                            .is_some_and(|adapter| adapter.capabilities().supports_streaming);
 
                         if self
                             .transcription_worker
@@ -561,6 +575,8 @@ impl AppState {
                                 pending_context_requests: Vec::new(),
                                 queued_utterances: 0,
                                 session,
+                                streaming,
+                                streaming_open: None,
                                 transcription_active: false,
                             },
                         );
@@ -807,6 +823,71 @@ impl AppState {
         true
     }
 
+    fn dispatch_streaming_audio(
+        &mut self,
+        session_id: &str,
+        frame_bytes: &[u8],
+        events: &mut Vec<Event>,
+    ) {
+        let Some(active_session) = self.active_sessions.get_mut(session_id) else {
+            return;
+        };
+        if !active_session.streaming {
+            return;
+        }
+        let Some(utterance_index) = active_session.session.live_utterance_index() else {
+            return;
+        };
+
+        let (command, opened) = match active_session.streaming_open {
+            Some(open) if open.utterance_index == utterance_index => (
+                WorkerCommand::StreamAudio {
+                    samples: decode_pcm_samples(frame_bytes),
+                    session_id: session_id.to_string(),
+                    utterance_id: open.utterance_id,
+                },
+                false,
+            ),
+            _ => {
+                let Some(utterance) = active_session.session.live_utterance() else {
+                    return;
+                };
+                let utterance_id = Uuid::new_v4();
+                active_session.streaming_open = Some(StreamingOpenUtterance {
+                    utterance_id,
+                    utterance_index,
+                });
+                if active_session.transcription_active {
+                    active_session.queued_utterances += 1;
+                } else {
+                    active_session.transcription_active = true;
+                }
+                (
+                    WorkerCommand::BeginStreamingUtterance {
+                        session_id: session_id.to_string(),
+                        utterance,
+                        utterance_id,
+                    },
+                    true,
+                )
+            }
+        };
+
+        if self.transcription_worker.send(command).is_err() {
+            events.push(Event::Error {
+                code: "internal_error".to_string(),
+                details: None,
+                message: "Failed to stream audio for local transcription.".to_string(),
+                session_id: Some(session_id.to_string()),
+            });
+            if opened {
+                active_session.streaming_open = None;
+                advance_transcription_queue(active_session);
+            }
+        }
+        emit_queue_tier_if_changed(active_session, events);
+    }
+
     fn handle_session_action(
         &mut self,
         session_id: &str,
@@ -830,6 +911,7 @@ impl AppState {
             WorkerEvent::SessionError {
                 code,
                 details,
+                finalizes_utterance,
                 message,
                 session_id,
                 utterance_id: _,
@@ -839,8 +921,10 @@ impl AppState {
                         return;
                     };
 
-                    advance_transcription_queue(active_session);
-                    emit_queue_tier_if_changed(active_session, events);
+                    if finalizes_utterance {
+                        advance_transcription_queue(active_session);
+                        emit_queue_tier_if_changed(active_session, events);
+                    }
                 }
 
                 events.push(Event::Error {
@@ -868,7 +952,8 @@ impl AppState {
                 utterance_start_ms_in_session,
                 warnings,
             } => {
-                {
+                let is_final = transcript.is_final();
+                if is_final {
                     let Some(active_session) = self.active_sessions.get_mut(&session_id) else {
                         return;
                     };
@@ -877,7 +962,6 @@ impl AppState {
                     emit_queue_tier_if_changed(active_session, events);
                 }
 
-                let is_final = transcript.is_final();
                 let text = transcript.joined_text();
                 events.push(Event::TranscriptReady {
                     is_final,
@@ -901,9 +985,11 @@ impl AppState {
                     return;
                 }
 
-                let should_stop = self.active_sessions.get(&session_id).is_some_and(|s| {
-                    s.session.config().mode == ListeningMode::OneSentence && !s.overload_draining
-                });
+                let should_stop = is_final
+                    && self.active_sessions.get(&session_id).is_some_and(|s| {
+                        s.session.config().mode == ListeningMode::OneSentence
+                            && !s.overload_draining
+                    });
 
                 if should_stop {
                     if let Some(stop_events) =
@@ -930,6 +1016,36 @@ impl AppState {
         };
 
         let session_id = active_session.session.config().session_id.clone();
+
+        if active_session.streaming {
+            let open = active_session.streaming_open.take();
+            let utterance_id = open.map_or_else(Uuid::new_v4, |open| open.utterance_id);
+            if open.is_none() {
+                if active_session.transcription_active {
+                    active_session.queued_utterances += 1;
+                } else {
+                    active_session.transcription_active = true;
+                }
+            }
+            let send_result =
+                self.transcription_worker
+                    .send(WorkerCommand::FinalizeStreamingUtterance {
+                        session_id: session_id.clone(),
+                        utterance,
+                        utterance_id,
+                    });
+            if send_result.is_err() {
+                events.push(Event::Error {
+                    code: "internal_error".to_string(),
+                    details: None,
+                    message: "Failed to finalize streaming transcription.".to_string(),
+                    session_id: Some(session_id.clone()),
+                });
+                advance_transcription_queue(active_session);
+            }
+            emit_queue_tier_if_changed(active_session, events);
+            return;
+        }
 
         if active_session.overload_draining {
             // Capture is already stopped; only a buffered finalize (graceful
@@ -1293,6 +1409,13 @@ fn advance_transcription_queue(active_session: &mut ActiveSession) {
     } else {
         active_session.transcription_active = false;
     }
+}
+
+fn decode_pcm_samples(frame_bytes: &[u8]) -> Vec<i16> {
+    frame_bytes
+        .chunks_exact(2)
+        .map(|chunk| i16::from_le_bytes([chunk[0], chunk[1]]))
+        .collect()
 }
 
 fn queue_backpressure_tier(queued_utterances: usize) -> QueueBackpressureTier {

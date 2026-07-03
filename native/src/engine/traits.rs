@@ -55,4 +55,5 @@ pub trait StreamingModel: Send {
     fn accept_audio(&mut self, samples: &[i16]) -> Result<(), TranscriptionError>;
     fn partial(&mut self) -> Result<EngineTranscriptOutput, TranscriptionError>;
     fn finalize_utterance(&mut self) -> Result<EngineTranscriptOutput, TranscriptionError>;
+    fn reset_utterance(&mut self);
 }
