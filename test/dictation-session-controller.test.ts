@@ -7,6 +7,7 @@ import {
 import type { NotePlacementOptions } from '../src/editor/note-surface';
 import { type LlmCleanupFailure, ProviderError } from '../src/llm/provider';
 import type { LlmRouter, LlmRouterCleanupResult } from '../src/llm/router';
+import type { SessionAcceptResult } from '../src/session/session';
 import type { TranscriptRevision } from '../src/session/session-journal';
 import { DEFAULT_PLUGIN_SETTINGS, type PluginSettings } from '../src/settings/plugin-settings';
 import type {
@@ -53,7 +54,7 @@ class FakeCaptureStream {
 class FakeSession {
   public currentSessionText = '';
   public readonly acceptedTexts: string[] = [];
-  public readonly acceptTranscript = vi.fn((revision: TranscriptRevision) => {
+  public readonly acceptTranscript = vi.fn((revision: TranscriptRevision): SessionAcceptResult => {
     this.acceptedTexts.push(revision.text);
     if (revision.isFinal) {
       this.currentSessionText = revision.text;
@@ -311,6 +312,41 @@ describe('DictationSessionController', () => {
     expect(controller.getState()).toBe('listening');
   });
 
+  it('debug-logs hallucination filter segment edits', async () => {
+    const logger = new FakeLogger();
+    const sidecarConnection = new FakeSidecarConnection();
+    const controller = createController({ logger, sidecarConnection });
+
+    await controller.startDictation();
+    const sessionId = sidecarConnection.startSession.mock.calls[0]?.[0].sessionId ?? '';
+    const event = transcriptReady(sessionId, 'Let me join');
+    if (event.type !== 'transcript_ready') {
+      throw new Error('expected transcript_ready fixture');
+    }
+    const edit = {
+      index: 0,
+      originalText: 'Gorglosa: Let me join',
+      strippedPrefix: 'Gorglosa:',
+    };
+    event.stageResults = [
+      {
+        durationMs: 0,
+        isFinal: true,
+        payload: { droppedSegments: [], editedSegments: [edit], version: 2 },
+        revisionIn: 0,
+        revisionOut: 0,
+        stageId: 'hallucination_filter',
+        status: { kind: 'ok' },
+      },
+    ];
+
+    sidecarConnection.emit(event);
+
+    await vi.waitFor(() => {
+      expect(logger.debug).toHaveBeenCalledWith('session', 'hallucination segment edited', edit);
+    });
+  });
+
   it('silently enforces the five-session active plus draining cap', async () => {
     const sidecarConnection = new FakeSidecarConnection();
     const controller = createController({ sidecarConnection });
@@ -417,6 +453,52 @@ describe('DictationSessionController', () => {
     await vi.waitFor(() => {
       expect(sessions[0]?.acceptedTexts).toEqual(['first clean', 'second clean']);
     });
+  });
+
+  it('does not accept queued utterances after cancellation cleanup throws', async () => {
+    const captureStream = new FakeCaptureStream();
+    const logger = new FakeLogger();
+    const sidecarConnection = new FakeSidecarConnection();
+    const sessions: FakeSession[] = [];
+    const controller = createController({
+      captureStream,
+      createSession: (session) => {
+        sessions.push(session);
+      },
+      logger,
+      sidecarConnection,
+    });
+
+    await controller.startDictation();
+    const sessionId = sidecarConnection.startSession.mock.calls[0]?.[0].sessionId ?? '';
+    const session = sessions[0];
+    if (session === undefined) {
+      throw new Error('expected session fixture');
+    }
+    session.acceptTranscript.mockImplementation((revision: TranscriptRevision) => {
+      if (revision.text === 'first utterance') {
+        return { kind: 'rejected' as const, reason: 'failed to insert transcript' };
+      }
+      return { kind: 'accepted' as const };
+    });
+    captureStream.stop.mockRejectedValueOnce(new Error('failed to stop capture'));
+
+    sidecarConnection.emit(transcriptReady(sessionId, 'first utterance'));
+    sidecarConnection.emit(transcriptReady(sessionId, 'second utterance'));
+
+    await vi.waitFor(() => {
+      expect(logger.error).toHaveBeenCalledWith(
+        'session',
+        'failed to process transcript',
+        expect.any(Error),
+      );
+    });
+    await vi.waitFor(() => {
+      expect(session.acceptTranscript).toHaveBeenCalledTimes(1);
+    });
+    expect(session.acceptTranscript).toHaveBeenCalledWith(
+      expect.objectContaining({ text: 'first utterance' }),
+    );
   });
 
   it('keeps raw transcript and reports a typed per-utterance cleanup failure', async () => {
@@ -703,7 +785,7 @@ describe('DictationSessionController', () => {
     expect(notice).toHaveBeenCalledWith('LLM transform returned nothing to add.');
   });
 
-  it('drains pending utterance accepts before the batch read when stop arrives in the same turn', async () => {
+  it('drains utterances accepted while stopping before the batch read', async () => {
     const sidecarConnection = new FakeSidecarConnection();
     const sessions: FakeSession[] = [];
     const cleanup = vi.fn(
@@ -730,10 +812,13 @@ describe('DictationSessionController', () => {
     await controller.startDictation();
     const sessionId = sidecarConnection.startSession.mock.calls[0]?.[0].sessionId ?? '';
 
-    // The sidecar delivers the final transcript_ready and session_stopped in one
-    // I/O chunk; emit them in the same synchronous turn (no await between) so the
-    // batch read must wait for the last utterance's accept to land.
+    await controller.stopDictation();
     sidecarConnection.emit(transcriptReady(sessionId, 'final utterance'));
+    await vi.waitFor(() => {
+      expect(sessions[0]?.acceptTranscript).toHaveBeenCalledWith(
+        expect.objectContaining({ text: 'final utterance' }),
+      );
+    });
     sidecarConnection.emit({ reason: 'user_stop', sessionId, type: 'session_stopped' });
 
     await vi.waitFor(() => {

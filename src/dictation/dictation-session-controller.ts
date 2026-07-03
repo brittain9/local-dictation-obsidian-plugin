@@ -675,7 +675,12 @@ export class DictationSessionController {
     const revisionPromise = this.resolveTranscriptRevision(entry, event);
     const accept = entry.cleanupChain.then(async () => {
       const revision = await revisionPromise;
-      if (revision === null || !this.sessions.has(event.sessionId)) {
+      if (
+        revision === null ||
+        !this.sessions.has(event.sessionId) ||
+        entry.phase === 'cancelling' ||
+        entry.phase === 'stopped'
+      ) {
         return;
       }
       const result = entry.session.acceptTranscript(revision);
@@ -1077,11 +1082,16 @@ export class DictationSessionController {
         continue;
       }
       const droppedSegments = stage.payload?.droppedSegments;
-      if (!Array.isArray(droppedSegments)) {
-        continue;
+      if (Array.isArray(droppedSegments)) {
+        for (const segment of droppedSegments) {
+          this.dependencies.logger?.debug('session', 'hallucination segment dropped', segment);
+        }
       }
-      for (const segment of droppedSegments) {
-        this.dependencies.logger?.debug('session', 'hallucination segment dropped', segment);
+      const editedSegments = stage.payload?.editedSegments;
+      if (Array.isArray(editedSegments)) {
+        for (const segment of editedSegments) {
+          this.dependencies.logger?.debug('session', 'hallucination segment edited', segment);
+        }
       }
     }
   }
