@@ -39,6 +39,9 @@ impl EngineRegistry {
             ));
         }
 
+        #[cfg(feature = "engine-moonshine")]
+        registry.register_adapter(Box::new(crate::adapters::moonshine::MoonshineAdapter));
+
         registry
     }
 
