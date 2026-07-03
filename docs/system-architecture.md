@@ -37,8 +37,10 @@ flowchart LR
 
 The plugin and sidecar talk over a single framed byte stream on the sidecar's
 stdin/stdout. Audio frames and JSON commands share stdin; JSON events come back
-on stdout. The transcript the sidecar emits is final text — the LLM transform
-and rendering downstream are plugin concerns.
+on stdout. `transcript_ready` carries revisioned text. Batch families emit one
+final revision per utterance; streaming families can emit changed partial
+revisions before the final. LLM transforms and editor rendering remain plugin
+concerns.
 
 ---
 
@@ -136,7 +138,7 @@ reassemble frames across chunk boundaries.
 | `session_started` | Session confirmed active |
 | `session_state_changed` | State-machine transition |
 | `audio_level` | Periodic input level for the meter |
-| `transcript_ready` | Completed transcript: segments (with speaker labels when diarization ran), timing, `stageResults[]`, and `warnings[]` |
+| `transcript_ready` | Transcript revision: `isFinal`, monotonic `revision`, segments, timing, `stageResults[]`, and `warnings[]` |
 | `transcription_queue_changed` | Back-pressure queue depth changed |
 | `context_request` | Sidecar asks the plugin for context for the next utterance |
 | `session_stopped` | Session ended, with reason |
@@ -211,6 +213,11 @@ to inference. The per-frame Silero trace also reaches downstream stages as a
 borrowed slice, so processors that need sub-utterance resolution can compute
 per-segment voiced fraction without re-running VAD.
 
+For a streaming family, the session also forwards PCM while the VAD utterance
+is open. VAD still owns the boundary and authoritative final clip. If trailing
+silence or a boundary-aware split makes the live PCM differ from that clip, the
+worker resets and replays the final clip before final decode.
+
 The perceived end-of-speech delay is the preset's silence window
 (400–2000 ms); Silero inference itself is ~1 ms amortised per 20 ms frame.
 
@@ -220,13 +227,14 @@ The perceived end-of-speech delay is the preset's silence window
 
 ```mermaid
 flowchart LR
-    UTT["Completed utterance<br/>(PCM + VAD evidence)"] --> WORKER
+    PCM["Open utterance PCM<br/>(streaming families)"] --> WORKER
+    UTT["Completed utterance<br/>(all families)"] --> WORKER
 
     subgraph WORKER ["Worker thread"]
         direction TB
         LOOKUP["Engine registry lookup<br/>(runtime / family adapter)"]
         GATE["Capability gate<br/>(warn + drop unsupported fields)"]
-        INF["Loaded model · transcribe"]
+        INF["LoadedModel · batch<br/>StreamingModel · incremental"]
         LOOKUP --> GATE --> INF
     end
 
@@ -243,10 +251,13 @@ the model, and produces timestamped text segments.
 |---|---|---|
 | Runtime | `Runtime` | Execution framework: accelerator probe, supported model formats |
 | Family adapter | `ModelFamilyAdapter` | Model shape: graph I/O, tokenizer, prompt tokens, audio limits, probe rules |
-| Loaded model | `LoadedModel` | Per-session inference state; only `transcribe(&TranscriptionRequest)` is contract |
+| Loaded batch model | `LoadedModel` | Per-session batch inference state; `transcribe(&TranscriptionRequest)` |
+| Loaded streaming model | `StreamingModel` | Per-utterance PCM acceptance, partial decode, final decode, reset |
 
-`EngineRegistry::build()` is the single registration site; worker dispatch is
-`registry.lookup((runtimeId, familyId)) → adapter.load → loaded.transcribe`.
+`EngineRegistry::build()` is the single registration site. Worker dispatch uses
+`adapter.load → loaded.transcribe` for batch families and
+`adapter.load_streaming → accept_audio / partial / finalize_utterance` for a
+streaming family.
 Capabilities reach the plugin two ways: inventory (`system_info`) and
 per-selection merge (`model_probe_result.mergedCapabilities`). Each runtime probes
 its accelerators at startup — `whisper_cpp` checks for a usable Metal or CUDA
@@ -258,11 +269,12 @@ reports what's actually available.
 | Runtime | Crate | Model format | Adapter |
 |---|---|---|---|
 | `whisper_cpp` | whisper-rs (whisper.cpp) | GGML `.bin` | `whisper` |
-| `onnx_runtime` | ort (ONNX Runtime) | ONNX | `cohere_transcribe` |
+| `onnx_runtime` | ort (ONNX Runtime) | ONNX / ORT | `cohere_transcribe`, `moonshine` |
 
-Cargo features: `engine-whisper`, `engine-cohere-transcribe`, `gpu-metal`,
-`gpu-cuda`, `gpu-ort-cuda`. A missing `(runtimeId, familyId)` pair surfaces as an
-`unsupported_engine` error rather than a silent failure.
+Cargo features: `engine-whisper`, `engine-cohere-transcribe`,
+`engine-moonshine`, `gpu-metal`, `gpu-cuda`, `gpu-ort-cuda`. A missing
+`(runtimeId, familyId)` pair surfaces as an `unsupported_engine` error rather
+than a silent failure.
 
 **Worker behavior:**
 - A dedicated thread holding `Arc<EngineRegistry>`, communicating over `mpsc`
@@ -270,6 +282,12 @@ Cargo features: `engine-whisper`, `engine-cohere-transcribe`, `gpu-metal`,
 - Whisper runs greedy decoding, English-only, with `use_gpu`/`flash_attn` from
   the acceleration config. The model context persists across utterances and
   reloads only on a path or GPU-config change.
+- Moonshine keeps frontend, encoder, adapter, cross-attention, and decoder KV
+  state for the open utterance. It attempts a changed-text partial every 500 ms;
+  the single worker thread guarantees one decode in flight, and the wall-time
+  gate drops catch-up partials while preserving all PCM for the next decode.
+- Partials carry only the engine stage outcome. Finals run the normal post-engine
+  chain and receive a revision greater than every emitted partial.
 - Back-pressure: finalized utterances queue while inference is in flight; queue
   tiers are reported, and the session stops at a hard cap rather than silently
   dropping audio.
@@ -289,6 +307,11 @@ Cargo features: `engine-whisper`, `engine-cohere-transcribe`, `gpu-metal`,
 | Cohere Transcribe INT8 | `onnx_runtime` · `cohere_transcribe` | INT8 | 2.9 GB | |
 | Cohere Transcribe Q4 | `onnx_runtime` · `cohere_transcribe` | Q4 | 2.0 GB | |
 
+Moonshine streaming models are external-file selections in this release and do
+not appear in the managed catalog. The pinned `tiny-streaming-en` layout and
+download instructions are in
+[`docs/guides/moonshine-live-testing.md`](guides/moonshine-live-testing.md).
+
 **Inference is the bottleneck.** Time depends on model size, hardware, and
 utterance length, and is reported as `processing_duration_ms` on each transcript.
 Typical for a ~3 s utterance: Whisper Tiny ~200-500 ms (CPU); Whisper Small
@@ -300,10 +323,11 @@ silence window hides most of the latency.
 
 ### Stage 5: Post-Engine Stages
 
-After inference, a chain of post-engine processors runs in canonical order on the
-finalized transcript. Each stage may rewrite or drop segments but is validated
-against the prior revision: it must not move timing boundaries, overlap segments,
-or run past the utterance duration. A panicking stage is caught and recorded as
+After final inference, a chain of post-engine processors runs in canonical order
+on the finalized transcript. Streaming partials bypass this chain entirely.
+Each final stage may rewrite or drop segments but is validated against the prior
+revision: it must not move timing boundaries, overlap segments, or run past the
+utterance duration. A panicking stage is caught and recorded as
 `Failed`; the chain continues. Every stage records a `StageOutcome`
 (`Ok` / `Skipped` / `Failed` with revision and payload), and the full history
 ships in `transcript_ready.stageResults[]`.
@@ -345,14 +369,19 @@ no enrollment, no persisted voiceprints, no network. The bundled models are
 `pyannote/segmentation-3.0` (MIT) and `wespeaker_en_voxceleb_resnet34_LM`
 (CC-BY-4.0); see [THIRD_PARTY_NOTICES.md](../THIRD_PARTY_NOTICES.md).
 
+Streaming sessions do not run diarization in this version. A requested
+`diarizationEnabled` value is ignored and reported in the transcript's
+capability warnings.
+
 ---
 
 ### Stage 7: Transform, Render, Insert (plugin)
 
-The sidecar's `transcript_ready` is final text. The plugin finishes the job:
+The plugin consumes every accepted `transcript_ready` revision:
 
-1. **LLM transform (optional, off by default).** Clean up, rewrite, or summarize
-   each utterance — or the whole session in batch — through a local model
+1. **LLM transform (optional, off by default).** Final revisions can be cleaned,
+   rewritten, or summarized per utterance — or the whole session in batch —
+   through a local model
    (Ollama) or OpenRouter. Routing is `local` by default; with remote enabled,
    jobs over a configurable character threshold can auto-route to OpenRouter.
    Audio is never sent; only the transcript text and any note context you opt in
@@ -360,8 +389,12 @@ The sidecar's `transcript_ready` is final text. The plugin finishes the job:
 2. **Render.** The transcript renderer (`src/transcript/renderer.ts`) applies the
    user's formatting (`smart` / `space` / `new_line` / `new_paragraph`), optional
    elapsed- or wall-clock timestamps, and speaker labels.
-3. **Insert.** The rendered text lands in the active editor at the dictation
-   anchor (`at_cursor` or `end_of_note`) via the Obsidian Editor API.
+3. **Insert or revise.** The first revision lands at the dictation anchor;
+   later revisions compare-and-swap the tracked utterance span. Non-final text
+   has a theme-neutral provisional opacity decoration. A user edit latches the
+   span, clears the decoration, and prevents all later model revisions from
+   overwriting it. Final, latch, and session teardown all clear provisional
+   state.
 
 ---
 
@@ -415,7 +448,7 @@ A representative slice of user-facing settings (full list and defaults in
 | **Obsidian Plugin API** | Host runtime: editor access, commands, settings, UI hooks |
 | **Web Audio API / AudioWorklet** | Microphone capture and PCM frame production at 50 fps |
 | **whisper-rs / whisper.cpp** | Primary engine; runs GGML-quantized Whisper on CPU, Metal, or CUDA |
-| **ort (ONNX Runtime)** | Engine for Cohere Transcribe; also runs Silero VAD and the diarization models |
+| **ort (ONNX Runtime)** | Engine for Cohere Transcribe and Moonshine; also runs Silero VAD and diarization models |
 | **Silero VAD** | Speech probability per 32 ms window; drives boundary detection |
 | **Node.js child_process** | Spawns and manages the Rust sidecar |
 | **reqwest + sha2** | Downloads model files and verifies their SHA-256 |

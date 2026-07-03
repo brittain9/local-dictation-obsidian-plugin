@@ -38,6 +38,16 @@ tiny-streaming-en/
 Select `frontend.ort` as an external ONNX model with the Moonshine family. The
 adapter resolves the other six files from the same directory.
 
+For a local adapter smoke test, pass that entry graph to the ignored real-model
+test. This compiles the CPU Moonshine feature and decodes the repository WAV in
+20 ms frames:
+
+```sh
+MOONSHINE_MODEL_PATH="$model_dir/frontend.ort" \
+  cargo test --manifest-path native/Cargo.toml --features engine-moonshine \
+  local_model_decodes_fixture_in_streaming_chunks -- --ignored --nocapture
+```
+
 This layout is the true streaming export used by the MIT-licensed
 [Moonshine reference implementation](https://github.com/moonshine-ai/moonshine).
 It keeps frontend state across chunks, incrementally encodes frames with bounded
@@ -46,7 +56,9 @@ non-streaming `moonshine-tiny` ONNX export in `onnx-community`.
 
 ## Manual acceptance checks
 
-Use `tiny-streaming-en` on CPU with a 16 kHz microphone, then verify:
+In Obsidian, open the plugin settings, choose an external model, set its family
+to **Moonshine**, and select `frontend.ort`. Use CPU inference with a 16 kHz
+microphone, then verify:
 
 - The first partial appears within one second of speech onset.
 - Changed text refreshes at roughly 500 ms intervals.
