@@ -94,6 +94,18 @@ companion plan plus a note in `docs/guides/` describing how to download and
 place the files for testing. Default test model: `moonshine-streaming-tiny`
 (f32) on CPU; quantized variants are a bonus, not a requirement.
 
+**Phase 0 result:** use Moonshine AI's official quantized
+`tiny-streaming-en` ORT export. The fixed sibling layout is `frontend.ort`,
+`encoder.ort`, `adapter.ort`, `cross_kv.ort`, `decoder_kv.ort`,
+`streaming_config.json`, and `tokenizer.bin`; the external-file selection points
+at `frontend.ort`. All five graphs load through the project's
+`ort::Session::commit_from_file` path. The graphs expose persistent frontend,
+encoder, decoder, and cross-attention state, so the implementation uses true
+incremental streaming rather than the batch re-decode fallback. A reference
+decode of the repository's LibriSpeech fixture confirmed sentence casing and
+punctuation. Download and manual-test instructions are pinned in
+`docs/guides/moonshine-live-testing.md`.
+
 ### D2 — Engine layer: a streaming session contract beside `LoadedModel`
 
 Additive extension of `native/src/engine/` (batch trait untouched):
