@@ -7,7 +7,7 @@ use crate::transcription::{SegmentDiagnostics, Transcript};
 
 const VERSION: u32 = 2;
 
-const STRUCTURAL_LABEL_KEEP_LIST: [&str; 13] = [
+const STRUCTURAL_LABEL_KEEP_LIST: &[&str] = &[
     "note",
     "todo",
     "warning",
@@ -73,10 +73,12 @@ impl StageProcessor for HallucinationFilterStage {
             };
         }
 
-        // Normalize the prompt context once per revision; without this hoist
-        // the prompt-leak rule would re-lowercase + re-split the same context
-        // string for every segment.
+        // Prepare both context representations once per revision instead of
+        // re-normalizing or re-tokenizing the same text for every segment.
         let normalized_context = ctx.context.map(|context| normalize_text(&context.text));
+        let context_label_tokens = ctx
+            .context
+            .map(|context| speaker_label_context_tokens(&context.text));
         let repetition_run_drops = repeated_segment_run_drops(&transcript.segments, ctx.is_final);
 
         let mut kept = Vec::with_capacity(transcript.segments.len());
@@ -85,34 +87,38 @@ impl StageProcessor for HallucinationFilterStage {
 
         for (index, segment) in transcript.segments.iter().enumerate() {
             let diagnostics = ctx.segment_diagnostics.get(index);
-            let mut processed_segment = segment.clone();
-            let reason = if repetition_run_drops[index] {
+            if repetition_run_drops[index] {
                 let evidence = SegmentEvidence::from_segment(segment, diagnostics, ctx);
-                Some((DropReason::RepetitionRun, evidence))
-            } else {
-                if ctx.is_final
-                    && let Some((stripped_prefix, text)) = strip_speaker_label(
-                        &segment.text,
-                        ctx.context.map(|context| context.text.as_str()),
-                    )
-                {
-                    edited.push(EditedSegment {
-                        index,
-                        stripped_prefix,
-                        original_text: segment.text.clone(),
-                    });
-                    processed_segment.text = text;
-                }
-                let evidence = SegmentEvidence::from_segment(&processed_segment, diagnostics, ctx);
-                classify_drop(
-                    &processed_segment,
+                dropped.push(DroppedSegment::from_segment(
+                    index,
+                    DropReason::RepetitionRun,
+                    segment,
                     &evidence,
-                    ctx.is_final,
-                    normalized_context.as_deref(),
-                )
-                .map(|reason| (reason, evidence))
-            };
-            if let Some((reason, evidence)) = reason {
+                    diagnostics,
+                ));
+                continue;
+            }
+
+            let mut processed_segment = segment.clone();
+            if ctx.is_final
+                && let Some((stripped_prefix, text)) =
+                    strip_speaker_label(&segment.text, context_label_tokens.as_deref())
+            {
+                edited.push(EditedSegment {
+                    index,
+                    stripped_prefix,
+                    original_text: segment.text.clone(),
+                });
+                processed_segment.text = text;
+            }
+
+            let evidence = SegmentEvidence::from_segment(&processed_segment, diagnostics, ctx);
+            if let Some(reason) = classify_drop(
+                &processed_segment,
+                &evidence,
+                ctx.is_final,
+                normalized_context.as_deref(),
+            ) {
                 dropped.push(DroppedSegment::from_segment(
                     index,
                     reason,
@@ -410,7 +416,7 @@ fn normalize_text(text: &str) -> String {
         .to_string()
 }
 
-fn strip_speaker_label(text: &str, context: Option<&str>) -> Option<(String, String)> {
+fn strip_speaker_label(text: &str, context_tokens: Option<&[&str]>) -> Option<(String, String)> {
     let colon = text.find(':')?;
     let prefix = &text[..colon];
     if prefix.trim() != prefix {
@@ -434,7 +440,7 @@ fn strip_speaker_label(text: &str, context: Option<&str>) -> Option<(String, Str
     if STRUCTURAL_LABEL_KEEP_LIST
         .iter()
         .any(|label| prefix.eq_ignore_ascii_case(label))
-        || context.is_some_and(|context| context_contains_label(context, &tokens))
+        || context_tokens.is_some_and(|context| context_contains_label(context, &tokens))
     {
         return None;
     }
@@ -448,22 +454,22 @@ fn is_label_token(token: &str) -> bool {
         return false;
     }
 
-    let remainder = chars.collect::<Vec<_>>();
-    !remainder.is_empty()
-        && remainder
-            .iter()
-            .all(|ch| ch.is_ascii_lowercase() || matches!(ch, '\'' | '’' | '.' | '-'))
+    let mut remainder = chars.peekable();
+    remainder.peek().is_some()
+        && remainder.all(|ch| ch.is_ascii_lowercase() || matches!(ch, '\'' | '’' | '.' | '-'))
 }
 
-fn context_contains_label(context: &str, label_tokens: &[&str]) -> bool {
-    let context_tokens = context
+fn speaker_label_context_tokens(context: &str) -> Vec<&str> {
+    context
         .split(|ch: char| !(ch.is_ascii_alphabetic() || matches!(ch, '\'' | '’' | '.' | '-')))
         .filter_map(|token| {
             let term = token.trim_matches(['\'', '’', '.', '-']);
             (!term.is_empty()).then_some(term)
         })
-        .collect::<Vec<_>>();
+        .collect()
+}
 
+fn context_contains_label(context_tokens: &[&str], label_tokens: &[&str]) -> bool {
     context_tokens.windows(label_tokens.len()).any(|window| {
         window
             .iter()
