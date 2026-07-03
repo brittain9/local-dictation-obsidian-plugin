@@ -675,7 +675,17 @@ export class DictationSessionController {
     const revisionPromise = this.resolveTranscriptRevision(entry, event);
     const accept = entry.cleanupChain.then(async () => {
       const revision = await revisionPromise;
-      if (revision === null || !this.sessions.has(event.sessionId)) {
+      // Gate on 'cancelling' only: cancelSession sets it synchronously before
+      // its first await and it persists if cancellation cleanup throws, so
+      // queued accepts cannot land in a half-cancelled session (#138).
+      // 'stopped' must NOT be gated — the sidecar can deliver the final
+      // transcript_ready and session_stopped in one I/O chunk, and the stop
+      // path drains these in-flight accepts after the phase flips.
+      if (
+        revision === null ||
+        !this.sessions.has(event.sessionId) ||
+        entry.phase === 'cancelling'
+      ) {
         return;
       }
       const result = entry.session.acceptTranscript(revision);
@@ -1077,11 +1087,16 @@ export class DictationSessionController {
         continue;
       }
       const droppedSegments = stage.payload?.droppedSegments;
-      if (!Array.isArray(droppedSegments)) {
-        continue;
+      if (Array.isArray(droppedSegments)) {
+        for (const segment of droppedSegments) {
+          this.dependencies.logger?.debug('session', 'hallucination segment dropped', segment);
+        }
       }
-      for (const segment of droppedSegments) {
-        this.dependencies.logger?.debug('session', 'hallucination segment dropped', segment);
+      const editedSegments = stage.payload?.editedSegments;
+      if (Array.isArray(editedSegments)) {
+        for (const segment of editedSegments) {
+          this.dependencies.logger?.debug('session', 'hallucination segment edited', segment);
+        }
       }
     }
   }

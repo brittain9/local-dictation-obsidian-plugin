@@ -5,7 +5,23 @@ use crate::protocol::{StageId, TranscriptSegment};
 use crate::stages::{StageContext, StageProcess, StageProcessor};
 use crate::transcription::{SegmentDiagnostics, Transcript};
 
-const VERSION: u32 = 1;
+const VERSION: u32 = 2;
+
+const STRUCTURAL_LABEL_KEEP_LIST: &[&str] = &[
+    "note",
+    "todo",
+    "warning",
+    "question",
+    "answer",
+    "summary",
+    "title",
+    "reminder",
+    "idea",
+    "important",
+    "update",
+    "edit",
+    "aside",
+];
 
 // Strong corroborators — any one drops a SOFT phrase on a final revision and is
 // the only path that drops a Normal-classified segment as silence.
@@ -24,6 +40,7 @@ const SHORT_VOICE_MS: u64 = 1_200;
 const SHORT_VOICE_MIN_WORDS: usize = 3;
 
 // Repetition / character-run thresholds.
+const REPEATED_SEGMENT_RUN_MIN: usize = 3;
 const NGRAM_3_MIN_COUNT: usize = 3;
 const NGRAM_5_MIN_COUNT: usize = 2;
 const SUFFIX_MIN_REPEATS: usize = 3;
@@ -56,19 +73,48 @@ impl StageProcessor for HallucinationFilterStage {
             };
         }
 
-        // Normalize the prompt context once per revision; without this hoist
-        // the prompt-leak rule would re-lowercase + re-split the same context
-        // string for every segment.
+        // Prepare both context representations once per revision instead of
+        // re-normalizing or re-tokenizing the same text for every segment.
         let normalized_context = ctx.context.map(|context| normalize_text(&context.text));
+        let context_label_tokens = ctx
+            .context
+            .map(|context| speaker_label_context_tokens(&context.text));
+        let repetition_run_drops = repeated_segment_run_drops(&transcript.segments, ctx.is_final);
 
         let mut kept = Vec::with_capacity(transcript.segments.len());
         let mut dropped = Vec::new();
+        let mut edited = Vec::new();
 
         for (index, segment) in transcript.segments.iter().enumerate() {
             let diagnostics = ctx.segment_diagnostics.get(index);
-            let evidence = SegmentEvidence::from_segment(segment, diagnostics, ctx);
+            if repetition_run_drops[index] {
+                let evidence = SegmentEvidence::from_segment(segment, diagnostics, ctx);
+                dropped.push(DroppedSegment::from_segment(
+                    index,
+                    DropReason::RepetitionRun,
+                    segment,
+                    &evidence,
+                    diagnostics,
+                ));
+                continue;
+            }
+
+            let mut processed_segment = segment.clone();
+            if ctx.is_final
+                && let Some((stripped_prefix, text)) =
+                    strip_speaker_label(&segment.text, context_label_tokens.as_deref())
+            {
+                edited.push(EditedSegment {
+                    index,
+                    stripped_prefix,
+                    original_text: segment.text.clone(),
+                });
+                processed_segment.text = text;
+            }
+
+            let evidence = SegmentEvidence::from_segment(&processed_segment, diagnostics, ctx);
             if let Some(reason) = classify_drop(
-                segment,
+                &processed_segment,
                 &evidence,
                 ctx.is_final,
                 normalized_context.as_deref(),
@@ -76,16 +122,16 @@ impl StageProcessor for HallucinationFilterStage {
                 dropped.push(DroppedSegment::from_segment(
                     index,
                     reason,
-                    segment,
+                    &processed_segment,
                     &evidence,
                     diagnostics,
                 ));
             } else {
-                kept.push(segment.clone());
+                kept.push(processed_segment);
             }
         }
 
-        if dropped.is_empty() {
+        if dropped.is_empty() && edited.is_empty() {
             StageProcess::Skipped {
                 reason: "no_hallucinations".to_string(),
                 payload: None,
@@ -97,6 +143,7 @@ impl StageProcessor for HallucinationFilterStage {
                     serde_json::to_value(FilterPayload {
                         version: VERSION,
                         dropped_segments: dropped,
+                        edited_segments: edited,
                     })
                     .expect("hallucination payload should serialize"),
                 ),
@@ -112,6 +159,7 @@ enum DropReason {
     BlocklistSoftCorroborated,
     PromptLeakCorroborated,
     Repetition,
+    RepetitionRun,
     Silence,
 }
 
@@ -227,6 +275,15 @@ impl SegmentEvidence {
 struct FilterPayload {
     version: u32,
     dropped_segments: Vec<DroppedSegment>,
+    edited_segments: Vec<EditedSegment>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct EditedSegment {
+    index: usize,
+    stripped_prefix: String,
+    original_text: String,
 }
 
 #[derive(Serialize)]
@@ -359,6 +416,68 @@ fn normalize_text(text: &str) -> String {
         .to_string()
 }
 
+fn strip_speaker_label(text: &str, context_tokens: Option<&[&str]>) -> Option<(String, String)> {
+    let colon = text.find(':')?;
+    let prefix = &text[..colon];
+    if prefix.trim() != prefix {
+        return None;
+    }
+
+    let tokens = prefix.split_whitespace().collect::<Vec<_>>();
+    if !(1..=2).contains(&tokens.len()) || !tokens.iter().all(|token| is_label_token(token)) {
+        return None;
+    }
+
+    let after_colon = &text[colon + 1..];
+    if !after_colon.chars().next().is_some_and(char::is_whitespace) {
+        return None;
+    }
+    let remainder = after_colon.trim_start();
+    if remainder.is_empty() {
+        return None;
+    }
+
+    if STRUCTURAL_LABEL_KEEP_LIST
+        .iter()
+        .any(|label| prefix.eq_ignore_ascii_case(label))
+        || context_tokens.is_some_and(|context| context_contains_label(context, &tokens))
+    {
+        return None;
+    }
+
+    Some((format!("{prefix}:"), remainder.to_string()))
+}
+
+fn is_label_token(token: &str) -> bool {
+    let mut chars = token.chars();
+    if !chars.next().is_some_and(|ch| ch.is_ascii_uppercase()) {
+        return false;
+    }
+
+    let mut remainder = chars.peekable();
+    remainder.peek().is_some()
+        && remainder.all(|ch| ch.is_ascii_lowercase() || matches!(ch, '\'' | '’' | '.' | '-'))
+}
+
+fn speaker_label_context_tokens(context: &str) -> Vec<&str> {
+    context
+        .split(|ch: char| !(ch.is_ascii_alphabetic() || matches!(ch, '\'' | '’' | '.' | '-')))
+        .filter_map(|token| {
+            let term = token.trim_matches(['\'', '’', '.', '-']);
+            (!term.is_empty()).then_some(term)
+        })
+        .collect()
+}
+
+fn context_contains_label(context_tokens: &[&str], label_tokens: &[&str]) -> bool {
+    context_tokens.windows(label_tokens.len()).any(|window| {
+        window
+            .iter()
+            .zip(label_tokens)
+            .all(|(context_token, label_token)| context_token.eq_ignore_ascii_case(label_token))
+    })
+}
+
 fn is_punctuation_only(text: &str) -> bool {
     let trimmed = text.trim();
     !trimmed.is_empty()
@@ -441,6 +560,36 @@ fn words(text: &str) -> Vec<&str> {
     text.split_whitespace().collect()
 }
 
+fn repeated_segment_run_drops(segments: &[TranscriptSegment], is_final: bool) -> Vec<bool> {
+    let mut drops = vec![false; segments.len()];
+    if !is_final {
+        return drops;
+    }
+
+    let normalized = segments
+        .iter()
+        .map(|segment| normalize_text(&segment.text))
+        .collect::<Vec<_>>();
+    let mut run_start = 0;
+    while run_start < normalized.len() {
+        if normalized[run_start].is_empty() {
+            run_start += 1;
+            continue;
+        }
+
+        let mut run_end = run_start + 1;
+        while run_end < normalized.len() && normalized[run_end] == normalized[run_start] {
+            run_end += 1;
+        }
+        if run_end - run_start >= REPEATED_SEGMENT_RUN_MIN {
+            drops[run_start + 1..run_end].fill(true);
+        }
+        run_start = run_end;
+    }
+
+    drops
+}
+
 fn repeated_ngram_dominates(words: &[&str]) -> bool {
     ngram_dominates(words, 3, NGRAM_3_MIN_COUNT) || ngram_dominates(words, 5, NGRAM_5_MIN_COUNT)
 }
@@ -498,7 +647,9 @@ fn is_prompt_leak(evidence: &SegmentEvidence, normalized_context: Option<&str>) 
     let Some(normalized_context) = normalized_context else {
         return false;
     };
-    if evidence.normalized_text.starts_with("glossary:") {
+    // Keep this prompt prefix in sync with `buildGlossary` in
+    // `src/editor/note-surface.ts`.
+    if evidence.normalized_text.starts_with("the notes mention") {
         return true;
     }
 
@@ -540,6 +691,15 @@ mod tests {
             utterance_id: Uuid::nil(),
             revision: 0,
             segments: vec![segment(text)],
+            stage_history: Vec::new(),
+        }
+    }
+
+    fn transcript_with_segments(texts: &[&str]) -> Transcript {
+        Transcript {
+            utterance_id: Uuid::nil(),
+            revision: 0,
+            segments: texts.iter().map(|text| segment(text)).collect(),
             stage_history: Vec::new(),
         }
     }
@@ -691,11 +851,169 @@ mod tests {
     }
 
     #[test]
+    fn consecutive_duplicate_segment_run_keeps_first_without_diagnostics() {
+        let transcript = transcript_with_segments(&[
+            "Peter, how's the show that reaches?",
+            "Peter, how's the show that reaches?",
+            "Peter, how's the show that reaches?",
+        ]);
+        let result = HallucinationFilterStage.process(&transcript, &ctx(&[], &[], None, true));
+        let StageProcess::Ok { segments, payload } = result else {
+            panic!("expected repetition run drop");
+        };
+
+        assert_eq!(segments.len(), 1);
+        assert_eq!(segments[0].text, "Peter, how's the show that reaches?");
+        let dropped = payload
+            .as_ref()
+            .and_then(|value| value.get("droppedSegments"))
+            .and_then(|value| value.as_array())
+            .expect("payload has droppedSegments");
+        assert_eq!(dropped.len(), 2);
+        assert_eq!(
+            dropped
+                .iter()
+                .map(|entry| entry.get("index").and_then(|value| value.as_u64()))
+                .collect::<Vec<_>>(),
+            vec![Some(1), Some(2)],
+        );
+        assert!(dropped.iter().all(|entry| {
+            entry.get("reason").and_then(|value| value.as_str()) == Some("repetition_run")
+        }));
+    }
+
+    #[test]
+    fn two_consecutive_duplicate_segments_are_kept() {
+        let transcript = transcript_with_segments(&["Repeat this.", "Repeat this."]);
+        let result = HallucinationFilterStage.process(&transcript, &ctx(&[], &[], None, true));
+        assert!(
+            matches!(result, StageProcess::Skipped { reason, .. } if reason == "no_hallucinations")
+        );
+    }
+
+    #[test]
+    fn partial_revision_keeps_consecutive_duplicate_segment_run() {
+        let transcript = transcript_with_segments(&["Repeat this."; 3]);
+        let result = HallucinationFilterStage.process(&transcript, &ctx(&[], &[], None, false));
+        assert!(
+            matches!(result, StageProcess::Skipped { reason, .. } if reason == "no_hallucinations")
+        );
+    }
+
+    #[test]
+    fn speaker_label_scrub_records_single_token_edit() {
+        let result = HallucinationFilterStage.process(
+            &transcript("Gorglosa: Let me join"),
+            &ctx(&[], &[], None, true),
+        );
+        let StageProcess::Ok { segments, payload } = result else {
+            panic!("expected speaker label edit");
+        };
+        assert_eq!(segments.len(), 1);
+        assert_eq!(segments[0].text, "Let me join");
+
+        let payload = payload.expect("edit payload");
+        assert_eq!(
+            payload.get("version").and_then(|value| value.as_u64()),
+            Some(2)
+        );
+        assert_eq!(
+            payload
+                .get("droppedSegments")
+                .and_then(|value| value.as_array())
+                .map(Vec::len),
+            Some(0),
+        );
+        let edits = payload
+            .get("editedSegments")
+            .and_then(|value| value.as_array())
+            .expect("editedSegments");
+        assert_eq!(edits.len(), 1);
+        assert_eq!(
+            edits[0].get("index").and_then(|value| value.as_u64()),
+            Some(0)
+        );
+        assert_eq!(
+            edits[0]
+                .get("strippedPrefix")
+                .and_then(|value| value.as_str()),
+            Some("Gorglosa:"),
+        );
+        assert_eq!(
+            edits[0]
+                .get("originalText")
+                .and_then(|value| value.as_str()),
+            Some("Gorglosa: Let me join"),
+        );
+    }
+
+    #[test]
+    fn speaker_label_scrub_handles_two_token_label() {
+        let result = HallucinationFilterStage.process(
+            &transcript("Peter Santanello: hi"),
+            &ctx(&[], &[], None, true),
+        );
+        let StageProcess::Ok { segments, .. } = result else {
+            panic!("expected speaker label edit");
+        };
+        assert_eq!(segments[0].text, "hi");
+    }
+
+    #[test]
+    fn speaker_label_scrub_keeps_structural_and_nonmatching_labels() {
+        for text in ["Note: buy milk", "TODO: x", "Peter:"] {
+            let result =
+                HallucinationFilterStage.process(&transcript(text), &ctx(&[], &[], None, true));
+            assert!(
+                matches!(result, StageProcess::Skipped { reason, .. } if reason == "no_hallucinations"),
+                "{text} should be kept unchanged",
+            );
+        }
+    }
+
+    #[test]
+    fn speaker_label_scrub_respects_context_terms() {
+        let without_context = HallucinationFilterStage.process(
+            &transcript("Nami: the navigator"),
+            &ctx(&[], &[], None, true),
+        );
+        let StageProcess::Ok { segments, .. } = without_context else {
+            panic!("expected speaker label edit without context");
+        };
+        assert_eq!(segments[0].text, "the navigator");
+
+        let context = ContextWindow {
+            budget_chars: 100,
+            sources: Vec::new(),
+            text: "The notes mention Nami.".to_string(),
+            truncated: false,
+        };
+        let with_context = HallucinationFilterStage.process(
+            &transcript("Nami: the navigator"),
+            &ctx(&[], &[], Some(&context), true),
+        );
+        assert!(
+            matches!(with_context, StageProcess::Skipped { reason, .. } if reason == "no_hallucinations")
+        );
+    }
+
+    #[test]
+    fn partial_revision_does_not_scrub_speaker_label() {
+        let result = HallucinationFilterStage.process(
+            &transcript("Gorglosa: Let me join"),
+            &ctx(&[], &[], None, false),
+        );
+        assert!(
+            matches!(result, StageProcess::Skipped { reason, .. } if reason == "no_hallucinations")
+        );
+    }
+
+    #[test]
     fn prompt_leak_requires_context_and_corroboration() {
         let context = ContextWindow {
             budget_chars: 100,
             sources: Vec::new(),
-            text: "Glossary: AlphaTerm, BetaTerm, GammaTerm, DeltaTerm".to_string(),
+            text: "The notes mention AlphaTerm, BetaTerm, GammaTerm, DeltaTerm.".to_string(),
             truncated: false,
         };
         let diagnostics = [SegmentDiagnostics {
@@ -705,7 +1023,7 @@ mod tests {
             decode_reached_eos: None,
         }];
         let result = HallucinationFilterStage.process(
-            &transcript("Glossary: AlphaTerm, BetaTerm"),
+            &transcript("The notes mention AlphaTerm, BetaTerm."),
             &ctx(&diagnostics, &[], Some(&context), true),
         );
         assert!(matches!(result, StageProcess::Skipped { .. }));
@@ -717,7 +1035,7 @@ mod tests {
             decode_reached_eos: Some(false),
         }];
         let result = HallucinationFilterStage.process(
-            &transcript("Glossary: AlphaTerm, BetaTerm"),
+            &transcript("The notes mention AlphaTerm, BetaTerm."),
             &ctx(&diagnostics, &[], Some(&context), true),
         );
         assert!(matches!(result, StageProcess::Ok { .. }));
@@ -982,7 +1300,7 @@ mod tests {
             panic!("expected Ok drop");
         };
         let payload = payload.expect("payload populated on drop");
-        assert_eq!(payload.get("version").and_then(|v| v.as_u64()), Some(1));
+        assert_eq!(payload.get("version").and_then(|v| v.as_u64()), Some(2));
         let dropped = payload
             .get("droppedSegments")
             .and_then(|v| v.as_array())

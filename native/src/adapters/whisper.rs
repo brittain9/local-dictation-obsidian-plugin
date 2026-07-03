@@ -70,7 +70,10 @@ impl LoadedModel for LoadedWhisperModel {
         let mut state = self.context.create_state().map_err(|error| {
             TranscriptionError::transcription_failure("failed to create whisper state", error)
         })?;
-        let mut params = FullParams::new(SamplingStrategy::Greedy { best_of: 0 });
+        // `best_of` is the decoder count during whisper.cpp temperature fallback,
+        // not beam width. Keep the upstream default of 5 so the entropy_thold 2.4 /
+        // temperature_inc 0.2 fallback can escape repetition; 0 collapsed it to one.
+        let mut params = FullParams::new(SamplingStrategy::Greedy { best_of: 5 });
 
         params.set_n_threads(recommended_thread_count(request.gpu_config.use_gpu));
         params.set_language(Some(&request.language));

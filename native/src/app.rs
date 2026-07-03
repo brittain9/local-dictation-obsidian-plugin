@@ -35,9 +35,9 @@ use crate::worker::{SessionMetadata, TranscriptionWorker, WorkerCommand, WorkerE
 const QUEUE_OVERLOAD_DEPTH: usize = 30;
 // Whisper's `initial_prompt` is hard-capped at 224 tokens (silently truncated
 // to the final 224 — see OpenAI's Whisper Prompting Guide). 384 chars of
-// glossary content (mostly short identifiers) lands comfortably under that
-// cap with headroom for tokenizer variance, while still fitting roughly
-// 30-60 distinct terms.
+// sentence-cased spelling-hint prose (mostly short identifiers) lands
+// comfortably under that cap with headroom for tokenizer variance, while
+// still fitting roughly 30-60 distinct terms.
 const CONTEXT_BUDGET_CHARS: u32 = 384;
 const CONTEXT_REQUEST_TIMEOUT: Duration = Duration::from_secs(2);
 const AUDIO_LEVEL_EVENT_INTERVAL: Duration = Duration::from_millis(50);
