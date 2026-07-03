@@ -173,12 +173,18 @@ accept into it.
 
 ### Decisions
 
-- **D1:** gate the FIFO accept body on session phase in addition to registry
-  membership: return early when `entry.phase === 'cancelling' || entry.phase === 'stopped'`.
-  `'stopping'` must **not** be gated — the stop flow drains in-flight
-  transcripts. (`cancelSession` already sets `phase = 'cancelling'`
-  synchronously before any `await`, `dictation-session-controller.ts:417`;
-  verify no await precedes it in the error path and keep it that way.)
+- **D1 (corrected in review):** gate the FIFO accept body on
+  `entry.phase === 'cancelling'` **only**, in addition to registry membership.
+  Issue #138's suggestion to also gate `'stopped'` turned out to be wrong:
+  `handleSessionStopped` flips the phase to `'stopped'` synchronously, and the
+  sidecar can deliver the final `transcript_ready` and `session_stopped` in
+  one I/O chunk — the stop path *drains* those in-flight accepts after the
+  flip, so gating `'stopped'` silently drops the last utterance (caught by the
+  pre-existing same-turn drain regression test). Neither `'stopping'` nor
+  `'stopped'` may be gated. `'cancelling'` alone covers #138: `cancelSession`
+  sets it synchronously before any `await`
+  (`dictation-session-controller.ts:417`) and it persists if cancellation
+  cleanup throws; fully-disposed sessions are covered by `sessions.has(...)`.
 - **D2:** dedicated regression test that forces `cancelSession` to throw
   (reject `captureStream.stop()` — the sidecar-cancel failure path is already
   caught internally) with a second utterance queued behind the failing one, and

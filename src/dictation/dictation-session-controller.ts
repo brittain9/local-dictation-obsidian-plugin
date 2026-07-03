@@ -675,11 +675,16 @@ export class DictationSessionController {
     const revisionPromise = this.resolveTranscriptRevision(entry, event);
     const accept = entry.cleanupChain.then(async () => {
       const revision = await revisionPromise;
+      // Gate on 'cancelling' only: cancelSession sets it synchronously before
+      // its first await and it persists if cancellation cleanup throws, so
+      // queued accepts cannot land in a half-cancelled session (#138).
+      // 'stopped' must NOT be gated — the sidecar can deliver the final
+      // transcript_ready and session_stopped in one I/O chunk, and the stop
+      // path drains these in-flight accepts after the phase flips.
       if (
         revision === null ||
         !this.sessions.has(event.sessionId) ||
-        entry.phase === 'cancelling' ||
-        entry.phase === 'stopped'
+        entry.phase === 'cancelling'
       ) {
         return;
       }

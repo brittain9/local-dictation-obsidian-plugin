@@ -785,6 +785,48 @@ describe('DictationSessionController', () => {
     expect(notice).toHaveBeenCalledWith('LLM transform returned nothing to add.');
   });
 
+  it('drains pending utterance accepts before the batch read when stop arrives in the same turn', async () => {
+    const sidecarConnection = new FakeSidecarConnection();
+    const sessions: FakeSession[] = [];
+    const cleanup = vi.fn(
+      async (): Promise<LlmRouterCleanupResult> => ({
+        model: 'm',
+        providerId: 'ollama',
+        text: 'Clean batch.',
+      }),
+    );
+    const controller = createController({
+      createSession: (session) => {
+        sessions.push(session);
+      },
+      getSettings: () =>
+        createSettings({
+          llmFeaturesEnabled: true,
+          llmPostprocessMode: 'batch',
+          selectedModel: createExternalModelSelection(),
+        }),
+      llmRouter: createFakeLlmRouter({ cleanup }),
+      sidecarConnection,
+    });
+
+    await controller.startDictation();
+    const sessionId = sidecarConnection.startSession.mock.calls[0]?.[0].sessionId ?? '';
+
+    // The sidecar delivers the final transcript_ready and session_stopped in one
+    // I/O chunk; emit them in the same synchronous turn (no await between) so the
+    // batch read must wait for the last utterance's accept to land.
+    sidecarConnection.emit(transcriptReady(sessionId, 'final utterance'));
+    sidecarConnection.emit({ reason: 'user_stop', sessionId, type: 'session_stopped' });
+
+    await vi.waitFor(() => {
+      expect(cleanup).toHaveBeenCalledWith(
+        expect.objectContaining({
+          userMessage: '<session_transcript>\nfinal utterance\n</session_transcript>',
+        }),
+      );
+    });
+  });
+
   it('drains utterances accepted while stopping before the batch read', async () => {
     const sidecarConnection = new FakeSidecarConnection();
     const sessions: FakeSession[] = [];
