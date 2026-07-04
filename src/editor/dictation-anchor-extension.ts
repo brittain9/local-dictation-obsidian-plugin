@@ -57,7 +57,7 @@ class DictationAnchorWidget extends WidgetType {
   }
 
   toDOM(): HTMLElement {
-    const span = activeDocument.createElement('span');
+    const span = createSpan();
     span.className = 'local-stt-dictation-anchor local-stt-dictation-anchor--visible';
     span.setAttribute('aria-hidden', 'true');
     return span;

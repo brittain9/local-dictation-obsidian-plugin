@@ -48,9 +48,9 @@ export function buildInstallProgressViewModel(
 
 export function createInstallProgressElement(state: InstallProgressState): HTMLDivElement {
   const viewModel = buildInstallProgressViewModel(state);
-  const root = activeDocument.createElement('div');
-  const header = activeDocument.createElement('div');
-  const statusLine = activeDocument.createElement('span');
+  const root = createDiv();
+  const header = createDiv();
+  const statusLine = createSpan();
 
   root.className = 'local-stt-install-progress';
   if (viewModel.isCancelling) {
@@ -63,7 +63,7 @@ export function createInstallProgressElement(state: InstallProgressState): HTMLD
   header.append(statusLine);
 
   if (viewModel.bytesLabel !== null) {
-    const bytesLabel = activeDocument.createElement('span');
+    const bytesLabel = createSpan();
     bytesLabel.className = 'local-stt-install-progress__bytes';
     bytesLabel.textContent = viewModel.bytesLabel;
     header.append(bytesLabel);
@@ -71,8 +71,8 @@ export function createInstallProgressElement(state: InstallProgressState): HTMLD
 
   root.append(header);
 
-  const progressTrack = activeDocument.createElement('div');
-  const progressFill = activeDocument.createElement('div');
+  const progressTrack = createDiv();
+  const progressFill = createDiv();
 
   progressTrack.className = 'local-stt-install-progress__track';
   progressTrack.setAttribute('role', 'progressbar');
@@ -86,7 +86,7 @@ export function createInstallProgressElement(state: InstallProgressState): HTMLD
   root.append(progressTrack);
 
   if (viewModel.secondaryLine !== null) {
-    const secondaryLine = activeDocument.createElement('div');
+    const secondaryLine = createDiv();
     secondaryLine.className = 'local-stt-install-progress__details';
     secondaryLine.textContent = viewModel.secondaryLine;
     root.append(secondaryLine);

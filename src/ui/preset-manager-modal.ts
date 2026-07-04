@@ -172,12 +172,12 @@ export class PresetManagerModal extends Modal {
     for (const hit of hits) {
       const { entry } = hit;
       const { preset } = entry;
-      const name = activeDocument.createDocumentFragment();
+      const name = createFragment();
       renderMatches(name, preset.label, hit.labelMatches);
       if (entry.ref === activeRef) {
         name.append(' ✓');
       }
-      const description = activeDocument.createDocumentFragment();
+      const description = createFragment();
       renderMatches(description, hit.description, hit.descriptionMatches);
       const setting = new Setting(listEl).setName(name).setDesc(description);
       setting.settingEl.addClass('local-stt-preset-row');

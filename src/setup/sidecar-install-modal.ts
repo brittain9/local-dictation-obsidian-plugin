@@ -156,7 +156,7 @@ export class SidecarInstallModal extends Modal {
 
   private renderProgress(active: ActiveSidecarInstall): void {
     const progressState = buildSidecarProgressState(active);
-    const fragment = activeDocument.createDocumentFragment();
+    const fragment = createFragment();
     this.installProgressEl = createInstallProgressElement(progressState);
     fragment.append(this.installProgressEl);
     this.contentEl.append(fragment);
