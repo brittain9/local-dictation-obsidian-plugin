@@ -77,7 +77,12 @@ interface NoteSurfaceLike {
   readNoteGlossary(maxChars: number): { text: string; truncated: boolean } | null;
   readNoteText(maxChars: number): { text: string; truncated: boolean } | null;
   readProjectionContext(): NoteProjectionContext;
-  replaceAnchor(utteranceId: string, newText: string, expectedOldText: string): ReplaceResult;
+  replaceAnchor(
+    utteranceId: string,
+    newText: string,
+    expectedOldText: string,
+    removeBoundary?: boolean,
+  ): ReplaceResult;
   rewriteRegion(
     range: RewriteRange,
     newText: string,
@@ -192,9 +197,9 @@ export class Session {
 
   joinRawSessionText(): string {
     return this.rawSessionEntries
-      .map((entry) => entry.rawText)
-      .join(' ')
-      .trim();
+      .map((entry) => entry.rawText.trim())
+      .filter((text) => text.length > 0)
+      .join(' ');
   }
 
   readCurrentSessionText(): string {
@@ -371,9 +376,25 @@ export class Session {
     this.dependencies.logger?.debug('session', `projection append denied: ${result.reason.kind}`);
   }
 
-  private applyRawPostprocessCallout(revision: TranscriptRevision): void {
+  // The per-utterance raw callout preserves the pre-cleanup text of a final
+  // whose LLM postprocess rewrote it. Returns the formatted callout body, or
+  // null when this revision does not warrant one.
+  private rawPostprocessCalloutText(revision: TranscriptRevision): string | null {
+    if (!revision.isFinal) {
+      return null;
+    }
+
     const rawText = revision.llmPostprocessRawText?.trim();
-    if (rawText === undefined || rawText.length === 0) {
+    if (rawText === undefined || rawText.length === 0 || rawText === revision.text.trim()) {
+      return null;
+    }
+
+    return formatRawPostprocessCallout(rawText);
+  }
+
+  private applyRawPostprocessCallout(revision: TranscriptRevision): void {
+    const callout = this.rawPostprocessCalloutText(revision);
+    if (callout === null) {
       return;
     }
 
@@ -382,7 +403,6 @@ export class Session {
       return;
     }
 
-    const callout = formatRawPostprocessCallout(rawText);
     const boundary = missingNewlines(context.tailContent, 2);
     const projection: TranscriptInsertProjection = {
       emittedSpeakerIndex: null,
@@ -399,7 +419,7 @@ export class Session {
     if (result?.kind === 'denied') {
       this.dependencies.logger?.debug(
         'session',
-        `raw LLM postprocess callout append denied (${rawText.length} chars): ${result.reason.kind}`,
+        `raw LLM postprocess callout append denied (${callout.length} chars): ${result.reason.kind}`,
       );
     }
   }
@@ -421,10 +441,18 @@ export class Session {
         ? this.renderer.composeReplacementBody(revision.spans, state.precedingSpeakerIndex)
         : revision.text;
 
+    // Fold the raw callout into the same atomic replace as the cleaned text so
+    // it lands directly beneath this utterance. A separate tail append would
+    // sit after any later utterance whose partial was projected while this
+    // final's LLM cleanup was still pending.
+    const callout = replacementText.length > 0 ? this.rawPostprocessCalloutText(revision) : null;
+    const projectedText = callout === null ? replacementText : `${replacementText}\n\n${callout}`;
+
     const result = this.surface?.replaceAnchor(
       revision.utteranceId,
-      replacementText,
+      projectedText,
       state.projectedText,
+      revision.isFinal && projectedText.length === 0,
     );
 
     if (result === undefined) {
@@ -436,7 +464,7 @@ export class Session {
         kind: 'projected',
         lastRevision: revision.revision,
         precedingSpeakerIndex: state.precedingSpeakerIndex,
-        projectedText: replacementText,
+        projectedText,
       });
       this.surface?.setProvisional(revision.utteranceId, !revision.isFinal);
       this.recordRawSessionReplace(revision);

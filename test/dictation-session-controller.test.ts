@@ -465,6 +465,80 @@ describe('DictationSessionController', () => {
     });
   });
 
+  it('projects monotonic partials while an earlier final cleanup is pending', async () => {
+    const sidecarConnection = new FakeSidecarConnection();
+    const sessions: FakeSession[] = [];
+    let resolveCleanup: ((value: LlmRouterCleanupResult) => void) | undefined;
+    const cleanup = vi.fn(
+      () =>
+        new Promise<LlmRouterCleanupResult>((resolve) => {
+          resolveCleanup = resolve;
+        }),
+    );
+    const controller = createController({
+      createSession: (session) => {
+        sessions.push(session);
+      },
+      getSettings: () =>
+        createSettings({
+          llmFeaturesEnabled: true,
+          llmPostprocessMode: 'per_utterance',
+          llmPostprocessSkipMinWords: 0,
+          selectedModel: createExternalModelSelection(),
+        }),
+      llmRouter: createFakeLlmRouter({ cleanup }),
+      sidecarConnection,
+    });
+
+    await controller.startDictation();
+    const sessionId = sidecarConnection.startSession.mock.calls[0]?.[0].sessionId ?? '';
+    sidecarConnection.emit(
+      transcriptReady(sessionId, 'utterance A final', {
+        utteranceId: crypto.randomUUID(),
+        utteranceIndex: 0,
+      }),
+    );
+    await vi.waitFor(() => {
+      expect(cleanup).toHaveBeenCalledTimes(1);
+    });
+
+    const liveUtteranceId = crypto.randomUUID();
+    sidecarConnection.emit(
+      transcriptReady(sessionId, 'utterance B partial 0', {
+        isFinal: false,
+        revision: 0,
+        utteranceId: liveUtteranceId,
+        utteranceIndex: 1,
+      }),
+    );
+    sidecarConnection.emit(
+      transcriptReady(sessionId, 'utterance B partial 1', {
+        isFinal: false,
+        revision: 1,
+        utteranceId: liveUtteranceId,
+        utteranceIndex: 1,
+      }),
+    );
+
+    await vi.waitFor(() => {
+      expect(sessions[0]?.acceptTranscript).toHaveBeenNthCalledWith(
+        1,
+        expect.objectContaining({ isFinal: false, revision: 0, utteranceId: liveUtteranceId }),
+      );
+      expect(sessions[0]?.acceptTranscript).toHaveBeenNthCalledWith(
+        2,
+        expect.objectContaining({ isFinal: false, revision: 1, utteranceId: liveUtteranceId }),
+      );
+    });
+
+    resolveCleanup?.({ model: 'm', providerId: 'ollama', text: 'Clean A.' });
+    await vi.waitFor(() => {
+      expect(sessions[0]?.acceptTranscript).toHaveBeenCalledWith(
+        expect.objectContaining({ isFinal: true, text: 'Clean A.' }),
+      );
+    });
+  });
+
   it('accepts cleaned per-utterance revisions in utterance order despite out-of-order completions', async () => {
     const sidecarConnection = new FakeSidecarConnection();
     const sessions: FakeSession[] = [];
@@ -1056,6 +1130,63 @@ describe('DictationSessionController', () => {
     expect(captureStream.stop).toHaveBeenCalledTimes(1);
     expect(sessions[0]?.dispose).toHaveBeenCalledTimes(1);
     expect(controller.getState()).toBe('idle');
+  });
+
+  it('drains queued work on queue overload instead of cancelling the session', async () => {
+    const captureStream = new FakeCaptureStream();
+    const notice = vi.fn();
+    const sidecarConnection = new FakeSidecarConnection();
+    const sessions: FakeSession[] = [];
+    const controller = createController({
+      captureStream,
+      createSession: (session) => {
+        sessions.push(session);
+      },
+      notice,
+      sidecarConnection,
+    });
+
+    await controller.startDictation();
+    const sessionId = sidecarConnection.startSession.mock.calls[0]?.[0].sessionId ?? '';
+    const session = sessions[0];
+    if (session === undefined) {
+      throw new Error('expected session fixture');
+    }
+
+    sidecarConnection.emit({
+      code: 'utterance_queue_overload',
+      details: 'queue depth reached saturation at 32',
+      message:
+        'Local Dictation stopped because the transcription backlog reached capacity. Already accepted utterances will finish processing.',
+      sessionId,
+      type: 'error',
+    });
+    // Drain the async error handler fully. Cancelling (the buggy path) would run
+    // to completion here and dispose the session, so anything checked after this
+    // flush reliably distinguishes drain from cancel.
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    // Overload must not cancel — that would tear the worker down and drop the
+    // queue the sidecar is still draining.
+    expect(sidecarConnection.cancelSession).not.toHaveBeenCalled();
+    expect(session.dispose).not.toHaveBeenCalled();
+    expect(notice).toHaveBeenCalledWith(expect.stringContaining('backlog reached capacity'));
+    expect(controller.getState()).toBe('idle');
+
+    // Already-accepted utterances still land while the queue drains. On the
+    // cancel path the session would already be gone, so this never records.
+    sidecarConnection.emit(transcriptReady(sessionId, 'queued utterance'));
+    await vi.waitFor(() => {
+      expect(session.acceptTranscript).toHaveBeenCalledWith(
+        expect.objectContaining({ text: 'queued utterance' }),
+      );
+    });
+
+    // The sidecar completes the drain; only then is the session disposed.
+    sidecarConnection.emit({ reason: 'queue_overload', sessionId, type: 'session_stopped' });
+    await vi.waitFor(() => {
+      expect(session.dispose).toHaveBeenCalledTimes(1);
+    });
   });
 
   it('handles stop during a pending start without opening capture', async () => {

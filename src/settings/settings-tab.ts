@@ -15,6 +15,7 @@ import {
   type SidecarInstallManager,
 } from '../sidecar/sidecar-install-manager';
 import { readInstallManifest, variantDirectoryPath } from '../sidecar/sidecar-installer';
+import { diarizationSettingDescription } from './diarization-setting';
 import { renderActiveInstallCard } from './install-progress-row';
 import { renderMicrophonePicker } from './microphone-picker';
 import { renderModelSection } from './model-settings-section';
@@ -99,6 +100,7 @@ export class LocalSttSettingTab extends PluginSettingTab {
   override readonly icon = 'audio-lines';
 
   private readonly access: SettingAccess;
+  private disposeDiarizationDesc: (() => void) | null = null;
   private disposeEngineSection: (() => void) | null = null;
   private disposeMicrophoneSection: (() => void) | null = null;
   private disposeMissingSidecarBanner: (() => void) | null = null;
@@ -217,11 +219,21 @@ export class LocalSttSettingTab extends PluginSettingTab {
       isValid: isTranscriptFormattingMode,
     });
 
-    addToggleSetting(outputCard, this.access, {
+    const diarizationSetting = addToggleSetting(outputCard, this.access, {
       name: 'Speaker labels (diarization)',
-      desc: 'Label each utterance with a detected speaker (Speaker 1, Speaker 2, …). Runs fully on-device; no audio leaves your machine.',
+      desc: '',
       key: 'diarizationEnabled',
     });
+    const updateDiarizationDesc = (): void => {
+      const caps = manager.getState().selectedModelCapabilities;
+      diarizationSetting.setDesc(
+        diarizationSettingDescription(
+          caps.status === 'ready' && caps.capabilities.family.supportsStreaming,
+        ),
+      );
+    };
+    updateDiarizationDesc();
+    this.disposeDiarizationDesc = manager.subscribe(updateDiarizationDesc);
 
     const timestampsCard = createSettingGroup(containerEl, 'Timestamps');
     this.renderTimestampSettings(timestampsCard, settings);
@@ -305,6 +317,8 @@ export class LocalSttSettingTab extends PluginSettingTab {
   private tearDown(): void {
     this.disposeModelSection?.();
     this.disposeModelSection = null;
+    this.disposeDiarizationDesc?.();
+    this.disposeDiarizationDesc = null;
     this.disposeEngineSection?.();
     this.disposeEngineSection = null;
     this.disposeMicrophoneSection?.();

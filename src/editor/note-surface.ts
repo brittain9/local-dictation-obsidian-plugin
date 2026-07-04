@@ -237,7 +237,12 @@ export class NoteSurface {
     return { kind: 'appended', span: cloneSpan(span) };
   }
 
-  replaceAnchor(utteranceId: UtteranceId, newText: string, expectedOldText: string): ReplaceResult {
+  replaceAnchor(
+    utteranceId: UtteranceId,
+    newText: string,
+    expectedOldText: string,
+    removeBoundary = newText.length === 0,
+  ): ReplaceResult {
     if (this.disposed) {
       return { kind: 'denied', reason: { kind: 'disposed' }, utteranceId };
     }
@@ -264,7 +269,7 @@ export class NoteSurface {
       };
     }
 
-    const replacementStart = newText.length === 0 ? span.start : span.textStart;
+    const replacementStart = removeBoundary ? span.start : span.textStart;
     this.view.dispatch({
       changes: { from: replacementStart, to: span.textEnd, insert: newText },
       effects: this.ownerAnchorEffects(replacementStart + newText.length),

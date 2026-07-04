@@ -19,7 +19,7 @@ export const provisionalTranscriptStateField = StateField.define<
 
     for (const [utteranceId, range] of value) {
       const from = transaction.changes.mapPos(range.from, -1);
-      const to = transaction.changes.mapPos(range.to, 1);
+      const to = transaction.changes.mapPos(range.to, -1);
       if (from < to) {
         next.set(utteranceId, { from, to, utteranceId });
       }

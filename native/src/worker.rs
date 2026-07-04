@@ -249,8 +249,11 @@ fn worker_main(
                 match load_result {
                     Ok(Ok(resources)) => {
                         let streaming = resources.family_capabilities.supports_streaming;
-                        let warnings =
-                            session_request_warnings(streaming, metadata.diarization_enabled);
+                        let warnings = session_request_warnings(
+                            &resources.family_capabilities,
+                            metadata.diarization_enabled,
+                            &metadata.language,
+                        );
                         let diarizer = if metadata.diarization_enabled && !streaming {
                             match SessionDiarizer::new() {
                                 Ok(diarizer) => Some(diarizer),
@@ -358,6 +361,9 @@ fn worker_main(
                 let utterance_end_ms_in_session = utterance.utterance_end_ms_in_session();
                 let utterance_start_ms_in_session = utterance.utterance_start_ms_in_session();
                 let FinalizedUtterance {
+                    // Batch transcription re-decodes the whole utterance, so the
+                    // streaming carry-forward marker is irrelevant here.
+                    carries_audio_forward: _,
                     pause_ms_before_utterance,
                     samples,
                     utterance_index,
@@ -581,6 +587,7 @@ fn finalize_streaming_utterance(
     let utterance_end_ms_in_session = utterance.utterance_end_ms_in_session();
     let utterance_start_ms_in_session = utterance.utterance_start_ms_in_session();
     let FinalizedUtterance {
+        carries_audio_forward,
         pause_ms_before_utterance,
         samples,
         utterance_index,
@@ -599,12 +606,28 @@ fn finalize_streaming_utterance(
     };
     let open = open.take();
     let revision = open.as_ref().map_or(0, |open| open.next_revision);
-    if open
+    match open
         .as_ref()
-        .is_none_or(|open| open.utterance_id != utterance_id || open.utterance.samples != samples)
+        .filter(|open| open.utterance_id == utterance_id)
     {
-        model.reset_utterance();
-        model.accept_audio(&samples)?;
+        Some(open) if samples.starts_with(&open.utterance.samples) => {
+            let missing_tail = &samples[open.utterance.samples.len()..];
+            if !missing_tail.is_empty() {
+                model.accept_audio(missing_tail)?;
+            }
+        }
+        Some(open) if !carries_audio_forward && open.utterance.samples.starts_with(&samples) => {
+            // Pause-driven finalization trims the silence hangover already fed
+            // to the streaming model. That suffix carries no speech, so keep
+            // the incremental state instead of resetting and re-feeding the
+            // finalized prefix. A boundary cap-split (`carries_audio_forward`)
+            // is excluded here: its streamed suffix is voice carried into the
+            // next utterance, so it must fall through to a reset and re-feed.
+        }
+        _ => {
+            model.reset_utterance();
+            model.accept_audio(&samples)?;
+        }
     }
 
     let engine_started_at = Instant::now();
@@ -661,17 +684,32 @@ fn send_worker_error(
     });
 }
 
-fn session_request_warnings(streaming: bool, diarization_enabled: bool) -> Vec<RequestWarning> {
-    if streaming && diarization_enabled {
-        vec![RequestWarning {
+fn session_request_warnings(
+    capabilities: &ModelFamilyCapabilities,
+    diarization_enabled: bool,
+    language: &str,
+) -> Vec<RequestWarning> {
+    let mut warnings = Vec::new();
+    if capabilities.supports_streaming && diarization_enabled {
+        warnings.push(RequestWarning {
             field: "diarizationEnabled".to_string(),
             reason:
                 "diarization dropped because streaming sessions do not support speaker attribution"
                     .to_string(),
-        }]
-    } else {
-        Vec::new()
+        });
     }
+    if capabilities.supports_streaming
+        && !capabilities.supports_language_selection
+        && !language.eq_ignore_ascii_case("en")
+    {
+        warnings.push(RequestWarning {
+            field: "language".to_string(),
+            reason:
+                "language dropped because streaming adapter does not advertise supports_language_selection"
+                    .to_string(),
+        });
+    }
+    warnings
 }
 
 fn joined_engine_text(output: &EngineTranscriptOutput) -> String {
@@ -873,6 +911,8 @@ fn assemble_transcript(input: TranscriptAssembly<'_>) -> Transcript {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Mutex;
+
     use super::*;
     use crate::audio_metadata::voiced_fraction;
     use crate::engine::capabilities::LanguageSupport;
@@ -1050,17 +1090,98 @@ mod tests {
     }
 
     #[test]
+    fn pause_finalize_reuses_streamed_state_after_silence_trim() {
+        let outcome = run_counted_streaming_finalize(FixtureVad {
+            calls: 0,
+            speech_frames: 20,
+        });
+        let counts = outcome.counts.lock().expect("feed counts lock");
+
+        assert_eq!(counts.reset_calls, 1, "finalize must not reset and re-feed");
+        assert!(
+            counts.accepted_samples > outcome.finalized_samples,
+            "the fixture must exercise trimmed silence already present in streamed state"
+        );
+    }
+
+    #[test]
+    fn cap_split_feeds_only_the_unstreamed_tail() {
+        let outcome = run_counted_streaming_finalize(FixtureVad {
+            calls: 0,
+            speech_frames: usize::MAX,
+        });
+        let counts = outcome.counts.lock().expect("feed counts lock");
+
+        assert_eq!(counts.reset_calls, 1, "finalize must not reset and re-feed");
+        assert_eq!(
+            counts.accepted_samples, outcome.finalized_samples,
+            "each capped utterance sample must be fed exactly once"
+        );
+    }
+
+    #[test]
+    fn boundary_cap_split_resets_and_refeeds_only_the_finalized_prefix() {
+        // Speech for 1400 frames, a 20-frame dip below the speech threshold (but
+        // above the negative threshold, so it registers a silence boundary
+        // without arming a pause finalize), then resumed speech until the 30 s
+        // cap. `split_at_boundary` cuts at the boundary and carries the resumed
+        // speech into the next utterance, so the streamed state holds voice that
+        // does not belong to this final.
+        let probabilities: Vec<f32> = std::iter::repeat_n(1.0_f32, 1_400)
+            .chain(std::iter::repeat_n(0.4_f32, 20))
+            .chain(std::iter::repeat_n(1.0_f32, 200))
+            .collect();
+        let outcome = run_counted_streaming_finalize(ScriptedVad {
+            probabilities,
+            index: 0,
+        });
+        let counts = outcome.counts.lock().expect("feed counts lock");
+
+        // Only a prefix of the streamed audio is finalized: the voiced suffix is
+        // carried forward, so this is a genuine boundary split, not a hard cut.
+        assert!(
+            outcome.finalized_samples < outcome.streamed_samples,
+            "boundary split must finalize a prefix of the streamed audio"
+        );
+        // begin_streaming_utterance resets once; the boundary split forces a
+        // second reset so the carried-forward speech is not folded into this
+        // final and then transcribed again in the next utterance.
+        assert_eq!(
+            counts.reset_calls, 2,
+            "boundary cap-split must reset and re-feed the finalized prefix"
+        );
+        assert_eq!(
+            counts.accepted_samples,
+            outcome.streamed_samples + outcome.finalized_samples,
+            "the finalized prefix is re-fed exactly once after the reset"
+        );
+    }
+
+    #[test]
     fn streaming_session_warns_when_diarization_is_requested() {
         assert_eq!(
-            session_request_warnings(true, true),
+            session_request_warnings(&streaming_caps(), true, "en"),
             vec![RequestWarning {
                 field: "diarizationEnabled".to_string(),
                 reason: "diarization dropped because streaming sessions do not support speaker attribution"
                     .to_string(),
             }]
         );
-        assert!(session_request_warnings(false, true).is_empty());
-        assert!(session_request_warnings(true, false).is_empty());
+        assert!(session_request_warnings(&whisper_caps(), true, "en").is_empty());
+        assert!(session_request_warnings(&streaming_caps(), false, "en").is_empty());
+    }
+
+    #[test]
+    fn streaming_session_warns_when_language_selection_is_dropped() {
+        assert_eq!(
+            session_request_warnings(&streaming_caps(), false, "fr"),
+            vec![RequestWarning {
+                field: "language".to_string(),
+                reason: "language dropped because streaming adapter does not advertise supports_language_selection"
+                    .to_string(),
+            }]
+        );
+        assert!(session_request_warnings(&streaming_caps(), false, "en").is_empty());
     }
 
     #[derive(Default)]
@@ -1073,6 +1194,154 @@ mod tests {
         speech_frames: usize,
     }
 
+    #[derive(Default)]
+    struct StreamingFeedCounts {
+        accepted_samples: usize,
+        reset_calls: usize,
+    }
+
+    struct CountedStreamingFinalize {
+        counts: Arc<Mutex<StreamingFeedCounts>>,
+        finalized_samples: usize,
+        streamed_samples: usize,
+    }
+
+    /// Plays back a fixed sequence of VAD probabilities, holding the last value
+    /// once the script is exhausted. Lets a streaming fixture reproduce a
+    /// speech → short silence gap → resumed speech pattern that drives a
+    /// boundary-aware 30 s cap split.
+    struct ScriptedVad {
+        probabilities: Vec<f32>,
+        index: usize,
+    }
+
+    struct CountingStreamingModel {
+        counts: Arc<Mutex<StreamingFeedCounts>>,
+    }
+
+    impl StreamingModel for CountingStreamingModel {
+        fn accept_audio(&mut self, samples: &[i16]) -> Result<(), TranscriptionError> {
+            self.counts
+                .lock()
+                .expect("feed counts lock")
+                .accepted_samples += samples.len();
+            Ok(())
+        }
+
+        fn partial(&mut self) -> Result<EngineTranscriptOutput, TranscriptionError> {
+            Ok(fixture_output("counted partial".to_string()))
+        }
+
+        fn finalize_utterance(&mut self) -> Result<EngineTranscriptOutput, TranscriptionError> {
+            Ok(fixture_output("counted final".to_string()))
+        }
+
+        fn reset_utterance(&mut self) {
+            self.counts.lock().expect("feed counts lock").reset_calls += 1;
+        }
+    }
+
+    fn run_counted_streaming_finalize<V: VoiceActivityDetector>(
+        vad: V,
+    ) -> CountedStreamingFinalize {
+        let counts = Arc::new(Mutex::new(StreamingFeedCounts::default()));
+        let (_cancel_tx, cancel_rx) = watch::channel(false);
+        let mut worker_session = WorkerSession {
+            metadata: SessionMetadata {
+                runtime_id: RuntimeId::OnnxRuntime,
+                family_id: ModelFamilyId::Moonshine,
+                gpu_config: GpuConfig::default(),
+                diarization_enabled: false,
+                language: "en".to_string(),
+                model_file_path: PathBuf::from("/tmp/frontend.ort"),
+                cancel_rx,
+                session_start_unix_ms: 0,
+                session_id: "streaming-reconcile-test".to_string(),
+                stage_enablement: StageEnablement::default(),
+            },
+            family_capabilities: streaming_caps(),
+            model: SessionModel::Streaming {
+                model: Box::new(CountingStreamingModel {
+                    counts: Arc::clone(&counts),
+                }),
+                utterance: None,
+            },
+            processors: Vec::new(),
+            diarizer: None,
+            warnings: Vec::new(),
+        };
+        let mut listening_session = ListeningSession::with_vad(
+            SessionConfig {
+                mode: ListeningMode::AlwaysOn,
+                session_start_unix_ms: 0,
+                session_id: "streaming-reconcile-test".to_string(),
+                style: SpeakingStyle::Balanced,
+            },
+            vad,
+        );
+        let runtime = test_runtime();
+        let (event_tx, _event_rx) = mpsc::channel();
+        let utterance_id = Uuid::new_v4();
+        let mut opened = false;
+
+        for index in 0..1_600 {
+            let frame = vec![index as i16; 320];
+            let frame_bytes: Vec<u8> = frame
+                .iter()
+                .flat_map(|sample| sample.to_le_bytes())
+                .collect();
+            let actions = listening_session.ingest_audio_frame(&frame_bytes).unwrap();
+            for action in actions {
+                let SessionAction::FinalizeUtterance(utterance) = action else {
+                    continue;
+                };
+                let finalized_samples = utterance.samples.len();
+                let streamed_samples = counts.lock().expect("feed counts lock").accepted_samples;
+                finalize_streaming_utterance(
+                    &mut worker_session,
+                    &event_tx,
+                    &runtime,
+                    "streaming-reconcile-test",
+                    utterance,
+                    utterance_id,
+                )
+                .unwrap();
+                return CountedStreamingFinalize {
+                    counts,
+                    finalized_samples,
+                    streamed_samples,
+                };
+            }
+
+            let Some(live) = listening_session.live_utterance() else {
+                continue;
+            };
+            if opened {
+                stream_audio(
+                    &mut worker_session,
+                    &event_tx,
+                    &runtime,
+                    "streaming-reconcile-test",
+                    utterance_id,
+                    &frame,
+                    ((index + 1) * 20) as u64,
+                )
+                .unwrap();
+            } else {
+                begin_streaming_utterance(
+                    &mut worker_session,
+                    live,
+                    utterance_id,
+                    ((index + 1) * 20) as u64,
+                )
+                .unwrap();
+                opened = true;
+            }
+        }
+
+        panic!("fixture did not finalize an utterance");
+    }
+
     impl VoiceActivityDetector for FixtureVad {
         fn speech_probability(&mut self, _frame: &[i16]) -> Result<f32, VoiceActivityError> {
             let probability = if self.calls < self.speech_frames {
@@ -1081,6 +1350,21 @@ mod tests {
                 0.0
             };
             self.calls += 1;
+            Ok(probability)
+        }
+
+        fn reset(&mut self) {}
+    }
+
+    impl VoiceActivityDetector for ScriptedVad {
+        fn speech_probability(&mut self, _frame: &[i16]) -> Result<f32, VoiceActivityError> {
+            let probability = self
+                .probabilities
+                .get(self.index)
+                .copied()
+                .or_else(|| self.probabilities.last().copied())
+                .unwrap_or(0.0);
+            self.index += 1;
             Ok(probability)
         }
 

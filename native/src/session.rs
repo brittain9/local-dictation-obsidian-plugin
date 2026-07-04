@@ -85,6 +85,14 @@ pub struct SessionConfig {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct FinalizedUtterance {
+    /// True when a 30 s-cap boundary split ends this utterance short of the
+    /// audio already streamed to the model, and the trailing (still-voiced)
+    /// suffix is carried into the next utterance. The streaming model has been
+    /// fed that suffix, so finalizing must reset its state and re-feed only
+    /// these samples — keeping the state would fold the next utterance's speech
+    /// into this final and then transcribe it again. Pause-driven and hard-cut
+    /// finalizations discard their trailing audio, so this stays `false`.
+    pub carries_audio_forward: bool,
     pub pause_ms_before_utterance: Option<u64>,
     pub samples: Vec<i16>,
     pub utterance_index: u64,
@@ -372,7 +380,7 @@ impl<TVad: VoiceActivityDetector> ListeningSession<TVad> {
         };
 
         let flattened = flatten_frames(&self.utterance_frames[..idx]);
-        let finalized = self.finalize_with_metadata(flattened, true);
+        let finalized = self.finalize_with_metadata(flattened, true, true);
         self.next_utterance_index = self.next_utterance_index.saturating_add(1);
 
         self.utterance_frames.drain(..idx);
@@ -435,7 +443,11 @@ impl<TVad: VoiceActivityDetector> ListeningSession<TVad> {
         }
 
         let flattened = flatten_frames(&self.utterance_frames[..retained_frames]);
-        Some(self.finalize_with_metadata(flattened, cap_split))
+        // Pause-driven finalizations and the hard-cut cap fallback discard their
+        // trailing audio, so they never carry a voiced suffix forward. Only the
+        // boundary split in `split_at_boundary` does, and it constructs its
+        // `FinalizedUtterance` directly.
+        Some(self.finalize_with_metadata(flattened, cap_split, false))
     }
 
     /// Single producer for `FinalizedUtterance`. Combining the audio flatten
@@ -447,6 +459,7 @@ impl<TVad: VoiceActivityDetector> ListeningSession<TVad> {
         &mut self,
         flattened: FlattenedFrames,
         cap_split: bool,
+        carries_audio_forward: bool,
     ) -> FinalizedUtterance {
         let voice_activity = flattened.voice_activity;
         let current_has_speech = voice_activity.speech_end_ms > voice_activity.speech_start_ms;
@@ -465,6 +478,7 @@ impl<TVad: VoiceActivityDetector> ListeningSession<TVad> {
         self.next_utterance_is_continuation = cap_split;
 
         FinalizedUtterance {
+            carries_audio_forward,
             pause_ms_before_utterance,
             samples: flattened.samples,
             utterance_index: self.next_utterance_index,
@@ -1108,7 +1122,7 @@ mod tests {
             },
         };
 
-        let finalized = session.finalize_with_metadata(flattened, false);
+        let finalized = session.finalize_with_metadata(flattened, false, false);
 
         assert_eq!(finalized.pause_ms_before_utterance, None);
         assert_eq!(session.last_final_speech_end_ms, Some(500));
@@ -1138,7 +1152,7 @@ mod tests {
             },
         };
 
-        let finalized = session.finalize_with_metadata(flattened, false);
+        let finalized = session.finalize_with_metadata(flattened, false, false);
 
         assert_eq!(finalized.pause_ms_before_utterance, None);
         assert!(!session.next_utterance_is_continuation);
@@ -1167,7 +1181,7 @@ mod tests {
             },
         };
 
-        let finalized = session.finalize_with_metadata(flattened, true);
+        let finalized = session.finalize_with_metadata(flattened, true, false);
 
         assert_eq!(finalized.pause_ms_before_utterance, None);
         assert!(session.next_utterance_is_continuation);

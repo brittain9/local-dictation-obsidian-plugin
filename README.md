@@ -7,6 +7,7 @@ Transcription runs entirely on your device. No accounts or cloud required. A fas
 ## Features
 
 - **Top models, run locally.** Whisper or Cohere Transcribe, on CPU or GPU. Cohere Transcribe currently tops the [Open ASR Leaderboard](https://huggingface.co/spaces/hf-audio/open_asr_leaderboard).
+- **Live dictation.** Moonshine streaming models show provisional words within about a second and revise them in place until each utterance finalizes.
 - **Speaker labels.** Optional on-device diarization tags who's talking — for interviews, meetings, and calls. Nothing is stored; voiceprints live in memory for the session only.
 - **System audio.** Transcribe your computer's output — meetings, calls, videos — not just your mic. Available on Windows and Linux.
 - **Timestamps.** Optionally stamp phrases with elapsed or wall-clock time — handy for meetings and interviews.
@@ -25,6 +26,8 @@ Then click the microphone in the ribbon, or bind a hotkey to **Local Dictation: 
 CPU works everywhere with no extra setup. Hardware acceleration is available for faster transcription — use Metal (macOS, automatic) or CUDA on a recent NVIDIA GPU (RTX 20-series / GTX 16-series or newer, with a current driver). See the [CUDA setup guide](docs/guides/cuda-setup.md) to enable it.
 
 macOS and Windows are the primary tested targets. On Linux, the plugin is used daily on Fedora 44 (native and Flatpak); other distributions should work but aren't routinely verified. If something breaks on yours, [open an issue](https://github.com/brittain9/local-dictation-obsidian-plugin/issues).
+
+Moonshine live dictation is English-only. Streaming models do not apply speaker labels, and long speech is split at a 30-second utterance cap. Tiny is intended for lower-end CPUs, Small is the recommended balance, and Medium trades additional compute and memory for accuracy. Batch models keep their existing behavior.
 
 ## 🔒 Privacy
 

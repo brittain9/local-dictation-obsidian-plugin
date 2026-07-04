@@ -222,6 +222,26 @@ describe('NoteSurface', () => {
     expect(doc(view)).toBe('Existing');
   });
 
+  it('keeps the boundary and timestamp prefix when an empty partial clears the body', () => {
+    const { surface, view } = createSurface({ doc: 'Existing', selectionHead: 8 });
+    const renderer = new TranscriptRenderer({
+      timestamps: timestamps({ enabled: true, header: false }),
+      transcriptFormatting: 'space',
+    });
+
+    expect(
+      appendWithRenderer(surface, renderer, 'u1', 'live words', {
+        utteranceStartMsInSession: 10_000,
+      }).kind,
+    ).toBe('appended');
+
+    expect(surface.replaceAnchor('u1', '', 'live words', false).kind).toBe('replaced');
+    expect(doc(view)).toBe('Existing (0:10) ');
+
+    expect(surface.replaceAnchor('u1', 'live words again', '', false).kind).toBe('replaced');
+    expect(doc(view)).toBe('Existing (0:10) live words again');
+  });
+
   it('applies provisional styling and clears it on final replacement', () => {
     const { surface, view } = createSurface({ extensions: provisionalTranscriptExtension() });
 
