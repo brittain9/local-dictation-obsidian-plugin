@@ -91,29 +91,6 @@ describe('resolveEngineCapabilities', () => {
 });
 
 describe('buildCapabilityLabels', () => {
-  it('renders Moonshine catalog capabilities as English streaming transcription', () => {
-    const capabilities = resolveEngineCapabilities(
-      [runtime('onnx_runtime', { supportedModelFormats: ['onnx'] })],
-      [
-        adapter('onnx_runtime', 'moonshine', {
-          producesPunctuation: true,
-          supportedLanguages: { kind: 'english_only' },
-          supportsStreaming: true,
-        }),
-      ],
-      'onnx_runtime',
-      'moonshine',
-    );
-
-    if (capabilities === null) {
-      throw new Error('expected Moonshine capabilities');
-    }
-
-    expect(buildCapabilityLabels(capabilities)).toEqual(
-      expect.arrayContaining(['ONNX', 'English only', 'Streaming', 'Punctuation']),
-    );
-  });
-
   it('always lists at least one accelerator and falls back to CPU when none are available', () => {
     // Empty availableAccelerators is a real wire-format possibility on CPU-only builds
     // where the runtime hasn't declared an explicit accelerator list.

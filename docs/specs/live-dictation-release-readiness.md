@@ -81,6 +81,17 @@ test.** 7–9 are fix-or-defer-with-rationale.
    *counts re-feeds* (the existing fixture model cannot distinguish the
    paths — that is why this escaped), driven through the real
    session→worker finalize flow with silence hangover and cap-split cases.
+   **Implementation decision (recorded post-review):** the fix keeps the
+   incremental model state on pause-driven finalizes, so the final decodes
+   speech *plus* the streamed silence hangover while a batch decode would
+   see only the trimmed buffer — strict final==batch equality is
+   deliberately relaxed on this path. Accepted because the hangover is
+   audio the model genuinely heard, the hallucination filter runs on
+   finals, and re-feeding the trimmed buffer is exactly the defect being
+   fixed. The simulation test cannot distinguish the two (its fixture
+   finalizes to a constant), so the guard is the dedicated manual-matrix
+   row in D5: listen for trailing-silence hallucination after pauses on
+   all three model sizes.
 2. **Empty partial after projected text deletes the utterance boundary
    prefix** (`src/session/session.ts:407-453`,
    `src/editor/note-surface.ts:267`). An empty non-final revision (worker
@@ -166,7 +177,11 @@ Expected behavior, verified during the manual pass:
 - Manual validation matrix on representative CPU hardware, tiny/small/
   medium: first partial ≤ 1 s, ~2 Hz refresh, final ≤ 700 ms after VAD
   close **including the ordinary pause-driven finalize** (this re-times
-  D2-1's path), plus first-partial-after-30s-cap-split; 5-minute soak with
+  D2-1's path), plus first-partial-after-30s-cap-split; **trailing-silence
+  hallucination check** — dictate with deliberate long pauses on
+  tiny/small/medium and confirm no junk tokens appear at utterance ends
+  (guards D2-1's relaxed final==batch equality, which no automated test
+  can see); 5-minute soak with
   no audio loss/reordering/stale provisional styling; typing latches;
   empty finals; one-sentence mode; stop/cancel/drain; note switching;
   session teardown; light/dark themes.

@@ -100,6 +100,7 @@ export class LocalSttSettingTab extends PluginSettingTab {
   override readonly icon = 'audio-lines';
 
   private readonly access: SettingAccess;
+  private disposeDiarizationDesc: (() => void) | null = null;
   private disposeEngineSection: (() => void) | null = null;
   private disposeMicrophoneSection: (() => void) | null = null;
   private disposeMissingSidecarBanner: (() => void) | null = null;
@@ -218,15 +219,21 @@ export class LocalSttSettingTab extends PluginSettingTab {
       isValid: isTranscriptFormattingMode,
     });
 
-    const selectedCapabilities = manager.getState().selectedModelCapabilities;
-    addToggleSetting(outputCard, this.access, {
+    const diarizationSetting = addToggleSetting(outputCard, this.access, {
       name: 'Speaker labels (diarization)',
-      desc: diarizationSettingDescription(
-        selectedCapabilities.status === 'ready' &&
-          selectedCapabilities.capabilities.family.supportsStreaming,
-      ),
+      desc: '',
       key: 'diarizationEnabled',
     });
+    const updateDiarizationDesc = (): void => {
+      const caps = manager.getState().selectedModelCapabilities;
+      diarizationSetting.setDesc(
+        diarizationSettingDescription(
+          caps.status === 'ready' && caps.capabilities.family.supportsStreaming,
+        ),
+      );
+    };
+    updateDiarizationDesc();
+    this.disposeDiarizationDesc = manager.subscribe(updateDiarizationDesc);
 
     const timestampsCard = createSettingGroup(containerEl, 'Timestamps');
     this.renderTimestampSettings(timestampsCard, settings);
@@ -310,6 +317,8 @@ export class LocalSttSettingTab extends PluginSettingTab {
   private tearDown(): void {
     this.disposeModelSection?.();
     this.disposeModelSection = null;
+    this.disposeDiarizationDesc?.();
+    this.disposeDiarizationDesc = null;
     this.disposeEngineSection?.();
     this.disposeEngineSection = null;
     this.disposeMicrophoneSection?.();
