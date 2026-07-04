@@ -542,6 +542,31 @@ describe('Session', () => {
     expect(surface.documentText).toBe('Cleaned words.\n\n> [!note]- raw\n> raw words');
   });
 
+  it('folds the raw callout beneath its own utterance when a later utterance was projected first', () => {
+    const { session, surface } = createSessionHarness();
+
+    // A's partial projects, then B's partial projects while A's cleaned final is
+    // still pending (its LLM cleanup runs async in the controller).
+    session.acceptTranscript(
+      transcript({ isFinal: false, revision: 0, text: 'raw words', utteranceId: 'u1' }),
+    );
+    session.acceptTranscript(
+      transcript({ isFinal: false, revision: 0, text: 'more', utteranceId: 'u2' }),
+    );
+    session.acceptTranscript(
+      transcript({
+        isFinal: true,
+        llmPostprocessRawText: 'raw words',
+        revision: 1,
+        text: 'Cleaned words.',
+        utteranceId: 'u1',
+      }),
+    );
+
+    // The callout lands directly beneath A, not after the later utterance B.
+    expect(surface.documentText).toBe('Cleaned words.\n\n> [!note]- raw\n> raw words more');
+  });
+
   it('insertAdjacentToSessionRange prepends above the untouched session range', () => {
     const { session, surface } = createSessionHarness();
 

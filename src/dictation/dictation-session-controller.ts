@@ -1059,6 +1059,11 @@ export class DictationSessionController {
       return;
     }
 
+    if (event.code === 'utterance_queue_overload' && event.sessionId !== undefined) {
+      await this.handleQueueOverload(event);
+      return;
+    }
+
     const detail = event.details ? `${event.message} (${event.details})` : event.message;
 
     if (event.sessionId === undefined) {
@@ -1079,6 +1084,36 @@ export class DictationSessionController {
     }
 
     await this.cancelSession(event.sessionId);
+  }
+
+  // Queue overload is a sidecar-initiated graceful stop: capture is already
+  // stopped natively and the already-accepted utterances keep draining until a
+  // session_stopped(queue_overload) event completes the teardown. Cancelling
+  // here (the fate of every other session-scoped error) would tear the worker
+  // down and drop that queued work before it lands, so surface the notice and
+  // let the drain run its course.
+  private async handleQueueOverload(
+    event: Extract<SidecarEvent, { type: 'error' }>,
+  ): Promise<void> {
+    const sessionId = event.sessionId;
+    if (sessionId === undefined) {
+      return;
+    }
+
+    const entry = this.sessions.get(sessionId);
+    if (entry === undefined) {
+      return;
+    }
+
+    const detail = event.details ? `${event.message} (${event.details})` : event.message;
+    if (sessionId === this.activeSessionId) {
+      this.dependencies.notice(`Local Dictation: ${detail}`);
+    } else {
+      this.dependencies.logger?.warn('session', detail);
+    }
+
+    entry.phase = 'stopping';
+    await this.clearActiveSession(sessionId);
   }
 
   private maybeLogLlmStageFailure(entry: ManagedSession, message: string): void {

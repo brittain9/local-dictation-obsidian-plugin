@@ -361,6 +361,9 @@ fn worker_main(
                 let utterance_end_ms_in_session = utterance.utterance_end_ms_in_session();
                 let utterance_start_ms_in_session = utterance.utterance_start_ms_in_session();
                 let FinalizedUtterance {
+                    // Batch transcription re-decodes the whole utterance, so the
+                    // streaming carry-forward marker is irrelevant here.
+                    carries_audio_forward: _,
                     pause_ms_before_utterance,
                     samples,
                     utterance_index,
@@ -584,6 +587,7 @@ fn finalize_streaming_utterance(
     let utterance_end_ms_in_session = utterance.utterance_end_ms_in_session();
     let utterance_start_ms_in_session = utterance.utterance_start_ms_in_session();
     let FinalizedUtterance {
+        carries_audio_forward,
         pause_ms_before_utterance,
         samples,
         utterance_index,
@@ -612,11 +616,13 @@ fn finalize_streaming_utterance(
                 model.accept_audio(missing_tail)?;
             }
         }
-        Some(open) if open.utterance.samples.starts_with(&samples) => {
+        Some(open) if !carries_audio_forward && open.utterance.samples.starts_with(&samples) => {
             // Pause-driven finalization trims the silence hangover already fed
             // to the streaming model. That suffix carries no speech, so keep
             // the incremental state instead of resetting and re-feeding the
-            // finalized prefix.
+            // finalized prefix. A boundary cap-split (`carries_audio_forward`)
+            // is excluded here: its streamed suffix is voice carried into the
+            // next utterance, so it must fall through to a reset and re-feed.
         }
         _ => {
             model.reset_utterance();
@@ -1085,31 +1091,69 @@ mod tests {
 
     #[test]
     fn pause_finalize_reuses_streamed_state_after_silence_trim() {
-        let (counts, finalized_samples) = run_counted_streaming_finalize(FixtureVad {
+        let outcome = run_counted_streaming_finalize(FixtureVad {
             calls: 0,
             speech_frames: 20,
         });
-        let counts = counts.lock().expect("feed counts lock");
+        let counts = outcome.counts.lock().expect("feed counts lock");
 
         assert_eq!(counts.reset_calls, 1, "finalize must not reset and re-feed");
         assert!(
-            counts.accepted_samples > finalized_samples,
+            counts.accepted_samples > outcome.finalized_samples,
             "the fixture must exercise trimmed silence already present in streamed state"
         );
     }
 
     #[test]
     fn cap_split_feeds_only_the_unstreamed_tail() {
-        let (counts, finalized_samples) = run_counted_streaming_finalize(FixtureVad {
+        let outcome = run_counted_streaming_finalize(FixtureVad {
             calls: 0,
             speech_frames: usize::MAX,
         });
-        let counts = counts.lock().expect("feed counts lock");
+        let counts = outcome.counts.lock().expect("feed counts lock");
 
         assert_eq!(counts.reset_calls, 1, "finalize must not reset and re-feed");
         assert_eq!(
-            counts.accepted_samples, finalized_samples,
+            counts.accepted_samples, outcome.finalized_samples,
             "each capped utterance sample must be fed exactly once"
+        );
+    }
+
+    #[test]
+    fn boundary_cap_split_resets_and_refeeds_only_the_finalized_prefix() {
+        // Speech for 1400 frames, a 20-frame dip below the speech threshold (but
+        // above the negative threshold, so it registers a silence boundary
+        // without arming a pause finalize), then resumed speech until the 30 s
+        // cap. `split_at_boundary` cuts at the boundary and carries the resumed
+        // speech into the next utterance, so the streamed state holds voice that
+        // does not belong to this final.
+        let probabilities: Vec<f32> = std::iter::repeat_n(1.0_f32, 1_400)
+            .chain(std::iter::repeat_n(0.4_f32, 20))
+            .chain(std::iter::repeat_n(1.0_f32, 200))
+            .collect();
+        let outcome = run_counted_streaming_finalize(ScriptedVad {
+            probabilities,
+            index: 0,
+        });
+        let counts = outcome.counts.lock().expect("feed counts lock");
+
+        // Only a prefix of the streamed audio is finalized: the voiced suffix is
+        // carried forward, so this is a genuine boundary split, not a hard cut.
+        assert!(
+            outcome.finalized_samples < outcome.streamed_samples,
+            "boundary split must finalize a prefix of the streamed audio"
+        );
+        // begin_streaming_utterance resets once; the boundary split forces a
+        // second reset so the carried-forward speech is not folded into this
+        // final and then transcribed again in the next utterance.
+        assert_eq!(
+            counts.reset_calls, 2,
+            "boundary cap-split must reset and re-feed the finalized prefix"
+        );
+        assert_eq!(
+            counts.accepted_samples,
+            outcome.streamed_samples + outcome.finalized_samples,
+            "the finalized prefix is re-fed exactly once after the reset"
         );
     }
 
@@ -1156,6 +1200,21 @@ mod tests {
         reset_calls: usize,
     }
 
+    struct CountedStreamingFinalize {
+        counts: Arc<Mutex<StreamingFeedCounts>>,
+        finalized_samples: usize,
+        streamed_samples: usize,
+    }
+
+    /// Plays back a fixed sequence of VAD probabilities, holding the last value
+    /// once the script is exhausted. Lets a streaming fixture reproduce a
+    /// speech → short silence gap → resumed speech pattern that drives a
+    /// boundary-aware 30 s cap split.
+    struct ScriptedVad {
+        probabilities: Vec<f32>,
+        index: usize,
+    }
+
     struct CountingStreamingModel {
         counts: Arc<Mutex<StreamingFeedCounts>>,
     }
@@ -1182,7 +1241,9 @@ mod tests {
         }
     }
 
-    fn run_counted_streaming_finalize(vad: FixtureVad) -> (Arc<Mutex<StreamingFeedCounts>>, usize) {
+    fn run_counted_streaming_finalize<V: VoiceActivityDetector>(
+        vad: V,
+    ) -> CountedStreamingFinalize {
         let counts = Arc::new(Mutex::new(StreamingFeedCounts::default()));
         let (_cancel_tx, cancel_rx) = watch::channel(false);
         let mut worker_session = WorkerSession {
@@ -1235,6 +1296,7 @@ mod tests {
                     continue;
                 };
                 let finalized_samples = utterance.samples.len();
+                let streamed_samples = counts.lock().expect("feed counts lock").accepted_samples;
                 finalize_streaming_utterance(
                     &mut worker_session,
                     &event_tx,
@@ -1244,7 +1306,11 @@ mod tests {
                     utterance_id,
                 )
                 .unwrap();
-                return (counts, finalized_samples);
+                return CountedStreamingFinalize {
+                    counts,
+                    finalized_samples,
+                    streamed_samples,
+                };
             }
 
             let Some(live) = listening_session.live_utterance() else {
@@ -1284,6 +1350,21 @@ mod tests {
                 0.0
             };
             self.calls += 1;
+            Ok(probability)
+        }
+
+        fn reset(&mut self) {}
+    }
+
+    impl VoiceActivityDetector for ScriptedVad {
+        fn speech_probability(&mut self, _frame: &[i16]) -> Result<f32, VoiceActivityError> {
+            let probability = self
+                .probabilities
+                .get(self.index)
+                .copied()
+                .or_else(|| self.probabilities.last().copied())
+                .unwrap_or(0.0);
+            self.index += 1;
             Ok(probability)
         }
 

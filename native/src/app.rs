@@ -3131,6 +3131,7 @@ mod tests {
 
     fn fake_utterance() -> FinalizedUtterance {
         FinalizedUtterance {
+            carries_audio_forward: false,
             pause_ms_before_utterance: None,
             samples: vec![0i16; 16000],
             utterance_index: 0,
