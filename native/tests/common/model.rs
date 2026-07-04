@@ -12,6 +12,16 @@ use local_dictation_sidecar::catalog::ModelCatalog;
 use local_dictation_sidecar::engine::{ModelFamilyId, RuntimeId};
 use sha2::{Digest, Sha256};
 
+const MOONSHINE_SIBLINGS: &[&str] = &[
+    "frontend.ort",
+    "encoder.ort",
+    "adapter.ort",
+    "cross_kv.ort",
+    "decoder_kv.ort",
+    "streaming_config.json",
+    "tokenizer.bin",
+];
+
 /// Smallest bundled whisper model — fast to download and load on CPU, which
 /// keeps the suite cheap while still exercising the real inference path.
 pub const TEST_MODEL_ID: &str = "whisper_tiny_en_q8_0";
@@ -65,6 +75,85 @@ pub fn require_whisper_model() -> PathBuf {
              ensure network access so the bundled catalog model can be downloaded."
         )
     })
+}
+
+#[derive(Clone, Copy, Debug)]
+pub enum MoonshineTier {
+    Tiny,
+    Small,
+}
+
+impl MoonshineTier {
+    pub fn model_id(self) -> &'static str {
+        match self {
+            Self::Tiny => "moonshine_tiny_streaming_en",
+            Self::Small => "moonshine_small_streaming_en",
+        }
+    }
+}
+
+/// Resolve the `frontend.ort` entry point for a complete Moonshine model.
+///
+/// An explicit `STT_TEST_MOONSHINE_DIR` takes priority. Otherwise all catalog
+/// artifacts are sha-verified and cached in a per-tier directory.
+pub fn resolve_moonshine_model(tier: MoonshineTier) -> Result<PathBuf, String> {
+    if let Some(dir) = std::env::var_os("STT_TEST_MOONSHINE_DIR") {
+        let dir = PathBuf::from(dir);
+        verify_moonshine_siblings(&dir)?;
+        return Ok(dir.join("frontend.ort"));
+    }
+
+    let catalog =
+        ModelCatalog::load_bundled().map_err(|error| format!("load catalog: {error:#}"))?;
+    let model = catalog
+        .find_model(
+            RuntimeId::OnnxRuntime,
+            ModelFamilyId::Moonshine,
+            tier.model_id(),
+        )
+        .ok_or_else(|| format!("bundled catalog has no model {}", tier.model_id()))?;
+
+    let dir = cache_dir().join(tier.model_id());
+    std::fs::create_dir_all(&dir).map_err(|error| format!("create {}: {error}", dir.display()))?;
+
+    for artifact in &model.artifacts {
+        let dest = dir.join(&artifact.filename);
+        let verified = dest.is_file()
+            && file_sha256(&dest).is_ok_and(|digest| digest.eq_ignore_ascii_case(&artifact.sha256));
+        if !verified {
+            download_verified(&artifact.download_url, &artifact.sha256, &dest)?;
+        }
+    }
+
+    verify_moonshine_siblings(&dir)?;
+    Ok(dir.join("frontend.ort"))
+}
+
+pub fn require_moonshine_model(tier: MoonshineTier) -> PathBuf {
+    resolve_moonshine_model(tier).unwrap_or_else(|error| {
+        panic!(
+            "could not obtain Moonshine {tier:?} assets: {error}\n  \
+             Set STT_TEST_MOONSHINE_DIR=/path/to/dir (containing frontend.ort + siblings) \
+             to reuse local assets, or ensure network access for the catalog download."
+        )
+    })
+}
+
+fn verify_moonshine_siblings(dir: &Path) -> Result<(), String> {
+    let missing: Vec<&str> = MOONSHINE_SIBLINGS
+        .iter()
+        .copied()
+        .filter(|filename| !dir.join(filename).is_file())
+        .collect();
+    if missing.is_empty() {
+        Ok(())
+    } else {
+        Err(format!(
+            "Moonshine model directory {} is missing: {}",
+            dir.display(),
+            missing.join(", ")
+        ))
+    }
 }
 
 fn cache_dir() -> PathBuf {
