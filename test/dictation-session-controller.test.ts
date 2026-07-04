@@ -465,6 +465,80 @@ describe('DictationSessionController', () => {
     });
   });
 
+  it('projects monotonic partials while an earlier final cleanup is pending', async () => {
+    const sidecarConnection = new FakeSidecarConnection();
+    const sessions: FakeSession[] = [];
+    let resolveCleanup: ((value: LlmRouterCleanupResult) => void) | undefined;
+    const cleanup = vi.fn(
+      () =>
+        new Promise<LlmRouterCleanupResult>((resolve) => {
+          resolveCleanup = resolve;
+        }),
+    );
+    const controller = createController({
+      createSession: (session) => {
+        sessions.push(session);
+      },
+      getSettings: () =>
+        createSettings({
+          llmFeaturesEnabled: true,
+          llmPostprocessMode: 'per_utterance',
+          llmPostprocessSkipMinWords: 0,
+          selectedModel: createExternalModelSelection(),
+        }),
+      llmRouter: createFakeLlmRouter({ cleanup }),
+      sidecarConnection,
+    });
+
+    await controller.startDictation();
+    const sessionId = sidecarConnection.startSession.mock.calls[0]?.[0].sessionId ?? '';
+    sidecarConnection.emit(
+      transcriptReady(sessionId, 'utterance A final', {
+        utteranceId: crypto.randomUUID(),
+        utteranceIndex: 0,
+      }),
+    );
+    await vi.waitFor(() => {
+      expect(cleanup).toHaveBeenCalledTimes(1);
+    });
+
+    const liveUtteranceId = crypto.randomUUID();
+    sidecarConnection.emit(
+      transcriptReady(sessionId, 'utterance B partial 0', {
+        isFinal: false,
+        revision: 0,
+        utteranceId: liveUtteranceId,
+        utteranceIndex: 1,
+      }),
+    );
+    sidecarConnection.emit(
+      transcriptReady(sessionId, 'utterance B partial 1', {
+        isFinal: false,
+        revision: 1,
+        utteranceId: liveUtteranceId,
+        utteranceIndex: 1,
+      }),
+    );
+
+    await vi.waitFor(() => {
+      expect(sessions[0]?.acceptTranscript).toHaveBeenNthCalledWith(
+        1,
+        expect.objectContaining({ isFinal: false, revision: 0, utteranceId: liveUtteranceId }),
+      );
+      expect(sessions[0]?.acceptTranscript).toHaveBeenNthCalledWith(
+        2,
+        expect.objectContaining({ isFinal: false, revision: 1, utteranceId: liveUtteranceId }),
+      );
+    });
+
+    resolveCleanup?.({ model: 'm', providerId: 'ollama', text: 'Clean A.' });
+    await vi.waitFor(() => {
+      expect(sessions[0]?.acceptTranscript).toHaveBeenCalledWith(
+        expect.objectContaining({ isFinal: true, text: 'Clean A.' }),
+      );
+    });
+  });
+
   it('accepts cleaned per-utterance revisions in utterance order despite out-of-order completions', async () => {
     const sidecarConnection = new FakeSidecarConnection();
     const sessions: FakeSession[] = [];

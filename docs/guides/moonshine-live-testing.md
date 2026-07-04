@@ -16,6 +16,18 @@ and SHA-256 checksums, validates the model, and only then promotes the complete
 install into the model store. Use the same screen to select, update, or remove a
 Moonshine model.
 
+## Behavior and limitations
+
+Moonshine writes provisional text while you speak, revises that text in place,
+and locks the final text when voice activity detection closes the utterance.
+Tiny is suitable for lower-end CPUs, Small is the recommended starting point,
+and Medium requires more CPU time and memory in exchange for accuracy; actual
+latency depends on the host processor.
+
+Live dictation is English-only. Speaker labels are not applied while a
+streaming model is selected, even when diarization is enabled. Continuous
+speech is split into separate utterances at the 30-second hard cap.
+
 ## Manual acceptance checks
 
 Use a Moonshine model installed through Manage Models with CPU inference and a

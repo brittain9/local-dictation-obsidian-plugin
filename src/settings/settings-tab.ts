@@ -15,6 +15,7 @@ import {
   type SidecarInstallManager,
 } from '../sidecar/sidecar-install-manager';
 import { readInstallManifest, variantDirectoryPath } from '../sidecar/sidecar-installer';
+import { diarizationSettingDescription } from './diarization-setting';
 import { renderActiveInstallCard } from './install-progress-row';
 import { renderMicrophonePicker } from './microphone-picker';
 import { renderModelSection } from './model-settings-section';
@@ -217,9 +218,13 @@ export class LocalSttSettingTab extends PluginSettingTab {
       isValid: isTranscriptFormattingMode,
     });
 
+    const selectedCapabilities = manager.getState().selectedModelCapabilities;
     addToggleSetting(outputCard, this.access, {
       name: 'Speaker labels (diarization)',
-      desc: 'Label each utterance with a detected speaker (Speaker 1, Speaker 2, …). Runs fully on-device; no audio leaves your machine.',
+      desc: diarizationSettingDescription(
+        selectedCapabilities.status === 'ready' &&
+          selectedCapabilities.capabilities.family.supportsStreaming,
+      ),
       key: 'diarizationEnabled',
     });
 

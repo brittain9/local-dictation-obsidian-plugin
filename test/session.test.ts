@@ -85,12 +85,16 @@ class FakeSurface {
     return result;
   }
 
-  replaceAnchor(utteranceId: string, newText: string, expectedOldText: string): ReplaceResult {
+  replaceAnchor(
+    utteranceId: string,
+    newText: string,
+    expectedOldText: string,
+    removeBoundary = newText.length === 0,
+  ): ReplaceResult {
     this.replaceCalls.push({ expectedOldText, newText, utteranceId });
 
     const span = this.spans.get(utteranceId);
-    const replacementStart =
-      span !== undefined && newText.length === 0 ? span.start : span?.textStart;
+    const replacementStart = span !== undefined && removeBoundary ? span.start : span?.textStart;
     const result: ReplaceResult =
       this.nextReplaceResult ??
       (span === undefined
@@ -253,6 +257,34 @@ describe('Session', () => {
     expect(surface.documentText).toBe('(0:10) final words.');
     expect(surface.appendCalls).toHaveLength(1);
     expect(surface.replaceCalls).toHaveLength(2);
+  });
+
+  it('preserves the separator and timestamp across an empty partial revision', () => {
+    const { session, surface } = createSessionHarness({
+      rendererOptions: renderOptions({
+        timestamps: timestamps({ enabled: true, header: false }),
+      }),
+    });
+    surface.documentText = 'Existing';
+
+    session.acceptTranscript(
+      transcript({
+        isFinal: false,
+        revision: 0,
+        text: 'first partial',
+        utteranceId: 'u1',
+        utteranceStartMsInSession: 10_000,
+      }),
+    );
+    session.acceptTranscript(
+      transcript({ isFinal: false, revision: 1, text: '', utteranceId: 'u1' }),
+    );
+    session.acceptTranscript(
+      transcript({ isFinal: false, revision: 2, text: 'next partial', utteranceId: 'u1' }),
+    );
+
+    expect(surface.documentText).toBe('Existing (0:10) next partial');
+    expect(surface.appendCalls).toHaveLength(1);
   });
 
   it('projects new and revised transcripts through append then replace using last projected text', () => {
@@ -448,6 +480,19 @@ describe('Session', () => {
     expect(surface.documentText).toBe('Polished tail.');
   });
 
+  it('omits emptied finalized utterances from joined raw session text', () => {
+    const { session } = createSessionHarness();
+
+    session.acceptTranscript(transcript({ text: 'first', utteranceId: 'u1' }));
+    session.acceptTranscript(transcript({ isFinal: false, text: 'temporary', utteranceId: 'u2' }));
+    session.acceptTranscript(
+      transcript({ isFinal: true, revision: 1, text: '', utteranceId: 'u2' }),
+    );
+    session.acceptTranscript(transcript({ text: 'third', utteranceId: 'u3' }));
+
+    expect(session.joinRawSessionText()).toBe('first third');
+  });
+
   it('replaceSessionRangeWithCleaned force-replaces the tracked range even if its text diverged', () => {
     const { session, surface } = createSessionHarness();
 
@@ -475,6 +520,25 @@ describe('Session', () => {
         showRawBelow: true,
       }),
     ).toBe(true);
+    expect(surface.documentText).toBe('Cleaned words.\n\n> [!note]- raw\n> raw words');
+  });
+
+  it('appends the raw callout when a projected partial is replaced by a cleaned final', () => {
+    const { session, surface } = createSessionHarness();
+
+    session.acceptTranscript(
+      transcript({ isFinal: false, revision: 0, text: 'raw words', utteranceId: 'u1' }),
+    );
+    session.acceptTranscript(
+      transcript({
+        isFinal: true,
+        llmPostprocessRawText: 'raw words',
+        revision: 1,
+        text: 'Cleaned words.',
+        utteranceId: 'u1',
+      }),
+    );
+
     expect(surface.documentText).toBe('Cleaned words.\n\n> [!note]- raw\n> raw words');
   });
 

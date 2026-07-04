@@ -51,6 +51,20 @@ describe('provisionalTranscriptExtension', () => {
     expect(decorationRanges(editedInside)).toEqual([{ from: 10, to: 15 }]);
   });
 
+  it('does not style text inserted at the exact provisional tail', () => {
+    const applied = state().update({
+      effects: setProvisionalTranscriptEffect.of({ from: 0, to: 5, utteranceId: 'u1' }),
+    }).state;
+    const editedAtTail = applied.update({ changes: { from: 5, insert: ' typed' } }).state;
+
+    expect(editedAtTail.field(provisionalTranscriptStateField).get('u1')).toEqual({
+      from: 0,
+      to: 5,
+      utteranceId: 'u1',
+    });
+    expect(decorationRanges(editedAtTail)).toEqual([{ from: 0, to: 5 }]);
+  });
+
   it('clears only the requested session spans during teardown', () => {
     const applied = state().update({
       effects: [

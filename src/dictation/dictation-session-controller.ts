@@ -91,9 +91,8 @@ type SessionPhase = 'starting' | 'active' | 'stopping' | 'cancelling' | 'stopped
 
 interface ManagedSession {
   anchorTimerId: number | null;
-  // Per-session FIFO: per-utterance cleanups run concurrently but their
-  // accept() must land in utterance order, so each transcript's cleanup+accept
-  // chains on the previous one's completion.
+  // Final revisions enter this FIFO so concurrent per-utterance cleanups land
+  // in final-event order. Partials bypass it and project immediately.
   cleanupChain: Promise<void>;
   cleanupAbortControllers: Set<AbortController>;
   llmFailureLogged: boolean;
@@ -669,33 +668,43 @@ export class DictationSessionController {
     }
     this.logDroppedHallucinations(event);
 
-    // The cleanup network call runs concurrently with later utterances for
-    // throughput, but accept() is serialized through the per-session FIFO so
-    // out-of-order remote completions still land in utterance order.
     const revisionPromise = this.resolveTranscriptRevision(entry, event);
+
+    if (!event.isFinal) {
+      const revision = await revisionPromise;
+      await this.acceptResolvedRevision(entry, event.sessionId, revision);
+      return;
+    }
+
+    // Final cleanup network calls run concurrently, but their accepts are
+    // serialized so out-of-order remote completions land in final-event order.
     const accept = entry.cleanupChain.then(async () => {
       const revision = await revisionPromise;
-      // Gate on 'cancelling' only: cancelSession sets it synchronously before
-      // its first await and it persists if cancellation cleanup throws, so
-      // queued accepts cannot land in a half-cancelled session (#138).
-      // 'stopped' must NOT be gated — the sidecar can deliver the final
-      // transcript_ready and session_stopped in one I/O chunk, and the stop
-      // path drains these in-flight accepts after the phase flips.
-      if (
-        revision === null ||
-        !this.sessions.has(event.sessionId) ||
-        entry.phase === 'cancelling'
-      ) {
-        return;
-      }
-      const result = entry.session.acceptTranscript(revision);
-      if (result.kind === 'rejected') {
-        this.handleError('Failed to record the local transcript', new Error(result.reason));
-        await this.cancelSession(event.sessionId);
-      }
+      await this.acceptResolvedRevision(entry, event.sessionId, revision);
     });
     entry.cleanupChain = accept.catch(() => {});
     await accept;
+  }
+
+  private async acceptResolvedRevision(
+    entry: ManagedSession,
+    sessionId: string,
+    revision: TranscriptRevision | null,
+  ): Promise<void> {
+    // Gate on 'cancelling' only: cancelSession sets it synchronously before
+    // its first await and it persists if cancellation cleanup throws, so
+    // queued accepts cannot land in a half-cancelled session (#138).
+    // 'stopped' must NOT be gated — the sidecar can deliver the final
+    // transcript_ready and session_stopped in one I/O chunk, and the stop
+    // path drains these in-flight accepts after the phase flips.
+    if (revision === null || !this.sessions.has(sessionId) || entry.phase === 'cancelling') {
+      return;
+    }
+    const result = entry.session.acceptTranscript(revision);
+    if (result.kind === 'rejected') {
+      this.handleError('Failed to record the local transcript', new Error(result.reason));
+      await this.cancelSession(sessionId);
+    }
   }
 
   private async resolveTranscriptRevision(

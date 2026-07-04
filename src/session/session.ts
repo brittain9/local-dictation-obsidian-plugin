@@ -77,7 +77,12 @@ interface NoteSurfaceLike {
   readNoteGlossary(maxChars: number): { text: string; truncated: boolean } | null;
   readNoteText(maxChars: number): { text: string; truncated: boolean } | null;
   readProjectionContext(): NoteProjectionContext;
-  replaceAnchor(utteranceId: string, newText: string, expectedOldText: string): ReplaceResult;
+  replaceAnchor(
+    utteranceId: string,
+    newText: string,
+    expectedOldText: string,
+    removeBoundary?: boolean,
+  ): ReplaceResult;
   rewriteRegion(
     range: RewriteRange,
     newText: string,
@@ -192,9 +197,9 @@ export class Session {
 
   joinRawSessionText(): string {
     return this.rawSessionEntries
-      .map((entry) => entry.rawText)
-      .join(' ')
-      .trim();
+      .map((entry) => entry.rawText.trim())
+      .filter((text) => text.length > 0)
+      .join(' ');
   }
 
   readCurrentSessionText(): string {
@@ -372,8 +377,12 @@ export class Session {
   }
 
   private applyRawPostprocessCallout(revision: TranscriptRevision): void {
+    if (!revision.isFinal) {
+      return;
+    }
+
     const rawText = revision.llmPostprocessRawText?.trim();
-    if (rawText === undefined || rawText.length === 0) {
+    if (rawText === undefined || rawText.length === 0 || rawText === revision.text.trim()) {
       return;
     }
 
@@ -425,6 +434,7 @@ export class Session {
       revision.utteranceId,
       replacementText,
       state.projectedText,
+      revision.isFinal && replacementText.length === 0,
     );
 
     if (result === undefined) {
@@ -440,6 +450,7 @@ export class Session {
       });
       this.surface?.setProvisional(revision.utteranceId, !revision.isFinal);
       this.recordRawSessionReplace(revision);
+      this.applyRawPostprocessCallout(revision);
       return;
     }
 

@@ -913,8 +913,22 @@ impl AppState {
                 finalizes_utterance,
                 message,
                 session_id,
-                utterance_id: _,
+                utterance_id,
             } => {
+                if !finalizes_utterance && utterance_id.is_some() {
+                    if !self.active_sessions.contains_key(&session_id) {
+                        return;
+                    }
+                    events.push(Event::Warning {
+                        code,
+                        details,
+                        message,
+                        session_id: Some(session_id.clone()),
+                    });
+                    self.emit_state_if_changed(&session_id, events);
+                    return;
+                }
+
                 {
                     let Some(active_session) = self.active_sessions.get_mut(&session_id) else {
                         return;
@@ -1016,6 +1030,21 @@ impl AppState {
 
         let session_id = active_session.session.config().session_id.clone();
 
+        if active_session.overload_draining {
+            // Capture is already stopped; only a buffered finalize (graceful
+            // stop, sentence-complete) can race in here. Drop instead of
+            // queueing past the hard cap.
+            events.push(Event::Warning {
+                code: "utterance_dropped_during_overload_drain".to_string(),
+                details: None,
+                message:
+                    "Dropped a finalized utterance while draining the transcription queue overload."
+                        .to_string(),
+                session_id: Some(session_id),
+            });
+            return;
+        }
+
         if active_session.streaming {
             let open = active_session.streaming_open.take();
             let utterance_id = open.map_or_else(Uuid::new_v4, |open| open.utterance_id);
@@ -1039,21 +1068,7 @@ impl AppState {
                 advance_transcription_queue(active_session);
             }
             emit_queue_tier_if_changed(active_session, events);
-            return;
-        }
-
-        if active_session.overload_draining {
-            // Capture is already stopped; only a buffered finalize (graceful
-            // stop, sentence-complete) can race in here. Drop instead of
-            // queueing past the hard cap.
-            events.push(Event::Warning {
-                code: "utterance_dropped_during_overload_drain".to_string(),
-                details: None,
-                message:
-                    "Dropped a finalized utterance while draining the transcription queue overload."
-                        .to_string(),
-                session_id: Some(session_id),
-            });
+            enter_overload_drain_if_saturated(active_session, events);
             return;
         }
 
@@ -1085,20 +1100,7 @@ impl AppState {
 
         if let Some(active_session) = self.active_sessions.get_mut(&session_id) {
             emit_queue_tier_if_changed(active_session, events);
-
-            if active_session.queued_utterances >= QUEUE_OVERLOAD_DEPTH
-                && !active_session.overload_draining
-            {
-                active_session.overload_draining = true;
-                events.push(Event::Error {
-                    code: "utterance_queue_overload".to_string(),
-                    details: Some(format!(
-                        "queue depth reached saturation at {QUEUE_OVERLOAD_DEPTH}"
-                    )),
-                    message: "Local Dictation stopped because the transcription backlog reached capacity. Already accepted utterances will finish processing.".to_string(),
-                    session_id: Some(session_id),
-                });
-            }
+            enter_overload_drain_if_saturated(active_session, events);
         }
     }
 
@@ -1435,6 +1437,22 @@ fn emit_queue_tier_if_changed(active_session: &mut ActiveSession, events: &mut V
         queued_utterances: active_session.queued_utterances,
         session_id: active_session.session.config().session_id.clone(),
         tier,
+    });
+}
+
+fn enter_overload_drain_if_saturated(active_session: &mut ActiveSession, events: &mut Vec<Event>) {
+    if active_session.queued_utterances < QUEUE_OVERLOAD_DEPTH || active_session.overload_draining {
+        return;
+    }
+
+    active_session.overload_draining = true;
+    events.push(Event::Error {
+        code: "utterance_queue_overload".to_string(),
+        details: Some(format!(
+            "queue depth reached saturation at {QUEUE_OVERLOAD_DEPTH}"
+        )),
+        message: "Local Dictation stopped because the transcription backlog reached capacity. Already accepted utterances will finish processing.".to_string(),
+        session_id: Some(active_session.session.config().session_id.clone()),
     });
 }
 
@@ -2689,6 +2707,87 @@ mod tests {
             31,
             "all accepted utterances should still be tracked through their context flow"
         );
+    }
+
+    #[test]
+    fn streaming_enqueue_escalates_tiers_and_enters_overload_drain() {
+        let model_file_path = create_model_file();
+        let mut app = test_app();
+        let _ = app.handle_command(start_session_command("session-1", &model_file_path));
+        app.active_sessions
+            .get_mut("session-1")
+            .expect("active session")
+            .streaming = true;
+
+        let mut events = enqueue_n_utterances(&mut app, 31);
+
+        assert_eq!(
+            events
+                .iter()
+                .filter_map(|event| match event {
+                    Event::TranscriptionQueueChanged { tier, .. } => Some(*tier),
+                    _ => None,
+                })
+                .collect::<Vec<_>>(),
+            vec![
+                QueueBackpressureTier::CatchingUp,
+                QueueBackpressureTier::FallingBehind,
+                QueueBackpressureTier::Saturated,
+            ]
+        );
+        assert!(events.iter().any(
+            |event| matches!(event, Event::Error { code, .. } if code == "utterance_queue_overload")
+        ));
+        let active = app
+            .active_sessions
+            .get("session-1")
+            .expect("active session");
+        assert!(active.overload_draining);
+        assert_eq!(active.queued_utterances, super::QUEUE_OVERLOAD_DEPTH);
+
+        // Drain the active transcription plus every queued utterance.
+        for _ in 0..=super::QUEUE_OVERLOAD_DEPTH {
+            app.handle_worker_event(fake_worker_transcript_ready("session-1", None), &mut events);
+        }
+        assert!(events.iter().any(|event| matches!(
+            event,
+            Event::SessionStopped {
+                reason: SessionStopReason::QueueOverload,
+                ..
+            }
+        )));
+        assert!(!app.active_sessions.contains_key("session-1"));
+    }
+
+    #[test]
+    fn partial_worker_error_is_recoverable_and_a_later_final_still_lands() {
+        let model_file_path = create_model_file();
+        let mut app = test_app();
+        let _ = app.handle_command(start_session_command("session-1", &model_file_path));
+        let mut events = Vec::new();
+
+        app.handle_worker_event(
+            WorkerEvent::SessionError {
+                code: "engine_inference_failed".to_string(),
+                details: Some("transient partial decode".to_string()),
+                finalizes_utterance: false,
+                message: "Partial decode failed.".to_string(),
+                session_id: "session-1".to_string(),
+                utterance_id: Some(Uuid::new_v4()),
+            },
+            &mut events,
+        );
+
+        assert!(matches!(
+            events.as_slice(),
+            [Event::Warning { code, .. }] if code == "engine_inference_failed"
+        ));
+        assert!(app.active_sessions.contains_key("session-1"));
+
+        app.handle_worker_event(fake_worker_transcript_ready("session-1", None), &mut events);
+        assert!(events.iter().any(
+            |event| matches!(event, Event::TranscriptReady { session_id, .. } if session_id == "session-1")
+        ));
     }
 
     #[test]
