@@ -1,6 +1,7 @@
 # Spec: Streaming (Moonshine) Quality + Performance Test Suite & Partial-Decode Fix
 
-Status: approved for implementation (design decisions locked with the maintainer, below)
+Status: implemented — with two design assumptions falsified during implementation
+(see **Implementation outcome** below). The suite's guards caught both.
 Branch: `test/streaming-moonshine-tests`
 Companion plan: `docs/specs/streaming-moonshine-test-suite-plan.md`
 
@@ -18,6 +19,71 @@ This branch does two things, together:
    the committed transcript by construction, gated by the new quality tests.
 
 The corpus exercises **Moonshine tiny + small** streaming tiers (both catalog models).
+
+## Implementation outcome (what shipped vs. what was designed)
+
+> This section is authoritative where it conflicts with the original design
+> narrative below. The design sections are kept as the reasoning record — and
+> because the two risks they flagged are exactly what fired.
+
+The tests were built first (TDD) and immediately falsified **two** assumptions the
+design leaned on. Both were caught by guards this spec had already listed as risks.
+
+### Finding 1 — cross-KV projection is position-dependent → Fix A reverted
+
+Design cause 1 assumed `k_cross`/`v_cross` are a pure per-frame linear projection of
+encoder memory, so an incremental cache (project only new frames, append) would be
+bit-identical. **False.** The equivalence guard, strengthened to also check a
+*nonzero-offset* suffix, showed a slice projected at absolute offset `i` does **not**
+match the same positions of the full projection (max abs diff ≈ 0.29 on `jfk`): the
+model position-encodes the cross-attention keys. Appending per-delta projections
+corrupts K/V, and because `compute_cross_kv` feeds *both* partial and final decode,
+it corrupted the committed transcript (`jfk` final decoded to **empty**).
+
+**Decision:** revert Fix A entirely. `compute_cross_kv` re-projects the full memory on
+change (cached via `cross_kv_valid` until memory grows). A correct incremental cache
+would need a position-aware cross-KV graph and is deferred as future work. The
+characterization test `cross_kv_projection_is_position_dependent` documents the
+constraint and guards against re-attempting the cache. **Fix A was not needed for the
+perf win** (see Finding 3).
+
+### Finding 2 — partials corrupt the final via divergent encoder memory → real bug fixed
+
+The design's load-bearing claim — "the final transcript is always a fresh full decode,
+so partials cannot affect committed accuracy" — was **also false**, and this was a
+pre-existing latent bug in the shipped engine, not a new regression. `partial()` runs
+`encode_available(false)`, which emits stable encoder frames incrementally through a
+sliding window and holds back the lookahead tail. At finalize, `encode_available(true)`
+only **appended the remaining tail** to that incrementally-built memory rather than
+re-encoding — so the final decode consumed a streaming *approximation* of memory
+(observed max frame diff ≈ 0.84 vs. a one-shot encode), which for `jfk` produced an
+empty final. Isolation probe: `jfk` final is correct fed one-shot **and** correct fed
+in chunks *without* partials, but **empty** fed in chunks *with* partials. Since live
+dictation always requests partials, real final transcripts were exposed.
+
+**Fix:** `decode()` now calls `reset_encoder_emission()` before the final encode,
+discarding the approximate memory and re-encoding all accumulated features in one pass —
+exactly what the one-shot path does. This makes the final decode independent of whether
+or how often partials were requested, so `final == one-shot` now holds *by construction*
+and is proven corpus-wide. This is the branch's most important quality fix.
+
+### Finding 3 — Fix B alone carries the entire perf win
+
+Bounded-tail partial decode (Fix B, kept) is sound and independent of Fix A. With Fix A
+reverted, the perf guard's second-half/first-half per-partial ratio is **1.87** (red
+baseline 4.26, threshold 3.0) — statistically identical to the 1.93 measured with both
+fixes. The cross-KV re-projection is O(memory) per partial but is not the dominant term;
+the quadratic blow-up was the full BOS re-decode, which Fix B bounds.
+
+### Net shipped change
+
+- **Reverted:** incremental cross-KV cache (unsound).
+- **Kept:** bounded-tail partial decode (the perf fix).
+- **Added:** full-memory re-encode at finalize (`reset_encoder_emission`) — fixes a
+  real, pre-existing empty/garbled-final bug.
+- **Tests:** quality (WER + anchors, tiny+small), `final == one-shot` corpus gate,
+  partial stability, EOS/silence, and the relative perf guard — all passing on tiny
+  and small.
 
 ## Decisions and reasoning (locked with the maintainer)
 
@@ -87,45 +153,58 @@ cap engages (and even then each partial redecodes 448 tokens). This is exactly t
 
 ## Why the fix is quality-neutral on the committed transcript
 
-The load-bearing insight: **the final transcript is always a fresh full decode.**
-`finalize_utterance` → `decode_text` resets the decoder and re-decodes the whole
+> **Superseded by Finding 2.** The premise below — that the final decode is
+> automatically independent of the partials — held for the *decoder* (it does reset
+> and re-decode from BOS) but **not** for the *encoder memory* the final decode reads.
+> Partials incrementally emitted memory that the final path then appended to rather
+> than re-encoding, so partials *did* change the committed transcript. The
+> `reset_encoder_emission` fix (Finding 2) restores the guarantee — the reasoning
+> below is now true *because* of that fix, not by default.
+
+The intended insight: **the final transcript is always a fresh full decode.**
+`finalize_utterance` → `decode_final` resets the decoder and re-decodes the whole
 utterance from BOS regardless of anything the partials did. Partials are a *live
 preview* superseded via the revision protocol (`is_final` / `revision`,
 `native/src/protocol.rs`).
 
-Therefore **any optimization to the partial path cannot change the accuracy of the
-committed text.** The O(n²) lives entirely in the preview path.
+The intent was that **any optimization to the partial path cannot change the accuracy
+of the committed text.** That now holds only because the final path also re-encodes
+memory from scratch (Finding 2); it was not true as originally shipped.
 
-- **cross-KV cache (cause 1)** is bit-identical by construction — helps both partial
-  and final, changes no output anywhere.
-- **bounded-tail partial decode (cause 2)** changes only intermediate previews, never
-  the final, because we leave the final path as a full decode. The only measurable
-  effect is on how previews revise mid-utterance, which bounded-tail keeps near-nil.
+- **bounded-tail partial decode (cause 2, kept)** changes only intermediate previews,
+  never the final, because the final path is a full decode over a full re-encode. The
+  only measurable effect is on how previews revise mid-utterance, which bounded-tail
+  keeps near-nil.
+- **cross-KV cache (cause 1, reverted)** was assumed bit-identical; it was not
+  (Finding 1).
 
 The quality suite *proves* this rather than asserting it: `final == one-shot`
-equivalence and the per-fixture WER budgets must hold through the fix.
+equivalence and the per-fixture WER budgets hold through the shipped fixes.
 
 ## The fix (`native/src/adapters/moonshine.rs`)
 
-**(A) Incremental cross-KV cache.** Cache projected `k_cross`/`v_cross` and their
-`cross_len`. In `encode_available`, after extending `memory` by `new_frames`, project
-only the new memory slice through the `cross_kv` graph and append to the cache; remove
-the blanket `cross_kv_valid = false` invalidation. Guarded by an equivalence test:
-`cross_kv(memory)[..n] == cross_kv(memory[..n])` (validates the position-independence
-assumption). Turns O(memory) per partial into O(new frames).
+**(A) Incremental cross-KV cache — designed, then REVERTED (Finding 1).** The plan was
+to project only the new memory slice through `cross_kv` and append. The equivalence
+guard falsified the position-independence assumption, so `compute_cross_kv` keeps
+re-projecting the full memory (cached via `cross_kv_valid` until memory grows). Not
+shipped.
 
-**(B) Bounded-tail partial decode.** Persist the generated token sequence and self-KV
-cache across partials on the open utterance. Each partial:
-- keeps the committed prefix (tokens older than a lookback window `W`) and their
-  self-KV,
+**(B) Bounded-tail partial decode — SHIPPED.** Persist the generated token sequence and
+self-KV cache across partials on the open utterance. Each partial:
+- keeps the committed prefix (tokens older than a lookback window
+  `PARTIAL_REDECODE_WINDOW_TOKENS`) and their self-KV,
 - truncates self-KV to the commit boundary,
-- re-decodes only the tail against the now-larger cross-KV, up to the token cap.
+- re-decodes only the tail against the current cross-KV, up to the token cap.
 
-`W` is a tuning constant (order of a few seconds of tokens) validated by the
-partial-stability test. Turns O(total tokens) per partial into O(`W`).
+The window is a tuning constant (a few seconds of tokens) validated by the
+partial-stability test. Turns O(total tokens) per partial into O(window). This is the
+entire perf win (Finding 3).
 
-**Final path unchanged.** `finalize_utterance` still full-decodes from BOS, so
-`final == one-shot` holds automatically and the equivalence test is the guard.
+**(C) Full-memory re-encode at finalize — SHIPPED (Finding 2).** `decode()` calls
+`reset_encoder_emission()` before the final encode, so `finalize_utterance`
+re-encodes all features in one pass and full-decodes from BOS over authoritative
+memory. This is what makes `final == one-shot` actually true; the equivalence test is
+the guard.
 
 ## Test surface (extends the existing harness)
 
@@ -180,13 +259,13 @@ corpus clips — no new committed audio asset), fed in 0.5 s cadence chunks, cal
 
 ## Risks and their guards
 
-| Risk | Guard |
-| --- | --- |
-| cross-KV is not actually per-frame position-independent | `cross_kv(memory)[..n] == cross_kv(memory[..n])` equivalence test — fix is gated on it |
-| Stable frames encoded during partials differ from the final encode | `final == one-shot` corpus test (end-to-end invariant) |
-| Bounded-tail corrupts decode or destabilizes previews | partial-stability test + finals-match + no-panic |
-| Perf guard flakes on slow/loaded CI | relative shape ratios, not absolute ms; `#[ignore]`d, run with `--ignored` |
-| Model download flakiness / cost | sha-verified cache reuse; env override to point at local assets; suite is opt-in |
+| Risk | Guard | Outcome |
+| --- | --- | --- |
+| cross-KV is not actually per-frame position-independent | `cross_kv_projection_is_position_dependent` equivalence test | **FIRED** (Finding 1) — Fix A reverted |
+| Stable frames encoded during partials differ from the final encode | `final == one-shot` corpus test (end-to-end invariant) | **FIRED** (Finding 2) — fixed via `reset_encoder_emission` |
+| Bounded-tail corrupts decode or destabilizes previews | partial-stability test + finals-match + no-panic | held |
+| Perf guard flakes on slow/loaded CI | relative shape ratios, not absolute ms; `#[ignore]`d, run with `--ignored` | held (ratio 1.87) |
+| Model download flakiness / cost | sha-verified cache reuse; env override to point at local assets; suite is opt-in | held |
 
 ## Non-goals
 
@@ -194,7 +273,11 @@ corpus clips — no new committed audio asset), fed in 0.5 s cadence chunks, cal
   maintainer flagged wanting more streaming models later; that is explicitly out of
   scope here. This branch stays focused on Moonshine quality/perf.
 - Moonshine medium tier.
-- Any change to the final-decode path or the wire/revision protocol.
+- Any change to the wire/revision protocol. (The final-decode path *was* changed —
+  Finding 2 forces a full re-encode at finalize — because the corpus test proved it was
+  producing wrong committed output. The original "no final-path change" intent was
+  incompatible with correctness.)
+- A correct incremental cross-KV cache (deferred; needs a position-aware graph).
 
 ## Run command (documented in the test file)
 

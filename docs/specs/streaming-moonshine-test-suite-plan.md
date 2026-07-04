@@ -1,5 +1,14 @@
 # Streaming (Moonshine) Test Suite & Partial-Decode Fix — Implementation Plan
 
+> **⚠️ Implementation deviated from this plan — see "Implementation outcome" in the
+> [spec](streaming-moonshine-test-suite.md) for the authoritative record.** In short:
+> Task 3's incremental cross-KV cache was **reverted** (the tests proved the projection
+> is position-dependent, so the cache corrupted the final decode); the perf win comes
+> entirely from Task 4's bounded-tail decode; and a bug the tests surfaced — partials
+> corrupting the final via divergent encoder memory — was fixed by re-encoding the full
+> memory at finalize (`reset_encoder_emission`, not in this plan). The task steps below
+> are preserved as the original pre-implementation guide.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Add streaming (Moonshine) quality + performance integration tests to the sidecar, and eliminate the O(n²) per-partial decode cost with a change that is quality-neutral on the committed transcript.
