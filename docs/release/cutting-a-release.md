@@ -51,7 +51,8 @@ just bit us (a stale `native/Cargo.toml`) is caught here in seconds.
 ## Cut it
 
 ```bash
-# 1. Land all the bumps on main (PR, or direct — main is unprotected).
+# 1. Land all the bumps on main via a PR — main is protected, so direct
+#    pushes are rejected by branch-protection rules.
 # 2. Tag main HEAD with the bare version and push:
 git fetch origin
 node scripts/read-release-version.mjs --tag <version>   # final check against the merged main content
@@ -106,8 +107,8 @@ one-click reinstall when they drift.
 
 ## Recovery
 
-**Failed before publish** (metadata gate, build leg) — fix on main, then move the
-tag onto the corrected commit:
+**Failed before publish** (metadata gate, build leg) — land the fix on main (via
+PR), then move the tag onto the corrected commit:
 
 ```bash
 git push origin :refs/tags/<version>   # delete the remote tag
