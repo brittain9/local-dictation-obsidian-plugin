@@ -439,7 +439,7 @@ struct StreamingState {
     cache_seq_len: usize,
     conv1_buffer: Vec<f32>,
     conv2_buffer: Vec<f32>,
-    cross_kv_frames: usize,
+    cross_kv_valid: bool,
     cross_len: usize,
     encoder_frames_emitted: usize,
     frame_count: i64,
@@ -465,7 +465,7 @@ impl StreamingState {
             cache_seq_len: 0,
             conv1_buffer: vec![0.0; config.d_model_frontend * 4],
             conv2_buffer: vec![0.0; config.c1 * 4],
-            cross_kv_frames: 0,
+            cross_kv_valid: false,
             cross_len: 0,
             encoder_frames_emitted: 0,
             frame_count: 0,
@@ -719,11 +719,25 @@ impl OrtMoonshineInference {
         self.state.memory_len += new_frames;
         self.state.encoder_frames_emitted = stable_count;
         self.state.adapter_pos_offset += new_frames as i64;
+        self.state.cross_kv_valid = false;
         Ok(())
     }
 
+    /// Project the full encoder memory into cross-attention K/V.
+    ///
+    /// This re-projects the *entire* memory whenever a new frame arrives rather
+    /// than caching prior frames and appending only the delta. The cross-KV
+    /// projection is position-dependent (the model applies rotary position
+    /// encoding to the keys), so a slice projected at absolute offset `i` does
+    /// not equal the same slice projected as a fresh sequence — appending
+    /// per-delta projections yields numerically different K/V that corrupts the
+    /// decode (an incremental cache produced an empty final transcript on the
+    /// `jfk` fixture). See `docs/specs/streaming-moonshine-test-suite.md` for
+    /// the investigation. The per-partial cost of this projection is bounded by
+    /// caching the result until memory changes; making it incremental requires
+    /// a position-aware cross-KV model and is deferred.
     fn compute_cross_kv(&mut self) -> Result<(), TranscriptionError> {
-        if self.state.cross_kv_frames == self.state.memory_len {
+        if self.state.cross_kv_valid {
             return Ok(());
         }
         if self.state.memory_len == 0 {
@@ -733,14 +747,12 @@ impl OrtMoonshineInference {
             ));
         }
 
-        let new_frames = self.state.memory_len - self.state.cross_kv_frames;
-        let offset = self.state.cross_kv_frames * self.config.decoder_dim;
         let memory = value(
             Array3::from_shape_vec(
-                (1, new_frames, self.config.decoder_dim),
-                self.state.memory[offset..].to_vec(),
+                (1, self.state.memory_len, self.config.decoder_dim),
+                self.state.memory.clone(),
             ),
-            "cross attention memory (delta)",
+            "cross attention memory",
         )?;
         let outputs = self
             .cross_kv
@@ -748,7 +760,7 @@ impl OrtMoonshineInference {
             .map_err(|error| {
                 TranscriptionError::transcription_failure("Moonshine cross attention", &error)
             })?;
-        let (shape, k_delta) = tensor_f32(output(&outputs, "k_cross")?, "k_cross")?;
+        let (shape, k_cross) = tensor_f32(output(&outputs, "k_cross")?, "k_cross")?;
         if shape.len() != 5
             || dimension(&shape, 0, "k_cross")? != self.config.depth
             || dimension(&shape, 2, "k_cross")? != self.config.nheads
@@ -756,35 +768,17 @@ impl OrtMoonshineInference {
         {
             return Err(shape_error("k_cross", &shape));
         }
-        let delta_len = dimension(&shape, 3, "k_cross")?;
-        if delta_len != new_frames {
-            return Err(shape_error("k_cross", &shape));
-        }
-        let expected = self.config.depth * self.config.nheads * delta_len * self.config.head_dim;
-        let v_delta = tensor_f32_data(output(&outputs, "v_cross")?, expected, "v_cross")?;
-        if k_delta.len() != expected {
+        let cross_len = dimension(&shape, 3, "k_cross")?;
+        let expected = self.config.depth * self.config.nheads * cross_len * self.config.head_dim;
+        let v_cross = tensor_f32_data(output(&outputs, "v_cross")?, expected, "v_cross")?;
+        if k_cross.len() != expected {
             return Err(shape_error("k_cross", &shape));
         }
 
-        let slabs = self.config.depth * self.config.nheads;
-        append_cross_kv(
-            &mut self.state.k_cross,
-            &k_delta,
-            self.state.cross_len,
-            delta_len,
-            slabs,
-            self.config.head_dim,
-        );
-        append_cross_kv(
-            &mut self.state.v_cross,
-            &v_delta,
-            self.state.cross_len,
-            delta_len,
-            slabs,
-            self.config.head_dim,
-        );
-        self.state.cross_len += delta_len;
-        self.state.cross_kv_frames = self.state.memory_len;
+        self.state.k_cross = k_cross;
+        self.state.v_cross = v_cross;
+        self.state.cross_len = cross_len;
+        self.state.cross_kv_valid = true;
         Ok(())
     }
 
@@ -792,6 +786,32 @@ impl OrtMoonshineInference {
         self.state.cache_seq_len = 0;
         self.state.k_self.clear();
         self.state.v_self.clear();
+    }
+
+    /// Discard incrementally-emitted encoder memory so the next
+    /// `encode_available` re-encodes the whole feature sequence in one pass.
+    ///
+    /// Partial decodes call `encode_available(false)`, which emits stable frames
+    /// through a sliding window as audio arrives and holds back the lookahead
+    /// tail. The resulting memory is a streaming *approximation* — it diverges
+    /// from a single full-sequence encode (observed max frame difference ~0.84
+    /// on the `jfk` fixture, enough to make the final decode emit an empty
+    /// transcript). The committed/final transcript must be authoritative, so
+    /// before the final decode we drop the approximate memory and re-encode all
+    /// accumulated features exactly as the one-shot path does. The frontend
+    /// features themselves are untouched; only the encoder→adapter emission
+    /// state is reset. This makes the final decode independent of whether (or
+    /// how often) partials were requested. See
+    /// `docs/specs/streaming-moonshine-test-suite.md`.
+    fn reset_encoder_emission(&mut self) {
+        self.state.memory.clear();
+        self.state.memory_len = 0;
+        self.state.encoder_frames_emitted = 0;
+        self.state.adapter_pos_offset = 0;
+        self.state.cross_kv_valid = false;
+        self.state.cross_len = 0;
+        self.state.k_cross.clear();
+        self.state.v_cross.clear();
     }
 
     fn truncate_self_kv(&mut self, keep_tokens: usize) {
@@ -963,35 +983,6 @@ impl OrtMoonshineInference {
     }
 }
 
-/// Grow a `[slabs, old_len, head_dim]` flat buffer by interleaving each slab's
-/// `[delta_len, head_dim]` rows after that slab's existing rows.
-fn append_cross_kv(
-    dst: &mut Vec<f32>,
-    src: &[f32],
-    old_len: usize,
-    delta_len: usize,
-    slabs: usize,
-    head_dim: usize,
-) {
-    debug_assert_eq!(dst.len(), slabs * old_len * head_dim);
-    debug_assert_eq!(src.len(), slabs * delta_len * head_dim);
-
-    let new_len = old_len + delta_len;
-    let mut grown = vec![0.0_f32; slabs * new_len * head_dim];
-    for slab in 0..slabs {
-        let old_slab = slab * old_len * head_dim;
-        let new_slab = slab * new_len * head_dim;
-        let keep = old_len * head_dim;
-        grown[new_slab..new_slab + keep].copy_from_slice(&dst[old_slab..old_slab + keep]);
-
-        let src_slab = slab * delta_len * head_dim;
-        let add = delta_len * head_dim;
-        grown[new_slab + keep..new_slab + keep + add]
-            .copy_from_slice(&src[src_slab..src_slab + add]);
-    }
-    *dst = grown;
-}
-
 impl MoonshineInference for OrtMoonshineInference {
     fn accept_audio(&mut self, samples: &[i16]) -> Result<(), TranscriptionError> {
         self.state.sample_count += samples.len();
@@ -1004,6 +995,7 @@ impl MoonshineInference for OrtMoonshineInference {
     fn decode(&mut self, is_final: bool) -> Result<DecodedTranscript, TranscriptionError> {
         if is_final {
             self.flush_pending_audio()?;
+            self.reset_encoder_emission();
             self.encode_available(true)?;
             return self.decode_final();
         }
@@ -1147,16 +1139,6 @@ mod tests {
     }
 
     #[test]
-    fn append_cross_kv_preserves_each_slab() {
-        let mut cache = vec![1.0, 2.0, 10.0, 20.0];
-        let delta = vec![3.0, 30.0];
-
-        append_cross_kv(&mut cache, &delta, 2, 1, 2, 1);
-
-        assert_eq!(cache, vec![1.0, 2.0, 3.0, 10.0, 20.0, 30.0]);
-    }
-
-    #[test]
     fn probe_reports_missing_sibling() {
         let root = temp_dir("missing-sibling");
         fs::create_dir_all(&root).unwrap();
@@ -1241,9 +1223,18 @@ mod tests {
         assert_eq!(final_text, one_shot_text);
     }
 
+    /// Characterizes why the cross-KV projection cannot be cached incrementally.
+    ///
+    /// A prefix slice projected on its own matches the full projection (it sits
+    /// at the same absolute offsets), but a suffix slice projected as a fresh
+    /// sequence does *not* match the corresponding positions of the full
+    /// projection — the model position-encodes the keys, so absolute offset
+    /// matters. This is the evidence behind `compute_cross_kv` re-projecting the
+    /// whole memory each time; appending per-delta projections corrupts the
+    /// decode. See `docs/specs/streaming-moonshine-test-suite.md`.
     #[test]
     #[ignore = "requires MOONSHINE_MODEL_PATH pointing to local streaming assets"]
-    fn cross_kv_projection_is_per_frame_independent() {
+    fn cross_kv_projection_is_position_dependent() {
         let model_path = std::env::var("MOONSHINE_MODEL_PATH")
             .expect("MOONSHINE_MODEL_PATH must point to frontend.ort");
         let mut inference =
@@ -1280,13 +1271,40 @@ mod tests {
             &inference.config,
         )
         .unwrap();
+        let suffix = project_cross_kv_full(
+            &mut inference.cross_kv,
+            &inference.state.memory[prefix_len..],
+            inference.state.memory_len - half,
+            &inference.config,
+        )
+        .unwrap();
 
-        assert_cross_prefix_matches(
+        // A prefix at offset 0 reproduces the full projection exactly.
+        let prefix_diff = cross_slice_max_abs_diff(
             &full,
             &prefix,
+            0,
             half,
             inference.state.memory_len,
             &inference.config,
+        );
+        assert!(
+            prefix_diff < 1.0e-4,
+            "prefix projection should match full projection, got max diff {prefix_diff}"
+        );
+
+        // A suffix at a nonzero offset does not — incremental caching is invalid.
+        let suffix_diff = cross_slice_max_abs_diff(
+            &full,
+            &suffix,
+            half,
+            inference.state.memory_len - half,
+            inference.state.memory_len,
+            &inference.config,
+        );
+        assert!(
+            suffix_diff > 1.0e-2,
+            "suffix projection should diverge from full (position-dependent), got max diff {suffix_diff}"
         );
     }
 
@@ -1354,33 +1372,33 @@ mod tests {
         Ok((k_cross, v_cross, cross_len))
     }
 
-    fn assert_cross_prefix_matches(
+    /// Max absolute difference between a projected slice and the corresponding
+    /// `[start, start + slice_len)` window of the full projection, across k and v.
+    fn cross_slice_max_abs_diff(
         full: &(Vec<f32>, Vec<f32>, usize),
-        prefix: &(Vec<f32>, Vec<f32>, usize),
-        prefix_len: usize,
+        slice: &(Vec<f32>, Vec<f32>, usize),
+        start: usize,
+        slice_len: usize,
         full_len: usize,
         config: &MoonshineConfig,
-    ) {
+    ) -> f32 {
         assert_eq!(full.2, full_len);
-        assert_eq!(prefix.2, prefix_len);
+        assert_eq!(slice.2, slice_len);
         let slabs = config.depth * config.nheads;
+        let mut max_diff = 0.0_f32;
 
         for slab in 0..slabs {
-            for position in 0..prefix_len {
+            for position in 0..slice_len {
                 for channel in 0..config.head_dim {
-                    let full_index = (slab * full_len + position) * config.head_dim + channel;
-                    let prefix_index = (slab * prefix_len + position) * config.head_dim + channel;
-                    assert!(
-                        (full.0[full_index] - prefix.0[prefix_index]).abs() < 1.0e-4,
-                        "k_cross differs at slab {slab}, position {position}, channel {channel}"
-                    );
-                    assert!(
-                        (full.1[full_index] - prefix.1[prefix_index]).abs() < 1.0e-4,
-                        "v_cross differs at slab {slab}, position {position}, channel {channel}"
-                    );
+                    let full_index =
+                        (slab * full_len + start + position) * config.head_dim + channel;
+                    let slice_index = (slab * slice_len + position) * config.head_dim + channel;
+                    max_diff = max_diff.max((full.0[full_index] - slice.0[slice_index]).abs());
+                    max_diff = max_diff.max((full.1[full_index] - slice.1[slice_index]).abs());
                 }
             }
         }
+        max_diff
     }
 
     #[derive(Default)]
