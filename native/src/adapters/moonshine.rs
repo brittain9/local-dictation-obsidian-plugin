@@ -437,7 +437,7 @@ struct StreamingState {
     cache_seq_len: usize,
     conv1_buffer: Vec<f32>,
     conv2_buffer: Vec<f32>,
-    cross_kv_valid: bool,
+    cross_kv_frames: usize,
     cross_len: usize,
     encoder_frames_emitted: usize,
     frame_count: i64,
@@ -462,7 +462,7 @@ impl StreamingState {
             cache_seq_len: 0,
             conv1_buffer: vec![0.0; config.d_model_frontend * 4],
             conv2_buffer: vec![0.0; config.c1 * 4],
-            cross_kv_valid: false,
+            cross_kv_frames: 0,
             cross_len: 0,
             encoder_frames_emitted: 0,
             frame_count: 0,
@@ -715,12 +715,11 @@ impl OrtMoonshineInference {
         self.state.memory_len += new_frames;
         self.state.encoder_frames_emitted = stable_count;
         self.state.adapter_pos_offset += new_frames as i64;
-        self.state.cross_kv_valid = false;
         Ok(())
     }
 
     fn compute_cross_kv(&mut self) -> Result<(), TranscriptionError> {
-        if self.state.cross_kv_valid {
+        if self.state.cross_kv_frames == self.state.memory_len {
             return Ok(());
         }
         if self.state.memory_len == 0 {
@@ -730,12 +729,14 @@ impl OrtMoonshineInference {
             ));
         }
 
+        let new_frames = self.state.memory_len - self.state.cross_kv_frames;
+        let offset = self.state.cross_kv_frames * self.config.decoder_dim;
         let memory = value(
             Array3::from_shape_vec(
-                (1, self.state.memory_len, self.config.decoder_dim),
-                self.state.memory.clone(),
+                (1, new_frames, self.config.decoder_dim),
+                self.state.memory[offset..].to_vec(),
             ),
-            "cross attention memory",
+            "cross attention memory (delta)",
         )?;
         let outputs = self
             .cross_kv
@@ -743,7 +744,7 @@ impl OrtMoonshineInference {
             .map_err(|error| {
                 TranscriptionError::transcription_failure("Moonshine cross attention", &error)
             })?;
-        let (shape, k_cross) = tensor_f32(output(&outputs, "k_cross")?, "k_cross")?;
+        let (shape, k_delta) = tensor_f32(output(&outputs, "k_cross")?, "k_cross")?;
         if shape.len() != 5
             || dimension(&shape, 0, "k_cross")? != self.config.depth
             || dimension(&shape, 2, "k_cross")? != self.config.nheads
@@ -751,17 +752,35 @@ impl OrtMoonshineInference {
         {
             return Err(shape_error("k_cross", &shape));
         }
-        let cross_len = dimension(&shape, 3, "k_cross")?;
-        let expected = self.config.depth * self.config.nheads * cross_len * self.config.head_dim;
-        let v_cross = tensor_f32_data(output(&outputs, "v_cross")?, expected, "v_cross")?;
-        if k_cross.len() != expected {
+        let delta_len = dimension(&shape, 3, "k_cross")?;
+        if delta_len != new_frames {
+            return Err(shape_error("k_cross", &shape));
+        }
+        let expected = self.config.depth * self.config.nheads * delta_len * self.config.head_dim;
+        let v_delta = tensor_f32_data(output(&outputs, "v_cross")?, expected, "v_cross")?;
+        if k_delta.len() != expected {
             return Err(shape_error("k_cross", &shape));
         }
 
-        self.state.k_cross = k_cross;
-        self.state.v_cross = v_cross;
-        self.state.cross_len = cross_len;
-        self.state.cross_kv_valid = true;
+        let slabs = self.config.depth * self.config.nheads;
+        append_cross_kv(
+            &mut self.state.k_cross,
+            &k_delta,
+            self.state.cross_len,
+            delta_len,
+            slabs,
+            self.config.head_dim,
+        );
+        append_cross_kv(
+            &mut self.state.v_cross,
+            &v_delta,
+            self.state.cross_len,
+            delta_len,
+            slabs,
+            self.config.head_dim,
+        );
+        self.state.cross_len += delta_len;
+        self.state.cross_kv_frames = self.state.memory_len;
         Ok(())
     }
 
@@ -871,6 +890,35 @@ impl OrtMoonshineInference {
             token_count: generated.len() as u32,
         })
     }
+}
+
+/// Grow a `[slabs, old_len, head_dim]` flat buffer by interleaving each slab's
+/// `[delta_len, head_dim]` rows after that slab's existing rows.
+fn append_cross_kv(
+    dst: &mut Vec<f32>,
+    src: &[f32],
+    old_len: usize,
+    delta_len: usize,
+    slabs: usize,
+    head_dim: usize,
+) {
+    debug_assert_eq!(dst.len(), slabs * old_len * head_dim);
+    debug_assert_eq!(src.len(), slabs * delta_len * head_dim);
+
+    let new_len = old_len + delta_len;
+    let mut grown = vec![0.0_f32; slabs * new_len * head_dim];
+    for slab in 0..slabs {
+        let old_slab = slab * old_len * head_dim;
+        let new_slab = slab * new_len * head_dim;
+        let keep = old_len * head_dim;
+        grown[new_slab..new_slab + keep].copy_from_slice(&dst[old_slab..old_slab + keep]);
+
+        let src_slab = slab * delta_len * head_dim;
+        let add = delta_len * head_dim;
+        grown[new_slab + keep..new_slab + keep + add]
+            .copy_from_slice(&src[src_slab..src_slab + add]);
+    }
+    *dst = grown;
 }
 
 impl MoonshineInference for OrtMoonshineInference {
@@ -1024,6 +1072,16 @@ mod tests {
     }
 
     #[test]
+    fn append_cross_kv_preserves_each_slab() {
+        let mut cache = vec![1.0, 2.0, 10.0, 20.0];
+        let delta = vec![3.0, 30.0];
+
+        append_cross_kv(&mut cache, &delta, 2, 1, 2, 1);
+
+        assert_eq!(cache, vec![1.0, 2.0, 3.0, 10.0, 20.0, 30.0]);
+    }
+
+    #[test]
     fn probe_reports_missing_sibling() {
         let root = temp_dir("missing-sibling");
         fs::create_dir_all(&root).unwrap();
@@ -1056,6 +1114,55 @@ mod tests {
 
     #[test]
     #[ignore = "requires MOONSHINE_MODEL_PATH pointing to local streaming assets"]
+    fn cross_kv_projection_is_per_frame_independent() {
+        let model_path = std::env::var("MOONSHINE_MODEL_PATH")
+            .expect("MOONSHINE_MODEL_PATH must point to frontend.ort");
+        let mut inference =
+            OrtMoonshineInference::load(Path::new(&model_path), GpuConfig { use_gpu: false })
+                .unwrap();
+
+        let fixture =
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/audio/7021-79740-0000.wav");
+        let samples: Vec<i16> = hound::WavReader::open(fixture)
+            .unwrap()
+            .samples::<i16>()
+            .map(Result::unwrap)
+            .collect();
+        inference.accept_audio(&samples[..32_000]).unwrap();
+        inference.encode_available(false).unwrap();
+        assert!(
+            inference.state.memory_len > 4,
+            "need enough memory frames to split"
+        );
+
+        let full = project_cross_kv_full(
+            &mut inference.cross_kv,
+            &inference.state.memory,
+            inference.state.memory_len,
+            &inference.config,
+        )
+        .unwrap();
+        let half = inference.state.memory_len / 2;
+        let prefix_len = half * inference.config.decoder_dim;
+        let prefix = project_cross_kv_full(
+            &mut inference.cross_kv,
+            &inference.state.memory[..prefix_len],
+            half,
+            &inference.config,
+        )
+        .unwrap();
+
+        assert_cross_prefix_matches(
+            &full,
+            &prefix,
+            half,
+            inference.state.memory_len,
+            &inference.config,
+        );
+    }
+
+    #[test]
+    #[ignore = "requires MOONSHINE_MODEL_PATH pointing to local streaming assets"]
     fn local_model_decodes_fixture_in_streaming_chunks() {
         let model_path = std::env::var("MOONSHINE_MODEL_PATH")
             .expect("MOONSHINE_MODEL_PATH must point to frontend.ort");
@@ -1084,6 +1191,67 @@ mod tests {
         assert!(!final_output.segments[0].text.trim().is_empty());
         assert_eq!(final_output.segments[0].end_ms, samples.len() as u64 / 16);
         assert_eq!(final_output, one_shot_output);
+    }
+
+    fn project_cross_kv_full(
+        session: &mut Session,
+        memory: &[f32],
+        memory_len: usize,
+        config: &MoonshineConfig,
+    ) -> Result<(Vec<f32>, Vec<f32>, usize), TranscriptionError> {
+        let memory = value(
+            Array3::from_shape_vec((1, memory_len, config.decoder_dim), memory.to_vec()),
+            "test cross attention memory",
+        )?;
+        let outputs = session
+            .run(ort::inputs!["memory" => memory])
+            .map_err(|error| {
+                TranscriptionError::transcription_failure("test Moonshine cross attention", &error)
+            })?;
+        let (shape, k_cross) = tensor_f32(output(&outputs, "k_cross")?, "k_cross")?;
+        if shape.len() != 5
+            || dimension(&shape, 0, "k_cross")? != config.depth
+            || dimension(&shape, 2, "k_cross")? != config.nheads
+            || dimension(&shape, 4, "k_cross")? != config.head_dim
+        {
+            return Err(shape_error("k_cross", &shape));
+        }
+        let cross_len = dimension(&shape, 3, "k_cross")?;
+        let expected = config.depth * config.nheads * cross_len * config.head_dim;
+        let v_cross = tensor_f32_data(output(&outputs, "v_cross")?, expected, "v_cross")?;
+        if k_cross.len() != expected {
+            return Err(shape_error("k_cross", &shape));
+        }
+        Ok((k_cross, v_cross, cross_len))
+    }
+
+    fn assert_cross_prefix_matches(
+        full: &(Vec<f32>, Vec<f32>, usize),
+        prefix: &(Vec<f32>, Vec<f32>, usize),
+        prefix_len: usize,
+        full_len: usize,
+        config: &MoonshineConfig,
+    ) {
+        assert_eq!(full.2, full_len);
+        assert_eq!(prefix.2, prefix_len);
+        let slabs = config.depth * config.nheads;
+
+        for slab in 0..slabs {
+            for position in 0..prefix_len {
+                for channel in 0..config.head_dim {
+                    let full_index = (slab * full_len + position) * config.head_dim + channel;
+                    let prefix_index = (slab * prefix_len + position) * config.head_dim + channel;
+                    assert!(
+                        (full.0[full_index] - prefix.0[prefix_index]).abs() < 1.0e-4,
+                        "k_cross differs at slab {slab}, position {position}, channel {channel}"
+                    );
+                    assert!(
+                        (full.1[full_index] - prefix.1[prefix_index]).abs() < 1.0e-4,
+                        "v_cross differs at slab {slab}, position {position}, channel {channel}"
+                    );
+                }
+            }
+        }
     }
 
     #[derive(Default)]
