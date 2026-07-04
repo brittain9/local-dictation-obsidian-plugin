@@ -18,6 +18,8 @@ use crate::transcription::{
 const SAMPLE_RATE: usize = 16_000;
 const FRONTEND_CHUNK_SAMPLES: usize = 1_280;
 const MAX_TOKENS_PER_SECOND: f32 = 6.5;
+/// Tokens at the partial frontier that may be revised as encoder memory grows.
+const PARTIAL_REDECODE_WINDOW_TOKENS: usize = 12;
 
 const FRONTEND_FILENAME: &str = "frontend.ort";
 const ENCODER_FILENAME: &str = "encoder.ort";
@@ -445,6 +447,7 @@ struct StreamingState {
     k_self: Vec<f32>,
     memory: Vec<f32>,
     memory_len: usize,
+    partial_tokens: Vec<i64>,
     pending_audio: Vec<f32>,
     sample_buffer: Vec<f32>,
     sample_count: usize,
@@ -470,6 +473,7 @@ impl StreamingState {
             k_self: Vec::new(),
             memory: Vec::new(),
             memory_len: 0,
+            partial_tokens: Vec::new(),
             pending_audio: Vec::new(),
             sample_buffer: vec![0.0; 79],
             sample_count: 0,
@@ -790,6 +794,31 @@ impl OrtMoonshineInference {
         self.state.v_self.clear();
     }
 
+    fn truncate_self_kv(&mut self, keep_tokens: usize) {
+        debug_assert!(keep_tokens <= self.state.cache_seq_len);
+        let old_len = self.state.cache_seq_len;
+        let slabs = self.config.depth * self.config.nheads;
+        let head_dim = self.config.head_dim;
+        debug_assert_eq!(self.state.k_self.len(), slabs * old_len * head_dim);
+        debug_assert_eq!(self.state.v_self.len(), slabs * old_len * head_dim);
+
+        let truncate = |cache: &[f32]| {
+            let mut kept = vec![0.0_f32; slabs * keep_tokens * head_dim];
+            for slab in 0..slabs {
+                let source_start = slab * old_len * head_dim;
+                let target_start = slab * keep_tokens * head_dim;
+                let count = keep_tokens * head_dim;
+                kept[target_start..target_start + count]
+                    .copy_from_slice(&cache[source_start..source_start + count]);
+            }
+            kept
+        };
+
+        self.state.k_self = truncate(&self.state.k_self);
+        self.state.v_self = truncate(&self.state.v_self);
+        self.state.cache_seq_len = keep_tokens;
+    }
+
     fn decode_step(&mut self, token: i64) -> Result<i64, TranscriptionError> {
         self.compute_cross_kv()?;
         let token = value(Array2::from_shape_vec((1, 1), vec![token]), "decoder token")?;
@@ -857,7 +886,49 @@ impl OrtMoonshineInference {
             })
     }
 
-    fn decode_text(&mut self) -> Result<DecodedTranscript, TranscriptionError> {
+    fn decode_partial(&mut self) -> Result<DecodedTranscript, TranscriptionError> {
+        if self.state.memory_len == 0 {
+            return Ok(DecodedTranscript {
+                reached_eos: false,
+                text: String::new(),
+                token_count: 0,
+            });
+        }
+
+        self.compute_cross_kv()?;
+        let commit = self
+            .state
+            .partial_tokens
+            .len()
+            .saturating_sub(PARTIAL_REDECODE_WINDOW_TOKENS);
+        self.truncate_self_kv(commit);
+        let mut generated = self.state.partial_tokens[..commit].to_vec();
+
+        let duration_seconds = self.state.sample_count as f32 / SAMPLE_RATE as f32;
+        let max_tokens = ((duration_seconds * MAX_TOKENS_PER_SECOND).ceil() as usize)
+            .min(self.config.max_seq_len);
+        let mut current = generated.last().copied().unwrap_or(self.config.bos_id);
+        let mut reached_eos = false;
+
+        while generated.len() < max_tokens {
+            let next = self.decode_step(current)?;
+            if next == self.config.eos_id {
+                reached_eos = true;
+                break;
+            }
+            generated.push(next);
+            current = next;
+        }
+
+        self.state.partial_tokens.clone_from(&generated);
+        Ok(DecodedTranscript {
+            reached_eos,
+            text: self.tokenizer.decode(&generated)?,
+            token_count: generated.len() as u32,
+        })
+    }
+
+    fn decode_final(&mut self) -> Result<DecodedTranscript, TranscriptionError> {
         if self.state.memory_len == 0 {
             return Ok(DecodedTranscript {
                 reached_eos: false,
@@ -933,9 +1004,11 @@ impl MoonshineInference for OrtMoonshineInference {
     fn decode(&mut self, is_final: bool) -> Result<DecodedTranscript, TranscriptionError> {
         if is_final {
             self.flush_pending_audio()?;
+            self.encode_available(true)?;
+            return self.decode_final();
         }
-        self.encode_available(is_final)?;
-        self.decode_text()
+        self.encode_available(false)?;
+        self.decode_partial()
     }
 
     fn reset(&mut self) {
@@ -1031,6 +1104,8 @@ mod tests {
 
     use super::*;
 
+    const BOUNDED_TAIL_WORDS: usize = 6;
+
     #[test]
     fn capabilities_describe_streaming_english_output() {
         let adapter = MoonshineAdapter;
@@ -1110,6 +1185,60 @@ mod tests {
         assert_eq!(final_output.segments[0].text, "fixture final.");
         assert_eq!(final_output.segments[0].end_ms, 1_000);
         assert_eq!(model.partial().unwrap().segments, Vec::new());
+    }
+
+    #[test]
+    #[ignore = "requires MOONSHINE_MODEL_PATH pointing to local streaming assets"]
+    fn partials_grow_as_bounded_prefix_and_final_matches_one_shot() {
+        let model_path = std::env::var("MOONSHINE_MODEL_PATH")
+            .expect("MOONSHINE_MODEL_PATH must point to frontend.ort");
+        let mut model = MoonshineAdapter
+            .load_streaming(Path::new(&model_path), GpuConfig { use_gpu: false })
+            .unwrap();
+        let fixture =
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/audio/7021-79740-0000.wav");
+        let samples: Vec<i16> = hound::WavReader::open(fixture)
+            .unwrap()
+            .samples::<i16>()
+            .map(Result::unwrap)
+            .collect();
+
+        let mut partials = Vec::new();
+        for chunk in samples.chunks(8_000) {
+            model.accept_audio(chunk).unwrap();
+            let text = model
+                .partial()
+                .unwrap()
+                .segments
+                .first()
+                .map(|segment| segment.text.clone())
+                .unwrap_or_default();
+            if !text.is_empty() {
+                partials.push(text);
+            }
+        }
+        let final_text = model.finalize_utterance().unwrap().segments[0].text.clone();
+
+        for pair in partials.windows(2) {
+            let earlier: Vec<&str> = pair[0].split_whitespace().collect();
+            let later: Vec<&str> = pair[1].split_whitespace().collect();
+            let committed = earlier.len().saturating_sub(BOUNDED_TAIL_WORDS);
+            assert!(
+                later.len() >= committed && earlier[..committed] == later[..committed],
+                "committed prefix changed:\n  {}\n  {}",
+                pair[0],
+                pair[1]
+            );
+        }
+
+        let mut one_shot = MoonshineAdapter
+            .load_streaming(Path::new(&model_path), GpuConfig { use_gpu: false })
+            .unwrap();
+        one_shot.accept_audio(&samples).unwrap();
+        let one_shot_text = one_shot.finalize_utterance().unwrap().segments[0]
+            .text
+            .clone();
+        assert_eq!(final_text, one_shot_text);
     }
 
     #[test]
