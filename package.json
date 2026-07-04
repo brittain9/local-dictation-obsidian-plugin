@@ -6,10 +6,8 @@
   "license": "MIT",
   "main": "main.js",
   "type": "module",
-  "packageManager": "npm@11.12.1",
   "engines": {
-    "node": "24.14.x",
-    "npm": "11.12.x"
+    "node": "^20.19.0 || ^22.13.0 || >=24"
   },
   "scripts": {
     "build:sidecar": "node scripts/build-sidecar.mjs",
