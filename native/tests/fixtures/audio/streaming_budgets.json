@@ -1,0 +1,24 @@
+{
+  "tiers": {
+    "tiny": { "default_max_wer": 0.22 },
+    "small": { "default_max_wer": 0.12 }
+  },
+  "fixtures": [
+    { "id": "jfk", "anchors": ["country"] },
+    { "id": "7021-79740-0000", "anchors": ["children"] },
+    { "id": "3575-170457-0051", "anchors": [] },
+    { "id": "1580-141084-0047", "anchors": [] },
+    {
+      "id": "5683-32866-0024",
+      "anchors": [],
+      "max_wer": { "tiny": 0.75 }
+    },
+    { "id": "3729-6852-0040", "anchors": [] },
+    {
+      "id": "4446-2271-0004",
+      "anchors": [],
+      "max_wer": { "tiny": 0.3 }
+    },
+    { "id": "4992-23283-0005", "anchors": [] }
+  ]
+}
