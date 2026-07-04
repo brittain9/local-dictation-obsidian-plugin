@@ -54,7 +54,7 @@ export function renderModelSection(
     const currentModel = deriveCurrentModelDisplay(state);
 
     // --- Current model row ---
-    const descFragment = activeDocument.createDocumentFragment();
+    const descFragment = createFragment();
     if (currentModel.engineLabel.length > 0) {
       descFragment.createSpan({ text: `${currentModel.engineLabel} \u00b7 ` });
     }
