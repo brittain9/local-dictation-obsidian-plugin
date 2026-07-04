@@ -41,6 +41,8 @@ const FRAME_HEADER_LEN: usize = 5;
 /// headroom for slow/loaded CI hosts.
 const DRIVE_TIMEOUT: Duration = Duration::from_secs(180);
 const POLL_INTERVAL: Duration = Duration::from_millis(10);
+const STREAMING_CADENCE_FRAMES: usize = 25;
+const STREAMING_CADENCE_DELAY: Duration = Duration::from_millis(500);
 
 const SESSION_START_UNIX_MS: u64 = 1_700_000_000_000;
 
@@ -70,6 +72,21 @@ pub struct TranscriptionOutcome {
     pub errors: Vec<String>,
 }
 
+#[derive(Debug, Default, Clone)]
+pub struct StreamingRevision {
+    pub revision: u32,
+    pub text: String,
+    pub processing_ms: u64,
+}
+
+#[derive(Debug, Default, Clone)]
+pub struct StreamingOutcome {
+    pub partials: Vec<StreamingRevision>,
+    pub final_text: String,
+    pub errors: Vec<String>,
+    pub stopped: bool,
+}
+
 // ---------------------------------------------------------------------------
 // In-process driver
 // ---------------------------------------------------------------------------
@@ -81,7 +98,7 @@ pub fn transcribe_in_process(
     frames: &[Vec<u8>],
     style: SpeakingStyle,
 ) -> TranscriptionOutcome {
-    run_in_process(model_path, frames, style, false)
+    run_in_process(whisper_selection(model_path), frames, style, false)
 }
 
 /// Like [`transcribe_in_process`] but with diarization on, so each utterance in
@@ -91,11 +108,11 @@ pub fn diarize_in_process(
     frames: &[Vec<u8>],
     style: SpeakingStyle,
 ) -> TranscriptionOutcome {
-    run_in_process(model_path, frames, style, true)
+    run_in_process(whisper_selection(model_path), frames, style, true)
 }
 
 fn run_in_process(
-    model_path: &Path,
+    model_selection: SelectedModel,
     frames: &[Vec<u8>],
     style: SpeakingStyle,
     diarization_enabled: bool,
@@ -107,7 +124,7 @@ fn run_in_process(
 
     let (_flow, events) = app.handle_command(start_session_command(
         &session_id,
-        model_path,
+        model_selection,
         style,
         diarization_enabled,
     ));
@@ -138,6 +155,57 @@ fn run_in_process(
             continue;
         }
         apply_events(&mut app, events, &mut outcome);
+    }
+
+    outcome
+}
+
+pub fn stream_in_process(model: SelectedModel, frames: &[Vec<u8>]) -> StreamingOutcome {
+    let catalog = ModelCatalog::load_bundled().expect("bundled catalog should load");
+    let mut app = AppState::new("streaming-e2e", catalog);
+    let session_id = Uuid::new_v4().to_string();
+    let mut outcome = StreamingOutcome::default();
+
+    let (_flow, events) = app.handle_command(start_session_command(
+        &session_id,
+        model,
+        SpeakingStyle::Patient,
+        false,
+    ));
+    apply_streaming_events(&mut app, events, &mut outcome);
+
+    let mut cadence_has_audio = false;
+    for (index, frame) in frames.iter().enumerate() {
+        let events = app.handle_audio_frame(AudioFrame {
+            frame_bytes: frame.clone(),
+            session_id: session_id.clone(),
+        });
+        apply_streaming_events(&mut app, events, &mut outcome);
+        let drained = app.drain_pending_outputs();
+        apply_streaming_events(&mut app, drained, &mut outcome);
+
+        cadence_has_audio |= frame.iter().any(|byte| *byte != 0);
+        if (index + 1) % STREAMING_CADENCE_FRAMES == 0 {
+            if cadence_has_audio {
+                thread::sleep(STREAMING_CADENCE_DELAY);
+            }
+            cadence_has_audio = false;
+        }
+    }
+
+    let (_flow, events) = app.handle_command(Command::StopSession {
+        session_id: session_id.clone(),
+    });
+    apply_streaming_events(&mut app, events, &mut outcome);
+
+    let deadline = Instant::now() + DRIVE_TIMEOUT;
+    while !outcome.stopped && Instant::now() < deadline {
+        let events = app.drain_pending_outputs();
+        if events.is_empty() {
+            thread::sleep(POLL_INTERVAL);
+            continue;
+        }
+        apply_streaming_events(&mut app, events, &mut outcome);
     }
 
     outcome
@@ -181,9 +249,48 @@ fn apply_events(app: &mut AppState, events: Vec<Event>, outcome: &mut Transcript
     }
 }
 
+fn apply_streaming_events(app: &mut AppState, events: Vec<Event>, outcome: &mut StreamingOutcome) {
+    for event in events {
+        match event {
+            Event::ContextRequest { correlation_id, .. } => {
+                let (_flow, more) = app.handle_command(Command::ContextResponse {
+                    correlation_id,
+                    context: None,
+                });
+                apply_streaming_events(app, more, outcome);
+            }
+            Event::TranscriptReady {
+                is_final,
+                processing_duration_ms,
+                revision,
+                text,
+                ..
+            } => {
+                let text = text.trim().to_string();
+                if is_final {
+                    if !text.is_empty() {
+                        outcome.final_text = text;
+                    }
+                } else {
+                    outcome.partials.push(StreamingRevision {
+                        revision,
+                        text,
+                        processing_ms: processing_duration_ms,
+                    });
+                }
+            }
+            Event::SessionStopped { .. } => outcome.stopped = true,
+            Event::Error { code, message, .. } => {
+                outcome.errors.push(format!("{code}: {message}"));
+            }
+            _ => {}
+        }
+    }
+}
+
 fn start_session_command(
     session_id: &str,
-    model_path: &Path,
+    model_selection: SelectedModel,
     style: SpeakingStyle,
     diarization_enabled: bool,
 ) -> Command {
@@ -193,15 +300,19 @@ fn start_session_command(
         include_system_audio: false,
         language: "en".to_string(),
         mode: ListeningMode::AlwaysOn,
-        model_selection: SelectedModel::ExternalFile {
-            runtime_id: RuntimeId::WhisperCpp,
-            family_id: ModelFamilyId::Whisper,
-            file_path: model_path.display().to_string(),
-        },
+        model_selection,
         model_store_path_override: None,
         session_start_unix_ms: SESSION_START_UNIX_MS,
         session_id: session_id.to_string(),
         speaking_style: style,
+    }
+}
+
+fn whisper_selection(model_path: &Path) -> SelectedModel {
+    SelectedModel::ExternalFile {
+        runtime_id: RuntimeId::WhisperCpp,
+        family_id: ModelFamilyId::Whisper,
+        file_path: model_path.display().to_string(),
     }
 }
 
@@ -263,9 +374,10 @@ fn run_via_process(
         }
     });
 
+    let model_selection = whisper_selection(model_path);
     write_command_frame(
         &mut stdin,
-        &start_session_json(&session_id, model_path, style, diarization_enabled),
+        &start_session_json(&session_id, &model_selection, style, diarization_enabled),
     );
     for frame in frames {
         write_audio_frame(&mut stdin, &session_id, frame);
@@ -357,7 +469,7 @@ fn apply_json_event(
 
 fn start_session_json(
     session_id: &str,
-    model_path: &Path,
+    model_selection: &SelectedModel,
     style: SpeakingStyle,
     diarization_enabled: bool,
 ) -> serde_json::Value {
@@ -369,12 +481,7 @@ fn start_session_json(
         "accelerationPreference": "cpu_only",
         "diarizationEnabled": diarization_enabled,
         "speakingStyle": speaking_style_wire(style),
-        "modelSelection": {
-            "kind": "external_file",
-            "runtimeId": "whisper_cpp",
-            "familyId": "whisper",
-            "filePath": model_path.display().to_string(),
-        },
+        "modelSelection": model_selection,
         "sessionStartUnixMs": SESSION_START_UNIX_MS,
     })
 }
