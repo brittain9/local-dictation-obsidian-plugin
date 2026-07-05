@@ -58,7 +58,7 @@ export function sampleMoonshineCatalogModel(): CatalogModelRecord {
       sizeBytes: 100,
     })),
     collectionId: 'moonshine_streaming',
-    displayName: 'Moonshine Small Streaming',
+    displayName: 'Moonshine Small',
     familyId: 'moonshine',
     languageTags: ['en'],
     licenseLabel: 'MIT',

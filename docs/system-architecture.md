@@ -306,11 +306,17 @@ than a silent failure.
 | Cohere Transcribe FP16 | `onnx_runtime` · `cohere_transcribe` | FP16 | 3.8 GB | 2B params |
 | Cohere Transcribe INT8 | `onnx_runtime` · `cohere_transcribe` | INT8 | 2.9 GB | |
 | Cohere Transcribe Q4 | `onnx_runtime` · `cohere_transcribe` | Q4 | 2.0 GB | |
+| Moonshine Tiny | `onnx_runtime` · `moonshine` | Quantized | 49 MB | Streaming (live), 34M params |
+| Moonshine Small | `onnx_runtime` · `moonshine` | Quantized | 157 MB | Streaming (live), recommended, 123M params |
+| Moonshine Medium | `onnx_runtime` · `moonshine` | Quantized | 289 MB | Streaming (live), 245M params |
 
-Moonshine streaming models are external-file selections in this release and do
-not appear in the managed catalog. The pinned `tiny-streaming-en` layout and
-download instructions are in
-[`docs/guides/moonshine-live-testing.md`](guides/moonshine-live-testing.md).
+Moonshine models are streaming (live-dictation) entries in the managed catalog,
+installed through Manage Models like any other model. Each is a multi-file ORT
+asset set (frontend, encoder, adapter, cross/decoder KV, streaming config, and
+tokenizer) fetched from Moonshine AI and verified against pinned sizes and
+SHA-256 hashes. They are English-only and do not apply speaker labels. See
+[`docs/guides/moonshine-live-testing.md`](guides/moonshine-live-testing.md) for
+install and manual acceptance testing.
 
 **Inference is the bottleneck.** Time depends on model size, hardware, and
 utterance length, and is reported as `processing_duration_ms` on each transcript.

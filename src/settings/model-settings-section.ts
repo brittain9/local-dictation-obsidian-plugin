@@ -58,6 +58,14 @@ export function renderModelSection(
     if (currentModel.engineLabel.length > 0) {
       descFragment.createSpan({ text: `${currentModel.engineLabel} \u00b7 ` });
     }
+    const caps = state.selectedModelCapabilities;
+    if (caps.status === 'ready' && caps.capabilities.family.supportsStreaming) {
+      descFragment.createSpan({
+        cls: 'local-stt-badge local-stt-badge--streaming',
+        text: 'Streaming',
+      });
+      descFragment.createSpan({ text: ' \u00b7 ' });
+    }
     const badge = getBadgeInfo(currentModel.installedLabel);
     descFragment.createSpan({
       cls: `local-stt-badge local-stt-badge--${badge.modifier}`,

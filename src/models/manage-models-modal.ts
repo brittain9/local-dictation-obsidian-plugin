@@ -214,6 +214,16 @@ export class ManageModelsModal extends Modal {
       return;
     }
 
+    const activeFamily = state.catalog.families.find(
+      (f) => f.runtimeId === this.activeTab?.runtimeId && f.familyId === this.activeTab?.familyId,
+    );
+    if (activeFamily !== undefined && activeFamily.summary.length > 0) {
+      this.listContainer.createEl('p', {
+        cls: 'local-stt-family-summary',
+        text: activeFamily.summary,
+      });
+    }
+
     const rows = deriveModelRowStates(state);
     const activeTab = this.activeTab;
     const tabRows = rows.filter(

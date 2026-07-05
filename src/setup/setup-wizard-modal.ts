@@ -201,6 +201,9 @@ export class SetupWizardModal extends Modal {
       body.createEl('p', {
         text: 'Install a transcription model to enable dictation. You can install more later — smaller models are faster, larger models are more accurate.',
       });
+      body.createEl('p', {
+        text: 'Two kinds are available: streaming models (Moonshine) show words live as you speak; standard models (Whisper) transcribe after each pause. For hands-free dictation, start with a streaming model.',
+      });
       if (!Platform.isMacOS) {
         body.createEl('p', {
           cls: 'local-stt-wizard-step__muted',
