@@ -2,6 +2,8 @@
 //! a model download + real inference. Run:
 //! cargo test --manifest-path native/Cargo.toml --test streaming_perf -- --ignored --nocapture
 
+#![cfg(feature = "engine-moonshine")]
+
 mod common;
 
 use std::time::Instant;
