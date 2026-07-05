@@ -1,12 +1,12 @@
 # Local Dictation
 
-On-device dictation plugin for Obsidian. Talk directly into your notes with fast accurate transcription from top models running on your CPU or GPU.
+On-device dictation plugin for Obsidian. Talk directly into your notes with fast accurate transcription from high-quality models running on your CPU or GPU.
 
 Transcription runs entirely on your device. No accounts or cloud required. A fast rust sidecar handles the inference and all models can be downloaded directly in the settings.
 
 ## Features
 
-- **Top models, run locally.** Whisper or Cohere Transcribe, on CPU or GPU. Cohere Transcribe currently tops the [Open ASR Leaderboard](https://huggingface.co/spaces/hf-audio/open_asr_leaderboard).
+- **High-quality models, run locally.** Choose from Whisper, Cohere Transcribe, or Moonshine — on CPU or GPU. Cohere Transcribe currently tops the [Open ASR Leaderboard](https://huggingface.co/spaces/hf-audio/open_asr_leaderboard).
 - **Live dictation.** Moonshine streaming models show provisional words within about a second and revise them in place until each utterance finalizes.
 - **Speaker labels.** Optional on-device diarization tags who's talking — for interviews, meetings, and calls. Nothing is stored; voiceprints live in memory for the session only.
 - **System audio.** Transcribe your computer's output — meetings, calls, videos — not just your mic. Available on Windows and Linux.
