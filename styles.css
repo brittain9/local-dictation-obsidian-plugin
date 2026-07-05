@@ -37,6 +37,11 @@
   color: var(--text-muted);
 }
 
+.local-stt-badge--streaming {
+  background-color: var(--background-modifier-border, rgba(128, 128, 128, 0.15));
+  color: var(--text-accent);
+}
+
 /* --- Tag pills ---------------------------------------------------- */
 
 .local-stt-tags {
@@ -102,6 +107,14 @@
 .local-stt-tab--active {
   color: var(--text-normal);
   border-bottom-color: var(--interactive-accent, #7c3aed);
+}
+
+/* --- Family summary (under the tab bar) --------------------------- */
+
+.local-stt-family-summary {
+  margin: 4px 0 12px;
+  color: var(--text-muted);
+  font-size: var(--font-ui-small);
 }
 
 /* --- Model rows (compact Setting-based) --------------------------- */

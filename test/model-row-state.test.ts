@@ -330,7 +330,7 @@ describe('deriveCurrentModelDisplay', () => {
     );
 
     expect(display).toMatchObject({
-      displayName: 'Moonshine Small Streaming',
+      displayName: 'Moonshine Small',
       engineLabel: 'Moonshine',
       installedLabel: 'Installed',
       resolvedPath: `/models/onnx_runtime/${MOONSHINE_MODEL_ID}/frontend.ort`,
