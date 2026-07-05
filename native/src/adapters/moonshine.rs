@@ -18,6 +18,8 @@ use crate::transcription::{
 const SAMPLE_RATE: usize = 16_000;
 const FRONTEND_CHUNK_SAMPLES: usize = 1_280;
 const MAX_TOKENS_PER_SECOND: f32 = 6.5;
+/// Tokens at the partial frontier that may be revised as encoder memory grows.
+const PARTIAL_REDECODE_WINDOW_TOKENS: usize = 12;
 
 const FRONTEND_FILENAME: &str = "frontend.ort";
 const ENCODER_FILENAME: &str = "encoder.ort";
@@ -352,6 +354,7 @@ impl MoonshineTokenizer {
     }
 }
 
+#[derive(Default)]
 struct DecodedTranscript {
     reached_eos: bool,
     text: String,
@@ -445,6 +448,7 @@ struct StreamingState {
     k_self: Vec<f32>,
     memory: Vec<f32>,
     memory_len: usize,
+    partial_tokens: Vec<i64>,
     pending_audio: Vec<f32>,
     sample_buffer: Vec<f32>,
     sample_count: usize,
@@ -470,6 +474,7 @@ impl StreamingState {
             k_self: Vec::new(),
             memory: Vec::new(),
             memory_len: 0,
+            partial_tokens: Vec::new(),
             pending_audio: Vec::new(),
             sample_buffer: vec![0.0; 79],
             sample_count: 0,
@@ -719,6 +724,9 @@ impl OrtMoonshineInference {
         Ok(())
     }
 
+    /// Project all encoder memory whenever it changes. Cross-KV keys are
+    /// position-dependent, so projecting and appending only new frames corrupts
+    /// decoding. See `docs/specs/streaming-moonshine-test-suite.md`.
     fn compute_cross_kv(&mut self) -> Result<(), TranscriptionError> {
         if self.state.cross_kv_valid {
             return Ok(());
@@ -769,6 +777,45 @@ impl OrtMoonshineInference {
         self.state.cache_seq_len = 0;
         self.state.k_self.clear();
         self.state.v_self.clear();
+    }
+
+    /// Discard approximate streaming memory so finalization re-encodes all
+    /// accumulated features exactly as the one-shot path does. This keeps final
+    /// output independent of partial cadence.
+    fn reset_encoder_emission(&mut self) {
+        self.state.memory.clear();
+        self.state.memory_len = 0;
+        self.state.encoder_frames_emitted = 0;
+        self.state.adapter_pos_offset = 0;
+        self.state.cross_kv_valid = false;
+        self.state.cross_len = 0;
+        self.state.k_cross.clear();
+        self.state.v_cross.clear();
+    }
+
+    fn truncate_self_kv(&mut self, keep_tokens: usize) {
+        debug_assert!(keep_tokens <= self.state.cache_seq_len);
+        let old_len = self.state.cache_seq_len;
+        let slabs = self.config.depth * self.config.nheads;
+        let head_dim = self.config.head_dim;
+        debug_assert_eq!(self.state.k_self.len(), slabs * old_len * head_dim);
+        debug_assert_eq!(self.state.v_self.len(), slabs * old_len * head_dim);
+
+        let truncate = |cache: &[f32]| {
+            let mut kept = vec![0.0_f32; slabs * keep_tokens * head_dim];
+            for slab in 0..slabs {
+                let source_start = slab * old_len * head_dim;
+                let target_start = slab * keep_tokens * head_dim;
+                let count = keep_tokens * head_dim;
+                kept[target_start..target_start + count]
+                    .copy_from_slice(&cache[source_start..source_start + count]);
+            }
+            kept
+        };
+
+        self.state.k_self = truncate(&self.state.k_self);
+        self.state.v_self = truncate(&self.state.v_self);
+        self.state.cache_seq_len = keep_tokens;
     }
 
     fn decode_step(&mut self, token: i64) -> Result<i64, TranscriptionError> {
@@ -838,24 +885,17 @@ impl OrtMoonshineInference {
             })
     }
 
-    fn decode_text(&mut self) -> Result<DecodedTranscript, TranscriptionError> {
-        if self.state.memory_len == 0 {
-            return Ok(DecodedTranscript {
-                reached_eos: false,
-                text: String::new(),
-                token_count: 0,
-            });
-        }
-
-        self.reset_decoder();
+    fn generate_tokens(
+        &mut self,
+        mut generated: Vec<i64>,
+    ) -> Result<(Vec<i64>, bool), TranscriptionError> {
         let duration_seconds = self.state.sample_count as f32 / SAMPLE_RATE as f32;
         let max_tokens = ((duration_seconds * MAX_TOKENS_PER_SECOND).ceil() as usize)
             .min(self.config.max_seq_len);
-        let mut generated = Vec::new();
-        let mut current = self.config.bos_id;
+        let mut current = generated.last().copied().unwrap_or(self.config.bos_id);
         let mut reached_eos = false;
 
-        for _ in 0..max_tokens {
+        while generated.len() < max_tokens {
             let next = self.decode_step(current)?;
             if next == self.config.eos_id {
                 reached_eos = true;
@@ -865,11 +905,48 @@ impl OrtMoonshineInference {
             current = next;
         }
 
+        Ok((generated, reached_eos))
+    }
+
+    fn decoded_transcript(
+        &self,
+        generated: &[i64],
+        reached_eos: bool,
+    ) -> Result<DecodedTranscript, TranscriptionError> {
         Ok(DecodedTranscript {
             reached_eos,
-            text: self.tokenizer.decode(&generated)?,
+            text: self.tokenizer.decode(generated)?,
             token_count: generated.len() as u32,
         })
+    }
+
+    fn decode_partial(&mut self) -> Result<DecodedTranscript, TranscriptionError> {
+        if self.state.memory_len == 0 {
+            return Ok(DecodedTranscript::default());
+        }
+
+        self.compute_cross_kv()?;
+        let commit = self
+            .state
+            .partial_tokens
+            .len()
+            .saturating_sub(PARTIAL_REDECODE_WINDOW_TOKENS);
+        self.truncate_self_kv(commit);
+        let (generated, reached_eos) =
+            self.generate_tokens(self.state.partial_tokens[..commit].to_vec())?;
+
+        self.state.partial_tokens.clone_from(&generated);
+        self.decoded_transcript(&generated, reached_eos)
+    }
+
+    fn decode_final(&mut self) -> Result<DecodedTranscript, TranscriptionError> {
+        if self.state.memory_len == 0 {
+            return Ok(DecodedTranscript::default());
+        }
+
+        self.reset_decoder();
+        let (generated, reached_eos) = self.generate_tokens(Vec::new())?;
+        self.decoded_transcript(&generated, reached_eos)
     }
 }
 
@@ -885,9 +962,12 @@ impl MoonshineInference for OrtMoonshineInference {
     fn decode(&mut self, is_final: bool) -> Result<DecodedTranscript, TranscriptionError> {
         if is_final {
             self.flush_pending_audio()?;
+            self.reset_encoder_emission();
+            self.encode_available(true)?;
+            return self.decode_final();
         }
-        self.encode_available(is_final)?;
-        self.decode_text()
+        self.encode_available(false)?;
+        self.decode_partial()
     }
 
     fn reset(&mut self) {
@@ -1054,6 +1134,69 @@ mod tests {
         assert_eq!(model.partial().unwrap().segments, Vec::new());
     }
 
+    /// Characterizes why the cross-KV projection cannot be cached incrementally.
+    ///
+    /// A prefix slice projected on its own matches the full projection (it sits
+    /// at the same absolute offsets), but a suffix slice projected as a fresh
+    /// sequence does *not* match the corresponding positions of the full
+    /// projection — the model position-encodes the keys, so absolute offset
+    /// matters. This is the evidence behind `compute_cross_kv` re-projecting the
+    /// whole memory each time; appending per-delta projections corrupts the
+    /// decode. See `docs/specs/streaming-moonshine-test-suite.md`.
+    #[test]
+    #[ignore = "requires MOONSHINE_MODEL_PATH pointing to local streaming assets"]
+    fn cross_kv_projection_is_position_dependent() {
+        let model_path = std::env::var("MOONSHINE_MODEL_PATH")
+            .expect("MOONSHINE_MODEL_PATH must point to frontend.ort");
+        let mut inference =
+            OrtMoonshineInference::load(Path::new(&model_path), GpuConfig { use_gpu: false })
+                .unwrap();
+
+        let fixture =
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/audio/7021-79740-0000.wav");
+        let samples: Vec<i16> = hound::WavReader::open(fixture)
+            .unwrap()
+            .samples::<i16>()
+            .map(Result::unwrap)
+            .collect();
+        inference.accept_audio(&samples[..32_000]).unwrap();
+        inference.encode_available(false).unwrap();
+        assert!(
+            inference.state.memory_len > 4,
+            "need enough memory frames to split"
+        );
+
+        let memory = inference.state.memory.clone();
+        let memory_len = inference.state.memory_len;
+        let full = project_cross_kv(&mut inference, &memory, memory_len);
+        let half = memory_len / 2;
+        let prefix_len = half * inference.config.decoder_dim;
+        let prefix = project_cross_kv(&mut inference, &memory[..prefix_len], half);
+        let suffix = project_cross_kv(&mut inference, &memory[prefix_len..], memory_len - half);
+
+        // A prefix at offset 0 reproduces the full projection exactly.
+        let prefix_diff =
+            cross_slice_max_abs_diff(&full, &prefix, 0, half, memory_len, &inference.config);
+        assert!(
+            prefix_diff < 1.0e-4,
+            "prefix projection should match full projection, got max diff {prefix_diff}"
+        );
+
+        // A suffix at a nonzero offset does not — incremental caching is invalid.
+        let suffix_diff = cross_slice_max_abs_diff(
+            &full,
+            &suffix,
+            half,
+            memory_len - half,
+            memory_len,
+            &inference.config,
+        );
+        assert!(
+            suffix_diff > 1.0e-2,
+            "suffix projection should diverge from full (position-dependent), got max diff {suffix_diff}"
+        );
+    }
+
     #[test]
     #[ignore = "requires MOONSHINE_MODEL_PATH pointing to local streaming assets"]
     fn local_model_decodes_fixture_in_streaming_chunks() {
@@ -1084,6 +1227,51 @@ mod tests {
         assert!(!final_output.segments[0].text.trim().is_empty());
         assert_eq!(final_output.segments[0].end_ms, samples.len() as u64 / 16);
         assert_eq!(final_output, one_shot_output);
+    }
+
+    fn project_cross_kv(
+        inference: &mut OrtMoonshineInference,
+        memory: &[f32],
+        memory_len: usize,
+    ) -> (Vec<f32>, Vec<f32>, usize) {
+        inference.state.memory = memory.to_vec();
+        inference.state.memory_len = memory_len;
+        inference.state.cross_kv_valid = false;
+        inference.compute_cross_kv().unwrap();
+        (
+            inference.state.k_cross.clone(),
+            inference.state.v_cross.clone(),
+            inference.state.cross_len,
+        )
+    }
+
+    /// Max absolute difference between a projected slice and the corresponding
+    /// `[start, start + slice_len)` window of the full projection, across k and v.
+    fn cross_slice_max_abs_diff(
+        full: &(Vec<f32>, Vec<f32>, usize),
+        slice: &(Vec<f32>, Vec<f32>, usize),
+        start: usize,
+        slice_len: usize,
+        full_len: usize,
+        config: &MoonshineConfig,
+    ) -> f32 {
+        assert_eq!(full.2, full_len);
+        assert_eq!(slice.2, slice_len);
+        let slabs = config.depth * config.nheads;
+        let mut max_diff = 0.0_f32;
+
+        for slab in 0..slabs {
+            for position in 0..slice_len {
+                for channel in 0..config.head_dim {
+                    let full_index =
+                        (slab * full_len + start + position) * config.head_dim + channel;
+                    let slice_index = (slab * slice_len + position) * config.head_dim + channel;
+                    max_diff = max_diff.max((full.0[full_index] - slice.0[slice_index]).abs());
+                    max_diff = max_diff.max((full.1[full_index] - slice.1[slice_index]).abs());
+                }
+            }
+        }
+        max_diff
     }
 
     #[derive(Default)]
