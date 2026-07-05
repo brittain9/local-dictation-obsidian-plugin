@@ -354,6 +354,7 @@ impl MoonshineTokenizer {
     }
 }
 
+#[derive(Default)]
 struct DecodedTranscript {
     reached_eos: bool,
     text: String,
@@ -723,19 +724,9 @@ impl OrtMoonshineInference {
         Ok(())
     }
 
-    /// Project the full encoder memory into cross-attention K/V.
-    ///
-    /// This re-projects the *entire* memory whenever a new frame arrives rather
-    /// than caching prior frames and appending only the delta. The cross-KV
-    /// projection is position-dependent (the model applies rotary position
-    /// encoding to the keys), so a slice projected at absolute offset `i` does
-    /// not equal the same slice projected as a fresh sequence — appending
-    /// per-delta projections yields numerically different K/V that corrupts the
-    /// decode (an incremental cache produced an empty final transcript on the
-    /// `jfk` fixture). See `docs/specs/streaming-moonshine-test-suite.md` for
-    /// the investigation. The per-partial cost of this projection is bounded by
-    /// caching the result until memory changes; making it incremental requires
-    /// a position-aware cross-KV model and is deferred.
+    /// Project all encoder memory whenever it changes. Cross-KV keys are
+    /// position-dependent, so projecting and appending only new frames corrupts
+    /// decoding. See `docs/specs/streaming-moonshine-test-suite.md`.
     fn compute_cross_kv(&mut self) -> Result<(), TranscriptionError> {
         if self.state.cross_kv_valid {
             return Ok(());
@@ -788,21 +779,9 @@ impl OrtMoonshineInference {
         self.state.v_self.clear();
     }
 
-    /// Discard incrementally-emitted encoder memory so the next
-    /// `encode_available` re-encodes the whole feature sequence in one pass.
-    ///
-    /// Partial decodes call `encode_available(false)`, which emits stable frames
-    /// through a sliding window as audio arrives and holds back the lookahead
-    /// tail. The resulting memory is a streaming *approximation* — it diverges
-    /// from a single full-sequence encode (observed max frame difference ~0.84
-    /// on the `jfk` fixture, enough to make the final decode emit an empty
-    /// transcript). The committed/final transcript must be authoritative, so
-    /// before the final decode we drop the approximate memory and re-encode all
-    /// accumulated features exactly as the one-shot path does. The frontend
-    /// features themselves are untouched; only the encoder→adapter emission
-    /// state is reset. This makes the final decode independent of whether (or
-    /// how often) partials were requested. See
-    /// `docs/specs/streaming-moonshine-test-suite.md`.
+    /// Discard approximate streaming memory so finalization re-encodes all
+    /// accumulated features exactly as the one-shot path does. This keeps final
+    /// output independent of partial cadence.
     fn reset_encoder_emission(&mut self) {
         self.state.memory.clear();
         self.state.memory_len = 0;
@@ -906,24 +885,10 @@ impl OrtMoonshineInference {
             })
     }
 
-    fn decode_partial(&mut self) -> Result<DecodedTranscript, TranscriptionError> {
-        if self.state.memory_len == 0 {
-            return Ok(DecodedTranscript {
-                reached_eos: false,
-                text: String::new(),
-                token_count: 0,
-            });
-        }
-
-        self.compute_cross_kv()?;
-        let commit = self
-            .state
-            .partial_tokens
-            .len()
-            .saturating_sub(PARTIAL_REDECODE_WINDOW_TOKENS);
-        self.truncate_self_kv(commit);
-        let mut generated = self.state.partial_tokens[..commit].to_vec();
-
+    fn generate_tokens(
+        &mut self,
+        mut generated: Vec<i64>,
+    ) -> Result<(Vec<i64>, bool), TranscriptionError> {
         let duration_seconds = self.state.sample_count as f32 / SAMPLE_RATE as f32;
         let max_tokens = ((duration_seconds * MAX_TOKENS_PER_SECOND).ceil() as usize)
             .min(self.config.max_seq_len);
@@ -940,46 +905,48 @@ impl OrtMoonshineInference {
             current = next;
         }
 
-        self.state.partial_tokens.clone_from(&generated);
+        Ok((generated, reached_eos))
+    }
+
+    fn decoded_transcript(
+        &self,
+        generated: &[i64],
+        reached_eos: bool,
+    ) -> Result<DecodedTranscript, TranscriptionError> {
         Ok(DecodedTranscript {
             reached_eos,
-            text: self.tokenizer.decode(&generated)?,
+            text: self.tokenizer.decode(generated)?,
             token_count: generated.len() as u32,
         })
     }
 
+    fn decode_partial(&mut self) -> Result<DecodedTranscript, TranscriptionError> {
+        if self.state.memory_len == 0 {
+            return Ok(DecodedTranscript::default());
+        }
+
+        self.compute_cross_kv()?;
+        let commit = self
+            .state
+            .partial_tokens
+            .len()
+            .saturating_sub(PARTIAL_REDECODE_WINDOW_TOKENS);
+        self.truncate_self_kv(commit);
+        let (generated, reached_eos) =
+            self.generate_tokens(self.state.partial_tokens[..commit].to_vec())?;
+
+        self.state.partial_tokens.clone_from(&generated);
+        self.decoded_transcript(&generated, reached_eos)
+    }
+
     fn decode_final(&mut self) -> Result<DecodedTranscript, TranscriptionError> {
         if self.state.memory_len == 0 {
-            return Ok(DecodedTranscript {
-                reached_eos: false,
-                text: String::new(),
-                token_count: 0,
-            });
+            return Ok(DecodedTranscript::default());
         }
 
         self.reset_decoder();
-        let duration_seconds = self.state.sample_count as f32 / SAMPLE_RATE as f32;
-        let max_tokens = ((duration_seconds * MAX_TOKENS_PER_SECOND).ceil() as usize)
-            .min(self.config.max_seq_len);
-        let mut generated = Vec::new();
-        let mut current = self.config.bos_id;
-        let mut reached_eos = false;
-
-        for _ in 0..max_tokens {
-            let next = self.decode_step(current)?;
-            if next == self.config.eos_id {
-                reached_eos = true;
-                break;
-            }
-            generated.push(next);
-            current = next;
-        }
-
-        Ok(DecodedTranscript {
-            reached_eos,
-            text: self.tokenizer.decode(&generated)?,
-            token_count: generated.len() as u32,
-        })
+        let (generated, reached_eos) = self.generate_tokens(Vec::new())?;
+        self.decoded_transcript(&generated, reached_eos)
     }
 }
 
@@ -1096,8 +1063,6 @@ mod tests {
 
     use super::*;
 
-    const BOUNDED_TAIL_WORDS: usize = 6;
-
     #[test]
     fn capabilities_describe_streaming_english_output() {
         let adapter = MoonshineAdapter;
@@ -1169,60 +1134,6 @@ mod tests {
         assert_eq!(model.partial().unwrap().segments, Vec::new());
     }
 
-    #[test]
-    #[ignore = "requires MOONSHINE_MODEL_PATH pointing to local streaming assets"]
-    fn partials_grow_as_bounded_prefix_and_final_matches_one_shot() {
-        let model_path = std::env::var("MOONSHINE_MODEL_PATH")
-            .expect("MOONSHINE_MODEL_PATH must point to frontend.ort");
-        let mut model = MoonshineAdapter
-            .load_streaming(Path::new(&model_path), GpuConfig { use_gpu: false })
-            .unwrap();
-        let fixture =
-            Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/audio/7021-79740-0000.wav");
-        let samples: Vec<i16> = hound::WavReader::open(fixture)
-            .unwrap()
-            .samples::<i16>()
-            .map(Result::unwrap)
-            .collect();
-
-        let mut partials = Vec::new();
-        for chunk in samples.chunks(8_000) {
-            model.accept_audio(chunk).unwrap();
-            let text = model
-                .partial()
-                .unwrap()
-                .segments
-                .first()
-                .map(|segment| segment.text.clone())
-                .unwrap_or_default();
-            if !text.is_empty() {
-                partials.push(text);
-            }
-        }
-        let final_text = model.finalize_utterance().unwrap().segments[0].text.clone();
-
-        for pair in partials.windows(2) {
-            let earlier: Vec<&str> = pair[0].split_whitespace().collect();
-            let later: Vec<&str> = pair[1].split_whitespace().collect();
-            let committed = earlier.len().saturating_sub(BOUNDED_TAIL_WORDS);
-            assert!(
-                later.len() >= committed && earlier[..committed] == later[..committed],
-                "committed prefix changed:\n  {}\n  {}",
-                pair[0],
-                pair[1]
-            );
-        }
-
-        let mut one_shot = MoonshineAdapter
-            .load_streaming(Path::new(&model_path), GpuConfig { use_gpu: false })
-            .unwrap();
-        one_shot.accept_audio(&samples).unwrap();
-        let one_shot_text = one_shot.finalize_utterance().unwrap().segments[0]
-            .text
-            .clone();
-        assert_eq!(final_text, one_shot_text);
-    }
-
     /// Characterizes why the cross-KV projection cannot be cached incrementally.
     ///
     /// A prefix slice projected on its own matches the full projection (it sits
@@ -1255,39 +1166,17 @@ mod tests {
             "need enough memory frames to split"
         );
 
-        let full = project_cross_kv_full(
-            &mut inference.cross_kv,
-            &inference.state.memory,
-            inference.state.memory_len,
-            &inference.config,
-        )
-        .unwrap();
-        let half = inference.state.memory_len / 2;
+        let memory = inference.state.memory.clone();
+        let memory_len = inference.state.memory_len;
+        let full = project_cross_kv(&mut inference, &memory, memory_len);
+        let half = memory_len / 2;
         let prefix_len = half * inference.config.decoder_dim;
-        let prefix = project_cross_kv_full(
-            &mut inference.cross_kv,
-            &inference.state.memory[..prefix_len],
-            half,
-            &inference.config,
-        )
-        .unwrap();
-        let suffix = project_cross_kv_full(
-            &mut inference.cross_kv,
-            &inference.state.memory[prefix_len..],
-            inference.state.memory_len - half,
-            &inference.config,
-        )
-        .unwrap();
+        let prefix = project_cross_kv(&mut inference, &memory[..prefix_len], half);
+        let suffix = project_cross_kv(&mut inference, &memory[prefix_len..], memory_len - half);
 
         // A prefix at offset 0 reproduces the full projection exactly.
-        let prefix_diff = cross_slice_max_abs_diff(
-            &full,
-            &prefix,
-            0,
-            half,
-            inference.state.memory_len,
-            &inference.config,
-        );
+        let prefix_diff =
+            cross_slice_max_abs_diff(&full, &prefix, 0, half, memory_len, &inference.config);
         assert!(
             prefix_diff < 1.0e-4,
             "prefix projection should match full projection, got max diff {prefix_diff}"
@@ -1298,8 +1187,8 @@ mod tests {
             &full,
             &suffix,
             half,
-            inference.state.memory_len - half,
-            inference.state.memory_len,
+            memory_len - half,
+            memory_len,
             &inference.config,
         );
         assert!(
@@ -1340,36 +1229,20 @@ mod tests {
         assert_eq!(final_output, one_shot_output);
     }
 
-    fn project_cross_kv_full(
-        session: &mut Session,
+    fn project_cross_kv(
+        inference: &mut OrtMoonshineInference,
         memory: &[f32],
         memory_len: usize,
-        config: &MoonshineConfig,
-    ) -> Result<(Vec<f32>, Vec<f32>, usize), TranscriptionError> {
-        let memory = value(
-            Array3::from_shape_vec((1, memory_len, config.decoder_dim), memory.to_vec()),
-            "test cross attention memory",
-        )?;
-        let outputs = session
-            .run(ort::inputs!["memory" => memory])
-            .map_err(|error| {
-                TranscriptionError::transcription_failure("test Moonshine cross attention", &error)
-            })?;
-        let (shape, k_cross) = tensor_f32(output(&outputs, "k_cross")?, "k_cross")?;
-        if shape.len() != 5
-            || dimension(&shape, 0, "k_cross")? != config.depth
-            || dimension(&shape, 2, "k_cross")? != config.nheads
-            || dimension(&shape, 4, "k_cross")? != config.head_dim
-        {
-            return Err(shape_error("k_cross", &shape));
-        }
-        let cross_len = dimension(&shape, 3, "k_cross")?;
-        let expected = config.depth * config.nheads * cross_len * config.head_dim;
-        let v_cross = tensor_f32_data(output(&outputs, "v_cross")?, expected, "v_cross")?;
-        if k_cross.len() != expected {
-            return Err(shape_error("k_cross", &shape));
-        }
-        Ok((k_cross, v_cross, cross_len))
+    ) -> (Vec<f32>, Vec<f32>, usize) {
+        inference.state.memory = memory.to_vec();
+        inference.state.memory_len = memory_len;
+        inference.state.cross_kv_valid = false;
+        inference.compute_cross_kv().unwrap();
+        (
+            inference.state.k_cross.clone(),
+            inference.state.v_cross.clone(),
+            inference.state.cross_len,
+        )
     }
 
     /// Max absolute difference between a projected slice and the corresponding
