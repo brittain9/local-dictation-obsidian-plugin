@@ -1,13 +1,20 @@
 import type { TranscriptSegment, TranscriptSpan, UtteranceId } from '../session/session-journal';
 import type {
+  SmartParagraphPauseSettings,
   TimestampClock,
   TimestampDensity,
   TranscriptFormattingMode,
 } from '../settings/plugin-settings';
+import {
+  DEFAULT_SMART_PARAGRAPH_PAUSE_MS,
+  normalizeSmartParagraphPauseSettings,
+} from '../settings/plugin-settings';
 
-export const SMART_PARAGRAPH_PAUSE_MS = 3000;
+export const SMART_PARAGRAPH_PAUSE_MS = DEFAULT_SMART_PARAGRAPH_PAUSE_MS;
 
 export interface TranscriptRenderOptions {
+  readonly smartParagraphLineBreakPauseMs?: number;
+  readonly smartParagraphParagraphPauseMs?: number;
   readonly timestamps: TranscriptTimestampRenderOptions;
   readonly transcriptFormatting: TranscriptFormattingMode;
 }
@@ -57,8 +64,14 @@ export class TranscriptRenderer {
   private hasRenderedText = false;
   private lastRenderedSpeakerIndex: number | null = null;
   private lastTimestampMsInSession: number | null = null;
+  private readonly smartParagraphPauses: SmartParagraphPauseSettings;
 
-  constructor(private readonly options: TranscriptRenderOptions) {}
+  constructor(private readonly options: TranscriptRenderOptions) {
+    this.smartParagraphPauses = normalizeSmartParagraphPauseSettings({
+      lineBreakPauseMs: options.smartParagraphLineBreakPauseMs,
+      paragraphPauseMs: options.smartParagraphParagraphPauseMs,
+    });
+  }
 
   planAppend(
     input: TranscriptAppendInput,
@@ -170,7 +183,18 @@ export class TranscriptRenderer {
       return this.options.transcriptFormatting;
     }
 
-    return isMeaningfulPause(pauseMsBeforeUtterance) ? 'new_paragraph' : 'space';
+    if (
+      pauseMsBeforeUtterance === null ||
+      pauseMsBeforeUtterance < this.smartParagraphPauses.lineBreakPauseMs
+    ) {
+      return 'space';
+    }
+
+    if (pauseMsBeforeUtterance < this.smartParagraphPauses.paragraphPauseMs) {
+      return 'new_line';
+    }
+
+    return 'new_paragraph';
   }
 
   private shouldEmitTimestamp(input: TranscriptAppendInput): boolean {
@@ -206,8 +230,11 @@ export class TranscriptRenderer {
   }
 }
 
-export function isMeaningfulPause(pauseMsBeforeUtterance: number | null): boolean {
-  return pauseMsBeforeUtterance !== null && pauseMsBeforeUtterance >= SMART_PARAGRAPH_PAUSE_MS;
+export function isMeaningfulPause(
+  pauseMsBeforeUtterance: number | null,
+  paragraphPauseMs = SMART_PARAGRAPH_PAUSE_MS,
+): boolean {
+  return pauseMsBeforeUtterance !== null && pauseMsBeforeUtterance >= paragraphPauseMs;
 }
 
 export function formatLandmark(

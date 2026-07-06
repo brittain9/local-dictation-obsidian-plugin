@@ -136,6 +136,43 @@ describe('TranscriptRenderer', () => {
     ).toBe('\n\nlong');
   });
 
+  it('uses custom smart paragraph line and paragraph thresholds', () => {
+    const renderer = new TranscriptRenderer({
+      smartParagraphLineBreakPauseMs: 1000,
+      smartParagraphParagraphPauseMs: 3000,
+      timestamps: timestamps(),
+      transcriptFormatting: 'smart',
+    });
+
+    expect(planAndCommit(renderer, { text: 'first' }).projectedText).toBe('first');
+    expect(
+      planAndCommit(
+        renderer,
+        {
+          pauseMsBeforeUtterance: 999,
+          text: 'short',
+        },
+        't',
+      ).projectedText,
+    ).toBe(' short');
+    expect(
+      planAndCommit(
+        renderer,
+        {
+          pauseMsBeforeUtterance: 1000,
+          text: 'line',
+        },
+        't',
+      ).projectedText,
+    ).toBe('\nline');
+    expect(
+      planAndCommit(renderer, {
+        pauseMsBeforeUtterance: 3000,
+        text: 'paragraph',
+      }).projectedText,
+    ).toBe('\n\nparagraph');
+  });
+
   it('treats null pause as continuation while still allowing interval timestamps', () => {
     const renderer = new TranscriptRenderer({
       timestamps: timestamps({ enabled: true, header: false }),

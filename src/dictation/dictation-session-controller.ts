@@ -81,6 +81,8 @@ interface ActiveSessionSnapshot {
   modelSelection: NonNullable<PluginSettings['selectedModel']>;
   modelStorePathOverride: string;
   sessionStartUnixMs: number;
+  smartParagraphLineBreakPauseMs: PluginSettings['smartParagraphLineBreakPauseMs'];
+  smartParagraphParagraphPauseMs: PluginSettings['smartParagraphParagraphPauseMs'];
   speakingStyle: PluginSettings['speakingStyle'];
   timestamps: TranscriptRenderOptions['timestamps'];
   transcriptFormatting: PluginSettings['transcriptFormatting'];
@@ -261,6 +263,8 @@ export class DictationSessionController {
         },
         placement: { anchor: snapshot.dictationAnchor },
         rendererOptions: {
+          smartParagraphLineBreakPauseMs: snapshot.smartParagraphLineBreakPauseMs,
+          smartParagraphParagraphPauseMs: snapshot.smartParagraphParagraphPauseMs,
           timestamps: snapshot.timestamps,
           transcriptFormatting: snapshot.transcriptFormatting,
         },
@@ -1246,6 +1250,8 @@ function createSessionSnapshot(
     modelSelection: selectedModel,
     modelStorePathOverride: settings.modelStorePathOverride,
     sessionStartUnixMs,
+    smartParagraphLineBreakPauseMs: settings.smartParagraphLineBreakPauseMs,
+    smartParagraphParagraphPauseMs: settings.smartParagraphParagraphPauseMs,
     speakingStyle: settings.speakingStyle,
     timestamps: {
       clock: settings.timestampClock,

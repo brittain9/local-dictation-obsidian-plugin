@@ -163,6 +163,33 @@ describe('DictationSessionController', () => {
     expect(controller.getState()).toBe('listening');
   });
 
+  it('passes smart paragraph thresholds to renderer options', async () => {
+    let rendererOptions: TranscriptRenderOptions | null = null;
+    const controller = createController({
+      createSession: (_session, options) => {
+        rendererOptions = options.rendererOptions;
+      },
+      getSettings: () =>
+        createSettings({
+          selectedModel: createExternalModelSelection(),
+          smartParagraphLineBreakPauseMs: 1200,
+          smartParagraphParagraphPauseMs: 4500,
+          transcriptFormatting: 'smart',
+        }),
+    });
+
+    await controller.startDictation();
+
+    if (rendererOptions === null) {
+      throw new Error('expected renderer options');
+    }
+    expect(rendererOptions).toMatchObject({
+      smartParagraphLineBreakPauseMs: 1200,
+      smartParagraphParagraphPauseMs: 4500,
+      transcriptFormatting: 'smart',
+    });
+  });
+
   it('includes system audio without skipping microphone capture', async () => {
     const captureStream = new FakeCaptureStream();
     const sidecarConnection = new FakeSidecarConnection();
@@ -1309,7 +1336,7 @@ function createController({
   audioLevelMeter?: FakeAudioLevelMeter;
   captureStream?: FakeCaptureStream;
   countAudioInputDevices?: () => Promise<number | null>;
-  createSession?: (session: FakeSession) => void;
+  createSession?: (session: FakeSession, options: CreateSessionOptions) => void;
   getSettings?: () => PluginSettings;
   llmRouter?: LlmRouter;
   logger?: FakeLogger;
@@ -1322,17 +1349,9 @@ function createController({
     captureStream,
     audioLevelMeter,
     ...(countAudioInputDevices !== undefined ? { countAudioInputDevices } : {}),
-    createSession: (_options: {
-      callbacks: {
-        onLockedNoteClosed: () => void;
-        onLockedNoteDeleted: () => void;
-      };
-      placement: NotePlacementOptions;
-      rendererOptions: TranscriptRenderOptions;
-      sessionId: string;
-    }) => {
+    createSession: (_options: CreateSessionOptions) => {
       const session = new FakeSession();
-      createSession?.(session);
+      createSession?.(session, _options);
       return session;
     },
     createLlmRouter: () => llmRouter,
@@ -1347,6 +1366,16 @@ function createController({
     setRibbonState: vi.fn((_state: DictationControllerState) => {}),
     sidecarConnection,
   });
+}
+
+interface CreateSessionOptions {
+  callbacks: {
+    onLockedNoteClosed: () => void;
+    onLockedNoteDeleted: () => void;
+  };
+  placement: NotePlacementOptions;
+  rendererOptions: TranscriptRenderOptions;
+  sessionId: string;
 }
 
 function createSettings(overrides: Partial<PluginSettings> = {}): PluginSettings {
