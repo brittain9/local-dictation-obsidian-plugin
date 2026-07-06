@@ -23,6 +23,7 @@ import {
   type DictationAnchor,
   isDictationAnchor,
   isListeningMode,
+  isRemoteLlmEffectivelyEnabled,
   isSpeakingStyle,
   isTimestampClock,
   isTimestampDensity,
@@ -250,10 +251,18 @@ export class LocalSttSettingTab extends PluginSettingTab {
       });
     });
 
-    addToggleSetting(llmCard, this.access, {
-      name: 'Enable remote LLM',
-      desc: 'Allow transcript text and included note context to be sent to OpenRouter. Audio is never sent.',
-      key: 'llmRemoteFeaturesEnabled',
+    const remoteLlmSetting = new Setting(llmCard)
+      .setName('Enable remote LLM')
+      .setDesc(
+        'Allow transcript text and included note context to be sent to OpenRouter. Audio is never sent.',
+      );
+    remoteLlmSetting.addToggle((toggle) => {
+      toggle.setValue(isRemoteLlmEffectivelyEnabled(settings));
+      toggle.setDisabled(!settings.llmFeaturesEnabled);
+      toggle.onChange(async (value) => {
+        if (!this.dependencies.getSettings().llmFeaturesEnabled) return;
+        await this.access.persistOne('llmRemoteFeaturesEnabled', value);
+      });
     });
 
     // --- Engine options ---
