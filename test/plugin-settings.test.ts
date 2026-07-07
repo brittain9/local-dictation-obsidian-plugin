@@ -7,10 +7,13 @@ import {
 } from '../src/llm/presets';
 import {
   DEFAULT_PLUGIN_SETTINGS,
+  DEFAULT_SMART_PARAGRAPH_PAUSE_MS,
   isRemoteLlmEffectivelyEnabled,
   LLM_USER_PRESET_MAX_COUNT,
   LLM_USER_PRESET_MAX_DESCRIPTION_CHARS,
   LLM_USER_PRESET_MAX_LABEL_CHARS,
+  MAX_SMART_PARAGRAPH_PAUSE_MS,
+  MIN_SMART_PARAGRAPH_PAUSE_MS,
   resetLlmPostprocessDefaults,
   resolvePluginSettings,
   shouldRefreshLlmSidebar,
@@ -92,6 +95,8 @@ describe('resolvePluginSettings', () => {
         sidecarPathOverride: ' /tmp/sidecar ',
         sidecarRequestTimeoutSeconds: 12,
         sidecarStartupTimeoutSeconds: 6,
+        smartParagraphLineBreakPauseMs: 1500,
+        smartParagraphParagraphPauseMs: 4500,
         speakingStyle: 'patient',
         timestampClock: 'wallclock',
         timestampDensity: 'every_utterance',
@@ -136,6 +141,8 @@ describe('resolvePluginSettings', () => {
       sidecarPathOverride: '/tmp/sidecar',
       sidecarRequestTimeoutSeconds: 12,
       sidecarStartupTimeoutSeconds: 6,
+      smartParagraphLineBreakPauseMs: 1500,
+      smartParagraphParagraphPauseMs: 4500,
       speakingStyle: 'patient',
       timestampClock: 'wallclock',
       timestampDensity: 'every_utterance',
@@ -183,6 +190,8 @@ describe('resolvePluginSettings', () => {
         sidecarPathOverride: 12,
         sidecarRequestTimeoutSeconds: -1,
         sidecarStartupTimeoutSeconds: 'fast',
+        smartParagraphLineBreakPauseMs: 'soon',
+        smartParagraphParagraphPauseMs: 'later',
         timestampClock: 'date',
         timestampDensity: 'always',
         timestampsEnabled: 'yes',
@@ -241,6 +250,43 @@ describe('resolvePluginSettings', () => {
     expect(
       resolvePluginSettings({ timestampSparseIntervalMs: 999_999 }).timestampSparseIntervalMs,
     ).toBe(600_000);
+  });
+
+  it('defaults smart paragraph thresholds to the legacy meaningful pause threshold', () => {
+    expect(DEFAULT_PLUGIN_SETTINGS.smartParagraphLineBreakPauseMs).toBe(
+      DEFAULT_SMART_PARAGRAPH_PAUSE_MS,
+    );
+    expect(DEFAULT_PLUGIN_SETTINGS.smartParagraphParagraphPauseMs).toBe(
+      DEFAULT_SMART_PARAGRAPH_PAUSE_MS,
+    );
+    expect(resolvePluginSettings({})).toMatchObject({
+      smartParagraphLineBreakPauseMs: DEFAULT_SMART_PARAGRAPH_PAUSE_MS,
+      smartParagraphParagraphPauseMs: DEFAULT_SMART_PARAGRAPH_PAUSE_MS,
+    });
+  });
+
+  it('clamps smart paragraph thresholds at the settings boundary', () => {
+    expect(
+      resolvePluginSettings({
+        smartParagraphLineBreakPauseMs: 1,
+        smartParagraphParagraphPauseMs: 999_999,
+      }),
+    ).toMatchObject({
+      smartParagraphLineBreakPauseMs: MIN_SMART_PARAGRAPH_PAUSE_MS,
+      smartParagraphParagraphPauseMs: MAX_SMART_PARAGRAPH_PAUSE_MS,
+    });
+  });
+
+  it('normalizes smart paragraph line breaks to not exceed paragraph breaks', () => {
+    expect(
+      resolvePluginSettings({
+        smartParagraphLineBreakPauseMs: 5000,
+        smartParagraphParagraphPauseMs: 2000,
+      }),
+    ).toMatchObject({
+      smartParagraphLineBreakPauseMs: 2000,
+      smartParagraphParagraphPauseMs: 2000,
+    });
   });
 
   it('defaults useLlmNoteContext to false', () => {

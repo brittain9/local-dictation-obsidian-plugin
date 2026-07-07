@@ -49,6 +49,10 @@ export const DEFAULT_TIMESTAMP_SPARSE_INTERVAL_MS = 30_000;
 export const MIN_TIMESTAMP_SPARSE_INTERVAL_MS = 10_000;
 export const MAX_TIMESTAMP_SPARSE_INTERVAL_MS = 600_000;
 
+export const DEFAULT_SMART_PARAGRAPH_PAUSE_MS = 3_000;
+export const MIN_SMART_PARAGRAPH_PAUSE_MS = 500;
+export const MAX_SMART_PARAGRAPH_PAUSE_MS = 30_000;
+
 export const SPEAKING_STYLES = [
   'responsive',
   'balanced',
@@ -128,6 +132,8 @@ export interface PluginSettings {
   sidecarPathOverride: string;
   sidecarRequestTimeoutSeconds: number;
   sidecarStartupTimeoutSeconds: number;
+  smartParagraphLineBreakPauseMs: number;
+  smartParagraphParagraphPauseMs: number;
   speakingStyle: SpeakingStyle;
   timestampClock: TimestampClock;
   timestampDensity: TimestampDensity;
@@ -176,6 +182,8 @@ export const DEFAULT_PLUGIN_SETTINGS: PluginSettings = {
   sidecarPathOverride: '',
   sidecarRequestTimeoutSeconds: 300,
   sidecarStartupTimeoutSeconds: 4,
+  smartParagraphLineBreakPauseMs: DEFAULT_SMART_PARAGRAPH_PAUSE_MS,
+  smartParagraphParagraphPauseMs: DEFAULT_SMART_PARAGRAPH_PAUSE_MS,
   speakingStyle: 'balanced',
   timestampClock: 'elapsed',
   timestampDensity: 'sparse',
@@ -189,6 +197,10 @@ export const DEFAULT_PLUGIN_SETTINGS: PluginSettings = {
 
 export function resolvePluginSettings(data: unknown): PluginSettings {
   const raw = isRecord(data) ? data : {};
+  const smartParagraphPauses = normalizeSmartParagraphPauseSettings({
+    lineBreakPauseMs: raw.smartParagraphLineBreakPauseMs,
+    paragraphPauseMs: raw.smartParagraphParagraphPauseMs,
+  });
   const { activeRef, userPresets } = migrateLlmPresetState({
     legacyPrompt: raw.llmPostprocessPrompt,
     storedRef: raw.llmPostprocessActivePresetRef,
@@ -300,6 +312,8 @@ export function resolvePluginSettings(data: unknown): PluginSettings {
       raw.sidecarStartupTimeoutSeconds,
       DEFAULT_PLUGIN_SETTINGS.sidecarStartupTimeoutSeconds,
     ),
+    smartParagraphLineBreakPauseMs: smartParagraphPauses.lineBreakPauseMs,
+    smartParagraphParagraphPauseMs: smartParagraphPauses.paragraphPauseMs,
     speakingStyle: isSpeakingStyle(raw.speakingStyle)
       ? raw.speakingStyle
       : DEFAULT_PLUGIN_SETTINGS.speakingStyle,
@@ -331,6 +345,34 @@ export function resolvePluginSettings(data: unknown): PluginSettings {
       DEFAULT_PLUGIN_SETTINGS.useLlmNoteContext,
     ),
     useNoteAsContext: readBoolean(raw.useNoteAsContext, DEFAULT_PLUGIN_SETTINGS.useNoteAsContext),
+  };
+}
+
+export interface SmartParagraphPauseSettings {
+  lineBreakPauseMs: number;
+  paragraphPauseMs: number;
+}
+
+export function normalizeSmartParagraphPauseSettings(value: {
+  lineBreakPauseMs: unknown;
+  paragraphPauseMs: unknown;
+}): SmartParagraphPauseSettings {
+  const paragraphPauseMs = readClampedInteger(
+    value.paragraphPauseMs,
+    DEFAULT_PLUGIN_SETTINGS.smartParagraphParagraphPauseMs,
+    MIN_SMART_PARAGRAPH_PAUSE_MS,
+    MAX_SMART_PARAGRAPH_PAUSE_MS,
+  );
+  const lineBreakPauseMs = readClampedInteger(
+    value.lineBreakPauseMs,
+    DEFAULT_PLUGIN_SETTINGS.smartParagraphLineBreakPauseMs,
+    MIN_SMART_PARAGRAPH_PAUSE_MS,
+    MAX_SMART_PARAGRAPH_PAUSE_MS,
+  );
+
+  return {
+    lineBreakPauseMs: Math.min(lineBreakPauseMs, paragraphPauseMs),
+    paragraphPauseMs,
   };
 }
 

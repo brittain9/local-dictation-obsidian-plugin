@@ -1,11 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
-import {
-  buildSpeakerSpans,
-  formatLandmark,
-  SMART_PARAGRAPH_PAUSE_MS,
-  TranscriptRenderer,
-} from '../src/transcript/renderer';
+import { DEFAULT_SMART_PARAGRAPH_PAUSE_MS } from '../src/settings/plugin-settings';
+import { buildSpeakerSpans, formatLandmark, TranscriptRenderer } from '../src/transcript/renderer';
 import {
   DEFAULT_SESSION_START_MS,
   DEFAULT_SPARSE_INTERVAL_MS,
@@ -79,7 +75,7 @@ describe('TranscriptRenderer', () => {
 
     planAndCommit(renderer, { text: 'first', utteranceStartMsInSession: 0 });
     const second = planAndCommit(renderer, {
-      pauseMsBeforeUtterance: SMART_PARAGRAPH_PAUSE_MS,
+      pauseMsBeforeUtterance: DEFAULT_SMART_PARAGRAPH_PAUSE_MS,
       text: 'later',
       utteranceStartMsInSession: DEFAULT_SPARSE_INTERVAL_MS,
     });
@@ -122,7 +118,7 @@ describe('TranscriptRenderer', () => {
       planAndCommit(
         renderer,
         {
-          pauseMsBeforeUtterance: SMART_PARAGRAPH_PAUSE_MS - 1,
+          pauseMsBeforeUtterance: DEFAULT_SMART_PARAGRAPH_PAUSE_MS - 1,
           text: 'short',
         },
         't',
@@ -130,10 +126,46 @@ describe('TranscriptRenderer', () => {
     ).toBe(' short');
     expect(
       planAndCommit(renderer, {
-        pauseMsBeforeUtterance: SMART_PARAGRAPH_PAUSE_MS,
+        pauseMsBeforeUtterance: DEFAULT_SMART_PARAGRAPH_PAUSE_MS,
         text: 'long',
       }).projectedText,
     ).toBe('\n\nlong');
+  });
+
+  it('uses custom smart paragraph line and paragraph thresholds', () => {
+    const renderer = new TranscriptRenderer({
+      smartParagraphPauses: { lineBreakPauseMs: 1000, paragraphPauseMs: 3000 },
+      timestamps: timestamps(),
+      transcriptFormatting: 'smart',
+    });
+
+    expect(planAndCommit(renderer, { text: 'first' }).projectedText).toBe('first');
+    expect(
+      planAndCommit(
+        renderer,
+        {
+          pauseMsBeforeUtterance: 999,
+          text: 'short',
+        },
+        't',
+      ).projectedText,
+    ).toBe(' short');
+    expect(
+      planAndCommit(
+        renderer,
+        {
+          pauseMsBeforeUtterance: 1000,
+          text: 'line',
+        },
+        't',
+      ).projectedText,
+    ).toBe('\nline');
+    expect(
+      planAndCommit(renderer, {
+        pauseMsBeforeUtterance: 3000,
+        text: 'paragraph',
+      }).projectedText,
+    ).toBe('\n\nparagraph');
   });
 
   it('treats null pause as continuation while still allowing interval timestamps', () => {

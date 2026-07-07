@@ -48,6 +48,7 @@ import {
   type SidecarInstallActionDeps,
   SidecarSettingsSection,
 } from './sidecar-settings-section';
+import { SmartParagraphSettingsModal } from './smart-paragraph-settings-modal';
 
 interface SettingsTabDependencies {
   getSettings: () => PluginSettings;
@@ -211,14 +212,7 @@ export class LocalSttSettingTab extends PluginSettingTab {
       isValid: isDictationAnchor,
     });
 
-    addEnumSetting(outputCard, this.access, {
-      name: 'Transcript formatting',
-      desc: 'How phrases are joined together.',
-      tooltip: 'Smart paragraphs use longer pauses as paragraph breaks.',
-      key: 'transcriptFormatting',
-      options: TRANSCRIPT_FORMATTING_OPTIONS,
-      isValid: isTranscriptFormattingMode,
-    });
+    this.renderTranscriptFormattingSetting(outputCard);
 
     const diarizationSetting = addToggleSetting(outputCard, this.access, {
       name: 'Speaker labels (diarization)',
@@ -337,6 +331,34 @@ export class LocalSttSettingTab extends PluginSettingTab {
     this.disposeMissingSidecarBanner?.();
     this.disposeMissingSidecarBanner = null;
     this.missingSidecarProgressEl = null;
+  }
+
+  private renderTranscriptFormattingSetting(parent: HTMLElement): void {
+    const setting = addEnumSetting(parent, this.access, {
+      name: 'Transcript formatting',
+      desc: 'How phrases are joined together.',
+      tooltip: 'Smart paragraphs use longer pauses as line or paragraph breaks.',
+      key: 'transcriptFormatting',
+      options: TRANSCRIPT_FORMATTING_OPTIONS,
+      isValid: isTranscriptFormattingMode,
+    });
+
+    setting.addExtraButton((button) => {
+      button
+        .setIcon('sliders-horizontal')
+        .setTooltip('Smart paragraph settings')
+        .onClick(() => {
+          new SmartParagraphSettingsModal(this.app, {
+            getSettings: () => this.dependencies.getSettings(),
+            onSave: () => {
+              this.display();
+            },
+            saveSettings: async (settings) => {
+              await this.dependencies.saveSettings(settings);
+            },
+          }).open();
+        });
+    });
   }
 
   private renderTimestampSettings(parent: HTMLElement, settings: PluginSettings): void {

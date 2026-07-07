@@ -1,13 +1,19 @@
 import type { TranscriptSegment, TranscriptSpan, UtteranceId } from '../session/session-journal';
 import type {
+  SmartParagraphPauseSettings,
   TimestampClock,
   TimestampDensity,
   TranscriptFormattingMode,
 } from '../settings/plugin-settings';
+import { DEFAULT_SMART_PARAGRAPH_PAUSE_MS } from '../settings/plugin-settings';
 
-export const SMART_PARAGRAPH_PAUSE_MS = 3000;
+const DEFAULT_SMART_PARAGRAPH_PAUSES: SmartParagraphPauseSettings = {
+  lineBreakPauseMs: DEFAULT_SMART_PARAGRAPH_PAUSE_MS,
+  paragraphPauseMs: DEFAULT_SMART_PARAGRAPH_PAUSE_MS,
+};
 
 export interface TranscriptRenderOptions {
+  readonly smartParagraphPauses?: SmartParagraphPauseSettings;
   readonly timestamps: TranscriptTimestampRenderOptions;
   readonly transcriptFormatting: TranscriptFormattingMode;
 }
@@ -57,8 +63,11 @@ export class TranscriptRenderer {
   private hasRenderedText = false;
   private lastRenderedSpeakerIndex: number | null = null;
   private lastTimestampMsInSession: number | null = null;
+  private readonly smartParagraphPauses: SmartParagraphPauseSettings;
 
-  constructor(private readonly options: TranscriptRenderOptions) {}
+  constructor(private readonly options: TranscriptRenderOptions) {
+    this.smartParagraphPauses = options.smartParagraphPauses ?? DEFAULT_SMART_PARAGRAPH_PAUSES;
+  }
 
   planAppend(
     input: TranscriptAppendInput,
@@ -170,7 +179,18 @@ export class TranscriptRenderer {
       return this.options.transcriptFormatting;
     }
 
-    return isMeaningfulPause(pauseMsBeforeUtterance) ? 'new_paragraph' : 'space';
+    if (
+      pauseMsBeforeUtterance === null ||
+      pauseMsBeforeUtterance < this.smartParagraphPauses.lineBreakPauseMs
+    ) {
+      return 'space';
+    }
+
+    if (pauseMsBeforeUtterance < this.smartParagraphPauses.paragraphPauseMs) {
+      return 'new_line';
+    }
+
+    return 'new_paragraph';
   }
 
   private shouldEmitTimestamp(input: TranscriptAppendInput): boolean {
@@ -204,10 +224,6 @@ export class TranscriptRenderer {
   private shouldEmitSpeakerLabel(speakerIndex: number | null): speakerIndex is number {
     return speakerIndex !== null && speakerIndex !== this.lastRenderedSpeakerIndex;
   }
-}
-
-export function isMeaningfulPause(pauseMsBeforeUtterance: number | null): boolean {
-  return pauseMsBeforeUtterance !== null && pauseMsBeforeUtterance >= SMART_PARAGRAPH_PAUSE_MS;
 }
 
 export function formatLandmark(
