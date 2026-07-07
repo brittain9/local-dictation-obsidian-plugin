@@ -1187,7 +1187,9 @@ describe('DictationSessionController', () => {
     expect(notice).not.toHaveBeenCalled();
     expect(logger.warn).toHaveBeenCalled();
     expect(captureStream.stop).toHaveBeenCalledTimes(1);
-    expect(sessions[0]?.dispose).toHaveBeenCalledTimes(1);
+    await vi.waitFor(() => {
+      expect(sessions[0]?.dispose).toHaveBeenCalledTimes(1);
+    });
     expect(controller.getState()).toBe('idle');
   });
 
@@ -1359,6 +1361,36 @@ describe('DictationSessionController', () => {
     await vi.waitFor(() => {
       expect(session.dispose).toHaveBeenCalledTimes(1);
     });
+    expect(controller.getState()).toBe('idle');
+  });
+
+  it('still cancels sessions during dispose when capture teardown rejects', async () => {
+    const captureStream = new FakeCaptureStream();
+    const logger = new FakeLogger();
+    const sidecarConnection = new FakeSidecarConnection();
+    const sessions: FakeSession[] = [];
+    const controller = createController({
+      captureStream,
+      createSession: (session) => {
+        sessions.push(session);
+      },
+      logger,
+      sidecarConnection,
+    });
+
+    await controller.startDictation();
+    const sessionId = sidecarConnection.startSession.mock.calls[0]?.[0].sessionId ?? '';
+    captureStream.stop.mockRejectedValueOnce(new Error('audio context close failed'));
+
+    await controller.dispose();
+
+    expect(sidecarConnection.cancelSession).toHaveBeenCalledWith(sessionId);
+    expect(logger.warn).toHaveBeenCalledWith(
+      'audio',
+      'failed to stop audio capture cleanly during teardown',
+      expect.any(Error),
+    );
+    expect(sessions[0]?.dispose).toHaveBeenCalledTimes(1);
     expect(controller.getState()).toBe('idle');
   });
 
