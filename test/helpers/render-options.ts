@@ -1,4 +1,3 @@
-import { DEFAULT_SMART_PARAGRAPH_PAUSE_MS } from '../../src/settings/plugin-settings';
 import type {
   TranscriptRenderOptions,
   TranscriptTimestampRenderOptions,
@@ -29,8 +28,6 @@ export function renderOptions(
   overrides: Partial<TranscriptRenderOptions> = {},
 ): TranscriptRenderOptions {
   return {
-    smartParagraphLineBreakPauseMs: DEFAULT_SMART_PARAGRAPH_PAUSE_MS,
-    smartParagraphParagraphPauseMs: DEFAULT_SMART_PARAGRAPH_PAUSE_MS,
     timestamps: timestamps(),
     transcriptFormatting: 'space',
     ...overrides,

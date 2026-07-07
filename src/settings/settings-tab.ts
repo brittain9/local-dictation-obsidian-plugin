@@ -38,7 +38,6 @@ import {
   addEnumSetting,
   addTextSetting,
   addToggleSetting,
-  appendInfoTooltip,
   createSettingGroup,
   type DropdownOption,
   type SettingAccess,
@@ -326,21 +325,15 @@ export class LocalSttSettingTab extends PluginSettingTab {
   }
 
   private renderTranscriptFormattingSetting(parent: HTMLElement): void {
-    const setting = new Setting(parent)
-      .setName('Transcript formatting')
-      .setDesc('How phrases are joined together.')
-      .addDropdown((dropdown) => {
-        for (const option of TRANSCRIPT_FORMATTING_OPTIONS) {
-          dropdown.addOption(option.value, option.label);
-        }
-        dropdown.setValue(this.dependencies.getSettings().transcriptFormatting);
-        dropdown.onChange(async (value) => {
-          if (!isTranscriptFormattingMode(value)) return;
-          await this.access.persistOne('transcriptFormatting', value);
-        });
-      });
+    const setting = addEnumSetting(parent, this.access, {
+      name: 'Transcript formatting',
+      desc: 'How phrases are joined together.',
+      tooltip: 'Smart paragraphs use longer pauses as line or paragraph breaks.',
+      key: 'transcriptFormatting',
+      options: TRANSCRIPT_FORMATTING_OPTIONS,
+      isValid: isTranscriptFormattingMode,
+    });
 
-    appendInfoTooltip(setting, 'Smart paragraphs use longer pauses as line or paragraph breaks.');
     setting.addExtraButton((button) => {
       button
         .setIcon('sliders-horizontal')

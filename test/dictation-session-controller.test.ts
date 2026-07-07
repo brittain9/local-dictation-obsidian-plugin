@@ -184,8 +184,7 @@ describe('DictationSessionController', () => {
       throw new Error('expected renderer options');
     }
     expect(rendererOptions).toMatchObject({
-      smartParagraphLineBreakPauseMs: 1200,
-      smartParagraphParagraphPauseMs: 4500,
+      smartParagraphPauses: { lineBreakPauseMs: 1200, paragraphPauseMs: 4500 },
       transcriptFormatting: 'smart',
     });
   });

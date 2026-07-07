@@ -5,8 +5,8 @@ import {
   DEFAULT_PLUGIN_SETTINGS,
   MAX_SMART_PARAGRAPH_PAUSE_MS,
   MIN_SMART_PARAGRAPH_PAUSE_MS,
+  normalizeSmartParagraphPauseSettings,
   type PluginSettings,
-  resolvePluginSettings,
   type SmartParagraphPauseSettings,
 } from './plugin-settings';
 
@@ -21,8 +21,6 @@ const MAX_PAUSE_SECONDS = MAX_SMART_PARAGRAPH_PAUSE_MS / 1000;
 
 export class SmartParagraphSettingsModal extends Modal {
   private draft: SmartParagraphPauseSettings;
-  private lineBreakInputEl: HTMLInputElement | null = null;
-  private paragraphInputEl: HTMLInputElement | null = null;
 
   constructor(
     app: App,
@@ -39,20 +37,13 @@ export class SmartParagraphSettingsModal extends Modal {
 
   override onClose(): void {
     this.contentEl.empty();
-    this.lineBreakInputEl = null;
-    this.paragraphInputEl = null;
   }
 
   private render(): void {
     this.contentEl.empty();
-    this.lineBreakInputEl = null;
-    this.paragraphInputEl = null;
 
     this.addSecondsSetting({
       desc: `Seconds before a single line break (${MIN_PAUSE_SECONDS}-${MAX_PAUSE_SECONDS}).`,
-      input: (inputEl) => {
-        this.lineBreakInputEl = inputEl;
-      },
       name: 'Line break pause',
       onChange: (value) => {
         this.draft = { ...this.draft, lineBreakPauseMs: value };
@@ -62,9 +53,6 @@ export class SmartParagraphSettingsModal extends Modal {
 
     this.addSecondsSetting({
       desc: `Seconds before a paragraph break (${MIN_PAUSE_SECONDS}-${MAX_PAUSE_SECONDS}).`,
-      input: (inputEl) => {
-        this.paragraphInputEl = inputEl;
-      },
       name: 'Paragraph pause',
       onChange: (value) => {
         this.draft = { ...this.draft, paragraphPauseMs: value };
@@ -79,7 +67,7 @@ export class SmartParagraphSettingsModal extends Modal {
             lineBreakPauseMs: DEFAULT_PLUGIN_SETTINGS.smartParagraphLineBreakPauseMs,
             paragraphPauseMs: DEFAULT_PLUGIN_SETTINGS.smartParagraphParagraphPauseMs,
           };
-          this.updateInputValues();
+          this.render();
         });
       })
       .addButton((button) => {
@@ -99,7 +87,6 @@ export class SmartParagraphSettingsModal extends Modal {
 
   private addSecondsSetting(options: {
     desc: string;
-    input: (inputEl: HTMLInputElement) => void;
     name: string;
     onChange: (value: number) => void;
     value: number;
@@ -113,7 +100,6 @@ export class SmartParagraphSettingsModal extends Modal {
         text.inputEl.max = String(MAX_PAUSE_SECONDS);
         text.inputEl.step = '0.1';
         text.setValue(formatSeconds(options.value));
-        options.input(text.inputEl);
         text.onChange((value) => {
           const pauseMs = parseSecondsToMs(value);
           if (pauseMs === null) return;
@@ -122,25 +108,14 @@ export class SmartParagraphSettingsModal extends Modal {
       });
   }
 
-  private updateInputValues(): void {
-    if (this.lineBreakInputEl !== null) {
-      this.lineBreakInputEl.value = formatSeconds(this.draft.lineBreakPauseMs);
-    }
-    if (this.paragraphInputEl !== null) {
-      this.paragraphInputEl.value = formatSeconds(this.draft.paragraphPauseMs);
-    }
-  }
-
   private async handleSave(): Promise<void> {
-    const normalizedSettings = resolvePluginSettings({
-      ...this.deps.getSettings(),
-      smartParagraphLineBreakPauseMs: this.draft.lineBreakPauseMs,
-      smartParagraphParagraphPauseMs: this.draft.paragraphPauseMs,
-    });
+    const normalized = normalizeSmartParagraphPauseSettings(this.draft);
 
-    await this.deps.saveSettings(normalizedSettings);
-    this.draft = draftFromSettings(normalizedSettings);
-    this.updateInputValues();
+    await this.deps.saveSettings({
+      ...this.deps.getSettings(),
+      smartParagraphLineBreakPauseMs: normalized.lineBreakPauseMs,
+      smartParagraphParagraphPauseMs: normalized.paragraphPauseMs,
+    });
     this.deps.onSave?.();
     this.close();
   }
@@ -168,5 +143,5 @@ function parseSecondsToMs(value: string): number | null {
 }
 
 function formatSeconds(milliseconds: number): string {
-  return Number((milliseconds / 1000).toFixed(3)).toString();
+  return (milliseconds / 1000).toString();
 }

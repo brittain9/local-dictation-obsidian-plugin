@@ -1,11 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
-import {
-  buildSpeakerSpans,
-  formatLandmark,
-  SMART_PARAGRAPH_PAUSE_MS,
-  TranscriptRenderer,
-} from '../src/transcript/renderer';
+import { DEFAULT_SMART_PARAGRAPH_PAUSE_MS } from '../src/settings/plugin-settings';
+import { buildSpeakerSpans, formatLandmark, TranscriptRenderer } from '../src/transcript/renderer';
 import {
   DEFAULT_SESSION_START_MS,
   DEFAULT_SPARSE_INTERVAL_MS,
@@ -79,7 +75,7 @@ describe('TranscriptRenderer', () => {
 
     planAndCommit(renderer, { text: 'first', utteranceStartMsInSession: 0 });
     const second = planAndCommit(renderer, {
-      pauseMsBeforeUtterance: SMART_PARAGRAPH_PAUSE_MS,
+      pauseMsBeforeUtterance: DEFAULT_SMART_PARAGRAPH_PAUSE_MS,
       text: 'later',
       utteranceStartMsInSession: DEFAULT_SPARSE_INTERVAL_MS,
     });
@@ -122,7 +118,7 @@ describe('TranscriptRenderer', () => {
       planAndCommit(
         renderer,
         {
-          pauseMsBeforeUtterance: SMART_PARAGRAPH_PAUSE_MS - 1,
+          pauseMsBeforeUtterance: DEFAULT_SMART_PARAGRAPH_PAUSE_MS - 1,
           text: 'short',
         },
         't',
@@ -130,7 +126,7 @@ describe('TranscriptRenderer', () => {
     ).toBe(' short');
     expect(
       planAndCommit(renderer, {
-        pauseMsBeforeUtterance: SMART_PARAGRAPH_PAUSE_MS,
+        pauseMsBeforeUtterance: DEFAULT_SMART_PARAGRAPH_PAUSE_MS,
         text: 'long',
       }).projectedText,
     ).toBe('\n\nlong');
@@ -138,8 +134,7 @@ describe('TranscriptRenderer', () => {
 
   it('uses custom smart paragraph line and paragraph thresholds', () => {
     const renderer = new TranscriptRenderer({
-      smartParagraphLineBreakPauseMs: 1000,
-      smartParagraphParagraphPauseMs: 3000,
+      smartParagraphPauses: { lineBreakPauseMs: 1000, paragraphPauseMs: 3000 },
       timestamps: timestamps(),
       transcriptFormatting: 'smart',
     });

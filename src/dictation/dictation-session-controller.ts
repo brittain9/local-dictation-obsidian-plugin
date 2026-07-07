@@ -16,7 +16,7 @@ import { type LlmCleanupFailure, type LlmProviderId, ProviderError } from '../ll
 import type { LlmRouter } from '../llm/router';
 import type { Session } from '../session/session';
 import type { StageId, StageOutcome, TranscriptRevision } from '../session/session-journal';
-import type { PluginSettings } from '../settings/plugin-settings';
+import type { PluginSettings, SmartParagraphPauseSettings } from '../settings/plugin-settings';
 import { formatErrorMessage } from '../shared/format-utils';
 import type { PluginLogger } from '../shared/plugin-logger';
 import { truncateLeadingText } from '../shared/text-truncation';
@@ -81,8 +81,7 @@ interface ActiveSessionSnapshot {
   modelSelection: NonNullable<PluginSettings['selectedModel']>;
   modelStorePathOverride: string;
   sessionStartUnixMs: number;
-  smartParagraphLineBreakPauseMs: PluginSettings['smartParagraphLineBreakPauseMs'];
-  smartParagraphParagraphPauseMs: PluginSettings['smartParagraphParagraphPauseMs'];
+  smartParagraphPauses: SmartParagraphPauseSettings;
   speakingStyle: PluginSettings['speakingStyle'];
   timestamps: TranscriptRenderOptions['timestamps'];
   transcriptFormatting: PluginSettings['transcriptFormatting'];
@@ -263,8 +262,7 @@ export class DictationSessionController {
         },
         placement: { anchor: snapshot.dictationAnchor },
         rendererOptions: {
-          smartParagraphLineBreakPauseMs: snapshot.smartParagraphLineBreakPauseMs,
-          smartParagraphParagraphPauseMs: snapshot.smartParagraphParagraphPauseMs,
+          smartParagraphPauses: snapshot.smartParagraphPauses,
           timestamps: snapshot.timestamps,
           transcriptFormatting: snapshot.transcriptFormatting,
         },
@@ -1250,8 +1248,10 @@ function createSessionSnapshot(
     modelSelection: selectedModel,
     modelStorePathOverride: settings.modelStorePathOverride,
     sessionStartUnixMs,
-    smartParagraphLineBreakPauseMs: settings.smartParagraphLineBreakPauseMs,
-    smartParagraphParagraphPauseMs: settings.smartParagraphParagraphPauseMs,
+    smartParagraphPauses: {
+      lineBreakPauseMs: settings.smartParagraphLineBreakPauseMs,
+      paragraphPauseMs: settings.smartParagraphParagraphPauseMs,
+    },
     speakingStyle: settings.speakingStyle,
     timestamps: {
       clock: settings.timestampClock,
