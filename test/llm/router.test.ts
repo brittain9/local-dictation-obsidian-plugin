@@ -141,6 +141,39 @@ describe('createLlmRouter', () => {
     expect(result.providerId).toBe(expected);
   });
 
+  it('routes auto on transcript length, not the full prompt (note context must not escalate a short utterance)', async () => {
+    const { router } = routerWithSpy(
+      settings({ llmRemoteThresholdChars: 100, llmRouting: 'auto' }),
+    );
+
+    // The dictated transcript is short, but the rendered userMessage embeds a
+    // large note-context block that alone would cross the threshold. Routing
+    // must stay local — #194: Auto must only escalate large *transcripts*.
+    const result = await router.cleanup({
+      prompt: 'Clean it.',
+      temperature: 0.2,
+      transcriptChars: 20,
+      userMessage: `<note_context>${'x'.repeat(1_000)}</note_context>short transcript`,
+    });
+
+    expect(result.providerId).toBe('ollama');
+  });
+
+  it('routes auto to remote when the transcript itself crosses the threshold, even with a small prompt', async () => {
+    const { router } = routerWithSpy(
+      settings({ llmRemoteThresholdChars: 100, llmRouting: 'auto' }),
+    );
+
+    const result = await router.cleanup({
+      prompt: 'Clean it.',
+      temperature: 0.2,
+      transcriptChars: 200,
+      userMessage: 'x'.repeat(200),
+    });
+
+    expect(result.providerId).toBe('openrouter');
+  });
+
   it('throws model_not_configured when the routed provider has no configured model', async () => {
     const { router } = routerWithSpy(
       settings({ llmProviderModels: { ollama: '', openrouter: '' }, llmRouting: 'local' }),

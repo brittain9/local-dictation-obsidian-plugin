@@ -14,9 +14,11 @@ export interface LlmRouterCleanupOptions {
   abortSignal?: AbortSignal;
   prompt: string;
   temperature: number;
-  // Length of the dictated text being transformed. The output cap scales with
-  // this, not with `userMessage`, which also carries note/prior context that
-  // the output should never approach in size.
+  // Length of the dictated text being transformed, as opposed to
+  // `userMessage`, which also carries note/prior context. This drives both
+  // the output-token cap and the Auto routing decision below — routing on
+  // `userMessage` would leak note context to OpenRouter for short
+  // dictations that merely have a large note attached (#194).
   transcriptChars: number;
   userMessage: string;
 }
@@ -29,7 +31,7 @@ export interface LlmRouterCleanupResult {
 
 export interface LlmRouter {
   cleanup(options: LlmRouterCleanupOptions): Promise<LlmRouterCleanupResult>;
-  selectProviderId(userMessageChars: number): LlmProviderId;
+  selectProviderId(transcriptChars: number): LlmProviderId;
 }
 
 // Routes each cleanup call to a provider by message size (see
@@ -48,10 +50,10 @@ export function createLlmRouter(
   // routing mode, auto threshold, model strings — deliberately stays frozen from
   // the session-start snapshot so a running session behaves predictably;
   // mid-session settings edits apply from the next session.
-  const selectProviderId = (userMessageChars: number): LlmProviderId =>
+  const selectProviderId = (transcriptChars: number): LlmProviderId =>
     selectRouteProviderId(
       isRemoteFeaturesEnabled() ? settings.llmRouting : 'local',
-      userMessageChars,
+      transcriptChars,
       settings.llmRemoteThresholdChars,
     );
 
@@ -70,7 +72,7 @@ export function createLlmRouter(
 
   return {
     async cleanup(options) {
-      const providerId = selectProviderId(options.userMessage.length);
+      const providerId = selectProviderId(options.transcriptChars);
       const model = getProviderModel(settings, providerId);
       if (model.length === 0) {
         const error = new ProviderError(

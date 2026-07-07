@@ -732,7 +732,7 @@ export class DictationSessionController {
       this.buildProviderCleanupContextSources(entry),
       rawText,
     );
-    const providerId = entry.snapshot.llmRouter.selectProviderId(userMessage.length);
+    const providerId = entry.snapshot.llmRouter.selectProviderId(rawText.length);
     const startedAt = Date.now();
     const abortController = new AbortController();
     entry.cleanupAbortControllers.add(abortController);
@@ -938,7 +938,7 @@ export class DictationSessionController {
         ? (entry.session.readNoteText(entry.snapshot.llmPostprocessNoteContextChars)?.text ?? null)
         : null;
     const userMessage = renderBatchProviderUserMessage(noteContext, transcriptText);
-    const providerId = entry.snapshot.llmRouter.selectProviderId(userMessage.length);
+    const providerId = entry.snapshot.llmRouter.selectProviderId(transcriptText.length);
 
     // The flashing processing range is now the "working" indicator, so the
     // cursor steps aside for the batch rewrite.
