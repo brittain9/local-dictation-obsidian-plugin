@@ -7,9 +7,9 @@
 //! libpulse is loaded at runtime with `dlopen` rather than linked, so a machine
 //! without it still runs the sidecar (microphone dictation keeps working) and
 //! only system-audio capture reports [`SystemAudioError::Capture`]. We ask the
-//! server for 16 kHz mono S16LE directly and let it resample, so each blocking
-//! read yields exactly one protocol frame and no client-side resampling is
-//! needed.
+//! server for 16 kHz mono S16LE directly and let it resample. Pulse/PipeWire's
+//! default record fragment can be multiple seconds, so we request one protocol
+//! frame per fragment to keep VAD and transcription fed in real time.
 
 use std::ffi::{c_char, c_int, c_void};
 use std::ptr;
@@ -43,9 +43,23 @@ struct PaSampleSpec {
     channels: u8,
 }
 
+/// `pa_buffer_attr` from `<pulse/def.h>`.
+#[repr(C)]
+#[allow(dead_code)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct PaBufferAttr {
+    maxlength: u32,
+    tlength: u32,
+    prebuf: u32,
+    minreq: u32,
+    fragsize: u32,
+}
+
+const PA_BUFFER_ATTR_UNSPECIFIED: u32 = u32::MAX;
+
 // The three `pa_simple` entry points we use. `pa_simple` itself and the
 // channel-map / buffer-attr arguments are opaque to us (NULL is passed for the
-// latter two), so they are typed as `c_void`.
+// channel-map argument), so the map is typed as `c_void`.
 type PaSimpleNew = unsafe extern "C" fn(
     server: *const c_char,
     name: *const c_char,
@@ -54,7 +68,7 @@ type PaSimpleNew = unsafe extern "C" fn(
     stream_name: *const c_char,
     ss: *const PaSampleSpec,
     map: *const c_void,
-    attr: *const c_void,
+    attr: *const PaBufferAttr,
     error: *mut c_int,
 ) -> *mut c_void;
 
@@ -127,6 +141,7 @@ fn capture_thread(
         rate: PCM_SAMPLE_RATE_HZ as u32,
         channels: 1,
     };
+    let attr = capture_buffer_attr();
     let mut error: c_int = 0;
     // `dev = "@DEFAULT_MONITOR@"` resolves to the monitor of the current default
     // sink on both PulseAudio and pipewire-pulse — the loopback of this
@@ -140,7 +155,7 @@ fn capture_thread(
             c"system audio".as_ptr(),
             &ss,
             ptr::null(),
-            ptr::null(),
+            &attr,
             &mut error,
         )
     };
@@ -157,9 +172,9 @@ fn capture_thread(
         return;
     }
 
-    // A connected monitor recording keeps the sink producing samples (silence
-    // when nothing plays), so each blocking read returns ~one frame (20 ms) and
-    // the stop flag is observed promptly between reads.
+    // `attr.fragsize` requests one 20 ms protocol frame per server fragment, so
+    // each blocking read returns promptly instead of waiting for the server's
+    // default multi-second capture fragment.
     while !stop.load(Ordering::Relaxed) {
         let mut frame_bytes = vec![0_u8; PCM_BYTES_PER_FRAME];
         let mut error: c_int = 0;
@@ -186,6 +201,16 @@ fn capture_thread(
     drop(lib);
 }
 
+fn capture_buffer_attr() -> PaBufferAttr {
+    PaBufferAttr {
+        maxlength: PA_BUFFER_ATTR_UNSPECIFIED,
+        tlength: PA_BUFFER_ATTR_UNSPECIFIED,
+        prebuf: PA_BUFFER_ATTR_UNSPECIFIED,
+        minreq: PA_BUFFER_ATTR_UNSPECIFIED,
+        fragsize: PCM_BYTES_PER_FRAME as u32,
+    }
+}
+
 /// Resolve the `pa_simple` entry points from `lib`. The returned function
 /// pointers borrow nothing, so the caller must keep `lib` loaded for as long as
 /// it calls them.
@@ -207,4 +232,21 @@ fn unavailable(details: String) -> SystemAudioError {
         "PulseAudio/PipeWire not available ({details}); \
          route this computer's output through a virtual device instead"
     ))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{PA_BUFFER_ATTR_UNSPECIFIED, capture_buffer_attr};
+    use crate::protocol::PCM_BYTES_PER_FRAME;
+
+    #[test]
+    fn capture_buffer_attr_requests_one_protocol_frame_per_fragment() {
+        let attr = capture_buffer_attr();
+
+        assert_eq!(attr.maxlength, PA_BUFFER_ATTR_UNSPECIFIED);
+        assert_eq!(attr.tlength, PA_BUFFER_ATTR_UNSPECIFIED);
+        assert_eq!(attr.prebuf, PA_BUFFER_ATTR_UNSPECIFIED);
+        assert_eq!(attr.minreq, PA_BUFFER_ATTR_UNSPECIFIED);
+        assert_eq!(attr.fragsize, PCM_BYTES_PER_FRAME as u32);
+    }
 }
