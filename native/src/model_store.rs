@@ -1,4 +1,4 @@
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use anyhow::{Context, Result, anyhow, ensure};
@@ -103,6 +103,24 @@ pub fn read_install_metadata(install_dir: &Path) -> Result<InstallMetadata> {
         .with_context(|| format!("failed to parse {}", metadata_path.display()))
 }
 
+/// Rejects model ids that are not safe to use as a single path component:
+/// empty, `.`/`..`, containing a path separator, or otherwise absolute.
+///
+/// `model_id` arrives over the wire with no other validation (see
+/// `Command::RemoveModel`/`Command::InstallModel`), so every path built from
+/// it must be checked here rather than relying on callers to do it.
+fn validate_path_component(model_id: &str) -> Result<()> {
+    let mut components = Path::new(model_id).components();
+    let is_single_normal_component = !model_id.contains('/')
+        && !model_id.contains('\\')
+        && !model_id.contains(':')
+        && matches!(components.next(), Some(Component::Normal(_)))
+        && components.next().is_none();
+
+    ensure!(is_single_normal_component, "invalid model id: {model_id:?}");
+    Ok(())
+}
+
 pub fn resolve_catalog_model_runtime_path(
     catalog: &ModelCatalog,
     model_store_root: &Path,
@@ -110,7 +128,7 @@ pub fn resolve_catalog_model_runtime_path(
     family_id: ModelFamilyId,
     model_id: &str,
 ) -> Result<PathBuf> {
-    let install_dir = resolve_model_install_dir(model_store_root, runtime_id, family_id, model_id);
+    let install_dir = resolve_model_install_dir(model_store_root, runtime_id, family_id, model_id)?;
     let metadata = read_install_metadata(&install_dir)?;
     ensure!(
         metadata.runtime_id == runtime_id
@@ -162,11 +180,13 @@ pub fn resolve_model_install_dir(
     runtime_id: RuntimeId,
     family_id: ModelFamilyId,
     model_id: &str,
-) -> PathBuf {
-    model_store_root
+) -> Result<PathBuf> {
+    validate_path_component(model_id)?;
+
+    Ok(model_store_root
         .join(runtime_id.as_str())
         .join(family_id.as_str())
-        .join(model_id)
+        .join(model_id))
 }
 
 pub fn resolve_model_store_info(model_store_path_override: Option<&str>) -> Result<ModelStoreInfo> {
@@ -207,7 +227,7 @@ pub fn remove_installed_model(
     family_id: ModelFamilyId,
     model_id: &str,
 ) -> Result<bool> {
-    let install_dir = resolve_model_install_dir(model_store_root, runtime_id, family_id, model_id);
+    let install_dir = resolve_model_install_dir(model_store_root, runtime_id, family_id, model_id)?;
 
     if !install_dir.exists() {
         return Ok(false);
@@ -322,8 +342,9 @@ mod tests {
     use std::fs::{create_dir_all, write};
 
     use super::{
-        InstallMetadata, InstalledArtifact, read_install_metadata, resolve_model_store_info,
-        scan_installed_models, write_install_metadata,
+        InstallMetadata, InstalledArtifact, read_install_metadata, remove_installed_model,
+        resolve_model_install_dir, resolve_model_store_info, scan_installed_models,
+        write_install_metadata,
     };
     use crate::catalog::{
         ArtifactRole, CatalogModel, ModelArtifact, ModelCatalog, ModelCollection,
@@ -390,6 +411,74 @@ mod tests {
             scan_installed_models(&sample_catalog(), &temp_dir).expect("scan should succeed");
 
         assert!(installed.is_empty());
+    }
+
+    #[test]
+    fn resolve_model_install_dir_rejects_unsafe_model_ids() {
+        let store_root = tempfile_dir("resolve-unsafe");
+
+        for unsafe_model_id in ["../x", "a/b", "a\\b", "/etc", "..", ".", ""] {
+            let result = resolve_model_install_dir(
+                &store_root,
+                RuntimeId::WhisperCpp,
+                ModelFamilyId::Whisper,
+                unsafe_model_id,
+            );
+            assert!(
+                result.is_err(),
+                "expected {unsafe_model_id:?} to be rejected"
+            );
+        }
+    }
+
+    #[test]
+    fn resolve_model_install_dir_accepts_plain_model_id() {
+        let store_root = tempfile_dir("resolve-safe");
+
+        let install_dir = resolve_model_install_dir(
+            &store_root,
+            RuntimeId::WhisperCpp,
+            ModelFamilyId::Whisper,
+            "small",
+        )
+        .expect("plain model id should resolve");
+
+        assert_eq!(
+            install_dir,
+            store_root.join("whisper_cpp").join("whisper").join("small")
+        );
+    }
+
+    #[test]
+    fn remove_installed_model_rejects_path_traversal_and_does_not_delete_outside_store() {
+        let workspace = tempfile_dir("remove-traversal-workspace");
+        let store_root = workspace.join("store");
+        create_dir_all(&store_root).expect("store root should create");
+
+        // A sibling directory outside the model store that a traversal
+        // attempt could otherwise reach and delete.
+        let outside_dir = workspace.join("Documents");
+        create_dir_all(&outside_dir).expect("outside dir should create");
+        write(outside_dir.join("keep.txt"), b"do not delete").expect("marker file should write");
+
+        for unsafe_model_id in ["../../Documents", "../x", "a/b", "..", ".", ""] {
+            let result = remove_installed_model(
+                &store_root,
+                RuntimeId::WhisperCpp,
+                ModelFamilyId::Whisper,
+                unsafe_model_id,
+            );
+            assert!(
+                result.is_err(),
+                "expected {unsafe_model_id:?} to be rejected"
+            );
+        }
+
+        assert!(outside_dir.is_dir(), "outside directory should survive");
+        assert!(
+            outside_dir.join("keep.txt").is_file(),
+            "marker file should survive"
+        );
     }
 
     fn sample_catalog() -> ModelCatalog {
