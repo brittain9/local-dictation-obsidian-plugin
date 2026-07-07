@@ -79,13 +79,7 @@ export class LocalDictationView extends ItemView {
     this.focusRefreshController = new FocusRefreshController({
       now: () => window.performance.now(),
       refreshPresets: () => this.dependencies.synchronizePresets(),
-      refreshProviders: () => {
-        const settings = this.dependencies.getSettings();
-        if (!settings.llmFeaturesEnabled || settings.llmPostprocessMode === 'off') {
-          return Promise.resolve();
-        }
-        return this.routingControls.refreshActiveProviders({ forceLocal: true });
-      },
+      refreshProviders: () => this.refreshActiveProvidersIfEnabled({ forceLocal: true }),
     });
     this.routingControls.setInputTracker((element) => {
       this.trackInputFocus(element);
@@ -111,10 +105,20 @@ export class LocalDictationView extends ItemView {
       this.dependencies.subscribeLlmCleanupFailure?.(() => {
         this.refresh();
       }) ?? null;
-    void this.routingControls.refreshActiveProviders();
+    void this.refreshActiveProvidersIfEnabled();
     this.registerDomEvent(this.contentEl.win, 'focus', () => {
       this.focusRefreshController.request();
     });
+  }
+
+  // Skip the network probe entirely when LLM transform is off, so opening the
+  // sidebar doesn't wake Ollama or hit OpenRouter for a feature the user disabled.
+  private refreshActiveProvidersIfEnabled(options?: { forceLocal?: boolean }): Promise<void> {
+    const settings = this.dependencies.getSettings();
+    if (!settings.llmFeaturesEnabled || settings.llmPostprocessMode === 'off') {
+      return Promise.resolve();
+    }
+    return this.routingControls.refreshActiveProviders(options);
   }
 
   override async onClose(): Promise<void> {
