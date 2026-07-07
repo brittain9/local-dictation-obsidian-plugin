@@ -18,8 +18,10 @@ import {
 import { isLlmRouting, type LlmProviderModels, type LlmRouting } from '../llm/provider';
 import {
   isSelectedModel,
+  isSelectedModelCapabilitiesSnapshot,
   normalizeSelectedModel,
   type SelectedModel,
+  type SelectedModelCapabilitiesSnapshot,
 } from '../models/model-management-types';
 import { isRecord } from '../shared/type-guards';
 import {
@@ -128,6 +130,10 @@ export interface PluginSettings {
   modelStorePathOverride: string;
   schemaVersion: 2;
   selectedModel: SelectedModel | null;
+  // Last-known-good capabilities for `selectedModel`, captured on a successful
+  // probe. Lets startup skip re-probing the sidecar (which forces a full
+  // model load) when the cached selection still matches.
+  selectedModelCapabilitiesSnapshot: SelectedModelCapabilitiesSnapshot | null;
   setupCompletedAt: string | null;
   sidecarPathOverride: string;
   sidecarRequestTimeoutSeconds: number;
@@ -178,6 +184,7 @@ export const DEFAULT_PLUGIN_SETTINGS: PluginSettings = {
   modelStorePathOverride: '',
   schemaVersion: 2,
   selectedModel: null,
+  selectedModelCapabilitiesSnapshot: null,
   setupCompletedAt: null,
   sidecarPathOverride: '',
   sidecarRequestTimeoutSeconds: 300,
@@ -299,6 +306,9 @@ export function resolvePluginSettings(data: unknown): PluginSettings {
     // Bump `schemaVersion` and add a migration step when renaming a key or changing default semantics.
     schemaVersion: 2,
     selectedModel: readSelectedModel(raw.selectedModel),
+    selectedModelCapabilitiesSnapshot: readSelectedModelCapabilitiesSnapshot(
+      raw.selectedModelCapabilitiesSnapshot,
+    ),
     setupCompletedAt: readSetupCompletedAt(raw.setupCompletedAt),
     sidecarPathOverride: readString(
       raw.sidecarPathOverride,
@@ -714,6 +724,19 @@ function readSelectedModel(selectedModel: unknown): SelectedModel | null {
   }
 
   return DEFAULT_PLUGIN_SETTINGS.selectedModel;
+}
+
+function readSelectedModelCapabilitiesSnapshot(
+  value: unknown,
+): SelectedModelCapabilitiesSnapshot | null {
+  if (!isSelectedModelCapabilitiesSnapshot(value)) {
+    return DEFAULT_PLUGIN_SETTINGS.selectedModelCapabilitiesSnapshot;
+  }
+
+  return {
+    capabilities: value.capabilities,
+    selection: normalizeSelectedModel(value.selection),
+  };
 }
 
 function readListeningMode(value: unknown): ListeningMode {

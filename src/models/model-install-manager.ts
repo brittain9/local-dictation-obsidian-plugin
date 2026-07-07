@@ -198,8 +198,24 @@ export class ModelInstallManager {
 
     const persistedSelection = this.deps.getSettings().selectedModel;
     if (persistedSelection !== null) {
-      this.selectedModelCapabilities = { selection: persistedSelection, status: 'pending' };
-      void this.refreshSelectedCapabilities(persistedSelection);
+      const snapshot = this.deps.getSettings().selectedModelCapabilitiesSnapshot;
+      if (snapshot !== null && selectedModelEquals(snapshot.selection, persistedSelection)) {
+        // Trust the capabilities captured the last time this exact selection
+        // was probed successfully (on select() or install completion)
+        // instead of re-probing the sidecar on every plugin startup —
+        // probing forces a full model load just to populate UI badges
+        // (issue #195). A stale snapshot only affects those badges; a
+        // genuinely broken model still fails loudly the moment dictation
+        // starts.
+        this.selectedModelCapabilities = {
+          capabilities: snapshot.capabilities,
+          selection: persistedSelection,
+          status: 'ready',
+        };
+      } else {
+        this.selectedModelCapabilities = { selection: persistedSelection, status: 'pending' };
+        void this.refreshSelectedCapabilities(persistedSelection);
+      }
     }
 
     this.notify();
@@ -361,6 +377,10 @@ export class ModelInstallManager {
     });
 
     if (!probeResult.available) {
+      // The user explicitly (re-)probed this exact selection and it's
+      // confirmed broken now — drop any cached "ready" snapshot for it so a
+      // future startup doesn't trust stale, now-incorrect capabilities.
+      await this.invalidateCapabilitiesSnapshot(selection);
       throw new Error(createProbeFailureMessage(probeResult));
     }
 
@@ -373,7 +393,7 @@ export class ModelInstallManager {
       }`,
     );
     await this.updateSettings({ selectedModel: selection });
-    this.applyProbeResultToCapabilities(selection, probeResult);
+    await this.applyProbeResultToCapabilities(selection, probeResult);
     return probeResult;
   }
 
@@ -426,7 +446,7 @@ export class ModelInstallManager {
 
   async clearSelection(): Promise<void> {
     this.deps.logger?.debug('model', 'cleared selected model');
-    await this.updateSettings({ selectedModel: null });
+    await this.updateSettings({ selectedModel: null, selectedModelCapabilitiesSnapshot: null });
     this.selectedModelCapabilities = { status: 'none' };
     this.notify();
   }
@@ -457,7 +477,7 @@ export class ModelInstallManager {
         modelSelection: selection,
         ...createModelStoreOverridePayload(this.deps.getSettings().modelStorePathOverride),
       });
-      this.applyProbeResultToCapabilities(selection, probeResult);
+      await this.applyProbeResultToCapabilities(selection, probeResult);
     } catch (error) {
       this.deps.logger?.warn(
         'model',
@@ -475,10 +495,10 @@ export class ModelInstallManager {
     }
   }
 
-  private applyProbeResultToCapabilities(
+  private async applyProbeResultToCapabilities(
     selection: SelectedModel,
     probeResult: ModelProbeResultEvent,
-  ): void {
+  ): Promise<void> {
     const current = this.deps.getSettings().selectedModel;
     if (current === null || !selectedModelEquals(current, selection)) {
       return;
@@ -490,6 +510,15 @@ export class ModelInstallManager {
         selection,
         status: 'ready',
       };
+      // Cache the result so a future plugin startup can trust it instead of
+      // re-probing the sidecar, which would force a full model load just to
+      // populate UI badges (issue #195).
+      await this.updateSettings({
+        selectedModelCapabilitiesSnapshot: {
+          capabilities: probeResult.mergedCapabilities,
+          selection,
+        },
+      });
     } else if (probeResult.status === 'missing' || probeResult.status === 'invalid') {
       this.selectedModelCapabilities = {
         details: createProbeFailureMessage(probeResult),
@@ -506,6 +535,13 @@ export class ModelInstallManager {
     }
 
     this.notify();
+  }
+
+  private async invalidateCapabilitiesSnapshot(selection: SelectedModel): Promise<void> {
+    const snapshot = this.deps.getSettings().selectedModelCapabilitiesSnapshot;
+    if (snapshot !== null && selectedModelEquals(snapshot.selection, selection)) {
+      await this.updateSettings({ selectedModelCapabilitiesSnapshot: null });
+    }
   }
 
   private handleSidecarEvent(event: SidecarEvent): void {
