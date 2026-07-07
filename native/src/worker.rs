@@ -234,11 +234,37 @@ fn worker_main(
                 utterance_id,
             } => {
                 let now_ms = worker_started_at.elapsed().as_millis() as u64;
-                if let Some(session) = sessions.get_mut(&session_id)
-                    && let Err(error) =
+                if let Some(session) = sessions.get_mut(&session_id) {
+                    let result = panic::catch_unwind(AssertUnwindSafe(|| {
                         begin_streaming_utterance(session, utterance, utterance_id, now_ms)
-                {
-                    send_worker_error(&event_tx, session_id, Some(utterance_id), false, error);
+                    }));
+                    match result {
+                        Ok(Ok(())) => {}
+                        Ok(Err(error)) => {
+                            send_worker_error(
+                                &event_tx,
+                                session_id,
+                                Some(utterance_id),
+                                false,
+                                error,
+                            );
+                        }
+                        Err(payload) => {
+                            clear_streaming_utterance(session);
+                            let message = format_panic_message(
+                                payload.as_ref(),
+                                "Worker thread panicked beginning a streaming utterance",
+                            );
+                            let _ = event_tx.send(WorkerEvent::SessionError {
+                                code: "worker_panic".to_string(),
+                                details: None,
+                                finalizes_utterance: false,
+                                message,
+                                session_id,
+                                utterance_id: Some(utterance_id),
+                            });
+                        }
+                    }
                 }
             }
             WorkerCommand::BeginSession(metadata) => {
@@ -315,18 +341,45 @@ fn worker_main(
                 utterance_id,
             } => {
                 let now_ms = worker_started_at.elapsed().as_millis() as u64;
-                if let Some(session) = sessions.get_mut(&session_id)
-                    && let Err(error) = stream_audio(
-                        session,
-                        &event_tx,
-                        &tokio_runtime,
-                        &session_id,
-                        utterance_id,
-                        &samples,
-                        now_ms,
-                    )
-                {
-                    send_worker_error(&event_tx, session_id, Some(utterance_id), false, error);
+                if let Some(session) = sessions.get_mut(&session_id) {
+                    let result = panic::catch_unwind(AssertUnwindSafe(|| {
+                        stream_audio(
+                            session,
+                            &event_tx,
+                            &tokio_runtime,
+                            &session_id,
+                            utterance_id,
+                            &samples,
+                            now_ms,
+                        )
+                    }));
+                    match result {
+                        Ok(Ok(())) => {}
+                        Ok(Err(error)) => {
+                            send_worker_error(
+                                &event_tx,
+                                session_id,
+                                Some(utterance_id),
+                                false,
+                                error,
+                            );
+                        }
+                        Err(payload) => {
+                            clear_streaming_utterance(session);
+                            let message = format_panic_message(
+                                payload.as_ref(),
+                                "Worker thread panicked streaming audio",
+                            );
+                            let _ = event_tx.send(WorkerEvent::SessionError {
+                                code: "worker_panic".to_string(),
+                                details: None,
+                                finalizes_utterance: false,
+                                message,
+                                session_id,
+                                utterance_id: Some(utterance_id),
+                            });
+                        }
+                    }
                 }
             }
             WorkerCommand::FinalizeStreamingUtterance {
@@ -334,17 +387,44 @@ fn worker_main(
                 utterance,
                 utterance_id,
             } => {
-                if let Some(session) = sessions.get_mut(&session_id)
-                    && let Err(error) = finalize_streaming_utterance(
-                        session,
-                        &event_tx,
-                        &tokio_runtime,
-                        &session_id,
-                        utterance,
-                        utterance_id,
-                    )
-                {
-                    send_worker_error(&event_tx, session_id, Some(utterance_id), true, error);
+                if let Some(session) = sessions.get_mut(&session_id) {
+                    let result = panic::catch_unwind(AssertUnwindSafe(|| {
+                        finalize_streaming_utterance(
+                            session,
+                            &event_tx,
+                            &tokio_runtime,
+                            &session_id,
+                            utterance,
+                            utterance_id,
+                        )
+                    }));
+                    match result {
+                        Ok(Ok(())) => {}
+                        Ok(Err(error)) => {
+                            send_worker_error(
+                                &event_tx,
+                                session_id,
+                                Some(utterance_id),
+                                true,
+                                error,
+                            );
+                        }
+                        Err(payload) => {
+                            clear_streaming_utterance(session);
+                            let message = format_panic_message(
+                                payload.as_ref(),
+                                "Worker thread panicked finalizing a streaming utterance",
+                            );
+                            let _ = event_tx.send(WorkerEvent::SessionError {
+                                code: "worker_panic".to_string(),
+                                details: None,
+                                finalizes_utterance: true,
+                                message,
+                                session_id,
+                                utterance_id: Some(utterance_id),
+                            });
+                        }
+                    }
                 }
             }
             WorkerCommand::TranscribeUtterance {
@@ -457,6 +537,20 @@ fn worker_main(
                 }
             }
         }
+    }
+}
+
+/// Drop the session's open streaming utterance, if any, after a caught panic.
+/// A panic can leave the adapter's incremental decode state unknown, so the
+/// safe move is to end the affected utterance the same way a clean adapter
+/// `Err` already does for `finalize_streaming_utterance` (which takes the
+/// slot before calling the model at all): the next `StreamAudio` for this
+/// utterance id becomes a no-op, and the next `FinalizeStreamingUtterance`
+/// falls through to `model.reset_utterance()` + a full re-feed instead of
+/// trusting whatever the model was doing when it panicked.
+fn clear_streaming_utterance(session: &mut WorkerSession) {
+    if let SessionModel::Streaming { utterance, .. } = &mut session.model {
+        *utterance = None;
     }
 }
 
@@ -911,11 +1005,14 @@ fn assemble_transcript(input: TranscriptAssembly<'_>) -> Transcript {
 
 #[cfg(test)]
 mod tests {
+    use std::path::Path;
     use std::sync::Mutex;
+    use std::time::Duration;
 
     use super::*;
     use crate::audio_metadata::voiced_fraction;
     use crate::engine::capabilities::LanguageSupport;
+    use crate::engine::traits::ModelFamilyAdapter;
     use crate::protocol::{
         ListeningMode, TimestampGranularity, TimestampSource, TranscriptSegment,
     };
@@ -1155,6 +1252,341 @@ mod tests {
             outcome.streamed_samples + outcome.finalized_samples,
             "the finalized prefix is re-fed exactly once after the reset"
         );
+    }
+
+    // --- Panic-boundary coverage for the streaming worker commands ---
+    //
+    // These drive `worker_main` itself (not the per-command helpers directly)
+    // through a real channel and a real spawned thread, so a regression that
+    // removes a `catch_unwind` would surface as the thread dying: `handle.join()`
+    // returning `Err`, or the follow-up "ping" command never getting a reply.
+
+    /// A `StreamingModel` whose panics are scripted by call count, so a single
+    /// adapter can be reused across the begin/stream/finalize panic tests
+    /// without needing three near-duplicate fakes.
+    struct ScriptedPanicModel {
+        accept_calls: usize,
+        panic_on_accept_call: Option<usize>,
+        panic_on_finalize: bool,
+    }
+
+    impl StreamingModel for ScriptedPanicModel {
+        fn accept_audio(&mut self, _samples: &[i16]) -> Result<(), TranscriptionError> {
+            self.accept_calls += 1;
+            if self.panic_on_accept_call == Some(self.accept_calls) {
+                panic!("synthetic accept_audio panic");
+            }
+            Ok(())
+        }
+
+        fn partial(&mut self) -> Result<EngineTranscriptOutput, TranscriptionError> {
+            Ok(fixture_output("panic-test partial".to_string()))
+        }
+
+        fn finalize_utterance(&mut self) -> Result<EngineTranscriptOutput, TranscriptionError> {
+            if self.panic_on_finalize {
+                panic!("synthetic finalize_utterance panic");
+            }
+            Ok(fixture_output("panic-test final".to_string()))
+        }
+
+        fn reset_utterance(&mut self) {}
+    }
+
+    struct ScriptedPanicAdapter {
+        capabilities: ModelFamilyCapabilities,
+        panic_on_accept_call: Option<usize>,
+        panic_on_finalize: bool,
+    }
+
+    impl ModelFamilyAdapter for ScriptedPanicAdapter {
+        fn runtime_id(&self) -> RuntimeId {
+            RuntimeId::OnnxRuntime
+        }
+
+        fn family_id(&self) -> ModelFamilyId {
+            ModelFamilyId::Moonshine
+        }
+
+        fn capabilities(&self) -> &ModelFamilyCapabilities {
+            &self.capabilities
+        }
+
+        fn probe_model(&self, _path: &Path) -> Result<(), TranscriptionError> {
+            Ok(())
+        }
+
+        fn load(
+            &self,
+            _path: &Path,
+            _gpu: GpuConfig,
+        ) -> Result<Box<dyn LoadedModel>, TranscriptionError> {
+            Err(TranscriptionError::unsupported_engine(
+                "panic-test adapter is streaming-only".to_string(),
+            ))
+        }
+
+        fn load_streaming(
+            &self,
+            _path: &Path,
+            _gpu: GpuConfig,
+        ) -> Result<Box<dyn StreamingModel>, TranscriptionError> {
+            Ok(Box::new(ScriptedPanicModel {
+                accept_calls: 0,
+                panic_on_accept_call: self.panic_on_accept_call,
+                panic_on_finalize: self.panic_on_finalize,
+            }))
+        }
+    }
+
+    fn panic_streaming_registry(
+        panic_on_accept_call: Option<usize>,
+        panic_on_finalize: bool,
+    ) -> Arc<EngineRegistry> {
+        let mut registry = EngineRegistry::default();
+        registry.register_adapter(Box::new(ScriptedPanicAdapter {
+            capabilities: streaming_caps(),
+            panic_on_accept_call,
+            panic_on_finalize,
+        }));
+        Arc::new(registry)
+    }
+
+    fn spawn_test_worker(
+        registry: Arc<EngineRegistry>,
+    ) -> (
+        Sender<WorkerCommand>,
+        Receiver<WorkerEvent>,
+        thread::JoinHandle<()>,
+    ) {
+        let (command_tx, command_rx) = mpsc::channel();
+        let (event_tx, event_rx) = mpsc::channel();
+        let handle = thread::spawn(move || worker_main(command_rx, event_tx, registry));
+        (command_tx, event_rx, handle)
+    }
+
+    fn streaming_session_metadata(session_id: &str) -> SessionMetadata {
+        let (_cancel_tx, cancel_rx) = watch::channel(false);
+        SessionMetadata {
+            runtime_id: RuntimeId::OnnxRuntime,
+            family_id: ModelFamilyId::Moonshine,
+            gpu_config: GpuConfig::default(),
+            diarization_enabled: false,
+            language: "en".to_string(),
+            model_file_path: PathBuf::from("/tmp/frontend.ort"),
+            cancel_rx,
+            session_start_unix_ms: 0,
+            session_id: session_id.to_string(),
+            stage_enablement: StageEnablement::default(),
+        }
+    }
+
+    fn live_utterance_fixture() -> LiveUtterance {
+        LiveUtterance {
+            pause_ms_before_utterance: None,
+            samples: vec![0i16; 320],
+            utterance_index: 0,
+            vad_probabilities: Vec::new(),
+            voice_activity: voice_activity(),
+        }
+    }
+
+    fn finalized_utterance_fixture(samples: Vec<i16>) -> FinalizedUtterance {
+        FinalizedUtterance {
+            carries_audio_forward: false,
+            pause_ms_before_utterance: None,
+            samples,
+            utterance_index: 0,
+            vad_probabilities: Vec::new(),
+            voice_activity: voice_activity(),
+        }
+    }
+
+    /// Sends a `TranscribeUtterance` "ping" against a still-streaming session
+    /// and asserts a reply arrives. A streaming session always rejects a batch
+    /// transcription with a deterministic `unsupported_engine` error (see the
+    /// `TranscribeUtterance` dispatch arm), so this proves the worker thread
+    /// is alive and still servicing its command channel after a caught panic,
+    /// independent of whatever the panicking command left behind.
+    fn assert_worker_still_responds(
+        command_tx: &Sender<WorkerCommand>,
+        event_rx: &Receiver<WorkerEvent>,
+        session_id: &str,
+    ) {
+        let ping_id = Uuid::new_v4();
+        command_tx
+            .send(WorkerCommand::TranscribeUtterance {
+                context: None,
+                session_id: session_id.to_string(),
+                utterance: finalized_utterance_fixture(vec![0i16; 320]),
+                utterance_id: ping_id,
+            })
+            .expect("worker command channel should still accept commands");
+
+        match event_rx
+            .recv_timeout(Duration::from_secs(5))
+            .expect("worker thread should still respond after a caught panic")
+        {
+            WorkerEvent::SessionError {
+                code, utterance_id, ..
+            } => {
+                assert_eq!(code, "unsupported_engine");
+                assert_eq!(utterance_id, Some(ping_id));
+            }
+            other => panic!("expected a SessionError ping reply, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn begin_streaming_utterance_panic_is_caught_and_worker_survives() {
+        let registry = panic_streaming_registry(Some(1), false);
+        let (command_tx, event_rx, handle) = spawn_test_worker(registry);
+        let session_id = "panic-begin".to_string();
+
+        command_tx
+            .send(WorkerCommand::BeginSession(streaming_session_metadata(
+                &session_id,
+            )))
+            .unwrap();
+
+        let utterance_id = Uuid::new_v4();
+        command_tx
+            .send(WorkerCommand::BeginStreamingUtterance {
+                session_id: session_id.clone(),
+                utterance: live_utterance_fixture(),
+                utterance_id,
+            })
+            .unwrap();
+
+        match event_rx
+            .recv_timeout(Duration::from_secs(5))
+            .expect("panic should still emit a SessionError")
+        {
+            WorkerEvent::SessionError {
+                code,
+                finalizes_utterance,
+                utterance_id: reported_id,
+                ..
+            } => {
+                assert_eq!(code, "worker_panic");
+                assert!(!finalizes_utterance);
+                assert_eq!(reported_id, Some(utterance_id));
+            }
+            other => panic!("expected SessionError, got {other:?}"),
+        }
+
+        assert_worker_still_responds(&command_tx, &event_rx, &session_id);
+        drop(command_tx);
+        handle
+            .join()
+            .expect("worker thread must not die from a caught panic");
+    }
+
+    #[test]
+    fn stream_audio_panic_is_caught_and_worker_survives() {
+        // Call #1 is the accept_audio inside BeginStreamingUtterance (must
+        // succeed so an utterance is actually open); call #2 is the first
+        // StreamAudio, which panics.
+        let registry = panic_streaming_registry(Some(2), false);
+        let (command_tx, event_rx, handle) = spawn_test_worker(registry);
+        let session_id = "panic-stream".to_string();
+
+        command_tx
+            .send(WorkerCommand::BeginSession(streaming_session_metadata(
+                &session_id,
+            )))
+            .unwrap();
+
+        let utterance_id = Uuid::new_v4();
+        command_tx
+            .send(WorkerCommand::BeginStreamingUtterance {
+                session_id: session_id.clone(),
+                utterance: live_utterance_fixture(),
+                utterance_id,
+            })
+            .unwrap();
+        command_tx
+            .send(WorkerCommand::StreamAudio {
+                samples: vec![0i16; 320],
+                session_id: session_id.clone(),
+                utterance_id,
+            })
+            .unwrap();
+
+        match event_rx
+            .recv_timeout(Duration::from_secs(5))
+            .expect("panic should still emit a SessionError")
+        {
+            WorkerEvent::SessionError {
+                code,
+                finalizes_utterance,
+                utterance_id: reported_id,
+                ..
+            } => {
+                assert_eq!(code, "worker_panic");
+                assert!(!finalizes_utterance);
+                assert_eq!(reported_id, Some(utterance_id));
+            }
+            other => panic!("expected SessionError, got {other:?}"),
+        }
+
+        assert_worker_still_responds(&command_tx, &event_rx, &session_id);
+        drop(command_tx);
+        handle
+            .join()
+            .expect("worker thread must not die from a caught panic");
+    }
+
+    #[test]
+    fn finalize_streaming_utterance_panic_is_caught_and_worker_survives() {
+        let registry = panic_streaming_registry(None, true);
+        let (command_tx, event_rx, handle) = spawn_test_worker(registry);
+        let session_id = "panic-finalize".to_string();
+
+        command_tx
+            .send(WorkerCommand::BeginSession(streaming_session_metadata(
+                &session_id,
+            )))
+            .unwrap();
+
+        let utterance_id = Uuid::new_v4();
+        command_tx
+            .send(WorkerCommand::BeginStreamingUtterance {
+                session_id: session_id.clone(),
+                utterance: live_utterance_fixture(),
+                utterance_id,
+            })
+            .unwrap();
+        command_tx
+            .send(WorkerCommand::FinalizeStreamingUtterance {
+                session_id: session_id.clone(),
+                utterance: finalized_utterance_fixture(vec![0i16; 320]),
+                utterance_id,
+            })
+            .unwrap();
+
+        match event_rx
+            .recv_timeout(Duration::from_secs(5))
+            .expect("panic should still emit a SessionError")
+        {
+            WorkerEvent::SessionError {
+                code,
+                finalizes_utterance,
+                utterance_id: reported_id,
+                ..
+            } => {
+                assert_eq!(code, "worker_panic");
+                assert!(finalizes_utterance);
+                assert_eq!(reported_id, Some(utterance_id));
+            }
+            other => panic!("expected SessionError, got {other:?}"),
+        }
+
+        assert_worker_still_responds(&command_tx, &event_rx, &session_id);
+        drop(command_tx);
+        handle
+            .join()
+            .expect("worker thread must not die from a caught panic");
     }
 
     #[test]
