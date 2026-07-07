@@ -438,7 +438,18 @@ export class DictationSessionController {
     this.applyUiState('idle');
     this.resetQueueTier();
     if (this.dependencies.captureStream.isCapturing()) {
-      await this.dependencies.captureStream.stop();
+      // Capture teardown is best-effort: a rejection here (e.g. AudioContext.close()
+      // throwing) must not stop stopDictation/cancelSession from sending the
+      // sidecar stop/cancel command or disposing the local session afterward.
+      try {
+        await this.dependencies.captureStream.stop();
+      } catch (error) {
+        this.dependencies.logger?.warn(
+          'audio',
+          'failed to stop audio capture cleanly during teardown',
+          error,
+        );
+      }
     }
   }
 
