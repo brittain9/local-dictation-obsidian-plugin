@@ -8,6 +8,7 @@ import {
 import {
   DEFAULT_PLUGIN_SETTINGS,
   DEFAULT_SMART_PARAGRAPH_PAUSE_MS,
+  isRemoteLlmEffectivelyEnabled,
   LLM_USER_PRESET_MAX_COUNT,
   LLM_USER_PRESET_MAX_DESCRIPTION_CHARS,
   LLM_USER_PRESET_MAX_LABEL_CHARS,
@@ -311,6 +312,20 @@ describe('resolvePluginSettings', () => {
         developerMode: true,
       }),
     ).toBe(false);
+  });
+
+  it.each([
+    ['both enabled', true, true, true],
+    ['global enabled and remote disabled', true, false, false],
+    ['global disabled and remote enabled', false, true, false],
+    ['both disabled', false, false, false],
+  ] as const)('resolves effective remote LLM availability when %s', (_label, llmFeaturesEnabled, llmRemoteFeaturesEnabled, expected) => {
+    expect(
+      isRemoteLlmEffectivelyEnabled({
+        llmFeaturesEnabled,
+        llmRemoteFeaturesEnabled,
+      }),
+    ).toBe(expected);
   });
 
   it('migrates the legacy single Ollama model into per-provider model storage', () => {
