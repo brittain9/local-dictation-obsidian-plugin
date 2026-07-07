@@ -350,6 +350,12 @@ export function resetLlmPostprocessDefaults(settings: PluginSettings): PluginSet
   };
 }
 
+export function isRemoteLlmEffectivelyEnabled(
+  settings: Pick<PluginSettings, 'llmFeaturesEnabled' | 'llmRemoteFeaturesEnabled'>,
+): boolean {
+  return settings.llmFeaturesEnabled && settings.llmRemoteFeaturesEnabled;
+}
+
 export function shouldRefreshLlmSidebar(previous: PluginSettings, next: PluginSettings): boolean {
   return previous.llmRemoteFeaturesEnabled !== next.llmRemoteFeaturesEnabled;
 }
