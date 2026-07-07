@@ -102,6 +102,10 @@ pub enum SessionState {
 pub enum SessionStopReason {
     QueueOverload,
     SentenceComplete,
+    /// The worker reported a session-scoped, non-recoverable error (e.g. model
+    /// load failure or a panic before the worker session was established).
+    /// The app-level session is torn down to match.
+    SessionError,
     Timeout,
     UserCancel,
     UserStop,
