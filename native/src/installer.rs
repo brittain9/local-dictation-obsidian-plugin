@@ -446,7 +446,8 @@ async fn install_model_with_downloader(
         request.runtime_id,
         request.family_id,
         &request.model_id,
-    );
+    )
+    .map_err(|error| fail_install(0, error.to_string()))?;
     let stage_dir = family_root.join(format!(
         ".staging-{}-{}",
         request.model_id, request.install_id
