@@ -750,6 +750,25 @@ impl AppState {
             session_id: session_id.to_owned(),
         });
         self.system_audio.stop(session_id);
+
+        // Sidecar stderr is piped into the plugin's console log, which is
+        // what users paste into bug reports. `silent` ~= `received` means
+        // the monitor captured an idle/wrong sink; high `dropped` with high
+        // `mic_only` means bursty delivery (frames arriving too late/fast to
+        // be mixed in). `None` for microphone-only sessions. The session id is
+        // deliberately omitted: adjacent lifecycle logs already identify the
+        // session, and CodeQL flags logged session ids as cleartext-logging.
+        if let Some(diagnostics) = active_session.audio_mixer.system_audio_diagnostics() {
+            eprintln!(
+                "system-audio diagnostics: received={} silent={} dropped={} mixed={} mic_only={}",
+                diagnostics.system_frames_received,
+                diagnostics.silent_system_frames,
+                diagnostics.system_frames_dropped,
+                diagnostics.mixed_ticks,
+                diagnostics.mic_only_ticks,
+            );
+        }
+
         Some(active_session)
     }
 
