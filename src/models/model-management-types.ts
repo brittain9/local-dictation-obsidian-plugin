@@ -167,6 +167,14 @@ export type SelectedModelCapabilities =
       capabilities: EngineCapabilitiesRecord;
     };
 
+// A persisted record of the last successful probe for a given selection, used
+// to skip the sidecar probe (which forces a full model load) on plugin
+// startup. Invalidated whenever the selection it was captured for changes.
+export interface SelectedModelCapabilitiesSnapshot {
+  capabilities: EngineCapabilitiesRecord;
+  selection: SelectedModel;
+}
+
 export type ModelInstallState =
   | 'cancelled'
   | 'completed'
@@ -221,6 +229,76 @@ export function isSelectedModel(value: unknown): value is SelectedModel {
   }
 
   return false;
+}
+
+function isLanguageSupport(value: unknown): value is LanguageSupport {
+  if (!isRecord(value)) {
+    return false;
+  }
+
+  switch (value.kind) {
+    case 'all':
+    case 'english_only':
+    case 'unknown':
+      return true;
+    case 'list':
+      return Array.isArray(value.tags) && value.tags.every((tag) => typeof tag === 'string');
+    default:
+      return false;
+  }
+}
+
+function isModelFamilyCapabilitiesRecord(value: unknown): value is ModelFamilyCapabilitiesRecord {
+  return (
+    isRecord(value) &&
+    typeof value.supportsSegmentTimestamps === 'boolean' &&
+    typeof value.supportsWordTimestamps === 'boolean' &&
+    typeof value.supportsInitialPrompt === 'boolean' &&
+    typeof value.supportsStreaming === 'boolean' &&
+    typeof value.supportsLanguageSelection === 'boolean' &&
+    isLanguageSupport(value.supportedLanguages) &&
+    (value.maxAudioDurationSecs === null || typeof value.maxAudioDurationSecs === 'number') &&
+    typeof value.producesPunctuation === 'boolean'
+  );
+}
+
+function isAcceleratorId(value: unknown): value is AcceleratorId {
+  return value === 'cpu' || value === 'cuda' || value === 'direct_ml' || value === 'metal';
+}
+
+function isModelFormat(value: unknown): value is ModelFormat {
+  return value === 'ggml' || value === 'gguf' || value === 'onnx';
+}
+
+function isRuntimeCapabilitiesRecord(value: unknown): value is RuntimeCapabilitiesRecord {
+  return (
+    isRecord(value) &&
+    Array.isArray(value.availableAccelerators) &&
+    value.availableAccelerators.every(isAcceleratorId) &&
+    isRecord(value.acceleratorDetails) &&
+    Array.isArray(value.supportedModelFormats) &&
+    value.supportedModelFormats.every(isModelFormat)
+  );
+}
+
+export function isEngineCapabilitiesRecord(value: unknown): value is EngineCapabilitiesRecord {
+  return (
+    isRecord(value) &&
+    isModelFamilyId(value.familyId) &&
+    isRuntimeId(value.runtimeId) &&
+    isModelFamilyCapabilitiesRecord(value.family) &&
+    isRuntimeCapabilitiesRecord(value.runtime)
+  );
+}
+
+export function isSelectedModelCapabilitiesSnapshot(
+  value: unknown,
+): value is SelectedModelCapabilitiesSnapshot {
+  return (
+    isRecord(value) &&
+    isSelectedModel(value.selection) &&
+    isEngineCapabilitiesRecord(value.capabilities)
+  );
 }
 
 export function normalizeSelectedModel(value: SelectedModel): SelectedModel {

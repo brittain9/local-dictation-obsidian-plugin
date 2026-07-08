@@ -690,6 +690,122 @@ describe('ModelInstallManager', () => {
         status: 'ready',
       });
     });
+
+    it('select() persists a capabilities snapshot alongside the selection', async () => {
+      configureSidecarForInit(harness.sidecarConnection);
+      await harness.manager.init();
+      harness.sidecarConnection.probeModelSelection.mockResolvedValueOnce(sampleReadyProbeResult());
+
+      await harness.manager.select(sampleSelection());
+
+      expect(harness.getSettings().selectedModelCapabilitiesSnapshot).toEqual({
+        capabilities: sampleMergedCapabilities(),
+        selection: sampleSelection(),
+      });
+    });
+  });
+
+  describe('startup probe skip (issue #195)', () => {
+    it('trusts a matching persisted capabilities snapshot on init and never probes the sidecar', async () => {
+      harness = createManagerHarness({
+        selectedModel: sampleSelection(),
+        selectedModelCapabilitiesSnapshot: {
+          capabilities: sampleMergedCapabilities(),
+          selection: sampleSelection(),
+        },
+      });
+      configureSidecarForInit(harness.sidecarConnection);
+
+      await harness.manager.init();
+
+      expect(harness.sidecarConnection.probeModelSelection).not.toHaveBeenCalled();
+      expect(harness.manager.getState().selectedModelCapabilities).toEqual({
+        capabilities: sampleMergedCapabilities(),
+        selection: sampleSelection(),
+        status: 'ready',
+      });
+    });
+
+    it('falls back to probing when the persisted snapshot belongs to a different selection', async () => {
+      harness = createManagerHarness({
+        selectedModel: sampleSelection(),
+        selectedModelCapabilitiesSnapshot: {
+          capabilities: sampleMergedCapabilities(),
+          selection: sampleSelection('whisper_small_en_q5_1'),
+        },
+      });
+      configureSidecarForInit(harness.sidecarConnection);
+      harness.sidecarConnection.probeModelSelection.mockResolvedValueOnce(sampleReadyProbeResult());
+
+      await harness.manager.init();
+
+      await vi.waitFor(() => {
+        expect(harness.sidecarConnection.probeModelSelection).toHaveBeenCalledTimes(1);
+        expect(harness.manager.getState().selectedModelCapabilities).toEqual({
+          capabilities: sampleMergedCapabilities(),
+          selection: sampleSelection(),
+          status: 'ready',
+        });
+      });
+    });
+
+    it('falls back to probing when no snapshot has been persisted', async () => {
+      harness = createManagerHarness({ selectedModel: sampleSelection() });
+      configureSidecarForInit(harness.sidecarConnection);
+      harness.sidecarConnection.probeModelSelection.mockResolvedValueOnce(sampleReadyProbeResult());
+
+      await harness.manager.init();
+
+      await vi.waitFor(() => {
+        expect(harness.sidecarConnection.probeModelSelection).toHaveBeenCalledTimes(1);
+      });
+    });
+
+    it('re-selecting a model whose probe now fails invalidates its persisted snapshot', async () => {
+      harness = createManagerHarness({
+        selectedModel: sampleSelection(),
+        selectedModelCapabilitiesSnapshot: {
+          capabilities: sampleMergedCapabilities(),
+          selection: sampleSelection(),
+        },
+      });
+      configureSidecarForInit(harness.sidecarConnection);
+      await harness.manager.init();
+      expect(harness.sidecarConnection.probeModelSelection).not.toHaveBeenCalled();
+
+      harness.sidecarConnection.probeModelSelection.mockResolvedValueOnce({
+        ...sampleReadyProbeResult(),
+        available: false,
+        details: 'file removed',
+        installed: false,
+        mergedCapabilities: null,
+        message: 'Model is not installed.',
+        resolvedPath: null,
+        sizeBytes: null,
+        status: 'missing',
+      });
+
+      await expect(harness.manager.select(sampleSelection())).rejects.toThrow(
+        'Model is not installed. (file removed)',
+      );
+      expect(harness.getSettings().selectedModelCapabilitiesSnapshot).toBeNull();
+    });
+
+    it('clearSelection() clears the persisted capabilities snapshot', async () => {
+      harness = createManagerHarness({
+        selectedModel: sampleSelection(),
+        selectedModelCapabilitiesSnapshot: {
+          capabilities: sampleMergedCapabilities(),
+          selection: sampleSelection(),
+        },
+      });
+      configureSidecarForInit(harness.sidecarConnection);
+      await harness.manager.init();
+
+      await harness.manager.clearSelection();
+
+      expect(harness.getSettings().selectedModelCapabilitiesSnapshot).toBeNull();
+    });
   });
 });
 

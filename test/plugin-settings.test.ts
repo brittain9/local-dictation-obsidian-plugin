@@ -203,6 +203,83 @@ describe('resolvePluginSettings', () => {
     ).toEqual(DEFAULT_PLUGIN_SETTINGS);
   });
 
+  it('round-trips a well-formed selectedModelCapabilitiesSnapshot', () => {
+    const selection = {
+      familyId: 'whisper' as const,
+      kind: 'catalog_model' as const,
+      modelId: 'whisper_large_v3_turbo_q8_0',
+      runtimeId: 'whisper_cpp' as const,
+    };
+    const capabilities = {
+      family: {
+        maxAudioDurationSecs: null,
+        producesPunctuation: true,
+        supportedLanguages: { kind: 'all' as const },
+        supportsInitialPrompt: true,
+        supportsLanguageSelection: true,
+        supportsSegmentTimestamps: true,
+        supportsStreaming: false,
+        supportsWordTimestamps: false,
+      },
+      familyId: 'whisper' as const,
+      runtime: {
+        acceleratorDetails: { cpu: { available: true, unavailableReason: null } },
+        availableAccelerators: ['cpu' as const],
+        supportedModelFormats: ['ggml' as const],
+      },
+      runtimeId: 'whisper_cpp' as const,
+    };
+
+    expect(
+      resolvePluginSettings({ selectedModelCapabilitiesSnapshot: { capabilities, selection } })
+        .selectedModelCapabilitiesSnapshot,
+    ).toEqual({ capabilities, selection });
+  });
+
+  it.each([
+    ['not a record', 'nope'],
+    [
+      'missing capabilities',
+      {
+        selection: {
+          familyId: 'whisper',
+          kind: 'catalog_model',
+          modelId: 'm',
+          runtimeId: 'whisper_cpp',
+        },
+      },
+    ],
+    [
+      'capabilities missing required fields',
+      {
+        capabilities: { familyId: 'whisper' },
+        selection: {
+          familyId: 'whisper',
+          kind: 'catalog_model',
+          modelId: 'm',
+          runtimeId: 'whisper_cpp',
+        },
+      },
+    ],
+    [
+      'invalid selection',
+      {
+        capabilities: {},
+        selection: {
+          familyId: 'not_a_family',
+          kind: 'catalog_model',
+          modelId: 'm',
+          runtimeId: 'whisper_cpp',
+        },
+      },
+    ],
+  ])('drops a malformed selectedModelCapabilitiesSnapshot (%s)', (_label, value) => {
+    expect(
+      resolvePluginSettings({ selectedModelCapabilitiesSnapshot: value })
+        .selectedModelCapabilitiesSnapshot,
+    ).toBeNull();
+  });
+
   it('validates setupCompletedAt as the exact persisted ISO timestamp', () => {
     const timestamp = '2026-05-22T10:00:00.000Z';
 
