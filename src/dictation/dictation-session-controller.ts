@@ -174,8 +174,10 @@ export class DictationSessionController {
   }
 
   async dispose(): Promise<void> {
-    if (this.dependencies.captureStream.isCapturing()) {
-      await this.dependencies.captureStream.stop();
+    if (this.activeSessionId !== null) {
+      await this.clearActiveSession(this.activeSessionId);
+    } else {
+      await this.stopCaptureForTeardown();
     }
 
     const sessionIds = [...this.sessions.keys()];
@@ -437,8 +439,25 @@ export class DictationSessionController {
     this.dependencies.audioLevelMeter.clearSession(sessionId);
     this.applyUiState('idle');
     this.resetQueueTier();
-    if (this.dependencies.captureStream.isCapturing()) {
+    await this.stopCaptureForTeardown();
+  }
+
+  private async stopCaptureForTeardown(): Promise<void> {
+    if (!this.dependencies.captureStream.isCapturing()) {
+      return;
+    }
+
+    // Capture teardown is best-effort: a rejection here (e.g. AudioContext.close()
+    // throwing) must not stop stopDictation/cancelSession/dispose from sending the
+    // sidecar stop/cancel command or disposing the local session afterward.
+    try {
       await this.dependencies.captureStream.stop();
+    } catch (error) {
+      this.dependencies.logger?.warn(
+        'audio',
+        'failed to stop audio capture cleanly during teardown',
+        error,
+      );
     }
   }
 
