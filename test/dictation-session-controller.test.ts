@@ -1250,6 +1250,95 @@ describe('DictationSessionController', () => {
     });
   });
 
+  it('warns the user about silent system-audio capture without stopping the session', async () => {
+    const captureStream = new FakeCaptureStream();
+    const logger = new FakeLogger();
+    const notice = vi.fn();
+    const sidecarConnection = new FakeSidecarConnection();
+    const sessions: FakeSession[] = [];
+    const controller = createController({
+      captureStream,
+      createSession: (session) => {
+        sessions.push(session);
+      },
+      logger,
+      notice,
+      sidecarConnection,
+    });
+
+    await controller.startDictation();
+    const sessionId = sidecarConnection.startSession.mock.calls[0]?.[0].sessionId ?? '';
+    const session = sessions[0];
+    if (session === undefined) {
+      throw new Error('expected session fixture');
+    }
+
+    sidecarConnection.emit({
+      code: 'system_audio_silent_capture',
+      message:
+        'System audio is connected but capturing silence. Your audio may be playing through a different output device than the system default.',
+      sessionId,
+      type: 'warning',
+    });
+
+    expect(notice).toHaveBeenCalledWith(
+      'Local Dictation: System audio is connected but capturing silence. Your audio may be playing through a different output device than the system default.',
+    );
+    expect(sidecarConnection.cancelSession).not.toHaveBeenCalled();
+    expect(session.dispose).not.toHaveBeenCalled();
+    expect(controller.getState()).not.toBe('error');
+  });
+
+  it('does not notice for silent system-audio warnings from stale sessions', async () => {
+    const captureStream = new FakeCaptureStream();
+    const logger = new FakeLogger();
+    const notice = vi.fn();
+    const sidecarConnection = new FakeSidecarConnection();
+    const controller = createController({ captureStream, logger, notice, sidecarConnection });
+
+    await controller.startDictation();
+
+    sidecarConnection.emit({
+      code: 'system_audio_silent_capture',
+      message:
+        'System audio is connected but capturing silence. Your audio may be playing through a different output device than the system default.',
+      sessionId: crypto.randomUUID(),
+      type: 'warning',
+    });
+
+    expect(notice).not.toHaveBeenCalled();
+    expect(logger.warn).toHaveBeenCalledWith(
+      'sidecar',
+      'System audio is connected but capturing silence. Your audio may be playing through a different output device than the system default.',
+      undefined,
+    );
+  });
+
+  it('logs but does not notice for other warning codes', async () => {
+    const captureStream = new FakeCaptureStream();
+    const logger = new FakeLogger();
+    const notice = vi.fn();
+    const sidecarConnection = new FakeSidecarConnection();
+    const controller = createController({ captureStream, logger, notice, sidecarConnection });
+
+    await controller.startDictation();
+    const sessionId = sidecarConnection.startSession.mock.calls[0]?.[0].sessionId ?? '';
+
+    sidecarConnection.emit({
+      code: 'no_active_session',
+      message: 'Stop session was requested without an active session.',
+      sessionId,
+      type: 'warning',
+    });
+
+    expect(notice).not.toHaveBeenCalled();
+    expect(logger.warn).toHaveBeenCalledWith(
+      'sidecar',
+      'Stop session was requested without an active session.',
+      undefined,
+    );
+  });
+
   it('handles stop during a pending start without opening capture', async () => {
     const captureStream = new FakeCaptureStream();
     const sidecarConnection = new FakeSidecarConnection();

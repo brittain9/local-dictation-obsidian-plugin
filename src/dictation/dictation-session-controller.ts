@@ -556,7 +556,7 @@ export class DictationSessionController {
         return;
 
       case 'warning':
-        this.dependencies.logger?.warn('sidecar', event.message, event.details);
+        this.handleWarningEvent(event);
         return;
 
       case 'session_stopped':
@@ -1069,6 +1069,17 @@ export class DictationSessionController {
         chars: cleanedText.length,
         placement,
       });
+    }
+  }
+
+  // Warnings never touch session state — the session keeps running. Most
+  // codes are log-only; system_audio_silent_capture also surfaces a Notice
+  // so the user learns their system audio is capturing silence.
+  private handleWarningEvent(event: Extract<SidecarEvent, { type: 'warning' }>): void {
+    this.dependencies.logger?.warn('sidecar', event.message, event.details);
+
+    if (event.code === 'system_audio_silent_capture' && event.sessionId === this.activeSessionId) {
+      this.dependencies.notice(`Local Dictation: ${event.message}`);
     }
   }
 

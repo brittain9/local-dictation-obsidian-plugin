@@ -15,6 +15,17 @@ const LEVEL_BANDS: usize = 6;
 /// silence" (idle/wrong monitor sink) from real captured audio.
 const SILENT_SAMPLE_THRESHOLD: i16 = 8;
 
+/// Microphone ticks (~5 s at the 20 ms frame cadence) to observe before
+/// evaluating whether system-audio capture has been silent for the session.
+/// Long enough to ride out startup jitter, short enough that a genuinely
+/// silent capture is flagged early.
+const SILENCE_CHECK_MIC_TICKS: u64 = 250;
+
+/// Fraction of received system-audio frames that must be silent for the
+/// session to count as "capturing silence" (idle/wrong monitor sink) rather
+/// than bursty/dropped delivery, which is a separate failure mode.
+const SILENT_FRAME_FRACTION: f64 = 0.95;
+
 /// Log-spaced speech band edges in Hz, mirroring the renderer's former
 /// AnalyserNode tap. Six bands span 80 Hz – 8 kHz (the 16 kHz capture Nyquist).
 const BAND_EDGES_HZ: [f32; LEVEL_BANDS + 1] = [80.0, 200.0, 500.0, 1000.0, 2000.0, 4000.0, 8000.0];
@@ -60,6 +71,7 @@ pub struct AudioMixer {
     system_frames_dropped: u64,
     mixed_ticks: u64,
     mic_only_ticks: u64,
+    silence_warning_checked: bool,
 }
 
 impl AudioMixer {
@@ -74,6 +86,7 @@ impl AudioMixer {
             system_frames_dropped: 0,
             mixed_ticks: 0,
             mic_only_ticks: 0,
+            silence_warning_checked: false,
         }
     }
 
@@ -88,6 +101,7 @@ impl AudioMixer {
             system_frames_dropped: 0,
             mixed_ticks: 0,
             mic_only_ticks: 0,
+            silence_warning_checked: false,
         }
     }
 
@@ -154,6 +168,29 @@ impl AudioMixer {
             mixed_ticks: self.mixed_ticks,
             mic_only_ticks: self.mic_only_ticks,
         })
+    }
+
+    /// Evaluates, once per session, whether system-audio capture has been
+    /// silent through the first `SILENCE_CHECK_MIC_TICKS` microphone ticks.
+    /// Latches immediately on that first evaluation — regardless of the
+    /// outcome — so it never re-triggers later in the session. Always
+    /// `false` for microphone-only mixers and for bursty/dropped-heavy
+    /// delivery, which is a separate failure mode with its own fix.
+    pub fn check_system_audio_silence(&mut self) -> bool {
+        if !self.include_system_audio || self.silence_warning_checked {
+            return false;
+        }
+
+        let mic_ticks = self.mixed_ticks + self.mic_only_ticks;
+        if mic_ticks < SILENCE_CHECK_MIC_TICKS {
+            return false;
+        }
+
+        self.silence_warning_checked = true;
+
+        self.system_frames_received == 0
+            || self.silent_system_frames as f64
+                >= self.system_frames_received as f64 * SILENT_FRAME_FRACTION
     }
 
     fn build_output(&self, frame_bytes: Vec<u8>) -> MixedAudioFrame {
@@ -377,5 +414,107 @@ mod tests {
             .expect("system-audio mixer reports diagnostics");
         assert_eq!(diagnostics.mic_only_ticks, 1);
         assert_eq!(diagnostics.mixed_ticks, 1);
+    }
+
+    /// Drives `count` microphone ticks, queuing a system frame with the given
+    /// `sample` amplitude ahead of each one so every tick is mixed (never
+    /// mic-only). A `sample` at or below `SILENT_SAMPLE_THRESHOLD` is silent.
+    fn drive_mixed_ticks(mixer: &mut AudioMixer, count: u64, sample: i16) {
+        for _ in 0..count {
+            mixer
+                .push_system_frame(frame_bytes_from_sample(sample))
+                .expect("valid frame");
+            mixer
+                .push_microphone_frame(frame_bytes_from_sample(100))
+                .expect("valid frame");
+        }
+    }
+
+    fn drive_microphone_only_ticks(mixer: &mut AudioMixer, count: u64) {
+        for _ in 0..count {
+            mixer
+                .push_microphone_frame(frame_bytes_from_sample(100))
+                .expect("valid frame");
+        }
+    }
+
+    #[test]
+    fn silence_check_fires_once_for_an_all_silent_session() {
+        let mut mixer = AudioMixer::microphone_with_system("session-1");
+
+        drive_mixed_ticks(&mut mixer, SILENCE_CHECK_MIC_TICKS - 1, 0);
+        assert!(
+            !mixer.check_system_audio_silence(),
+            "must not fire before the tick threshold"
+        );
+
+        drive_mixed_ticks(&mut mixer, 1, 0);
+        assert!(
+            mixer.check_system_audio_silence(),
+            "all-silent system audio must fire at the threshold"
+        );
+    }
+
+    #[test]
+    fn silence_check_fires_for_absent_system_audio() {
+        let mut mixer = AudioMixer::microphone_with_system("session-1");
+
+        drive_microphone_only_ticks(&mut mixer, SILENCE_CHECK_MIC_TICKS);
+
+        assert!(
+            mixer.check_system_audio_silence(),
+            "absent system audio must warn once enough microphone ticks arrive"
+        );
+    }
+
+    #[test]
+    fn silence_check_uses_silent_frame_fraction_threshold() {
+        let mut just_below_threshold = AudioMixer::microphone_with_system("session-1");
+        drive_mixed_ticks(&mut just_below_threshold, 237, 0);
+        drive_mixed_ticks(&mut just_below_threshold, 13, 1000);
+        assert!(
+            !just_below_threshold.check_system_audio_silence(),
+            "94.8% silent frames must not warn"
+        );
+
+        let mut at_threshold = AudioMixer::microphone_with_system("session-2");
+        drive_mixed_ticks(&mut at_threshold, 238, 0);
+        drive_mixed_ticks(&mut at_threshold, 12, 1000);
+        assert!(
+            at_threshold.check_system_audio_silence(),
+            "95.2% silent frames must warn"
+        );
+    }
+
+    #[test]
+    fn silence_check_does_not_fire_for_healthy_audio() {
+        let mut mixer = AudioMixer::microphone_with_system("session-1");
+
+        drive_mixed_ticks(&mut mixer, SILENCE_CHECK_MIC_TICKS, 1000);
+
+        assert!(!mixer.check_system_audio_silence());
+    }
+
+    #[test]
+    fn silence_check_does_not_fire_for_microphone_only_sessions() {
+        let mut mixer = AudioMixer::microphone_only("session-1");
+
+        drive_microphone_only_ticks(&mut mixer, SILENCE_CHECK_MIC_TICKS);
+
+        assert!(!mixer.check_system_audio_silence());
+    }
+
+    #[test]
+    fn silence_check_never_fires_twice() {
+        let mut mixer = AudioMixer::microphone_with_system("session-1");
+
+        drive_mixed_ticks(&mut mixer, SILENCE_CHECK_MIC_TICKS, 0);
+        assert!(mixer.check_system_audio_silence());
+
+        drive_mixed_ticks(&mut mixer, SILENCE_CHECK_MIC_TICKS, 0);
+        assert!(
+            !mixer.check_system_audio_silence(),
+            "must latch after the first evaluation"
+        );
     }
 }

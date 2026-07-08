@@ -225,6 +225,11 @@ impl AppState {
                     return events;
                 }
             };
+
+            if active_session.audio_mixer.check_system_audio_silence() {
+                events.push(system_audio_silent_capture_event(&session_id));
+            }
+
             let audio_level_event = audio_level_event_if_due(active_session, &mixed);
             let streaming_frame = mixed.frame_bytes.clone();
 
@@ -1533,6 +1538,20 @@ fn invalid_audio_frame_event(session_id: &str, error: AudioMixerError) -> Event 
     }
 }
 
+// Non-fatal: the session keeps running after this fires. Reuses `Event::Warning`
+// rather than `Event::Error` because every existing error code tears the
+// session down plugin-side, which would defeat the point of a heads-up.
+fn system_audio_silent_capture_event(session_id: &str) -> Event {
+    Event::Warning {
+        code: "system_audio_silent_capture".to_string(),
+        details: None,
+        message: "System audio is connected but capturing silence. Your audio may be playing \
+            through a different output device than the system default."
+            .to_string(),
+        session_id: Some(session_id.to_string()),
+    }
+}
+
 fn resolved_model_supports_initial_prompt(
     registry: &EngineRegistry,
     runtime_id: RuntimeId,
@@ -2209,6 +2228,117 @@ mod tests {
                 ..
             }) if session_id == "session-1"
         ));
+    }
+
+    /// Drives `count` mic ticks for `session_id`, queuing a system-audio frame
+    /// at the given `sample` amplitude ahead of each one so every tick is
+    /// mixed. Returns every event produced, in order, across all ticks.
+    fn drive_silence_check_ticks(
+        app: &mut AppState,
+        session_id: &str,
+        count: u64,
+        sample: i16,
+    ) -> Vec<Event> {
+        let mut events = Vec::new();
+        for _ in 0..count {
+            let _ = app.handle_system_audio_frame(AudioFrame {
+                frame_bytes: constant_frame_bytes(sample),
+                session_id: session_id.to_string(),
+            });
+            events.extend(app.handle_audio_frame(AudioFrame {
+                frame_bytes: constant_frame_bytes(100),
+                session_id: session_id.to_string(),
+            }));
+        }
+        events
+    }
+
+    fn constant_frame_bytes(sample: i16) -> Vec<u8> {
+        let mut bytes = vec![0_u8; PCM_BYTES_PER_FRAME];
+        for chunk in bytes.chunks_exact_mut(2) {
+            chunk.copy_from_slice(&sample.to_le_bytes());
+        }
+        bytes
+    }
+
+    fn is_silence_warning(event: &Event) -> bool {
+        matches!(event, Event::Warning { code, .. } if code == "system_audio_silent_capture")
+    }
+
+    #[test]
+    fn system_audio_silence_warning_fires_once_then_latches() {
+        let model_file_path = create_model_file();
+        let mut app = test_app_with_system_audio(FakeSystemAudioState::default());
+        let _ = app.handle_command(start_session_command_with_system_audio(
+            "session-1",
+            &model_file_path,
+            true,
+        ));
+
+        // 250 mic ticks (~5 s) is the silence-check threshold; all-silent
+        // system audio through that window must trigger exactly one warning.
+        let events = drive_silence_check_ticks(&mut app, "session-1", 250, 0);
+        let warnings: Vec<&Event> = events
+            .iter()
+            .filter(|event| is_silence_warning(event))
+            .collect();
+        assert_eq!(
+            warnings,
+            vec![&Event::Warning {
+                code: "system_audio_silent_capture".to_string(),
+                details: None,
+                message: "System audio is connected but capturing silence. Your audio may be \
+                    playing through a different output device than the system default."
+                    .to_string(),
+                session_id: Some("session-1".to_string()),
+            }],
+            "expected exactly one silence warning: {events:?}"
+        );
+
+        // Continuing well past the threshold must never fire a second warning.
+        let more_events = drive_silence_check_ticks(&mut app, "session-1", 250, 0);
+        assert!(
+            !more_events.iter().any(is_silence_warning),
+            "warning must latch after the first evaluation: {more_events:?}"
+        );
+    }
+
+    #[test]
+    fn system_audio_silence_warning_skips_healthy_audio() {
+        let model_file_path = create_model_file();
+        let mut app = test_app_with_system_audio(FakeSystemAudioState::default());
+        let _ = app.handle_command(start_session_command_with_system_audio(
+            "session-1",
+            &model_file_path,
+            true,
+        ));
+
+        let events = drive_silence_check_ticks(&mut app, "session-1", 250, 1000);
+
+        assert!(
+            !events.iter().any(is_silence_warning),
+            "healthy system audio must not warn: {events:?}"
+        );
+    }
+
+    #[test]
+    fn microphone_only_session_never_emits_silence_warning() {
+        let model_file_path = create_model_file();
+        let mut app = test_app();
+        let _ = app.handle_command(start_session_command("session-1", &model_file_path));
+
+        let mut events = Vec::new();
+        for _ in 0..250 {
+            events.extend(app.handle_audio_frame(AudioFrame {
+                frame_bytes: constant_frame_bytes(100),
+                session_id: "session-1".to_string(),
+            }));
+        }
+
+        assert!(
+            !events.iter().any(is_silence_warning),
+            "microphone-only sessions must never warn about system-audio silence: {events:?}"
+        );
     }
 
     #[test]
