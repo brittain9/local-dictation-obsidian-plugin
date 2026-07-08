@@ -9,6 +9,12 @@ use crate::protocol::{PCM_BYTES_PER_FRAME, PCM_SAMPLE_RATE_HZ, PCM_SAMPLES_PER_F
 const SYSTEM_FRAME_BUFFER_LIMIT: usize = 4;
 const LEVEL_BANDS: usize = 6;
 
+/// Max-abs-sample threshold (raw i16 units) at or below which a system-audio
+/// frame counts as silent. A few LSBs of noise-floor dither still count as
+/// silence — this is what distinguishes "the stream delivers digital
+/// silence" (idle/wrong monitor sink) from real captured audio.
+const SILENT_SAMPLE_THRESHOLD: i16 = 8;
+
 /// Log-spaced speech band edges in Hz, mirroring the renderer's former
 /// AnalyserNode tap. Six bands span 80 Hz – 8 kHz (the 16 kHz capture Nyquist).
 const BAND_EDGES_HZ: [f32; LEVEL_BANDS + 1] = [80.0, 200.0, 500.0, 1000.0, 2000.0, 4000.0, 8000.0];
@@ -31,11 +37,29 @@ pub struct AudioMixerError {
     pub expected_bytes: usize,
 }
 
+/// Per-session system-audio delivery health, snapshotted at session
+/// teardown. `silent` ≈ `received` means the monitor is capturing an idle or
+/// wrong sink; high `dropped` with high `mic_only` means bursty delivery
+/// (frames arriving in bunches too late to be mixed in).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SystemAudioDiagnostics {
+    pub system_frames_received: u64,
+    pub silent_system_frames: u64,
+    pub system_frames_dropped: u64,
+    pub mixed_ticks: u64,
+    pub mic_only_ticks: u64,
+}
+
 pub struct AudioMixer {
     analyzer: LevelAnalyzer,
     include_system_audio: bool,
     session_id: String,
     system_frames: VecDeque<Vec<u8>>,
+    system_frames_received: u64,
+    silent_system_frames: u64,
+    system_frames_dropped: u64,
+    mixed_ticks: u64,
+    mic_only_ticks: u64,
 }
 
 impl AudioMixer {
@@ -45,6 +69,11 @@ impl AudioMixer {
             include_system_audio: false,
             session_id: session_id.into(),
             system_frames: VecDeque::new(),
+            system_frames_received: 0,
+            silent_system_frames: 0,
+            system_frames_dropped: 0,
+            mixed_ticks: 0,
+            mic_only_ticks: 0,
         }
     }
 
@@ -54,6 +83,11 @@ impl AudioMixer {
             include_system_audio: true,
             session_id: session_id.into(),
             system_frames: VecDeque::new(),
+            system_frames_received: 0,
+            silent_system_frames: 0,
+            system_frames_dropped: 0,
+            mixed_ticks: 0,
+            mic_only_ticks: 0,
         }
     }
 
@@ -65,8 +99,14 @@ impl AudioMixer {
 
         let mixed = if self.include_system_audio {
             match self.system_frames.pop_front() {
-                Some(system_frame) => mix_frames(&frame_bytes, &system_frame),
-                None => frame_bytes,
+                Some(system_frame) => {
+                    self.mixed_ticks += 1;
+                    mix_frames(&frame_bytes, &system_frame)
+                }
+                None => {
+                    self.mic_only_ticks += 1;
+                    frame_bytes
+                }
             }
         } else {
             frame_bytes
@@ -82,8 +122,13 @@ impl AudioMixer {
         validate_frame(&frame_bytes)?;
 
         if self.include_system_audio {
+            self.system_frames_received += 1;
+            if is_silent_frame(&frame_bytes) {
+                self.silent_system_frames += 1;
+            }
             if self.system_frames.len() >= SYSTEM_FRAME_BUFFER_LIMIT {
                 self.system_frames.pop_front();
+                self.system_frames_dropped += 1;
             }
             self.system_frames.push_back(frame_bytes);
         }
@@ -93,6 +138,22 @@ impl AudioMixer {
 
     pub fn clear(&mut self) {
         self.system_frames.clear();
+    }
+
+    /// Snapshot of system-audio delivery counters for this session, or
+    /// `None` for microphone-only mixers where they aren't tracked.
+    pub fn system_audio_diagnostics(&self) -> Option<SystemAudioDiagnostics> {
+        if !self.include_system_audio {
+            return None;
+        }
+
+        Some(SystemAudioDiagnostics {
+            system_frames_received: self.system_frames_received,
+            silent_system_frames: self.silent_system_frames,
+            system_frames_dropped: self.system_frames_dropped,
+            mixed_ticks: self.mixed_ticks,
+            mic_only_ticks: self.mic_only_ticks,
+        })
     }
 
     fn build_output(&self, frame_bytes: Vec<u8>) -> MixedAudioFrame {
@@ -119,6 +180,14 @@ fn validate_frame(frame_bytes: &[u8]) -> Result<(), AudioMixerError> {
     Err(AudioMixerError {
         actual_bytes: frame_bytes.len(),
         expected_bytes: PCM_BYTES_PER_FRAME,
+    })
+}
+
+/// True when every sample in the frame falls at or below the silence
+/// threshold, i.e. the frame carries no meaningful audio.
+fn is_silent_frame(frame_bytes: &[u8]) -> bool {
+    frame_bytes.chunks_exact(2).all(|sample| {
+        i16::from_le_bytes([sample[0], sample[1]]).unsigned_abs() <= SILENT_SAMPLE_THRESHOLD as u16
     })
 }
 
@@ -219,4 +288,94 @@ fn band_bin_ranges(length: usize, sample_rate: usize) -> [(usize, usize); LEVEL_
         *range = (lo, hi);
     }
     ranges
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn frame_bytes_from_sample(sample: i16) -> Vec<u8> {
+        let mut bytes = Vec::with_capacity(PCM_BYTES_PER_FRAME);
+        for _ in 0..PCM_SAMPLES_PER_FRAME {
+            bytes.extend_from_slice(&sample.to_le_bytes());
+        }
+        bytes
+    }
+
+    #[test]
+    fn microphone_only_mixer_reports_no_diagnostics() {
+        let mut mixer = AudioMixer::microphone_only("session-1");
+
+        mixer
+            .push_microphone_frame(frame_bytes_from_sample(100))
+            .expect("valid frame");
+
+        assert_eq!(mixer.system_audio_diagnostics(), None);
+    }
+
+    #[test]
+    fn push_system_frame_counts_received_and_silent() {
+        let mut mixer = AudioMixer::microphone_with_system("session-1");
+
+        mixer
+            .push_system_frame(frame_bytes_from_sample(0))
+            .expect("valid frame");
+        mixer
+            .push_system_frame(frame_bytes_from_sample(SILENT_SAMPLE_THRESHOLD))
+            .expect("valid frame");
+        mixer
+            .push_system_frame(frame_bytes_from_sample(SILENT_SAMPLE_THRESHOLD + 1))
+            .expect("valid frame");
+
+        let diagnostics = mixer
+            .system_audio_diagnostics()
+            .expect("system-audio mixer reports diagnostics");
+        assert_eq!(diagnostics.system_frames_received, 3);
+        assert_eq!(diagnostics.silent_system_frames, 2);
+        assert_eq!(diagnostics.system_frames_dropped, 0);
+    }
+
+    #[test]
+    fn push_system_frame_counts_ring_overflow_as_dropped() {
+        let mut mixer = AudioMixer::microphone_with_system("session-1");
+
+        for _ in 0..(SYSTEM_FRAME_BUFFER_LIMIT + 2) {
+            mixer
+                .push_system_frame(frame_bytes_from_sample(100))
+                .expect("valid frame");
+        }
+
+        let diagnostics = mixer
+            .system_audio_diagnostics()
+            .expect("system-audio mixer reports diagnostics");
+        assert_eq!(
+            diagnostics.system_frames_received,
+            SYSTEM_FRAME_BUFFER_LIMIT as u64 + 2
+        );
+        assert_eq!(diagnostics.system_frames_dropped, 2);
+    }
+
+    #[test]
+    fn push_microphone_frame_counts_mixed_and_mic_only_ticks() {
+        let mut mixer = AudioMixer::microphone_with_system("session-1");
+
+        // No queued system frame: this tick is mic-only.
+        mixer
+            .push_microphone_frame(frame_bytes_from_sample(100))
+            .expect("valid frame");
+
+        // Queue a system frame, then consume it on the next mic tick: mixed.
+        mixer
+            .push_system_frame(frame_bytes_from_sample(100))
+            .expect("valid frame");
+        mixer
+            .push_microphone_frame(frame_bytes_from_sample(100))
+            .expect("valid frame");
+
+        let diagnostics = mixer
+            .system_audio_diagnostics()
+            .expect("system-audio mixer reports diagnostics");
+        assert_eq!(diagnostics.mic_only_ticks, 1);
+        assert_eq!(diagnostics.mixed_ticks, 1);
+    }
 }
