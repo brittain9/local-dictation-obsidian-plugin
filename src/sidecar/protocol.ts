@@ -44,6 +44,7 @@ export type SessionState = (typeof SESSION_STATES)[number];
 export const SESSION_STOP_REASONS = [
   'queue_overload',
   'sentence_complete',
+  'session_error',
   'timeout',
   'user_cancel',
   'user_stop',

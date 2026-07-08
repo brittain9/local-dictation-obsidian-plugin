@@ -915,7 +915,31 @@ impl AppState {
                 session_id,
                 utterance_id,
             } => {
-                if !finalizes_utterance && utterance_id.is_some() {
+                if utterance_id.is_none() {
+                    // No utterance to attribute this to means the failure is
+                    // session-scoped, not per-utterance. Today the only
+                    // source is `BeginSession` failing or panicking before
+                    // the worker inserts its session record, which leaves
+                    // the worker with no session at all for `session_id`.
+                    // Tear the app-level session down to match: otherwise it
+                    // looks alive to the host forever while the worker
+                    // silently ignores every future command for it (#194).
+                    events.push(Event::Error {
+                        code,
+                        details,
+                        message,
+                        session_id: Some(session_id.clone()),
+                    });
+                    if self.tear_down_session(&session_id).is_some() {
+                        events.push(Event::SessionStopped {
+                            reason: SessionStopReason::SessionError,
+                            session_id,
+                        });
+                    }
+                    return;
+                }
+
+                if !finalizes_utterance {
                     if !self.active_sessions.contains_key(&session_id) {
                         return;
                     }
@@ -934,10 +958,8 @@ impl AppState {
                         return;
                     };
 
-                    if finalizes_utterance {
-                        advance_transcription_queue(active_session);
-                        emit_queue_tier_if_changed(active_session, events);
-                    }
+                    advance_transcription_queue(active_session);
+                    emit_queue_tier_if_changed(active_session, events);
                 }
 
                 events.push(Event::Error {
@@ -1695,10 +1717,18 @@ mod tests {
         }
     }
 
+    #[derive(Clone, Copy)]
+    enum FakeLoadBehavior {
+        Succeed,
+        Fail,
+        Panic,
+    }
+
     struct FakeAdapter {
         family_id: ModelFamilyId,
         runtime_id: RuntimeId,
         capabilities: ModelFamilyCapabilities,
+        load_behavior: FakeLoadBehavior,
     }
 
     impl FakeAdapter {
@@ -1720,6 +1750,7 @@ mod tests {
                     max_audio_duration_secs: None,
                     produces_punctuation: true,
                 },
+                load_behavior: FakeLoadBehavior::Succeed,
             }
         }
 
@@ -1727,6 +1758,25 @@ mod tests {
             let mut adapter = Self::new();
             adapter.runtime_id = runtime_id;
             adapter.family_id = family_id;
+            adapter
+        }
+
+        /// Probe succeeds (so `StartSession` proceeds past model resolution),
+        /// but the worker's async `load()` returns an error — simulating a
+        /// corrupt or incompatible model file discovered only once the
+        /// worker thread actually loads it.
+        fn failing_load() -> Self {
+            let mut adapter = Self::new();
+            adapter.load_behavior = FakeLoadBehavior::Fail;
+            adapter
+        }
+
+        /// Same as `failing_load`, but the worker thread panics instead of
+        /// returning `Err` — simulating a crash inside a third-party engine
+        /// library during model load.
+        fn panicking_load() -> Self {
+            let mut adapter = Self::new();
+            adapter.load_behavior = FakeLoadBehavior::Panic;
             adapter
         }
     }
@@ -1767,8 +1817,28 @@ mod tests {
             _path: &std::path::Path,
             _gpu: GpuConfig,
         ) -> Result<Box<dyn LoadedModel>, TranscriptionError> {
-            Ok(Box::new(FakeLoadedModel))
+            match self.load_behavior {
+                FakeLoadBehavior::Succeed => Ok(Box::new(FakeLoadedModel)),
+                FakeLoadBehavior::Fail => {
+                    Err(TranscriptionError::invalid_model("fake model load failure"))
+                }
+                FakeLoadBehavior::Panic => panic!("fake model load panicked"),
+            }
         }
+    }
+
+    fn fake_registry_with_failing_load() -> Arc<EngineRegistry> {
+        let mut registry = EngineRegistry::default();
+        registry.register_runtime(Box::new(FakeRuntime::cpu_only()));
+        registry.register_adapter(Box::new(FakeAdapter::failing_load()));
+        Arc::new(registry)
+    }
+
+    fn fake_registry_with_panicking_load() -> Arc<EngineRegistry> {
+        let mut registry = EngineRegistry::default();
+        registry.register_runtime(Box::new(FakeRuntime::cpu_only()));
+        registry.register_adapter(Box::new(FakeAdapter::panicking_load()));
+        Arc::new(registry)
     }
 
     fn fake_registry() -> Arc<EngineRegistry> {
@@ -1812,12 +1882,27 @@ mod tests {
     }
 
     fn test_app() -> AppState {
-        AppState::with_registry(
-            "0.1.0",
-            sample_catalog(),
-            fake_registry(),
-            ListeningSession::new,
-        )
+        test_app_with_registry(fake_registry())
+    }
+
+    fn test_app_with_registry(registry: Arc<EngineRegistry>) -> AppState {
+        AppState::with_registry("0.1.0", sample_catalog(), registry, ListeningSession::new)
+    }
+
+    /// Polls the real worker thread's event channel via `drain_worker_events`
+    /// until it yields at least one event or the timeout elapses. Needed for
+    /// tests that exercise the actual worker thread (rather than injecting a
+    /// synthetic `WorkerEvent` directly) since `BeginSession` is fire-and-
+    /// forget across a channel.
+    fn wait_for_worker_events(app: &mut AppState) -> Vec<Event> {
+        let deadline = Instant::now() + Duration::from_secs(5);
+        loop {
+            let events = app.drain_worker_events();
+            if !events.is_empty() || Instant::now() >= deadline {
+                return events;
+            }
+            std::thread::sleep(Duration::from_millis(1));
+        }
     }
 
     fn test_app_with_system_audio(system_audio: FakeSystemAudioState) -> AppState {
@@ -2788,6 +2873,166 @@ mod tests {
         assert!(events.iter().any(
             |event| matches!(event, Event::TranscriptReady { session_id, .. } if session_id == "session-1")
         ));
+    }
+
+    /// Regression test for issue #194 finding 2: a `SessionError` with no
+    /// `utterance_id` is session-scoped (today, only `BeginSession` failing
+    /// or panicking before the worker inserts its session record reaches
+    /// this path), so the app must tear the session down rather than leaving
+    /// a session that looks active to the host while the worker silently
+    /// ignores every future command for it.
+    #[test]
+    fn session_scoped_worker_error_tears_down_the_active_session() {
+        let model_file_path = create_model_file();
+        let mut app = test_app();
+        let _ = app.handle_command(start_session_command("session-1", &model_file_path));
+        assert!(app.active_sessions.contains_key("session-1"));
+        let mut events = Vec::new();
+
+        app.handle_worker_event(
+            WorkerEvent::SessionError {
+                code: "invalid_model_file".to_string(),
+                details: Some("fake model load failure".to_string()),
+                finalizes_utterance: false,
+                message: "Model file is missing, unreadable, or unsupported.".to_string(),
+                session_id: "session-1".to_string(),
+                utterance_id: None,
+            },
+            &mut events,
+        );
+
+        assert!(
+            events.iter().any(
+                |event| matches!(event, Event::Error { code, session_id, .. } if code == "invalid_model_file" && session_id.as_deref() == Some("session-1"))
+            ),
+            "expected an Error event, got: {events:?}"
+        );
+        assert!(
+            matches!(
+                events.iter().find(|event| matches!(event, Event::SessionStopped { .. })),
+                Some(Event::SessionStopped {
+                    reason: SessionStopReason::SessionError,
+                    session_id,
+                }) if session_id == "session-1"
+            ),
+            "expected SessionStopped{{SessionError}} so the host sees the session end, got: {events:?}"
+        );
+        assert!(
+            !app.active_sessions.contains_key("session-1"),
+            "a session-scoped worker error must remove the zombie app-level session"
+        );
+    }
+
+    /// A session-scoped worker error can race with a user-initiated stop/
+    /// cancel that already tore the session down. The event must still
+    /// surface (so the host sees the underlying failure) without emitting a
+    /// second, spurious `SessionStopped` for a session that is already gone.
+    #[test]
+    fn session_scoped_worker_error_after_session_already_gone_emits_only_error() {
+        let model_file_path = create_model_file();
+        let mut app = test_app();
+        let _ = app.handle_command(start_session_command("session-1", &model_file_path));
+        let _ = app.handle_command(Command::CancelSession {
+            session_id: "session-1".to_string(),
+        });
+        assert!(!app.active_sessions.contains_key("session-1"));
+        let mut events = Vec::new();
+
+        app.handle_worker_event(
+            WorkerEvent::SessionError {
+                code: "worker_panic".to_string(),
+                details: None,
+                finalizes_utterance: false,
+                message: "Worker thread panicked loading model".to_string(),
+                session_id: "session-1".to_string(),
+                utterance_id: None,
+            },
+            &mut events,
+        );
+
+        assert!(matches!(
+            events.as_slice(),
+            [Event::Error { code, .. }] if code == "worker_panic"
+        ));
+    }
+
+    /// End-to-end version of `session_scoped_worker_error_tears_down_the_
+    /// active_session`, driven through the real (spawned-thread) worker with
+    /// a `FakeAdapter` whose `probe_model` succeeds but `load` fails. This
+    /// exercises the production `BeginSession` -> `load_session_resources`
+    /// path in worker.rs, not just the app-side event handling.
+    #[test]
+    fn start_session_tears_down_when_worker_model_load_fails() {
+        let model_file_path = create_model_file();
+        let mut app = test_app_with_registry(fake_registry_with_failing_load());
+        let (_, start_events) =
+            app.handle_command(start_session_command("session-1", &model_file_path));
+        assert!(
+            start_events
+                .iter()
+                .any(|event| matches!(event, Event::SessionStarted { .. })),
+            "StartSession is fire-and-forget and must optimistically report started"
+        );
+        assert!(app.active_sessions.contains_key("session-1"));
+
+        let events = wait_for_worker_events(&mut app);
+
+        assert!(
+            events.iter().any(
+                |event| matches!(event, Event::Error { code, .. } if code == "invalid_model_file")
+            ),
+            "expected the load failure to surface as an Error event, got: {events:?}"
+        );
+        assert!(
+            matches!(
+                events.iter().find(|event| matches!(event, Event::SessionStopped { .. })),
+                Some(Event::SessionStopped {
+                    reason: SessionStopReason::SessionError,
+                    session_id,
+                }) if session_id == "session-1"
+            ),
+            "expected SessionStopped{{SessionError}}, got: {events:?}"
+        );
+        assert!(
+            !app.active_sessions.contains_key("session-1"),
+            "a worker model-load failure must not leave a zombie app-level session"
+        );
+    }
+
+    /// Same as `start_session_tears_down_when_worker_model_load_fails`, but
+    /// the worker thread panics inside `load()` instead of returning `Err`.
+    /// `worker_main` catches the panic with `catch_unwind`, so the worker
+    /// thread survives and still reports the failure through the normal
+    /// `SessionError` path.
+    #[test]
+    fn start_session_tears_down_when_worker_model_load_panics() {
+        let model_file_path = create_model_file();
+        let mut app = test_app_with_registry(fake_registry_with_panicking_load());
+        let _ = app.handle_command(start_session_command("session-1", &model_file_path));
+        assert!(app.active_sessions.contains_key("session-1"));
+
+        let events = wait_for_worker_events(&mut app);
+
+        assert!(
+            events
+                .iter()
+                .any(|event| matches!(event, Event::Error { code, .. } if code == "worker_panic")),
+            "expected the load panic to surface as an Error event, got: {events:?}"
+        );
+        assert!(
+            matches!(
+                events.iter().find(|event| matches!(event, Event::SessionStopped { .. })),
+                Some(Event::SessionStopped {
+                    reason: SessionStopReason::SessionError,
+                    session_id,
+                }) if session_id == "session-1"
+            ),
+            "expected SessionStopped{{SessionError}}, got: {events:?}"
+        );
+        assert!(
+            !app.active_sessions.contains_key("session-1"),
+            "a worker model-load panic must not leave a zombie app-level session"
+        );
     }
 
     #[test]
