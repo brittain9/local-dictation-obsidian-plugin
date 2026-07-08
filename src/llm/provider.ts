@@ -131,11 +131,15 @@ export function withProviderModel(
 }
 
 // Pure size-based routing: 'local' always picks Ollama, 'remote' always picks
-// OpenRouter, and 'auto' escalates to OpenRouter once the user message exceeds
-// the configured character threshold (local models choke on large contexts).
+// OpenRouter, and 'auto' escalates to OpenRouter once the *transcript*
+// exceeds the configured character threshold (local models choke on large
+// contexts). This deliberately ignores the full prompt/user-message size,
+// which also carries note/prior-utterance context: the UI promises that Auto
+// only sends large transcripts to OpenRouter, and a short dictation must not
+// escalate just because it happens to have a large note attached.
 export function selectRouteProviderId(
   routing: LlmRouting,
-  userMessageChars: number,
+  transcriptChars: number,
   thresholdChars: number,
 ): LlmProviderId {
   switch (routing) {
@@ -144,7 +148,7 @@ export function selectRouteProviderId(
     case 'remote':
       return 'openrouter';
     case 'auto':
-      return userMessageChars <= thresholdChars ? 'ollama' : 'openrouter';
+      return transcriptChars <= thresholdChars ? 'ollama' : 'openrouter';
   }
 }
 
