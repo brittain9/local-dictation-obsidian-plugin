@@ -106,6 +106,8 @@ interface EnvelopeBase<TType extends string> {
 
 export type HealthCommand = EnvelopeBase<'health'>;
 
+export type ProbeSystemAudioCommand = EnvelopeBase<'probe_system_audio'>;
+
 export interface StartSessionCommand extends EnvelopeBase<'start_session'> {
   accelerationPreference: AccelerationPreference;
   diarizationEnabled: boolean;
@@ -180,6 +182,7 @@ export type SidecarCommand =
   | InstallModelCommand
   | ListInstalledModelsCommand
   | ListModelCatalogCommand
+  | ProbeSystemAudioCommand
   | ProbeModelSelectionCommand
   | RemoveModelCommand
   | ShutdownCommand
@@ -196,6 +199,12 @@ export interface SystemInfoEvent extends EnvelopeBase<'system_info'> {
   compiledRuntimes: CompiledRuntimeInfo[];
   sidecarVersion: string;
   systemInfo: string;
+}
+
+export interface SystemAudioProbeResultEvent extends EnvelopeBase<'system_audio_probe_result'> {
+  code?: string;
+  message?: string;
+  ok: boolean;
 }
 
 export interface ModelStoreEvent extends EnvelopeBase<'model_store'>, ModelStoreRecord {}
@@ -296,6 +305,7 @@ export type SidecarEvent =
   | SessionStartedEvent
   | SessionStateChangedEvent
   | SessionStoppedEvent
+  | SystemAudioProbeResultEvent
   | SystemInfoEvent
   | TranscriptionQueueChangedEvent
   | TranscriptReadyEvent
@@ -303,6 +313,10 @@ export type SidecarEvent =
 
 export function createHealthCommand(): HealthCommand {
   return createEnvelope('health');
+}
+
+export function createProbeSystemAudioCommand(): ProbeSystemAudioCommand {
+  return createEnvelope('probe_system_audio');
 }
 
 export function createGetSystemInfoCommand(): GetSystemInfoCommand {
@@ -475,6 +489,7 @@ const SIDECAR_EVENT_TYPE_FLAGS = {
   session_started: 1,
   session_state_changed: 1,
   session_stopped: 1,
+  system_audio_probe_result: 1,
   system_info: 1,
   transcript_ready: 1,
   transcription_queue_changed: 1,

@@ -373,6 +373,44 @@ describe('DictationSessionController', () => {
     });
   });
 
+  it('debug-logs final transcript summaries without logging partial revision summaries', async () => {
+    const logger = new FakeLogger();
+    const sidecarConnection = new FakeSidecarConnection();
+    const sessions: FakeSession[] = [];
+    const controller = createController({
+      createSession: (session) => {
+        sessions.push(session);
+      },
+      logger,
+      sidecarConnection,
+    });
+
+    await controller.startDictation();
+    const sessionId = sidecarConnection.startSession.mock.calls[0]?.[0].sessionId ?? '';
+    logger.debug.mockClear();
+
+    sidecarConnection.emit(transcriptReady(sessionId, 'partial', { isFinal: false, revision: 1 }));
+
+    await vi.waitFor(() => {
+      expect(sessions[0]?.acceptTranscript).toHaveBeenCalledWith(
+        expect.objectContaining({ isFinal: false, text: 'partial' }),
+      );
+    });
+    expect(logger.debug).not.toHaveBeenCalledWith(
+      'session',
+      expect.stringContaining('transcript received'),
+    );
+
+    sidecarConnection.emit(transcriptReady(sessionId, 'final', { isFinal: true, revision: 2 }));
+
+    await vi.waitFor(() => {
+      expect(logger.debug).toHaveBeenCalledWith(
+        'session',
+        'final transcript received (5 chars, 12ms processing)',
+      );
+    });
+  });
+
   it('silently enforces the five-session active plus draining cap', async () => {
     const sidecarConnection = new FakeSidecarConnection();
     const controller = createController({ sidecarConnection });

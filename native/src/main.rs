@@ -8,7 +8,7 @@ use anyhow::{Context, Result};
 use local_dictation_sidecar::app::{AppState, ControlFlow};
 use local_dictation_sidecar::catalog::ModelCatalog;
 use local_dictation_sidecar::protocol::{
-    AudioFrame, Event, IncomingFrame, read_frame, write_event_frame,
+    AudioFrame, Command, Event, IncomingFrame, read_frame, write_event_frame,
 };
 use whisper_rs::install_logging_hooks;
 
@@ -17,6 +17,7 @@ enum InputMessage {
     Frame(IncomingFrame),
     ProtocolError(String),
     SystemAudio(AudioFrame),
+    SystemAudioProbeResult(Event),
 }
 
 fn main() -> Result<()> {
@@ -37,7 +38,7 @@ fn run_stdio(catalog: ModelCatalog, sidecar_version: String) -> Result<()> {
     // into the same channel the stdin reader feeds, so they flow through the
     // identical command/audio dispatch path. `Sender` is `!Sync`, so a `Mutex`
     // makes the sink satisfy the `Send + Sync` bound.
-    let sink_tx = Mutex::new(input_tx);
+    let sink_tx = Mutex::new(input_tx.clone());
     app_state.set_system_audio_sink(Arc::new(move |frame| {
         if let Ok(tx) = sink_tx.lock() {
             let _ = tx.send(InputMessage::SystemAudio(frame));
@@ -54,6 +55,10 @@ fn run_stdio(catalog: ModelCatalog, sidecar_version: String) -> Result<()> {
                         ControlFlow::Continue,
                         app_state.handle_audio_frame(audio_frame),
                     ),
+                    IncomingFrame::Command(Command::ProbeSystemAudio) => {
+                        spawn_system_audio_probe(input_tx.clone());
+                        (ControlFlow::Continue, Vec::new())
+                    }
                     IncomingFrame::Command(command) => app_state.handle_command(command),
                 };
 
@@ -68,6 +73,9 @@ fn run_stdio(catalog: ModelCatalog, sidecar_version: String) -> Result<()> {
                     &mut writer,
                     app_state.handle_system_audio_frame(audio_frame),
                 )?;
+            }
+            Ok(InputMessage::SystemAudioProbeResult(event)) => {
+                write_events(&mut writer, vec![event])?;
             }
             Ok(InputMessage::ProtocolError(details)) => {
                 write_events(
@@ -115,6 +123,25 @@ fn spawn_input_reader(tx: Sender<InputMessage>) {
                 }
             }
         }
+    });
+}
+
+fn spawn_system_audio_probe(tx: Sender<InputMessage>) {
+    thread::spawn(move || {
+        let event = match local_dictation_sidecar::system_audio::probe_system_audio() {
+            Ok(()) => Event::SystemAudioProbeResult {
+                ok: true,
+                code: None,
+                message: None,
+            },
+            Err(error) => Event::SystemAudioProbeResult {
+                ok: false,
+                code: Some(error.code().to_string()),
+                message: Some(error.message()),
+            },
+        };
+
+        let _ = tx.send(InputMessage::SystemAudioProbeResult(event));
     });
 }
 

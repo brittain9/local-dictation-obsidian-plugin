@@ -17,8 +17,8 @@ Options:
   --help      Show this help text.
 
 Environment overrides:
-  CC             Host C compiler       (default: /usr/bin/gcc)
-  CXX            Host C++ compiler     (default: /usr/bin/g++)
+  CC             Host C compiler       (default: newest supported /usr/bin/gcc-*)
+  CXX            Host C++ compiler     (default: newest supported /usr/bin/g++-*)
   CUDAHOSTCXX    nvcc host compiler    (default: $CXX)
   CUDACXX        CUDA compiler         (default: /usr/local/cuda/bin/nvcc)
   CUDA_LIB_PATH  Library dir for RPATH (auto-detected from CUDACXX)
@@ -44,6 +44,42 @@ require_glob_match() {
   compgen -G "$pattern" >/dev/null || die "required runtime artifact missing after build: $pattern"
 }
 
+compiler_major() {
+  local compiler=$1
+  "$compiler" -dumpfullversion -dumpversion | awk -F. '{ print $1 }'
+}
+
+pick_supported_compiler() {
+  local fallback=$1
+  shift
+
+  local candidate
+  for candidate in "$@"; do
+    [[ -x "$candidate" ]] || continue
+    local major
+    major=$(compiler_major "$candidate")
+    [[ "$major" =~ ^[0-9]+$ ]] || continue
+    if (( major <= 15 )); then
+      printf '%s\n' "$candidate"
+      return
+    fi
+  done
+
+  printf '%s\n' "$fallback"
+}
+
+require_cuda_supported_compiler() {
+  local label=$1
+  local compiler=$2
+  local major
+  major=$(compiler_major "$compiler")
+  [[ "$major" =~ ^[0-9]+$ ]] || die "failed to detect $label version from $compiler"
+
+  if (( major > 15 )); then
+    die "CUDA 13.2 does not support $label $compiler (GCC $major). Install gcc-15/g++-15 or set CC/CXX/CUDAHOSTCXX to a GCC <= 15 toolchain."
+  fi
+}
+
 stage_runtime_artifact() {
   local artifact_path=$1
   local resolved_path
@@ -54,6 +90,15 @@ stage_runtime_artifact() {
     rm -f "$artifact_path"
     cp "$resolved_path" "$artifact_path"
   fi
+}
+
+copy_resolved_artifact() {
+  local source_path=$1
+  local destination_path=$2
+  local resolved_path
+  resolved_path=$(readlink -f "$source_path")
+  [[ -f "$resolved_path" ]] || die "runtime artifact does not resolve to a file: $source_path"
+  cp "$resolved_path" "$destination_path"
 }
 
 # ---------------------------------------------------------------------------
@@ -87,8 +132,10 @@ done
 # ---------------------------------------------------------------------------
 
 export PATH="/usr/local/cuda/bin:$HOME/.cargo/bin:$PATH"
-export CC=${CC:-/usr/bin/gcc}
-export CXX=${CXX:-/usr/bin/g++}
+default_cc=$(pick_supported_compiler /usr/bin/gcc /usr/bin/gcc-15 /usr/bin/gcc-14 /usr/bin/gcc-13 /usr/bin/gcc-12 /usr/bin/gcc)
+default_cxx=$(pick_supported_compiler /usr/bin/g++ /usr/bin/g++-15 /usr/bin/g++-14 /usr/bin/g++-13 /usr/bin/g++-12 /usr/bin/g++)
+export CC=${CC:-$default_cc}
+export CXX=${CXX:-$default_cxx}
 export CUDAHOSTCXX=${CUDAHOSTCXX:-$CXX}
 export CUDACXX=${CUDACXX:-/usr/local/cuda/bin/nvcc}
 export WHISPER_DONT_GENERATE_BINDINGS=1
@@ -106,6 +153,9 @@ require_cmd "$CC"
 require_cmd "$CXX"
 require_cmd "$CUDAHOSTCXX"
 require_cmd "$CUDACXX"
+require_cuda_supported_compiler "CC" "$CC"
+require_cuda_supported_compiler "CXX" "$CXX"
+require_cuda_supported_compiler "CUDAHOSTCXX" "$CUDAHOSTCXX"
 
 # ---------------------------------------------------------------------------
 # Paths
@@ -183,4 +233,8 @@ while IFS= read -r provider; do
   require_glob_match "$target_dir/$profile/${provider}*"
   stage_runtime_artifact "$target_dir/$profile/$provider"
 done < <(node "$REPO_ROOT/scripts/list-cuda-artifacts.mjs" providers linux)
+
+while IFS= read -r runtime; do
+  copy_resolved_artifact "$cuda_lib/$runtime" "$target_dir/$profile/$runtime"
+done < <(node "$REPO_ROOT/scripts/list-cuda-artifacts.mjs" runtime linux)
 printf 'Done: %s\n' "$binary"

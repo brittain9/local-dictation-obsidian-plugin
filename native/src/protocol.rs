@@ -266,6 +266,7 @@ struct CommandEnvelope {
 )]
 pub enum Command {
     Health,
+    ProbeSystemAudio,
     StartSession {
         #[serde(default)]
         acceleration_preference: AccelerationPreference,
@@ -398,6 +399,13 @@ pub enum Event {
         compiled_runtimes: Vec<CompiledRuntimeInfo>,
         compiled_adapters: Vec<CompiledAdapterInfo>,
         system_info: String,
+    },
+    SystemAudioProbeResult {
+        ok: bool,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        code: Option<String>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        message: Option<String>,
     },
     SessionStarted {
         mode: ListeningMode,
@@ -703,6 +711,22 @@ mod tests {
     }
 
     #[test]
+    fn probe_system_audio_command_round_trips() {
+        let payload = serde_json::to_vec(&serde_json::json!({
+            "type": "probe_system_audio"
+        }))
+        .expect("payload should serialize");
+        let mut framed = Vec::new();
+        write_frame(&mut framed, JSON_FRAME_KIND, &payload).expect("frame should write");
+
+        let parsed = read_frame(&mut framed.as_slice())
+            .expect("frame should parse")
+            .expect("frame should exist");
+
+        assert_eq!(parsed, IncomingFrame::Command(Command::ProbeSystemAudio));
+    }
+
+    #[test]
     fn audio_level_event_serializes_for_ribbon_metering() {
         let event = Event::AudioLevel {
             bands: [0.0, 0.1, 0.2, 0.3, 0.4, 1.0],
@@ -714,6 +738,28 @@ mod tests {
         let parsed: EventEnvelope = serde_json::from_slice(payload).expect("event should parse");
 
         assert_eq!(parsed.event, event);
+    }
+
+    #[test]
+    fn system_audio_probe_result_omits_success_error_fields() {
+        let event = Event::SystemAudioProbeResult {
+            ok: true,
+            code: None,
+            message: None,
+        };
+        let mut framed = Vec::new();
+        write_event_frame(&mut framed, &event).expect("event should write");
+        let payload = &framed[FRAME_HEADER_LENGTH..];
+        let parsed: serde_json::Value =
+            serde_json::from_slice(payload).expect("event should parse");
+
+        assert_eq!(
+            parsed,
+            serde_json::json!({
+                "type": "system_audio_probe_result",
+                "ok": true
+            })
+        );
     }
 
     #[test]

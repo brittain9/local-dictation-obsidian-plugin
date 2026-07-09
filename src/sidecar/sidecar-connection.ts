@@ -13,6 +13,7 @@ import {
   createListInstalledModelsCommand,
   createListModelCatalogCommand,
   createProbeModelSelectionCommand,
+  createProbeSystemAudioCommand,
   createRemoveModelCommand,
   createStartSessionCommand,
   createStopSessionCommand,
@@ -34,6 +35,7 @@ import {
   type SidecarCommand,
   type SidecarEvent,
   type StartSessionCommand,
+  type SystemAudioProbeResultEvent,
   type SystemInfoEvent,
 } from './protocol';
 import { createSidecarStderrLogEntry } from './sidecar-logging';
@@ -201,6 +203,16 @@ export class SidecarConnection {
         selectedModelEquals(event.selection, payload.modelSelection),
       'model_probe_result',
       timeoutMs,
+    );
+  }
+
+  async probeSystemAudio(timeoutMs = 75_000): Promise<SystemAudioProbeResultEvent> {
+    return this.sendCommandAndWait(
+      createProbeSystemAudioCommand(),
+      (event): event is SystemAudioProbeResultEvent => event.type === 'system_audio_probe_result',
+      'system_audio_probe_result',
+      timeoutMs,
+      (event) => event.sessionId === undefined,
     );
   }
 
@@ -454,9 +466,10 @@ function shouldLogProtocolEvent(event: SidecarEvent): boolean {
     case 'session_started':
     case 'session_state_changed':
     case 'session_stopped':
-    case 'transcript_ready':
     case 'warning':
       return true;
+    case 'transcript_ready':
+      return event.isFinal;
     case 'model_install_update':
       return false;
     default:
@@ -475,7 +488,7 @@ function summarizeProtocolEvent(event: SidecarEvent): string {
     case 'session_stopped':
       return `event: session_stopped (${event.sessionId}, ${event.reason})`;
     case 'transcript_ready':
-      return `event: transcript_ready (${event.sessionId}, ${event.text.length} chars)`;
+      return `event: transcript_ready (${event.sessionId}, final, ${event.text.length} chars)`;
     case 'warning':
       return `event: warning (${event.code})`;
     case 'error':

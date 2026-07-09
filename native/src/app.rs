@@ -293,6 +293,7 @@ impl AppState {
 
                 (ControlFlow::Continue, events)
             }
+            Command::ProbeSystemAudio => (ControlFlow::Continue, events),
             Command::ContextResponse {
                 correlation_id,
                 context,
@@ -2166,6 +2167,32 @@ mod tests {
             !app.active_sessions.contains_key("session-1"),
             "failed system-audio start must tear down the partially-created session"
         );
+    }
+
+    #[test]
+    fn system_audio_permission_denied_reports_permission_code() {
+        let model_file_path = create_model_file();
+        let system_audio = FakeSystemAudioState::default();
+        system_audio.fail_start(SystemAudioError::PermissionDenied);
+        let mut app = test_app_with_system_audio(system_audio.clone());
+
+        let (_, events) = app.handle_command(start_session_command_with_system_audio(
+            "session-1",
+            &model_file_path,
+            true,
+        ));
+
+        assert_eq!(
+            events,
+            vec![Event::Error {
+                code: "system_audio_permission_denied".to_string(),
+                details: None,
+                message: "System-audio recording permission is off for Obsidian. Open System Settings → Privacy & Security → Screen & System Audio Recording, enable Obsidian, and try again.".to_string(),
+                session_id: Some("session-1".to_string()),
+            }]
+        );
+        assert_eq!(system_audio.starts(), vec!["session-1"]);
+        assert_eq!(system_audio.stops(), vec!["session-1"]);
     }
 
     #[test]

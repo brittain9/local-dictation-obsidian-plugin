@@ -5,6 +5,10 @@ import { Platform } from 'obsidian';
 import type { AudioCaptureStream } from '../audio/audio-capture-stream';
 import { formatMicrophoneCaptureErrorMessage } from '../audio/microphone-permission-message';
 import type { SidecarAudioLevelMeter } from '../audio/sidecar-audio-level-meter';
+import {
+  formatSystemAudioErrorMessage,
+  formatSystemAudioSidecarErrorMessage,
+} from '../audio/system-audio-permission-message';
 import type { NotePlacementOptions } from '../editor/note-surface';
 import {
   type LlmPostprocessMode,
@@ -676,10 +680,12 @@ export class DictationSessionController {
     entry: ManagedSession,
     event: TranscriptReadyEvent,
   ): Promise<void> {
-    this.dependencies.logger?.debug(
-      'session',
-      `transcript received (${event.text.length} chars, ${event.processingDurationMs}ms processing)`,
-    );
+    if (event.isFinal) {
+      this.dependencies.logger?.debug(
+        'session',
+        `final transcript received (${event.text.length} chars, ${event.processingDurationMs}ms processing)`,
+      );
+    }
 
     for (const warning of event.warnings) {
       this.dependencies.logger?.debug(
@@ -1085,7 +1091,8 @@ export class DictationSessionController {
       return;
     }
 
-    const detail = event.details ? `${event.message} (${event.details})` : event.message;
+    const rawDetail = event.details ? `${event.message} (${event.details})` : event.message;
+    const detail = formatSystemAudioErrorMessage(rawDetail, event.code);
 
     if (event.sessionId === undefined) {
       this.handleError('Local Dictation sidecar error', detail);
@@ -1185,6 +1192,13 @@ export class DictationSessionController {
     if (microphoneMessage !== null) {
       this.dependencies.logger?.warn('session', message, formatErrorMessage(error));
       this.dependencies.notice(microphoneMessage);
+      return;
+    }
+
+    const systemAudioMessage = formatSystemAudioSidecarErrorMessage(error);
+    if (systemAudioMessage !== null) {
+      this.dependencies.logger?.warn('session', message, formatErrorMessage(error));
+      this.dependencies.notice(systemAudioMessage);
       return;
     }
 

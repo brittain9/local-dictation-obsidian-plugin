@@ -1,6 +1,7 @@
 import type { App, Plugin } from 'obsidian';
 import { Notice, Platform, PluginSettingTab, Setting } from 'obsidian';
 
+import { formatSystemAudioProbeResultMessage } from '../audio/system-audio-permission-message';
 import { resolveEngineCapabilities } from '../models/capability-view';
 import type { ModelInstallManager } from '../models/model-install-manager';
 import { updateInstallProgressElement } from '../models/model-install-progress';
@@ -49,6 +50,7 @@ import {
   SidecarSettingsSection,
 } from './sidecar-settings-section';
 import { SmartParagraphSettingsModal } from './smart-paragraph-settings-modal';
+import { isSystemAudioSupportedOnCurrentPlatform } from './system-audio-support';
 
 interface SettingsTabDependencies {
   getSettings: () => PluginSettings;
@@ -61,7 +63,7 @@ interface SettingsTabDependencies {
   resolvePluginDirectory: () => Promise<string>;
   restartSidecar: () => Promise<void>;
   saveSettings: (settings: PluginSettings) => Promise<void>;
-  sidecarConnection: Pick<SidecarConnection, 'shutdown'>;
+  sidecarConnection: Pick<SidecarConnection, 'probeSystemAudio' | 'shutdown'>;
   sidecarInstallManager: SidecarInstallManager;
 }
 
@@ -168,7 +170,7 @@ export class LocalSttSettingTab extends PluginSettingTab {
     // --- Capture ---
     const captureCard = createSettingGroup(containerEl, 'Capture');
 
-    const systemAudioSupported = Platform.isWin || Platform.isLinux;
+    const systemAudioSupported = isSystemAudioSupportedOnCurrentPlatform();
 
     this.disposeMicrophoneSection = renderMicrophonePicker(captureCard, {
       access: this.access,
@@ -181,6 +183,12 @@ export class LocalSttSettingTab extends PluginSettingTab {
         name: 'Include system audio',
         desc: "Also capture this computer's default audio output for meetings, calls, and videos.",
         key: 'includeSystemAudio',
+        onChange: async (value) => {
+          // First-ever probe is the designed moment for the macOS TCC prompt.
+          if (value && Platform.isMacOS) {
+            await this.probeSystemAudio();
+          }
+        },
       });
     }
 
@@ -331,6 +339,20 @@ export class LocalSttSettingTab extends PluginSettingTab {
     this.disposeMissingSidecarBanner?.();
     this.disposeMissingSidecarBanner = null;
     this.missingSidecarProgressEl = null;
+  }
+
+  private async probeSystemAudio(): Promise<void> {
+    try {
+      const result = await this.dependencies.sidecarConnection.probeSystemAudio();
+      if (result.ok) {
+        new Notice('System audio is ready.');
+        return;
+      }
+
+      new Notice(formatSystemAudioProbeResultMessage(result));
+    } catch (error) {
+      new Notice(`Could not test system audio: ${formatErrorMessage(error)}`);
+    }
   }
 
   private renderTranscriptFormattingSetting(parent: HTMLElement): void {

@@ -63,9 +63,10 @@ it into fixed 640-byte frames at 50 fps.
   linear-interpolation resampling from the browser's native rate (44.1/48 kHz)
   down to 16 kHz.
 - **System audio** (this computer's output) is captured natively by the sidecar
-  on Windows (WASAPI loopback) and Linux (the default PulseAudio/PipeWire
-  monitor). It is optional and graceful — if the platform's audio stack is
-  unavailable (as on macOS) the source is simply hidden.
+  on Windows (WASAPI loopback), Linux (the default PulseAudio/PipeWire monitor),
+  and macOS 14.2+ (CoreAudio process taps attached to a private aggregate
+  device). It is optional and graceful — if the platform's audio stack is
+  unavailable the source is simply hidden.
 
 **PCM format** (shared constants, identical in TS and Rust):
 
