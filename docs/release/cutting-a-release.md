@@ -53,8 +53,25 @@ just bit us (a stale `native/Cargo.toml`) is caught here in seconds.
 ```bash
 # 1. Land all the bumps on main via a PR — main is protected, so direct
 #    pushes are rejected by branch-protection rules.
-# 2. Tag main HEAD with the bare version and push:
+# 2. Wait for the Windows CUDA cache warmer at that exact main commit. The
+#    release-metadata bump triggers it automatically; dispatch it on main if a
+#    retry is needed. Do not tag while this run is queued or in progress:
 git fetch origin
+main_sha=$(git rev-parse origin/main)
+gh run list --workflow windows-cuda-cache.yml --commit "$main_sha" --limit 1
+# If no run exists, or the matching run needs a clean retry:
+gh workflow run windows-cuda-cache.yml --ref main
+run_id=$(gh run list --workflow windows-cuda-cache.yml --commit "$main_sha" --limit 1 --json databaseId --jq '.[0].databaseId')
+test -n "$run_id"
+gh run watch "$run_id" --exit-status
+
+# 3. The successful exact-commit run above is the release gate. List the two
+#    default-branch cache families as a diagnostic; broad key prefixes alone do
+#    not prove that a cache matches the commit being tagged.
+gh cache list --ref refs/heads/main --limit 100 --json key,ref,createdAt,lastAccessedAt --jq \
+  '.[] | select(.key | startswith("cuda-Windows-") or contains("sidecar-windows-x86_64-cuda"))'
+
+# 4. Tag main HEAD with the bare version and push:
 node scripts/read-release-version.mjs --tag <version>   # final check against the merged main content
 git tag <version> origin/main
 git push origin <version>                               # fires .github/workflows/release.yml
@@ -87,12 +104,14 @@ CUDA archives also bundle the ONNX Runtime provider libraries and the reviewed
 CUDA runtime libraries declared in `native/cuda-artifacts.json`. The macOS sidecar
 is ad-hoc signed before packaging.
 
-CUDA release builds target one forward-compatible Turing PTX target
-(`CMAKE_CUDA_ARCHITECTURES=75-virtual`), and all release jobs set `GGML_NATIVE=OFF`
-so sidecars don't inherit runner-only CPU SIMD. On licensing: the ONNX Runtime
-provider libraries are MIT and safe to bundle; the bundled CUDA runtime libraries
-ship after CUDA EULA review; cuDNN is NVIDIA-licensed and is **not** bundled, so
-Cohere CUDA users supply it themselves.
+Cross-platform release-build invariants live in
+`.github/release-build-config.json`; the metadata job resolves that file once
+and feeds every native release leg. Its CUDA architecture targets one
+forward-compatible Turing PTX variant, and its `GGML_NATIVE` setting prevents
+sidecars from inheriting runner-only CPU SIMD. On licensing: the ONNX Runtime
+provider libraries are MIT and safe to bundle; the bundled CUDA runtime
+libraries ship after CUDA EULA review; cuDNN is NVIDIA-licensed and is **not**
+bundled, so Cohere CUDA users supply it themselves.
 
 Obsidian's updater only replaces `main.js`/`manifest.json`/`styles.css`, so the
 plugin installs the sidecar itself: it downloads the archive matching
@@ -129,5 +148,9 @@ new one publishes so "Latest" is never broken.
   legs. Always run the pre-flight.
 - **Never pipe `gh run watch` through `tail`/`head`.** A pipeline's exit status
   is the last command's, so a failed run looks like success.
+- **Wait for `windows-cuda-cache` before tagging.** GitHub lets a release tag
+  restore caches created on the default branch, but it cannot restore a cache
+  created by a different release tag. The warmer must finish successfully at
+  the exact `origin/main` commit being tagged.
 - **CUDA build legs are warm-cache fast** (~3 min) but cold runs are ~20+ min;
   don't assume a hang.

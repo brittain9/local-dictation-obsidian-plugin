@@ -1,0 +1,74 @@
+name: Build Windows CUDA release sidecar
+description: Build the production Windows CUDA sidecar and populate its trusted caches.
+
+inputs:
+  node-version:
+    description: Node.js version resolved from .mise.toml.
+    required: true
+  rust-toolchain:
+    description: Rust version resolved from rust-toolchain.toml.
+    required: true
+  ggml-native:
+    description: Portable GGML native-build setting.
+    required: true
+  ort-cuda-version:
+    description: ONNX Runtime CUDA execution-provider major.
+    required: true
+  cuda-toolkit-version:
+    description: CUDA toolkit version used by release builds.
+    required: true
+  cuda-architectures:
+    description: CMake CUDA architecture target used by release builds.
+    required: true
+  windows-cuda-subpackages-manifest:
+    description: Repository-relative Windows CUDA subpackage manifest.
+    required: true
+
+outputs:
+  cuda-toolkit-cache-hit:
+    description: Whether the exact extracted-toolkit cache was restored.
+    value: ${{ steps.cuda.outputs.cache-hit }}
+
+runs:
+  using: composite
+  steps:
+    # Keep the cache-invalidating environment beside the authoritative build.
+    # setup-sidecar-rust hashes these prefixes before restoring target-cuda.
+    - name: Configure Windows CUDA release build
+      shell: pwsh
+      env:
+        CMAKE_CUDA_ARCHITECTURES_INPUT: ${{ inputs.cuda-architectures }}
+        GGML_NATIVE_INPUT: ${{ inputs.ggml-native }}
+        ORT_CUDA_VERSION_INPUT: ${{ inputs.ort-cuda-version }}
+      run: |
+        "GGML_NATIVE=$env:GGML_NATIVE_INPUT" | Out-File -FilePath $env:GITHUB_ENV -Append
+        "ORT_CUDA_VERSION=$env:ORT_CUDA_VERSION_INPUT" | Out-File -FilePath $env:GITHUB_ENV -Append
+        "CMAKE_CUDA_ARCHITECTURES=$env:CMAKE_CUDA_ARCHITECTURES_INPUT" | Out-File -FilePath $env:GITHUB_ENV -Append
+
+    - name: Setup Node.js + npm
+      uses: ./.github/actions/setup-node-npm
+      with:
+        node-version: ${{ inputs.node-version }}
+
+    # Run toolkit setup before rust-cache so CUDA_TOOLKIT_VERSION participates
+    # in the Rust cache key on both a cache hit and a fresh install.
+    - id: cuda
+      name: Setup Windows CUDA toolkit
+      uses: ./.github/actions/setup-windows-cuda
+      with:
+        toolkit-version: ${{ inputs.cuda-toolkit-version }}
+        subpackages-manifest: ${{ inputs.windows-cuda-subpackages-manifest }}
+
+    - name: Setup Rust
+      uses: ./.github/actions/setup-sidecar-rust
+      with:
+        toolchain: ${{ inputs.rust-toolchain }}
+        cache-workspaces: native -> target-cuda
+        cache-shared-key: sidecar-windows-x86_64-cuda
+        cache-on-failure: 'false'
+
+    - name: Build Windows CUDA release sidecar
+      shell: pwsh
+      env:
+        CARGO_TIMINGS: '1'
+      run: npm run build:sidecar:cuda:windows:release

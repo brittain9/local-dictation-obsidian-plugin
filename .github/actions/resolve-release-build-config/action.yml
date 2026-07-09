@@ -1,0 +1,33 @@
+name: Resolve release build configuration
+description: Read authoritative release and toolchain settings for downstream jobs.
+
+outputs:
+  node-version:
+    description: Node.js version pinned by .mise.toml.
+    value: ${{ steps.config.outputs.node-version }}
+  rust-toolchain:
+    description: Rust version pinned by rust-toolchain.toml.
+    value: ${{ steps.config.outputs.rust-toolchain }}
+  ggml-native:
+    description: Portable GGML native-build setting.
+    value: ${{ steps.config.outputs.ggml-native }}
+  ort-cuda-version:
+    description: ONNX Runtime CUDA execution-provider major.
+    value: ${{ steps.config.outputs.ort-cuda-version }}
+  cuda-toolkit-version:
+    description: CUDA toolkit version used by release builds.
+    value: ${{ steps.config.outputs.cuda-toolkit-version }}
+  cuda-architectures:
+    description: CMake CUDA architecture target used by release builds.
+    value: ${{ steps.config.outputs.cuda-architectures }}
+  windows-cuda-subpackages-manifest:
+    description: Repository-relative Windows CUDA subpackage manifest.
+    value: ${{ steps.config.outputs.windows-cuda-subpackages-manifest }}
+
+runs:
+  using: composite
+  steps:
+    - id: config
+      name: Resolve release build configuration
+      shell: bash
+      run: node scripts/read-release-build-config.mjs --github-output

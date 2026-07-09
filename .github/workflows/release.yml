@@ -17,48 +17,32 @@ concurrency:
   group: release-${{ github.ref }}
   cancel-in-progress: false
 
-env:
-  # GGML_NATIVE=OFF forces a portable CPU feature baseline (falls back to
-  # GGML_AVX2). Without this, ggml's cmake probes the runner's CPU and bakes
-  # in whatever SIMD it supports (AVX-512 on current Azure ubuntu-latest /
-  # windows-latest runners), which crashes with STATUS_ILLEGAL_INSTRUCTION on
-  # consumer CPUs that don't execute AVX-512 (e.g. Alder Lake / Raptor Lake).
-  # Inherited by every job env so Swatinem/rust-cache (which runs before the
-  # Build sidecar step) sees it when computing its key, otherwise stale
-  # AVX-512-compiled artifacts get restored and silently re-shipped.
-  GGML_NATIVE: 'OFF'
-  # Pin the ONNX Runtime CUDA execution-provider major (cu13). Set here at the
-  # workflow env level — not only in build-cuda.{sh,ps1} — for the same reason
-  # as GGML_NATIVE: Swatinem/rust-cache computes its key before the build step,
-  # so the value must be visible at cache time (via the ORT env-vars prefix in
-  # setup-sidecar-rust) for an ORT CUDA-major flip to bust the cache instead of
-  # silently restoring a stale cu12 provider. The build scripts keep a :-13
-  # fallback so local builds stay deterministic too.
-  ORT_CUDA_VERSION: '13'
-  # Single source of truth for the CUDA toolkit: drives the Jimver/cuda-toolkit
-  # install AND is hashed into the rust-cache key (the 'CUDA' env-vars prefix in
-  # setup-sidecar-rust). Set at workflow env so it's visible when rust-cache
-  # computes its key — before the toolkit is installed — so a toolkit bump forks
-  # target-cuda instead of silently restoring stale NVCC objects. See #143.
-  CUDA_TOOLKIT_VERSION: '13.2.0'
-  NODE_VERSION: 24.14.1
-  RUST_TOOLCHAIN: 1.94.1
-
 jobs:
   metadata:
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.version.outputs.value }}
       notes_path: ${{ steps.notes.outputs.path }}
+      node_version: ${{ steps.build-config.outputs.node-version }}
+      rust_toolchain: ${{ steps.build-config.outputs.rust-toolchain }}
+      ggml_native: ${{ steps.build-config.outputs.ggml-native }}
+      ort_cuda_version: ${{ steps.build-config.outputs.ort-cuda-version }}
+      cuda_toolkit_version: ${{ steps.build-config.outputs.cuda-toolkit-version }}
+      cuda_architectures: ${{ steps.build-config.outputs.cuda-architectures }}
+      windows_cuda_subpackages_manifest: ${{ steps.build-config.outputs.windows-cuda-subpackages-manifest }}
 
     steps:
       - name: Checkout
         uses: actions/checkout@v7
 
+      - id: build-config
+        name: Resolve release build configuration
+        uses: ./.github/actions/resolve-release-build-config
+
       - name: Setup Node.js + npm
         uses: ./.github/actions/setup-node-npm
         with:
-          node-version: ${{ env.NODE_VERSION }}
+          node-version: ${{ steps.build-config.outputs.node-version }}
 
       - id: version
         name: Resolve release version
@@ -87,7 +71,7 @@ jobs:
       - name: Setup Node.js + npm
         uses: ./.github/actions/setup-node-npm
         with:
-          node-version: ${{ env.NODE_VERSION }}
+          node-version: ${{ needs.metadata.outputs.node_version }}
           cache: 'true'
           upgrade-npm: 'true'
 
@@ -118,6 +102,11 @@ jobs:
   native-quality:
     needs: metadata
     runs-on: ubuntu-latest
+    env:
+      # These values must exist before rust-cache computes its environment key.
+      GGML_NATIVE: ${{ needs.metadata.outputs.ggml_native }}
+      ORT_CUDA_VERSION: ${{ needs.metadata.outputs.ort_cuda_version }}
+      CUDA_TOOLKIT_VERSION: ${{ needs.metadata.outputs.cuda_toolkit_version }}
 
     steps:
       - name: Checkout
@@ -126,14 +115,14 @@ jobs:
       - name: Setup Node.js + npm
         uses: ./.github/actions/setup-node-npm
         with:
-          node-version: ${{ env.NODE_VERSION }}
+          node-version: ${{ needs.metadata.outputs.node_version }}
           cache: 'true'
           upgrade-npm: 'true'
 
       - name: Setup Rust
         uses: ./.github/actions/setup-sidecar-rust
         with:
-          toolchain: ${{ env.RUST_TOOLCHAIN }}
+          toolchain: ${{ needs.metadata.outputs.rust_toolchain }}
           components: rustfmt, clippy
           cache-workspaces: native -> target
           cache-shared-key: native-quality
@@ -158,11 +147,12 @@ jobs:
       id-token: write
       attestations: write
     env:
-      # ggml's CUDA default builds PTX/SASS for many architecture variants,
-      # which dominates release CUDA jobs (especially on Windows). Ship one
-      # forward-compatible Turing PTX target instead. That requires a Turing-or-
-      # newer NVIDIA GPU for CUDA acceleration; older GPUs use the CPU sidecar.
-      CMAKE_CUDA_ARCHITECTURES: ${{ matrix.cuda_architectures }}
+      # These values must exist before rust-cache computes its environment key.
+      GGML_NATIVE: ${{ needs.metadata.outputs.ggml_native }}
+      ORT_CUDA_VERSION: ${{ needs.metadata.outputs.ort_cuda_version }}
+      CUDA_TOOLKIT_VERSION: ${{ needs.metadata.outputs.cuda_toolkit_version }}
+      # Only the CUDA matrix leg consumes this shared release target.
+      CMAKE_CUDA_ARCHITECTURES: ${{ matrix.cuda && needs.metadata.outputs.cuda_architectures || '' }}
     strategy:
       fail-fast: false
       matrix:
@@ -174,7 +164,6 @@ jobs:
             build_command: npm run build:sidecar:release
             cache_workspaces: native -> target
             cuda: false
-            cuda_architectures: ''
           - runner: ubuntu-latest
             asset_name: sidecar-linux-x86_64-cpu
             archive_name: sidecar-linux-x86_64-cpu.tar.gz
@@ -182,7 +171,6 @@ jobs:
             build_command: npm run build:sidecar:release
             cache_workspaces: native -> target
             cuda: false
-            cuda_architectures: ''
           - runner: ubuntu-latest
             asset_name: sidecar-linux-x86_64-cuda
             archive_name: sidecar-linux-x86_64-cuda.tar.gz
@@ -190,7 +178,6 @@ jobs:
             build_command: npm run build:sidecar:cuda:release
             cache_workspaces: native -> target-cuda
             cuda: true
-            cuda_architectures: '75-virtual'
 
     runs-on: ${{ matrix.runner }}
 
@@ -201,12 +188,12 @@ jobs:
       - name: Setup Node.js + npm
         uses: ./.github/actions/setup-node-npm
         with:
-          node-version: ${{ env.NODE_VERSION }}
+          node-version: ${{ needs.metadata.outputs.node_version }}
 
       - name: Setup Rust
         uses: ./.github/actions/setup-sidecar-rust
         with:
-          toolchain: ${{ env.RUST_TOOLCHAIN }}
+          toolchain: ${{ needs.metadata.outputs.rust_toolchain }}
           cache-workspaces: ${{ matrix.cache_workspaces }}
           cache-shared-key: ${{ matrix.asset_name }}
           # Never save a cache from a failed build. A failed CUDA configure would
@@ -219,7 +206,7 @@ jobs:
         if: matrix.cuda
         uses: Jimver/cuda-toolkit@v0.2.35
         with:
-          cuda: ${{ env.CUDA_TOOLKIT_VERSION }}
+          cuda: ${{ needs.metadata.outputs.cuda_toolkit_version }}
           method: network
 
       - name: Build sidecar
@@ -271,8 +258,6 @@ jobs:
       contents: read
       id-token: write
       attestations: write
-    env:
-      CMAKE_CUDA_ARCHITECTURES: ${{ matrix.cuda_architectures }}
     strategy:
       fail-fast: false
       matrix:
@@ -283,18 +268,14 @@ jobs:
             build_command: npm run build:sidecar:release
             cache_workspaces: native -> target
             cuda: false
-            cuda_architectures: ''
           - asset_name: sidecar-windows-x86_64-cuda
             archive_name: sidecar-windows-x86_64-cuda.tar.gz
             binary_path: native/target-cuda/release/local-dictation-sidecar.exe
-            build_command: npm run build:sidecar:cuda:windows:release
-            cache_workspaces: native -> target-cuda
             cuda: true
-            cuda_architectures: '75-virtual'
 
     # windows-2025 is the Windows Server 2025 image, which now ships Visual
-    # Studio 2026 (v18) by default. CUDA 13.2 is the first toolkit to support
-    # MSVC v18 as a host compiler, so the VS CUDA generator works here. We pin
+    # Studio 2026 (v18) by default. The pinned toolkit supports MSVC v18 as a
+    # host compiler, so the VS CUDA generator works here. We pin
     # this OS label rather than windows-latest for determinism (it won't roll to
     # a future Server major), and deliberately avoid the windows-2025-vs2026
     # alias — that one is testing-only and collapses into windows-2025 after the
@@ -308,15 +289,29 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
 
+      - name: Configure Windows CPU release build
+        if: '!matrix.cuda'
+        shell: pwsh
+        env:
+          CUDA_TOOLKIT_VERSION_INPUT: ${{ needs.metadata.outputs.cuda_toolkit_version }}
+          GGML_NATIVE_INPUT: ${{ needs.metadata.outputs.ggml_native }}
+          ORT_CUDA_VERSION_INPUT: ${{ needs.metadata.outputs.ort_cuda_version }}
+        run: |
+          "GGML_NATIVE=$env:GGML_NATIVE_INPUT" | Out-File -FilePath $env:GITHUB_ENV -Append
+          "ORT_CUDA_VERSION=$env:ORT_CUDA_VERSION_INPUT" | Out-File -FilePath $env:GITHUB_ENV -Append
+          "CUDA_TOOLKIT_VERSION=$env:CUDA_TOOLKIT_VERSION_INPUT" | Out-File -FilePath $env:GITHUB_ENV -Append
+
       - name: Setup Node.js + npm
+        if: '!matrix.cuda'
         uses: ./.github/actions/setup-node-npm
         with:
-          node-version: ${{ env.NODE_VERSION }}
+          node-version: ${{ needs.metadata.outputs.node_version }}
 
       - name: Setup Rust
+        if: '!matrix.cuda'
         uses: ./.github/actions/setup-sidecar-rust
         with:
-          toolchain: ${{ env.RUST_TOOLCHAIN }}
+          toolchain: ${{ needs.metadata.outputs.rust_toolchain }}
           cache-workspaces: ${{ matrix.cache_workspaces }}
           cache-shared-key: ${{ matrix.asset_name }}
           # Never save a cache from a failed build. A failed CUDA configure would
@@ -325,92 +320,24 @@ jobs:
           # warm-build path (the Windows-CUDA regression in #143).
           cache-on-failure: 'false'
 
-      # Resolve the toolkit install dir from CUDA_TOOLKIT_VERSION (Jimver installs
-      # to ...\CUDA\v<major>.<minor>). Derived, not hardcoded, so a toolkit bump
-      # moves the cache path in lockstep with the version-keyed cache below.
-      - name: Resolve CUDA install dir
+      - name: Build Windows CUDA release sidecar
         if: matrix.cuda
-        shell: pwsh
-        run: |
-          $v = '${{ env.CUDA_TOOLKIT_VERSION }}'.Split('.')
-          $dir = "C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v$($v[0]).$($v[1])"
-          "CUDA_INSTALL_DIR=$dir" | Out-File -FilePath $env:GITHUB_ENV -Append
-
-      # Cache the EXTRACTED toolkit dir and skip the (network-variable, 3-9 min)
-      # Jimver install on a hit. CMake's CUDA language support only needs nvcc on
-      # PATH + CUDA_PATH; it never reads the VS BuildCustomizations .props the
-      # installer drops outside CUDA_PATH, so caching CUDA_PATH alone suffices.
-      # Key busts on toolkit version (env) OR sub-package set (committed JSON). See #143.
-      - name: Restore CUDA toolkit
-        if: matrix.cuda
-        id: cuda-cache
-        uses: actions/cache/restore@v6
+        uses: ./.github/actions/build-windows-cuda-release
         with:
-          path: ${{ env.CUDA_INSTALL_DIR }}
-          key: cuda-${{ runner.os }}-${{ env.CUDA_TOOLKIT_VERSION }}-${{ hashFiles('.github/cuda-windows-subpackages.json') }}
-
-      - name: Read CUDA sub-packages
-        if: matrix.cuda && steps.cuda-cache.outputs.cache-hit != 'true'
-        id: cuda-subpkgs
-        shell: pwsh
-        run: |
-          $json = (Get-Content -Raw .github/cuda-windows-subpackages.json) -replace '\s', ''
-          "list=$json" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
-
-      - name: Install CUDA toolkit
-        if: matrix.cuda && steps.cuda-cache.outputs.cache-hit != 'true'
-        uses: Jimver/cuda-toolkit@v0.2.35
-        with:
-          cuda: ${{ env.CUDA_TOOLKIT_VERSION }}
-          method: network
-          # CUDA 13 split the monolithic CUDA 12.x toolkit into granular Windows
-          # installer components, so the compiler toolchain now needs pieces that
-          # nvcc/cudart bundled implicitly under 12.9:
-          #   crt    -> include/crt/host_config.h (pulled in by cuda_runtime.h)
-          #   nvvm   -> the cicc device compiler + libdevice (nvvm/bin, nvvm/libdevice)
-          #   thrust -> include/cccl (Thrust/CUB) used by ggml-cuda kernels
-          # Without them CMake's CUDA compiler probe fails (C1083 on host_config.h,
-          # then "cannot find the path" for nvvm/bin). cufft is NOT a build/link
-          # dependency (ggml/whisper never link it) but it ships cufft64_*.dll,
-          # which onnxruntime_providers_cuda.dll loads at runtime; we redistribute
-          # that DLL (native/cuda-artifacts.json), so its runtime package must be
-          # installed here for the packager to copy — dropping it breaks the
-          # release archive (Linux gets cufft free via its full-toolkit install).
-          # cublas_dev stays (ships cublas.lib / cublasLt.lib — the MSVC import
-          # libs the final link needs; LNK1181 without it, since the runtime cublas
-          # package ships only the DLLs). The set lives in
-          # .github/cuda-windows-subpackages.json so it also feeds the cache key.
-          # See #139, #143.
-          sub-packages: ${{ steps.cuda-subpkgs.outputs.list }}
-
-      # On a hit we skip Jimver, so replicate the env vars + PATH entry it would
-      # have exported (verified against Jimver/cuda-toolkit src/update-path.ts).
-      - name: Set CUDA env from cache
-        if: matrix.cuda && steps.cuda-cache.outputs.cache-hit == 'true'
-        shell: pwsh
-        run: |
-          $v = '${{ env.CUDA_TOOLKIT_VERSION }}'.Split('.')
-          $name = "CUDA_PATH_V$($v[0])_$($v[1])"
-          "CUDA_PATH=$env:CUDA_INSTALL_DIR" | Out-File -FilePath $env:GITHUB_ENV -Append
-          "$name=$env:CUDA_INSTALL_DIR" | Out-File -FilePath $env:GITHUB_ENV -Append
-          "CUDA_PATH_VX_Y=$name" | Out-File -FilePath $env:GITHUB_ENV -Append
-          "$env:CUDA_INSTALL_DIR\bin" | Out-File -FilePath $env:GITHUB_PATH -Append
+          node-version: ${{ needs.metadata.outputs.node_version }}
+          rust-toolchain: ${{ needs.metadata.outputs.rust_toolchain }}
+          ggml-native: ${{ needs.metadata.outputs.ggml_native }}
+          ort-cuda-version: ${{ needs.metadata.outputs.ort_cuda_version }}
+          cuda-toolkit-version: ${{ needs.metadata.outputs.cuda_toolkit_version }}
+          cuda-architectures: ${{ needs.metadata.outputs.cuda_architectures }}
+          windows-cuda-subpackages-manifest: ${{ needs.metadata.outputs.windows_cuda_subpackages_manifest }}
 
       - name: Build sidecar
+        if: '!matrix.cuda'
         shell: pwsh
         env:
           CARGO_TIMINGS: '1'
         run: ${{ matrix.build_command }}
-
-      # Save only after a green build, and only on a miss. Mirrors the build cache's
-      # cache-on-failure:false — a failed/partial install never poisons the
-      # immutable-keyed toolkit cache.
-      - name: Save CUDA toolkit
-        if: success() && matrix.cuda && steps.cuda-cache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v6
-        with:
-          path: ${{ env.CUDA_INSTALL_DIR }}
-          key: ${{ steps.cuda-cache.outputs.cache-primary-key }}
 
       - name: Upload cargo timings
         if: always()
@@ -464,7 +391,7 @@ jobs:
       - name: Setup Node.js + npm
         uses: ./.github/actions/setup-node-npm
         with:
-          node-version: ${{ env.NODE_VERSION }}
+          node-version: ${{ needs.metadata.outputs.node_version }}
 
       - name: Download plugin bundle
         uses: actions/download-artifact@v8
@@ -530,7 +457,7 @@ jobs:
       - name: Setup Node.js + npm
         uses: ./.github/actions/setup-node-npm
         with:
-          node-version: ${{ env.NODE_VERSION }}
+          node-version: ${{ needs.metadata.outputs.node_version }}
 
       - name: Render release timing report
         env:

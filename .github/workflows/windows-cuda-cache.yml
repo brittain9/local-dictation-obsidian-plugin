@@ -1,0 +1,88 @@
+name: windows-cuda-cache
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      # Release metadata: a version bump should warm the exact commit that will
+      # be tagged, even when its native source is otherwise unchanged.
+      - manifest.json
+      - package.json
+      - versions.json
+      - docs/release/notes/**
+      # Production sidecar inputs compiled into the Windows CUDA binary.
+      - native/Cargo.lock
+      - native/Cargo.toml
+      - native/catalog.json
+      - native/cuda-artifacts.json
+      - native/models/**
+      - native/src/**
+      # Build scripts, toolchain setup, and cache identity.
+      - .mise.toml
+      - rust-toolchain.toml
+      - scripts/build-cuda.ps1
+      - scripts/read-release-build-config.mjs
+      - scripts/list-cuda-artifacts.mjs
+      - scripts/lib/cuda-artifacts.mjs
+      - .github/actions/build-windows-cuda-release/action.yml
+      - .github/actions/resolve-release-build-config/action.yml
+      - .github/actions/setup-node-npm/action.yml
+      - .github/actions/setup-sidecar-rust/action.yml
+      - .github/actions/setup-windows-cuda/action.yml
+      - .github/cuda-windows-subpackages.json
+      - .github/release-build-config.json
+      - .github/workflows/release.yml
+      - .github/workflows/windows-cuda-cache.yml
+
+permissions:
+  contents: read
+
+# The newest relevant main commit supersedes an older warm in progress. Cache
+# actions save only after a green job, so a cancelled build cannot poison cache.
+concurrency:
+  group: windows-cuda-cache-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  warm-windows-cuda:
+    runs-on: windows-2025
+    steps:
+      # workflow_dispatch allows branch selection. Fail clearly rather than
+      # creating a branch-scoped cache that future release tags cannot restore.
+      - name: Require the default branch
+        shell: pwsh
+        env:
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          $expected = "refs/heads/$env:DEFAULT_BRANCH"
+          if ($env:GITHUB_REF -ne $expected) {
+            throw "Dispatch this workflow from $expected, not $env:GITHUB_REF."
+          }
+
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - id: build-config
+        name: Resolve release build configuration
+        uses: ./.github/actions/resolve-release-build-config
+
+      - name: Build Windows CUDA release sidecar
+        uses: ./.github/actions/build-windows-cuda-release
+        with:
+          node-version: ${{ steps.build-config.outputs.node-version }}
+          rust-toolchain: ${{ steps.build-config.outputs.rust-toolchain }}
+          ggml-native: ${{ steps.build-config.outputs.ggml-native }}
+          ort-cuda-version: ${{ steps.build-config.outputs.ort-cuda-version }}
+          cuda-toolkit-version: ${{ steps.build-config.outputs.cuda-toolkit-version }}
+          cuda-architectures: ${{ steps.build-config.outputs.cuda-architectures }}
+          windows-cuda-subpackages-manifest: ${{ steps.build-config.outputs.windows-cuda-subpackages-manifest }}
+
+      - name: Upload cargo timings
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: timings-sidecar-windows-x86_64-cuda
+          path: native/target-cuda/cargo-timings/*.html
+          if-no-files-found: ignore
