@@ -1,5 +1,7 @@
 import { Platform } from 'obsidian';
 
+import { compareVersions } from '../version';
+
 export interface SystemAudioPlatform {
   isLinux: boolean;
   isMacOS: boolean;
@@ -26,19 +28,8 @@ export function isMacOSVersionAtLeast(
   requiredMajor: number,
   requiredMinor: number,
 ): boolean {
-  if (version === null || version === undefined) {
-    return false;
-  }
-
-  const [majorText, minorText = '0'] = version.trim().split('.');
-  const major = Number.parseInt(majorText ?? '', 10);
-  const minor = Number.parseInt(minorText, 10);
-
-  if (!Number.isInteger(major) || !Number.isInteger(minor)) {
-    return false;
-  }
-
-  return major > requiredMajor || (major === requiredMajor && minor >= requiredMinor);
+  const comparison = compareVersions(version, `${requiredMajor}.${requiredMinor}`);
+  return comparison !== null && comparison >= 0;
 }
 
 function readMacOSSystemVersion(): string | null {

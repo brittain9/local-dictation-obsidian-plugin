@@ -1,4 +1,5 @@
 import type { SystemAudioProbeResultEvent } from '../sidecar/protocol';
+import { compareVersions } from '../version';
 
 const SYSTEM_AUDIO_PERMISSION_DENIED_CODE = 'system_audio_permission_denied';
 const ELECTRON_SYSTEM_AUDIO_PERMISSION_MINIMUM_VERSION = '39.6.0';
@@ -35,53 +36,26 @@ export function formatSystemAudioSidecarErrorMessage(
   error: unknown,
   electronVersion = readElectronVersion(),
 ): string | null {
-  const code = (error as { code?: unknown } | null)?.code;
+  const details = error as { code?: unknown; message?: unknown } | null;
 
-  if (code !== SYSTEM_AUDIO_PERMISSION_DENIED_CODE) {
+  if (details?.code !== SYSTEM_AUDIO_PERMISSION_DENIED_CODE) {
     return null;
   }
 
-  const message = error instanceof Error ? error.message : (error as { message?: unknown }).message;
+  const { message } = details;
   if (typeof message !== 'string') {
     return null;
   }
 
-  return formatSystemAudioErrorMessage(message, code, electronVersion);
+  return formatSystemAudioErrorMessage(message, details.code, electronVersion);
 }
 
 export function isElectronVersionOlderThan(
   version: string | null | undefined,
   minimumVersion: string,
 ): boolean {
-  const parsedVersion = parseVersion(version);
-  const parsedMinimum = parseVersion(minimumVersion);
-
-  if (parsedVersion === null || parsedMinimum === null) {
-    return false;
-  }
-
-  for (let index = 0; index < parsedMinimum.length; index += 1) {
-    const current = parsedVersion[index] ?? 0;
-    const minimum = parsedMinimum[index] ?? 0;
-
-    if (current < minimum) {
-      return true;
-    }
-    if (current > minimum) {
-      return false;
-    }
-  }
-
-  return false;
-}
-
-function parseVersion(version: string | null | undefined): number[] | null {
-  if (version === null || version === undefined) {
-    return null;
-  }
-
-  const parts = version.split('.').map((part) => Number.parseInt(part, 10));
-  return parts.every(Number.isInteger) ? parts : null;
+  // Unknown or unparseable versions must not trigger the reinstall hint.
+  return compareVersions(version, minimumVersion) === -1;
 }
 
 function readElectronVersion(): string | null {

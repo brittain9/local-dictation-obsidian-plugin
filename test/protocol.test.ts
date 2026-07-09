@@ -287,7 +287,7 @@ describe('command serialization', () => {
   });
 });
 
-// Events ---------------------------------------------------------------------
+// Event parsing --------------------------------------------------------------
 
 describe('event parsing', () => {
   it('accepts successful and failed system-audio probe results', () => {
@@ -310,11 +310,7 @@ describe('event parsing', () => {
       type: 'system_audio_probe_result',
     });
   });
-});
 
-// Event parsing --------------------------------------------------------------
-
-describe('event parsing', () => {
   it('parses audio_level events for ribbon metering', () => {
     expect(
       parseEventFrame(

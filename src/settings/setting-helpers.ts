@@ -57,13 +57,14 @@ export function addEnumSetting<K extends keyof PluginSettings>(
 export function addToggleSetting<K extends SettingsKeyOf<boolean>>(
   parent: HTMLElement,
   access: SettingAccess,
-  spec: SettingSpec & { key: K },
+  spec: SettingSpec & { key: K; onChange?: (value: boolean) => void | Promise<void> },
 ): Setting {
   const setting = new Setting(parent).setName(spec.name).setDesc(spec.desc);
   setting.addToggle((toggle) => {
     toggle.setValue(access.getSettings()[spec.key]);
     toggle.onChange(async (value) => {
       await access.persistOne(spec.key, value);
+      await spec.onChange?.(value);
     });
   });
   appendInfoTooltip(setting, spec.tooltip);

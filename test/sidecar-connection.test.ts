@@ -140,7 +140,9 @@ function readJsonPayload(frame: Uint8Array): unknown {
     1,
     true,
   );
-  return JSON.parse(new TextDecoder().decode(frame.slice(FRAME_HEADER_LENGTH, 5 + payloadLength)));
+  return JSON.parse(
+    new TextDecoder().decode(frame.slice(FRAME_HEADER_LENGTH, FRAME_HEADER_LENGTH + payloadLength)),
+  );
 }
 
 function transcriptReadyEvent(overrides: Partial<TranscriptReadyEvent> = {}): TranscriptReadyEvent {

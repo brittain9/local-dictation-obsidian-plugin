@@ -3,46 +3,22 @@
 //! The tap entry points arrived in macOS 14.2, so they are resolved with
 //! `dlsym` instead of linked. The older aggregate-device and IOProc APIs are
 //! linked normally through CoreAudio.
-
-#[cfg(target_os = "macos")]
-use std::sync::Arc;
-#[cfg(target_os = "macos")]
-use std::sync::atomic::{AtomicBool, Ordering};
-#[cfg(target_os = "macos")]
-use std::sync::mpsc;
-#[cfg(target_os = "macos")]
-use std::thread;
-#[cfg(target_os = "macos")]
-use std::time::Duration;
+//!
+//! Everything that touches CoreAudio lives in the `platform` module, gated on
+//! macOS as one unit. The items above it are pure format/description helpers
+//! that also compile under `cfg(test)` so the host test suite covers them.
 
 use super::SystemAudioError;
-#[cfg(target_os = "macos")]
-use super::{AudioFrameSink, CaptureHandle};
-
-#[cfg(target_os = "macos")]
-const INIT_TIMEOUT: Duration = Duration::from_secs(10);
-
-#[cfg(target_os = "macos")]
-const MACOS_UNSUPPORTED_MESSAGE: &str = "System-audio capture needs macOS 14.2 or later. Route \
-    output through a virtual audio device (BlackHole) and pick it as your microphone instead.";
 
 type OSStatus = i32;
-#[cfg(target_os = "macos")]
-type AudioObjectID = u32;
 type AudioObjectPropertySelector = u32;
 type AudioObjectPropertyScope = u32;
 type AudioObjectPropertyElement = u32;
 type AudioFormatID = u32;
 type AudioFormatFlags = u32;
 
-#[cfg(target_os = "macos")]
-const K_AUDIO_HARDWARE_NO_ERROR: OSStatus = 0;
-#[cfg(target_os = "macos")]
-const K_AUDIO_OBJECT_UNKNOWN: AudioObjectID = 0;
 const K_AUDIO_OBJECT_PROPERTY_SCOPE_GLOBAL: AudioObjectPropertyScope = 0x676c_6f62;
 const K_AUDIO_OBJECT_PROPERTY_ELEMENT_MAIN: AudioObjectPropertyElement = 0;
-#[cfg(target_os = "macos")]
-const K_AUDIO_TAP_PROPERTY_DESCRIPTION: AudioObjectPropertySelector = 0x7464_7363;
 const K_AUDIO_TAP_PROPERTY_FORMAT: AudioObjectPropertySelector = 0x7466_6d74;
 const K_AUDIO_FORMAT_LINEAR_PCM: AudioFormatID = 0x6c70_636d;
 const K_AUDIO_FORMAT_FLAG_IS_FLOAT: AudioFormatFlags = 1 << 0;
@@ -55,23 +31,6 @@ struct AudioObjectPropertyAddress {
     m_selector: AudioObjectPropertySelector,
     m_scope: AudioObjectPropertyScope,
     m_element: AudioObjectPropertyElement,
-}
-
-#[repr(C)]
-#[derive(Clone, Copy, Debug, PartialEq)]
-#[cfg(target_os = "macos")]
-struct AudioBuffer {
-    m_number_channels: u32,
-    m_data_byte_size: u32,
-    m_data: *mut std::ffi::c_void,
-}
-
-#[repr(C)]
-#[derive(Clone, Copy, Debug, PartialEq)]
-#[cfg(target_os = "macos")]
-struct AudioBufferList {
-    m_number_buffers: u32,
-    m_buffers: [AudioBuffer; 1],
 }
 
 #[repr(C)]
@@ -101,53 +60,6 @@ struct AggregateDeviceDescription {
     tap_auto_start: bool,
     tap_uid: String,
     drift_compensation: bool,
-}
-
-#[cfg(target_os = "macos")]
-pub(crate) fn spawn_capture(
-    session_id: String,
-    sink: AudioFrameSink,
-) -> Result<CaptureHandle, SystemAudioError> {
-    spawn_capture_with_timeout(session_id, sink, INIT_TIMEOUT)
-}
-
-#[cfg(target_os = "macos")]
-pub(super) fn spawn_capture_with_timeout(
-    session_id: String,
-    sink: AudioFrameSink,
-    init_timeout: Duration,
-) -> Result<CaptureHandle, SystemAudioError> {
-    let stop = Arc::new(AtomicBool::new(false));
-    let thread_stop = Arc::clone(&stop);
-    let (init_tx, init_rx) = mpsc::channel::<Result<(), SystemAudioError>>();
-
-    let join = thread::spawn(move || capture_thread(session_id, sink, thread_stop, init_tx));
-
-    match init_rx.recv_timeout(init_timeout) {
-        Ok(Ok(())) => Ok(CaptureHandle::new(stop, join)),
-        Ok(Err(error)) => {
-            let _ = join.join();
-            Err(error)
-        }
-        Err(_) => {
-            stop.store(true, Ordering::Relaxed);
-            Err(SystemAudioError::Capture(
-                "timed out opening the macOS system-audio tap".into(),
-            ))
-        }
-    }
-}
-
-#[cfg(target_os = "macos")]
-fn capture_thread(
-    session_id: String,
-    sink: AudioFrameSink,
-    stop: Arc<AtomicBool>,
-    init_tx: mpsc::Sender<Result<(), SystemAudioError>>,
-) {
-    if let Err(error) = platform::run_capture(session_id, sink, stop, init_tx) {
-        eprintln!("system-audio capture: {error}");
-    }
 }
 
 fn parse_tap_format(
@@ -215,18 +127,6 @@ fn tap_property_address(selector: AudioObjectPropertySelector) -> AudioObjectPro
     }
 }
 
-#[cfg(target_os = "macos")]
-fn os_status_result(status: OSStatus, action: &str) -> Result<(), SystemAudioError> {
-    if status == K_AUDIO_HARDWARE_NO_ERROR {
-        Ok(())
-    } else {
-        Err(SystemAudioError::Capture(format!(
-            "{action} failed with CoreAudio status {}",
-            format_os_status(status)
-        )))
-    }
-}
-
 fn format_os_status(status: OSStatus) -> String {
     let bytes = (status as u32).to_be_bytes();
     if bytes
@@ -240,13 +140,17 @@ fn format_os_status(status: OSStatus) -> String {
 }
 
 #[cfg(target_os = "macos")]
+pub(crate) use platform::{spawn_capture, spawn_capture_with_timeout};
+
+#[cfg(target_os = "macos")]
 mod platform {
-    use std::ffi::c_void;
+    use std::ffi::{CStr, c_void};
     use std::mem;
     use std::ptr;
     use std::sync::Arc;
     use std::sync::atomic::{AtomicBool, Ordering};
     use std::sync::mpsc::{self, SyncSender};
+    use std::thread;
     use std::time::Duration;
 
     use objc2::msg_send;
@@ -255,23 +159,48 @@ mod platform {
     use objc2_foundation::{NSArray, NSDictionary, NSNumber, NSString, NSUUID};
 
     use super::{
-        AudioBufferList, AudioFrameSink, AudioObjectID, AudioObjectPropertyAddress,
-        AudioStreamBasicDescription, K_AUDIO_OBJECT_UNKNOWN, K_AUDIO_TAP_PROPERTY_DESCRIPTION,
-        K_AUDIO_TAP_PROPERTY_FORMAT, MACOS_UNSUPPORTED_MESSAGE, MacLoopbackFormat, OSStatus,
-        SystemAudioError, aggregate_device_description, os_status_result, parse_tap_format,
-        tap_property_address,
+        AudioObjectPropertyAddress, AudioStreamBasicDescription, K_AUDIO_TAP_PROPERTY_FORMAT,
+        MacLoopbackFormat, OSStatus, SystemAudioError, aggregate_device_description,
+        format_os_status, parse_tap_format, tap_property_address,
     };
     use crate::protocol::AudioFrame;
     use crate::system_audio::resample::LoopbackFrameResampler;
+    use crate::system_audio::{AudioFrameSink, CaptureHandle};
 
+    type AudioObjectID = u32;
+
+    const INIT_TIMEOUT: Duration = Duration::from_secs(10);
     const SAMPLE_CHANNEL_CAPACITY: usize = 8;
     const DRAIN_INTERVAL: Duration = Duration::from_millis(10);
+
+    const MACOS_UNSUPPORTED_MESSAGE: &str = "System-audio capture needs macOS 14.2 or later. \
+        Route output through a virtual audio device (BlackHole) and pick it as your microphone \
+        instead.";
+
+    const K_AUDIO_HARDWARE_NO_ERROR: OSStatus = 0;
+    const K_AUDIO_OBJECT_UNKNOWN: AudioObjectID = 0;
+    const K_AUDIO_TAP_PROPERTY_DESCRIPTION: super::AudioObjectPropertySelector = 0x7464_7363;
 
     const K_AUDIO_AGGREGATE_DEVICE_IS_PRIVATE_KEY: &str = "private";
     const K_AUDIO_AGGREGATE_DEVICE_TAP_LIST_KEY: &str = "taps";
     const K_AUDIO_AGGREGATE_DEVICE_TAP_AUTO_START_KEY: &str = "tapautostart";
     const K_AUDIO_SUB_TAP_UID_KEY: &str = "uid";
     const K_AUDIO_SUB_TAP_DRIFT_COMPENSATION_KEY: &str = "drift";
+
+    #[repr(C)]
+    #[derive(Clone, Copy, Debug, PartialEq)]
+    struct AudioBuffer {
+        m_number_channels: u32,
+        m_data_byte_size: u32,
+        m_data: *mut c_void,
+    }
+
+    #[repr(C)]
+    #[derive(Clone, Copy, Debug, PartialEq)]
+    struct AudioBufferList {
+        m_number_buffers: u32,
+        m_buffers: [AudioBuffer; 1],
+    }
 
     type CreateProcessTap = unsafe extern "C" fn(
         in_description: *mut AnyObject,
@@ -400,7 +329,62 @@ mod platform {
         tx: SyncSender<Vec<f32>>,
     }
 
-    pub(super) fn run_capture(
+    pub(crate) fn spawn_capture(
+        session_id: String,
+        sink: AudioFrameSink,
+    ) -> Result<CaptureHandle, SystemAudioError> {
+        spawn_capture_with_timeout(session_id, sink, INIT_TIMEOUT)
+    }
+
+    pub(crate) fn spawn_capture_with_timeout(
+        session_id: String,
+        sink: AudioFrameSink,
+        init_timeout: Duration,
+    ) -> Result<CaptureHandle, SystemAudioError> {
+        let stop = Arc::new(AtomicBool::new(false));
+        let thread_stop = Arc::clone(&stop);
+        let (init_tx, init_rx) = mpsc::channel::<Result<(), SystemAudioError>>();
+
+        let join = thread::spawn(move || capture_thread(session_id, sink, thread_stop, init_tx));
+
+        match init_rx.recv_timeout(init_timeout) {
+            Ok(Ok(())) => Ok(CaptureHandle::new(stop, join)),
+            Ok(Err(error)) => {
+                let _ = join.join();
+                Err(error)
+            }
+            Err(_) => {
+                stop.store(true, Ordering::Relaxed);
+                Err(SystemAudioError::Capture(
+                    "timed out opening the macOS system-audio tap".into(),
+                ))
+            }
+        }
+    }
+
+    fn capture_thread(
+        session_id: String,
+        sink: AudioFrameSink,
+        stop: Arc<AtomicBool>,
+        init_tx: mpsc::Sender<Result<(), SystemAudioError>>,
+    ) {
+        if let Err(error) = run_capture(session_id, sink, stop, init_tx) {
+            eprintln!("system-audio capture: {error}");
+        }
+    }
+
+    fn os_status_result(status: OSStatus, action: &str) -> Result<(), SystemAudioError> {
+        if status == K_AUDIO_HARDWARE_NO_ERROR {
+            Ok(())
+        } else {
+            Err(SystemAudioError::Capture(format!(
+                "{action} failed with CoreAudio status {}",
+                format_os_status(status)
+            )))
+        }
+    }
+
+    fn run_capture(
         session_id: String,
         sink: AudioFrameSink,
         stop: Arc<AtomicBool>,
@@ -545,8 +529,12 @@ mod platform {
                 return Err(macos_unsupported());
             }
 
-            let create_process_tap = load_create_process_tap().ok_or_else(macos_unsupported)?;
-            let destroy_process_tap = load_destroy_process_tap().ok_or_else(macos_unsupported)?;
+            let create_process_tap =
+                load_symbol::<CreateProcessTap>(c"AudioHardwareCreateProcessTap")
+                    .ok_or_else(macos_unsupported)?;
+            let destroy_process_tap =
+                load_symbol::<DestroyProcessTap>(c"AudioHardwareDestroyProcessTap")
+                    .ok_or_else(macos_unsupported)?;
             Ok(Self {
                 create_process_tap,
                 destroy_process_tap,
@@ -581,7 +569,7 @@ mod platform {
     }
 
     fn probe_tap_permission(tap_id: AudioObjectID) -> Result<(), SystemAudioError> {
-        let address = super::tap_property_address(K_AUDIO_TAP_PROPERTY_DESCRIPTION);
+        let address = tap_property_address(K_AUDIO_TAP_PROPERTY_DESCRIPTION);
         let mut description: *mut c_void = ptr::null_mut();
         let mut data_size = mem::size_of::<*mut c_void>() as u32;
         let status = unsafe {
@@ -705,7 +693,7 @@ mod platform {
         // Read through raw pointers: the list's trailing buffer array is
         // variable-length, so a `&AudioBufferList` reference (declared with one
         // buffer) must not be used to reach later entries.
-        let buffers = unsafe { (&raw const (*input_data).m_buffers).cast::<super::AudioBuffer>() };
+        let buffers = unsafe { (&raw const (*input_data).m_buffers).cast::<AudioBuffer>() };
         let buffer_count = unsafe { (*input_data).m_number_buffers } as usize;
 
         if format.non_interleaved {
@@ -716,7 +704,7 @@ mod platform {
     }
 
     unsafe fn collect_interleaved_mono(
-        buffers: *const super::AudioBuffer,
+        buffers: *const AudioBuffer,
         buffer_count: usize,
         channels: usize,
     ) -> Vec<f32> {
@@ -734,6 +722,9 @@ mod platform {
             let sample_count = buffer.m_data_byte_size as usize / mem::size_of::<f32>();
             let samples =
                 unsafe { std::slice::from_raw_parts(buffer.m_data.cast::<f32>(), sample_count) };
+            // Reserve up front: this runs on the real-time IOProc thread, where
+            // geometric Vec growth means repeated reallocations per callback.
+            mono.reserve(sample_count / channels);
             for frame in samples.chunks_exact(channels) {
                 mono.push(frame.iter().sum::<f32>() / channels as f32);
             }
@@ -742,10 +733,10 @@ mod platform {
     }
 
     unsafe fn collect_non_interleaved_mono(
-        buffers: *const super::AudioBuffer,
+        buffers: *const AudioBuffer,
         buffer_count: usize,
     ) -> Vec<f32> {
-        let mut channel_slices: Vec<&[f32]> = Vec::new();
+        let mut channel_slices: Vec<&[f32]> = Vec::with_capacity(buffer_count);
         for buffer_index in 0..buffer_count {
             let buffer = unsafe { &*buffers.add(buffer_index) };
             if buffer.m_data.is_null() {
@@ -775,32 +766,13 @@ mod platform {
         mono
     }
 
-    fn load_create_process_tap() -> Option<CreateProcessTap> {
-        let symbol = unsafe {
-            libc::dlsym(
-                libc::RTLD_DEFAULT,
-                c"AudioHardwareCreateProcessTap".as_ptr(),
-            )
-        };
-        if symbol.is_null() {
-            None
-        } else {
-            Some(unsafe { mem::transmute::<*mut c_void, CreateProcessTap>(symbol) })
-        }
-    }
-
-    fn load_destroy_process_tap() -> Option<DestroyProcessTap> {
-        let symbol = unsafe {
-            libc::dlsym(
-                libc::RTLD_DEFAULT,
-                c"AudioHardwareDestroyProcessTap".as_ptr(),
-            )
-        };
-        if symbol.is_null() {
-            None
-        } else {
-            Some(unsafe { mem::transmute::<*mut c_void, DestroyProcessTap>(symbol) })
-        }
+    /// Resolve one dynamically-loaded CoreAudio entry point. Returns `None`
+    /// when the symbol is absent (macOS < 14.2).
+    ///
+    /// `T` must be the matching `unsafe extern "C" fn` pointer type.
+    fn load_symbol<T: Copy>(name: &CStr) -> Option<T> {
+        let symbol = unsafe { libc::dlsym(libc::RTLD_DEFAULT, name.as_ptr()) };
+        (!symbol.is_null()).then(|| unsafe { mem::transmute_copy::<*mut c_void, T>(&symbol) })
     }
 
     fn macos_unsupported() -> SystemAudioError {

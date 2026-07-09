@@ -179,7 +179,17 @@ export class LocalSttSettingTab extends PluginSettingTab {
     });
 
     if (systemAudioSupported) {
-      this.renderSystemAudioSetting(captureCard, settings);
+      addToggleSetting(captureCard, this.access, {
+        name: 'Include system audio',
+        desc: "Also capture this computer's default audio output for meetings, calls, and videos.",
+        key: 'includeSystemAudio',
+        onChange: async (value) => {
+          // First-ever probe is the designed moment for the macOS TCC prompt.
+          if (value && Platform.isMacOS) {
+            await this.probeSystemAudio();
+          }
+        },
+      });
     }
 
     addEnumSetting(captureCard, this.access, {
@@ -329,25 +339,6 @@ export class LocalSttSettingTab extends PluginSettingTab {
     this.disposeMissingSidecarBanner?.();
     this.disposeMissingSidecarBanner = null;
     this.missingSidecarProgressEl = null;
-  }
-
-  private renderSystemAudioSetting(parent: HTMLElement, settings: PluginSettings): void {
-    const setting = new Setting(parent)
-      .setName('Include system audio')
-      .setDesc(
-        "Also capture this computer's default audio output for meetings, calls, and videos.",
-      );
-
-    setting.addToggle((toggle) => {
-      toggle.setValue(settings.includeSystemAudio);
-      toggle.onChange(async (value) => {
-        await this.access.persistOne('includeSystemAudio', value);
-
-        if (value && Platform.isMacOS) {
-          await this.probeSystemAudio();
-        }
-      });
-    });
   }
 
   private async probeSystemAudio(): Promise<void> {
