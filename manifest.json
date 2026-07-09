@@ -1,7 +1,7 @@
 {
   "id": "local-dictation",
   "name": "Local Dictation",
-  "version": "2026.7.2",
+  "version": "2026.7.3",
   "minAppVersion": "1.11.5",
   "description": "Private, on-device speech-to-text. Dictate notes with Whisper, Cohere Transcribe, or live Moonshine models; clean up with a local Ollama model.",
   "author": "Alexander Brittain",
