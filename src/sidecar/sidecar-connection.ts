@@ -466,9 +466,10 @@ function shouldLogProtocolEvent(event: SidecarEvent): boolean {
     case 'session_started':
     case 'session_state_changed':
     case 'session_stopped':
-    case 'transcript_ready':
     case 'warning':
       return true;
+    case 'transcript_ready':
+      return event.isFinal;
     case 'model_install_update':
       return false;
     default:
@@ -487,7 +488,7 @@ function summarizeProtocolEvent(event: SidecarEvent): string {
     case 'session_stopped':
       return `event: session_stopped (${event.sessionId}, ${event.reason})`;
     case 'transcript_ready':
-      return `event: transcript_ready (${event.sessionId}, ${event.text.length} chars)`;
+      return `event: transcript_ready (${event.sessionId}, final, ${event.text.length} chars)`;
     case 'warning':
       return `event: warning (${event.code})`;
     case 'error':

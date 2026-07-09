@@ -680,10 +680,12 @@ export class DictationSessionController {
     entry: ManagedSession,
     event: TranscriptReadyEvent,
   ): Promise<void> {
-    this.dependencies.logger?.debug(
-      'session',
-      `transcript received (${event.text.length} chars, ${event.processingDurationMs}ms processing)`,
-    );
+    if (event.isFinal) {
+      this.dependencies.logger?.debug(
+        'session',
+        `final transcript received (${event.text.length} chars, ${event.processingDurationMs}ms processing)`,
+      );
+    }
 
     for (const warning of event.warnings) {
       this.dependencies.logger?.debug(

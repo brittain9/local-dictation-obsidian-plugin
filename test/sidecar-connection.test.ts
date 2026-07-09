@@ -6,6 +6,7 @@ import {
   type HealthOkEvent,
   type ModelInstallUpdateEvent,
   type SidecarEvent,
+  type TranscriptReadyEvent,
   type WarningEvent,
 } from '../src/sidecar/protocol';
 import { SidecarConnection, type SidecarError } from '../src/sidecar/sidecar-connection';
@@ -63,7 +64,10 @@ class FakeSidecarProcess {
   }
 }
 
-function createHarness(timeoutMs = 5_000): {
+function createHarness(
+  timeoutMs = 5_000,
+  logger?: ConstructorParameters<typeof SidecarConnection>[0]['logger'],
+): {
   connection: SidecarConnection;
   process: FakeSidecarProcess;
 } {
@@ -71,10 +75,16 @@ function createHarness(timeoutMs = 5_000): {
   const resolveLaunchSpec: ResolveSidecarLaunchSpec = async () => ({
     command: '/tmp/local-dictation-sidecar-test',
   });
-  const connection = new SidecarConnection({
+  const options: ConstructorParameters<typeof SidecarConnection>[0] = {
     createProcess: (_resolve, handlers) => process.attach(handlers),
     getRequestTimeoutMs: () => timeoutMs,
     resolveLaunchSpec,
+  };
+  if (logger !== undefined) {
+    options.logger = logger;
+  }
+  const connection = new SidecarConnection({
+    ...options,
   });
 
   return { connection, process };
@@ -131,6 +141,28 @@ function readJsonPayload(frame: Uint8Array): unknown {
     true,
   );
   return JSON.parse(new TextDecoder().decode(frame.slice(FRAME_HEADER_LENGTH, 5 + payloadLength)));
+}
+
+function transcriptReadyEvent(overrides: Partial<TranscriptReadyEvent> = {}): TranscriptReadyEvent {
+  return {
+    isFinal: true,
+    pauseMsBeforeUtterance: null,
+    processingDurationMs: 12,
+    revision: 0,
+    segments: [],
+    sessionId: 'session-1',
+    speakerIndex: null,
+    stageResults: [],
+    text: 'hello',
+    type: 'transcript_ready',
+    utteranceDurationMs: 1000,
+    utteranceEndMsInSession: 1000,
+    utteranceId: 'utterance-1',
+    utteranceIndex: 0,
+    utteranceStartMsInSession: 0,
+    warnings: [],
+    ...overrides,
+  };
 }
 
 async function flushMicrotasks(): Promise<void> {
@@ -283,5 +315,23 @@ describe('SidecarConnection', () => {
 
     expect(process.startCalls).toBe(0);
     expect(process.writtenFrames).toHaveLength(0);
+  });
+
+  it('logs final transcript events without logging partial transcript revisions', () => {
+    const logger = {
+      debug: vi.fn(),
+      error: vi.fn(),
+      warn: vi.fn(),
+    };
+    const { process } = createHarness(5_000, logger);
+
+    process.deliver(transcriptReadyEvent({ isFinal: false, revision: 1 }));
+    process.deliver(transcriptReadyEvent({ isFinal: true, revision: 2, text: 'hello world' }));
+
+    expect(logger.debug).toHaveBeenCalledTimes(1);
+    expect(logger.debug).toHaveBeenCalledWith(
+      'protocol',
+      'event: transcript_ready (session-1, final, 11 chars)',
+    );
   });
 });
