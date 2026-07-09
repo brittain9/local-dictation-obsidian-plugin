@@ -56,6 +56,8 @@ struct MacLoopbackFormat {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct AggregateDeviceDescription {
+    name: &'static str,
+    uid: String,
     is_private: bool,
     tap_auto_start: bool,
     tap_uid: String,
@@ -98,8 +100,13 @@ fn parse_tap_format(
     })
 }
 
-fn aggregate_device_description(tap_uid: String) -> AggregateDeviceDescription {
+// AudioHardwareCreateAggregateDevice requires kAudioAggregateDeviceNameKey and
+// kAudioAggregateDeviceUIDKey at minimum; omitting them fails with 'nope'
+// (kAudioHardwareIllegalOperationError).
+fn aggregate_device_description(uid: String, tap_uid: String) -> AggregateDeviceDescription {
     AggregateDeviceDescription {
+        name: "Local Dictation System Audio",
+        uid,
         is_private: true,
         tap_auto_start: false,
         tap_uid,
@@ -181,6 +188,8 @@ mod platform {
     const K_AUDIO_OBJECT_UNKNOWN: AudioObjectID = 0;
     const K_AUDIO_TAP_PROPERTY_DESCRIPTION: super::AudioObjectPropertySelector = 0x7464_7363;
 
+    const K_AUDIO_AGGREGATE_DEVICE_NAME_KEY: &str = "name";
+    const K_AUDIO_AGGREGATE_DEVICE_UID_KEY: &str = "uid";
     const K_AUDIO_AGGREGATE_DEVICE_IS_PRIVATE_KEY: &str = "private";
     const K_AUDIO_AGGREGATE_DEVICE_TAP_LIST_KEY: &str = "taps";
     const K_AUDIO_AGGREGATE_DEVICE_TAP_AUTO_START_KEY: &str = "tapautostart";
@@ -417,7 +426,8 @@ mod platform {
                 SystemAudioError::Capture("CoreAudio returned an unknown process-tap id".into())
             } else {
                 SystemAudioError::Capture(format!(
-                    "AudioHardwareCreateProcessTap failed with CoreAudio status {status}"
+                    "AudioHardwareCreateProcessTap failed with CoreAudio status {}",
+                    format_os_status(status)
                 ))
             };
             let _ = init_tx.send(Err(error));
@@ -445,7 +455,8 @@ mod platform {
                 )
             } else {
                 SystemAudioError::Capture(format!(
-                    "AudioHardwareCreateAggregateDevice failed with CoreAudio status {status}"
+                    "AudioHardwareCreateAggregateDevice failed with CoreAudio status {}",
+                    format_os_status(status)
                 ))
             };
             let _ = init_tx.send(Err(error));
@@ -477,7 +488,8 @@ mod platform {
         };
         if status != 0 {
             let _ = init_tx.send(Err(SystemAudioError::Capture(format!(
-                "AudioDeviceCreateIOProcID failed with CoreAudio status {status}"
+                "AudioDeviceCreateIOProcID failed with CoreAudio status {}",
+                format_os_status(status)
             ))));
             return Ok(());
         }
@@ -486,7 +498,8 @@ mod platform {
         let status = unsafe { AudioDeviceStart(aggregate_device, io_proc_id) };
         if status != 0 {
             let _ = init_tx.send(Err(SystemAudioError::Capture(format!(
-                "AudioDeviceStart failed with CoreAudio status {status}"
+                "AudioDeviceStart failed with CoreAudio status {}",
+                format_os_status(status)
             ))));
             return Ok(());
         }
@@ -609,7 +622,7 @@ mod platform {
     fn create_aggregate_description(
         tap_uid: String,
     ) -> Retained<NSDictionary<NSString, AnyObject>> {
-        let description = aggregate_device_description(tap_uid);
+        let description = aggregate_device_description(uuid::Uuid::new_v4().to_string(), tap_uid);
         let tap_uid = NSString::from_str(&description.tap_uid);
         let drift_compensation = NSNumber::new_bool(description.drift_compensation);
         let tap_entry = NSDictionary::<NSString, AnyObject>::from_slices(
@@ -620,16 +633,20 @@ mod platform {
             &[&*tap_uid, &*drift_compensation],
         );
         let tap_list = NSArray::<NSDictionary<NSString, AnyObject>>::from_slice(&[&*tap_entry]);
+        let name = NSString::from_str(description.name);
+        let uid = NSString::from_str(&description.uid);
         let is_private = NSNumber::new_bool(description.is_private);
         let tap_auto_start = NSNumber::new_bool(description.tap_auto_start);
 
         NSDictionary::<NSString, AnyObject>::from_slices(
             &[
+                &*NSString::from_str(K_AUDIO_AGGREGATE_DEVICE_NAME_KEY),
+                &*NSString::from_str(K_AUDIO_AGGREGATE_DEVICE_UID_KEY),
                 &*NSString::from_str(K_AUDIO_AGGREGATE_DEVICE_IS_PRIVATE_KEY),
                 &*NSString::from_str(K_AUDIO_AGGREGATE_DEVICE_TAP_LIST_KEY),
                 &*NSString::from_str(K_AUDIO_AGGREGATE_DEVICE_TAP_AUTO_START_KEY),
             ],
-            &[&*is_private, &*tap_list, &*tap_auto_start],
+            &[&*name, &*uid, &*is_private, &*tap_list, &*tap_auto_start],
         )
     }
 
@@ -840,11 +857,14 @@ mod tests {
 
     #[test]
     fn aggregate_description_is_private_tap_only_and_does_not_auto_start() {
-        let description = aggregate_device_description("tap-uid".to_string());
+        let description =
+            aggregate_device_description("device-uid".to_string(), "tap-uid".to_string());
 
         assert_eq!(
             description,
             AggregateDeviceDescription {
+                name: "Local Dictation System Audio",
+                uid: "device-uid".to_string(),
                 is_private: true,
                 tap_auto_start: false,
                 tap_uid: "tap-uid".to_string(),

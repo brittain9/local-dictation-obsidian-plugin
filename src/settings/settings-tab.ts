@@ -185,8 +185,11 @@ export class LocalSttSettingTab extends PluginSettingTab {
         key: 'includeSystemAudio',
         onChange: async (value) => {
           // First-ever probe is the designed moment for the macOS TCC prompt.
-          if (value && Platform.isMacOS) {
-            await this.probeSystemAudio();
+          if (value && Platform.isMacOS && !(await this.probeSystemAudio())) {
+            // Capture cannot work; leaving the toggle on would just fail
+            // every session start with the same error.
+            await this.access.persistOne('includeSystemAudio', false);
+            this.display();
           }
         },
       });
@@ -341,18 +344,20 @@ export class LocalSttSettingTab extends PluginSettingTab {
     this.missingSidecarProgressEl = null;
   }
 
-  private async probeSystemAudio(): Promise<void> {
+  /** Returns whether the probe confirmed capture is usable. */
+  private async probeSystemAudio(): Promise<boolean> {
     try {
       const result = await this.dependencies.sidecarConnection.probeSystemAudio();
       if (result.ok) {
         new Notice('System audio is ready.');
-        return;
+        return true;
       }
 
       new Notice(formatSystemAudioProbeResultMessage(result));
     } catch (error) {
       new Notice(`Could not test system audio: ${formatErrorMessage(error)}`);
     }
+    return false;
   }
 
   private renderTranscriptFormattingSetting(parent: HTMLElement): void {
