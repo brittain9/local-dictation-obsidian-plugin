@@ -17,6 +17,9 @@ native/**/target-cuda/
 !native/tests/fixtures/audio/*.pcm
 *.tmp
 data.json
+# Local `download-stats.mjs --snapshot` output; the canonical history lives on
+# the stats-history branch (see docs/specs/download-stats.md).
+stats/
 
 .DS_Store
 .idea/
