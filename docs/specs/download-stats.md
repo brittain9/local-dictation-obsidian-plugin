@@ -40,7 +40,7 @@ normal `gh` token (read-only, public repo). Derivations:
   series. Two fetches days apart are needed to see a delta — hence snapshotting
   (below).
 
-### 2. Traffic API (`/traffic/views`, `/traffic/clones`, `/traffic/popular/referrers`, `/traffic/popular/paths`)
+### 2. Traffic API (`/traffic/views`, `/traffic/clones`, `/traffic/popular/referrers`)
 
 The only source with **unique** visitor/cloner counts, not just totals.
 Requires push-level repo access — the default `GITHUB_TOKEN` in Actions
@@ -76,17 +76,40 @@ Markdown to stdout:
 5. Traffic (last 14 days): views/uniques, clones/uniques, top referrers. Any
    endpoint that 403s (no push access / no PAT) is shown as "unavailable" with
    a one-line reason instead of failing the whole report.
-6. **Deltas vs. last snapshot**, when `stats/history.jsonl` has a prior entry:
-   main.js downloads gained, registry downloads gained, traffic window
-   comparison.
+6. **Deltas vs. last snapshot**, when the history log has a prior entry:
+   main.js downloads gained, registry downloads gained. Locally the history
+   file usually doesn't exist, so the script falls back to reading
+   `origin/stats-history:stats/history.jsonl` directly — deltas work after a
+   plain `git fetch`, no branch checkout needed.
 
 Flags:
-- `--snapshot` — after rendering, append one normalized JSON line to
-  `stats/history.jsonl` (created if absent).
+- `--snapshot` — after rendering, record one normalized JSON line in the
+  history file (created if absent). Real snapshots are CI's job; a local
+  `--snapshot` writes to a gitignored `stats/history.jsonl` in the working
+  tree.
 - `--json` — print the raw collected data as JSON instead of the markdown
   report (for scripting/debugging).
 
-## Snapshot schema (`stats/history.jsonl`)
+Env:
+- `STATS_HISTORY_PATH` — history file location, default `stats/history.jsonl`.
+  The weekly workflow points this at its checkout of the `stats-history`
+  branch.
+
+## Snapshot history: the `stats-history` branch
+
+Snapshots live in `stats/history.jsonl` on the dedicated orphan branch
+`stats-history`, not on `main`: `main`'s protection ruleset (PR + required
+checks) rejects direct bot pushes, and a weekly data commit doesn't belong in
+`main`'s history anyway. The branch was seeded with one real snapshot so the
+delta path is exercised from the first CI run, and carries a README stating
+its purpose.
+
+**Never delete this branch.** It is intentionally unmerged and will look stale
+in branch listings forever — that is by design. The traffic API retains only a
+rolling 14-day window, so this branch is the *only* long-term record of
+unique-visitor data; deleting it destroys that history permanently.
+
+## Snapshot schema (`stats/history.jsonl` on `stats-history`)
 
 One JSON object per line, newest appended at the bottom:
 
@@ -109,11 +132,13 @@ below), so a snapshot still lands with everything else intact.
 
 `.github/workflows/stats-snapshot.yml` — cron `Mon 06:00 UTC` +
 `workflow_dispatch`, mirroring the cadence/style of the existing
-`cache-cleanup.yml` weekly sweep. Runs `node scripts/download-stats.mjs
---snapshot`, writes the rendered report to `GITHUB_STEP_SUMMARY` (so each run
-doubles as a readable weekly digest, same pattern as
-`release-timing-report.mjs`), and commits `stats/history.jsonl` if it
-changed.
+`cache-cleanup.yml` weekly sweep. Checks out `main` (for the script) plus the
+`stats-history` branch into a `stats-history/` subdirectory, runs `node
+scripts/download-stats.mjs --snapshot` with `STATS_HISTORY_PATH` pointing into
+that subdirectory, writes the rendered report to `GITHUB_STEP_SUMMARY` (so
+each run doubles as a readable weekly digest, same pattern as
+`release-timing-report.mjs`), and commits + pushes `stats/history.jsonl` on
+`stats-history` if it changed.
 
 **Known gap requiring manual setup**: the default `GITHUB_TOKEN` cannot read
 traffic endpoints under any permissions grant — GitHub does not expose that
@@ -131,7 +156,10 @@ the 14-day window rolls over.
 - `scripts/download-stats.mjs` — CLI entry point.
 - `scripts/lib/download-stats-data.mjs` — pure helpers (asset classification,
   snapshot normalization, delta math), unit-tested.
-- `test/download-stats.test.ts` — tests for the pure helpers.
+- `test/download-stats.test.ts` — tests for the pure helpers plus arg parsing
+  and report rendering.
 - `.github/workflows/stats-snapshot.yml` — weekly cron.
-- `stats/history.jsonl` — append-only snapshot log, seeded with one real entry.
+- `stats-history` branch — append-only snapshot log
+  (`stats/history.jsonl`, seeded with one real entry) plus a README. Never
+  delete (see above).
 - `package.json` — `stats:downloads` script.

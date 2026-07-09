@@ -4,6 +4,12 @@ name: stats-snapshot
 # The traffic API's 14-day rolling window means any gap longer than two weeks
 # permanently loses that window's unique-visitor data — this cron is the only
 # thing standing between "we have history" and "we don't".
+#
+# Snapshots are committed to the dedicated stats-history branch, never to
+# main: main's protection ruleset (PR + required checks) rejects direct bot
+# pushes, and weekly data churn doesn't belong in main's history anyway.
+# stats-history is intentionally never merged and MUST NOT be deleted during
+# branch cleanup — it holds the only long-term record of the traffic data.
 on:
   schedule:
     # Mondays ~06:00 UTC. Off-peak; minute offset avoids the top-of-hour rush
@@ -24,6 +30,12 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
 
+      - name: Checkout stats-history branch
+        uses: actions/checkout@v7
+        with:
+          ref: stats-history
+          path: stats-history
+
       - name: Setup Node.js + npm
         uses: ./.github/actions/setup-node-npm
         with:
@@ -41,9 +53,11 @@ jobs:
       - name: Render and snapshot download stats
         env:
           GH_TOKEN: ${{ secrets.STATS_TRAFFIC_TOKEN || github.token }}
+          STATS_HISTORY_PATH: stats-history/stats/history.jsonl
         run: node scripts/download-stats.mjs --snapshot | tee -a "$GITHUB_STEP_SUMMARY"
 
       - name: Commit snapshot if changed
+        working-directory: stats-history
         run: |
           if git diff --quiet -- stats/history.jsonl; then
             echo "No new snapshot data; skipping commit."

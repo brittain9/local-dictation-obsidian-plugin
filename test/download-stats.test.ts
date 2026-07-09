@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
+import { buildReport, parseArgs } from '../scripts/download-stats.mjs';
 import {
   aggregatePlatformSplit,
   classifySidecarAsset,
@@ -136,5 +137,76 @@ describe('computeDelta', () => {
       mainJsDownloadsGained: 23,
       registryDownloadsGained: 88,
     });
+  });
+});
+
+describe('parseArgs', () => {
+  it('parses the supported flags', () => {
+    expect(parseArgs([])).toEqual({ help: false, json: false, snapshot: false });
+    expect(parseArgs(['--snapshot', '--json'])).toEqual({
+      help: false,
+      json: true,
+      snapshot: true,
+    });
+    expect(parseArgs(['-h'])).toEqual({ help: true, json: false, snapshot: false });
+  });
+
+  it('rejects unknown arguments instead of silently ignoring them', () => {
+    expect(() => parseArgs(['--snapshots'])).toThrow(/Unknown argument: --snapshots/);
+  });
+});
+
+describe('buildReport', () => {
+  const previous = normalizeSnapshot({
+    capturedAt: '2026-07-01T00:00:00.000Z',
+    repo: { forks: 0, stars: 3, watchers: 0 },
+    releases: [{ assets: { 'main.js': 80 }, publishedAt: '2026-07-09T02:50:34Z', tag: '2026.7.3' }],
+    obsidianRegistry: { byVersion: { '2026.7.2': 40 }, total: 400 },
+    traffic: null,
+  });
+  const current = normalizeSnapshot({
+    capturedAt: '2026-07-08T00:00:00.000Z',
+    repo: { forks: 0, stars: 3, watchers: 0 },
+    releases: [
+      {
+        assets: {
+          'main.js': 103,
+          'manifest.json': 110,
+          'sidecar-linux-x86_64-cpu.tar.gz': 7,
+          'sidecar-macos-arm64.tar.gz': 3,
+        },
+        publishedAt: '2026-07-09T02:50:34Z',
+        tag: '2026.7.3',
+      },
+    ],
+    obsidianRegistry: { byVersion: { '2026.7.10': 5, '2026.7.2': 55 }, total: 488 },
+    traffic: { clones: { count: 1321, uniques: 258 }, views: { count: 110, uniques: 44 } },
+  });
+
+  it('renders delta, traffic, and referrer sections when all data is available', () => {
+    const report = buildReport({
+      current,
+      delta: computeDelta(previous, current),
+      referrers: [{ count: 30, referrer: 'obsidian.md', uniques: 12 }],
+    });
+    expect(report).toContain('## Since last snapshot');
+    expect(report).toContain('main.js downloads gained: **+23**');
+    expect(report).toContain('| 2026.7.3 | 2026-07-09 | 103 | 110 |');
+    expect(report).toContain('- Views: 110 (44 unique)');
+    expect(report).toContain('| obsidian.md | 30 | 12 |');
+    // Registry versions must sort numerically (2026.7.10 above 2026.7.2), not
+    // lexicographically.
+    expect(report.indexOf('| 2026.7.10 | 5 |')).toBeLessThan(report.indexOf('| 2026.7.2 | 55 |'));
+  });
+
+  it('omits the delta section without history and marks traffic unavailable without credentials', () => {
+    const withoutTraffic = { ...current, traffic: null };
+    const report = buildReport({
+      current: withoutTraffic,
+      delta: computeDelta(null, withoutTraffic),
+      referrers: null,
+    });
+    expect(report).not.toContain('## Since last snapshot');
+    expect(report).toContain('_Unavailable');
   });
 });

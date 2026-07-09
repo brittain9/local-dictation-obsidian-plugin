@@ -12,16 +12,19 @@
 //     + per-version registry downloads, independent of GitHub asset counts.
 //
 // See docs/specs/download-stats.md for the full rationale, report shape, and
-// the stats/history.jsonl snapshot schema.
+// the snapshot schema. Snapshot history lives on the dedicated stats-history
+// branch (stats/history.jsonl there), never on main.
 //
 // CLI: node scripts/download-stats.mjs [--snapshot] [--json]
-//   --snapshot  append a normalized snapshot to stats/history.jsonl
+//   --snapshot  record a normalized snapshot in the history file
 //   --json      print the raw collected data instead of the markdown report
 // Optional env: GITHUB_REPOSITORY (skips the `gh repo view` lookup, as set by
-//               Actions), GH_TOKEN (passed through to `gh` for auth).
+//               Actions), GH_TOKEN (passed through to `gh` for auth),
+//               STATS_HISTORY_PATH (history file location; the weekly workflow
+//               points this at its checkout of the stats-history branch).
 
 import { spawnSync } from 'node:child_process';
-import { appendFile, mkdir, readFile } from 'node:fs/promises';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { dirname } from 'node:path';
 import process from 'node:process';
 
@@ -33,7 +36,9 @@ import {
 
 const OBSIDIAN_STATS_URL =
   'https://raw.githubusercontent.com/obsidianmd/obsidian-releases/master/community-plugin-stats.json';
-const HISTORY_PATH = 'stats/history.jsonl';
+const HISTORY_BRANCH = 'stats-history';
+const HISTORY_PATH_IN_BRANCH = 'stats/history.jsonl';
+const HISTORY_PATH = process.env.STATS_HISTORY_PATH ?? HISTORY_PATH_IN_BRANCH;
 
 export function parseArgs(argv) {
   const args = { help: false, json: false, snapshot: false };
@@ -72,15 +77,18 @@ function resolveRepo() {
 }
 
 function fetchReleases(repo) {
+  // --paginate alone emits one JSON array per page back-to-back, which
+  // JSON.parse rejects past 100 releases; --slurp wraps the pages in an outer
+  // array instead, flattened below.
   const result = spawnSync(
     'gh',
-    ['api', '-X', 'GET', `repos/${repo}/releases`, '-f', 'per_page=100', '--paginate'],
+    ['api', '-X', 'GET', `repos/${repo}/releases`, '-f', 'per_page=100', '--paginate', '--slurp'],
     { encoding: 'utf8', maxBuffer: 50 * 1024 * 1024 },
   );
   if (result.status !== 0) {
     throw new Error(`gh api releases failed (${result.status}): ${result.stderr}`);
   }
-  const raw = JSON.parse(result.stdout);
+  const raw = JSON.parse(result.stdout).flat();
   return raw.map((release) => ({
     tag: release.tag_name,
     publishedAt: release.published_at,
@@ -108,9 +116,11 @@ function fetchTrafficEndpoint(repo, path) {
     encoding: 'utf8',
   });
   if (result.status !== 0) {
-    console.warn(
-      `warning: traffic/${path} unavailable (needs push/administration access to the repo)`,
-    );
+    // Missing push/administration access is the expected cause, but surface
+    // gh's actual stderr so rate limits or network failures aren't misread as
+    // a credential problem.
+    const reason = result.stderr?.trim() || `exit status ${result.status}`;
+    console.warn(`warning: traffic/${path} unavailable: ${reason}`);
     return null;
   }
   return JSON.parse(result.stdout);
@@ -141,14 +151,7 @@ async function fetchObsidianRegistry(pluginId) {
   return { total: downloads, byVersion };
 }
 
-async function readHistory(path) {
-  let raw;
-  try {
-    raw = await readFile(path, 'utf8');
-  } catch (error) {
-    if (error.code === 'ENOENT') return [];
-    throw error;
-  }
+function parseHistoryLines(raw) {
   return raw
     .split('\n')
     .map((line) => line.trim())
@@ -156,9 +159,31 @@ async function readHistory(path) {
     .map((line) => JSON.parse(line));
 }
 
-async function appendSnapshot(path, snapshot) {
+// History lives on the stats-history branch, not main. CI checks that branch
+// out and points STATS_HISTORY_PATH at it; locally the file normally doesn't
+// exist, so fall back to reading the branch ref directly — this keeps the
+// delta section working after a plain `git fetch`.
+async function readHistory(path) {
+  try {
+    return parseHistoryLines(await readFile(path, 'utf8'));
+  } catch (error) {
+    if (error.code !== 'ENOENT') throw error;
+  }
+  const result = spawnSync('git', ['show', `origin/${HISTORY_BRANCH}:${HISTORY_PATH_IN_BRANCH}`], {
+    encoding: 'utf8',
+  });
+  if (result.status !== 0) return [];
+  return parseHistoryLines(result.stdout);
+}
+
+// Write the full history rather than appending the new entry: when the prior
+// entries came from the branch fallback above, an append-only write would
+// create a local file holding just one line, which would then shadow the real
+// branch history on the next run. In CI the file already holds every prior
+// line, so this degenerates to the same one-line-added diff an append gives.
+async function writeHistory(path, entries) {
   await mkdir(dirname(path), { recursive: true });
-  await appendFile(path, `${JSON.stringify(snapshot)}\n`);
+  await writeFile(path, `${entries.map((entry) => JSON.stringify(entry)).join('\n')}\n`);
 }
 
 function formatSigned(n) {
@@ -277,14 +302,14 @@ async function main() {
   }
 
   if (args.snapshot) {
-    await appendSnapshot(HISTORY_PATH, current);
-    console.error(`Appended snapshot to ${HISTORY_PATH}`);
+    await writeHistory(HISTORY_PATH, [...history, current]);
+    console.error(`Recorded snapshot ${history.length + 1} in ${HISTORY_PATH}`);
   }
 }
 
 const invokedDirectly =
-  import.meta.url === `file://${process.argv[1]}` ||
-  import.meta.url.endsWith(process.argv[1] ?? '');
+  process.argv[1] !== undefined &&
+  (import.meta.url === `file://${process.argv[1]}` || import.meta.url.endsWith(process.argv[1]));
 
 if (invokedDirectly) {
   main().catch((error) => {
