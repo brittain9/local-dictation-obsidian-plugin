@@ -4,7 +4,7 @@ import {
   type DictationControllerState,
   DictationSessionController,
 } from '../src/dictation/dictation-session-controller';
-import type { NotePlacementOptions } from '../src/editor/note-surface';
+import type { NotePlacementOptions, SurfaceDesynchronization } from '../src/editor/note-surface';
 import { type LlmCleanupFailure, ProviderError } from '../src/llm/provider';
 import type { LlmRouter, LlmRouterCleanupResult } from '../src/llm/router';
 import type { SessionAcceptResult } from '../src/session/session';
@@ -728,6 +728,267 @@ describe('DictationSessionController', () => {
     });
   });
 
+  it('contains a fatal note-surface desynchronization once and drops later transcripts', async () => {
+    const captureStream = new FakeCaptureStream();
+    const logger = new FakeLogger();
+    const notice = vi.fn();
+    const sidecarConnection = new FakeSidecarConnection();
+    const sessions: FakeSession[] = [];
+    const cleanup = vi.fn(
+      async (): Promise<LlmRouterCleanupResult> => ({
+        model: 'm',
+        providerId: 'ollama',
+        text: 'must not run',
+      }),
+    );
+    let onSurfaceDesynchronized: ((failure: SurfaceDesynchronization) => void) | undefined;
+    const controller = createController({
+      captureStream,
+      createSession: (session, options) => {
+        sessions.push(session);
+        onSurfaceDesynchronized = options.callbacks.onSurfaceDesynchronized;
+      },
+      getSettings: () =>
+        createSettings({
+          llmFeaturesEnabled: true,
+          llmPostprocessMode: 'per_utterance',
+          llmPostprocessSkipMinWords: 0,
+          selectedModel: createExternalModelSelection(),
+        }),
+      logger,
+      llmRouter: createFakeLlmRouter({ cleanup }),
+      notice,
+      sidecarConnection,
+    });
+    const failure: SurfaceDesynchronization = {
+      documentLength: 4280,
+      kind: 'surface_desynchronized',
+      trackedPosition: 4314,
+    };
+
+    await controller.startDictation();
+    const sessionId = sidecarConnection.startSession.mock.calls[0]?.[0].sessionId ?? '';
+
+    onSurfaceDesynchronized?.(failure);
+    onSurfaceDesynchronized?.(failure);
+    sidecarConnection.emit(transcriptReady(sessionId, 'must be dropped'));
+
+    await vi.waitFor(() => {
+      expect(sidecarConnection.cancelSession).toHaveBeenCalledOnce();
+    });
+    expect(sidecarConnection.cancelSession).toHaveBeenCalledWith(sessionId);
+    expect(captureStream.stop).toHaveBeenCalledOnce();
+    expect(logger.error).toHaveBeenCalledOnce();
+    expect(logger.error).toHaveBeenCalledWith(
+      'session',
+      'dictation note surface desynchronized',
+      failure,
+    );
+    expect(notice).toHaveBeenCalledOnce();
+    expect(notice).toHaveBeenCalledWith(
+      'Dictation stopped because the note changed in a way Local Dictation could not safely track. Start dictation again to continue.',
+    );
+    await vi.waitFor(() => {
+      expect(sessions[0]?.acceptTranscript).not.toHaveBeenCalled();
+    });
+    expect(cleanup).not.toHaveBeenCalled();
+  });
+
+  it('sends one sidecar cancel when fatal containment races another cancellation source', async () => {
+    const captureStream = new FakeCaptureStream();
+    const sidecarConnection = new FakeSidecarConnection();
+    let onLockedNoteClosed: (() => void) | undefined;
+    let onSurfaceDesynchronized: ((failure: SurfaceDesynchronization) => void) | undefined;
+    let resolveCaptureStop: (() => void) | undefined;
+    captureStream.stop.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          resolveCaptureStop = resolve;
+        }),
+    );
+    const controller = createController({
+      captureStream,
+      createSession: (_session, options) => {
+        onLockedNoteClosed = options.callbacks.onLockedNoteClosed;
+        onSurfaceDesynchronized = options.callbacks.onSurfaceDesynchronized;
+      },
+      sidecarConnection,
+    });
+
+    await controller.startDictation();
+
+    onSurfaceDesynchronized?.({
+      documentLength: 4280,
+      kind: 'surface_desynchronized',
+      trackedPosition: 4314,
+    });
+    onLockedNoteClosed?.();
+
+    await vi.waitFor(() => {
+      expect(captureStream.stop).toHaveBeenCalledOnce();
+    });
+    expect(sidecarConnection.cancelSession).not.toHaveBeenCalled();
+
+    resolveCaptureStop?.();
+    await vi.waitFor(() => {
+      expect(sidecarConnection.cancelSession).toHaveBeenCalledOnce();
+    });
+  });
+
+  it('reports a pending fatal desynchronization after the sidecar has already stopped', async () => {
+    const logger = new FakeLogger();
+    const notice = vi.fn();
+    const sidecarConnection = new FakeSidecarConnection();
+    const sessions: FakeSession[] = [];
+    let onSurfaceDesynchronized: ((failure: SurfaceDesynchronization) => void) | undefined;
+    const failure: SurfaceDesynchronization = {
+      documentLength: 4280,
+      kind: 'surface_desynchronized',
+      trackedPosition: 4314,
+    };
+    const controller = createController({
+      createSession: (session, options) => {
+        sessions.push(session);
+        onSurfaceDesynchronized = options.callbacks.onSurfaceDesynchronized;
+        session.acceptTranscript.mockImplementation(() => {
+          onSurfaceDesynchronized?.(failure);
+          return { kind: 'accepted' };
+        });
+      },
+      logger,
+      notice,
+      sidecarConnection,
+    });
+
+    await controller.startDictation();
+    const sessionId = sidecarConnection.startSession.mock.calls[0]?.[0].sessionId ?? '';
+    sidecarConnection.emit(transcriptReady(sessionId, 'final utterance'));
+    sidecarConnection.emit({ reason: 'user_stop', sessionId, type: 'session_stopped' });
+
+    await vi.waitFor(() => {
+      expect(sessions[0]?.dispose).toHaveBeenCalledOnce();
+    });
+    expect(sidecarConnection.cancelSession).not.toHaveBeenCalled();
+    expect(logger.error).toHaveBeenCalledOnce();
+    expect(logger.error).toHaveBeenCalledWith(
+      'session',
+      'dictation note surface desynchronized',
+      failure,
+    );
+    expect(notice).toHaveBeenCalledOnce();
+    expect(notice).toHaveBeenCalledWith(
+      'Dictation stopped because the note changed in a way Local Dictation could not safely track. Start dictation again to continue.',
+    );
+  });
+
+  it('aborts pending provider work when a fatal surface failure arrives after stop', async () => {
+    const notice = vi.fn();
+    const sidecarConnection = new FakeSidecarConnection();
+    let cleanupSignal: AbortSignal | undefined;
+    let resolveCleanup: ((result: LlmRouterCleanupResult) => void) | undefined;
+    const cleanup = vi.fn(
+      ({ abortSignal }: { abortSignal?: AbortSignal }) =>
+        new Promise<LlmRouterCleanupResult>((resolve) => {
+          cleanupSignal = abortSignal;
+          resolveCleanup = resolve;
+        }),
+    );
+    let onSurfaceDesynchronized: ((failure: SurfaceDesynchronization) => void) | undefined;
+    const sessions: FakeSession[] = [];
+    const controller = createController({
+      createSession: (session, options) => {
+        sessions.push(session);
+        onSurfaceDesynchronized = options.callbacks.onSurfaceDesynchronized;
+      },
+      getSettings: () =>
+        createSettings({
+          llmFeaturesEnabled: true,
+          llmPostprocessMode: 'per_utterance',
+          llmPostprocessSkipMinWords: 0,
+          selectedModel: createExternalModelSelection(),
+        }),
+      llmRouter: createFakeLlmRouter({ cleanup }),
+      notice,
+      sidecarConnection,
+    });
+
+    await controller.startDictation();
+    const sessionId = sidecarConnection.startSession.mock.calls[0]?.[0].sessionId ?? '';
+    sidecarConnection.emit(transcriptReady(sessionId, 'pending cleanup'));
+    await vi.waitFor(() => {
+      expect(cleanup).toHaveBeenCalledOnce();
+    });
+    sidecarConnection.emit({ reason: 'user_stop', sessionId, type: 'session_stopped' });
+    onSurfaceDesynchronized?.({
+      documentLength: 4280,
+      kind: 'surface_desynchronized',
+      trackedPosition: 4314,
+    });
+
+    expect(cleanupSignal?.aborted).toBe(true);
+    expect(sidecarConnection.cancelSession).not.toHaveBeenCalled();
+    expect(notice).toHaveBeenCalledOnce();
+
+    resolveCleanup?.({ model: 'm', providerId: 'ollama', text: 'ignored' });
+    await vi.waitFor(() => {
+      expect(sessions[0]?.dispose).toHaveBeenCalledOnce();
+    });
+    expect(sessions[0]?.acceptTranscript).not.toHaveBeenCalled();
+  });
+
+  it('contains an unexpected projection exception with accurate single-shot notice copy', async () => {
+    const captureStream = new FakeCaptureStream();
+    const logger = new FakeLogger();
+    const notice = vi.fn();
+    const sidecarConnection = new FakeSidecarConnection();
+    const sessions: FakeSession[] = [];
+    const controller = createController({
+      captureStream,
+      createSession: (session) => {
+        sessions.push(session);
+        session.acceptTranscript.mockImplementation(() => {
+          throw new RangeError('Invalid change range 4314 to 4314 (in doc of length 4280)');
+        });
+      },
+      logger,
+      notice,
+      sidecarConnection,
+    });
+
+    await controller.startDictation();
+    const sessionId = sidecarConnection.startSession.mock.calls[0]?.[0].sessionId ?? '';
+    sidecarConnection.emit(
+      transcriptReady(sessionId, 'first', {
+        isFinal: false,
+        utteranceId: 'partial-1',
+        utteranceIndex: 0,
+      }),
+    );
+    sidecarConnection.emit(
+      transcriptReady(sessionId, 'second', {
+        isFinal: false,
+        utteranceId: 'partial-2',
+        utteranceIndex: 1,
+      }),
+    );
+
+    await vi.waitFor(() => {
+      expect(sidecarConnection.cancelSession).toHaveBeenCalledOnce();
+    });
+    expect(captureStream.stop).toHaveBeenCalledOnce();
+    expect(logger.error).toHaveBeenCalledOnce();
+    expect(logger.error).toHaveBeenCalledWith(
+      'session',
+      'failed to process transcript',
+      expect.any(RangeError),
+    );
+    expect(notice).toHaveBeenCalledOnce();
+    expect(notice).toHaveBeenCalledWith(
+      'Dictation stopped because Local Dictation could not safely write to the note. Start dictation again to continue.',
+    );
+    expect(sessions[0]?.acceptTranscript).toHaveBeenCalledOnce();
+  });
+
   it('keeps raw transcript and reports a typed per-utterance cleanup failure', async () => {
     const sidecarConnection = new FakeSidecarConnection();
     const sessions: FakeSession[] = [];
@@ -1097,6 +1358,263 @@ describe('DictationSessionController', () => {
         }),
       );
     });
+  });
+
+  it('does not start batch provider work after a pending accept reports a fatal surface failure', async () => {
+    const sidecarConnection = new FakeSidecarConnection();
+    const sessions: FakeSession[] = [];
+    const cleanup = vi.fn(
+      async (): Promise<LlmRouterCleanupResult> => ({
+        model: 'm',
+        providerId: 'ollama',
+        text: 'must not run',
+      }),
+    );
+    let onSurfaceDesynchronized: ((failure: SurfaceDesynchronization) => void) | undefined;
+    const controller = createController({
+      createSession: (session, options) => {
+        sessions.push(session);
+        onSurfaceDesynchronized = options.callbacks.onSurfaceDesynchronized;
+        session.acceptTranscript.mockImplementation((revision: TranscriptRevision) => {
+          session.currentSessionText = revision.text;
+          onSurfaceDesynchronized?.({
+            documentLength: 4280,
+            kind: 'surface_desynchronized',
+            trackedPosition: 4314,
+          });
+          return { kind: 'accepted' };
+        });
+      },
+      getSettings: () =>
+        createSettings({
+          llmFeaturesEnabled: true,
+          llmPostprocessMode: 'batch',
+          selectedModel: createExternalModelSelection(),
+        }),
+      llmRouter: createFakeLlmRouter({ cleanup }),
+      sidecarConnection,
+    });
+
+    await controller.startDictation();
+    const sessionId = sidecarConnection.startSession.mock.calls[0]?.[0].sessionId ?? '';
+
+    sidecarConnection.emit(transcriptReady(sessionId, 'final utterance'));
+    sidecarConnection.emit({ reason: 'user_stop', sessionId, type: 'session_stopped' });
+
+    await vi.waitFor(() => {
+      expect(sessions[0]?.dispose).toHaveBeenCalledOnce();
+    });
+    expect(cleanup).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['hiding the anchor', 'anchor'],
+    ['marking the range', 'processing'],
+  ] as const)('does not start batch provider work after a fatal failure while %s', async (_description, mutation) => {
+    const logger = new FakeLogger();
+    const sidecarConnection = new FakeSidecarConnection();
+    const sessions: FakeSession[] = [];
+    const cleanup = vi.fn(
+      async (): Promise<LlmRouterCleanupResult> => ({
+        model: 'm',
+        providerId: 'ollama',
+        text: 'must not run',
+      }),
+    );
+    let onSurfaceDesynchronized: ((failure: SurfaceDesynchronization) => void) | undefined;
+    const controller = createController({
+      createSession: (session, options) => {
+        sessions.push(session);
+        onSurfaceDesynchronized = options.callbacks.onSurfaceDesynchronized;
+      },
+      getSettings: () =>
+        createSettings({
+          llmFeaturesEnabled: true,
+          llmPostprocessMode: 'batch',
+          selectedModel: createExternalModelSelection(),
+        }),
+      llmRouter: createFakeLlmRouter({ cleanup }),
+      logger,
+      sidecarConnection,
+    });
+
+    await controller.startDictation();
+    const sessionId = sidecarConnection.startSession.mock.calls[0]?.[0].sessionId ?? '';
+    sidecarConnection.emit(transcriptReady(sessionId, 'raw transcript'));
+    await vi.waitFor(() => {
+      expect(sessions[0]?.acceptTranscript).toHaveBeenCalledOnce();
+    });
+    await controller.stopDictation();
+
+    const session = sessions[0];
+    if (session === undefined) {
+      throw new Error('expected session fixture');
+    }
+    const reportFatalFailure = () => {
+      onSurfaceDesynchronized?.({
+        documentLength: 4280,
+        kind: 'surface_desynchronized',
+        trackedPosition: 4314,
+      });
+    };
+    if (mutation === 'anchor') {
+      session.setAnchorMode.mockImplementationOnce(reportFatalFailure);
+    } else {
+      session.markSessionRangeAsProcessing.mockImplementationOnce(() => {
+        reportFatalFailure();
+        return false;
+      });
+    }
+
+    sidecarConnection.emit({ reason: 'user_stop', sessionId, type: 'session_stopped' });
+
+    await vi.waitFor(() => {
+      expect(session.dispose).toHaveBeenCalledOnce();
+    });
+    expect(cleanup).not.toHaveBeenCalled();
+    expect(logger.warn).not.toHaveBeenCalledWith(
+      'llm',
+      expect.stringContaining('session range no longer available'),
+    );
+  });
+
+  it('does not apply a batch result after clearing its processing mark reports a fatal failure', async () => {
+    const sidecarConnection = new FakeSidecarConnection();
+    const sessions: FakeSession[] = [];
+    const onLlmCleanupSuccess = vi.fn();
+    let onSurfaceDesynchronized: ((failure: SurfaceDesynchronization) => void) | undefined;
+    const controller = createController({
+      createSession: (session, options) => {
+        sessions.push(session);
+        onSurfaceDesynchronized = options.callbacks.onSurfaceDesynchronized;
+      },
+      getSettings: () =>
+        createSettings({
+          llmFeaturesEnabled: true,
+          llmPostprocessMode: 'batch',
+          selectedModel: createExternalModelSelection(),
+        }),
+      llmRouter: createFakeLlmRouter({
+        cleanup: vi.fn(
+          async (): Promise<LlmRouterCleanupResult> => ({
+            model: 'm',
+            providerId: 'ollama',
+            text: 'Clean batch.',
+          }),
+        ),
+      }),
+      onLlmCleanupSuccess,
+      sidecarConnection,
+    });
+
+    await controller.startDictation();
+    const sessionId = sidecarConnection.startSession.mock.calls[0]?.[0].sessionId ?? '';
+    sidecarConnection.emit(transcriptReady(sessionId, 'raw transcript'));
+    await vi.waitFor(() => {
+      expect(sessions[0]?.acceptTranscript).toHaveBeenCalledOnce();
+    });
+    await controller.stopDictation();
+
+    const session = sessions[0];
+    if (session === undefined) {
+      throw new Error('expected session fixture');
+    }
+    session.clearSessionProcessingMark.mockImplementationOnce(() => {
+      onSurfaceDesynchronized?.({
+        documentLength: 4280,
+        kind: 'surface_desynchronized',
+        trackedPosition: 4314,
+      });
+    });
+    sidecarConnection.emit({ reason: 'user_stop', sessionId, type: 'session_stopped' });
+
+    await vi.waitFor(() => {
+      expect(session.dispose).toHaveBeenCalledOnce();
+    });
+    expect(session.replaceSessionRangeWithCleaned).not.toHaveBeenCalled();
+    expect(onLlmCleanupSuccess).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    [
+      'replacement',
+      undefined,
+      'batch cleanup replacement skipped; session range no longer available',
+    ],
+    [
+      'additive',
+      'builtin:tldr',
+      'additive batch insert skipped; session range no longer available',
+    ],
+  ] as const)('suppresses misleading %s batch logs and success after result application reports fatal', async (_description, activePresetRef, misleadingWarning) => {
+    const logger = new FakeLogger();
+    const notice = vi.fn();
+    const onLlmCleanupSuccess = vi.fn();
+    const sidecarConnection = new FakeSidecarConnection();
+    const sessions: FakeSession[] = [];
+    let onSurfaceDesynchronized: ((failure: SurfaceDesynchronization) => void) | undefined;
+    const controller = createController({
+      createSession: (session, options) => {
+        sessions.push(session);
+        onSurfaceDesynchronized = options.callbacks.onSurfaceDesynchronized;
+      },
+      getSettings: () =>
+        createSettings({
+          llmFeaturesEnabled: true,
+          ...(activePresetRef === undefined
+            ? {}
+            : { llmPostprocessActivePresetRef: activePresetRef }),
+          llmPostprocessMode: 'batch',
+          selectedModel: createExternalModelSelection(),
+        }),
+      llmRouter: createFakeLlmRouter({
+        cleanup: vi.fn(
+          async (): Promise<LlmRouterCleanupResult> => ({
+            model: 'm',
+            providerId: 'ollama',
+            text: 'Clean batch.',
+          }),
+        ),
+      }),
+      logger,
+      notice,
+      onLlmCleanupSuccess,
+      sidecarConnection,
+    });
+
+    await controller.startDictation();
+    const sessionId = sidecarConnection.startSession.mock.calls[0]?.[0].sessionId ?? '';
+    sidecarConnection.emit(transcriptReady(sessionId, 'raw transcript'));
+    await vi.waitFor(() => {
+      expect(sessions[0]?.acceptTranscript).toHaveBeenCalledOnce();
+    });
+    await controller.stopDictation();
+
+    const session = sessions[0];
+    if (session === undefined) {
+      throw new Error('expected session fixture');
+    }
+    const reportFatalFailure = () => {
+      onSurfaceDesynchronized?.({
+        documentLength: 4280,
+        kind: 'surface_desynchronized',
+        trackedPosition: 4314,
+      });
+      return false;
+    };
+    if (activePresetRef === undefined) {
+      session.replaceSessionRangeWithCleaned.mockImplementationOnce(reportFatalFailure);
+    } else {
+      session.insertAdjacentToSessionRange.mockImplementationOnce(reportFatalFailure);
+    }
+    sidecarConnection.emit({ reason: 'user_stop', sessionId, type: 'session_stopped' });
+
+    await vi.waitFor(() => {
+      expect(session.dispose).toHaveBeenCalledOnce();
+    });
+    expect(logger.warn).not.toHaveBeenCalledWith('llm', misleadingWarning);
+    expect(onLlmCleanupSuccess).not.toHaveBeenCalled();
+    expect(notice).toHaveBeenCalledOnce();
   });
 
   it('keeps raw transcript when a batch cleanup fails and reports it', async () => {
@@ -1550,6 +2068,7 @@ interface CreateSessionOptions {
   callbacks: {
     onLockedNoteClosed: () => void;
     onLockedNoteDeleted: () => void;
+    onSurfaceDesynchronized: (failure: SurfaceDesynchronization) => void;
   };
   placement: NotePlacementOptions;
   rendererOptions: TranscriptRenderOptions;

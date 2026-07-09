@@ -10,6 +10,7 @@ import type {
   ReplaceResult,
   RewriteRange,
   RewriteResult,
+  SurfaceDesynchronization,
 } from '../src/editor/note-surface';
 import { Session } from '../src/session/session';
 import type {
@@ -41,15 +42,19 @@ class FakeSurface {
   public readonly readNoteText = vi.fn(
     (_maxChars: number): { text: string; truncated: boolean } | null => null,
   );
-  public readonly setAnchorMode = vi.fn();
+  public readonly setAnchorMode = vi.fn(
+    (_mode: 'hidden' | 'visible'): SurfaceDesynchronization | null => null,
+  );
   public readonly setProcessingRange = vi.fn(
-    (_range: { from: number; to: number } | null): void => undefined,
+    (_range: { from: number; to: number } | null): SurfaceDesynchronization | null => null,
   );
   public readonly setProvisional = vi.fn(
-    (_utteranceId: string, _provisional: boolean): void => undefined,
+    (_utteranceId: string, _provisional: boolean): SurfaceDesynchronization | null => null,
   );
-  public readonly validateExternalModification = vi.fn();
+  public readonly validateExternalModification = vi.fn((): SurfaceDesynchronization | null => null);
   public documentText = '';
+  public onSurfaceDesynchronized: ((failure: SurfaceDesynchronization) => void) | null = null;
+  public readonly appendResultByUtterance = new Map<string, AppendResult>();
   public nextAppendResult: AppendResult | null = null;
   public nextReplaceResult: ReplaceResult | null = null;
   public nextRewriteResult: RewriteResult | null = null;
@@ -65,17 +70,18 @@ class FakeSurface {
     this.appendCalls.push({ projection, utteranceId });
 
     const from = this.documentText.length;
-    const result = this.nextAppendResult ?? {
-      kind: 'appended',
-      span: {
-        end: from + projection.projectedText.length,
-        projectedText: projection.insertedText,
-        start: from,
-        textEnd: from + projection.textEndOffset,
-        textStart: from + projection.textStartOffset,
-        utteranceId,
-      },
-    };
+    const result = this.appendResultByUtterance.get(utteranceId) ??
+      this.nextAppendResult ?? {
+        kind: 'appended',
+        span: {
+          end: from + projection.projectedText.length,
+          projectedText: projection.insertedText,
+          start: from,
+          textEnd: from + projection.textEndOffset,
+          textStart: from + projection.textStartOffset,
+          utteranceId,
+        },
+      };
 
     if (result.kind === 'appended') {
       this.documentText = `${this.documentText}${projection.projectedText}`;
@@ -445,6 +451,118 @@ describe('Session', () => {
     });
   });
 
+  it('reports a fatal surface desynchronization once and stops projecting transcripts', () => {
+    const { callbacks, lockedFile, session, surface, vault } = createSessionHarness();
+    const failure: SurfaceDesynchronization = {
+      documentLength: 4280,
+      kind: 'surface_desynchronized',
+      trackedPosition: 4314,
+    };
+    surface.validateExternalModification.mockReturnValue(failure);
+
+    vault.trigger('modify', lockedFile);
+    vault.trigger('modify', lockedFile);
+    session.acceptTranscript(transcript({ text: 'must not be inserted', utteranceId: 'u1' }));
+
+    expect(callbacks.onSurfaceDesynchronized).toHaveBeenCalledOnce();
+    expect(callbacks.onSurfaceDesynchronized).toHaveBeenCalledWith(failure);
+    expect(surface.dispose).toHaveBeenCalledOnce();
+    expect(surface.appendCalls).toHaveLength(0);
+  });
+
+  it('forwards editor-update surface desynchronization through the lifecycle once', () => {
+    const { callbacks, surface } = createSessionHarness();
+    const failure: SurfaceDesynchronization = {
+      documentLength: 4280,
+      kind: 'surface_desynchronized',
+      trackedPosition: 4314,
+    };
+
+    surface.onSurfaceDesynchronized?.(failure);
+    surface.onSurfaceDesynchronized?.(failure);
+
+    expect(callbacks.onSurfaceDesynchronized).toHaveBeenCalledOnce();
+    expect(callbacks.onSurfaceDesynchronized).toHaveBeenCalledWith(failure);
+    expect(surface.dispose).toHaveBeenCalledOnce();
+  });
+
+  it('propagates a mutation-boundary desynchronization through the lifecycle once', () => {
+    const { callbacks, session, surface } = createSessionHarness();
+    const failure: SurfaceDesynchronization = {
+      documentLength: 4280,
+      kind: 'surface_desynchronized',
+      trackedPosition: 4314,
+    };
+    surface.nextAppendResult = {
+      kind: 'denied',
+      reason: failure,
+      utteranceId: 'u1',
+    };
+
+    session.acceptTranscript(transcript({ text: 'first', utteranceId: 'u1' }));
+    session.acceptTranscript(transcript({ text: 'second', utteranceId: 'u2' }));
+
+    expect(callbacks.onSurfaceDesynchronized).toHaveBeenCalledOnce();
+    expect(callbacks.onSurfaceDesynchronized).toHaveBeenCalledWith(failure);
+    expect(surface.dispose).toHaveBeenCalledOnce();
+    expect(surface.appendCalls).toHaveLength(1);
+  });
+
+  it('propagates a raw-callout append desynchronization through the lifecycle', () => {
+    const { callbacks, session, surface } = createSessionHarness();
+    const failure: SurfaceDesynchronization = {
+      documentLength: 4280,
+      kind: 'surface_desynchronized',
+      trackedPosition: 4314,
+    };
+    surface.appendResultByUtterance.set('u1:llm_raw', {
+      kind: 'denied',
+      reason: failure,
+      utteranceId: 'u1:llm_raw',
+    });
+
+    session.acceptTranscript(
+      transcript({
+        llmPostprocessRawText: 'raw words',
+        text: 'Cleaned words.',
+        utteranceId: 'u1',
+      }),
+    );
+
+    expect(callbacks.onSurfaceDesynchronized).toHaveBeenCalledOnce();
+    expect(callbacks.onSurfaceDesynchronized).toHaveBeenCalledWith(failure);
+    expect(surface.dispose).toHaveBeenCalledOnce();
+    expect(surface.documentText).toBe('Cleaned words.');
+  });
+
+  it('propagates desynchronization while clearing a denied replacement provisional', () => {
+    const { callbacks, session, surface } = createSessionHarness();
+    const failure: SurfaceDesynchronization = {
+      documentLength: 4280,
+      kind: 'surface_desynchronized',
+      trackedPosition: 4314,
+    };
+    session.acceptTranscript(
+      transcript({ isFinal: false, revision: 0, text: 'partial', utteranceId: 'u1' }),
+    );
+    surface.nextReplaceResult = {
+      kind: 'denied',
+      reason: { kind: 'user_edited' },
+      utteranceId: 'u1',
+    };
+    surface.setProvisional.mockReturnValueOnce(failure);
+
+    session.acceptTranscript(
+      transcript({ isFinal: true, revision: 1, text: 'final', utteranceId: 'u1' }),
+    );
+    session.acceptTranscript(transcript({ text: 'must not append', utteranceId: 'u2' }));
+
+    expect(callbacks.onSurfaceDesynchronized).toHaveBeenCalledOnce();
+    expect(callbacks.onSurfaceDesynchronized).toHaveBeenCalledWith(failure);
+    expect(surface.dispose).toHaveBeenCalledOnce();
+    expect(surface.appendCalls).toHaveLength(1);
+  });
+
   it('proxies readNoteGlossary to the active surface', () => {
     const { session, surface } = createSessionHarness();
     surface.readNoteGlossary.mockReturnValueOnce({
@@ -655,6 +773,7 @@ function createSessionHarness(options: { rendererOptions?: TranscriptRenderOptio
   callbacks: {
     onLockedNoteClosed: ReturnType<typeof vi.fn>;
     onLockedNoteDeleted: ReturnType<typeof vi.fn>;
+    onSurfaceDesynchronized: ReturnType<typeof vi.fn>;
   };
   lockedFile: TFile;
   session: Session;
@@ -669,6 +788,7 @@ function createSessionHarness(options: { rendererOptions?: TranscriptRenderOptio
   const callbacks = {
     onLockedNoteClosed: vi.fn(),
     onLockedNoteDeleted: vi.fn(),
+    onSurfaceDesynchronized: vi.fn(),
   };
   const app = { vault, workspace } as unknown as Pick<App, 'vault' | 'workspace'>;
   const placement: NotePlacementOptions = { anchor: 'at_cursor' };
@@ -676,7 +796,10 @@ function createSessionHarness(options: { rendererOptions?: TranscriptRenderOptio
     app,
     callbacks,
     lockedFile,
-    noteSurfaceFactory: () => surface,
+    noteSurfaceFactory: (_view, _placement, onSurfaceDesynchronized) => {
+      surface.onSurfaceDesynchronized = onSurfaceDesynchronized;
+      return surface;
+    },
     placement,
     rendererOptions: options.rendererOptions ?? renderOptions(),
     sessionId: 'session-1',

@@ -9,7 +9,7 @@ import {
   formatSystemAudioErrorMessage,
   formatSystemAudioSidecarErrorMessage,
 } from '../audio/system-audio-permission-message';
-import type { NotePlacementOptions } from '../editor/note-surface';
+import type { NotePlacementOptions, SurfaceDesynchronization } from '../editor/note-surface';
 import {
   type LlmPostprocessMode,
   type LlmPresetOutput,
@@ -18,7 +18,7 @@ import {
 } from '../llm/presets';
 import { type LlmCleanupFailure, type LlmProviderId, ProviderError } from '../llm/provider';
 import type { LlmRouter } from '../llm/router';
-import type { Session } from '../session/session';
+import type { Session, SessionAcceptResult } from '../session/session';
 import type { StageId, StageOutcome, TranscriptRevision } from '../session/session-journal';
 import type { PluginSettings, SmartParagraphPauseSettings } from '../settings/plugin-settings';
 import { formatErrorMessage } from '../shared/format-utils';
@@ -100,6 +100,7 @@ interface ManagedSession {
   // in final-event order. Partials bypass it and project immediately.
   cleanupChain: Promise<void>;
   cleanupAbortControllers: Set<AbortController>;
+  fatalTranscriptFailureReported: boolean;
   llmFailureLogged: boolean;
   pendingTranscriptWork: Set<Promise<void>>;
   phase: SessionPhase;
@@ -114,6 +115,7 @@ interface DictationSessionControllerDependencies {
     callbacks: {
       onLockedNoteClosed: () => void;
       onLockedNoteDeleted: () => void;
+      onSurfaceDesynchronized: (failure: SurfaceDesynchronization) => void;
     };
     placement: NotePlacementOptions;
     rendererOptions: TranscriptRenderOptions;
@@ -144,9 +146,14 @@ interface DictationSessionControllerDependencies {
 
 const ANCHOR_VISIBLE_DELAY_MS = 2500;
 const MAX_CONTROLLER_SESSIONS = 5;
+const SURFACE_DESYNCHRONIZED_NOTICE =
+  'Dictation stopped because the note changed in a way Local Dictation could not safely track. Start dictation again to continue.';
+const TRANSCRIPT_WRITE_FAILURE_NOTICE =
+  'Dictation stopped because Local Dictation could not safely write to the note. Start dictation again to continue.';
 
 export class DictationSessionController {
   private activeSessionId: string | null = null;
+  private readonly cancellationPromises = new Map<string, Promise<void>>();
   private readonly releaseSidecarSubscription: () => void;
   private readonly sessions = new Map<string, ManagedSession>();
   private state: DictationControllerState = 'idle';
@@ -265,6 +272,14 @@ export class DictationSessionController {
           onLockedNoteDeleted: () => {
             this.cancelOnLockedNoteEvent(sessionId, 'deleted');
           },
+          onSurfaceDesynchronized: (failure) => {
+            this.cancelOnFatalTranscriptFailure(
+              sessionId,
+              'dictation note surface desynchronized',
+              failure,
+              SURFACE_DESYNCHRONIZED_NOTICE,
+            );
+          },
         },
         placement: { anchor: snapshot.dictationAnchor },
         rendererOptions: {
@@ -283,6 +298,7 @@ export class DictationSessionController {
       anchorTimerId: null,
       cleanupChain: Promise.resolve(),
       cleanupAbortControllers: new Set(),
+      fatalTranscriptFailureReported: false,
       llmFailureLogged: false,
       pendingTranscriptWork: new Set(),
       phase: 'starting',
@@ -418,13 +434,40 @@ export class DictationSessionController {
     }
   }
 
-  private async cancelSession(sessionId: string): Promise<void> {
-    const entry = this.sessions.get(sessionId);
-    if (entry !== undefined) {
-      entry.phase = 'cancelling';
-      this.abortProviderCleanups(entry);
+  private cancelSession(sessionId: string): Promise<void> {
+    const inFlightCancellation = this.cancellationPromises.get(sessionId);
+    if (inFlightCancellation !== undefined) {
+      return inFlightCancellation;
     }
 
+    const entry = this.sessions.get(sessionId);
+    if (entry === undefined) {
+      return Promise.resolve();
+    }
+
+    // Establish the terminal state before capture teardown yields. Every caller
+    // then joins the same promise, so concurrent failure sources cannot send
+    // duplicate cancellation commands to the sidecar.
+    entry.phase = 'cancelling';
+    this.abortProviderCleanups(entry);
+    const cancellation = Promise.resolve().then(() => this.completeSessionCancellation(sessionId));
+    this.cancellationPromises.set(sessionId, cancellation);
+    void cancellation.then(
+      () => {
+        if (this.cancellationPromises.get(sessionId) === cancellation) {
+          this.cancellationPromises.delete(sessionId);
+        }
+      },
+      () => {
+        if (this.cancellationPromises.get(sessionId) === cancellation) {
+          this.cancellationPromises.delete(sessionId);
+        }
+      },
+    );
+    return cancellation;
+  }
+
+  private async completeSessionCancellation(sessionId: string): Promise<void> {
     await this.clearActiveSession(sessionId);
 
     try {
@@ -658,7 +701,7 @@ export class DictationSessionController {
 
   private async handleTranscriptReady(event: TranscriptReadyEvent): Promise<void> {
     const entry = this.sessions.get(event.sessionId);
-    if (entry === undefined) {
+    if (entry === undefined || entry.fatalTranscriptFailureReported) {
       return;
     }
 
@@ -667,10 +710,15 @@ export class DictationSessionController {
     try {
       await work;
     } catch (error) {
-      // processTranscriptReady handles cleanup failures itself; this guards the
-      // rare case where acceptTranscript throws, so it cannot escape as an
-      // unhandled rejection from the void-ed sidecar event handler.
-      this.dependencies.logger?.error('session', 'failed to process transcript', error);
+      // processTranscriptReady handles cleanup failures itself. A projection
+      // exception means this session can no longer write safely, so contain it
+      // exactly like a typed surface failure instead of retrying every revision.
+      this.cancelOnFatalTranscriptFailure(
+        event.sessionId,
+        'failed to process transcript',
+        error,
+        TRANSCRIPT_WRITE_FAILURE_NOTICE,
+      );
     } finally {
       entry.pendingTranscriptWork.delete(work);
     }
@@ -724,10 +772,29 @@ export class DictationSessionController {
     // 'stopped' must NOT be gated — the sidecar can deliver the final
     // transcript_ready and session_stopped in one I/O chunk, and the stop
     // path drains these in-flight accepts after the phase flips.
-    if (revision === null || !this.sessions.has(sessionId) || entry.phase === 'cancelling') {
+    if (
+      revision === null ||
+      !this.sessions.has(sessionId) ||
+      entry.phase === 'cancelling' ||
+      entry.fatalTranscriptFailureReported
+    ) {
       return;
     }
-    const result = entry.session.acceptTranscript(revision);
+    let result: SessionAcceptResult;
+    try {
+      result = entry.session.acceptTranscript(revision);
+    } catch (error) {
+      this.cancelOnFatalTranscriptFailure(
+        sessionId,
+        'failed to process transcript',
+        error,
+        TRANSCRIPT_WRITE_FAILURE_NOTICE,
+      );
+      return;
+    }
+    if (entry.fatalTranscriptFailureReported) {
+      return;
+    }
     if (result.kind === 'rejected') {
       this.handleError('Failed to record the local transcript', new Error(result.reason));
       await this.cancelSession(sessionId);
@@ -942,12 +1009,15 @@ export class DictationSessionController {
     // transcript — otherwise the batch rewrite would miss the last utterance(s).
     if (entry.pendingTranscriptWork.size > 0) {
       await this.drainPendingTranscriptWork(entry);
-      if (this.sessions.get(sessionId) !== entry) {
-        return;
-      }
+    }
+    if (this.stopTerminatedBatchCleanup(sessionId, entry)) {
+      return;
     }
 
     const transcriptText = entry.session.readCurrentSessionText();
+    if (this.stopTerminatedBatchCleanup(sessionId, entry)) {
+      return;
+    }
 
     if (transcriptText.length === 0) {
       this.dependencies.logger?.warn(
@@ -968,7 +1038,13 @@ export class DictationSessionController {
     // The flashing processing range is now the "working" indicator, so the
     // cursor steps aside for the batch rewrite.
     entry.session.setAnchorMode('hidden');
+    if (this.stopTerminatedBatchCleanup(sessionId, entry)) {
+      return;
+    }
     entry.session.markSessionRangeAsProcessing();
+    if (this.stopTerminatedBatchCleanup(sessionId, entry)) {
+      return;
+    }
 
     const abortController = new AbortController();
     entry.cleanupAbortControllers.add(abortController);
@@ -985,33 +1061,46 @@ export class DictationSessionController {
       if (abortController.signal.aborted) {
         if (this.sessions.get(sessionId) === entry) {
           entry.session.clearSessionProcessingMark();
-          this.disposeLocalSession(sessionId);
+          if (!this.stopTerminatedBatchCleanup(sessionId, entry)) {
+            this.disposeLocalSession(sessionId);
+          }
         }
         return;
       }
-      if (!this.sessions.has(sessionId)) {
+      if (this.stopTerminatedBatchCleanup(sessionId, entry)) {
         return;
       }
 
       entry.session.clearSessionProcessingMark();
+      if (this.stopTerminatedBatchCleanup(sessionId, entry)) {
+        return;
+      }
 
-      this.applyBatchCleanupResult(entry, result.text.trim(), transcriptText);
+      this.applyBatchCleanupResult(sessionId, entry, result.text.trim(), transcriptText);
+      if (this.stopTerminatedBatchCleanup(sessionId, entry)) {
+        return;
+      }
       this.dependencies.onLlmCleanupSuccess?.();
       this.disposeLocalSession(sessionId);
     } catch (error) {
       if (abortController.signal.aborted) {
         if (this.sessions.get(sessionId) === entry) {
           entry.session.clearSessionProcessingMark();
-          this.disposeLocalSession(sessionId);
+          if (!this.stopTerminatedBatchCleanup(sessionId, entry)) {
+            this.disposeLocalSession(sessionId);
+          }
         }
         return;
       }
-      if (!this.sessions.has(sessionId)) {
+      if (this.stopTerminatedBatchCleanup(sessionId, entry)) {
         return;
       }
 
       this.handleProviderCleanupFailure(failedProviderId(error, providerId), error);
       entry.session.clearSessionProcessingMark();
+      if (this.stopTerminatedBatchCleanup(sessionId, entry)) {
+        return;
+      }
       this.disposeLocalSession(sessionId);
     } finally {
       entry.cleanupAbortControllers.delete(abortController);
@@ -1023,6 +1112,7 @@ export class DictationSessionController {
   // transcript. Throws ProviderError for an empty replace result so the caller's
   // failure path keeps the raw text.
   private applyBatchCleanupResult(
+    sessionId: string,
     entry: ManagedSession,
     cleanedText: string,
     transcriptText: string,
@@ -1036,6 +1126,9 @@ export class DictationSessionController {
         rawTextForCallout: transcriptText,
         showRawBelow: entry.snapshot.llmPostprocessShowRawBelow,
       });
+      if (this.stopTerminatedBatchCleanup(sessionId, entry)) {
+        return;
+      }
 
       if (!replaced) {
         this.dependencies.logger?.warn(
@@ -1064,6 +1157,9 @@ export class DictationSessionController {
 
     const placement = entry.snapshot.llmPostprocessOutput === 'add_above' ? 'above' : 'below';
     const inserted = entry.session.insertAdjacentToSessionRange(cleanedText, placement);
+    if (this.stopTerminatedBatchCleanup(sessionId, entry)) {
+      return;
+    }
 
     if (!inserted) {
       this.dependencies.logger?.warn(
@@ -1076,6 +1172,18 @@ export class DictationSessionController {
         placement,
       });
     }
+  }
+
+  private stopTerminatedBatchCleanup(sessionId: string, entry: ManagedSession): boolean {
+    if (this.sessions.get(sessionId) !== entry) {
+      return true;
+    }
+    if (!entry.fatalTranscriptFailureReported) {
+      return false;
+    }
+
+    this.disposeLocalSession(sessionId);
+    return true;
   }
 
   private async handleErrorEvent(event: Extract<SidecarEvent, { type: 'error' }>): Promise<void> {
@@ -1179,6 +1287,32 @@ export class DictationSessionController {
     }
 
     this.dependencies.logger?.warn('session', `locked note ${reason} for session ${sessionId}`);
+    void this.cancelSession(sessionId);
+  }
+
+  private cancelOnFatalTranscriptFailure(
+    sessionId: string,
+    logMessage: string,
+    details: unknown,
+    noticeMessage: string,
+  ): void {
+    const entry = this.sessions.get(sessionId);
+    if (entry === undefined || entry.fatalTranscriptFailureReported) {
+      return;
+    }
+
+    entry.fatalTranscriptFailureReported = true;
+    this.abortProviderCleanups(entry);
+    this.dependencies.logger?.error('session', logMessage, details);
+    this.dependencies.notice(noticeMessage);
+
+    if (entry.phase === 'cancelling' || entry.phase === 'stopped') {
+      return;
+    }
+
+    // Mark cancellation before any await so concurrent queued transcript work
+    // observes the terminal phase and cannot repeat the failure.
+    entry.phase = 'cancelling';
     void this.cancelSession(sessionId);
   }
 
