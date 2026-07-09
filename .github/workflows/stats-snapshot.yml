@@ -1,0 +1,56 @@
+name: stats-snapshot
+
+# Weekly capture of download/usage stats (see docs/specs/download-stats.md).
+# The traffic API's 14-day rolling window means any gap longer than two weeks
+# permanently loses that window's unique-visitor data — this cron is the only
+# thing standing between "we have history" and "we don't".
+on:
+  schedule:
+    # Mondays ~06:00 UTC. Off-peak; minute offset avoids the top-of-hour rush
+    # (same reasoning as cache-cleanup.yml).
+    - cron: '13 6 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  NODE_VERSION: 24.14.1
+
+jobs:
+  snapshot:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup Node.js + npm
+        uses: ./.github/actions/setup-node-npm
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Install JavaScript dependencies
+        run: npm ci
+
+      # STATS_TRAFFIC_TOKEN is a fine-grained PAT (this repo only,
+      # Administration: read) that must be added manually as a repo secret —
+      # the default GITHUB_TOKEN cannot read traffic endpoints under any
+      # permissions grant. Falls back to GITHUB_TOKEN so the rest of the
+      # snapshot (releases, registry, repo metadata) still lands even before
+      # that secret exists; traffic is recorded as null in that case.
+      - name: Render and snapshot download stats
+        env:
+          GH_TOKEN: ${{ secrets.STATS_TRAFFIC_TOKEN || github.token }}
+        run: node scripts/download-stats.mjs --snapshot | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: Commit snapshot if changed
+        run: |
+          if git diff --quiet -- stats/history.jsonl; then
+            echo "No new snapshot data; skipping commit."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add stats/history.jsonl
+          git commit -m "chore: weekly download-stats snapshot"
+          git push
