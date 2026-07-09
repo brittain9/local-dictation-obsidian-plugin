@@ -1,8 +1,9 @@
 import type { App } from 'obsidian';
-import { Modal, Notice, Platform, setIcon } from 'obsidian';
+import { Modal, Platform, setIcon } from 'obsidian';
 import { ManageModelsModal } from '../models/manage-models-modal';
 import type { ModelInstallManager } from '../models/model-install-manager';
 import type { PluginLogger } from '../shared/plugin-logger';
+import type { UserFeedback } from '../shared/user-feedback';
 import type { SidecarConnection } from '../sidecar/sidecar-connection';
 import type { SidecarInstallManager } from '../sidecar/sidecar-install-manager';
 import { getInstallCopy } from './sidecar-install-copy';
@@ -10,6 +11,7 @@ import { SidecarInstallModal } from './sidecar-install-modal';
 
 interface WizardDependencies {
   app: App;
+  feedback: Pick<UserFeedback, 'show'>;
   hasSelectedModel: () => boolean;
   isSidecarInstalled: () => Promise<boolean>;
   logger?: PluginLogger;
@@ -172,6 +174,7 @@ export class SetupWizardModal extends Modal {
   private openSidecarInstall(): void {
     const modal = new SidecarInstallModal(this.deps.app, {
       copy: getInstallCopy('cpu', 'first-run'),
+      feedback: this.deps.feedback,
       manager: this.deps.sidecarInstallManager,
       onInstalled: async () => {
         await this.deps.postSidecarInstalled();
@@ -229,6 +232,7 @@ export class SetupWizardModal extends Modal {
 
   private openModelPicker(): void {
     const modal = new ManageModelsModal(this.deps.app, {
+      feedback: this.deps.feedback,
       manager: this.deps.modelInstallManager,
       onChanged: () => {
         // Re-check on any change so the wizard advances as soon as a model is selected.
@@ -296,8 +300,11 @@ export class SetupWizardModal extends Modal {
         tab.searchInputEl.dispatchEvent(new Event('input'));
       }
     } catch (error) {
-      this.deps.logger?.warn('setup', 'failed to open hotkey settings', error);
-      new Notice('Open Settings → Hotkeys and search for "Local Dictation".');
+      this.deps.feedback.show({
+        cause: error,
+        intent: 'warning',
+        message: 'Open Settings → Hotkeys and search for "Local Dictation".',
+      });
     }
   }
 

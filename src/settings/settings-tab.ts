@@ -1,5 +1,5 @@
 import type { App, Plugin } from 'obsidian';
-import { Notice, Platform, PluginSettingTab, Setting } from 'obsidian';
+import { Platform, PluginSettingTab, Setting } from 'obsidian';
 
 import { formatSystemAudioProbeResultMessage } from '../audio/system-audio-permission-message';
 import { resolveEngineCapabilities } from '../models/capability-view';
@@ -7,8 +7,8 @@ import type { ModelInstallManager } from '../models/model-install-manager';
 import { updateInstallProgressElement } from '../models/model-install-progress';
 import { ExternalModelFileModal, ModelDetailsModal } from '../models/model-management-modals';
 import { matchesModelTriple } from '../models/model-management-types';
-import { formatErrorMessage } from '../shared/format-utils';
 import type { PluginLogger } from '../shared/plugin-logger';
+import type { UserFeedback } from '../shared/user-feedback';
 import type { SpeakingStyle } from '../sidecar/protocol';
 import type { SidecarConnection } from '../sidecar/sidecar-connection';
 import {
@@ -53,6 +53,7 @@ import { SmartParagraphSettingsModal } from './smart-paragraph-settings-modal';
 import { isSystemAudioSupportedOnCurrentPlatform } from './system-audio-support';
 
 interface SettingsTabDependencies {
+  feedback: Pick<UserFeedback, 'show'>;
   getSettings: () => PluginSettings;
   isDictationBusy: () => boolean;
   logger?: PluginLogger | undefined;
@@ -157,6 +158,7 @@ export class LocalSttSettingTab extends PluginSettingTab {
           this.app,
           selectedModel?.kind === 'external_file' ? selectedModel.filePath : '',
           {
+            feedback: this.dependencies.feedback,
             manager,
             onChanged: async () => {
               this.display();
@@ -174,6 +176,7 @@ export class LocalSttSettingTab extends PluginSettingTab {
 
     this.disposeMicrophoneSection = renderMicrophonePicker(captureCard, {
       access: this.access,
+      feedback: this.dependencies.feedback,
       isDictationBusy: this.dependencies.isDictationBusy,
       logger: this.dependencies.logger,
     });
@@ -349,13 +352,22 @@ export class LocalSttSettingTab extends PluginSettingTab {
     try {
       const result = await this.dependencies.sidecarConnection.probeSystemAudio();
       if (result.ok) {
-        new Notice('System audio is ready.');
+        this.dependencies.feedback.show({ intent: 'success', message: 'System audio is ready.' });
         return true;
       }
 
-      new Notice(formatSystemAudioProbeResultMessage(result));
+      this.dependencies.feedback.show({
+        intent: 'action-required',
+        key: 'system-audio-permission',
+        message: formatSystemAudioProbeResultMessage(result),
+      });
     } catch (error) {
-      new Notice(`Could not test system audio: ${formatErrorMessage(error)}`);
+      this.dependencies.feedback.show({
+        cause: error,
+        intent: 'error',
+        message:
+          'Could not test system audio. Check that the speech engine is installed and try again.',
+      });
     }
     return false;
   }
@@ -518,16 +530,27 @@ export class LocalSttSettingTab extends PluginSettingTab {
           toggle.setValue(settings.accelerationPreference === 'auto');
           toggle.onChange(async (value) => {
             if (this.dependencies.isDictationBusy()) {
-              new Notice('Cannot change hardware acceleration while dictating.');
+              this.dependencies.feedback.show({
+                intent: 'warning',
+                message: 'Cannot change hardware acceleration while dictating.',
+              });
               toggle.setValue(!value);
               return;
             }
             await this.access.persistOne('accelerationPreference', value ? 'auto' : 'cpu_only');
             try {
               await this.dependencies.restartSidecar();
-              new Notice(value ? 'Hardware acceleration on.' : 'Hardware acceleration off.');
+              this.dependencies.feedback.show({
+                intent: 'success',
+                message: value ? 'Hardware acceleration on.' : 'Hardware acceleration off.',
+              });
             } catch (error) {
-              new Notice(`Failed to apply hardware acceleration: ${formatErrorMessage(error)}`);
+              this.dependencies.feedback.show({
+                cause: error,
+                intent: 'error',
+                message:
+                  'Hardware acceleration was saved, but the speech engine could not restart. Restart Obsidian to apply it.',
+              });
             }
           });
         });
@@ -635,6 +658,7 @@ export class LocalSttSettingTab extends PluginSettingTab {
   private buildSidecarInstallActionDeps(): SidecarInstallActionDeps {
     return {
       app: this.app,
+      feedback: this.dependencies.feedback,
       isDictationBusy: this.dependencies.isDictationBusy,
       logger: this.dependencies.logger,
       modelInstallManager: this.dependencies.modelInstallManager,

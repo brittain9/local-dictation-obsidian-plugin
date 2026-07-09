@@ -1,7 +1,8 @@
-import { Notice, Setting } from 'obsidian';
+import { Setting } from 'obsidian';
 
 import { formatMicrophoneCaptureErrorMessage } from '../audio/microphone-permission-message';
 import type { PluginLogger } from '../shared/plugin-logger';
+import type { UserFeedback } from '../shared/user-feedback';
 import type { AudioInputDevice } from './plugin-settings';
 import type { SettingAccess } from './setting-helpers';
 
@@ -24,6 +25,7 @@ const DEVICE_CHANGE_DEBOUNCE_MS = 300;
 
 export interface MicrophonePickerDependencies {
   access: SettingAccess;
+  feedback: Pick<UserFeedback, 'show'>;
   isDictationBusy: () => boolean;
   logger?: PluginLogger | undefined;
 }
@@ -179,7 +181,11 @@ export function renderMicrophonePicker(
     if (label.length === 0) {
       // Shouldn't happen — the user can only pick an unlabeled row before
       // priming permission, and we don't want to persist a blank label.
-      new Notice('Allow microphone access first to save this device.');
+      deps.feedback.show({
+        intent: 'action-required',
+        key: 'microphone-permission',
+        message: 'Allow microphone access first to save this device.',
+      });
       const saved = getSaved();
       if (selectEl !== null) {
         selectEl.value = saved?.deviceId ?? DEFAULT_OPTION_VALUE;
@@ -193,13 +199,16 @@ export function renderMicrophonePicker(
 
   async function primePermission(): Promise<void> {
     if (deps.isDictationBusy()) {
-      new Notice('Stop dictation to detect microphones.');
+      deps.feedback.show({ intent: 'warning', message: 'Stop dictation to detect microphones.' });
       return;
     }
 
     const mediaDevices = window.navigator?.mediaDevices;
     if (mediaDevices?.getUserMedia === undefined) {
-      new Notice('Microphone access is not available in this runtime.');
+      deps.feedback.show({
+        intent: 'error',
+        message: 'Microphone access is not available in this runtime.',
+      });
       return;
     }
 
@@ -210,11 +219,14 @@ export function renderMicrophonePicker(
       }
       await enumerate();
     } catch (error) {
-      new Notice(
-        formatMicrophoneCaptureErrorMessage(error) ??
+      deps.feedback.show({
+        cause: error,
+        intent: 'action-required',
+        key: 'microphone-permission',
+        message:
+          formatMicrophoneCaptureErrorMessage(error) ??
           'Could not detect microphones. Check your system audio settings.',
-      );
-      deps.logger?.warn('audio', 'priming microphone permission failed', error);
+      });
     }
   }
 

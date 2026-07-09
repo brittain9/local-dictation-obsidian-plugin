@@ -1,7 +1,8 @@
 import type { App } from 'obsidian';
-import { Modal, Notice, Setting, setIcon } from 'obsidian';
+import { Modal, Setting, setIcon } from 'obsidian';
 
-import { formatBytes, formatErrorMessage } from '../shared/format-utils';
+import { formatBytes } from '../shared/format-utils';
+import type { UserFeedback } from '../shared/user-feedback';
 import { resolveEngineCapabilities } from './capability-view';
 import { isCancellingPhase, type ModelInstallManager } from './model-install-manager';
 import {
@@ -24,6 +25,7 @@ import { deriveModelFamilyTabs, deriveModelRowStates, type ModelRowState } from 
 // ---------------------------------------------------------------------------
 
 interface ManageModelsModalDependencies {
+  feedback: Pick<UserFeedback, 'show'>;
   manager: ModelInstallManager;
   onChanged: () => void;
   onRunSetup?: () => void;
@@ -275,14 +277,17 @@ export class ManageModelsModal extends Modal {
               .setButtonText('Install')
               .setDisabled(this.actionInProgress)
               .onClick(() => {
-                void this.runAction(async () => {
-                  await this.deps.manager.install({
-                    familyId: row.model.familyId,
-                    kind: 'catalog_model',
-                    modelId: row.model.modelId,
-                    runtimeId: row.model.runtimeId,
-                  });
-                }, 'Model install started.');
+                void this.runAction(
+                  async () => {
+                    await this.deps.manager.install({
+                      familyId: row.model.familyId,
+                      kind: 'catalog_model',
+                      modelId: row.model.modelId,
+                      runtimeId: row.model.runtimeId,
+                    });
+                  },
+                  { failureMessage: 'Could not start the model install. Try again.' },
+                );
               });
           });
           break;
@@ -294,15 +299,22 @@ export class ManageModelsModal extends Modal {
               .setButtonText('Use')
               .setDisabled(this.actionInProgress)
               .onClick(() => {
-                void this.runAction(async () => {
-                  await this.deps.manager.select({
-                    familyId: row.model.familyId,
-                    kind: 'catalog_model',
-                    modelId: row.model.modelId,
-                    runtimeId: row.model.runtimeId,
-                  });
-                  this.close();
-                }, 'Model selected.');
+                void this.runAction(
+                  async () => {
+                    await this.deps.manager.select({
+                      familyId: row.model.familyId,
+                      kind: 'catalog_model',
+                      modelId: row.model.modelId,
+                      runtimeId: row.model.runtimeId,
+                    });
+                    this.close();
+                  },
+                  {
+                    failureMessage:
+                      'Could not select the model. Check that its files are available.',
+                    successMessage: 'Model selected.',
+                  },
+                );
               });
           });
           break;
@@ -325,7 +337,7 @@ export class ManageModelsModal extends Modal {
                 .onClick(() => {
                   void this.runAction(async () => {
                     await this.deps.manager.cancel();
-                  }, 'Install cancelled.');
+                  });
                 });
             }
           });
@@ -338,14 +350,21 @@ export class ManageModelsModal extends Modal {
               .setButtonText('Remove')
               .setDisabled(this.actionInProgress)
               .onClick(() => {
-                void this.runAction(async () => {
-                  await this.deps.manager.remove({
-                    familyId: row.model.familyId,
-                    kind: 'catalog_model',
-                    modelId: row.model.modelId,
-                    runtimeId: row.model.runtimeId,
-                  });
-                }, 'Model removed.');
+                void this.runAction(
+                  async () => {
+                    await this.deps.manager.remove({
+                      familyId: row.model.familyId,
+                      kind: 'catalog_model',
+                      modelId: row.model.modelId,
+                      runtimeId: row.model.runtimeId,
+                    });
+                  },
+                  {
+                    failureMessage:
+                      'Could not remove the model. Close any process using its files.',
+                    successMessage: 'Model removed.',
+                  },
+                );
               });
           });
           break;
@@ -432,7 +451,10 @@ export class ManageModelsModal extends Modal {
   // Action runner
   // -------------------------------------------------------------------------
 
-  private async runAction(action: () => Promise<void>, successMessage: string): Promise<void> {
+  private async runAction(
+    action: () => Promise<void>,
+    messages: { failureMessage?: string; successMessage?: string } = {},
+  ): Promise<void> {
     if (this.actionInProgress) {
       return;
     }
@@ -442,10 +464,18 @@ export class ManageModelsModal extends Modal {
 
     try {
       await action();
-      new Notice(`Local Dictation: ${successMessage}`);
+      if (messages.successMessage !== undefined) {
+        this.deps.feedback.show({ intent: 'success', message: messages.successMessage });
+      }
       this.deps.onChanged();
     } catch (error) {
-      new Notice(`Local Dictation: ${formatErrorMessage(error)}`);
+      if (messages.failureMessage !== undefined) {
+        this.deps.feedback.show({
+          cause: error,
+          intent: 'error',
+          message: messages.failureMessage,
+        });
+      }
     } finally {
       this.actionInProgress = false;
       this.renderModelList();

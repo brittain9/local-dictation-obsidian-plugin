@@ -2,7 +2,6 @@ import {
   AbstractInputSuggest,
   type App,
   type ExtraButtonComponent,
-  Notice,
   SecretComponent,
   Setting,
   setIcon,
@@ -23,15 +22,16 @@ import {
 import { isLlmRouting, type PluginSettings } from '../settings/plugin-settings';
 import { appendInfoTooltip } from '../settings/setting-helpers';
 import type { PluginLogger } from '../shared/plugin-logger';
+import type { UserFeedback } from '../shared/user-feedback';
 import { formatCleanupFailureBanner, priceTier, providerHealthFromError } from './llm-provider-ui';
 import { deriveInlineStatus, INLINE_STATUS_PRESENTATION } from './llm-status';
 
 export interface LlmRoutingControlsDependencies {
   app: App;
+  feedback: Pick<UserFeedback, 'show'>;
   getOpenRouterApiKey: () => string;
   getSettings: () => PluginSettings;
   logger?: PluginLogger | undefined;
-  notice?: ((message: string) => void) | undefined;
   persist: (settings: PluginSettings, options?: { rerender?: boolean }) => Promise<void>;
   requestRerender: () => void;
 }
@@ -150,17 +150,13 @@ export class LlmRoutingControls {
     const refreshes: Promise<void>[] = [];
     if (!settings.llmRemoteFeaturesEnabled) {
       refreshes.push(
-        options.forceLocal === true
-          ? this.refreshModels('ollama', { silent: true })
-          : this.recheckModels('ollama'),
+        options.forceLocal === true ? this.refreshModels('ollama') : this.recheckModels('ollama'),
       );
       return Promise.all(refreshes).then(() => undefined);
     }
     if (settings.llmRouting === 'local' || settings.llmRouting === 'auto') {
       refreshes.push(
-        options.forceLocal === true
-          ? this.refreshModels('ollama', { silent: true })
-          : this.recheckModels('ollama'),
+        options.forceLocal === true ? this.refreshModels('ollama') : this.recheckModels('ollama'),
       );
     }
     if (settings.llmRouting === 'remote' || settings.llmRouting === 'auto') {
@@ -174,7 +170,7 @@ export class LlmRoutingControls {
     if (state.modelsLoaded && state.health.kind === 'ready') {
       return Promise.resolve();
     }
-    return this.refreshModels(providerId, { silent: true });
+    return this.refreshModels(providerId);
   }
 
   // Background warm: load a provider's catalog once. Unlike `recheckModels`,
@@ -185,7 +181,7 @@ export class LlmRoutingControls {
     if (state.modelsLoaded || this.modelsRefreshInFlight[providerId] === true) {
       return;
     }
-    void this.refreshModels(providerId, { silent: true });
+    void this.refreshModels(providerId);
   }
 
   render(parent: HTMLElement, settings: PluginSettings): void {
@@ -481,7 +477,7 @@ export class LlmRoutingControls {
       const failure = await this.testOpenRouter();
       button.setIcon(failure === null ? 'check' : 'x');
       if (failure !== null) {
-        this.notice(`Local Dictation: ${failure}`);
+        this.dependencies.feedback.show({ intent: 'warning', message: failure });
       }
       window.setTimeout(() => {
         button.setIcon('plug-zap');
@@ -530,10 +526,7 @@ export class LlmRoutingControls {
     this.dependencies.requestRerender();
   }
 
-  private async refreshModels(
-    providerId: LlmProviderId,
-    options: { silent?: boolean } = {},
-  ): Promise<void> {
+  private async refreshModels(providerId: LlmProviderId): Promise<void> {
     if (this.modelsRefreshInFlight[providerId] === true) {
       return;
     }
@@ -550,23 +543,12 @@ export class LlmRoutingControls {
       state.models = [];
       state.health = providerHealthFromError(error);
       this.dependencies.logger?.warn('llm', `${providerName} refresh failed`, error);
-      if (options.silent !== true) {
-        this.notice(`Local Dictation: ${providerName} is unavailable.`);
-      }
     } finally {
       state.modelsLoaded = true;
       this.modelsRefreshInFlight[providerId] = false;
     }
 
     this.dependencies.requestRerender();
-  }
-
-  private notice(message: string): void {
-    if (this.dependencies.notice !== undefined) {
-      this.dependencies.notice(message);
-      return;
-    }
-    new Notice(message);
   }
 
   private createProvider(

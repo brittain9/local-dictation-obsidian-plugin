@@ -1,11 +1,12 @@
 import type { App } from 'obsidian';
-import { Modal, Notice } from 'obsidian';
+import { Modal } from 'obsidian';
 
 import {
   createInstallProgressElement,
   updateInstallProgressElement,
 } from '../models/model-install-progress';
 import { formatErrorMessage } from '../shared/format-utils';
+import type { UserFeedback } from '../shared/user-feedback';
 import {
   type ActiveSidecarInstall,
   buildSidecarProgressState,
@@ -21,6 +22,7 @@ import type { InstallCopy } from './sidecar-install-copy';
 export interface SidecarInstallModalOptions {
   beforeReplace?: (() => Promise<void>) | undefined;
   copy: InstallCopy;
+  feedback: Pick<UserFeedback, 'show'>;
   manager: SidecarInstallManager;
   onInstalled: () => Promise<void>;
   onVariantInstalled?: ((variant: SidecarInstallVariant) => Promise<void>) | undefined;
@@ -215,7 +217,11 @@ export class SidecarInstallModal extends Modal {
         version: this.options.version,
       });
     } catch (error) {
-      new Notice(formatErrorMessage(error));
+      this.options.feedback.show({
+        cause: error,
+        intent: 'error',
+        message: 'Could not start the sidecar install. Close other setup windows and try again.',
+      });
     }
   }
 }

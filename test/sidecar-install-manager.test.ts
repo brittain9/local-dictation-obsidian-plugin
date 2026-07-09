@@ -50,7 +50,7 @@ function successfulInstallResult(variant: 'cpu' | 'cuda' = 'cpu') {
 describe('SidecarInstallManager', () => {
   it('rejects concurrent installs while one is in flight', () => {
     installSidecarMock.mockImplementationOnce(() => new Promise(() => {}));
-    const manager = new SidecarInstallManager({ notice: vi.fn() });
+    const manager = new SidecarInstallManager({ feedback: { show: vi.fn() } });
 
     manager.install(defaultInstallOptions());
 
@@ -61,7 +61,7 @@ describe('SidecarInstallManager', () => {
 
   it('aborts the installer signal when cancel is called and marks phase canceling', () => {
     installSidecarMock.mockImplementationOnce(() => new Promise(() => {}));
-    const manager = new SidecarInstallManager({ notice: vi.fn() });
+    const manager = new SidecarInstallManager({ feedback: { show: vi.fn() } });
 
     manager.install(defaultInstallOptions());
     const captured = installSidecarMock.mock.calls[0]?.[0] as InstallSidecarOptions | undefined;
@@ -73,15 +73,15 @@ describe('SidecarInstallManager', () => {
 
   it('clears state, invokes the onInstalled hook, and shows the success notice', async () => {
     installSidecarMock.mockResolvedValueOnce(successfulInstallResult());
-    const notice = vi.fn();
+    const show = vi.fn();
     const onInstalled = vi.fn(async () => {});
-    const manager = new SidecarInstallManager({ notice });
+    const manager = new SidecarInstallManager({ feedback: { show } });
 
     manager.install({ ...defaultInstallOptions(), onInstalled });
     await vi.waitFor(() => expect(manager.getState().activeInstall).toBeNull());
 
     expect(onInstalled).toHaveBeenCalledOnce();
-    expect(notice).toHaveBeenCalledWith('Installed.');
+    expect(show).toHaveBeenCalledWith({ intent: 'success', message: 'Installed.' });
     expect(manager.getState().lastError).toBeNull();
   });
 
@@ -89,10 +89,10 @@ describe('SidecarInstallManager', () => {
     installSidecarMock
       .mockResolvedValueOnce(successfulInstallResult('cpu'))
       .mockResolvedValueOnce(successfulInstallResult('cuda'));
-    const notice = vi.fn();
+    const show = vi.fn();
     const firstInstalled = vi.fn(async () => {});
     const secondInstalled = vi.fn(async () => {});
-    const manager = new SidecarInstallManager({ notice });
+    const manager = new SidecarInstallManager({ feedback: { show } });
 
     manager.install({
       ...defaultInstallOptions(),
@@ -113,8 +113,8 @@ describe('SidecarInstallManager', () => {
     expect(installSidecarMock).toHaveBeenCalledTimes(2);
     expect(firstInstalled).toHaveBeenCalledOnce();
     expect(secondInstalled).toHaveBeenCalledOnce();
-    expect(notice).toHaveBeenNthCalledWith(1, 'CPU installed.');
-    expect(notice).toHaveBeenNthCalledWith(2, 'CUDA installed.');
+    expect(show).toHaveBeenNthCalledWith(1, { intent: 'success', message: 'CPU installed.' });
+    expect(show).toHaveBeenNthCalledWith(2, { intent: 'success', message: 'CUDA installed.' });
     expect(manager.getState().lastError).toBeNull();
   });
 
@@ -122,10 +122,10 @@ describe('SidecarInstallManager', () => {
     installSidecarMock
       .mockResolvedValueOnce(successfulInstallResult('cpu'))
       .mockResolvedValueOnce(successfulInstallResult('cuda'));
-    const notice = vi.fn();
+    const show = vi.fn();
     const onInstalled = vi.fn(async () => {});
     const onVariantInstalled = vi.fn(async () => {});
-    const manager = new SidecarInstallManager({ notice });
+    const manager = new SidecarInstallManager({ feedback: { show } });
 
     manager.installBatch({
       ...defaultInstallOptions(),
@@ -143,8 +143,8 @@ describe('SidecarInstallManager', () => {
     expect(onVariantInstalled).toHaveBeenCalledOnce();
     expect(onVariantInstalled).toHaveBeenCalledWith('cpu');
     expect(onInstalled).toHaveBeenCalledOnce();
-    expect(notice).toHaveBeenCalledOnce();
-    expect(notice).toHaveBeenCalledWith('Sidecars updated.');
+    expect(show).toHaveBeenCalledOnce();
+    expect(show).toHaveBeenCalledWith({ intent: 'success', message: 'Sidecars updated.' });
   });
 
   it('continues the batch when an intermediate restart fails', async () => {
@@ -153,7 +153,7 @@ describe('SidecarInstallManager', () => {
       .mockResolvedValueOnce(successfulInstallResult('cuda'));
     const logger = { debug: vi.fn(), error: vi.fn(), warn: vi.fn() };
     const onInstalled = vi.fn(async () => {});
-    const manager = new SidecarInstallManager({ logger, notice: vi.fn() });
+    const manager = new SidecarInstallManager({ feedback: { show: vi.fn() }, logger });
 
     manager.installBatch({
       ...defaultInstallOptions(),
@@ -182,7 +182,7 @@ describe('SidecarInstallManager', () => {
           resolveCpu = resolve;
         }),
     );
-    const manager = new SidecarInstallManager({ notice: vi.fn() });
+    const manager = new SidecarInstallManager({ feedback: { show: vi.fn() } });
 
     manager.installBatch({
       ...defaultInstallOptions(),
@@ -207,9 +207,9 @@ describe('SidecarInstallManager', () => {
     installSidecarMock
       .mockResolvedValueOnce(successfulInstallResult('cpu'))
       .mockRejectedValueOnce(new Error('CUDA download failed'));
-    const notice = vi.fn();
+    const show = vi.fn();
     const onInstalled = vi.fn(async () => {});
-    const manager = new SidecarInstallManager({ notice });
+    const manager = new SidecarInstallManager({ feedback: { show } });
 
     manager.installBatch({
       ...defaultInstallOptions(),
@@ -221,12 +221,12 @@ describe('SidecarInstallManager', () => {
     expect(installSidecarMock).toHaveBeenCalledTimes(2);
     expect(onInstalled).not.toHaveBeenCalled();
     expect(manager.getState().lastError).toBe('CUDA download failed');
-    expect(notice).toHaveBeenCalledWith('Sidecar install failed: CUDA download failed');
+    expect(show).not.toHaveBeenCalled();
   });
 
   it('deduplicates variants and rejects an empty batch', async () => {
     installSidecarMock.mockResolvedValueOnce(successfulInstallResult('cpu'));
-    const manager = new SidecarInstallManager({ notice: vi.fn() });
+    const manager = new SidecarInstallManager({ feedback: { show: vi.fn() } });
 
     expect(() =>
       manager.installBatch({
@@ -246,26 +246,29 @@ describe('SidecarInstallManager', () => {
 
   it('records install failures and clears active state', async () => {
     installSidecarMock.mockRejectedValueOnce(new Error('network failed'));
-    const notice = vi.fn();
-    const manager = new SidecarInstallManager({ notice });
+    const show = vi.fn();
+    const manager = new SidecarInstallManager({ feedback: { show } });
 
     manager.install(defaultInstallOptions());
     await vi.waitFor(() => expect(manager.getState().activeInstall).toBeNull());
 
     expect(manager.getState().lastError).toBe('network failed');
-    expect(notice).toHaveBeenCalledWith('Sidecar install failed: network failed');
+    expect(show).not.toHaveBeenCalled();
   });
 
   it('treats AbortError as a user-initiated cancel, not a failure', async () => {
     const abortError = Object.assign(new Error('aborted'), { name: 'AbortError' });
     installSidecarMock.mockRejectedValueOnce(abortError);
-    const notice = vi.fn();
-    const manager = new SidecarInstallManager({ notice });
+    const show = vi.fn();
+    const manager = new SidecarInstallManager({ feedback: { show } });
 
     manager.install(defaultInstallOptions());
     await vi.waitFor(() => expect(manager.getState().activeInstall).toBeNull());
 
-    expect(notice).toHaveBeenCalledWith('Sidecar install cancelled.');
+    expect(show).toHaveBeenCalledWith({
+      intent: 'information',
+      message: 'Sidecar install cancelled.',
+    });
     expect(manager.getState().lastError).toBeNull();
   });
 });
