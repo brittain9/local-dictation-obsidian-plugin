@@ -12,6 +12,7 @@ import {
   type ReplaceResult,
   type RewriteRange,
   type RewriteResult,
+  type SurfaceDesynchronization,
 } from '../editor/note-surface';
 import type { PluginLogger } from '../shared/plugin-logger';
 import { truncateLeadingText } from '../shared/text-truncation';
@@ -55,6 +56,7 @@ export type SessionAcceptResult =
 export interface SessionLifecycleCallbacks {
   onLockedNoteClosed: () => void;
   onLockedNoteDeleted: () => void;
+  onSurfaceDesynchronized: (failure: SurfaceDesynchronization) => void;
 }
 
 export interface SessionDependencies {
@@ -62,7 +64,11 @@ export interface SessionDependencies {
   callbacks: SessionLifecycleCallbacks;
   logger?: PluginLogger;
   lockedFile: TFile;
-  noteSurfaceFactory?: (view: EditorView, placement: NotePlacementOptions) => NoteSurfaceLike;
+  noteSurfaceFactory?: (
+    view: EditorView,
+    placement: NotePlacementOptions,
+    onSurfaceDesynchronized: (failure: SurfaceDesynchronization) => void,
+  ) => NoteSurfaceLike;
   placement: NotePlacementOptions;
   rendererOptions: TranscriptRenderOptions;
   sessionId: string;
@@ -88,10 +94,10 @@ interface NoteSurfaceLike {
     newText: string,
     preservedSpans: PreservedSpan[],
   ): RewriteResult;
-  setAnchorMode(mode: DictationAnchorMode): void;
-  setProcessingRange(range: { from: number; to: number } | null): void;
-  setProvisional(utteranceId: UtteranceId, provisional: boolean): void;
-  validateExternalModification(): void;
+  setAnchorMode(mode: DictationAnchorMode): SurfaceDesynchronization | null;
+  setProcessingRange(range: { from: number; to: number } | null): SurfaceDesynchronization | null;
+  setProvisional(utteranceId: UtteranceId, provisional: boolean): SurfaceDesynchronization | null;
+  validateExternalModification(): SurfaceDesynchronization | null;
 }
 
 interface RawSessionEntry {
@@ -110,6 +116,7 @@ export class Session {
   private readonly rawSessionEntryIndexByUtterance = new Map<UtteranceId, number>();
   private readonly refs: Array<{ offref: (ref: EventRef) => void; ref: EventRef }> = [];
   private surface: NoteSurfaceLike | null;
+  private surfaceDesynchronized = false;
 
   static createFromActiveEditor(
     app: Pick<App, 'vault' | 'workspace'>,
@@ -151,6 +158,9 @@ export class Session {
     this.surface = (dependencies.noteSurfaceFactory ?? createNoteSurface)(
       dependencies.view,
       dependencies.placement,
+      (failure) => {
+        this.handleSurfaceDesynchronization(failure);
+      },
     );
     this.registerLifecycleSubscriptions();
   }
@@ -247,6 +257,11 @@ export class Session {
       this.rawSessionEntries.map((entry) => ({ utteranceId: entry.utteranceId })),
     );
 
+    if (result.kind === 'denied' && result.reason.kind === 'surface_desynchronized') {
+      this.handleSurfaceDesynchronization(result.reason);
+      return false;
+    }
+
     return result.kind === 'rewritten';
   }
 
@@ -277,11 +292,19 @@ export class Session {
       this.rawSessionEntries.map((entry) => ({ utteranceId: entry.utteranceId })),
     );
 
+    if (result.kind === 'denied' && result.reason.kind === 'surface_desynchronized') {
+      this.handleSurfaceDesynchronization(result.reason);
+      return false;
+    }
+
     return result.kind === 'rewritten';
   }
 
   setAnchorMode(mode: DictationAnchorMode): void {
-    this.surface?.setAnchorMode(mode);
+    const result = this.surface?.setAnchorMode(mode);
+    if (result !== undefined && result !== null) {
+      this.handleSurfaceDesynchronization(result);
+    }
   }
 
   markSessionRangeAsProcessing(): boolean {
@@ -292,12 +315,19 @@ export class Session {
     if (range === null) {
       return false;
     }
-    this.surface.setProcessingRange(range);
+    const result = this.surface.setProcessingRange(range);
+    if (result !== null) {
+      this.handleSurfaceDesynchronization(result);
+      return false;
+    }
     return true;
   }
 
   clearSessionProcessingMark(): void {
-    this.surface?.setProcessingRange(null);
+    const result = this.surface?.setProcessingRange(null);
+    if (result !== undefined && result !== null) {
+      this.handleSurfaceDesynchronization(result);
+    }
   }
 
   dispose(): void {
@@ -365,10 +395,17 @@ export class Session {
         precedingSpeakerIndex: projection.precedingSpeakerIndex,
         projectedText: projection.insertedText,
       });
-      this.surface?.setProvisional(revision.utteranceId, !revision.isFinal);
+      if (!this.updateProvisionalState(revision.utteranceId, !revision.isFinal)) {
+        return;
+      }
       this.recordRawSessionAppend(revision, projection);
       this.renderer.commitAppend(projection);
       this.applyRawPostprocessCallout(revision);
+      return;
+    }
+
+    if (result.reason.kind === 'surface_desynchronized') {
+      this.handleSurfaceDesynchronization(result.reason);
       return;
     }
 
@@ -417,6 +454,10 @@ export class Session {
     const result = this.surface?.appendProjection(`${revision.utteranceId}:llm_raw`, projection);
 
     if (result?.kind === 'denied') {
+      if (result.reason.kind === 'surface_desynchronized') {
+        this.handleSurfaceDesynchronization(result.reason);
+        return;
+      }
       this.dependencies.logger?.debug(
         'session',
         `raw LLM postprocess callout append denied (${callout.length} chars): ${result.reason.kind}`,
@@ -466,8 +507,15 @@ export class Session {
         precedingSpeakerIndex: state.precedingSpeakerIndex,
         projectedText,
       });
-      this.surface?.setProvisional(revision.utteranceId, !revision.isFinal);
+      if (!this.updateProvisionalState(revision.utteranceId, !revision.isFinal)) {
+        return;
+      }
       this.recordRawSessionReplace(revision);
+      return;
+    }
+
+    if (result.reason.kind === 'surface_desynchronized') {
+      this.handleSurfaceDesynchronization(result.reason);
       return;
     }
 
@@ -476,7 +524,9 @@ export class Session {
     } else {
       this.projectionByUtterance.set(revision.utteranceId, { kind: 'denied' });
     }
-    this.surface?.setProvisional(revision.utteranceId, false);
+    if (!this.updateProvisionalState(revision.utteranceId, false)) {
+      return;
+    }
     this.dependencies.logger?.debug('session', `projection replace denied: ${result.reason.kind}`);
   }
 
@@ -547,8 +597,32 @@ export class Session {
 
   private handleModify(file: TAbstractFile): void {
     if (file === this.dependencies.lockedFile) {
-      this.surface?.validateExternalModification();
+      const result = this.surface?.validateExternalModification();
+      if (result !== undefined && result !== null) {
+        this.handleSurfaceDesynchronization(result);
+      }
     }
+  }
+
+  private handleSurfaceDesynchronization(failure: SurfaceDesynchronization): void {
+    if (this.surfaceDesynchronized) {
+      return;
+    }
+
+    this.surfaceDesynchronized = true;
+    this.surface?.dispose();
+    this.surface = null;
+    this.dependencies.callbacks.onSurfaceDesynchronized(failure);
+  }
+
+  private updateProvisionalState(utteranceId: UtteranceId, provisional: boolean): boolean {
+    const failure = this.surface?.setProvisional(utteranceId, provisional);
+    if (failure === undefined || failure === null) {
+      return true;
+    }
+
+    this.handleSurfaceDesynchronization(failure);
+    return false;
   }
 
   private handleRename(file: TAbstractFile, oldPath: string): void {
@@ -635,8 +709,12 @@ export class Session {
   }
 }
 
-function createNoteSurface(view: EditorView, placement: NotePlacementOptions): NoteSurface {
-  return new NoteSurface(view, placement);
+function createNoteSurface(
+  view: EditorView,
+  placement: NotePlacementOptions,
+  onSurfaceDesynchronized: (failure: SurfaceDesynchronization) => void,
+): NoteSurface {
+  return new NoteSurface(view, placement, onSurfaceDesynchronized);
 }
 
 function resolveActiveEditorTarget(

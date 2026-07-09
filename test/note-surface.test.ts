@@ -6,23 +6,37 @@ import {
   type TransactionSpec,
 } from '@codemirror/state';
 import type { EditorView, ViewUpdate } from '@codemirror/view';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
   dictationAnchorExtension,
   dictationAnchorStateField,
+  setAnchorEffect,
+  setAnchorModeEffect,
 } from '../src/editor/dictation-anchor-extension';
 import { NoteSurface } from '../src/editor/note-surface';
 import {
   provisionalTranscriptDecorationsField,
   provisionalTranscriptExtension,
+  provisionalTranscriptStateField,
+  setProvisionalTranscriptEffect,
 } from '../src/editor/provisional-transcript-extension';
+import {
+  sessionProcessingExtension,
+  sessionProcessingStateField,
+  setSessionProcessingEffect,
+} from '../src/editor/session-processing-extension';
 import type { DictationAnchor } from '../src/settings/plugin-settings';
-import { TranscriptRenderer, type TranscriptRenderOptions } from '../src/transcript/renderer';
+import {
+  type TranscriptInsertProjection,
+  TranscriptRenderer,
+  type TranscriptRenderOptions,
+} from '../src/transcript/renderer';
 import { renderOptions, timestamps } from './helpers/render-options';
 
 class FakeEditorView {
   public lastUpdate: ViewUpdate | null = null;
   public state: EditorState;
+  private readonly updateListeners: Array<(update: ViewUpdate) => void> = [];
 
   constructor(doc: string, selectionHead: number, extensions: Extension = []) {
     this.state = EditorState.create({
@@ -33,27 +47,49 @@ class FakeEditorView {
   }
 
   dispatch(spec: TransactionSpec): void {
-    const transaction = this.state.update(spec);
+    const startState = this.state;
+    const transaction = startState.update(spec);
     this.state = transaction.state;
     this.lastUpdate = {
       changes: transaction.changes,
       docChanged: transaction.docChanged,
+      startState,
       transactions: [transaction],
       view: this,
     } as unknown as ViewUpdate;
+    for (const listener of this.updateListeners) {
+      listener(this.lastUpdate);
+    }
+  }
+
+  addUpdateListener(listener: (update: ViewUpdate) => void): void {
+    this.updateListeners.push(listener);
   }
 
   apply(spec: TransactionSpec): ViewUpdate {
-    const transaction = this.state.update(spec);
+    const startState = this.state;
+    const transaction = startState.update(spec);
     this.state = transaction.state;
 
     this.lastUpdate = {
       changes: transaction.changes,
       docChanged: transaction.docChanged,
+      startState,
       transactions: [transaction],
       view: this,
     } as unknown as ViewUpdate;
     return this.lastUpdate;
+  }
+
+  replaceStateWithoutViewUpdate(doc: string): void {
+    this.state = EditorState.create({
+      doc,
+      selection: EditorSelection.cursor(doc.length),
+    });
+  }
+
+  replaceEditorStateWithoutViewUpdate(state: EditorState): void {
+    this.state = state;
   }
 }
 
@@ -62,14 +98,24 @@ function createSurface({
   doc = '',
   extensions = [],
   selectionHead = 0,
+  onSurfaceDesynchronized,
 }: {
   anchor?: DictationAnchor;
   doc?: string;
   extensions?: Extension;
   selectionHead?: number;
+  onSurfaceDesynchronized?: (failure: {
+    documentLength: number;
+    kind: 'surface_desynchronized';
+    trackedPosition: number;
+  }) => void;
 } = {}): { surface: NoteSurface; view: FakeEditorView } {
   const view = new FakeEditorView(doc, selectionHead, extensions);
-  const surface = new NoteSurface(view as unknown as EditorView, { anchor });
+  const surface = new NoteSurface(
+    view as unknown as EditorView,
+    { anchor },
+    onSurfaceDesynchronized,
+  );
 
   return { surface, view };
 }
@@ -90,6 +136,19 @@ function append(
   input: { pauseMsBeforeUtterance?: number | null; utteranceStartMsInSession?: number } = {},
 ): ReturnType<NoteSurface['appendProjection']> {
   return appendWithRenderer(surface, new TranscriptRenderer(options), utteranceId, text, input);
+}
+
+function literalProjection(text: string): TranscriptInsertProjection {
+  return {
+    emittedSpeakerIndex: null,
+    emittedTimestamp: null,
+    insertedText: text,
+    precedingSpeakerIndex: null,
+    projectedText: text,
+    replacementPrefix: '',
+    textEndOffset: text.length,
+    textStartOffset: 0,
+  };
 }
 
 function appendWithRenderer(
@@ -122,6 +181,150 @@ function doc(view: FakeEditorView): string {
 }
 
 describe('NoteSurface', () => {
+  it('reports a fatal desynchronization without changing an externally replaced note', () => {
+    const initialDocument = 'x'.repeat(4280);
+    const externalReplacement = 'r'.repeat(4280);
+    const { surface, view } = createSurface({
+      doc: initialDocument,
+      selectionHead: initialDocument.length,
+    });
+    const priorTranscript = 'y'.repeat(34);
+
+    expect(surface.appendProjection('u1', literalProjection(priorTranscript)).kind).toBe(
+      'appended',
+    );
+    expect(doc(view).length).toBe(4314);
+
+    view.replaceStateWithoutViewUpdate(externalReplacement);
+
+    const failure = surface.validateExternalModification();
+    expect(failure).toEqual({
+      documentLength: 4280,
+      kind: 'surface_desynchronized',
+      trackedPosition: 4314,
+    });
+    expect(surface.appendProjection('u2', literalProjection('next'))).toEqual({
+      kind: 'denied',
+      reason: failure,
+      utteranceId: 'u2',
+    });
+    expect(doc(view)).toBe(externalReplacement);
+  });
+
+  it('keeps the writing tail valid when a mapped edit shrinks the note', () => {
+    const initialDocument = 'x'.repeat(4280);
+    const { surface, view } = createSurface({
+      doc: initialDocument,
+      selectionHead: initialDocument.length,
+    });
+
+    expect(surface.appendProjection('u1', literalProjection('y'.repeat(34))).kind).toBe('appended');
+    surface.observeTransaction(view.apply({ changes: { from: 4280, to: 4314, insert: '' } }));
+
+    expect(surface.appendProjection('u2', literalProjection('z')).kind).toBe('appended');
+    expect(doc(view)).toBe(`${initialDocument}z`);
+  });
+
+  it('reports an unmapped replacement before mapping the next editor transaction', () => {
+    const initialDocument = 'x'.repeat(4280);
+    const externalReplacement = 'r'.repeat(4280);
+    const onSurfaceDesynchronized = vi.fn();
+    const { surface, view } = createSurface({
+      doc: initialDocument,
+      onSurfaceDesynchronized,
+      selectionHead: initialDocument.length,
+    });
+    expect(surface.appendProjection('u1', literalProjection('y'.repeat(34))).kind).toBe('appended');
+    view.replaceStateWithoutViewUpdate(externalReplacement);
+    const update = view.apply({ changes: { from: 0, insert: '!' } });
+    let failure: ReturnType<NoteSurface['validateExternalModification']> = null;
+
+    expect(() => {
+      failure = surface.observeTransaction(update);
+    }).not.toThrow();
+    expect(failure).toEqual({
+      documentLength: 4280,
+      kind: 'surface_desynchronized',
+      trackedPosition: 4314,
+    });
+    expect(onSurfaceDesynchronized).toHaveBeenCalledOnce();
+    expect(onSurfaceDesynchronized).toHaveBeenCalledWith(failure);
+    expect(doc(view)).toBe(`!${externalReplacement}`);
+  });
+
+  it('keeps appending after a live partial is replaced by a shorter final', () => {
+    const initialDocument = 'x'.repeat(4246);
+    const { surface, view } = createSurface({
+      doc: initialDocument,
+      selectionHead: initialDocument.length,
+    });
+    const partial = 'p'.repeat(68);
+    const final = 'f'.repeat(34);
+
+    expect(surface.appendProjection('u1', literalProjection(partial)).kind).toBe('appended');
+    expect(surface.replaceAnchor('u1', final, partial, false).kind).toBe('replaced');
+    expect(surface.appendProjection('u2', literalProjection('z')).kind).toBe('appended');
+
+    expect(doc(view)).toBe(`${initialDocument}${final}z`);
+  });
+
+  it.each([
+    ['anchor mode', (surface: NoteSurface) => surface.setAnchorMode('visible')],
+    ['processing range', (surface: NoteSurface) => surface.setProcessingRange({ from: 0, to: 1 })],
+    ['provisional range', (surface: NoteSurface) => surface.setProvisional('u1', true)],
+    ['pending prefix trim', (surface: NoteSurface) => surface.trimPendingInitialPrefix()],
+    ['dispose', (surface: NoteSurface) => surface.dispose()],
+  ] as const)('blocks %s mutation after an unmapped replacement', (_label, mutate) => {
+    const initialDocument = 'x'.repeat(4280);
+    const externalReplacement = 'r'.repeat(4280);
+    const { surface, view } = createSurface({
+      doc: initialDocument,
+      selectionHead: initialDocument.length,
+    });
+    expect(surface.appendProjection('u1', literalProjection('y'.repeat(34))).kind).toBe('appended');
+    view.replaceStateWithoutViewUpdate(externalReplacement);
+
+    expect(mutate(surface)).toEqual({
+      documentLength: 4280,
+      kind: 'surface_desynchronized',
+      trackedPosition: 4314,
+    });
+    expect(doc(view)).toBe(externalReplacement);
+  });
+
+  it('clears editor decorations when a desynchronized surface is disposed', () => {
+    const extensions = [
+      dictationAnchorExtension(),
+      provisionalTranscriptExtension(),
+      sessionProcessingExtension(),
+    ];
+    const initialDocument = 'x'.repeat(4280);
+    const externalReplacement = 'r'.repeat(4280);
+    const { surface, view } = createSurface({
+      doc: initialDocument,
+      extensions,
+      selectionHead: initialDocument.length,
+    });
+    expect(surface.appendProjection('u1', literalProjection('y'.repeat(34))).kind).toBe('appended');
+    let replacementState = EditorState.create({ doc: externalReplacement, extensions });
+    replacementState = replacementState.update({
+      effects: [
+        setAnchorEffect.of(100),
+        setAnchorModeEffect.of('visible'),
+        setProvisionalTranscriptEffect.of({ from: 0, to: 1, utteranceId: 'u1' }),
+        setSessionProcessingEffect.of({ from: 0, to: 1 }),
+      ],
+    }).state;
+    view.replaceEditorStateWithoutViewUpdate(replacementState);
+    const failure = surface.validateExternalModification();
+
+    expect(surface.dispose()).toEqual(failure);
+    expect(view.state.field(dictationAnchorStateField)).toEqual({ mode: 'hidden', pos: null });
+    expect(view.state.field(provisionalTranscriptStateField).size).toBe(0);
+    expect(view.state.field(sessionProcessingStateField)).toBeNull();
+    expect(doc(view)).toBe(externalReplacement);
+  });
+
   it('keeps same-cursor sessions ordered when the later session writes first', () => {
     const view = new FakeEditorView('', 0);
     const earlier = new NoteSurface(view as unknown as EditorView, { anchor: 'at_cursor' });
@@ -140,6 +343,31 @@ describe('NoteSurface', () => {
     later.observeTransaction(view.lastUpdate);
 
     expect(doc(view)).toBe('AB');
+  });
+
+  it('keeps same-cursor overlaps healthy when listeners observe an older append in creation order', () => {
+    const view = new FakeEditorView('', 0);
+    const earlierFailure = vi.fn();
+    const laterFailure = vi.fn();
+    const earlier = new NoteSurface(
+      view as unknown as EditorView,
+      { anchor: 'at_cursor' },
+      earlierFailure,
+    );
+    const later = new NoteSurface(
+      view as unknown as EditorView,
+      { anchor: 'at_cursor' },
+      laterFailure,
+    );
+    view.addUpdateListener((update) => earlier.observeTransaction(update));
+    view.addUpdateListener((update) => later.observeTransaction(update));
+
+    expect(append(earlier, 'earlier', 'A').kind).toBe('appended');
+    expect(append(later, 'later', 'B').kind).toBe('appended');
+
+    expect(doc(view)).toBe('A B');
+    expect(earlierFailure).not.toHaveBeenCalled();
+    expect(laterFailure).not.toHaveBeenCalled();
   });
 
   it('extends the writing-region tail past user text typed at the initial anchor before any utterance', () => {

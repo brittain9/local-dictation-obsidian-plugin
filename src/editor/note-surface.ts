@@ -47,7 +47,16 @@ export interface ProjectedSpan {
   utteranceId: UtteranceId;
 }
 
-export type AppendDenialReason = { kind: 'disposed' } | { kind: 'already_projected' };
+export interface SurfaceDesynchronization {
+  readonly documentLength: number;
+  readonly kind: 'surface_desynchronized';
+  readonly trackedPosition: number;
+}
+
+export type AppendDenialReason =
+  | { kind: 'disposed' }
+  | { kind: 'already_projected' }
+  | SurfaceDesynchronization;
 
 export type AppendResult =
   | {
@@ -64,7 +73,8 @@ export type ReplaceDenialReason =
   | { kind: 'disposed' }
   | { kind: 'not_found' }
   | { kind: 'user_edited' }
-  | { currentText: string; kind: 'span_mismatch' };
+  | { currentText: string; kind: 'span_mismatch' }
+  | SurfaceDesynchronization;
 
 export type ReplaceResult =
   | {
@@ -91,7 +101,8 @@ export type RewriteDenialReason =
   | { kind: 'range_invalid' }
   | { kind: 'range_partial' }
   | { kind: 'user_edited' }
-  | { kind: 'span_mismatch' };
+  | { kind: 'span_mismatch' }
+  | SurfaceDesynchronization;
 
 export type RewriteResult =
   | {
@@ -141,6 +152,7 @@ export function noteSurfaceUpdateListenerExtension(): Extension {
 
 export class NoteSurface {
   private readonly createdAt = nextSurfaceOrder;
+  private desynchronization: SurfaceDesynchronization | null = null;
   private disposed = false;
   private initialAnchorPos: number;
   private readonly initialBoundaryPos: number;
@@ -150,6 +162,7 @@ export class NoteSurface {
   constructor(
     readonly view: EditorView,
     private readonly placement: NotePlacementOptions,
+    private readonly onSurfaceDesynchronized?: (failure: SurfaceDesynchronization) => void,
   ) {
     nextSurfaceOrder += 1;
     this.initialAnchorPos = this.computePinPosition();
@@ -164,9 +177,18 @@ export class NoteSurface {
     }
   }
 
-  observeTransaction(update: ViewUpdate): void {
+  observeTransaction(update: ViewUpdate): SurfaceDesynchronization | null {
     if (this.disposed || update.view !== this.view || !update.docChanged) {
-      return;
+      return null;
+    }
+    if (this.desynchronization !== null) {
+      return this.desynchronization;
+    }
+
+    const desynchronization = this.detectOwnedDesynchronization(update.startState.doc.length);
+    if (desynchronization !== null) {
+      this.onSurfaceDesynchronized?.(desynchronization);
+      return desynchronization;
     }
 
     const spansBefore = [...this.spans.values()].map(cloneSpan);
@@ -175,7 +197,7 @@ export class NoteSurface {
     this.mapSpans(update);
 
     if (!this.hasLatchableUserChange(update)) {
-      return;
+      return null;
     }
 
     for (const before of spansBefore) {
@@ -192,6 +214,7 @@ export class NoteSurface {
     }
 
     this.clearProvisional(latchedUtteranceIds);
+    return null;
   }
 
   readProjectionContext(): NoteProjectionContext {
@@ -206,6 +229,11 @@ export class NoteSurface {
   appendProjection(utteranceId: UtteranceId, projection: TranscriptInsertProjection): AppendResult {
     if (this.disposed) {
       return { kind: 'denied', reason: { kind: 'disposed' }, utteranceId };
+    }
+
+    const desynchronization = this.detectDesynchronization();
+    if (desynchronization !== null) {
+      return { kind: 'denied', reason: desynchronization, utteranceId };
     }
 
     if (this.spans.has(utteranceId)) {
@@ -245,6 +273,11 @@ export class NoteSurface {
   ): ReplaceResult {
     if (this.disposed) {
       return { kind: 'denied', reason: { kind: 'disposed' }, utteranceId };
+    }
+
+    const desynchronization = this.detectDesynchronization();
+    if (desynchronization !== null) {
+      return { kind: 'denied', reason: desynchronization, utteranceId };
     }
 
     const span = this.spans.get(utteranceId);
@@ -301,6 +334,11 @@ export class NoteSurface {
       return { kind: 'denied', reason: { kind: 'disposed' } };
     }
 
+    const desynchronization = this.detectDesynchronization();
+    if (desynchronization !== null) {
+      return { kind: 'denied', reason: desynchronization };
+    }
+
     if (!this.isValidRange(range)) {
       return { kind: 'denied', reason: { kind: 'range_invalid' } };
     }
@@ -351,9 +389,14 @@ export class NoteSurface {
     return { kind: 'rewritten', range };
   }
 
-  validateExternalModification(): void {
+  validateExternalModification(): SurfaceDesynchronization | null {
     if (this.disposed) {
-      return;
+      return null;
+    }
+
+    const desynchronization = this.detectDesynchronization();
+    if (desynchronization !== null) {
+      return desynchronization;
     }
 
     const latchedUtteranceIds: string[] = [];
@@ -368,29 +411,47 @@ export class NoteSurface {
       }
     }
     this.clearProvisional(latchedUtteranceIds);
+    return null;
   }
 
-  setAnchorMode(mode: DictationAnchorMode): void {
+  setAnchorMode(mode: DictationAnchorMode): SurfaceDesynchronization | null {
+    if (this.disposed) {
+      return null;
+    }
+    const desynchronization = this.detectDesynchronization();
+    if (desynchronization !== null) {
+      return desynchronization;
+    }
     if (this.isAnchorOwner()) {
       this.view.dispatch({ effects: setAnchorModeEffect.of(mode) });
     }
+    return null;
   }
 
-  setProcessingRange(range: SessionProcessingRange | null): void {
+  setProcessingRange(range: SessionProcessingRange | null): SurfaceDesynchronization | null {
     if (this.disposed) {
-      return;
+      return null;
+    }
+    const desynchronization = this.detectDesynchronization();
+    if (desynchronization !== null) {
+      return desynchronization;
     }
     this.view.dispatch({ effects: setSessionProcessingEffect.of(range) });
+    return null;
   }
 
-  setProvisional(utteranceId: UtteranceId, provisional: boolean): void {
+  setProvisional(utteranceId: UtteranceId, provisional: boolean): SurfaceDesynchronization | null {
     if (this.disposed) {
-      return;
+      return null;
+    }
+    const desynchronization = this.detectDesynchronization();
+    if (desynchronization !== null) {
+      return desynchronization;
     }
     const span = this.spans.get(utteranceId);
     if (!provisional || span === undefined || span.latched !== undefined) {
       this.clearProvisional([utteranceId]);
-      return;
+      return null;
     }
     this.view.dispatch({
       effects: setProvisionalTranscriptEffect.of({
@@ -399,11 +460,19 @@ export class NoteSurface {
         utteranceId,
       }),
     });
+    return null;
   }
 
-  trimPendingInitialPrefix(): void {
-    if (this.disposed || this.pendingInitialPrefix.length === 0) {
-      return;
+  trimPendingInitialPrefix(): SurfaceDesynchronization | null {
+    if (this.disposed) {
+      return null;
+    }
+    const desynchronization = this.detectDesynchronization();
+    if (desynchronization !== null) {
+      return desynchronization;
+    }
+    if (this.pendingInitialPrefix.length === 0) {
+      return null;
     }
 
     const pending = this.pendingInitialPrefix;
@@ -421,10 +490,18 @@ export class NoteSurface {
     }
 
     this.pendingInitialPrefix = '';
+    return null;
   }
 
-  dispose(): void {
-    this.trimPendingInitialPrefix();
+  dispose(): SurfaceDesynchronization | null {
+    if (this.disposed) {
+      return this.desynchronization;
+    }
+
+    const desynchronization = this.detectDesynchronization();
+    if (desynchronization === null) {
+      this.trimPendingInitialPrefix();
+    }
     const provisionalUtteranceIds = [...this.spans.keys()];
     this.disposed = true;
     unregisterNoteSurface(this);
@@ -441,6 +518,7 @@ export class NoteSurface {
       effects.push(clearAnchorEffect.of(null));
     }
     this.view.dispatch({ effects });
+    return desynchronization;
   }
 
   // The shared cursor belongs to the newest live surface for this view. With
@@ -574,6 +652,58 @@ export class NoteSurface {
     return tail;
   }
 
+  private detectDesynchronization(
+    documentLength = this.view.state.doc.length,
+  ): SurfaceDesynchronization | null {
+    const ownedDesynchronization = this.detectOwnedDesynchronization(documentLength);
+    if (ownedDesynchronization !== null) {
+      return ownedDesynchronization;
+    }
+
+    const writingRegionTail = this.writingRegionTail();
+    if (!isDocumentPosition(writingRegionTail, documentLength)) {
+      return this.markDesynchronized(writingRegionTail, documentLength);
+    }
+
+    return null;
+  }
+
+  private detectOwnedDesynchronization(documentLength: number): SurfaceDesynchronization | null {
+    if (this.desynchronization !== null) {
+      return this.desynchronization;
+    }
+
+    if (!isDocumentPosition(this.initialAnchorPos, documentLength)) {
+      return this.markDesynchronized(this.initialAnchorPos, documentLength);
+    }
+
+    for (const span of this.spans.values()) {
+      const positions = [span.start, span.textStart, span.textEnd, span.end];
+      let previous = -1;
+      for (const position of positions) {
+        if (!isDocumentPosition(position, documentLength) || position < previous) {
+          return this.markDesynchronized(position, documentLength);
+        }
+        previous = position;
+      }
+    }
+
+    return null;
+  }
+
+  private markDesynchronized(
+    trackedPosition: number,
+    documentLength: number,
+  ): SurfaceDesynchronization {
+    const failure: SurfaceDesynchronization = {
+      documentLength,
+      kind: 'surface_desynchronized',
+      trackedPosition,
+    };
+    this.desynchronization = failure;
+    return failure;
+  }
+
   private lastSpan(): ProjectedSpan | null {
     let last: ProjectedSpan | null = null;
 
@@ -636,6 +766,10 @@ export class NoteSurface {
       range.to <= this.view.state.doc.length
     );
   }
+}
+
+function isDocumentPosition(position: number, documentLength: number): boolean {
+  return Number.isInteger(position) && position >= 0 && position <= documentLength;
 }
 
 function changeIntersectsSpan(update: ViewUpdate, span: ProjectedSpan): boolean {
