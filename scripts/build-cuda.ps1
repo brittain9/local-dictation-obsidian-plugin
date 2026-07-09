@@ -30,7 +30,7 @@ function Invoke-TimedStep($Name, [scriptblock]$Action) {
   }
 }
 
-foreach ($tool in 'cargo', 'nvcc') {
+foreach ($tool in 'cargo', 'node', 'nvcc') {
   if (-not (Get-Command $tool -ErrorAction SilentlyContinue)) {
     throw "required tool not found on PATH: $tool"
   }
@@ -39,8 +39,13 @@ foreach ($tool in 'cargo', 'nvcc') {
 $jobs = Read-PositiveInt 'BUILD_JOBS' ([Environment]::ProcessorCount)
 $env:CARGO_BUILD_JOBS = "$jobs"
 $env:CMAKE_BUILD_PARALLEL_LEVEL = "$jobs"
-# Pin the ONNX Runtime CUDA execution-provider major (see build-cuda.sh).
-if (-not $env:ORT_CUDA_VERSION) { $env:ORT_CUDA_VERSION = '13' }
+# Pin the ONNX Runtime CUDA execution-provider major (see build-cuda.sh). The
+# release config is authoritative; callers may override it for compatibility
+# testing.
+if (-not $env:ORT_CUDA_VERSION) {
+  $env:ORT_CUDA_VERSION = & node scripts/read-release-build-config.mjs --field ortCudaVersion
+  if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+}
 
 # Disable the whisper/ggml ccache probe (no ccache on the runner; the rust-cache
 # target-cuda restore is what makes warm builds fast, not ccache), matching

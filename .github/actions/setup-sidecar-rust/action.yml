@@ -18,11 +18,11 @@ inputs:
   cache-env-vars:
     description: Value passed to Swatinem/rust-cache 'env-vars' input. Default extends defaults with GGML, WHISPER, ORT, and CUDA so build-affecting flips (CPU SIMD, whisper flags, ONNX Runtime CUDA major, CUDA toolkit version) bust the cache.
     required: false
-    # CUDA covers CUDA_TOOLKIT_VERSION, set as a workflow-level env var. The CUDA
-    # toolkit version otherwise lives only in the Jimver/cuda-toolkit `uses` input
-    # and is invisible to the rust-cache key, so a toolkit bump would silently
-    # restore stale NVCC objects from target-cuda. Hashing it forks the key.
-    default: 'CARGO CC CFLAGS CXX CMAKE RUST GGML WHISPER ORT CUDA'
+    # CUDA covers CUDA_TOOLKIT_VERSION, exported before this action by the
+    # calling release path. The version passed to Jimver/cuda-toolkit is not
+    # otherwise visible to rust-cache, so a toolkit bump would restore stale
+    # NVCC objects from target-cuda.
+    default: 'GGML WHISPER ORT CUDA_TOOLKIT_VERSION'
   cache-on-failure:
     description: Value passed to Swatinem/rust-cache 'cache-on-failure' input.
     required: false

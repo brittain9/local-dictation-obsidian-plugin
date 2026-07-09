@@ -1,0 +1,95 @@
+name: Setup Windows CUDA toolkit
+description: Restore or install the pinned Windows CUDA toolkit and export its build environment.
+
+inputs:
+  toolkit-version:
+    description: CUDA toolkit version installed by Jimver/cuda-toolkit.
+    required: true
+  subpackages-manifest:
+    description: Repository-relative JSON array of CUDA installer sub-packages.
+    required: true
+
+outputs:
+  cache-hit:
+    description: Whether the exact extracted-toolkit cache was restored.
+    value: ${{ steps.cuda-cache.outputs.cache-hit }}
+  cache-primary-key:
+    description: Exact toolkit cache key attempted by the restore.
+    value: ${{ steps.cuda-cache.outputs.cache-primary-key }}
+  install-dir:
+    description: Windows CUDA toolkit directory restored or installed.
+    value: ${{ steps.config.outputs.install-dir }}
+
+runs:
+  using: composite
+  steps:
+    - id: config
+      name: Resolve Windows CUDA configuration
+      shell: pwsh
+      env:
+        CUDA_SUBPACKAGES_MANIFEST: ${{ inputs.subpackages-manifest }}
+        CUDA_TOOLKIT_VERSION_INPUT: ${{ inputs.toolkit-version }}
+      run: |
+        if ($env:RUNNER_OS -ne 'Windows') {
+          throw 'setup-windows-cuda only supports Windows runners.'
+        }
+        if ($env:CUDA_TOOLKIT_VERSION_INPUT -notmatch '^\d+\.\d+\.\d+$') {
+          throw "CUDA toolkit version must use major.minor.patch: $env:CUDA_TOOLKIT_VERSION_INPUT"
+        }
+
+        $manifest = Resolve-Path -LiteralPath $env:CUDA_SUBPACKAGES_MANIFEST
+        $packages = @(Get-Content -Raw $manifest | ConvertFrom-Json)
+        if ($packages.Count -eq 0 -or $packages.Where({ $_ -isnot [string] -or $_.Length -eq 0 }).Count -gt 0) {
+          throw "$manifest must contain at least one non-empty CUDA sub-package string."
+        }
+
+        $version = $env:CUDA_TOOLKIT_VERSION_INPUT.Split('.')
+        $installDir = "C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v$($version[0]).$($version[1])"
+        $subpackages = ConvertTo-Json -Compress -InputObject $packages
+
+        "install-dir=$installDir" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+        "subpackages=$subpackages" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+
+    - id: cuda-cache
+      name: Restore CUDA toolkit
+      uses: actions/cache/restore@v6
+      with:
+        path: ${{ steps.config.outputs.install-dir }}
+        # Use GitHub's native hashFiles implementation to preserve the exact
+        # cache identity originally seeded on main. See #189.
+        key: cuda-${{ runner.os }}-${{ inputs.toolkit-version }}-${{ hashFiles(inputs.subpackages-manifest) }}
+
+    - name: Install CUDA toolkit
+      if: steps.cuda-cache.outputs.cache-hit != 'true'
+      uses: Jimver/cuda-toolkit@v0.2.35
+      with:
+        cuda: ${{ inputs.toolkit-version }}
+        method: network
+        # CUDA 13 split the Windows toolkit into granular packages. This set
+        # includes the compiler, headers, device compiler, C++ templates,
+        # link-time libraries, and runtime DLLs shipped in the release archive.
+        sub-packages: ${{ steps.config.outputs.subpackages }}
+
+    # Jimver exports the same variables after an install. Export them on both
+    # paths so a restored toolkit and a fresh install have one environment
+    # contract, independent of third-party action internals.
+    - name: Export CUDA environment
+      shell: pwsh
+      env:
+        CUDA_INSTALL_DIR_INPUT: ${{ steps.config.outputs.install-dir }}
+        CUDA_TOOLKIT_VERSION_INPUT: ${{ inputs.toolkit-version }}
+      run: |
+        $version = $env:CUDA_TOOLKIT_VERSION_INPUT.Split('.')
+        $versionedName = "CUDA_PATH_V$($version[0])_$($version[1])"
+
+        "CUDA_INSTALL_DIR=$env:CUDA_INSTALL_DIR_INPUT" | Out-File -FilePath $env:GITHUB_ENV -Append
+        "CUDA_TOOLKIT_VERSION=$env:CUDA_TOOLKIT_VERSION_INPUT" | Out-File -FilePath $env:GITHUB_ENV -Append
+        "CUDA_PATH=$env:CUDA_INSTALL_DIR_INPUT" | Out-File -FilePath $env:GITHUB_ENV -Append
+        "$versionedName=$env:CUDA_INSTALL_DIR_INPUT" | Out-File -FilePath $env:GITHUB_ENV -Append
+        "CUDA_PATH_VX_Y=$versionedName" | Out-File -FilePath $env:GITHUB_ENV -Append
+        "$env:CUDA_INSTALL_DIR_INPUT\bin" | Out-File -FilePath $env:GITHUB_PATH -Append
+
+        $nvcc = Join-Path $env:CUDA_INSTALL_DIR_INPUT 'bin\nvcc.exe'
+        if (-not (Test-Path -LiteralPath $nvcc)) {
+          throw "CUDA setup completed without nvcc at $nvcc"
+        }

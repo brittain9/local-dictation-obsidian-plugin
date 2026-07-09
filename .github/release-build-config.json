@@ -1,0 +1,8 @@
+{
+  "ggmlNative": "OFF",
+  "ortCudaVersion": "13",
+  "cudaToolkitVersion": "13.2.0",
+  "cudaArchitectures": "75-virtual",
+  "windowsCudaSubpackagesManifest": ".github/cuda-windows-subpackages.json",
+  "windowsCudaRustCacheEnvVars": "RUST_TOOLCHAIN GGML WHISPER ORT CUDA_TOOLKIT_VERSION"
+}

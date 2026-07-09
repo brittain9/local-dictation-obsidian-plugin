@@ -143,9 +143,14 @@ export WHISPER_CCACHE=OFF
 export GGML_CCACHE=OFF
 export CMAKE_ARGS="${CMAKE_ARGS:+$CMAKE_ARGS }-DWHISPER_CCACHE=OFF -DGGML_CCACHE=OFF"
 # Pin the ONNX Runtime CUDA execution-provider major so local and CI builds
-# resolve the same pyke cu13 binaries instead of auto-detecting from whatever
-# CUDA toolkit happens to be on PATH. ort reads this in ort-sys' build script.
-export ORT_CUDA_VERSION=${ORT_CUDA_VERSION:-13}
+# resolve the same pyke binaries instead of auto-detecting from whatever CUDA
+# toolkit happens to be on PATH. The release config is authoritative; callers
+# may still override it explicitly for local compatibility testing.
+if [[ -z "${ORT_CUDA_VERSION:-}" ]]; then
+  require_cmd node
+  ORT_CUDA_VERSION=$(node scripts/read-release-build-config.mjs --field ortCudaVersion)
+fi
+export ORT_CUDA_VERSION
 
 require_cmd cargo
 require_cmd rustc
