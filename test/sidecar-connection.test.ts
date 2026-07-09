@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   type ErrorEvent,
   encodeJsonFrame,
+  FRAME_HEADER_LENGTH,
   type HealthOkEvent,
   type ModelInstallUpdateEvent,
   type SidecarEvent,
@@ -124,6 +125,14 @@ function healthOkEvent(overrides: Partial<HealthOkEvent> = {}): HealthOkEvent {
   };
 }
 
+function readJsonPayload(frame: Uint8Array): unknown {
+  const payloadLength = new DataView(frame.buffer, frame.byteOffset, frame.byteLength).getUint32(
+    1,
+    true,
+  );
+  return JSON.parse(new TextDecoder().decode(frame.slice(FRAME_HEADER_LENGTH, 5 + payloadLength)));
+}
+
 async function flushMicrotasks(): Promise<void> {
   await Promise.resolve();
 }
@@ -154,6 +163,21 @@ describe('SidecarConnection', () => {
     });
     expect(process.startCalls).toBe(1);
     expect(process.writtenFrames).toHaveLength(1);
+  });
+
+  it('probes system audio with the dedicated command and result event', async () => {
+    const { connection, process } = createHarness();
+
+    const resultPromise = connection.probeSystemAudio();
+    await flushMicrotasks();
+
+    expect(readJsonPayload(process.writtenFrames[0] ?? new Uint8Array())).toEqual({
+      type: 'probe_system_audio',
+    });
+
+    process.deliver({ ok: true, type: 'system_audio_probe_result' });
+
+    await expect(resultPromise).resolves.toEqual({ ok: true, type: 'system_audio_probe_result' });
   });
 
   it('notifies subscribed listeners until they unsubscribe', () => {

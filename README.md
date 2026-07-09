@@ -9,7 +9,7 @@ Transcription runs entirely on your device. No accounts or cloud required. A fas
 - **High-quality models, run locally.** Choose from Whisper, Cohere Transcribe, or Moonshine — on CPU or GPU. Cohere Transcribe currently tops the [Open ASR Leaderboard](https://huggingface.co/spaces/hf-audio/open_asr_leaderboard).
 - **Live dictation.** Moonshine streaming models show provisional words within about a second and revise them in place until each utterance finalizes.
 - **Speaker labels.** Optional on-device diarization tags who's talking — for interviews, meetings, and calls. Nothing is stored; voiceprints live in memory for the session only.
-- **System audio.** Transcribe your computer's output — meetings, calls, videos — not just your mic. Available on Windows and Linux.
+- **System audio.** Transcribe your computer's output — meetings, calls, videos — not just your mic. Available on Windows, Linux, and macOS 14.2+.
 - **Timestamps.** Optionally stamp phrases with elapsed or wall-clock time — handy for meetings and interviews.
 - **LLM presets.** Clean up, summarize, pull out action items, or reshape a transcript with built-in or custom presets, run through a local model (Ollama) or OpenRouter.
 - **Auto routing.** Keep cleanup fully local, or have only oversized transcripts route automatically to OpenRouter for a bigger model and larger context window.

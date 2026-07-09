@@ -8,18 +8,17 @@
 //!
 //! Capture is inherently per-OS. Windows uses WASAPI loopback of the default
 //! render endpoint; Linux records the monitor of the default PulseAudio/PipeWire
-//! sink (`@DEFAULT_MONITOR@`). Both are zero user setup. macOS and other
-//! platforms have no native backend yet: [`SystemAudioController`] is a stub
-//! whose [`start`](SystemAudioController::start) returns
+//! sink (`@DEFAULT_MONITOR@`); macOS 14.2+ uses CoreAudio process taps attached
+//! to a private aggregate device. Older macOS and other platforms return
 //! [`SystemAudioError::Unsupported`], and users route output through a virtual
 //! audio device and pick it in the normal microphone list instead.
 //!
-//! The real controller and [`CaptureHandle`] therefore compile on Windows and
-//! Linux; elsewhere only the stub and the shared error type compile. (The
-//! resampler is Windows-only — the Linux backend asks PulseAudio for 16 kHz
-//! mono directly, so no client-side resampling is needed.)
+//! The real controller and [`CaptureHandle`] therefore compile on Windows,
+//! Linux, and macOS. Elsewhere only the stub and the shared error type compile.
+//! The resampler is shared by Windows and macOS; Linux asks PulseAudio for
+//! 16 kHz mono directly, so no client-side resampling is needed.
 
-#[cfg(any(windows, test))]
+#[cfg(any(windows, target_os = "macos", test))]
 mod resample;
 
 #[cfg(windows)]
@@ -28,8 +27,13 @@ mod windows;
 #[cfg(target_os = "linux")]
 mod linux;
 
+#[cfg(any(target_os = "macos", test))]
+mod macos;
+
 #[cfg(target_os = "linux")]
 use self::linux as backend;
+#[cfg(target_os = "macos")]
+use self::macos as backend;
 #[cfg(windows)]
 use self::windows as backend;
 
@@ -53,6 +57,8 @@ pub trait SystemAudioCapture: Send {
 pub enum SystemAudioError {
     /// This platform has no native loopback backend yet.
     Unsupported,
+    /// macOS has not granted the host app system-audio recording permission.
+    PermissionDenied,
     /// The OS audio backend failed to open or initialize the loopback stream.
     Capture(String),
 }
@@ -62,6 +68,7 @@ impl SystemAudioError {
     pub fn code(&self) -> &'static str {
         match self {
             Self::Unsupported => "system_audio_unsupported",
+            Self::PermissionDenied => "system_audio_permission_denied",
             Self::Capture(_) => "system_audio_capture_failed",
         }
     }
@@ -72,6 +79,10 @@ impl SystemAudioError {
             Self::Unsupported => "System-audio capture isn't available on this platform yet. \
                 Route this computer's output through a virtual audio device and pick it as your \
                 microphone — see the System audio guide."
+                .to_string(),
+            Self::PermissionDenied => "System-audio recording permission is off for Obsidian. \
+                Open System Settings → Privacy & Security → Screen & System Audio Recording, \
+                enable Obsidian, and try again."
                 .to_string(),
             Self::Capture(details) => format!("Could not start system-audio capture: {details}"),
         }
@@ -88,13 +99,13 @@ impl std::error::Error for SystemAudioError {}
 
 /// A running capture thread for one session. Dropping or stopping signals the
 /// thread to exit and joins it.
-#[cfg(any(windows, target_os = "linux"))]
+#[cfg(any(windows, target_os = "linux", target_os = "macos"))]
 pub(crate) struct CaptureHandle {
     stop: Arc<std::sync::atomic::AtomicBool>,
     join: Option<std::thread::JoinHandle<()>>,
 }
 
-#[cfg(any(windows, target_os = "linux"))]
+#[cfg(any(windows, target_os = "linux", target_os = "macos"))]
 impl CaptureHandle {
     /// Build a handle from a shared stop flag and the thread it controls. Used
     /// by platform backends after they spawn their capture loop.
@@ -119,13 +130,13 @@ impl CaptureHandle {
 /// Owns the active system-audio capture threads, keyed by session id, and the
 /// sink frames are delivered to. Captures stop when their session ends and when
 /// the controller is dropped (sidecar shutdown).
-#[cfg(any(windows, target_os = "linux"))]
+#[cfg(any(windows, target_os = "linux", target_os = "macos"))]
 pub struct SystemAudioController {
     sink: AudioFrameSink,
     captures: std::collections::HashMap<String, CaptureHandle>,
 }
 
-#[cfg(any(windows, target_os = "linux"))]
+#[cfg(any(windows, target_os = "linux", target_os = "macos"))]
 impl SystemAudioController {
     /// A controller with a no-op sink. The host installs the real sink with
     /// [`set_sink`](Self::set_sink) once its ingestion channel exists.
@@ -161,7 +172,7 @@ impl SystemAudioController {
     }
 }
 
-#[cfg(any(windows, target_os = "linux"))]
+#[cfg(any(windows, target_os = "linux", target_os = "macos"))]
 impl Drop for SystemAudioController {
     fn drop(&mut self) {
         for (_session_id, handle) in self.captures.drain() {
@@ -174,10 +185,10 @@ impl Drop for SystemAudioController {
 /// matches the native controller so the host wires it identically; `start`
 /// reports the feature unavailable so callers fall back to the documented
 /// virtual-device method.
-#[cfg(not(any(windows, target_os = "linux")))]
+#[cfg(not(any(windows, target_os = "linux", target_os = "macos")))]
 pub struct SystemAudioController;
 
-#[cfg(not(any(windows, target_os = "linux")))]
+#[cfg(not(any(windows, target_os = "linux", target_os = "macos")))]
 impl SystemAudioController {
     pub fn new() -> Self {
         Self
@@ -212,7 +223,23 @@ impl Default for SystemAudioController {
     }
 }
 
-#[cfg(all(test, not(any(windows, target_os = "linux"))))]
+#[cfg(target_os = "macos")]
+pub fn probe_system_audio() -> Result<(), SystemAudioError> {
+    let handle = backend::spawn_capture_with_timeout(
+        uuid::Uuid::new_v4().to_string(),
+        Arc::new(|_frame| {}),
+        std::time::Duration::from_secs(75),
+    )?;
+    handle.stop_and_join();
+    Ok(())
+}
+
+#[cfg(not(target_os = "macos"))]
+pub fn probe_system_audio() -> Result<(), SystemAudioError> {
+    Err(SystemAudioError::Unsupported)
+}
+
+#[cfg(all(test, not(any(windows, target_os = "linux", target_os = "macos"))))]
 mod tests {
     use super::{SystemAudioController, SystemAudioError};
 

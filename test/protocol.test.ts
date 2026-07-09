@@ -8,6 +8,7 @@ import {
   createCancelSessionCommand,
   createContextResponseCommand,
   createHealthCommand,
+  createProbeSystemAudioCommand,
   createStartSessionCommand,
   createStopSessionCommand,
   decodeAudioFrameEnvelope,
@@ -259,6 +260,12 @@ describe('command serialization', () => {
     });
   });
 
+  it('serializes the system-audio probe command without a session payload', () => {
+    expect(readPayload(encodeJsonFrame(createProbeSystemAudioCommand()))).toEqual({
+      type: 'probe_system_audio',
+    });
+  });
+
   it('serializes context_response carrying a context window or explicit null', () => {
     const window: ContextWindow = {
       budgetChars: 512,
@@ -276,6 +283,31 @@ describe('command serialization', () => {
       context: null,
       correlationId: 'corr-1',
       type: 'context_response',
+    });
+  });
+});
+
+// Events ---------------------------------------------------------------------
+
+describe('event parsing', () => {
+  it('accepts successful and failed system-audio probe results', () => {
+    expect(
+      parseEventFrame(JSON.stringify({ ok: true, type: 'system_audio_probe_result' })),
+    ).toEqual({ ok: true, type: 'system_audio_probe_result' });
+    expect(
+      parseEventFrame(
+        JSON.stringify({
+          code: 'system_audio_permission_denied',
+          message: 'grant permission',
+          ok: false,
+          type: 'system_audio_probe_result',
+        }),
+      ),
+    ).toEqual({
+      code: 'system_audio_permission_denied',
+      message: 'grant permission',
+      ok: false,
+      type: 'system_audio_probe_result',
     });
   });
 });
