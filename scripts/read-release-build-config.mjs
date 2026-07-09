@@ -7,6 +7,7 @@ const CONFIG_OUTPUT_NAMES = {
   cudaToolkitVersion: 'cuda-toolkit-version',
   cudaArchitectures: 'cuda-architectures',
   windowsCudaSubpackagesManifest: 'windows-cuda-subpackages-manifest',
+  windowsCudaRustCacheEnvVars: 'windows-cuda-rust-cache-env-vars',
 };
 const OUTPUT_NAMES = {
   nodeVersion: 'node-version',

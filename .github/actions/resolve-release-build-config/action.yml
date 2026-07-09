@@ -23,6 +23,9 @@ outputs:
   windows-cuda-subpackages-manifest:
     description: Repository-relative Windows CUDA subpackage manifest.
     value: ${{ steps.config.outputs.windows-cuda-subpackages-manifest }}
+  windows-cuda-rust-cache-env-vars:
+    description: Extra rust-cache environment prefixes for Windows CUDA compatibility.
+    value: ${{ steps.config.outputs.windows-cuda-rust-cache-env-vars }}
 
 runs:
   using: composite

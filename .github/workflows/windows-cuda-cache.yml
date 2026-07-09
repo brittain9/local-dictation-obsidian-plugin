@@ -78,6 +78,7 @@ jobs:
           cuda-toolkit-version: ${{ steps.build-config.outputs.cuda-toolkit-version }}
           cuda-architectures: ${{ steps.build-config.outputs.cuda-architectures }}
           windows-cuda-subpackages-manifest: ${{ steps.build-config.outputs.windows-cuda-subpackages-manifest }}
+          windows-cuda-rust-cache-env-vars: ${{ steps.build-config.outputs.windows-cuda-rust-cache-env-vars }}
 
       - name: Upload cargo timings
         if: always()

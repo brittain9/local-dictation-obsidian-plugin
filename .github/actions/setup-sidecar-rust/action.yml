@@ -22,7 +22,7 @@ inputs:
     # calling release path. The version passed to Jimver/cuda-toolkit is not
     # otherwise visible to rust-cache, so a toolkit bump would restore stale
     # NVCC objects from target-cuda.
-    default: 'CARGO CC CFLAGS CXX CMAKE RUST GGML WHISPER ORT CUDA'
+    default: 'GGML WHISPER ORT CUDA_TOOLKIT_VERSION'
   cache-on-failure:
     description: Value passed to Swatinem/rust-cache 'cache-on-failure' input.
     required: false

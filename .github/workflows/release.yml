@@ -30,6 +30,7 @@ jobs:
       cuda_toolkit_version: ${{ steps.build-config.outputs.cuda-toolkit-version }}
       cuda_architectures: ${{ steps.build-config.outputs.cuda-architectures }}
       windows_cuda_subpackages_manifest: ${{ steps.build-config.outputs.windows-cuda-subpackages-manifest }}
+      windows_cuda_rust_cache_env_vars: ${{ steps.build-config.outputs.windows-cuda-rust-cache-env-vars }}
 
     steps:
       - name: Checkout
@@ -331,6 +332,7 @@ jobs:
           cuda-toolkit-version: ${{ needs.metadata.outputs.cuda_toolkit_version }}
           cuda-architectures: ${{ needs.metadata.outputs.cuda_architectures }}
           windows-cuda-subpackages-manifest: ${{ needs.metadata.outputs.windows_cuda_subpackages_manifest }}
+          windows-cuda-rust-cache-env-vars: ${{ needs.metadata.outputs.windows_cuda_rust_cache_env_vars }}
 
       - name: Build sidecar
         if: '!matrix.cuda'
