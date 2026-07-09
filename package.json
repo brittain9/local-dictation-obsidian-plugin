@@ -26,6 +26,7 @@
     "test": "vitest run",
     "test:system-audio": "cargo test --manifest-path native/Cargo.toml --test system_audio_smoke -- --ignored --nocapture",
     "install:dev": "node scripts/install-dev-plugin.mjs",
+    "install:dev:cuda": "node scripts/install-dev-cuda.mjs",
     "verify:build-output": "node scripts/verify-build-output.mjs",
     "verify:build-output:release": "node scripts/verify-build-output.mjs --release",
     "check:frontend": "npm run typecheck && npm run lint && npm run lint:obsidian && npm run test && npm run build:frontend",

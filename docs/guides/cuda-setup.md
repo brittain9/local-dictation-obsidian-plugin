@@ -51,7 +51,9 @@ Don't set `LD_LIBRARY_PATH` as a global Flatpak override — it makes Electron l
 
 ## Building from source
 
-Needs CUDA Toolkit `13.2` with `nvcc` on `PATH` (and cuDNN 9.x for Cohere):
+Needs CUDA Toolkit `13.2` with `nvcc` on `PATH` (and cuDNN 9.x for Cohere).
+CUDA 13.2 supports GCC host compilers through GCC 15; on Linux the build script
+prefers `/usr/bin/gcc-15` and `/usr/bin/g++-15` when they are installed.
 
 ```sh
 bash scripts/build-cuda.sh            # Linux        (add --release for release)
@@ -63,7 +65,10 @@ Artifacts:
 - CPU: `native/target/{debug|release}/local-dictation-sidecar[.exe]`
 - CUDA: `native/target-cuda/{debug|release}/local-dictation-sidecar[.exe]`
 
-The CUDA build also stages the ONNX Runtime provider libraries next to the binary — keep them together. A repo checkout auto-detects the CUDA debug build at `native/target-cuda/debug`, so no path override is needed when testing from source.
+The Linux CUDA build also stages the ONNX Runtime provider libraries and CUDA
+runtime libraries next to the binary — keep them together. A repo checkout
+auto-detects the CUDA debug build at `native/target-cuda/debug`, so no path
+override is needed when testing from source.
 
 ## Troubleshooting
 

@@ -45,11 +45,14 @@ This installs the built `main.js`, `manifest.json`, and `styles.css` into the va
 For Linux CUDA testing:
 
 ```sh
-npm run build:frontend
-npm run build:sidecar
-npm run build:sidecar:cuda
-npm run install:dev -- --vault ~/Documents/test-vault-stt --sidecars --enable
+npm run install:dev:cuda -- --vault ~/Documents/test-vault-stt
 ```
+
+This one-command flow builds the frontend, CPU sidecar, and CUDA sidecar,
+verifies the build output, prunes stale files from the vault's installed plugin
+directory, then installs and enables the plugin. It prints a step-by-step status
+log and an override report. Existing vault-local `data.json` is preserved by
+default; pass `--reset-data` to wipe it too.
 
 For macOS testing, `npm run build:sidecar` builds the Metal-capable sidecar automatically.
 
@@ -64,6 +67,7 @@ npm run build:sidecar:cuda            # Linux CUDA sidecar
 npm run build:sidecar:cuda:windows    # Windows CUDA sidecar
 npm run dev              # watch mode for plugin
 npm run install:dev -- --vault <vault> --sidecars --enable
+npm run install:dev:cuda -- --vault <vault> # build CPU+CUDA and force-install
 ```
 
 **Test and check:**
