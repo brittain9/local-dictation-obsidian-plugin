@@ -841,6 +841,55 @@ describe('DictationSessionController', () => {
     });
   });
 
+  it.each([
+    {
+      callback: 'onLockedNoteClosed' as const,
+      expectedKey: 'dictation-target-closed',
+      expectedMessage:
+        'Dictation stopped because its target note was closed or replaced. Start dictation again to continue.',
+      reason: 'closed',
+    },
+    {
+      callback: 'onLockedNoteDeleted' as const,
+      expectedKey: 'dictation-target-deleted',
+      expectedMessage:
+        'Dictation stopped because its target note was deleted. Restore or recreate the note, then start dictation again.',
+      reason: 'deleted',
+    },
+  ])('reports one actionable explanation when the target is $reason', async (scenario) => {
+    const captureStream = new FakeCaptureStream();
+    const show = vi.fn();
+    const sidecarConnection = new FakeSidecarConnection();
+    let callbacks: CreateSessionOptions['callbacks'] | undefined;
+    const controller = createController({
+      captureStream,
+      createSession: (_session, options) => {
+        callbacks = options.callbacks;
+      },
+      feedback: { show },
+      sidecarConnection,
+    });
+
+    await controller.startDictation();
+    const sessionId = sidecarConnection.startSession.mock.calls[0]?.[0].sessionId ?? '';
+    const targetLossCallback = callbacks?.[scenario.callback];
+
+    targetLossCallback?.();
+    targetLossCallback?.();
+
+    await vi.waitFor(() => {
+      expect(sidecarConnection.cancelSession).toHaveBeenCalledOnce();
+    });
+    expect(captureStream.stop).toHaveBeenCalledOnce();
+    expect(show).toHaveBeenCalledOnce();
+    expect(show).toHaveBeenCalledWith({
+      cause: { reason: scenario.reason, sessionId },
+      intent: 'warning',
+      key: scenario.expectedKey,
+      message: scenario.expectedMessage,
+    });
+  });
+
   it('reports a pending fatal desynchronization after the sidecar has already stopped', async () => {
     const show = vi.fn();
     const sidecarConnection = new FakeSidecarConnection();

@@ -7,18 +7,17 @@ describe('TemporaryLeafPinLeaseManager', () => {
   it('temporarily pins an unpinned leaf and restores it after the target is no longer needed', () => {
     const leaf = new FakeLeaf(false);
     const manager = new TemporaryLeafPinLeaseManager();
-    let targetLive = true;
 
-    const lease = manager.acquire(leaf, () => targetLive);
+    const lease = manager.acquire(leaf, () => true);
 
     expect(leaf.pinned).toBe(true);
     expect(leaf.setPinned).toHaveBeenCalledTimes(1);
     expect(leaf.listenerCount).toBe(1);
 
     lease.release();
-    targetLive = false;
 
     expect(leaf.setPinned).toHaveBeenNthCalledWith(2, false);
+    expect(leaf.listenerCountsAtMutation).toEqual([1, 0]);
     expect(leaf.listenerCount).toBe(0);
   });
 
@@ -94,8 +93,10 @@ describe('TemporaryLeafPinLeaseManager', () => {
 class FakeLeaf implements PinnableLeaf {
   private readonly listeners = new Map<EventRef, (pinned: boolean) => void>();
   private nextRef = 0;
+  public readonly listenerCountsAtMutation: number[] = [];
   public pinned: boolean;
   readonly setPinned = vi.fn((pinned: boolean) => {
+    this.listenerCountsAtMutation.push(this.listeners.size);
     this.pinned = pinned;
     this.emitPinnedChange(pinned);
   });

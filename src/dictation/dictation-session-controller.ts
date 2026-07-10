@@ -107,6 +107,7 @@ interface ManagedSession {
   phase: SessionPhase;
   session: ControllerSession;
   snapshot: ActiveSessionSnapshot;
+  targetLossReported: boolean;
 }
 
 interface DictationSessionControllerDependencies {
@@ -173,6 +174,16 @@ const FEEDBACK_FAILURES = {
   stopDictation: {
     key: 'dictation-stop-failed',
     message: 'Could not stop dictation.',
+  },
+  targetNoteClosed: {
+    key: 'dictation-target-closed',
+    message:
+      'Dictation stopped because its target note was closed or replaced. Start dictation again to continue.',
+  },
+  targetNoteDeleted: {
+    key: 'dictation-target-deleted',
+    message:
+      'Dictation stopped because its target note was deleted. Restore or recreate the note, then start dictation again.',
   },
   transcriptWrite: {
     key: 'transcript-write-failed',
@@ -337,6 +348,7 @@ export class DictationSessionController {
       phase: 'starting',
       session,
       snapshot,
+      targetLossReported: false,
     };
     this.sessions.set(sessionId, entry);
     this.activeSessionId = sessionId;
@@ -1314,11 +1326,22 @@ export class DictationSessionController {
   }
 
   private cancelOnLockedNoteEvent(sessionId: string, reason: 'closed' | 'deleted'): void {
-    if (!this.sessions.has(sessionId)) {
+    const entry = this.sessions.get(sessionId);
+    if (entry === undefined || entry.targetLossReported) {
       return;
     }
 
-    this.dependencies.logger?.warn('session', `locked note ${reason} for session ${sessionId}`);
+    entry.targetLossReported = true;
+    const failure =
+      reason === 'closed'
+        ? FEEDBACK_FAILURES.targetNoteClosed
+        : FEEDBACK_FAILURES.targetNoteDeleted;
+    this.dependencies.feedback.show({
+      cause: { reason, sessionId },
+      intent: 'warning',
+      key: failure.key,
+      message: failure.message,
+    });
     void this.cancelSession(sessionId);
   }
 
