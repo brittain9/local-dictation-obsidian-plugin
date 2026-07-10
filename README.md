@@ -69,7 +69,7 @@ For CUDA requirements and Flatpak-specific setup, see the [CUDA setup guide](doc
 ## Privacy
 
 - **Transcription stays local.** Audio is processed by the native sidecar on your computer and is not uploaded for transcription.
-- **Downloads are explicit.** The sidecar comes from GitHub Releases; model files come from the source URLs shown in the model catalog. Downloaded engine and model files live outside your vault.
+- **Downloads are explicit.** The sidecar comes from GitHub Releases and is installed with the plugin. Model files come from the source URLs shown in the catalog and use a shared local data directory outside your vault by default.
 - **Remote cleanup uses text, not audio.** If you configure and select OpenRouter, it receives the transcript plus any note context you choose to include. Ollama requests stay on your computer through its loopback interface.
 - **Remote processing is optional.** You can disable OpenRouter routing or all LLM features from Settings. If you use OpenRouter, configure its provider and zero-data-retention controls to match your requirements.
 - **Speaker identity is session-only.** Diarization embeddings are held in memory for the active session and are not persisted as voice profiles.

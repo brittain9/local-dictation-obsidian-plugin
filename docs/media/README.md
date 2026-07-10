@@ -5,8 +5,8 @@ The README images are captures of the real plugin in a disposable Obsidian vault
 ## Capture environment
 
 - Obsidian 1.12.7 with an isolated Electron user-data directory.
-- Local Dictation 2026.7.3, enabled as the only community plugin.
-- The published 2026.7.3 Linux CPU sidecar and locally installed catalog models.
+- The published Local Dictation 2026.7.3 plugin bundle and Linux CPU sidecar, enabled as the only community plugin.
+- Locally installed catalog models, with Moonshine Medium selected for the live capture.
 - A disposable vault containing only `Live dictation demo.md` and `Meeting notes.md`.
 - Chromium DevTools Protocol `Page.captureScreenshot`, which captures the Obsidian app surface rather than the desktop.
 
