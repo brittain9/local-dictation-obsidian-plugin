@@ -492,6 +492,18 @@ describe('Session', () => {
     );
   });
 
+  it('continues without pinning either leaf when exact editor resolution is ambiguous', () => {
+    const { duplicateLeaf, session, surface, targetLeaf } = createSessionHarness({
+      ambiguousTarget: true,
+    });
+
+    session.acceptTranscript(transcript({ text: 'still dictated', utteranceId: 'u1' }));
+
+    expect(targetLeaf.setPinned).not.toHaveBeenCalled();
+    expect(duplicateLeaf?.setPinned).not.toHaveBeenCalled();
+    expect(surface.appendCalls).toHaveLength(1);
+  });
+
   it('requests cancel on locked-note delete and never writes later transcripts', () => {
     const { callbacks, lockedFile, session, surface, vault } = createSessionHarness();
 
@@ -839,6 +851,7 @@ describe('Session', () => {
 
 function createSessionHarness(
   options: {
+    ambiguousTarget?: boolean;
     duplicateLockedLeaf?: boolean;
     leafPinManager?: TemporaryLeafPinLeaseManager;
     logger?: PluginLogger;
@@ -867,9 +880,13 @@ function createSessionHarness(
   if (targetLeaf === undefined) {
     throw new Error('expected target leaf fixture');
   }
-  const duplicateLeaf = options.duplicateLockedLeaf
-    ? new FakeMarkdownLeaf(lockedFile, {} as EditorView)
-    : null;
+  const duplicateLeaf =
+    options.duplicateLockedLeaf || options.ambiguousTarget
+      ? new FakeMarkdownLeaf(
+          lockedFile,
+          options.ambiguousTarget ? targetLeaf.view.editor.cm : ({} as EditorView),
+        )
+      : null;
   if (duplicateLeaf !== null) {
     workspace.leaves.unshift(duplicateLeaf);
   }
