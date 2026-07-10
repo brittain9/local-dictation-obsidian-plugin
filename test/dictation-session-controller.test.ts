@@ -655,6 +655,60 @@ describe('DictationSessionController', () => {
     });
   });
 
+  it('drops a queued raw final after an acknowledged cancellation while earlier cleanup ignores abort', async () => {
+    const sidecarConnection = new FakeSidecarConnection();
+    const sessions: FakeSession[] = [];
+    let cleanupSignal: AbortSignal | undefined;
+    let resolveCleanup: ((value: LlmRouterCleanupResult) => void) | undefined;
+    const cleanup = vi.fn(
+      ({ abortSignal }: { abortSignal?: AbortSignal }) =>
+        new Promise<LlmRouterCleanupResult>((resolve) => {
+          cleanupSignal = abortSignal;
+          resolveCleanup = resolve;
+        }),
+    );
+    let onLockedNoteClosed: (() => void) | undefined;
+    const controller = createController({
+      createSession: (session, options) => {
+        sessions.push(session);
+        onLockedNoteClosed = options.callbacks.onLockedNoteClosed;
+      },
+      getSettings: () =>
+        createSettings({
+          llmFeaturesEnabled: true,
+          llmPostprocessMode: 'per_utterance',
+          llmPostprocessSkipMinWords: 2,
+          selectedModel: createExternalModelSelection(),
+        }),
+      llmRouter: createFakeLlmRouter({ cleanup }),
+      sidecarConnection,
+    });
+
+    await controller.startDictation();
+    const sessionId = sidecarConnection.startSession.mock.calls[0]?.[0].sessionId ?? '';
+
+    sidecarConnection.emit(transcriptReady(sessionId, 'cleanup blocks'));
+    sidecarConnection.emit(transcriptReady(sessionId, 'raw'));
+    await vi.waitFor(() => {
+      expect(cleanup).toHaveBeenCalledOnce();
+    });
+
+    onLockedNoteClosed?.();
+    await vi.waitFor(() => {
+      expect(sidecarConnection.cancelSession).toHaveBeenCalledWith(sessionId);
+    });
+    expect(cleanupSignal?.aborted).toBe(true);
+    expect(sessions[0]?.acceptTranscript).not.toHaveBeenCalled();
+
+    // This provider deliberately ignores abort. Its completion releases the
+    // raw final queued behind it after session_stopped has already arrived.
+    resolveCleanup?.({ model: 'm', providerId: 'ollama', text: 'ignored cleanup' });
+    await vi.waitFor(() => {
+      expect(sessions[0]?.dispose).toHaveBeenCalledOnce();
+    });
+    expect(sessions[0]?.acceptTranscript).not.toHaveBeenCalled();
+  });
+
   it('does not accept queued utterances after cancellation, even when capture teardown rejects', async () => {
     const captureStream = new FakeCaptureStream();
     const logger = new FakeLogger();
