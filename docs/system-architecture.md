@@ -421,6 +421,21 @@ The ribbon mic reflects the capture state: `idle` (click to start), `starting`,
 happens in the background without blocking capture, so there is no separate
 "transcribing" ribbon state.
 
+### Editor Target Ownership
+
+A dictation session resolves the exact CodeMirror editor that owns its target
+and, when possible, temporarily pins that Markdown leaf. The lease lasts until
+accepted transcripts and optional batch cleanup finish, so ordinary navigation
+opens elsewhere instead of displacing the note receiving text. User pin changes
+always take precedence over plugin ownership.
+
+If the exact target leaf closes or is replaced, the controller cancels the
+session and discards later transcript events. If an external edit makes a
+tracked insertion position unmappable, the note surface returns a typed terminal
+outcome and clears plugin decorations rather than clamping or guessing a new
+position. Both paths preserve the note and produce one actionable recovery
+message.
+
 ### Settings
 
 A representative slice of user-facing settings (full list and defaults in
