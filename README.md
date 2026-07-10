@@ -48,7 +48,7 @@ All transcription models in the current catalog run locally and support English.
 
 1. [Install **Local Dictation** from Community Plugins](https://obsidian.md/plugins?id=local-dictation).
 2. Follow the setup wizard to download the native speech-to-text engine and a starter model.
-3. Click the microphone in the ribbon, or bind a hotkey to **Local Dictation: Toggle dictation**, and start talking. Text lands at your cursor.
+3. On the final step, select **Try dictation now** to begin in the open Markdown note. Or select **Done** and start later from the ribbon microphone or **Local Dictation: Toggle dictation** hotkey. Text lands at your cursor.
 
 The engine and models need a one-time download. Transcription then works without an ongoing network connection.
 
