@@ -38,6 +38,39 @@ export default defineConfig([
       // mid-sentence words ("context Windows", "0 Is deterministic"). Our UI text
       // is already sentence case. The community-review bot does not run this rule.
       'obsidianmd/ui/sentence-case': 'off',
+      'no-restricted-imports': [
+        'error',
+        {
+          paths: [
+            {
+              importNames: ['Notice'],
+              message:
+                'Use the typed user-feedback boundary; only the Obsidian feedback presenter may import Notice.',
+              name: 'obsidian',
+            },
+          ],
+        },
+      ],
+      'no-restricted-syntax': [
+        'error',
+        {
+          message:
+            'Construct notices through the typed user-feedback boundary, not directly with new Notice().',
+          selector: "NewExpression[callee.name='Notice']",
+        },
+        {
+          message:
+            'Construct notices through the typed user-feedback boundary, not through an Obsidian namespace import.',
+          selector: "NewExpression[callee.property.name='Notice']",
+        },
+      ],
+    },
+  },
+  {
+    files: ['src/shared/obsidian-feedback-presenter.ts'],
+    rules: {
+      'no-restricted-imports': 'off',
+      'no-restricted-syntax': 'off',
     },
   },
 ]);

@@ -24,6 +24,7 @@ import type { PluginSettings, SmartParagraphPauseSettings } from '../settings/pl
 import { formatErrorMessage } from '../shared/format-utils';
 import type { PluginLogger } from '../shared/plugin-logger';
 import { truncateLeadingText } from '../shared/text-truncation';
+import type { UserFeedback } from '../shared/user-feedback';
 import type {
   ContextRequestEvent,
   ContextWindow,
@@ -122,9 +123,9 @@ interface DictationSessionControllerDependencies {
     sessionId: string;
   }) => ControllerSession;
   createLlmRouter: (settings: PluginSettings) => LlmRouter;
+  feedback: Pick<UserFeedback, 'show'>;
   getSettings: () => PluginSettings;
   logger?: PluginLogger;
-  notice: (message: string) => void;
   onLlmCleanupFailure?: (failure: LlmCleanupFailure) => void;
   onLlmCleanupSuccess?: () => void;
   onModelMissing?: () => void;
@@ -146,10 +147,39 @@ interface DictationSessionControllerDependencies {
 
 const ANCHOR_VISIBLE_DELAY_MS = 2500;
 const MAX_CONTROLLER_SESSIONS = 5;
-const SURFACE_DESYNCHRONIZED_NOTICE =
-  'Dictation stopped because the note changed in a way Local Dictation could not safely track. Start dictation again to continue.';
-const TRANSCRIPT_WRITE_FAILURE_NOTICE =
-  'Dictation stopped because Local Dictation could not safely write to the note. Start dictation again to continue.';
+interface FeedbackFailure {
+  key: string;
+  message: string;
+}
+
+const FEEDBACK_FAILURES = {
+  recordTranscript: {
+    key: 'transcript-record-failed',
+    message: 'Could not record the transcript.',
+  },
+  sidecar: {
+    key: 'sidecar-session-error',
+    message: 'The speech engine reported an error.',
+  },
+  surfaceDesynchronized: {
+    key: 'dictation-surface-desynchronized',
+    message:
+      'Dictation stopped because the note changed in a way Local Dictation could not safely track. Start dictation again to continue.',
+  },
+  startDictation: {
+    key: 'dictation-start-failed',
+    message: 'Could not start dictation.',
+  },
+  stopDictation: {
+    key: 'dictation-stop-failed',
+    message: 'Could not stop dictation.',
+  },
+  transcriptWrite: {
+    key: 'transcript-write-failed',
+    message:
+      'Dictation stopped because Local Dictation could not safely write to the note. Start dictation again to continue.',
+  },
+} as const satisfies Record<string, FeedbackFailure>;
 
 export class DictationSessionController {
   private activeSessionId: string | null = null;
@@ -177,7 +207,11 @@ export class DictationSessionController {
     const sessionId = this.activeSessionId ?? this.latestSessionId();
 
     if (sessionId === null) {
-      this.dependencies.notice('Dictation is not currently active.');
+      this.dependencies.feedback.show({
+        intent: 'information',
+        key: 'dictation-not-active',
+        message: 'Dictation is not currently active.',
+      });
       return;
     }
 
@@ -238,7 +272,7 @@ export class DictationSessionController {
     try {
       await this.assertMicrophoneInputAvailable();
     } catch (error) {
-      this.handleError('Failed to start the dictation session', error);
+      this.handleError(FEEDBACK_FAILURES.startDictation, error);
       return;
     }
 
@@ -251,7 +285,7 @@ export class DictationSessionController {
         this.dependencies.onSidecarMissing?.();
         return;
       }
-      this.handleError('Failed to start the dictation session', error);
+      this.handleError(FEEDBACK_FAILURES.startDictation, error);
       return;
     }
 
@@ -275,9 +309,8 @@ export class DictationSessionController {
           onSurfaceDesynchronized: (failure) => {
             this.cancelOnFatalTranscriptFailure(
               sessionId,
-              'dictation note surface desynchronized',
+              FEEDBACK_FAILURES.surfaceDesynchronized,
               failure,
-              SURFACE_DESYNCHRONIZED_NOTICE,
             );
           },
         },
@@ -290,7 +323,7 @@ export class DictationSessionController {
         sessionId,
       });
     } catch (error) {
-      this.handleError('Failed to start the dictation session', error);
+      this.handleError(FEEDBACK_FAILURES.startDictation, error);
       return;
     }
 
@@ -374,7 +407,11 @@ export class DictationSessionController {
     const sessionId = this.activeSessionId;
 
     if (sessionId === null) {
-      this.dependencies.notice('Dictation is not currently active.');
+      this.dependencies.feedback.show({
+        intent: 'information',
+        key: 'dictation-not-active',
+        message: 'Dictation is not currently active.',
+      });
       return;
     }
 
@@ -392,7 +429,7 @@ export class DictationSessionController {
       this.dependencies.sidecarConnection.requestStopSession(sessionId);
     } catch (error) {
       this.disposeLocalSession(sessionId);
-      this.handleError('Failed to stop the dictation session', error);
+      this.handleError(FEEDBACK_FAILURES.stopDictation, error);
     }
   }
 
@@ -417,7 +454,7 @@ export class DictationSessionController {
     } else {
       await this.cancelSession(sessionId);
     }
-    this.handleError('Failed to start the dictation session', error);
+    this.handleError(FEEDBACK_FAILURES.startDictation, error);
   }
 
   private async assertMicrophoneInputAvailable(): Promise<void> {
@@ -715,9 +752,8 @@ export class DictationSessionController {
       // exactly like a typed surface failure instead of retrying every revision.
       this.cancelOnFatalTranscriptFailure(
         event.sessionId,
-        'failed to process transcript',
+        FEEDBACK_FAILURES.transcriptWrite,
         error,
-        TRANSCRIPT_WRITE_FAILURE_NOTICE,
       );
     } finally {
       entry.pendingTranscriptWork.delete(work);
@@ -728,7 +764,7 @@ export class DictationSessionController {
     entry: ManagedSession,
     event: TranscriptReadyEvent,
   ): Promise<void> {
-    if (event.isFinal) {
+    if (event.isFinal && event.text.length > 0) {
       this.dependencies.logger?.debug(
         'session',
         `final transcript received (${event.text.length} chars, ${event.processingDurationMs}ms processing)`,
@@ -784,19 +820,14 @@ export class DictationSessionController {
     try {
       result = entry.session.acceptTranscript(revision);
     } catch (error) {
-      this.cancelOnFatalTranscriptFailure(
-        sessionId,
-        'failed to process transcript',
-        error,
-        TRANSCRIPT_WRITE_FAILURE_NOTICE,
-      );
+      this.cancelOnFatalTranscriptFailure(sessionId, FEEDBACK_FAILURES.transcriptWrite, error);
       return;
     }
     if (entry.fatalTranscriptFailureReported) {
       return;
     }
     if (result.kind === 'rejected') {
-      this.handleError('Failed to record the local transcript', new Error(result.reason));
+      this.handleError(FEEDBACK_FAILURES.recordTranscript, new Error(result.reason));
       await this.cancelSession(sessionId);
     }
   }
@@ -1147,11 +1178,10 @@ export class DictationSessionController {
       // Additive presets may legitimately find nothing to add (e.g. no action
       // items), but say so — a silently failing model would otherwise look
       // like success.
-      this.dependencies.notice('LLM transform returned nothing to add.');
-      this.dependencies.logger?.debug(
-        'llm',
-        'additive batch returned empty output; nothing inserted',
-      );
+      this.dependencies.feedback.show({
+        intent: 'information',
+        message: 'LLM transform returned nothing to add.',
+      });
       return;
     }
 
@@ -1203,7 +1233,7 @@ export class DictationSessionController {
     const detail = formatSystemAudioErrorMessage(rawDetail, event.code);
 
     if (event.sessionId === undefined) {
-      this.handleError('Local Dictation sidecar error', detail);
+      this.handleError(FEEDBACK_FAILURES.sidecar, detail);
       return;
     }
 
@@ -1214,7 +1244,7 @@ export class DictationSessionController {
 
     if (event.sessionId === this.activeSessionId) {
       this.applyUiState('error');
-      this.dependencies.notice(`Local Dictation: ${detail}`);
+      this.dependencies.feedback.show({ intent: 'error', message: detail });
     } else {
       this.dependencies.logger?.warn('session', detail);
     }
@@ -1243,7 +1273,11 @@ export class DictationSessionController {
 
     const detail = event.details ? `${event.message} (${event.details})` : event.message;
     if (sessionId === this.activeSessionId) {
-      this.dependencies.notice(`Local Dictation: ${detail}`);
+      this.dependencies.feedback.show({
+        intent: 'warning',
+        key: 'utterance-queue-overload',
+        message: detail,
+      });
     } else {
       this.dependencies.logger?.warn('session', detail);
     }
@@ -1267,16 +1301,14 @@ export class DictationSessionController {
         continue;
       }
       const droppedSegments = stage.payload?.droppedSegments;
-      if (Array.isArray(droppedSegments)) {
-        for (const segment of droppedSegments) {
-          this.dependencies.logger?.debug('session', 'hallucination segment dropped', segment);
-        }
-      }
       const editedSegments = stage.payload?.editedSegments;
-      if (Array.isArray(editedSegments)) {
-        for (const segment of editedSegments) {
-          this.dependencies.logger?.debug('session', 'hallucination segment edited', segment);
-        }
+      const dropped = Array.isArray(droppedSegments) ? droppedSegments.length : 0;
+      const edited = Array.isArray(editedSegments) ? editedSegments.length : 0;
+      if (dropped + edited > 0) {
+        this.dependencies.logger?.debug('session', 'hallucination filter adjusted segments', {
+          dropped,
+          edited,
+        });
       }
     }
   }
@@ -1292,9 +1324,8 @@ export class DictationSessionController {
 
   private cancelOnFatalTranscriptFailure(
     sessionId: string,
-    logMessage: string,
+    failure: FeedbackFailure,
     details: unknown,
-    noticeMessage: string,
   ): void {
     const entry = this.sessions.get(sessionId);
     if (entry === undefined || entry.fatalTranscriptFailureReported) {
@@ -1303,8 +1334,12 @@ export class DictationSessionController {
 
     entry.fatalTranscriptFailureReported = true;
     this.abortProviderCleanups(entry);
-    this.dependencies.logger?.error('session', logMessage, details);
-    this.dependencies.notice(noticeMessage);
+    this.dependencies.feedback.show({
+      cause: details,
+      intent: 'error',
+      key: failure.key,
+      message: failure.message,
+    });
 
     if (entry.phase === 'cancelling' || entry.phase === 'stopped') {
       return;
@@ -1316,7 +1351,7 @@ export class DictationSessionController {
     void this.cancelSession(sessionId);
   }
 
-  private handleError(message: string, error: unknown): void {
+  private handleError(failure: FeedbackFailure, error: unknown): void {
     this.applyUiState('error');
 
     // Microphone-capture failures get specific, actionable copy that stands on
@@ -1324,20 +1359,32 @@ export class DictationSessionController {
     // the instructions. The Settings mic picker shows the same copy for parity.
     const microphoneMessage = formatMicrophoneCaptureErrorMessage(error);
     if (microphoneMessage !== null) {
-      this.dependencies.logger?.warn('session', message, formatErrorMessage(error));
-      this.dependencies.notice(microphoneMessage);
+      this.dependencies.feedback.show({
+        cause: error,
+        intent: 'action-required',
+        key: 'microphone-permission',
+        message: microphoneMessage,
+      });
       return;
     }
 
     const systemAudioMessage = formatSystemAudioSidecarErrorMessage(error);
     if (systemAudioMessage !== null) {
-      this.dependencies.logger?.warn('session', message, formatErrorMessage(error));
-      this.dependencies.notice(systemAudioMessage);
+      this.dependencies.feedback.show({
+        cause: error,
+        intent: 'action-required',
+        key: 'system-audio-permission',
+        message: systemAudioMessage,
+      });
       return;
     }
 
-    this.dependencies.logger?.error('session', message, error);
-    this.dependencies.notice(`${message}: ${formatErrorMessage(error)}`);
+    this.dependencies.feedback.show({
+      cause: error,
+      intent: 'error',
+      key: failure.key,
+      message: failure.message,
+    });
   }
 }
 

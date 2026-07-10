@@ -1,11 +1,12 @@
 import type { App } from 'obsidian';
-import { Modal, Notice } from 'obsidian';
+import { Modal } from 'obsidian';
 
 import {
   createInstallProgressElement,
   updateInstallProgressElement,
 } from '../models/model-install-progress';
 import { formatErrorMessage } from '../shared/format-utils';
+import type { UserFeedback } from '../shared/user-feedback';
 import {
   type ActiveSidecarInstall,
   buildSidecarProgressState,
@@ -21,6 +22,7 @@ import type { InstallCopy } from './sidecar-install-copy';
 export interface SidecarInstallModalOptions {
   beforeReplace?: (() => Promise<void>) | undefined;
   copy: InstallCopy;
+  feedback: Pick<UserFeedback, 'show'>;
   manager: SidecarInstallManager;
   onInstalled: () => Promise<void>;
   onVariantInstalled?: ((variant: SidecarInstallVariant) => Promise<void>) | undefined;
@@ -30,6 +32,7 @@ export interface SidecarInstallModalOptions {
 }
 
 export class SidecarInstallModal extends Modal {
+  private inlineFailureVisible = false;
   private installProgressEl: HTMLDivElement | null = null;
   private unsubscribe: (() => void) | null = null;
   private wasActive = false;
@@ -42,6 +45,7 @@ export class SidecarInstallModal extends Modal {
   }
 
   override onOpen(): void {
+    this.inlineFailureVisible = true;
     this.modalEl.addClass('local-stt-sidecar-install');
     this.titleEl.setText(this.options.copy.title);
     this.unsubscribe = this.options.manager.subscribe(() => {
@@ -51,6 +55,7 @@ export class SidecarInstallModal extends Modal {
   }
 
   override onClose(): void {
+    this.inlineFailureVisible = false;
     this.unsubscribe?.();
     this.unsubscribe = null;
     this.contentEl.empty();
@@ -207,6 +212,11 @@ export class SidecarInstallModal extends Modal {
     try {
       this.options.manager.installBatch({
         beforeReplace: this.options.beforeReplace,
+        failureFeedback: {
+          isInlineVisible: () => this.inlineFailureVisible,
+          message:
+            'The speech engine install failed. Reopen setup or Settings to review the error and retry.',
+        },
         onInstalled: this.options.onInstalled,
         onVariantInstalled: this.options.onVariantInstalled,
         pluginDirectory: this.options.pluginDirectory,
@@ -215,7 +225,11 @@ export class SidecarInstallModal extends Modal {
         version: this.options.version,
       });
     } catch (error) {
-      new Notice(formatErrorMessage(error));
+      this.options.feedback.show({
+        cause: error,
+        intent: 'error',
+        message: 'Could not start the sidecar install. Close other setup windows and try again.',
+      });
     }
   }
 }

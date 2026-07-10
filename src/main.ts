@@ -1,6 +1,6 @@
 import { dirname, join } from 'node:path';
 import { IS_PRODUCTION_BUILD } from 'virtual:build-mode';
-import { FileSystemAdapter, Notice, Platform, Plugin } from 'obsidian';
+import { FileSystemAdapter, Platform, Plugin } from 'obsidian';
 
 import { AudioCaptureStream } from './audio/audio-capture-stream';
 import { SidecarAudioLevelMeter } from './audio/sidecar-audio-level-meter';
@@ -30,8 +30,9 @@ import {
   type SidecarInstallActionDeps,
 } from './settings/sidecar-settings-section';
 import { SetupWizardModal } from './setup/setup-wizard-modal';
-import { formatErrorMessage } from './shared/format-utils';
+import { createObsidianFeedbackPresenter } from './shared/obsidian-feedback-presenter';
 import { createPluginLogger, type PluginLogger } from './shared/plugin-logger';
+import { createUserFeedback, type UserFeedback } from './shared/user-feedback';
 import { assertSidecarExecutableIsFresh } from './sidecar/sidecar-build-state';
 import { SidecarConnection } from './sidecar/sidecar-connection';
 import { formatSidecarExecutableName } from './sidecar/sidecar-executable';
@@ -54,6 +55,10 @@ export default class LocalSttPlugin extends Plugin {
   private audioLevelMeter: SidecarAudioLevelMeter | null = null;
   private dictationController: DictationSessionController | null = null;
   private logger: PluginLogger = createPluginLogger(() => this.settings.developerMode);
+  private readonly feedback: UserFeedback = createUserFeedback({
+    logger: this.logger,
+    presenter: createObsidianFeedbackPresenter(),
+  });
   private llmCleanupFailure: LlmCleanupFailure | null = null;
   private readonly llmCleanupFailureSubscribers = new Set<() => void>();
   private modelInstallManager: ModelInstallManager | null = null;
@@ -99,7 +104,11 @@ export default class LocalSttPlugin extends Plugin {
     this.audioCaptureStream = new AudioCaptureStream({
       logger: this.logger,
       onDeviceFallback: () => {
-        new Notice('Saved microphone unavailable. Using the default input device.');
+        this.feedback.show({
+          intent: 'warning',
+          key: 'microphone-device-fallback',
+          message: 'Saved microphone unavailable. Using the default input device.',
+        });
       },
     });
     this.modelInstallManager = new ModelInstallManager({
@@ -111,22 +120,18 @@ export default class LocalSttPlugin extends Plugin {
       sidecarConnection: this.sidecarConnection,
     });
     this.sidecarInstallManager = new SidecarInstallManager({
+      feedback: this.feedback,
       logger: this.logger,
-      notice: (message) => {
-        new Notice(message);
-      },
     });
     this.registerView(
       LOCAL_DICTATION_VIEW_TYPE,
       (leaf) =>
         new LocalDictationView(leaf, {
+          feedback: this.feedback,
           getOpenRouterApiKey: () => this.getOpenRouterApiKey(),
           getSettings: () => this.settings,
           getLlmCleanupFailure: () => this.llmCleanupFailure,
           logger: this.logger,
-          notice: (message) => {
-            new Notice(message);
-          },
           saveSettings: async (nextSettings) => {
             await this.updateSettings(nextSettings);
           },
@@ -169,10 +174,8 @@ export default class LocalSttPlugin extends Plugin {
           () => this.getOpenRouterApiKey(),
         ),
       getSettings: () => this.settings,
+      feedback: this.feedback,
       logger: this.logger,
-      notice: (message) => {
-        new Notice(message);
-      },
       onLlmCleanupFailure: (failure) => {
         this.llmCleanupFailure = failure;
         this.notifyLlmCleanupFailureSubscribers();
@@ -200,6 +203,7 @@ export default class LocalSttPlugin extends Plugin {
 
     this.addSettingTab(
       new LocalSttSettingTab(this.app, this, {
+        feedback: this.feedback,
         getSettings: () => this.settings,
         isDictationBusy: () => this.dictationController?.isBusy() ?? false,
         logger: this.logger,
@@ -316,6 +320,7 @@ export default class LocalSttPlugin extends Plugin {
 
     const modal = new SetupWizardModal({
       app: this.app,
+      feedback: this.feedback,
       hasSelectedModel: () => this.settings.selectedModel !== null,
       isSidecarInstalled: () => this.isSidecarInstalled(),
       logger: this.logger,
@@ -349,6 +354,7 @@ export default class LocalSttPlugin extends Plugin {
       return;
     }
     new ManageModelsModal(this.app, {
+      feedback: this.feedback,
       manager: this.requireModelInstallManager(),
       onChanged: options.onChanged ?? (() => {}),
       onRunSetup: () => {
@@ -400,6 +406,7 @@ export default class LocalSttPlugin extends Plugin {
       this.sidecarConnection?.dispose();
     }
 
+    this.feedback.dispose();
     this.ribbonController?.dispose();
   }
 
@@ -412,7 +419,10 @@ export default class LocalSttPlugin extends Plugin {
       );
 
       if (options.showNotice ?? true) {
-        new Notice(`Local Dictation sidecar is ready (${health.sidecarVersion}).`);
+        this.feedback.show({
+          intent: 'success',
+          message: `Sidecar is ready (${health.sidecarVersion}).`,
+        });
       }
     } catch (error) {
       this.handleError('Sidecar health check failed', error, options.showNotice ?? true);
@@ -422,13 +432,21 @@ export default class LocalSttPlugin extends Plugin {
 
   private handleError(message: string, error: unknown, showNotice: boolean): void {
     if (showNotice) {
-      new Notice(`${message}: ${formatErrorMessage(error)}`);
+      this.feedback.show({
+        cause: error,
+        intent: 'error',
+        key: message,
+        message: `${message}.`,
+      });
     }
   }
 
   private async restartSidecar(): Promise<void> {
     if (this.requireDictationController().isBusy()) {
-      new Notice('Restart the sidecar only when dictation is idle.');
+      this.feedback.show({
+        intent: 'warning',
+        message: 'Restart the sidecar only when dictation is idle.',
+      });
       return;
     }
 
@@ -439,7 +457,10 @@ export default class LocalSttPlugin extends Plugin {
         this.settings.sidecarStartupTimeoutSeconds * 1000,
       );
 
-      new Notice(`Restarted Local Dictation sidecar (${health.sidecarVersion}).`);
+      this.feedback.show({
+        intent: 'success',
+        message: `Restarted sidecar (${health.sidecarVersion}).`,
+      });
     } catch (error) {
       this.handleError('Sidecar restart failed', error, true);
     }
@@ -623,12 +644,6 @@ export default class LocalSttPlugin extends Plugin {
 
     if (drift.length === 0) return;
 
-    this.logger.debug(
-      'sidecar',
-      `sidecar version drift: ${drift
-        .map((entry) => `${entry.variant} ${entry.installedVersion}`)
-        .join(', ')}, plugin ${this.manifest.version}`,
-    );
     this.notifySidecarVersionDrift(drift, pluginDirectory);
   }
 
@@ -643,32 +658,26 @@ export default class LocalSttPlugin extends Plugin {
         : variants[0] === 'cuda'
           ? 'CUDA speech engine is'
           : 'speech engine is';
-    const notice = new Notice(
-      createFragment((fragment) => {
-        fragment.createDiv({
-          text: `Local Dictation updated to ${this.manifest.version}, but the installed ${engineLabel} out of date. Update now to keep them in sync.`,
-        });
-        fragment
-          .createEl('a', {
-            href: '#',
-            text: variants.length === 2 ? 'Update speech engines' : 'Update speech engine',
-          })
-          .addEventListener('click', (event) => {
-            event.preventDefault();
-            notice.hide();
-            openSidecarUpdateModal(this.buildSidecarInstallActionDeps(), {
-              pluginDirectory,
-              variants,
-            });
+    this.feedback.show({
+      action: {
+        label: variants.length === 2 ? 'Update speech engines' : 'Update speech engine',
+        run: () => {
+          openSidecarUpdateModal(this.buildSidecarInstallActionDeps(), {
+            pluginDirectory,
+            variants,
           });
-      }),
-      0,
-    );
+        },
+      },
+      intent: 'action-required',
+      key: 'sidecar-version-drift',
+      message: `Updated to ${this.manifest.version}, but the installed ${engineLabel} out of date. Update now to keep them in sync.`,
+    });
   }
 
   private buildSidecarInstallActionDeps(): SidecarInstallActionDeps {
     return {
       app: this.app,
+      feedback: this.feedback,
       isDictationBusy: () => this.dictationController?.isBusy() ?? false,
       logger: this.logger,
       modelInstallManager: this.requireModelInstallManager(),

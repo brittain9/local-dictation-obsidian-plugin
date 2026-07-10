@@ -1,7 +1,8 @@
 import type { App } from 'obsidian';
-import { Modal, Notice, Setting } from 'obsidian';
+import { Modal, Setting } from 'obsidian';
 
-import { formatBytes, formatErrorMessage } from '../shared/format-utils';
+import { formatBytes } from '../shared/format-utils';
+import type { UserFeedback } from '../shared/user-feedback';
 import { buildCapabilityLabels } from './capability-view';
 import type { ModelInstallManager } from './model-install-manager';
 import {
@@ -12,6 +13,7 @@ import {
 } from './model-management-types';
 
 interface ExternalModelFileModalDependencies {
+  feedback: Pick<UserFeedback, 'show'>;
   manager: ModelInstallManager;
   onChanged: () => Promise<void>;
 }
@@ -89,10 +91,18 @@ export class ExternalModelFileModal extends Modal {
           try {
             await this.dependencies.manager.validateAndSelectExternalFile(nextPath, this.engine);
             await this.dependencies.onChanged();
-            new Notice('Local Dictation: External model file validated and selected.');
+            this.dependencies.feedback.show({
+              intent: 'success',
+              message: 'External model file validated and selected.',
+            });
             this.close();
           } catch (error) {
-            new Notice(`Local Dictation: ${formatErrorMessage(error)}`);
+            this.dependencies.feedback.show({
+              cause: error,
+              intent: 'error',
+              message:
+                'Could not validate the external model file. Check the file path and model family, then try again.',
+            });
           }
         });
     });

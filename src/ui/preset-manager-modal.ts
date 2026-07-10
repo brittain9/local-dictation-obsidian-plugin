@@ -1,12 +1,5 @@
 import type { App, DropdownComponent } from 'obsidian';
-import {
-  Modal,
-  Notice,
-  prepareSimpleSearch,
-  renderMatches,
-  SearchComponent,
-  Setting,
-} from 'obsidian';
+import { Modal, prepareSimpleSearch, renderMatches, SearchComponent, Setting } from 'obsidian';
 
 import {
   formatStyleRef,
@@ -25,6 +18,7 @@ import {
   LLM_USER_PRESET_MAX_LABEL_CHARS,
   type PluginSettings,
 } from '../settings/plugin-settings';
+import type { UserFeedback } from '../shared/user-feedback';
 import { ConfirmModal } from './confirm-modal';
 import {
   applyPresetDraftSave,
@@ -37,6 +31,7 @@ import {
 import { type PresetSearchHit, searchPresetEntries } from './preset-search';
 
 interface PresetManagerModalDependencies {
+  feedback: Pick<UserFeedback, 'show'>;
   getSettings: () => PluginSettings;
   mutatePresetState: (mutation: LlmPresetStateMutation) => Promise<void>;
 }
@@ -464,7 +459,10 @@ export class PresetManagerModal extends Modal {
           };
         });
         if (wasActive) {
-          new Notice(`"${preset.label}" was active — switched to Clean up.`);
+          this.deps.feedback.show({
+            intent: 'information',
+            message: `"${preset.label}" was active — switched to Clean up.`,
+          });
         }
         this.render();
       },

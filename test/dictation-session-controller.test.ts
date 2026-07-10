@@ -10,6 +10,7 @@ import type { LlmRouter, LlmRouterCleanupResult } from '../src/llm/router';
 import type { SessionAcceptResult } from '../src/session/session';
 import type { TranscriptRevision } from '../src/session/session-journal';
 import { DEFAULT_PLUGIN_SETTINGS, type PluginSettings } from '../src/settings/plugin-settings';
+import type { UserFeedback } from '../src/shared/user-feedback';
 import type {
   ContextWindow,
   QueueBackpressureTier,
@@ -246,14 +247,16 @@ describe('DictationSessionController', () => {
     captureStream.start.mockRejectedValueOnce(
       Object.assign(new Error('Permission denied'), { name: 'NotAllowedError' }),
     );
-    const notice = vi.fn();
-    const controller = createController({ captureStream, notice });
+    const show = vi.fn();
+    const controller = createController({ captureStream, feedback: { show } });
 
     await controller.startDictation();
 
-    expect(notice).toHaveBeenCalledWith(formatMicrophonePermissionDeniedMessage());
-    expect(notice).not.toHaveBeenCalledWith(
-      expect.stringContaining('Failed to start the dictation session'),
+    expect(show).toHaveBeenCalledWith(
+      expect.objectContaining({
+        intent: 'action-required',
+        message: formatMicrophonePermissionDeniedMessage(),
+      }),
     );
   });
 
@@ -263,19 +266,13 @@ describe('DictationSessionController', () => {
       Object.assign(new Error('Requested device not found'), { name: 'NotFoundError' }),
     );
     const logger = new FakeLogger();
-    const notice = vi.fn();
-    const controller = createController({ captureStream, logger, notice });
+    const show = vi.fn();
+    const controller = createController({ captureStream, feedback: { show }, logger });
 
     await controller.startDictation();
 
-    expect(notice).toHaveBeenCalledWith(expect.stringContaining('No microphone detected'));
-    expect(notice).not.toHaveBeenCalledWith(
-      expect.stringContaining('Failed to start the dictation session'),
-    );
-    expect(logger.warn).toHaveBeenCalledWith(
-      'session',
-      'Failed to start the dictation session',
-      'Requested device not found',
+    expect(show).toHaveBeenCalledWith(
+      expect.objectContaining({ message: expect.stringContaining('No microphone detected') }),
     );
     expect(logger.error).not.toHaveBeenCalled();
   });
@@ -284,27 +281,24 @@ describe('DictationSessionController', () => {
     const captureStream = new FakeCaptureStream();
     const logger = new FakeLogger();
     const sidecarConnection = new FakeSidecarConnection();
-    const notice = vi.fn();
+    const show = vi.fn();
     const controller = createController({
       captureStream,
       countAudioInputDevices: async () => 0,
       logger,
-      notice,
+      feedback: { show },
       sidecarConnection,
     });
 
     await controller.startDictation();
 
-    expect(notice).toHaveBeenCalledWith(expect.stringContaining('No microphone detected'));
+    expect(show).toHaveBeenCalledWith(
+      expect.objectContaining({ message: expect.stringContaining('No microphone detected') }),
+    );
     expect(sidecarConnection.ensureStarted).not.toHaveBeenCalled();
     expect(sidecarConnection.startSession).not.toHaveBeenCalled();
     expect(captureStream.start).not.toHaveBeenCalled();
     expect(controller.getState()).toBe('error');
-    expect(logger.warn).toHaveBeenCalledWith(
-      'session',
-      'Failed to start the dictation session',
-      'No audio input devices found.',
-    );
     expect(logger.error).not.toHaveBeenCalled();
   });
 
@@ -338,7 +332,7 @@ describe('DictationSessionController', () => {
     expect(controller.getState()).toBe('listening');
   });
 
-  it('debug-logs hallucination filter segment edits', async () => {
+  it('debug-logs hallucination filter counts without transcript text', async () => {
     const logger = new FakeLogger();
     const sidecarConnection = new FakeSidecarConnection();
     const controller = createController({ logger, sidecarConnection });
@@ -369,8 +363,14 @@ describe('DictationSessionController', () => {
     sidecarConnection.emit(event);
 
     await vi.waitFor(() => {
-      expect(logger.debug).toHaveBeenCalledWith('session', 'hallucination segment edited', edit);
+      expect(logger.debug).toHaveBeenCalledWith(
+        'session',
+        'hallucination filter adjusted segments',
+        { dropped: 0, edited: 1 },
+      );
     });
+    expect(JSON.stringify(logger.debug.mock.calls)).not.toContain('Gorglosa');
+    expect(JSON.stringify(logger.debug.mock.calls)).not.toContain('Let me join');
   });
 
   it('debug-logs final transcript summaries without logging partial revision summaries', async () => {
@@ -402,11 +402,17 @@ describe('DictationSessionController', () => {
     );
 
     sidecarConnection.emit(transcriptReady(sessionId, 'final', { isFinal: true, revision: 2 }));
+    sidecarConnection.emit(transcriptReady(sessionId, '', { isFinal: true, revision: 3 }));
 
     await vi.waitFor(() => {
-      expect(logger.debug).toHaveBeenCalledWith(
-        'session',
-        'final transcript received (5 chars, 12ms processing)',
+      expect(
+        logger.debug.mock.calls.filter(
+          ([category, message]) =>
+            category === 'session' && String(message).includes('final transcript received'),
+        ),
+      ).toEqual([['session', 'final transcript received (5 chars, 12ms processing)']]);
+      expect(sessions[0]?.acceptTranscript).toHaveBeenCalledWith(
+        expect.objectContaining({ isFinal: true, revision: 3, text: '' }),
       );
     });
   });
@@ -652,6 +658,7 @@ describe('DictationSessionController', () => {
   it('does not accept queued utterances after cancellation, even when capture teardown rejects', async () => {
     const captureStream = new FakeCaptureStream();
     const logger = new FakeLogger();
+    const show = vi.fn();
     const sidecarConnection = new FakeSidecarConnection();
     const sessions: FakeSession[] = [];
     const controller = createController({
@@ -659,6 +666,7 @@ describe('DictationSessionController', () => {
       createSession: (session) => {
         sessions.push(session);
       },
+      feedback: { show },
       logger,
       sidecarConnection,
     });
@@ -698,10 +706,12 @@ describe('DictationSessionController', () => {
     sidecarConnection.emit(transcriptReady(sessionId, 'second utterance'));
 
     await vi.waitFor(() => {
-      expect(logger.error).toHaveBeenCalledWith(
-        'session',
-        'Failed to record the local transcript',
-        expect.any(Error),
+      expect(show).toHaveBeenCalledWith(
+        expect.objectContaining({
+          intent: 'error',
+          key: 'transcript-record-failed',
+          message: 'Could not record the transcript.',
+        }),
       );
     });
     // The rejected capture teardown must not stop cancellation from completing:
@@ -730,8 +740,7 @@ describe('DictationSessionController', () => {
 
   it('contains a fatal note-surface desynchronization once and drops later transcripts', async () => {
     const captureStream = new FakeCaptureStream();
-    const logger = new FakeLogger();
-    const notice = vi.fn();
+    const show = vi.fn();
     const sidecarConnection = new FakeSidecarConnection();
     const sessions: FakeSession[] = [];
     const cleanup = vi.fn(
@@ -755,9 +764,8 @@ describe('DictationSessionController', () => {
           llmPostprocessSkipMinWords: 0,
           selectedModel: createExternalModelSelection(),
         }),
-      logger,
+      feedback: { show },
       llmRouter: createFakeLlmRouter({ cleanup }),
-      notice,
       sidecarConnection,
     });
     const failure: SurfaceDesynchronization = {
@@ -778,16 +786,14 @@ describe('DictationSessionController', () => {
     });
     expect(sidecarConnection.cancelSession).toHaveBeenCalledWith(sessionId);
     expect(captureStream.stop).toHaveBeenCalledOnce();
-    expect(logger.error).toHaveBeenCalledOnce();
-    expect(logger.error).toHaveBeenCalledWith(
-      'session',
-      'dictation note surface desynchronized',
-      failure,
-    );
-    expect(notice).toHaveBeenCalledOnce();
-    expect(notice).toHaveBeenCalledWith(
-      'Dictation stopped because the note changed in a way Local Dictation could not safely track. Start dictation again to continue.',
-    );
+    expect(show).toHaveBeenCalledOnce();
+    expect(show).toHaveBeenCalledWith({
+      cause: failure,
+      intent: 'error',
+      key: 'dictation-surface-desynchronized',
+      message:
+        'Dictation stopped because the note changed in a way Local Dictation could not safely track. Start dictation again to continue.',
+    });
     await vi.waitFor(() => {
       expect(sessions[0]?.acceptTranscript).not.toHaveBeenCalled();
     });
@@ -836,8 +842,7 @@ describe('DictationSessionController', () => {
   });
 
   it('reports a pending fatal desynchronization after the sidecar has already stopped', async () => {
-    const logger = new FakeLogger();
-    const notice = vi.fn();
+    const show = vi.fn();
     const sidecarConnection = new FakeSidecarConnection();
     const sessions: FakeSession[] = [];
     let onSurfaceDesynchronized: ((failure: SurfaceDesynchronization) => void) | undefined;
@@ -855,8 +860,7 @@ describe('DictationSessionController', () => {
           return { kind: 'accepted' };
         });
       },
-      logger,
-      notice,
+      feedback: { show },
       sidecarConnection,
     });
 
@@ -869,20 +873,12 @@ describe('DictationSessionController', () => {
       expect(sessions[0]?.dispose).toHaveBeenCalledOnce();
     });
     expect(sidecarConnection.cancelSession).not.toHaveBeenCalled();
-    expect(logger.error).toHaveBeenCalledOnce();
-    expect(logger.error).toHaveBeenCalledWith(
-      'session',
-      'dictation note surface desynchronized',
-      failure,
-    );
-    expect(notice).toHaveBeenCalledOnce();
-    expect(notice).toHaveBeenCalledWith(
-      'Dictation stopped because the note changed in a way Local Dictation could not safely track. Start dictation again to continue.',
-    );
+    expect(show).toHaveBeenCalledOnce();
+    expect(show).toHaveBeenCalledWith(expect.objectContaining({ cause: failure }));
   });
 
   it('aborts pending provider work when a fatal surface failure arrives after stop', async () => {
-    const notice = vi.fn();
+    const show = vi.fn();
     const sidecarConnection = new FakeSidecarConnection();
     let cleanupSignal: AbortSignal | undefined;
     let resolveCleanup: ((result: LlmRouterCleanupResult) => void) | undefined;
@@ -907,8 +903,8 @@ describe('DictationSessionController', () => {
           llmPostprocessSkipMinWords: 0,
           selectedModel: createExternalModelSelection(),
         }),
+      feedback: { show },
       llmRouter: createFakeLlmRouter({ cleanup }),
-      notice,
       sidecarConnection,
     });
 
@@ -927,7 +923,7 @@ describe('DictationSessionController', () => {
 
     expect(cleanupSignal?.aborted).toBe(true);
     expect(sidecarConnection.cancelSession).not.toHaveBeenCalled();
-    expect(notice).toHaveBeenCalledOnce();
+    expect(show).toHaveBeenCalledOnce();
 
     resolveCleanup?.({ model: 'm', providerId: 'ollama', text: 'ignored' });
     await vi.waitFor(() => {
@@ -938,8 +934,7 @@ describe('DictationSessionController', () => {
 
   it('contains an unexpected projection exception with accurate single-shot notice copy', async () => {
     const captureStream = new FakeCaptureStream();
-    const logger = new FakeLogger();
-    const notice = vi.fn();
+    const show = vi.fn();
     const sidecarConnection = new FakeSidecarConnection();
     const sessions: FakeSession[] = [];
     const controller = createController({
@@ -950,8 +945,7 @@ describe('DictationSessionController', () => {
           throw new RangeError('Invalid change range 4314 to 4314 (in doc of length 4280)');
         });
       },
-      logger,
-      notice,
+      feedback: { show },
       sidecarConnection,
     });
 
@@ -976,16 +970,14 @@ describe('DictationSessionController', () => {
       expect(sidecarConnection.cancelSession).toHaveBeenCalledOnce();
     });
     expect(captureStream.stop).toHaveBeenCalledOnce();
-    expect(logger.error).toHaveBeenCalledOnce();
-    expect(logger.error).toHaveBeenCalledWith(
-      'session',
-      'failed to process transcript',
-      expect.any(RangeError),
-    );
-    expect(notice).toHaveBeenCalledOnce();
-    expect(notice).toHaveBeenCalledWith(
-      'Dictation stopped because Local Dictation could not safely write to the note. Start dictation again to continue.',
-    );
+    expect(show).toHaveBeenCalledOnce();
+    expect(show).toHaveBeenCalledWith({
+      cause: expect.any(RangeError),
+      intent: 'error',
+      key: 'transcript-write-failed',
+      message:
+        'Dictation stopped because Local Dictation could not safely write to the note. Start dictation again to continue.',
+    });
     expect(sessions[0]?.acceptTranscript).toHaveBeenCalledOnce();
   });
 
@@ -1238,13 +1230,13 @@ describe('DictationSessionController', () => {
   it('additive batch treats empty output as nothing to add and says so', async () => {
     const sidecarConnection = new FakeSidecarConnection();
     const sessions: FakeSession[] = [];
-    const notice = vi.fn();
+    const show = vi.fn();
     const onLlmCleanupFailure = vi.fn();
     const controller = createController({
       createSession: (session) => {
         sessions.push(session);
       },
-      notice,
+      feedback: { show },
       getSettings: () =>
         createSettings({
           llmFeaturesEnabled: true,
@@ -1270,7 +1262,10 @@ describe('DictationSessionController', () => {
     });
     expect(sessions[0]?.insertAdjacentToSessionRange).not.toHaveBeenCalled();
     expect(onLlmCleanupFailure).not.toHaveBeenCalled();
-    expect(notice).toHaveBeenCalledWith('LLM transform returned nothing to add.');
+    expect(show).toHaveBeenCalledWith({
+      intent: 'information',
+      message: 'LLM transform returned nothing to add.',
+    });
   });
 
   it('drains pending utterance accepts before the batch read when stop arrives in the same turn', async () => {
@@ -1548,7 +1543,7 @@ describe('DictationSessionController', () => {
     ],
   ] as const)('suppresses misleading %s batch logs and success after result application reports fatal', async (_description, activePresetRef, misleadingWarning) => {
     const logger = new FakeLogger();
-    const notice = vi.fn();
+    const show = vi.fn();
     const onLlmCleanupSuccess = vi.fn();
     const sidecarConnection = new FakeSidecarConnection();
     const sessions: FakeSession[] = [];
@@ -1576,8 +1571,8 @@ describe('DictationSessionController', () => {
           }),
         ),
       }),
+      feedback: { show },
       logger,
-      notice,
       onLlmCleanupSuccess,
       sidecarConnection,
     });
@@ -1614,7 +1609,7 @@ describe('DictationSessionController', () => {
     });
     expect(logger.warn).not.toHaveBeenCalledWith('llm', misleadingWarning);
     expect(onLlmCleanupSuccess).not.toHaveBeenCalled();
-    expect(notice).toHaveBeenCalledOnce();
+    expect(show).toHaveBeenCalledOnce();
   });
 
   it('keeps raw transcript when a batch cleanup fails and reports it', async () => {
@@ -1715,7 +1710,7 @@ describe('DictationSessionController', () => {
   it('cleans up silently when the sidecar rejects capacity as a backstop', async () => {
     const captureStream = new FakeCaptureStream();
     const logger = new FakeLogger();
-    const notice = vi.fn();
+    const show = vi.fn();
     const sidecarConnection = new FakeSidecarConnection();
     const sessions: FakeSession[] = [];
     const controller = createController({
@@ -1724,7 +1719,7 @@ describe('DictationSessionController', () => {
         sessions.push(session);
       },
       logger,
-      notice,
+      feedback: { show },
       sidecarConnection,
     });
 
@@ -1740,7 +1735,7 @@ describe('DictationSessionController', () => {
     await Promise.resolve();
     await Promise.resolve();
 
-    expect(notice).not.toHaveBeenCalled();
+    expect(show).not.toHaveBeenCalled();
     expect(logger.warn).toHaveBeenCalled();
     expect(captureStream.stop).toHaveBeenCalledTimes(1);
     await vi.waitFor(() => {
@@ -1751,7 +1746,7 @@ describe('DictationSessionController', () => {
 
   it('drains queued work on queue overload instead of cancelling the session', async () => {
     const captureStream = new FakeCaptureStream();
-    const notice = vi.fn();
+    const show = vi.fn();
     const sidecarConnection = new FakeSidecarConnection();
     const sessions: FakeSession[] = [];
     const controller = createController({
@@ -1759,7 +1754,7 @@ describe('DictationSessionController', () => {
       createSession: (session) => {
         sessions.push(session);
       },
-      notice,
+      feedback: { show },
       sidecarConnection,
     });
 
@@ -1787,7 +1782,9 @@ describe('DictationSessionController', () => {
     // queue the sidecar is still draining.
     expect(sidecarConnection.cancelSession).not.toHaveBeenCalled();
     expect(session.dispose).not.toHaveBeenCalled();
-    expect(notice).toHaveBeenCalledWith(expect.stringContaining('backlog reached capacity'));
+    expect(show).toHaveBeenCalledWith(
+      expect.objectContaining({ message: expect.stringContaining('backlog reached capacity') }),
+    );
     expect(controller.getState()).toBe('idle');
 
     // Already-accepted utterances still land while the queue drains. On the
@@ -2024,7 +2021,7 @@ function createController({
   llmRouter = createFakeLlmRouter(),
   getSettings = () => createSettings({ selectedModel: createExternalModelSelection() }),
   logger = new FakeLogger(),
-  notice = vi.fn(),
+  feedback = { show: vi.fn() },
   sidecarConnection = new FakeSidecarConnection(),
   onLlmCleanupFailure,
   onLlmCleanupSuccess,
@@ -2036,7 +2033,7 @@ function createController({
   getSettings?: () => PluginSettings;
   llmRouter?: LlmRouter;
   logger?: FakeLogger;
-  notice?: (message: string) => void;
+  feedback?: Pick<UserFeedback, 'show'>;
   onLlmCleanupFailure?: (failure: LlmCleanupFailure) => void;
   onLlmCleanupSuccess?: () => void;
   sidecarConnection?: FakeSidecarConnection;
@@ -2051,9 +2048,9 @@ function createController({
       return session;
     },
     createLlmRouter: () => llmRouter,
+    feedback,
     getSettings,
     logger,
-    notice,
     ...(onLlmCleanupFailure !== undefined ? { onLlmCleanupFailure } : {}),
     ...(onLlmCleanupSuccess !== undefined ? { onLlmCleanupSuccess } : {}),
     onModelMissing: vi.fn(),

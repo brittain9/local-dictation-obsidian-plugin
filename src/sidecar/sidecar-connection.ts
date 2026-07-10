@@ -418,10 +418,6 @@ export class SidecarConnection {
   }
 
   private dispatchEvent(event: SidecarEvent): void {
-    if (shouldLogProtocolEvent(event)) {
-      this.options.logger?.debug('protocol', summarizeProtocolEvent(event));
-    }
-
     if (event.type === 'model_install_update' && event.state === 'failed') {
       this.options.logger?.warn(
         'model',
@@ -457,43 +453,5 @@ export class SidecarConnection {
       this.pendingWaiters.delete(waiter);
       waiter.reject(error);
     }
-  }
-}
-
-function shouldLogProtocolEvent(event: SidecarEvent): boolean {
-  switch (event.type) {
-    case 'error':
-    case 'session_started':
-    case 'session_state_changed':
-    case 'session_stopped':
-    case 'warning':
-      return true;
-    case 'transcript_ready':
-      return event.isFinal;
-    case 'model_install_update':
-      return false;
-    default:
-      return false;
-  }
-}
-
-function summarizeProtocolEvent(event: SidecarEvent): string {
-  switch (event.type) {
-    case 'model_install_update':
-      return `event: model_install_update (${event.modelId}, ${event.state})`;
-    case 'session_started':
-      return `event: session_started (${event.sessionId})`;
-    case 'session_state_changed':
-      return `event: session_state_changed (${event.sessionId}, ${event.state})`;
-    case 'session_stopped':
-      return `event: session_stopped (${event.sessionId}, ${event.reason})`;
-    case 'transcript_ready':
-      return `event: transcript_ready (${event.sessionId}, final, ${event.text.length} chars)`;
-    case 'warning':
-      return `event: warning (${event.code})`;
-    case 'error':
-      return `event: error (${event.code})`;
-    default:
-      return `event: ${event.type}`;
   }
 }

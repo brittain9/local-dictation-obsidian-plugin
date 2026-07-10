@@ -13,15 +13,17 @@ import { LlmRoutingControls } from '../src/ui/llm-routing-controls';
 import { createFakeLlmProvider } from './fixtures/llm';
 
 function createControls(overrides: Partial<PluginSettings> = {}, openRouterApiKey = '') {
+  const show = vi.fn();
   const requestRerender = vi.fn();
   const controls = new LlmRoutingControls({
     app: {} as App,
+    feedback: { show },
     getOpenRouterApiKey: () => openRouterApiKey,
     getSettings: () => ({ ...DEFAULT_PLUGIN_SETTINGS, ...overrides }),
     persist: vi.fn(async () => {}),
     requestRerender,
   });
-  return { controls, requestRerender };
+  return { controls, requestRerender, show };
 }
 
 async function flushAsyncWork(): Promise<void> {
@@ -46,6 +48,18 @@ describe('LlmRoutingControls.refreshActiveProviders', () => {
     controls.refreshActiveProviders();
     await flushAsyncWork();
     expect(listModels).toHaveBeenCalledTimes(2);
+  });
+
+  it('keeps provider refresh failures inline without also showing a notice', async () => {
+    createProviderMock.mockReturnValue(
+      createFakeLlmProvider({ listModels: vi.fn().mockRejectedValue(new Error('offline')) }),
+    );
+    const { controls, requestRerender, show } = createControls();
+
+    await controls.refreshActiveProviders();
+
+    expect(requestRerender).toHaveBeenCalled();
+    expect(show).not.toHaveBeenCalled();
   });
 
   it('does not refetch a provider that already loaded successfully', async () => {

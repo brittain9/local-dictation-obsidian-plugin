@@ -4,6 +4,7 @@ import {
   encodeJsonFrame,
   FRAME_HEADER_LENGTH,
   type HealthOkEvent,
+  MAX_FRAME_PAYLOAD_BYTES,
   type ModelInstallUpdateEvent,
   type SidecarEvent,
   type TranscriptReadyEvent,
@@ -61,6 +62,14 @@ class FakeSidecarProcess {
   exit(code: number | null = 1, signal: NodeJS.Signals | null = null): void {
     this.running = false;
     this.handlers?.onExit(code, signal);
+  }
+
+  stderr(line: string): void {
+    this.handlers?.onStderrLine(line);
+  }
+
+  stdout(chunk: Uint8Array): void {
+    this.handlers?.onStdoutChunk(chunk);
   }
 }
 
@@ -319,7 +328,53 @@ describe('SidecarConnection', () => {
     expect(process.writtenFrames).toHaveLength(0);
   });
 
-  it('logs final transcript events without logging partial transcript revisions', () => {
+  it('does not mirror routine session lifecycle or transcript events into protocol logs', () => {
+    const logger = {
+      debug: vi.fn(),
+      error: vi.fn(),
+      warn: vi.fn(),
+    };
+    const { connection, process } = createHarness(5_000, logger);
+    const listener = vi.fn();
+    connection.subscribe(listener);
+
+    process.deliver({ mode: 'always_on', sessionId: 'session-1', type: 'session_started' });
+    process.deliver({ sessionId: 'session-1', state: 'listening', type: 'session_state_changed' });
+    process.deliver(transcriptReadyEvent({ isFinal: false, revision: 1 }));
+    process.deliver(transcriptReadyEvent({ isFinal: true, revision: 2, text: 'hello world' }));
+    process.deliver({ reason: 'user_stop', sessionId: 'session-1', type: 'session_stopped' });
+
+    expect(listener).toHaveBeenCalledTimes(5);
+    expect(listener).toHaveBeenLastCalledWith({
+      reason: 'user_stop',
+      sessionId: 'session-1',
+      type: 'session_stopped',
+    });
+    expect(logger.debug).not.toHaveBeenCalled();
+  });
+
+  it('logs fatal protocol corruption and stops the sidecar', () => {
+    const logger = {
+      debug: vi.fn(),
+      error: vi.fn(),
+      warn: vi.fn(),
+    };
+    const { process } = createHarness(5_000, logger);
+    const corruptHeader = new Uint8Array(FRAME_HEADER_LENGTH);
+    corruptHeader[0] = 1;
+    new DataView(corruptHeader.buffer).setUint32(1, MAX_FRAME_PAYLOAD_BYTES + 1, true);
+
+    process.stdout(corruptHeader);
+
+    expect(logger.warn).toHaveBeenCalledWith(
+      'protocol',
+      'fatal sidecar stream error; restarting',
+      expect.any(Error),
+    );
+    expect(process.stopCalls).toBe(1);
+  });
+
+  it('keeps native warnings, system-audio diagnostics, and unexpected exits observable', () => {
     const logger = {
       debug: vi.fn(),
       error: vi.fn(),
@@ -327,13 +382,18 @@ describe('SidecarConnection', () => {
     };
     const { process } = createHarness(5_000, logger);
 
-    process.deliver(transcriptReadyEvent({ isFinal: false, revision: 1 }));
-    process.deliver(transcriptReadyEvent({ isFinal: true, revision: 2, text: 'hello world' }));
+    process.stderr('system-audio diagnostics: received=42 silent=0 dropped=0 mixed=42 mic_only=0');
+    process.stderr('error: native worker failed');
+    process.exit(9, null);
 
-    expect(logger.debug).toHaveBeenCalledTimes(1);
     expect(logger.debug).toHaveBeenCalledWith(
-      'protocol',
-      'event: transcript_ready (session-1, final, 11 chars)',
+      'sidecar',
+      'sidecar: system-audio diagnostics: received=42 silent=0 dropped=0 mixed=42 mic_only=0',
+    );
+    expect(logger.warn).toHaveBeenCalledWith('sidecar', 'sidecar: error: native worker failed');
+    expect(logger.warn).toHaveBeenCalledWith(
+      'sidecar',
+      'sidecar process exited unexpectedly (code: 9, signal: null)',
     );
   });
 });

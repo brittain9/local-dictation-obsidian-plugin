@@ -1,6 +1,7 @@
 import type { InstallProgressState } from '../models/model-install-progress';
 import { formatErrorMessage } from '../shared/format-utils';
 import type { PluginLogger } from '../shared/plugin-logger';
+import type { UserFeedback } from '../shared/user-feedback';
 import {
   type InstallProgress,
   installSidecar,
@@ -24,6 +25,10 @@ export interface SidecarInstallManagerState {
 
 export interface SidecarInstallOptions {
   beforeReplace?: (() => Promise<void>) | undefined;
+  failureFeedback: {
+    isInlineVisible: () => boolean;
+    message: string;
+  };
   onInstalled: () => Promise<void>;
   pluginDirectory: string;
   successNotice: string;
@@ -37,8 +42,8 @@ export interface SidecarInstallBatchOptions extends Omit<SidecarInstallOptions, 
 }
 
 interface SidecarInstallManagerDependencies {
+  feedback: Pick<UserFeedback, 'show'>;
   logger?: PluginLogger | undefined;
-  notice: (message: string) => void;
 }
 
 const INITIAL_PROGRESS: InstallProgress = {
@@ -158,17 +163,25 @@ export class SidecarInstallManager {
       }
 
       await options.onInstalled();
-      this.deps.notice(options.successNotice);
+      this.deps.feedback.show({ intent: 'success', message: options.successNotice });
       this.lastError = null;
     } catch (error) {
       if (isAbortError(error)) {
-        this.deps.notice('Sidecar install cancelled.');
+        this.deps.feedback.show({ intent: 'information', message: 'Sidecar install cancelled.' });
         this.lastError = null;
       } else {
         const message = formatErrorMessage(error);
-        this.deps.logger?.error('installer', 'sidecar install failed', error);
         this.lastError = message;
-        this.deps.notice(`Sidecar install failed: ${message}`);
+        if (options.failureFeedback.isInlineVisible()) {
+          this.deps.logger?.error('installer', 'sidecar install failed', error);
+        } else {
+          this.deps.feedback.show({
+            cause: error,
+            intent: 'error',
+            key: 'sidecar-install-failed',
+            message: options.failureFeedback.message,
+          });
+        }
       }
     } finally {
       if (this.abortController?.signal === signal) {

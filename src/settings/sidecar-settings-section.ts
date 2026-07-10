@@ -1,5 +1,5 @@
 import type { App } from 'obsidian';
-import { Notice, Platform, Setting } from 'obsidian';
+import { Platform, Setting } from 'obsidian';
 
 import type { ModelInstallManager } from '../models/model-install-manager';
 import { updateInstallProgressElement } from '../models/model-install-progress';
@@ -9,8 +9,8 @@ import {
   type InstallIntent,
 } from '../setup/sidecar-install-copy';
 import { SidecarInstallModal } from '../setup/sidecar-install-modal';
-import { formatErrorMessage } from '../shared/format-utils';
 import type { PluginLogger } from '../shared/plugin-logger';
+import type { UserFeedback } from '../shared/user-feedback';
 import { detectNvidiaDriver, type NvidiaDriverStatus } from '../sidecar/gpu-precheck';
 import type { SidecarConnection } from '../sidecar/sidecar-connection';
 import {
@@ -30,6 +30,7 @@ import { addPositiveIntSetting, addTextSetting, type SettingAccess } from './set
 
 export interface SidecarInstallActionDeps {
   app: App;
+  feedback: Pick<UserFeedback, 'show'>;
   isDictationBusy(): boolean;
   logger?: PluginLogger | undefined;
   modelInstallManager: ModelInstallManager;
@@ -293,9 +294,11 @@ export function openSidecarInstallModal(
   },
 ): void {
   if (deps.isDictationBusy()) {
-    new Notice(
-      'Stop dictation before installing a sidecar — the install restarts the engine. If a transcript is still processing, run "Cancel dictation" to stop it now.',
-    );
+    deps.feedback.show({
+      intent: 'warning',
+      message:
+        'Stop dictation before installing a sidecar — the install restarts the engine. If a transcript is still processing, run "Cancel dictation" to stop it now.',
+    });
     return;
   }
 
@@ -304,6 +307,7 @@ export function openSidecarInstallModal(
       await shutdownSidecarBeforeFileMutation(deps, `${opts.variant} install`);
     },
     copy: getInstallCopy(opts.variant, opts.intent),
+    feedback: deps.feedback,
     manager: deps.sidecarInstallManager,
     onInstalled: async () => {
       await opts.onInstalled?.();
@@ -325,9 +329,11 @@ export function openSidecarUpdateModal(
   },
 ): void {
   if (deps.isDictationBusy()) {
-    new Notice(
-      'Stop dictation before updating sidecars — the update restarts the engine. If a transcript is still processing, run "Cancel dictation" to stop it now.',
-    );
+    deps.feedback.show({
+      intent: 'warning',
+      message:
+        'Stop dictation before updating sidecars — the update restarts the engine. If a transcript is still processing, run "Cancel dictation" to stop it now.',
+    });
     return;
   }
 
@@ -336,6 +342,7 @@ export function openSidecarUpdateModal(
       await shutdownSidecarBeforeFileMutation(deps, 'sidecar update');
     },
     copy: getSidecarUpdateCopy(opts.variants),
+    feedback: deps.feedback,
     manager: deps.sidecarInstallManager,
     onInstalled: async () => {
       await deps.restartSidecar();
@@ -360,9 +367,10 @@ async function uninstallSidecarVariantWithUx(
   const userFacingName = Platform.isMacOS ? 'sidecar' : `${variantLabel} sidecar`;
 
   if (deps.isDictationBusy()) {
-    new Notice(
-      `Stop dictation before uninstalling the ${userFacingName}. If a transcript is still processing, run "Cancel dictation" to stop it now.`,
-    );
+    deps.feedback.show({
+      intent: 'warning',
+      message: `Stop dictation before uninstalling the ${userFacingName}. If a transcript is still processing, run "Cancel dictation" to stop it now.`,
+    });
     return;
   }
 
@@ -370,26 +378,33 @@ async function uninstallSidecarVariantWithUx(
     await shutdownSidecarBeforeFileMutation(deps, `${variantLabel} uninstall`);
     await uninstallSidecarVariant(pluginDirectory, variant);
   } catch (error) {
-    deps.logger?.error('installer', `failed to uninstall ${variantLabel} sidecar`, error);
-    new Notice(`Failed to uninstall ${userFacingName}: ${formatErrorMessage(error)}`);
+    deps.feedback.show({
+      cause: error,
+      intent: 'error',
+      message: `Could not uninstall the ${userFacingName}. Close other setup windows and try again.`,
+    });
     return;
   }
 
-  new Notice(
-    Platform.isMacOS
+  deps.feedback.show({
+    intent: 'success',
+    message: Platform.isMacOS
       ? 'Sidecar uninstalled.'
       : variant === 'cuda'
         ? 'CUDA sidecar uninstalled. Running on CPU.'
         : 'CPU sidecar uninstalled.',
-  );
+  });
   deps.refreshSettingsTab();
 
   try {
     await deps.restartSidecar();
   } catch (error) {
     if (error instanceof SidecarNotInstalledError) return;
-    deps.logger?.warn('installer', 'sidecar restart after uninstall failed', error);
-    new Notice(`Sidecar could not restart: ${formatErrorMessage(error)}`);
+    deps.feedback.show({
+      cause: error,
+      intent: 'warning',
+      message: 'The speech engine could not restart. Restart Obsidian before dictating.',
+    });
   }
 }
 

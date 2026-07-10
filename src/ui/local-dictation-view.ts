@@ -19,6 +19,7 @@ import {
   createSettingGroup,
 } from '../settings/setting-helpers';
 import type { PluginLogger } from '../shared/plugin-logger';
+import type { UserFeedback } from '../shared/user-feedback';
 import { ConfirmModal } from './confirm-modal';
 import { FocusRefreshController } from './focus-refresh-controller';
 import { formatCleanupFailureBanner } from './llm-provider-ui';
@@ -40,12 +41,12 @@ const CLEANUP_MODE_OPTIONS: ReadonlyArray<{ label: string; value: LlmPresetTimin
 ];
 
 interface LocalDictationViewDependencies {
+  feedback: Pick<UserFeedback, 'show'>;
   getOpenRouterApiKey: () => string;
   getSettings: () => PluginSettings;
   getLlmCleanupFailure?: () => LlmCleanupFailure | null;
   logger?: PluginLogger | undefined;
   mutatePresetState: (mutation: LlmPresetStateMutation) => Promise<void>;
-  notice?: (message: string) => void;
   saveSettings: (settings: PluginSettings) => Promise<void>;
   subscribeLlmCleanupFailure?: (callback: () => void) => () => void;
   synchronizePresets: () => Promise<void>;
@@ -67,10 +68,10 @@ export class LocalDictationView extends ItemView {
     super(leaf);
     this.routingControls = new LlmRoutingControls({
       app: this.app,
+      feedback: this.dependencies.feedback,
       getOpenRouterApiKey: () => this.dependencies.getOpenRouterApiKey(),
       getSettings: () => this.dependencies.getSettings(),
       logger: this.dependencies.logger,
-      ...(this.dependencies.notice !== undefined ? { notice: this.dependencies.notice } : {}),
       persist: (settings, options) => this.persistSettings(settings, options),
       requestRerender: () => {
         this.scheduleRender();
@@ -291,6 +292,7 @@ export class LocalDictationView extends ItemView {
   private async openPresetManager(): Promise<void> {
     await this.dependencies.synchronizePresets();
     new PresetManagerModal(this.app, {
+      feedback: this.dependencies.feedback,
       getSettings: () => this.dependencies.getSettings(),
       mutatePresetState: async (mutation) => {
         await this.mutatePresetState(mutation);
