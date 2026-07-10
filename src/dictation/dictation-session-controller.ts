@@ -94,6 +94,9 @@ interface ActiveSessionSnapshot {
 }
 
 type SessionPhase = 'starting' | 'active' | 'stopping' | 'cancelling' | 'stopped';
+// Stable across sidecar lifecycle acknowledgements: graceful terminal feedback
+// may still drain accepted work, while cancellation permanently rejects writes.
+type SessionTermination = 'open' | 'feedback-claimed' | 'cancelled';
 
 interface ManagedSession {
   anchorTimerId: number | null;
@@ -101,13 +104,16 @@ interface ManagedSession {
   // in final-event order. Partials bypass it and project immediately.
   cleanupChain: Promise<void>;
   cleanupAbortControllers: Set<AbortController>;
-  fatalTranscriptFailureReported: boolean;
   llmFailureLogged: boolean;
   pendingTranscriptWork: Set<Promise<void>>;
   phase: SessionPhase;
   session: ControllerSession;
   snapshot: ActiveSessionSnapshot;
-  terminalFeedbackReported: boolean;
+  termination: SessionTermination;
+}
+
+function rejectsTranscriptWork(entry: ManagedSession): boolean {
+  return entry.termination === 'cancelled';
 }
 
 interface DictationSessionControllerDependencies {
@@ -342,13 +348,12 @@ export class DictationSessionController {
       anchorTimerId: null,
       cleanupChain: Promise.resolve(),
       cleanupAbortControllers: new Set(),
-      fatalTranscriptFailureReported: false,
       llmFailureLogged: false,
       pendingTranscriptWork: new Set(),
       phase: 'starting',
       session,
       snapshot,
-      terminalFeedbackReported: false,
+      termination: 'open',
     };
     this.sessions.set(sessionId, entry);
     this.activeSessionId = sessionId;
@@ -461,12 +466,12 @@ export class DictationSessionController {
       return;
     }
 
+    this.handleError(FEEDBACK_FAILURES.startDictation, error, entry);
     if (entry.phase === 'starting') {
       this.disposeLocalSession(sessionId);
     } else {
       await this.cancelSession(sessionId);
     }
-    this.handleError(FEEDBACK_FAILURES.startDictation, error, entry);
   }
 
   private async assertMicrophoneInputAvailable(): Promise<void> {
@@ -497,6 +502,7 @@ export class DictationSessionController {
     // Establish the terminal state before capture teardown yields. Every caller
     // then joins the same promise, so concurrent failure sources cannot send
     // duplicate cancellation commands to the sidecar.
+    entry.termination = 'cancelled';
     entry.phase = 'cancelling';
     this.abortProviderCleanups(entry);
     const cancellation = Promise.resolve().then(() => this.completeSessionCancellation(sessionId));
@@ -753,7 +759,7 @@ export class DictationSessionController {
 
   private async handleTranscriptReady(event: TranscriptReadyEvent): Promise<void> {
     const entry = this.sessions.get(event.sessionId);
-    if (entry === undefined || entry.fatalTranscriptFailureReported) {
+    if (entry === undefined || rejectsTranscriptWork(entry)) {
       return;
     }
 
@@ -827,7 +833,7 @@ export class DictationSessionController {
       revision === null ||
       !this.sessions.has(sessionId) ||
       entry.phase === 'cancelling' ||
-      entry.fatalTranscriptFailureReported
+      rejectsTranscriptWork(entry)
     ) {
       return;
     }
@@ -838,7 +844,7 @@ export class DictationSessionController {
       this.cancelOnFatalTranscriptFailure(sessionId, FEEDBACK_FAILURES.transcriptWrite, error);
       return;
     }
-    if (entry.fatalTranscriptFailureReported) {
+    if (rejectsTranscriptWork(entry)) {
       return;
     }
     if (result.kind === 'rejected') {
@@ -1006,7 +1012,9 @@ export class DictationSessionController {
       'session',
       `session ${event.sessionId} stopped (reason: ${event.reason})`,
     );
-    entry.phase = 'stopped';
+    if (!rejectsTranscriptWork(entry)) {
+      entry.phase = 'stopped';
+    }
 
     if (event.sessionId === this.activeSessionId) {
       this.activeSessionId = null;
@@ -1223,7 +1231,7 @@ export class DictationSessionController {
     if (this.sessions.get(sessionId) !== entry) {
       return true;
     }
-    if (!entry.fatalTranscriptFailureReported) {
+    if (!rejectsTranscriptWork(entry)) {
       return false;
     }
 
@@ -1364,11 +1372,10 @@ export class DictationSessionController {
     details: unknown,
   ): void {
     const entry = this.sessions.get(sessionId);
-    if (entry === undefined || entry.fatalTranscriptFailureReported) {
+    if (entry === undefined || rejectsTranscriptWork(entry)) {
       return;
     }
 
-    entry.fatalTranscriptFailureReported = true;
     this.abortProviderCleanups(entry);
     this.reportTerminalFeedback(entry, {
       cause: details,
@@ -1376,6 +1383,7 @@ export class DictationSessionController {
       key: failure.key,
       message: failure.message,
     });
+    entry.termination = 'cancelled';
 
     if (entry.phase === 'cancelling' || entry.phase === 'stopped') {
       return;
@@ -1388,11 +1396,11 @@ export class DictationSessionController {
   }
 
   private reportTerminalFeedback(entry: ManagedSession, request: FeedbackRequest): boolean {
-    if (entry.terminalFeedbackReported) {
+    if (entry.termination !== 'open') {
       return false;
     }
 
-    entry.terminalFeedbackReported = true;
+    entry.termination = 'feedback-claimed';
     this.dependencies.feedback.show(request);
     return true;
   }
