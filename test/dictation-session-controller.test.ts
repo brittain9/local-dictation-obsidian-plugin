@@ -879,6 +879,50 @@ describe('DictationSessionController', () => {
 
   it.each([
     {
+      error: (sessionId: string): SidecarEvent => ({
+        code: 'inference_failed',
+        message: 'The speech engine failed.',
+        sessionId,
+        type: 'error',
+      }),
+      source: 'sidecar error',
+    },
+    {
+      error: (sessionId: string): SidecarEvent => ({
+        code: 'utterance_queue_overload',
+        message: 'The transcription backlog reached capacity.',
+        sessionId,
+        type: 'error',
+      }),
+      source: 'queue overload',
+    },
+  ])('keeps target-loss feedback when it races a $source', async ({ error, source: _source }) => {
+    const show = vi.fn();
+    const sidecarConnection = new FakeSidecarConnection();
+    let onLockedNoteClosed: (() => void) | undefined;
+    const controller = createController({
+      createSession: (_session, options) => {
+        onLockedNoteClosed = options.callbacks.onLockedNoteClosed;
+      },
+      feedback: { show },
+      sidecarConnection,
+    });
+
+    await controller.startDictation();
+    const sessionId = sidecarConnection.startSession.mock.calls[0]?.[0].sessionId ?? '';
+
+    onLockedNoteClosed?.();
+    sidecarConnection.emit(error(sessionId));
+
+    await vi.waitFor(() => {
+      expect(sidecarConnection.cancelSession).toHaveBeenCalledOnce();
+    });
+    expect(show).toHaveBeenCalledOnce();
+    expect(show).toHaveBeenCalledWith(expect.objectContaining({ key: 'dictation-target-closed' }));
+  });
+
+  it.each([
+    {
       callback: 'onLockedNoteClosed' as const,
       expectedKey: 'dictation-target-closed',
       expectedMessage:

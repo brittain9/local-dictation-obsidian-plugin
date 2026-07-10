@@ -441,7 +441,7 @@ export class DictationSessionController {
       this.dependencies.sidecarConnection.requestStopSession(sessionId);
     } catch (error) {
       this.disposeLocalSession(sessionId);
-      this.handleError(FEEDBACK_FAILURES.stopDictation, error);
+      this.handleError(FEEDBACK_FAILURES.stopDictation, error, entry);
     }
   }
 
@@ -466,7 +466,7 @@ export class DictationSessionController {
     } else {
       await this.cancelSession(sessionId);
     }
-    this.handleError(FEEDBACK_FAILURES.startDictation, error);
+    this.handleError(FEEDBACK_FAILURES.startDictation, error, entry);
   }
 
   private async assertMicrophoneInputAvailable(): Promise<void> {
@@ -672,6 +672,9 @@ export class DictationSessionController {
     if (entry === undefined) {
       return;
     }
+    if (entry.phase === 'cancelling') {
+      return;
+    }
 
     this.applySessionStateToAnchor(entry, event.state);
 
@@ -839,7 +842,7 @@ export class DictationSessionController {
       return;
     }
     if (result.kind === 'rejected') {
-      this.handleError(FEEDBACK_FAILURES.recordTranscript, new Error(result.reason));
+      this.handleError(FEEDBACK_FAILURES.recordTranscript, new Error(result.reason), entry);
       await this.cancelSession(sessionId);
     }
   }
@@ -1256,7 +1259,12 @@ export class DictationSessionController {
 
     if (event.sessionId === this.activeSessionId) {
       this.applyUiState('error');
-      this.dependencies.feedback.show({ intent: 'error', message: detail });
+      this.reportTerminalFeedback(entry, {
+        cause: { code: event.code, details: event.details, sessionId: event.sessionId },
+        intent: 'error',
+        key: FEEDBACK_FAILURES.sidecar.key,
+        message: detail,
+      });
     } else {
       this.dependencies.logger?.warn('session', detail);
     }
@@ -1282,10 +1290,14 @@ export class DictationSessionController {
     if (entry === undefined) {
       return;
     }
+    if (entry.phase === 'cancelling') {
+      return;
+    }
 
     const detail = event.details ? `${event.message} (${event.details})` : event.message;
     if (sessionId === this.activeSessionId) {
-      this.dependencies.feedback.show({
+      this.reportTerminalFeedback(entry, {
+        cause: { code: event.code, details: event.details, sessionId },
         intent: 'warning',
         key: 'utterance-queue-overload',
         message: detail,
@@ -1382,15 +1394,22 @@ export class DictationSessionController {
     this.dependencies.feedback.show(request);
   }
 
-  private handleError(failure: FeedbackFailure, error: unknown): void {
+  private handleError(failure: FeedbackFailure, error: unknown, entry?: ManagedSession): void {
     this.applyUiState('error');
+    const report = (request: FeedbackRequest): void => {
+      if (entry === undefined) {
+        this.dependencies.feedback.show(request);
+        return;
+      }
+      this.reportTerminalFeedback(entry, request);
+    };
 
     // Microphone-capture failures get specific, actionable copy that stands on
     // its own; prefixing it with the generic start-failure message just buries
     // the instructions. The Settings mic picker shows the same copy for parity.
     const microphoneMessage = formatMicrophoneCaptureErrorMessage(error);
     if (microphoneMessage !== null) {
-      this.dependencies.feedback.show({
+      report({
         cause: error,
         intent: 'action-required',
         key: 'microphone-permission',
@@ -1401,7 +1420,7 @@ export class DictationSessionController {
 
     const systemAudioMessage = formatSystemAudioSidecarErrorMessage(error);
     if (systemAudioMessage !== null) {
-      this.dependencies.feedback.show({
+      report({
         cause: error,
         intent: 'action-required',
         key: 'system-audio-permission',
@@ -1410,7 +1429,7 @@ export class DictationSessionController {
       return;
     }
 
-    this.dependencies.feedback.show({
+    report({
       cause: error,
       intent: 'error',
       key: failure.key,
