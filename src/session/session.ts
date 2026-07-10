@@ -126,6 +126,10 @@ export class Session {
   private surface: NoteSurfaceLike | null;
   private surfaceDesynchronized = false;
 
+  static hasDictationTarget(app: Pick<App, 'workspace'>): boolean {
+    return resolveDictationTarget(app) !== null;
+  }
+
   static createFromActiveEditor(
     app: Pick<App, 'vault' | 'workspace'>,
     options: {
@@ -137,9 +141,7 @@ export class Session {
       sessionId: string;
     },
   ): Session {
-    const active = resolveActiveEditorTarget(app);
-    const fallback = active === null ? resolveFallbackEditorTarget(app) : null;
-    const target = active ?? fallback;
+    const target = resolveDictationTarget(app);
 
     if (target === null) {
       throw new Error('No active Markdown editor is available.');
@@ -147,7 +149,9 @@ export class Session {
 
     // No cursor available — append to end of the open note rather than blocking on a popup.
     const placement: NotePlacementOptions =
-      fallback !== null ? { ...options.placement, anchor: 'end_of_note' } : options.placement;
+      target.kind === 'fallback'
+        ? { ...options.placement, anchor: 'end_of_note' }
+        : options.placement;
 
     return new Session({
       app,
@@ -780,6 +784,20 @@ function createNoteSurface(
   onSurfaceDesynchronized: (failure: SurfaceDesynchronization) => void,
 ): NoteSurface {
   return new NoteSurface(view, placement, onSurfaceDesynchronized);
+}
+
+type DictationTarget =
+  | { file: TFile; kind: 'active'; view: EditorView }
+  | { file: TFile; kind: 'fallback'; view: EditorView };
+
+function resolveDictationTarget(app: Pick<App, 'workspace'>): DictationTarget | null {
+  const active = resolveActiveEditorTarget(app);
+  if (active !== null) {
+    return { ...active, kind: 'active' };
+  }
+
+  const fallback = resolveFallbackEditorTarget(app);
+  return fallback === null ? null : { ...fallback, kind: 'fallback' };
 }
 
 function resolveActiveEditorTarget(

@@ -164,6 +164,43 @@ class FakeSurface {
 }
 
 describe('Session', () => {
+  it('reports whether ordinary dictation can resolve a writable Markdown target', () => {
+    const activeFile = fakeFile('active.md');
+    const activeView = {} as EditorView;
+    const fallbackFile = fakeFile('fallback.md');
+    const fallbackView = {} as EditorView;
+
+    expect(
+      Session.hasDictationTarget({
+        workspace: {
+          activeEditor: { editor: { cm: activeView }, file: activeFile },
+          getActiveFile: () => activeFile,
+          getLeavesOfType: () => [],
+        },
+      } as unknown as Pick<App, 'workspace'>),
+    ).toBe(true);
+    expect(
+      Session.hasDictationTarget({
+        workspace: {
+          activeEditor: null,
+          getActiveFile: () => fallbackFile,
+          getLeavesOfType: () => [
+            { view: { editor: { cm: fallbackView }, file: fallbackFile } },
+          ],
+        },
+      } as unknown as Pick<App, 'workspace'>),
+    ).toBe(true);
+    expect(
+      Session.hasDictationTarget({
+        workspace: {
+          activeEditor: null,
+          getActiveFile: () => fallbackFile,
+          getLeavesOfType: () => [],
+        },
+      } as unknown as Pick<App, 'workspace'>),
+    ).toBe(false);
+  });
+
   it('replaces a partial in place when its final revision arrives', () => {
     const { session, surface } = createSessionHarness();
 
