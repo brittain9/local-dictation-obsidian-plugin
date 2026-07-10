@@ -4,9 +4,9 @@
 [![GitHub stars](https://img.shields.io/github/stars/brittain9/local-dictation-obsidian-plugin?style=flat-square)](https://github.com/brittain9/local-dictation-obsidian-plugin)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=flat-square)](LICENSE)
 
-**Private speech-to-text, directly in your Obsidian notes.** Dictate with live text or capture a meeting from your microphone and system audio. Transcription runs on your device, with no account or cloud service required.
+**Private speech-to-text, directly in your Obsidian notes.** Dictate voice notes with live text or transcribe meetings from your microphone and system audio. Transcription runs on your device, with no account or cloud service required.
 
-Optional text transformations can run locally through Ollama or remotely through OpenRouter. Remote processing is off until you configure and select it; audio is never sent to either provider.
+Optional AI cleanup can summarize, extract action items, or reshape a transcript. It stays off until you configure and select it, and audio is never sent for cleanup.
 
 [Install Local Dictation from Obsidian Community Plugins](https://obsidian.md/plugins?id=local-dictation)
 
@@ -62,7 +62,9 @@ Published sidecar builds currently target Apple silicon on macOS and x86-64 on W
 | **Windows (x86-64)** | Supported | Optional CUDA on a recent NVIDIA GPU | Supported |
 | **Linux (x86-64)** | Supported | Optional CUDA on a recent NVIDIA GPU | Supported through PulseAudio/PipeWire |
 
-macOS and Windows are the primary tested targets. On Linux, the plugin is used daily on Fedora (native and Flatpak); other distributions should work but are not routinely verified. If something breaks on yours, [open an issue](https://github.com/brittain9/local-dictation-obsidian-plugin/issues).
+macOS and Windows are the primary tested targets. On Linux, the plugin is used daily on Fedora (native and Flatpak); other distributions should work but are not routinely verified.
+
+If something breaks on your distribution, [open an issue](https://github.com/brittain9/local-dictation-obsidian-plugin/issues).
 
 For CUDA requirements and Flatpak-specific setup, see the [CUDA setup guide](docs/guides/cuda-setup.md).
 
@@ -82,4 +84,4 @@ Local Dictation pairs a TypeScript plugin with a Rust sidecar for inference. See
 
 Local Dictation is MIT-licensed; see [LICENSE](LICENSE).
 
-The bundled sidecar models are openly licensed: Silero VAD (MIT) for voice activity detection, WeSpeaker (CC BY 4.0) for speaker embeddings, and pyannote segmentation (MIT). See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) for full attributions. Transcription model licenses are shown in the model catalog before download.
+Third-party component and model licenses are documented in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) and shown in the model catalog before download.
