@@ -1,50 +1,71 @@
 # Local Dictation
 
-On-device dictation plugin for Obsidian. Talk directly into your notes with fast accurate transcription from high-quality models running on your CPU or GPU.
-
-Transcription runs entirely on your device. No accounts or cloud required. A fast rust sidecar handles the inference and all models can be downloaded directly in the settings.
-
-## Features
-
-- **High-quality models, run locally.** Choose from Whisper, Cohere Transcribe, or Moonshine — on CPU or GPU. Cohere Transcribe currently tops the [Open ASR Leaderboard](https://huggingface.co/spaces/hf-audio/open_asr_leaderboard).
-- **Live dictation.** Moonshine streaming models show provisional words within about a second and revise them in place until each utterance finalizes.
-- **Speaker labels.** Optional on-device diarization tags who's talking — for interviews, meetings, and calls. Nothing is stored; voiceprints live in memory for the session only.
-- **System audio.** Transcribe your computer's output — meetings, calls, videos — not just your mic. Available on Windows, Linux, and macOS 14.2+.
-- **Timestamps.** Optionally stamp phrases with elapsed or wall-clock time — handy for meetings and interviews.
-- **LLM presets.** Clean up, summarize, pull out action items, or reshape a transcript with built-in or custom presets, run through a local model (Ollama) or OpenRouter.
-- **Auto routing.** Keep cleanup fully local, or have only oversized transcripts route automatically to OpenRouter for a bigger model and larger context window.
-- **Runs on your hardware.** Metal on macOS, CUDA on recent NVIDIA GPUs, CPU everywhere else.
-
-## 🚀 Getting started
-
-Install **Local Dictation** from Obsidian's Community Plugins. A setup wizard downloads the engine and a starter model on first launch.
-
-Then click the microphone in the ribbon, or bind a hotkey to **Local Dictation: Toggle dictation**, and start talking. Text lands at your cursor.
-
-## Platform support
-
-CPU works everywhere with no extra setup. Hardware acceleration is available for faster transcription — use Metal (macOS, automatic) or CUDA on a recent NVIDIA GPU (RTX 20-series / GTX 16-series or newer, with a current driver). See the [CUDA setup guide](docs/guides/cuda-setup.md) to enable it.
-
-macOS and Windows are the primary tested targets. On Linux, the plugin is used daily on Fedora 44 (native and Flatpak); other distributions should work but aren't routinely verified. If something breaks on yours, [open an issue](https://github.com/brittain9/local-dictation-obsidian-plugin/issues).
-
-Moonshine live dictation is English-only. Streaming models do not apply speaker labels, and long speech is split at a 30-second utterance cap. Tiny is intended for lower-end CPUs, Small is the recommended balance, and Medium trades additional compute and memory for accuracy. Batch models keep their existing behavior.
-
-## 🔒 Privacy
-
-Your audio never leaves your device — transcription is always local. The sidecar and models download once from GitHub Releases, and model files live outside your vault.
-
-Local LLMs are limited in capability, so you can route your transcribed text to OpenRouter for frontier models and much larger context windows. Restrict it to ZDR endpoints and approved providers in OpenRouter to match your own privacy standards. Remote LLM features turn off with a single toggle, and a second toggle disables all LLM features in the plugin.
-
-## Contributing
-
-A TypeScript plugin paired with a rust sidecar for inference. See [CONTRIBUTING.md](CONTRIBUTING.md) for the architecture, setup, and workflow.
-
-## License
-
-Local Dictation is MIT-licensed — see [LICENSE](LICENSE).
-
-The models bundled in the sidecar are openly licensed too: Silero VAD (MIT) for voice activity detection, plus the diarization models WeSpeaker (CC-BY-4.0) and pyannote segmentation (MIT). See Full attributions [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
-
 [![GitHub release](https://img.shields.io/github/v/release/brittain9/local-dictation-obsidian-plugin?style=flat-square)](https://github.com/brittain9/local-dictation-obsidian-plugin/releases/latest)
 [![GitHub stars](https://img.shields.io/github/stars/brittain9/local-dictation-obsidian-plugin?style=flat-square)](https://github.com/brittain9/local-dictation-obsidian-plugin/stargazers)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=flat-square)](LICENSE)
+
+**Private speech-to-text, directly in your Obsidian notes.** Dictate with live text or capture a meeting from your microphone and system audio. Transcription runs on your device, with no account or cloud service required.
+
+Optional text transformations can run locally through Ollama or remotely through OpenRouter. Remote processing is off until you configure and select it; audio is never sent to either provider.
+
+[Install Local Dictation from Obsidian Community Plugins](https://obsidian.md/plugins?id=local-dictation)
+
+## Choose your workflow
+
+| Workflow | What happens | Model fit |
+| --- | --- | --- |
+| **Live dictation** | Provisional words appear and revise in place while you speak. | Moonshine streaming models |
+| **Notes and drafts** | Final text lands at your cursor after each pause. | Whisper or Cohere Transcribe batch models |
+| **Meetings and calls** | Add computer audio to microphone capture, then optionally label speakers and add timestamps. | Whisper or Cohere Transcribe batch models |
+
+All transcription models in the current catalog run locally and support English. Moonshine is optimized for live dictation; speaker labels currently require a batch model.
+
+## Features
+
+- **Live text.** Moonshine streaming models show provisional words and revise them in place until each utterance finalizes.
+- **Meeting capture.** Include system audio from meetings, calls, or videos alongside your microphone on Windows, Linux, and macOS 14.2 or later.
+- **Speaker labels.** Optional on-device diarization assigns session-stable speaker labels. Speaker embeddings stay in memory and are discarded after the session.
+- **Timestamps.** Add elapsed or wall-clock timestamps at configurable intervals.
+- **Local model choices.** Choose Whisper, Cohere Transcribe, or Moonshine models and download them from Settings.
+- **Optional text transformation.** Clean up, summarize, extract action items, or apply a custom prompt through local Ollama or remote OpenRouter models.
+- **Explicit remote controls.** Keep transformations local, allow OpenRouter only for oversized transcripts, or disable remote and LLM features entirely.
+
+## Getting started
+
+1. [Install **Local Dictation** from Community Plugins](https://obsidian.md/plugins?id=local-dictation).
+2. Follow the setup wizard to download the native speech-to-text engine and a starter model.
+3. Click the microphone in the ribbon, or bind a hotkey to **Local Dictation: Toggle dictation**, and start talking. Text lands at your cursor.
+
+The engine and models need a one-time download. Transcription then works without an ongoing network connection.
+
+## Platform support
+
+Published sidecar builds currently target Apple silicon on macOS and x86-64 on Windows and Linux.
+
+| Platform | CPU | Hardware acceleration | System audio |
+| --- | --- | --- | --- |
+| **macOS (Apple silicon)** | Supported | Metal is automatic for Whisper | macOS 14.2 or later |
+| **Windows (x86-64)** | Supported | Optional CUDA on a recent NVIDIA GPU | Supported |
+| **Linux (x86-64)** | Supported | Optional CUDA on a recent NVIDIA GPU | Supported through PulseAudio/PipeWire |
+
+macOS and Windows are the primary tested targets. On Linux, the plugin is used daily on Fedora (native and Flatpak); other distributions should work but are not routinely verified. If something breaks on yours, [open an issue](https://github.com/brittain9/local-dictation-obsidian-plugin/issues).
+
+For CUDA requirements and Flatpak-specific setup, see the [CUDA setup guide](docs/guides/cuda-setup.md).
+
+## Privacy
+
+- **Transcription stays local.** Audio is processed by the native sidecar on your computer and is not uploaded for transcription.
+- **Downloads are explicit.** The sidecar comes from GitHub Releases; model files come from the source URLs shown in the model catalog. Downloaded engine and model files live outside your vault.
+- **Remote cleanup uses text, not audio.** If you configure and select OpenRouter, it receives the transcript plus any note context you choose to include. Ollama requests stay on your computer through its loopback interface.
+- **Remote processing is optional.** You can disable OpenRouter routing or all LLM features from Settings. If you use OpenRouter, configure its provider and zero-data-retention controls to match your requirements.
+- **Speaker identity is session-only.** Diarization embeddings are held in memory for the active session and are not persisted as voice profiles.
+
+## Contributing
+
+Local Dictation pairs a TypeScript plugin with a Rust sidecar for inference. See [CONTRIBUTING.md](CONTRIBUTING.md) for the architecture, setup, and workflow.
+
+## License
+
+Local Dictation is MIT-licensed; see [LICENSE](LICENSE).
+
+The bundled sidecar models are openly licensed: Silero VAD (MIT) for voice activity detection, WeSpeaker (CC BY 4.0) for speaker embeddings, and pyannote segmentation (MIT). See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) for full attributions. Transcription model licenses are shown in the model catalog before download.
