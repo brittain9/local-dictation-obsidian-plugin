@@ -10,6 +10,20 @@ Optional text transformations can run locally through Ollama or remotely through
 
 [Install Local Dictation from Obsidian Community Plugins](https://obsidian.md/plugins?id=local-dictation)
 
+## See it in action
+
+![Obsidian showing Local Dictation's active waveform icon and provisional Moonshine text in a disposable vault](docs/media/live-dictation.png)
+
+_Live Moonshine output captured while the real plugin transcribed a synthetic audio file through Chromium's test microphone._
+
+![Obsidian reading view showing synthetic meeting notes with a microphone and system audio source, timestamped speaker labels, and action items](docs/media/meeting-notes.png)
+
+_A synthetic meeting note demonstrates the system-audio, timestamp, and speaker-label workflow without exposing a real vault._
+
+![Local Dictation setup wizard explaining streaming Moonshine and batch Whisper models in a disposable Obsidian vault](docs/media/setup-wizard.png)
+
+_The first-run wizard installs the native engine and helps you choose between live and batch transcription._
+
 ## Choose your workflow
 
 | Workflow | What happens | Model fit |
