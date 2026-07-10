@@ -655,6 +655,60 @@ describe('DictationSessionController', () => {
     });
   });
 
+  it('drops a queued raw final after an acknowledged cancellation while earlier cleanup ignores abort', async () => {
+    const sidecarConnection = new FakeSidecarConnection();
+    const sessions: FakeSession[] = [];
+    let cleanupSignal: AbortSignal | undefined;
+    let resolveCleanup: ((value: LlmRouterCleanupResult) => void) | undefined;
+    const cleanup = vi.fn(
+      ({ abortSignal }: { abortSignal?: AbortSignal }) =>
+        new Promise<LlmRouterCleanupResult>((resolve) => {
+          cleanupSignal = abortSignal;
+          resolveCleanup = resolve;
+        }),
+    );
+    let onLockedNoteClosed: (() => void) | undefined;
+    const controller = createController({
+      createSession: (session, options) => {
+        sessions.push(session);
+        onLockedNoteClosed = options.callbacks.onLockedNoteClosed;
+      },
+      getSettings: () =>
+        createSettings({
+          llmFeaturesEnabled: true,
+          llmPostprocessMode: 'per_utterance',
+          llmPostprocessSkipMinWords: 2,
+          selectedModel: createExternalModelSelection(),
+        }),
+      llmRouter: createFakeLlmRouter({ cleanup }),
+      sidecarConnection,
+    });
+
+    await controller.startDictation();
+    const sessionId = sidecarConnection.startSession.mock.calls[0]?.[0].sessionId ?? '';
+
+    sidecarConnection.emit(transcriptReady(sessionId, 'cleanup blocks'));
+    sidecarConnection.emit(transcriptReady(sessionId, 'raw'));
+    await vi.waitFor(() => {
+      expect(cleanup).toHaveBeenCalledOnce();
+    });
+
+    onLockedNoteClosed?.();
+    await vi.waitFor(() => {
+      expect(sidecarConnection.cancelSession).toHaveBeenCalledWith(sessionId);
+    });
+    expect(cleanupSignal?.aborted).toBe(true);
+    expect(sessions[0]?.acceptTranscript).not.toHaveBeenCalled();
+
+    // This provider deliberately ignores abort. Its completion releases the
+    // raw final queued behind it after session_stopped has already arrived.
+    resolveCleanup?.({ model: 'm', providerId: 'ollama', text: 'ignored cleanup' });
+    await vi.waitFor(() => {
+      expect(sessions[0]?.dispose).toHaveBeenCalledOnce();
+    });
+    expect(sessions[0]?.acceptTranscript).not.toHaveBeenCalled();
+  });
+
   it('does not accept queued utterances after cancellation, even when capture teardown rejects', async () => {
     const captureStream = new FakeCaptureStream();
     const logger = new FakeLogger();
@@ -800,8 +854,9 @@ describe('DictationSessionController', () => {
     expect(cleanup).not.toHaveBeenCalled();
   });
 
-  it('sends one sidecar cancel when fatal containment races another cancellation source', async () => {
+  it('reports and cancels once when fatal containment races target loss', async () => {
     const captureStream = new FakeCaptureStream();
+    const show = vi.fn();
     const sidecarConnection = new FakeSidecarConnection();
     let onLockedNoteClosed: (() => void) | undefined;
     let onSurfaceDesynchronized: ((failure: SurfaceDesynchronization) => void) | undefined;
@@ -818,6 +873,7 @@ describe('DictationSessionController', () => {
         onLockedNoteClosed = options.callbacks.onLockedNoteClosed;
         onSurfaceDesynchronized = options.callbacks.onSurfaceDesynchronized;
       },
+      feedback: { show },
       sidecarConnection,
     });
 
@@ -838,6 +894,213 @@ describe('DictationSessionController', () => {
     resolveCaptureStop?.();
     await vi.waitFor(() => {
       expect(sidecarConnection.cancelSession).toHaveBeenCalledOnce();
+    });
+    expect(show).toHaveBeenCalledOnce();
+    expect(show).toHaveBeenCalledWith(
+      expect.objectContaining({ key: 'dictation-surface-desynchronized' }),
+    );
+  });
+
+  it('keeps target-loss feedback as the first cause when desynchronization follows', async () => {
+    const show = vi.fn();
+    const sidecarConnection = new FakeSidecarConnection();
+    let onLockedNoteClosed: (() => void) | undefined;
+    let onSurfaceDesynchronized: ((failure: SurfaceDesynchronization) => void) | undefined;
+    const controller = createController({
+      createSession: (_session, options) => {
+        onLockedNoteClosed = options.callbacks.onLockedNoteClosed;
+        onSurfaceDesynchronized = options.callbacks.onSurfaceDesynchronized;
+      },
+      feedback: { show },
+      sidecarConnection,
+    });
+
+    await controller.startDictation();
+
+    onLockedNoteClosed?.();
+    onSurfaceDesynchronized?.({
+      documentLength: 4280,
+      kind: 'surface_desynchronized',
+      trackedPosition: 4314,
+    });
+
+    await vi.waitFor(() => {
+      expect(sidecarConnection.cancelSession).toHaveBeenCalledOnce();
+    });
+    expect(show).toHaveBeenCalledOnce();
+    expect(show).toHaveBeenCalledWith(expect.objectContaining({ key: 'dictation-target-closed' }));
+  });
+
+  it('keeps the controller idle when target loss wins a pending-start failure race', async () => {
+    const show = vi.fn();
+    const sidecarConnection = new FakeSidecarConnection();
+    let onLockedNoteClosed: (() => void) | undefined;
+    let rejectStart: ((error: Error) => void) | undefined;
+    sidecarConnection.startSession.mockImplementationOnce(
+      () =>
+        new Promise((_resolve, reject) => {
+          rejectStart = reject;
+        }),
+    );
+    sidecarConnection.cancelSession.mockImplementationOnce(async (sessionId) => ({
+      reason: 'user_cancel',
+      sessionId,
+      type: 'session_stopped',
+    }));
+    const controller = createController({
+      createSession: (_session, options) => {
+        onLockedNoteClosed = options.callbacks.onLockedNoteClosed;
+      },
+      feedback: { show },
+      sidecarConnection,
+    });
+
+    const start = controller.startDictation();
+    await vi.waitFor(() => {
+      expect(sidecarConnection.startSession).toHaveBeenCalledOnce();
+    });
+
+    onLockedNoteClosed?.();
+    await vi.waitFor(() => {
+      expect(controller.getState()).toBe('idle');
+      expect(sidecarConnection.cancelSession).toHaveBeenCalledOnce();
+    });
+
+    rejectStart?.(new Error('sidecar start failed after cancellation'));
+    await start;
+
+    expect(controller.getState()).toBe('idle');
+    expect(show).toHaveBeenCalledOnce();
+    expect(show).toHaveBeenCalledWith(expect.objectContaining({ key: 'dictation-target-closed' }));
+  });
+
+  it.each([
+    {
+      error: (sessionId: string): SidecarEvent => ({
+        code: 'inference_failed',
+        message: 'The speech engine failed.',
+        sessionId,
+        type: 'error',
+      }),
+      source: 'sidecar error',
+    },
+    {
+      error: (sessionId: string): SidecarEvent => ({
+        code: 'utterance_queue_overload',
+        message: 'The transcription backlog reached capacity.',
+        sessionId,
+        type: 'error',
+      }),
+      source: 'queue overload',
+    },
+  ])('keeps target-loss feedback when it races a $source', async ({ error, source: _source }) => {
+    const show = vi.fn();
+    const sidecarConnection = new FakeSidecarConnection();
+    let onLockedNoteClosed: (() => void) | undefined;
+    const controller = createController({
+      createSession: (_session, options) => {
+        onLockedNoteClosed = options.callbacks.onLockedNoteClosed;
+      },
+      feedback: { show },
+      sidecarConnection,
+    });
+
+    await controller.startDictation();
+    const sessionId = sidecarConnection.startSession.mock.calls[0]?.[0].sessionId ?? '';
+
+    onLockedNoteClosed?.();
+    sidecarConnection.emit(error(sessionId));
+
+    await vi.waitFor(() => {
+      expect(sidecarConnection.cancelSession).toHaveBeenCalledOnce();
+    });
+    expect(show).toHaveBeenCalledOnce();
+    expect(show).toHaveBeenCalledWith(expect.objectContaining({ key: 'dictation-target-closed' }));
+  });
+
+  it('reports target loss after a prior queue-overload warning cancels the drain', async () => {
+    const show = vi.fn();
+    const sidecarConnection = new FakeSidecarConnection();
+    let onLockedNoteClosed: (() => void) | undefined;
+    const controller = createController({
+      createSession: (_session, options) => {
+        onLockedNoteClosed = options.callbacks.onLockedNoteClosed;
+      },
+      feedback: { show },
+      sidecarConnection,
+    });
+
+    await controller.startDictation();
+    const sessionId = sidecarConnection.startSession.mock.calls[0]?.[0].sessionId ?? '';
+    sidecarConnection.emit({
+      code: 'utterance_queue_overload',
+      message: 'The transcription backlog reached capacity.',
+      sessionId,
+      type: 'error',
+    });
+    await vi.waitFor(() => {
+      expect(show).toHaveBeenCalledWith(
+        expect.objectContaining({ key: 'utterance-queue-overload' }),
+      );
+    });
+
+    onLockedNoteClosed?.();
+
+    await vi.waitFor(() => {
+      expect(sidecarConnection.cancelSession).toHaveBeenCalledWith(sessionId);
+    });
+    expect(show).toHaveBeenCalledTimes(2);
+    expect(show).toHaveBeenLastCalledWith(
+      expect.objectContaining({ key: 'dictation-target-closed' }),
+    );
+  });
+
+  it.each([
+    {
+      callback: 'onLockedNoteClosed' as const,
+      expectedKey: 'dictation-target-closed',
+      expectedMessage:
+        'Dictation stopped because its target note was closed or replaced. Start dictation again to continue.',
+      reason: 'closed',
+    },
+    {
+      callback: 'onLockedNoteDeleted' as const,
+      expectedKey: 'dictation-target-deleted',
+      expectedMessage:
+        'Dictation stopped because its target note was deleted. Restore or recreate the note, then start dictation again.',
+      reason: 'deleted',
+    },
+  ])('reports one actionable explanation when the target is $reason', async (scenario) => {
+    const captureStream = new FakeCaptureStream();
+    const show = vi.fn();
+    const sidecarConnection = new FakeSidecarConnection();
+    let callbacks: CreateSessionOptions['callbacks'] | undefined;
+    const controller = createController({
+      captureStream,
+      createSession: (_session, options) => {
+        callbacks = options.callbacks;
+      },
+      feedback: { show },
+      sidecarConnection,
+    });
+
+    await controller.startDictation();
+    const sessionId = sidecarConnection.startSession.mock.calls[0]?.[0].sessionId ?? '';
+    const targetLossCallback = callbacks?.[scenario.callback];
+
+    targetLossCallback?.();
+    targetLossCallback?.();
+
+    await vi.waitFor(() => {
+      expect(sidecarConnection.cancelSession).toHaveBeenCalledOnce();
+    });
+    expect(captureStream.stop).toHaveBeenCalledOnce();
+    expect(show).toHaveBeenCalledOnce();
+    expect(show).toHaveBeenCalledWith({
+      cause: { reason: scenario.reason, sessionId },
+      intent: 'warning',
+      key: scenario.expectedKey,
+      message: scenario.expectedMessage,
     });
   });
 

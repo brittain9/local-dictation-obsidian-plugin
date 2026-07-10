@@ -24,7 +24,7 @@ import type { PluginSettings, SmartParagraphPauseSettings } from '../settings/pl
 import { formatErrorMessage } from '../shared/format-utils';
 import type { PluginLogger } from '../shared/plugin-logger';
 import { truncateLeadingText } from '../shared/text-truncation';
-import type { UserFeedback } from '../shared/user-feedback';
+import type { FeedbackRequest, UserFeedback } from '../shared/user-feedback';
 import type {
   ContextRequestEvent,
   ContextWindow,
@@ -94,6 +94,9 @@ interface ActiveSessionSnapshot {
 }
 
 type SessionPhase = 'starting' | 'active' | 'stopping' | 'cancelling' | 'stopped';
+// Stable across sidecar lifecycle acknowledgements. Terminal causes claim the
+// feedback slot, while cancellation also permanently rejects transcript work.
+type TerminalArbitrationState = 'open' | 'feedback-claimed' | 'cancelled';
 
 interface ManagedSession {
   anchorTimerId: number | null;
@@ -101,12 +104,16 @@ interface ManagedSession {
   // in final-event order. Partials bypass it and project immediately.
   cleanupChain: Promise<void>;
   cleanupAbortControllers: Set<AbortController>;
-  fatalTranscriptFailureReported: boolean;
   llmFailureLogged: boolean;
   pendingTranscriptWork: Set<Promise<void>>;
   phase: SessionPhase;
   session: ControllerSession;
   snapshot: ActiveSessionSnapshot;
+  terminalArbitration: TerminalArbitrationState;
+}
+
+function rejectsTranscriptWork(entry: ManagedSession): boolean {
+  return entry.terminalArbitration === 'cancelled';
 }
 
 interface DictationSessionControllerDependencies {
@@ -173,6 +180,16 @@ const FEEDBACK_FAILURES = {
   stopDictation: {
     key: 'dictation-stop-failed',
     message: 'Could not stop dictation.',
+  },
+  targetNoteClosed: {
+    key: 'dictation-target-closed',
+    message:
+      'Dictation stopped because its target note was closed or replaced. Start dictation again to continue.',
+  },
+  targetNoteDeleted: {
+    key: 'dictation-target-deleted',
+    message:
+      'Dictation stopped because its target note was deleted. Restore or recreate the note, then start dictation again.',
   },
   transcriptWrite: {
     key: 'transcript-write-failed',
@@ -331,12 +348,12 @@ export class DictationSessionController {
       anchorTimerId: null,
       cleanupChain: Promise.resolve(),
       cleanupAbortControllers: new Set(),
-      fatalTranscriptFailureReported: false,
       llmFailureLogged: false,
       pendingTranscriptWork: new Set(),
       phase: 'starting',
       session,
       snapshot,
+      terminalArbitration: 'open',
     };
     this.sessions.set(sessionId, entry);
     this.activeSessionId = sessionId;
@@ -429,7 +446,7 @@ export class DictationSessionController {
       this.dependencies.sidecarConnection.requestStopSession(sessionId);
     } catch (error) {
       this.disposeLocalSession(sessionId);
-      this.handleError(FEEDBACK_FAILURES.stopDictation, error);
+      this.handleError(FEEDBACK_FAILURES.stopDictation, error, entry);
     }
   }
 
@@ -449,12 +466,12 @@ export class DictationSessionController {
       return;
     }
 
+    this.handleError(FEEDBACK_FAILURES.startDictation, error, entry);
     if (entry.phase === 'starting') {
       this.disposeLocalSession(sessionId);
     } else {
       await this.cancelSession(sessionId);
     }
-    this.handleError(FEEDBACK_FAILURES.startDictation, error);
   }
 
   private async assertMicrophoneInputAvailable(): Promise<void> {
@@ -485,6 +502,7 @@ export class DictationSessionController {
     // Establish the terminal state before capture teardown yields. Every caller
     // then joins the same promise, so concurrent failure sources cannot send
     // duplicate cancellation commands to the sidecar.
+    entry.terminalArbitration = 'cancelled';
     entry.phase = 'cancelling';
     this.abortProviderCleanups(entry);
     const cancellation = Promise.resolve().then(() => this.completeSessionCancellation(sessionId));
@@ -660,6 +678,9 @@ export class DictationSessionController {
     if (entry === undefined) {
       return;
     }
+    if (entry.phase === 'cancelling') {
+      return;
+    }
 
     this.applySessionStateToAnchor(entry, event.state);
 
@@ -738,7 +759,7 @@ export class DictationSessionController {
 
   private async handleTranscriptReady(event: TranscriptReadyEvent): Promise<void> {
     const entry = this.sessions.get(event.sessionId);
-    if (entry === undefined || entry.fatalTranscriptFailureReported) {
+    if (entry === undefined || rejectsTranscriptWork(entry)) {
       return;
     }
 
@@ -812,7 +833,7 @@ export class DictationSessionController {
       revision === null ||
       !this.sessions.has(sessionId) ||
       entry.phase === 'cancelling' ||
-      entry.fatalTranscriptFailureReported
+      rejectsTranscriptWork(entry)
     ) {
       return;
     }
@@ -823,11 +844,11 @@ export class DictationSessionController {
       this.cancelOnFatalTranscriptFailure(sessionId, FEEDBACK_FAILURES.transcriptWrite, error);
       return;
     }
-    if (entry.fatalTranscriptFailureReported) {
+    if (rejectsTranscriptWork(entry)) {
       return;
     }
     if (result.kind === 'rejected') {
-      this.handleError(FEEDBACK_FAILURES.recordTranscript, new Error(result.reason));
+      this.handleError(FEEDBACK_FAILURES.recordTranscript, new Error(result.reason), entry);
       await this.cancelSession(sessionId);
     }
   }
@@ -991,7 +1012,9 @@ export class DictationSessionController {
       'session',
       `session ${event.sessionId} stopped (reason: ${event.reason})`,
     );
-    entry.phase = 'stopped';
+    if (!rejectsTranscriptWork(entry)) {
+      entry.phase = 'stopped';
+    }
 
     if (event.sessionId === this.activeSessionId) {
       this.activeSessionId = null;
@@ -1208,7 +1231,7 @@ export class DictationSessionController {
     if (this.sessions.get(sessionId) !== entry) {
       return true;
     }
-    if (!entry.fatalTranscriptFailureReported) {
+    if (!rejectsTranscriptWork(entry)) {
       return false;
     }
 
@@ -1243,8 +1266,15 @@ export class DictationSessionController {
     }
 
     if (event.sessionId === this.activeSessionId) {
-      this.applyUiState('error');
-      this.dependencies.feedback.show({ intent: 'error', message: detail });
+      const reported = this.reportTerminalFeedback(entry, {
+        cause: { code: event.code, details: event.details, sessionId: event.sessionId },
+        intent: 'error',
+        key: FEEDBACK_FAILURES.sidecar.key,
+        message: detail,
+      });
+      if (reported) {
+        this.applyUiState('error');
+      }
     } else {
       this.dependencies.logger?.warn('session', detail);
     }
@@ -1270,10 +1300,17 @@ export class DictationSessionController {
     if (entry === undefined) {
       return;
     }
+    if (entry.phase === 'cancelling') {
+      return;
+    }
 
     const detail = event.details ? `${event.message} (${event.details})` : event.message;
     if (sessionId === this.activeSessionId) {
+      // Queue overload is a graceful stop, not a cancellation cause. Keep its
+      // warning outside terminal arbitration so a later target loss can explain
+      // why accepted work was discarded while the queue was draining.
       this.dependencies.feedback.show({
+        cause: { code: event.code, details: event.details, sessionId },
         intent: 'warning',
         key: 'utterance-queue-overload',
         message: detail,
@@ -1314,11 +1351,21 @@ export class DictationSessionController {
   }
 
   private cancelOnLockedNoteEvent(sessionId: string, reason: 'closed' | 'deleted'): void {
-    if (!this.sessions.has(sessionId)) {
+    const entry = this.sessions.get(sessionId);
+    if (entry === undefined) {
       return;
     }
 
-    this.dependencies.logger?.warn('session', `locked note ${reason} for session ${sessionId}`);
+    const failure =
+      reason === 'closed'
+        ? FEEDBACK_FAILURES.targetNoteClosed
+        : FEEDBACK_FAILURES.targetNoteDeleted;
+    this.reportTerminalFeedback(entry, {
+      cause: { reason, sessionId },
+      intent: 'warning',
+      key: failure.key,
+      message: failure.message,
+    });
     void this.cancelSession(sessionId);
   }
 
@@ -1328,18 +1375,18 @@ export class DictationSessionController {
     details: unknown,
   ): void {
     const entry = this.sessions.get(sessionId);
-    if (entry === undefined || entry.fatalTranscriptFailureReported) {
+    if (entry === undefined || rejectsTranscriptWork(entry)) {
       return;
     }
 
-    entry.fatalTranscriptFailureReported = true;
     this.abortProviderCleanups(entry);
-    this.dependencies.feedback.show({
+    this.reportTerminalFeedback(entry, {
       cause: details,
       intent: 'error',
       key: failure.key,
       message: failure.message,
     });
+    entry.terminalArbitration = 'cancelled';
 
     if (entry.phase === 'cancelling' || entry.phase === 'stopped') {
       return;
@@ -1351,40 +1398,57 @@ export class DictationSessionController {
     void this.cancelSession(sessionId);
   }
 
-  private handleError(failure: FeedbackFailure, error: unknown): void {
-    this.applyUiState('error');
+  private reportTerminalFeedback(entry: ManagedSession, request: FeedbackRequest): boolean {
+    if (entry.terminalArbitration !== 'open') {
+      return false;
+    }
 
+    entry.terminalArbitration = 'feedback-claimed';
+    this.dependencies.feedback.show(request);
+    return true;
+  }
+
+  private handleError(failure: FeedbackFailure, error: unknown, entry?: ManagedSession): void {
     // Microphone-capture failures get specific, actionable copy that stands on
     // its own; prefixing it with the generic start-failure message just buries
     // the instructions. The Settings mic picker shows the same copy for parity.
     const microphoneMessage = formatMicrophoneCaptureErrorMessage(error);
+    let request: FeedbackRequest;
     if (microphoneMessage !== null) {
-      this.dependencies.feedback.show({
+      request = {
         cause: error,
         intent: 'action-required',
         key: 'microphone-permission',
         message: microphoneMessage,
-      });
-      return;
+      };
+    } else {
+      const systemAudioMessage = formatSystemAudioSidecarErrorMessage(error);
+      request =
+        systemAudioMessage === null
+          ? {
+              cause: error,
+              intent: 'error',
+              key: failure.key,
+              message: failure.message,
+            }
+          : {
+              cause: error,
+              intent: 'action-required',
+              key: 'system-audio-permission',
+              message: systemAudioMessage,
+            };
     }
 
-    const systemAudioMessage = formatSystemAudioSidecarErrorMessage(error);
-    if (systemAudioMessage !== null) {
-      this.dependencies.feedback.show({
-        cause: error,
-        intent: 'action-required',
-        key: 'system-audio-permission',
-        message: systemAudioMessage,
-      });
-      return;
+    let reported: boolean;
+    if (entry === undefined) {
+      this.dependencies.feedback.show(request);
+      reported = true;
+    } else {
+      reported = this.reportTerminalFeedback(entry, request);
     }
-
-    this.dependencies.feedback.show({
-      cause: error,
-      intent: 'error',
-      key: failure.key,
-      message: failure.message,
-    });
+    if (reported) {
+      this.applyUiState('error');
+    }
   }
 }
 

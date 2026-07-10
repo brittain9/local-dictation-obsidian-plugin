@@ -12,7 +12,9 @@ import type {
   RewriteResult,
   SurfaceDesynchronization,
 } from '../src/editor/note-surface';
+import { TemporaryLeafPinLeaseManager } from '../src/editor/temporary-leaf-pin';
 import { Session } from '../src/session/session';
+import type { PluginLogger } from '../src/shared/plugin-logger';
 import type {
   TranscriptInsertProjection,
   TranscriptRenderOptions,
@@ -396,7 +398,8 @@ describe('Session', () => {
   });
 
   it('keeps projecting to the locked background note when the active tab changes', () => {
-    const { callbacks, lockedFile, session, surface, workspace } = createSessionHarness();
+    const { callbacks, lockedFile, session, surface, targetLeaf, workspace } =
+      createSessionHarness();
     const otherFile = fakeFile('other.md');
 
     workspace.activeEditor = fakeActiveEditor(otherFile);
@@ -410,18 +413,95 @@ describe('Session', () => {
       utteranceId: 'u1',
     });
     expect(workspace.leaves[0]?.view?.file).toBe(lockedFile);
+    expect(targetLeaf.pinned).toBe(true);
   });
 
-  it('requests graceful stop when the locked note is no longer open', () => {
-    const { callbacks, session, surface, workspace } = createSessionHarness();
+  it('treats the exact target leaf as closed even when a duplicate shows the same file', () => {
+    const { callbacks, duplicateLeaf, session, surface, workspace } = createSessionHarness({
+      duplicateLockedLeaf: true,
+    });
 
-    workspace.leaves = [];
+    workspace.leaves = duplicateLeaf === null ? [] : [duplicateLeaf];
     workspace.trigger('layout-change');
     session.acceptTranscript(transcript({ text: 'drained journal only', utteranceId: 'u1' }));
 
     expect(callbacks.onLockedNoteClosed).toHaveBeenCalledTimes(1);
     expect(surface.dispose).toHaveBeenCalledTimes(1);
     expect(surface.appendCalls).toHaveLength(0);
+  });
+
+  it('treats replacement of the target leaf editor as terminal', () => {
+    const { callbacks, lockedFile, session, surface, targetLeaf, workspace } =
+      createSessionHarness();
+
+    targetLeaf.view = {
+      editor: { cm: {} as EditorView },
+      file: lockedFile,
+    };
+    workspace.trigger('layout-change');
+    session.acceptTranscript(transcript({ text: 'must not move', utteranceId: 'u1' }));
+
+    expect(callbacks.onLockedNoteClosed).toHaveBeenCalledOnce();
+    expect(surface.dispose).toHaveBeenCalledOnce();
+    expect(surface.appendCalls).toHaveLength(0);
+  });
+
+  it('does not stop or pin the target when an unrelated duplicate leaf closes', () => {
+    const { callbacks, duplicateLeaf, session, targetLeaf, workspace } = createSessionHarness({
+      duplicateLockedLeaf: true,
+    });
+
+    workspace.leaves = [targetLeaf];
+    workspace.trigger('layout-change');
+
+    expect(callbacks.onLockedNoteClosed).not.toHaveBeenCalled();
+    expect(targetLeaf.pinned).toBe(true);
+    expect(duplicateLeaf?.setPinned).not.toHaveBeenCalled();
+
+    session.dispose();
+
+    expect(targetLeaf.pinned).toBe(false);
+  });
+
+  it('holds the temporary pin until session disposal', () => {
+    const { session, targetLeaf } = createSessionHarness();
+
+    expect(targetLeaf.pinned).toBe(true);
+    session.acceptTranscript(transcript({ text: 'pending transcript', utteranceId: 'u1' }));
+    expect(targetLeaf.pinned).toBe(true);
+
+    session.dispose();
+
+    expect(targetLeaf.pinned).toBe(false);
+  });
+
+  it('continues without navigation protection when the exact editor leaf is unresolved', () => {
+    const logger = fakeLogger();
+    const { session, surface, targetLeaf } = createSessionHarness({
+      logger,
+      unresolvedTarget: true,
+    });
+
+    session.acceptTranscript(transcript({ text: 'still dictated', utteranceId: 'u1' }));
+
+    expect(targetLeaf.setPinned).not.toHaveBeenCalled();
+    expect(surface.appendCalls).toHaveLength(1);
+    expect(logger.debug).toHaveBeenCalledWith(
+      'session',
+      'navigation protection unavailable: exact editor leaf could not be resolved',
+    );
+  });
+
+  it('continues without pinning either leaf when exact editor resolution is ambiguous', () => {
+    const { duplicateLeaf, session, surface, targetLeaf } = createSessionHarness({
+      ambiguousTarget: true,
+    });
+
+    session.acceptTranscript(transcript({ text: 'still dictated', utteranceId: 'u1' }));
+
+    expect(targetLeaf.setPinned).not.toHaveBeenCalled();
+    expect(duplicateLeaf?.setPinned).not.toHaveBeenCalled();
+    expect(surface.appendCalls).toHaveLength(1);
   });
 
   it('requests cancel on locked-note delete and never writes later transcripts', () => {
@@ -769,15 +849,26 @@ describe('Session', () => {
   });
 });
 
-function createSessionHarness(options: { rendererOptions?: TranscriptRenderOptions } = {}): {
+function createSessionHarness(
+  options: {
+    ambiguousTarget?: boolean;
+    duplicateLockedLeaf?: boolean;
+    leafPinManager?: TemporaryLeafPinLeaseManager;
+    logger?: PluginLogger;
+    rendererOptions?: TranscriptRenderOptions;
+    unresolvedTarget?: boolean;
+  } = {},
+): {
   callbacks: {
     onLockedNoteClosed: ReturnType<typeof vi.fn>;
     onLockedNoteDeleted: ReturnType<typeof vi.fn>;
     onSurfaceDesynchronized: ReturnType<typeof vi.fn>;
   };
+  duplicateLeaf: FakeMarkdownLeaf | null;
   lockedFile: TFile;
   session: Session;
   surface: FakeSurface;
+  targetLeaf: FakeMarkdownLeaf;
   vault: FakeEvents;
   workspace: FakeWorkspace;
 } {
@@ -785,6 +876,20 @@ function createSessionHarness(options: { rendererOptions?: TranscriptRenderOptio
   const surface = new FakeSurface();
   const vault = new FakeEvents();
   const workspace = new FakeWorkspace(lockedFile);
+  const targetLeaf = workspace.leaves[0];
+  if (targetLeaf === undefined) {
+    throw new Error('expected target leaf fixture');
+  }
+  const duplicateLeaf =
+    options.duplicateLockedLeaf || options.ambiguousTarget
+      ? new FakeMarkdownLeaf(
+          lockedFile,
+          options.ambiguousTarget ? targetLeaf.view.editor.cm : ({} as EditorView),
+        )
+      : null;
+  if (duplicateLeaf !== null) {
+    workspace.leaves.unshift(duplicateLeaf);
+  }
   const callbacks = {
     onLockedNoteClosed: vi.fn(),
     onLockedNoteDeleted: vi.fn(),
@@ -795,6 +900,7 @@ function createSessionHarness(options: { rendererOptions?: TranscriptRenderOptio
   const session = new Session({
     app,
     callbacks,
+    leafPinManager: options.leafPinManager ?? new TemporaryLeafPinLeaseManager(),
     lockedFile,
     noteSurfaceFactory: (_view, _placement, onSurfaceDesynchronized) => {
       surface.onSurfaceDesynchronized = onSurfaceDesynchronized;
@@ -803,10 +909,20 @@ function createSessionHarness(options: { rendererOptions?: TranscriptRenderOptio
     placement,
     rendererOptions: options.rendererOptions ?? renderOptions(),
     sessionId: 'session-1',
-    view: {} as EditorView,
+    view: options.unresolvedTarget ? ({} as EditorView) : targetLeaf.view.editor.cm,
+    ...(options.logger !== undefined ? { logger: options.logger } : {}),
   });
 
-  return { callbacks, lockedFile, session, surface, vault, workspace };
+  return {
+    callbacks,
+    duplicateLeaf,
+    lockedFile,
+    session,
+    surface,
+    targetLeaf,
+    vault,
+    workspace,
+  };
 }
 
 class FakeEvents {
@@ -842,16 +958,35 @@ class FakeEvents {
 
 class FakeWorkspace extends FakeEvents {
   public activeEditor: unknown;
-  public leaves: Array<{ view: { editor: { cm: EditorView }; file: TFile } }> = [];
+  public leaves: FakeMarkdownLeaf[] = [];
 
   constructor(file: TFile) {
     super();
-    this.activeEditor = fakeActiveEditor(file);
-    this.leaves = [this.activeEditor as { view: { editor: { cm: EditorView }; file: TFile } }];
+    const leaf = new FakeMarkdownLeaf(file, {} as EditorView);
+    this.activeEditor = leaf.view;
+    this.leaves = [leaf];
   }
 
-  getLeavesOfType(viewType: string): Array<{ view: { editor: { cm: EditorView }; file: TFile } }> {
+  getLeavesOfType(viewType: string): FakeMarkdownLeaf[] {
     return viewType === 'markdown' ? this.leaves : [];
+  }
+}
+
+class FakeMarkdownLeaf extends FakeEvents {
+  public pinned = false;
+  public view: { editor: { cm: EditorView }; file: TFile };
+  public readonly setPinned = vi.fn((pinned: boolean) => {
+    this.pinned = pinned;
+    this.trigger('pinned-change', pinned);
+  });
+
+  constructor(file: TFile, view: EditorView) {
+    super();
+    this.view = { editor: { cm: view }, file };
+  }
+
+  getViewState(): { pinned: boolean } {
+    return { pinned: this.pinned };
   }
 }
 
@@ -871,4 +1006,16 @@ function fakeFile(path: string): TFile {
     path,
     vault: null,
   } as unknown as TFile;
+}
+
+function fakeLogger(): {
+  debug: ReturnType<typeof vi.fn<PluginLogger['debug']>>;
+  error: ReturnType<typeof vi.fn<PluginLogger['error']>>;
+  warn: ReturnType<typeof vi.fn<PluginLogger['warn']>>;
+} {
+  return {
+    debug: vi.fn<PluginLogger['debug']>(),
+    error: vi.fn<PluginLogger['error']>(),
+    warn: vi.fn<PluginLogger['warn']>(),
+  };
 }

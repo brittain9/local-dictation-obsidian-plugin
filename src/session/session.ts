@@ -14,6 +14,11 @@ import {
   type RewriteResult,
   type SurfaceDesynchronization,
 } from '../editor/note-surface';
+import type {
+  PinnableLeaf,
+  TemporaryLeafPinLease,
+  TemporaryLeafPinLeaseManager,
+} from '../editor/temporary-leaf-pin';
 import type { PluginLogger } from '../shared/plugin-logger';
 import { truncateLeadingText } from '../shared/text-truncation';
 import {
@@ -32,7 +37,7 @@ interface MarkdownFileInfoLike {
   file: TFile | null;
 }
 
-interface MarkdownLeafLike {
+interface MarkdownLeafLike extends PinnableLeaf {
   view?: MarkdownFileInfoLike;
 }
 
@@ -62,6 +67,7 @@ export interface SessionLifecycleCallbacks {
 export interface SessionDependencies {
   app: Pick<App, 'vault' | 'workspace'>;
   callbacks: SessionLifecycleCallbacks;
+  leafPinManager: Pick<TemporaryLeafPinLeaseManager, 'acquire'>;
   logger?: PluginLogger;
   lockedFile: TFile;
   noteSurfaceFactory?: (
@@ -109,6 +115,8 @@ interface RawSessionEntry {
 export class Session {
   private readonly journal: SessionJournal;
   private readonly renderer: TranscriptRenderer;
+  private readonly targetLeaf: MarkdownLeafLike | null;
+  private leafPinLease: TemporaryLeafPinLease | null = null;
   private noteDeleted = false;
   private noteOpen = true;
   private readonly projectionByUtterance = new Map<string, ProjectionState>();
@@ -122,6 +130,7 @@ export class Session {
     app: Pick<App, 'vault' | 'workspace'>,
     options: {
       callbacks: SessionLifecycleCallbacks;
+      leafPinManager: Pick<TemporaryLeafPinLeaseManager, 'acquire'>;
       logger?: PluginLogger;
       placement: NotePlacementOptions;
       rendererOptions: TranscriptRenderOptions;
@@ -143,6 +152,7 @@ export class Session {
     return new Session({
       app,
       callbacks: options.callbacks,
+      leafPinManager: options.leafPinManager,
       lockedFile: target.file,
       placement,
       rendererOptions: options.rendererOptions,
@@ -162,7 +172,9 @@ export class Session {
         this.handleSurfaceDesynchronization(failure);
       },
     );
+    this.targetLeaf = findOpenMarkdownLeafForEditor(dependencies.app, dependencies.view);
     this.registerLifecycleSubscriptions();
+    this.acquireLeafPinLease();
   }
 
   acceptTranscript(revision: TranscriptRevision): SessionAcceptResult {
@@ -335,6 +347,7 @@ export class Session {
     this.surface?.dispose();
     this.surface = null;
     this.releaseSubscriptions();
+    this.releaseLeafPinLease();
   }
 
   private projectRevision(revision: TranscriptRevision): void {
@@ -573,7 +586,7 @@ export class Session {
       return;
     }
 
-    if (this.hasOpenLockedFile()) {
+    if (this.hasLiveTargetSurface()) {
       return;
     }
 
@@ -634,9 +647,61 @@ export class Session {
     }
   }
 
-  private hasOpenLockedFile(): boolean {
+  private acquireLeafPinLease(): void {
+    if (this.targetLeaf === null) {
+      this.dependencies.logger?.debug(
+        'session',
+        'navigation protection unavailable: exact editor leaf could not be resolved',
+      );
+      return;
+    }
+
+    try {
+      this.leafPinLease = this.dependencies.leafPinManager.acquire(this.targetLeaf, () =>
+        this.isExactTargetLeafLive(),
+      );
+    } catch (error) {
+      this.dependencies.logger?.debug(
+        'session',
+        'navigation protection unavailable: temporary leaf pin could not be acquired',
+        error,
+      );
+    }
+  }
+
+  private releaseLeafPinLease(): void {
+    const lease = this.leafPinLease;
+    this.leafPinLease = null;
+
+    try {
+      lease?.release();
+    } catch (error) {
+      this.dependencies.logger?.warn(
+        'session',
+        'failed to restore the temporary dictation leaf pin',
+        error,
+      );
+    }
+  }
+
+  private hasLiveTargetSurface(): boolean {
+    if (this.targetLeaf !== null) {
+      return this.isExactTargetLeafLive();
+    }
+
     return (
       findOpenMarkdownViewForFile(this.dependencies.app, this.dependencies.lockedFile) !== null
+    );
+  }
+
+  private isExactTargetLeafLive(): boolean {
+    if (this.targetLeaf === null) {
+      return false;
+    }
+
+    return (
+      findOpenMarkdownLeafForEditor(this.dependencies.app, this.dependencies.view) ===
+      this.targetLeaf
     );
   }
 
@@ -761,6 +826,26 @@ function findOpenMarkdownViewForFile(
   }
 
   return null;
+}
+
+function findOpenMarkdownLeafForEditor(
+  app: Pick<App, 'workspace'>,
+  targetView: EditorView,
+): MarkdownLeafLike | null {
+  let match: MarkdownLeafLike | null = null;
+
+  for (const leaf of app.workspace.getLeavesOfType('markdown') as unknown as MarkdownLeafLike[]) {
+    if (leaf.view?.editor?.cm !== targetView) {
+      continue;
+    }
+
+    if (match !== null) {
+      return null;
+    }
+    match = leaf;
+  }
+
+  return match;
 }
 
 function formatRawPostprocessCallout(rawText: string): string {

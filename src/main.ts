@@ -10,6 +10,7 @@ import { dictationAnchorExtension } from './editor/dictation-anchor-extension';
 import { noteSurfaceUpdateListenerExtension } from './editor/note-surface';
 import { provisionalTranscriptExtension } from './editor/provisional-transcript-extension';
 import { sessionProcessingExtension } from './editor/session-processing-extension';
+import { TemporaryLeafPinLeaseManager } from './editor/temporary-leaf-pin';
 import type { LlmCleanupFailure } from './llm/provider';
 import { createLlmRouter } from './llm/router';
 import { ManageModelsModal } from './models/manage-models-modal';
@@ -67,6 +68,7 @@ export default class LocalSttPlugin extends Plugin {
   private settings: PluginSettings = DEFAULT_PLUGIN_SETTINGS;
   private sidecarConnection: SidecarConnection | null = null;
   private sidecarInstallManager: SidecarInstallManager | null = null;
+  private readonly temporaryLeafPinLeaseManager = new TemporaryLeafPinLeaseManager();
 
   override async onload(): Promise<void> {
     const loadedSettings = loadPluginSettings(await this.loadData(), this.app.secretStorage);
@@ -161,6 +163,7 @@ export default class LocalSttPlugin extends Plugin {
       createSession: ({ callbacks, placement, rendererOptions, sessionId }) =>
         Session.createFromActiveEditor(this.app, {
           callbacks,
+          leafPinManager: this.temporaryLeafPinLeaseManager,
           logger: this.logger,
           placement,
           rendererOptions,
