@@ -94,9 +94,9 @@ interface ActiveSessionSnapshot {
 }
 
 type SessionPhase = 'starting' | 'active' | 'stopping' | 'cancelling' | 'stopped';
-// Stable across sidecar lifecycle acknowledgements: graceful terminal feedback
-// may still drain accepted work, while cancellation permanently rejects writes.
-type SessionTermination = 'open' | 'feedback-claimed' | 'cancelled';
+// Stable across sidecar lifecycle acknowledgements. Terminal causes claim the
+// feedback slot, while cancellation also permanently rejects transcript work.
+type TerminalArbitrationState = 'open' | 'feedback-claimed' | 'cancelled';
 
 interface ManagedSession {
   anchorTimerId: number | null;
@@ -109,11 +109,11 @@ interface ManagedSession {
   phase: SessionPhase;
   session: ControllerSession;
   snapshot: ActiveSessionSnapshot;
-  termination: SessionTermination;
+  terminalArbitration: TerminalArbitrationState;
 }
 
 function rejectsTranscriptWork(entry: ManagedSession): boolean {
-  return entry.termination === 'cancelled';
+  return entry.terminalArbitration === 'cancelled';
 }
 
 interface DictationSessionControllerDependencies {
@@ -353,7 +353,7 @@ export class DictationSessionController {
       phase: 'starting',
       session,
       snapshot,
-      termination: 'open',
+      terminalArbitration: 'open',
     };
     this.sessions.set(sessionId, entry);
     this.activeSessionId = sessionId;
@@ -502,7 +502,7 @@ export class DictationSessionController {
     // Establish the terminal state before capture teardown yields. Every caller
     // then joins the same promise, so concurrent failure sources cannot send
     // duplicate cancellation commands to the sidecar.
-    entry.termination = 'cancelled';
+    entry.terminalArbitration = 'cancelled';
     entry.phase = 'cancelling';
     this.abortProviderCleanups(entry);
     const cancellation = Promise.resolve().then(() => this.completeSessionCancellation(sessionId));
@@ -1306,7 +1306,10 @@ export class DictationSessionController {
 
     const detail = event.details ? `${event.message} (${event.details})` : event.message;
     if (sessionId === this.activeSessionId) {
-      this.reportTerminalFeedback(entry, {
+      // Queue overload is a graceful stop, not a cancellation cause. Keep its
+      // warning outside terminal arbitration so a later target loss can explain
+      // why accepted work was discarded while the queue was draining.
+      this.dependencies.feedback.show({
         cause: { code: event.code, details: event.details, sessionId },
         intent: 'warning',
         key: 'utterance-queue-overload',
@@ -1383,7 +1386,7 @@ export class DictationSessionController {
       key: failure.key,
       message: failure.message,
     });
-    entry.termination = 'cancelled';
+    entry.terminalArbitration = 'cancelled';
 
     if (entry.phase === 'cancelling' || entry.phase === 'stopped') {
       return;
@@ -1396,11 +1399,11 @@ export class DictationSessionController {
   }
 
   private reportTerminalFeedback(entry: ManagedSession, request: FeedbackRequest): boolean {
-    if (entry.termination !== 'open') {
+    if (entry.terminalArbitration !== 'open') {
       return false;
     }
 
-    entry.termination = 'feedback-claimed';
+    entry.terminalArbitration = 'feedback-claimed';
     this.dependencies.feedback.show(request);
     return true;
   }

@@ -1018,6 +1018,43 @@ describe('DictationSessionController', () => {
     expect(show).toHaveBeenCalledWith(expect.objectContaining({ key: 'dictation-target-closed' }));
   });
 
+  it('reports target loss after a prior queue-overload warning cancels the drain', async () => {
+    const show = vi.fn();
+    const sidecarConnection = new FakeSidecarConnection();
+    let onLockedNoteClosed: (() => void) | undefined;
+    const controller = createController({
+      createSession: (_session, options) => {
+        onLockedNoteClosed = options.callbacks.onLockedNoteClosed;
+      },
+      feedback: { show },
+      sidecarConnection,
+    });
+
+    await controller.startDictation();
+    const sessionId = sidecarConnection.startSession.mock.calls[0]?.[0].sessionId ?? '';
+    sidecarConnection.emit({
+      code: 'utterance_queue_overload',
+      message: 'The transcription backlog reached capacity.',
+      sessionId,
+      type: 'error',
+    });
+    await vi.waitFor(() => {
+      expect(show).toHaveBeenCalledWith(
+        expect.objectContaining({ key: 'utterance-queue-overload' }),
+      );
+    });
+
+    onLockedNoteClosed?.();
+
+    await vi.waitFor(() => {
+      expect(sidecarConnection.cancelSession).toHaveBeenCalledWith(sessionId);
+    });
+    expect(show).toHaveBeenCalledTimes(2);
+    expect(show).toHaveBeenLastCalledWith(
+      expect.objectContaining({ key: 'dictation-target-closed' }),
+    );
+  });
+
   it.each([
     {
       callback: 'onLockedNoteClosed' as const,
