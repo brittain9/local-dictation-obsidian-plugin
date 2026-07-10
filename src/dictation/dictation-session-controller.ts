@@ -820,11 +820,7 @@ export class DictationSessionController {
     try {
       result = entry.session.acceptTranscript(revision);
     } catch (error) {
-      this.cancelOnFatalTranscriptFailure(
-        sessionId,
-        FEEDBACK_FAILURES.transcriptWrite,
-        error,
-      );
+      this.cancelOnFatalTranscriptFailure(sessionId, FEEDBACK_FAILURES.transcriptWrite, error);
       return;
     }
     if (entry.fatalTranscriptFailureReported) {

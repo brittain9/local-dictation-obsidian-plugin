@@ -32,6 +32,7 @@ export interface SidecarInstallModalOptions {
 }
 
 export class SidecarInstallModal extends Modal {
+  private inlineFailureVisible = false;
   private installProgressEl: HTMLDivElement | null = null;
   private unsubscribe: (() => void) | null = null;
   private wasActive = false;
@@ -44,6 +45,7 @@ export class SidecarInstallModal extends Modal {
   }
 
   override onOpen(): void {
+    this.inlineFailureVisible = true;
     this.modalEl.addClass('local-stt-sidecar-install');
     this.titleEl.setText(this.options.copy.title);
     this.unsubscribe = this.options.manager.subscribe(() => {
@@ -53,6 +55,7 @@ export class SidecarInstallModal extends Modal {
   }
 
   override onClose(): void {
+    this.inlineFailureVisible = false;
     this.unsubscribe?.();
     this.unsubscribe = null;
     this.contentEl.empty();
@@ -209,6 +212,11 @@ export class SidecarInstallModal extends Modal {
     try {
       this.options.manager.installBatch({
         beforeReplace: this.options.beforeReplace,
+        failureFeedback: {
+          isInlineVisible: () => this.inlineFailureVisible,
+          message:
+            'The speech engine install failed. Reopen setup or Settings to review the error and retry.',
+        },
         onInstalled: this.options.onInstalled,
         onVariantInstalled: this.options.onVariantInstalled,
         pluginDirectory: this.options.pluginDirectory,

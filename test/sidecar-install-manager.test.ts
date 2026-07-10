@@ -27,6 +27,10 @@ beforeEach(() => {
 
 function defaultInstallOptions() {
   return {
+    failureFeedback: {
+      isInlineVisible: () => true,
+      message: 'The speech engine install failed. Reopen setup or Settings to retry.',
+    },
     onInstalled: vi.fn(async () => {}),
     pluginDirectory: '/plugin',
     successNotice: 'Installed.',
@@ -213,6 +217,10 @@ describe('SidecarInstallManager', () => {
 
     manager.installBatch({
       ...defaultInstallOptions(),
+      failureFeedback: {
+        isInlineVisible: () => false,
+        message: 'The speech engine update failed. Reopen Settings to retry.',
+      },
       onInstalled,
       variants: ['cpu', 'cuda'],
     });
@@ -221,7 +229,12 @@ describe('SidecarInstallManager', () => {
     expect(installSidecarMock).toHaveBeenCalledTimes(2);
     expect(onInstalled).not.toHaveBeenCalled();
     expect(manager.getState().lastError).toBe('CUDA download failed');
-    expect(show).not.toHaveBeenCalled();
+    expect(show).toHaveBeenCalledWith({
+      cause: expect.any(Error),
+      intent: 'error',
+      key: 'sidecar-install-failed',
+      message: 'The speech engine update failed. Reopen Settings to retry.',
+    });
   });
 
   it('deduplicates variants and rejects an empty batch', async () => {
@@ -247,13 +260,19 @@ describe('SidecarInstallManager', () => {
   it('records install failures and clears active state', async () => {
     installSidecarMock.mockRejectedValueOnce(new Error('network failed'));
     const show = vi.fn();
-    const manager = new SidecarInstallManager({ feedback: { show } });
+    const logger = { debug: vi.fn(), error: vi.fn(), warn: vi.fn() };
+    const manager = new SidecarInstallManager({ feedback: { show }, logger });
 
     manager.install(defaultInstallOptions());
     await vi.waitFor(() => expect(manager.getState().activeInstall).toBeNull());
 
     expect(manager.getState().lastError).toBe('network failed');
     expect(show).not.toHaveBeenCalled();
+    expect(logger.error).toHaveBeenCalledWith(
+      'installer',
+      'sidecar install failed',
+      expect.any(Error),
+    );
   });
 
   it('treats AbortError as a user-initiated cancel, not a failure', async () => {

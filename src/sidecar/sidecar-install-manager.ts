@@ -25,6 +25,10 @@ export interface SidecarInstallManagerState {
 
 export interface SidecarInstallOptions {
   beforeReplace?: (() => Promise<void>) | undefined;
+  failureFeedback: {
+    isInlineVisible: () => boolean;
+    message: string;
+  };
   onInstalled: () => Promise<void>;
   pluginDirectory: string;
   successNotice: string;
@@ -167,8 +171,17 @@ export class SidecarInstallManager {
         this.lastError = null;
       } else {
         const message = formatErrorMessage(error);
-        this.deps.logger?.error('installer', 'sidecar install failed', error);
         this.lastError = message;
+        if (options.failureFeedback.isInlineVisible()) {
+          this.deps.logger?.error('installer', 'sidecar install failed', error);
+        } else {
+          this.deps.feedback.show({
+            cause: error,
+            intent: 'error',
+            key: 'sidecar-install-failed',
+            message: options.failureFeedback.message,
+          });
+        }
       }
     } finally {
       if (this.abortController?.signal === signal) {
