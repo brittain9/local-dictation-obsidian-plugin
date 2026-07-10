@@ -71,4 +71,3 @@ export interface SnapshotDelta {
 }
 
 export function computeDelta(previous: Snapshot | null, current: Snapshot): SnapshotDelta;
-export function compareCalverVersions(a: string, b: string): number;

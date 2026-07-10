@@ -28,11 +28,8 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { dirname } from 'node:path';
 import process from 'node:process';
 
-import {
-  compareCalverVersions,
-  computeDelta,
-  normalizeSnapshot,
-} from './lib/download-stats-data.mjs';
+import { compareCalverVersions } from './lib/calver.mjs';
+import { computeDelta, normalizeSnapshot } from './lib/download-stats-data.mjs';
 
 const OBSIDIAN_STATS_URL =
   'https://raw.githubusercontent.com/obsidianmd/obsidian-releases/master/community-plugin-stats.json';
