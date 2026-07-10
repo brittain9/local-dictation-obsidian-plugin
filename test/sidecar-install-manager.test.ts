@@ -207,23 +207,32 @@ describe('SidecarInstallManager', () => {
     await vi.waitFor(() => expect(installSidecarMock).toHaveBeenCalledTimes(2));
   });
 
-  it('stops a batch after the failing variant without running final initialization', async () => {
-    installSidecarMock
-      .mockResolvedValueOnce(successfulInstallResult('cpu'))
-      .mockRejectedValueOnce(new Error('CUDA download failed'));
+  it('surfaces a batch failure when its inline owner closes before the failing variant', async () => {
+    const cudaFailure: { reject?: (error: Error) => void } = {};
+    installSidecarMock.mockResolvedValueOnce(successfulInstallResult('cpu')).mockImplementationOnce(
+      () =>
+        new Promise((_resolve, reject) => {
+          cudaFailure.reject = reject;
+        }),
+    );
     const show = vi.fn();
     const onInstalled = vi.fn(async () => {});
     const manager = new SidecarInstallManager({ feedback: { show } });
+    let inlineVisible = true;
 
     manager.installBatch({
       ...defaultInstallOptions(),
       failureFeedback: {
-        isInlineVisible: () => false,
+        isInlineVisible: () => inlineVisible,
         message: 'The speech engine update failed. Reopen Settings to retry.',
       },
       onInstalled,
       variants: ['cpu', 'cuda'],
     });
+    await vi.waitFor(() => expect(installSidecarMock).toHaveBeenCalledTimes(2));
+
+    inlineVisible = false;
+    cudaFailure.reject?.(new Error('CUDA download failed'));
     await vi.waitFor(() => expect(manager.getState().activeInstall).toBeNull());
 
     expect(installSidecarMock).toHaveBeenCalledTimes(2);
