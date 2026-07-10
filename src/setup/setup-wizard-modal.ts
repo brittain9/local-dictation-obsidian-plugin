@@ -6,13 +6,16 @@ import type { PluginLogger } from '../shared/plugin-logger';
 import type { UserFeedback } from '../shared/user-feedback';
 import type { SidecarConnection } from '../sidecar/sidecar-connection';
 import type { SidecarInstallManager } from '../sidecar/sidecar-install-manager';
+import { SetupReadyActions } from './setup-ready-actions';
 import { getInstallCopy } from './sidecar-install-copy';
 import { SidecarInstallModal } from './sidecar-install-modal';
 
 interface WizardDependencies {
   app: App;
   feedback: Pick<UserFeedback, 'show'>;
+  hasDictationTarget: () => boolean;
   hasSelectedModel: () => boolean;
+  isDictationBusy: () => boolean;
   isSidecarInstalled: () => Promise<boolean>;
   logger?: PluginLogger;
   modelInstallManager: ModelInstallManager;
@@ -23,6 +26,7 @@ interface WizardDependencies {
   sidecarConnection: Pick<SidecarConnection, 'restart'>;
   sidecarInstallManager: SidecarInstallManager;
   sidecarStartupTimeoutMs: number;
+  startDictation: () => Promise<void>;
 }
 
 type WizardStepId = 'sidecar' | 'model' | 'ready';
@@ -34,9 +38,18 @@ export class SetupWizardModal extends Modal {
   private sidecarReady = false;
   private modelReady = false;
   private modelManagerUnsub: (() => void) | null = null;
+  private readonly readyActions: SetupReadyActions;
 
   constructor(private readonly deps: WizardDependencies) {
     super(deps.app);
+    this.readyActions = new SetupReadyActions({
+      closeWizard: () => this.close(),
+      feedback: deps.feedback,
+      hasDictationTarget: deps.hasDictationTarget,
+      isDictationBusy: deps.isDictationBusy,
+      onCompleted: deps.onCompleted,
+      startDictation: deps.startDictation,
+    });
   }
 
   override onOpen(): void {
@@ -252,6 +265,9 @@ export class SetupWizardModal extends Modal {
       cls: 'local-stt-wizard-step__title',
       text: "You're ready to dictate",
     });
+    body.createEl('p', {
+      text: "Try it in the Markdown note that's open now. Speak a few words, then use the ribbon mic or your hotkey to stop.",
+    });
 
     const cardRibbon = body.createDiv({ cls: 'local-stt-wizard-card' });
     const ribbonIcon = cardRibbon.createSpan({ cls: 'local-stt-wizard-card__icon' });
@@ -276,12 +292,16 @@ export class SetupWizardModal extends Modal {
 
     const actions = this.contentEl.createDiv({ cls: 'local-stt-wizard-actions' });
     actions.createEl('button', { text: 'Back' }).addEventListener('click', () => this.goBack());
-    const done = actions.createEl('button', { cls: 'mod-cta', text: 'Done' });
+    const done = actions.createEl('button', { text: 'Done' });
     done.addEventListener('click', () => {
-      void (async () => {
-        await this.deps.onCompleted();
-        this.close();
-      })();
+      void this.readyActions.done();
+    });
+    const tryDictation = actions.createEl('button', {
+      cls: 'mod-cta',
+      text: 'Try dictation now',
+    });
+    tryDictation.addEventListener('click', () => {
+      void this.readyActions.tryDictationNow();
     });
   }
 
