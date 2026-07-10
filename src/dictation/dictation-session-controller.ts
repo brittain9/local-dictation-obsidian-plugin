@@ -1258,13 +1258,15 @@ export class DictationSessionController {
     }
 
     if (event.sessionId === this.activeSessionId) {
-      this.applyUiState('error');
-      this.reportTerminalFeedback(entry, {
+      const reported = this.reportTerminalFeedback(entry, {
         cause: { code: event.code, details: event.details, sessionId: event.sessionId },
         intent: 'error',
         key: FEEDBACK_FAILURES.sidecar.key,
         message: detail,
       });
+      if (reported) {
+        this.applyUiState('error');
+      }
     } else {
       this.dependencies.logger?.warn('session', detail);
     }
@@ -1385,56 +1387,57 @@ export class DictationSessionController {
     void this.cancelSession(sessionId);
   }
 
-  private reportTerminalFeedback(entry: ManagedSession, request: FeedbackRequest): void {
+  private reportTerminalFeedback(entry: ManagedSession, request: FeedbackRequest): boolean {
     if (entry.terminalFeedbackReported) {
-      return;
+      return false;
     }
 
     entry.terminalFeedbackReported = true;
     this.dependencies.feedback.show(request);
+    return true;
   }
 
   private handleError(failure: FeedbackFailure, error: unknown, entry?: ManagedSession): void {
-    this.applyUiState('error');
-    const report = (request: FeedbackRequest): void => {
-      if (entry === undefined) {
-        this.dependencies.feedback.show(request);
-        return;
-      }
-      this.reportTerminalFeedback(entry, request);
-    };
-
     // Microphone-capture failures get specific, actionable copy that stands on
     // its own; prefixing it with the generic start-failure message just buries
     // the instructions. The Settings mic picker shows the same copy for parity.
     const microphoneMessage = formatMicrophoneCaptureErrorMessage(error);
+    let request: FeedbackRequest;
     if (microphoneMessage !== null) {
-      report({
+      request = {
         cause: error,
         intent: 'action-required',
         key: 'microphone-permission',
         message: microphoneMessage,
-      });
-      return;
+      };
+    } else {
+      const systemAudioMessage = formatSystemAudioSidecarErrorMessage(error);
+      request =
+        systemAudioMessage === null
+          ? {
+              cause: error,
+              intent: 'error',
+              key: failure.key,
+              message: failure.message,
+            }
+          : {
+              cause: error,
+              intent: 'action-required',
+              key: 'system-audio-permission',
+              message: systemAudioMessage,
+            };
     }
 
-    const systemAudioMessage = formatSystemAudioSidecarErrorMessage(error);
-    if (systemAudioMessage !== null) {
-      report({
-        cause: error,
-        intent: 'action-required',
-        key: 'system-audio-permission',
-        message: systemAudioMessage,
-      });
-      return;
+    let reported: boolean;
+    if (entry === undefined) {
+      this.dependencies.feedback.show(request);
+      reported = true;
+    } else {
+      reported = this.reportTerminalFeedback(entry, request);
     }
-
-    report({
-      cause: error,
-      intent: 'error',
-      key: failure.key,
-      message: failure.message,
-    });
+    if (reported) {
+      this.applyUiState('error');
+    }
   }
 }
 

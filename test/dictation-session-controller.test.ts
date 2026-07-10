@@ -877,6 +877,49 @@ describe('DictationSessionController', () => {
     expect(show).toHaveBeenCalledWith(expect.objectContaining({ key: 'dictation-target-closed' }));
   });
 
+  it('keeps the controller idle when target loss wins a pending-start failure race', async () => {
+    const show = vi.fn();
+    const sidecarConnection = new FakeSidecarConnection();
+    let onLockedNoteClosed: (() => void) | undefined;
+    let rejectStart: ((error: Error) => void) | undefined;
+    sidecarConnection.startSession.mockImplementationOnce(
+      () =>
+        new Promise((_resolve, reject) => {
+          rejectStart = reject;
+        }),
+    );
+    sidecarConnection.cancelSession.mockImplementationOnce(async (sessionId) => ({
+      reason: 'user_cancel',
+      sessionId,
+      type: 'session_stopped',
+    }));
+    const controller = createController({
+      createSession: (_session, options) => {
+        onLockedNoteClosed = options.callbacks.onLockedNoteClosed;
+      },
+      feedback: { show },
+      sidecarConnection,
+    });
+
+    const start = controller.startDictation();
+    await vi.waitFor(() => {
+      expect(sidecarConnection.startSession).toHaveBeenCalledOnce();
+    });
+
+    onLockedNoteClosed?.();
+    await vi.waitFor(() => {
+      expect(controller.getState()).toBe('idle');
+      expect(sidecarConnection.cancelSession).toHaveBeenCalledOnce();
+    });
+
+    rejectStart?.(new Error('sidecar start failed after cancellation'));
+    await start;
+
+    expect(controller.getState()).toBe('idle');
+    expect(show).toHaveBeenCalledOnce();
+    expect(show).toHaveBeenCalledWith(expect.objectContaining({ key: 'dictation-target-closed' }));
+  });
+
   it.each([
     {
       error: (sessionId: string): SidecarEvent => ({
