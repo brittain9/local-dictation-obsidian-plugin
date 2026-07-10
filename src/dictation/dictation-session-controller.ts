@@ -24,7 +24,7 @@ import type { PluginSettings, SmartParagraphPauseSettings } from '../settings/pl
 import { formatErrorMessage } from '../shared/format-utils';
 import type { PluginLogger } from '../shared/plugin-logger';
 import { truncateLeadingText } from '../shared/text-truncation';
-import type { UserFeedback } from '../shared/user-feedback';
+import type { FeedbackRequest, UserFeedback } from '../shared/user-feedback';
 import type {
   ContextRequestEvent,
   ContextWindow,
@@ -107,7 +107,7 @@ interface ManagedSession {
   phase: SessionPhase;
   session: ControllerSession;
   snapshot: ActiveSessionSnapshot;
-  targetLossReported: boolean;
+  terminalFeedbackReported: boolean;
 }
 
 interface DictationSessionControllerDependencies {
@@ -348,7 +348,7 @@ export class DictationSessionController {
       phase: 'starting',
       session,
       snapshot,
-      targetLossReported: false,
+      terminalFeedbackReported: false,
     };
     this.sessions.set(sessionId, entry);
     this.activeSessionId = sessionId;
@@ -1327,16 +1327,15 @@ export class DictationSessionController {
 
   private cancelOnLockedNoteEvent(sessionId: string, reason: 'closed' | 'deleted'): void {
     const entry = this.sessions.get(sessionId);
-    if (entry === undefined || entry.targetLossReported) {
+    if (entry === undefined) {
       return;
     }
 
-    entry.targetLossReported = true;
     const failure =
       reason === 'closed'
         ? FEEDBACK_FAILURES.targetNoteClosed
         : FEEDBACK_FAILURES.targetNoteDeleted;
-    this.dependencies.feedback.show({
+    this.reportTerminalFeedback(entry, {
       cause: { reason, sessionId },
       intent: 'warning',
       key: failure.key,
@@ -1357,7 +1356,7 @@ export class DictationSessionController {
 
     entry.fatalTranscriptFailureReported = true;
     this.abortProviderCleanups(entry);
-    this.dependencies.feedback.show({
+    this.reportTerminalFeedback(entry, {
       cause: details,
       intent: 'error',
       key: failure.key,
@@ -1372,6 +1371,15 @@ export class DictationSessionController {
     // observes the terminal phase and cannot repeat the failure.
     entry.phase = 'cancelling';
     void this.cancelSession(sessionId);
+  }
+
+  private reportTerminalFeedback(entry: ManagedSession, request: FeedbackRequest): void {
+    if (entry.terminalFeedbackReported) {
+      return;
+    }
+
+    entry.terminalFeedbackReported = true;
+    this.dependencies.feedback.show(request);
   }
 
   private handleError(failure: FeedbackFailure, error: unknown): void {

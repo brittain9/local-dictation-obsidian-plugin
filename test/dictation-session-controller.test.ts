@@ -800,8 +800,9 @@ describe('DictationSessionController', () => {
     expect(cleanup).not.toHaveBeenCalled();
   });
 
-  it('sends one sidecar cancel when fatal containment races another cancellation source', async () => {
+  it('reports and cancels once when fatal containment races target loss', async () => {
     const captureStream = new FakeCaptureStream();
+    const show = vi.fn();
     const sidecarConnection = new FakeSidecarConnection();
     let onLockedNoteClosed: (() => void) | undefined;
     let onSurfaceDesynchronized: ((failure: SurfaceDesynchronization) => void) | undefined;
@@ -818,6 +819,7 @@ describe('DictationSessionController', () => {
         onLockedNoteClosed = options.callbacks.onLockedNoteClosed;
         onSurfaceDesynchronized = options.callbacks.onSurfaceDesynchronized;
       },
+      feedback: { show },
       sidecarConnection,
     });
 
@@ -839,6 +841,40 @@ describe('DictationSessionController', () => {
     await vi.waitFor(() => {
       expect(sidecarConnection.cancelSession).toHaveBeenCalledOnce();
     });
+    expect(show).toHaveBeenCalledOnce();
+    expect(show).toHaveBeenCalledWith(
+      expect.objectContaining({ key: 'dictation-surface-desynchronized' }),
+    );
+  });
+
+  it('keeps target-loss feedback as the first cause when desynchronization follows', async () => {
+    const show = vi.fn();
+    const sidecarConnection = new FakeSidecarConnection();
+    let onLockedNoteClosed: (() => void) | undefined;
+    let onSurfaceDesynchronized: ((failure: SurfaceDesynchronization) => void) | undefined;
+    const controller = createController({
+      createSession: (_session, options) => {
+        onLockedNoteClosed = options.callbacks.onLockedNoteClosed;
+        onSurfaceDesynchronized = options.callbacks.onSurfaceDesynchronized;
+      },
+      feedback: { show },
+      sidecarConnection,
+    });
+
+    await controller.startDictation();
+
+    onLockedNoteClosed?.();
+    onSurfaceDesynchronized?.({
+      documentLength: 4280,
+      kind: 'surface_desynchronized',
+      trackedPosition: 4314,
+    });
+
+    await vi.waitFor(() => {
+      expect(sidecarConnection.cancelSession).toHaveBeenCalledOnce();
+    });
+    expect(show).toHaveBeenCalledOnce();
+    expect(show).toHaveBeenCalledWith(expect.objectContaining({ key: 'dictation-target-closed' }));
   });
 
   it.each([
