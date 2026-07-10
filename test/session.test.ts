@@ -184,9 +184,7 @@ describe('Session', () => {
         workspace: {
           activeEditor: null,
           getActiveFile: () => fallbackFile,
-          getLeavesOfType: () => [
-            { view: { editor: { cm: fallbackView }, file: fallbackFile } },
-          ],
+          getLeavesOfType: () => [{ view: { editor: { cm: fallbackView }, file: fallbackFile } }],
         },
       } as unknown as Pick<App, 'workspace'>),
     ).toBe(true);

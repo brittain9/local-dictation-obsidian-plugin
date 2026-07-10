@@ -324,7 +324,9 @@ export default class LocalSttPlugin extends Plugin {
     const modal = new SetupWizardModal({
       app: this.app,
       feedback: this.feedback,
+      hasDictationTarget: () => Session.hasDictationTarget(this.app),
       hasSelectedModel: () => this.settings.selectedModel !== null,
+      isDictationBusy: () => this.requireDictationController().isBusy(),
       isSidecarInstalled: () => this.isSidecarInstalled(),
       logger: this.logger,
       modelInstallManager: this.requireModelInstallManager(),
@@ -347,6 +349,7 @@ export default class LocalSttPlugin extends Plugin {
       sidecarConnection: this.requireSidecarConnection(),
       sidecarInstallManager: this.requireSidecarInstallManager(),
       sidecarStartupTimeoutMs: this.settings.sidecarStartupTimeoutSeconds * 1000,
+      startDictation: () => this.requireDictationController().startDictation(),
     });
     modal.open();
   }
