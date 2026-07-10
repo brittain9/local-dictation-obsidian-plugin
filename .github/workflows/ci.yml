@@ -38,6 +38,9 @@ jobs:
       - name: Install JavaScript dependencies
         run: npm ci
 
+      - name: Validate release metadata
+        run: npm run check:release
+
       - name: Run frontend quality gates
         run: npm run check:frontend
 

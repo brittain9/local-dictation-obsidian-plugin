@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest';
 
 import { buildReport, parseArgs } from '../scripts/download-stats.mjs';
+import { compareCalverVersions } from '../scripts/lib/calver.mjs';
 import {
   aggregatePlatformSplit,
   classifySidecarAsset,
-  compareCalverVersions,
   computeDelta,
   normalizeSnapshot,
   sumMainJsDownloads,
@@ -98,6 +98,12 @@ describe('compareCalverVersions', () => {
 
   it('treats equal versions as equal', () => {
     expect(compareCalverVersions('2026.7.2', '2026.7.2')).toBe(0);
+  });
+
+  it('compares unbounded MICRO values without losing integer precision', () => {
+    expect(
+      compareCalverVersions('2026.7.9007199254740992', '2026.7.9007199254740993'),
+    ).toBeLessThan(0);
   });
 });
 

@@ -83,18 +83,3 @@ export function computeDelta(previous, current) {
     registryDownloadsGained: current.obsidianRegistry.total - previous.obsidianRegistry.total,
   };
 }
-
-// Obsidian's community-plugin-stats.json keys releases by calver version
-// string (e.g. "2026.7.10") in insertion order, not chronological order, and
-// the MICRO segment isn't zero-padded — a plain string sort would rank
-// "2026.7.10" before "2026.7.2". Compare numerically per segment instead.
-export function compareCalverVersions(a, b) {
-  const partsA = a.split('.').map(Number);
-  const partsB = b.split('.').map(Number);
-  const length = Math.max(partsA.length, partsB.length);
-  for (let i = 0; i < length; i += 1) {
-    const diff = (partsA[i] ?? 0) - (partsB[i] ?? 0);
-    if (diff !== 0) return diff;
-  }
-  return 0;
-}

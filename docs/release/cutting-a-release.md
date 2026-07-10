@@ -10,10 +10,8 @@ counter (the 11th release cut in June 2026), **not** the day of the month.
 Format rules enforced by `scripts/read-release-version.mjs`:
 
 - **Month** is `1`–`12` with **no leading zero** → `2026.6.11`, never `2026.06.11`.
-- **MICRO** is currently constrained to `1`–`31` (a holdover from the old
-  day-based scheme). If a month ever needs a 32nd release, relax
-  `DATE_VERSION_PATTERN` in that script. Its error text also still reads
-  "YYYY.M.D" — cosmetic.
+- **MICRO** is any positive integer with no leading zero. It is not capped at
+  31 because it counts releases, not calendar days.
 - The git tag is **bare, no `v` prefix**, and must equal `manifest.json` exactly.
 
 ## Files that carry the version
@@ -25,28 +23,93 @@ fails at the CI metadata gate:
 | --- | --- |
 | `manifest.json` | `version`. Bump `minAppVersion` **only** if the runtime floor actually changed. |
 | `package.json` | `version`. |
-| `native/Cargo.toml` | `version` of the `local-dictation-sidecar` crate. **Easiest one to forget — it's the Rust sidecar.** |
-| `native/Cargo.lock` | the `version` under `[[package]] name = "local-dictation-sidecar"`. Keep in lock-step or the `--locked` build legs fail. |
-| `versions.json` | add `"<version>": "<minAppVersion>"`. (Obsidian's min-app map; not checked by the version validator, but required by the store.) |
-| `docs/release/notes/<version>.md` | new, non-empty, curated. Sections in order, omit empty: `## Highlights`, `## Fixes`, `## Performance`, `## Internal`. User-facing, plain language, one bold lead per bullet. |
+| `package-lock.json` | top-level `version` and the root package version under `packages[""]`. |
+| `native/Cargo.toml` | `version` of the `local-dictation-sidecar` crate. |
+| `native/Cargo.lock` | the `version` under `[[package]] name = "local-dictation-sidecar"`. |
+| `versions.json` | add `"<version>": "<minAppVersion>"` for Obsidian's minimum-app map. |
+| `docs/release/notes/<version>.md` | new, non-empty, curated release notes. |
+
+Do not update historical version examples in specifications, tests, or media
+capture records just because they mention the previous release.
 
 `minAppVersion` and the `obsidian` devDependency are independent on purpose: the
 floor can sit one patch above the typings (e.g. floor `1.11.5` for encryption at
 rest while typings pin `1.11.4`, since `1.11.5` has no npm package).
+
+## Prepare the release PR
+
+Release tooling changes must land in their own PR before the release metadata
+PR. That keeps the release PR mechanical and ensures it uses the exact checks
+that will validate it.
+
+Start from a clean branch and supply the version explicitly:
+
+```bash
+git switch -c chore/release-<version>
+npm run release:prepare -- --version <version>
+```
+
+The command validates the current release state before changing anything,
+updates every version-bearing file above, and creates a comments-only notes
+scaffold. It refuses to overwrite existing notes. To change the Obsidian floor
+for a release, pass `--min-app-version <version>`; otherwise the current floor
+is preserved.
+
+### Curate release notes
+
+Review the merged changes since the previous tag using their PR descriptions,
+tests, code, and user documentation. Do not turn commit subjects into a raw
+changelog. Write for plugin users and describe outcomes rather than internal
+types or implementation mechanics.
+
+Use these sections in order and omit empty ones: `## Highlights`,
+`## Improvements`, `## Fixes`, `## Performance`, `## Compatibility`,
+`## Known Limitations`, `## Internal`.
+
+- Put the most important features first.
+- Aim for 3–8 user-visible bullets total, with one bold lead per bullet.
+- Keep each bullet to one concise paragraph.
+- Allow at most one `Internal` bullet, reserved for engineering work that
+  materially improves release confidence or maintainability.
+- Exclude routine tests, refactors, dependency bumps, statistics, and
+  documentation-only changes unless users must act on them.
+
+The notes validator intentionally enforces only curated, non-comment content;
+review owns prose quality rather than a brittle style linter.
+
+### Reconcile documentation
+
+Before opening the release PR, compare the release range and make an explicit
+documentation decision for every user-visible or architectural change:
+
+```bash
+previous_tag=$(git describe --tags --abbrev=0)
+git log --oneline "$previous_tag"..HEAD
+git diff --name-only "$previous_tag"..HEAD
+```
+
+- Update the README or guides when onboarding, requirements, settings, or
+  user workflows changed.
+- Update `docs/system-architecture.md` when ownership boundaries, lifecycle,
+  data flow, or failure containment changed.
+- Use the release notes for behavior worth announcing that does not need
+  durable standalone documentation.
+- Record "no documentation change needed" in the PR when the audit finds no
+  durable gap.
 
 ## Pre-flight (run locally — mirrors the CI gate exactly)
 
 From the repo root, after bumping all files:
 
 ```bash
-node scripts/read-release-version.mjs --tag <version>      # manifest == package == native/Cargo.toml, and tag == version
-node scripts/validate-release-notes.mjs --version <version> # notes file exists and is non-empty
-npm run check                                               # typecheck, biome, eslint, vitest, frontend build, + cargo (rust)
+npm run check:release
+node scripts/read-release-version.mjs --tag <version>
+npm run check
 ```
 
-If the first two print `<version>` with no error, the `metadata` job will pass.
-Running these **before tagging** is the whole point of this doc — the gate that
-just bit us (a stale `native/Cargo.toml`) is caught here in seconds.
+`check:release` verifies every metadata mirror, the current `versions.json`
+mapping, and curated notes. Normal PR CI and the tag workflow run the same gate.
+The explicit tag check must print `<version>` with no error.
 
 ## Cut it
 
@@ -72,6 +135,7 @@ gh cache list --ref refs/heads/main --limit 100 --json key,ref,createdAt,lastAcc
   '.[] | select(.key | startswith("cuda-Windows-") or contains("sidecar-windows-x86_64-cuda"))'
 
 # 4. Tag main HEAD with the bare version and push:
+npm run check:release
 node scripts/read-release-version.mjs --tag <version>   # final check against the merged main content
 git tag <version> origin/main
 git push origin <version>                               # fires .github/workflows/release.yml
@@ -142,10 +206,8 @@ new one publishes so "Latest" is never broken.
 
 ## Gotchas (learned the hard way)
 
-- **`native/Cargo.toml` + `native/Cargo.lock` are the easy miss.** They live on
-  the Rust side and aren't obvious from the JS bump. CI's metadata gate catches
-  the `Cargo.toml`; the lock must match it or `cargo --locked` fails in the build
-  legs. Always run the pre-flight.
+- **Do not hand-edit a subset of version files.** Run `release:prepare`; the
+  metadata gate checks JavaScript, Rust, both lockfiles, and `versions.json`.
 - **Never pipe `gh run watch` through `tail`/`head`.** A pipeline's exit status
   is the last command's, so a failed run looks like success.
 - **Wait for `windows-cuda-cache` before tagging.** GitHub lets a release tag
