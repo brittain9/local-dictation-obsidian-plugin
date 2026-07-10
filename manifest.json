@@ -3,7 +3,7 @@
   "name": "Local Dictation",
   "version": "2026.7.3",
   "minAppVersion": "1.11.5",
-  "description": "Private, on-device speech-to-text. Dictate notes with Whisper, Cohere Transcribe, or live Moonshine models; clean up with a local Ollama model.",
+  "description": "Private, on-device dictation for notes and meetings, with live text, system audio, speaker labels, timestamps, and optional local or remote text cleanup.",
   "author": "Alexander Brittain",
   "authorUrl": "https://github.com/brittain9",
   "helpUrl": "https://github.com/brittain9/local-dictation-obsidian-plugin",
