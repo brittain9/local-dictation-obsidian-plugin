@@ -23,7 +23,7 @@
       "familyId": "cohere_transcribe",
       "runtimeId": "onnx_runtime",
       "displayName": "Cohere Transcribe",
-      "summary": "Cohere Transcribe (2B parameters, 14 languages) running on ONNX Runtime."
+      "summary": "Cohere Transcribe (2B parameters) running on ONNX Runtime. Local Dictation currently enables English only."
     },
     {
       "familyId": "moonshine",
