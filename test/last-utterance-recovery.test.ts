@@ -30,6 +30,22 @@ describe('LastUtteranceRecovery', () => {
     expect(recovery.hasUtterance()).toBe(false);
   });
 
+  it('clears immediately when disabled and ignores text until re-enabled', () => {
+    const { recovery } = createRecoveryHarness();
+    recovery.recordFinalizedUtterance('temporary text');
+
+    recovery.setEnabled(false);
+    recovery.recordFinalizedUtterance('must not be retained');
+
+    expect(recovery.hasUtterance()).toBe(false);
+
+    recovery.setEnabled(true);
+    expect(recovery.hasUtterance()).toBe(false);
+
+    recovery.recordFinalizedUtterance('new recovery text');
+    expect(recovery.hasUtterance()).toBe(true);
+  });
+
   it('inserts at the cursor without replacing a selection and separates adjacent words', () => {
     const { feedback, recovery } = createRecoveryHarness();
     const editor = createEditorHarness('beforeafter', { ch: 6, line: 0 });
@@ -56,6 +72,31 @@ describe('LastUtteranceRecovery', () => {
     recovery.reinsert(editor.editor);
 
     expect(editor.replaceRange).toHaveBeenCalledWith('aside', { ch: 1, line: 0 });
+  });
+
+  it.each([
+    ['emphasis', '****', 2, '**restored**'],
+    ['inline code', '``', 1, '`restored`'],
+    ['quotes', '""', 1, '"restored"'],
+  ])('does not synthesize spaces inside Markdown %s', (_label, line, ch, expectedLine) => {
+    const { recovery } = createRecoveryHarness();
+    const editor = createEditorHarness(line, { ch, line: 0 });
+    recovery.recordFinalizedUtterance('restored');
+
+    recovery.reinsert(editor.editor);
+
+    const insertion = editor.replaceRange.mock.calls[0]?.[0] ?? '';
+    expect(`${line.slice(0, ch)}${insertion}${line.slice(ch)}`).toBe(expectedLine);
+  });
+
+  it('separates adjacent Unicode word characters', () => {
+    const { recovery } = createRecoveryHarness();
+    const editor = createEditorHarness('𐐀界', { ch: 2, line: 0 });
+    recovery.recordFinalizedUtterance('é');
+
+    recovery.reinsert(editor.editor);
+
+    expect(editor.replaceRange).toHaveBeenCalledWith(' é ', { ch: 2, line: 0 });
   });
 
   it('places the cursor after a recovered multiline utterance', () => {

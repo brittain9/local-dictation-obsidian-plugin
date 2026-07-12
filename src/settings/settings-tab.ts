@@ -244,6 +244,12 @@ export class LocalSttSettingTab extends PluginSettingTab {
     updateDiarizationDesc();
     this.disposeDiarizationDesc = manager.subscribe(updateDiarizationDesc);
 
+    addToggleSetting(outputCard, this.access, {
+      name: 'Keep last utterance for recovery',
+      desc: 'Keep the latest finalized utterance in memory for the Reinsert last utterance command. The text is never saved to disk and is cleared when disabled or the plugin unloads.',
+      key: 'retainLastUtterance',
+    });
+
     const timestampsCard = createSettingGroup(containerEl, 'Timestamps');
     this.renderTimestampSettings(timestampsCard, settings);
 

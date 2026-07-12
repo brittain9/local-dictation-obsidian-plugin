@@ -128,6 +128,7 @@ export interface PluginSettings {
   llmRouting: LlmRouting;
   localTranscriptSidebarBootstrapped: boolean;
   modelStorePathOverride: string;
+  retainLastUtterance: boolean;
   schemaVersion: 2;
   selectedModel: SelectedModel | null;
   // Last-known-good capabilities for `selectedModel`, captured on a successful
@@ -182,6 +183,7 @@ export const DEFAULT_PLUGIN_SETTINGS: PluginSettings = {
   llmRouting: 'local',
   localTranscriptSidebarBootstrapped: false,
   modelStorePathOverride: '',
+  retainLastUtterance: true,
   schemaVersion: 2,
   selectedModel: null,
   selectedModelCapabilitiesSnapshot: null,
@@ -302,6 +304,10 @@ export function resolvePluginSettings(data: unknown): PluginSettings {
     modelStorePathOverride: readString(
       raw.modelStorePathOverride,
       DEFAULT_PLUGIN_SETTINGS.modelStorePathOverride,
+    ),
+    retainLastUtterance: readBoolean(
+      raw.retainLastUtterance,
+      DEFAULT_PLUGIN_SETTINGS.retainLastUtterance,
     ),
     // Bump `schemaVersion` and add a migration step when renaming a key or changing default semantics.
     schemaVersion: 2,

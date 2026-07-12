@@ -5,12 +5,14 @@ const STOP_DICTATION_COMMAND_ID = 'stop-dictation-session';
 const CANCEL_DICTATION_COMMAND_ID = 'cancel-dictation-session';
 const TOGGLE_DICTATION_COMMAND_ID = 'toggle-dictation-session';
 const REINSERT_LAST_UTTERANCE_COMMAND_ID = 'reinsert-last-utterance';
+const CLEAR_LAST_UTTERANCE_COMMAND_ID = 'clear-last-utterance';
 
 interface CommandDependencies {
   cancelDictation: () => Promise<void>;
+  clearLastUtterance: () => void;
   checkSidecarHealth: () => Promise<void>;
   plugin: Plugin;
-  canReinsertLastUtterance: () => boolean;
+  hasLastUtterance: () => boolean;
   reinsertLastUtterance: (editor: Editor) => void;
   restartSidecar: () => Promise<void>;
   startDictation: () => Promise<void>;
@@ -55,11 +57,25 @@ export function registerCommands(dependencies: CommandDependencies): void {
     id: REINSERT_LAST_UTTERANCE_COMMAND_ID,
     name: 'Reinsert last utterance',
     editorCheckCallback: (checking, editor) => {
-      if (!dependencies.canReinsertLastUtterance()) {
+      if (!dependencies.hasLastUtterance()) {
         return false;
       }
       if (!checking) {
         dependencies.reinsertLastUtterance(editor);
+      }
+      return true;
+    },
+  });
+
+  dependencies.plugin.addCommand({
+    id: CLEAR_LAST_UTTERANCE_COMMAND_ID,
+    name: 'Clear last utterance',
+    checkCallback: (checking) => {
+      if (!dependencies.hasLastUtterance()) {
+        return false;
+      }
+      if (!checking) {
+        dependencies.clearLastUtterance();
       }
       return true;
     },

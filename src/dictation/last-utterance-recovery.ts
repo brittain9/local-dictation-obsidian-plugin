@@ -2,25 +2,39 @@ import type { Editor, EditorPosition } from 'obsidian';
 
 import type { UserFeedback } from '../shared/user-feedback';
 
+const UNICODE_WORD_AT_START = /^[\p{L}\p{M}\p{N}\p{Pc}]/u;
+const UNICODE_WORD_AT_END = /[\p{L}\p{M}\p{N}\p{Pc}]$/u;
+
 export type UtteranceRecoveryEditor = Pick<
   Editor,
   'getCursor' | 'getLine' | 'replaceRange' | 'setCursor'
 >;
 
 export class LastUtteranceRecovery {
+  private enabled = true;
   private text: string | null = null;
 
   constructor(private readonly feedback: Pick<UserFeedback, 'show'>) {}
 
   hasUtterance(): boolean {
-    return this.text !== null;
+    return this.enabled && this.text !== null;
   }
 
   clear(): void {
     this.text = null;
   }
 
+  setEnabled(enabled: boolean): void {
+    this.enabled = enabled;
+    if (!enabled) {
+      this.clear();
+    }
+  }
+
   recordFinalizedUtterance(text: string): void {
+    if (!this.enabled) {
+      return;
+    }
     const normalized = text.trim();
     if (normalized.length > 0) {
       this.text = normalized;
@@ -62,32 +76,16 @@ export class LastUtteranceRecovery {
 }
 
 function formatInsertion(text: string, line: string, cursorCh: number): string {
-  const characterBefore = cursorCh > 0 ? line.charAt(cursorCh - 1) : '';
-  const characterAfter = line.charAt(cursorCh);
-  const prefix = needsSpaceBefore(characterBefore, text.charAt(0)) ? ' ' : '';
-  const suffix = needsSpaceAfter(text.charAt(text.length - 1), characterAfter) ? ' ' : '';
+  const textBeforeCursor = line.slice(0, cursorCh);
+  const textAfterCursor = line.slice(cursorCh);
+  const prefix = needsWordBoundarySpace(textBeforeCursor, text) ? ' ' : '';
+  const suffix = needsWordBoundarySpace(text, textAfterCursor) ? ' ' : '';
 
   return `${prefix}${text}${suffix}`;
 }
 
-function needsSpaceBefore(characterBefore: string, firstInsertedCharacter: string): boolean {
-  if (characterBefore.length === 0 || /\s/u.test(characterBefore)) {
-    return false;
-  }
-  if ('([{'.includes(characterBefore) || '.,!?;:)]}'.includes(firstInsertedCharacter)) {
-    return false;
-  }
-  return true;
-}
-
-function needsSpaceAfter(lastInsertedCharacter: string, characterAfter: string): boolean {
-  if (characterAfter.length === 0 || /\s/u.test(characterAfter)) {
-    return false;
-  }
-  if ('([{'.includes(lastInsertedCharacter) || '.,!?;:)]}'.includes(characterAfter)) {
-    return false;
-  }
-  return true;
+function needsWordBoundarySpace(before: string, after: string): boolean {
+  return UNICODE_WORD_AT_END.test(before) && UNICODE_WORD_AT_START.test(after);
 }
 
 function advancePosition(position: EditorPosition, insertion: string): EditorPosition {

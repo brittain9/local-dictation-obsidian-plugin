@@ -76,6 +76,7 @@ export default class LocalSttPlugin extends Plugin {
   override async onload(): Promise<void> {
     const loadedSettings = loadPluginSettings(await this.loadData(), this.app.secretStorage);
     this.settings = loadedSettings.settings;
+    this.lastUtteranceRecovery.setEnabled(this.settings.retainLastUtterance);
     if (loadedSettings.shouldPersist) {
       await this.saveData(this.settings);
     }
@@ -242,8 +243,16 @@ export default class LocalSttPlugin extends Plugin {
 
     registerCommands({
       cancelDictation: async () => this.requireDictationController().cancelDictation(),
-      canReinsertLastUtterance: () => this.lastUtteranceRecovery.hasUtterance(),
+      clearLastUtterance: () => {
+        this.lastUtteranceRecovery.clear();
+        this.feedback.show({
+          intent: 'success',
+          key: 'last-utterance-cleared',
+          message: 'Cleared the last retained utterance.',
+        });
+      },
       checkSidecarHealth: async () => this.checkSidecarHealth(),
+      hasLastUtterance: () => this.lastUtteranceRecovery.hasUtterance(),
       plugin: this,
       reinsertLastUtterance: (editor) => {
         this.lastUtteranceRecovery.reinsert(editor);
@@ -504,6 +513,7 @@ export default class LocalSttPlugin extends Plugin {
   ): Promise<void> {
     const previousSettings = this.settings;
     this.settings = resolvePluginSettings(nextSettings);
+    this.lastUtteranceRecovery.setEnabled(this.settings.retainLastUtterance);
     if (options.persist) {
       await this.saveData(this.settings);
     }
