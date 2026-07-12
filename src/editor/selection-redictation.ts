@@ -149,9 +149,10 @@ export class SelectionRedictationSession extends SingleFinalEditorSession {
         key: 'selection-redictation-complete',
         message: 'Replaced the selected text.',
       });
-    } catch (error) {
+    } catch {
+      // Do not forward the editor error as feedback cause: an implementation
+      // may echo the transaction payload, which contains the spoken text.
       this.dependencies.feedback.show({
-        cause: error,
         intent: 'error',
         key: 'selection-redictation-failed',
         message: 'Could not replace the selected text. Select it again and retry.',

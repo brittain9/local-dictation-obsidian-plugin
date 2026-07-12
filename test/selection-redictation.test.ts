@@ -125,6 +125,23 @@ describe('SelectionRedictationSession', () => {
     expect(harness.editor.transaction).toHaveBeenCalledOnce();
   });
 
+  it('does not forward a content-bearing editor error to feedback', () => {
+    const harness = createSessionHarness();
+    harness.editor.transaction.mockImplementationOnce(() => {
+      throw new Error('transaction rejected: private replacement transcript');
+    });
+
+    harness.session.acceptTranscript(
+      transcript({ text: 'private replacement transcript', utteranceId: 'selection-1' }),
+    );
+
+    expect(harness.feedback.show).toHaveBeenCalledWith({
+      intent: 'error',
+      key: 'selection-redictation-failed',
+      message: 'Could not replace the selected text. Select it again and retry.',
+    });
+  });
+
   it('leaves the note unchanged when its captured document changes', () => {
     const harness = createSessionHarness();
     harness.editor.getValue.mockReturnValue('user-edited document');

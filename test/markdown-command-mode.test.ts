@@ -169,6 +169,23 @@ describe('Markdown command capture and session', () => {
     );
   });
 
+  it('does not forward a content-bearing editor error to feedback', () => {
+    const harness = createSessionHarness();
+    harness.editor.transaction.mockImplementationOnce(() => {
+      throw new Error('transaction rejected: literal private transcript');
+    });
+
+    harness.session.acceptTranscript(
+      transcript({ text: 'literal private transcript', utteranceId: 'command-1' }),
+    );
+
+    expect(harness.feedback.show).toHaveBeenCalledWith({
+      intent: 'error',
+      key: 'markdown-command-failed',
+      message: 'Could not apply the Markdown command. Run the command and try again.',
+    });
+  });
+
   it('does not mutate for an unknown command and gives actionable feedback', () => {
     const harness = createSessionHarness();
 

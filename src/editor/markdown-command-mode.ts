@@ -203,9 +203,10 @@ export class MarkdownCommandSession extends SingleFinalEditorSession {
         key: 'markdown-command-complete',
         message: 'Applied the Markdown voice command.',
       });
-    } catch (error) {
+    } catch {
+      // Do not forward the editor error as feedback cause: an implementation
+      // may echo the transaction payload, which contains the spoken text.
       this.dependencies.feedback.show({
-        cause: error,
         intent: 'error',
         key: 'markdown-command-failed',
         message: 'Could not apply the Markdown command. Run the command and try again.',
