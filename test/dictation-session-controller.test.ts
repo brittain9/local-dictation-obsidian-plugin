@@ -2104,6 +2104,72 @@ describe('DictationSessionController', () => {
     expect(controller.getState()).toBe('idle');
   });
 
+  it('gracefully finalizes buffered speech when the active microphone disconnects', async () => {
+    const captureStream = new FakeCaptureStream();
+    const show = vi.fn();
+    const sidecarConnection = new FakeSidecarConnection();
+    const sessions: FakeSession[] = [];
+    const controller = createController({
+      captureStream,
+      createSession: (session) => {
+        sessions.push(session);
+      },
+      feedback: { show },
+      sidecarConnection,
+    });
+
+    await controller.startDictation();
+    const sessionId = sidecarConnection.startSession.mock.calls[0]?.[0].sessionId ?? '';
+
+    await controller.handleAudioCaptureEnded(sessionId);
+
+    expect(captureStream.stop).toHaveBeenCalledTimes(1);
+    expect(sidecarConnection.requestStopSession).toHaveBeenCalledWith(sessionId);
+    expect(sidecarConnection.cancelSession).not.toHaveBeenCalled();
+    expect(show).toHaveBeenCalledWith(
+      expect.objectContaining({
+        intent: 'warning',
+        key: 'microphone-capture-ended',
+        message: expect.stringContaining('Reconnect the microphone'),
+      }),
+    );
+    expect(controller.getState()).toBe('idle');
+
+    sidecarConnection.emit(transcriptReady(sessionId, 'speech captured before disconnect'));
+    await vi.waitFor(() => {
+      expect(sessions[0]?.acceptTranscript).toHaveBeenCalledWith(
+        expect.objectContaining({ text: 'speech captured before disconnect' }),
+      );
+    });
+    sidecarConnection.emit({ reason: 'user_stop', sessionId, type: 'session_stopped' });
+    await vi.waitFor(() => {
+      expect(sessions[0]?.dispose).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  it('ignores a stale microphone-ended event after a new session starts', async () => {
+    const captureStream = new FakeCaptureStream();
+    const show = vi.fn();
+    const sidecarConnection = new FakeSidecarConnection();
+    const controller = createController({ captureStream, feedback: { show }, sidecarConnection });
+
+    await controller.startDictation();
+    const firstSessionId = sidecarConnection.startSession.mock.calls[0]?.[0].sessionId ?? '';
+    await controller.handleAudioCaptureEnded(firstSessionId);
+    await controller.startDictation();
+    const secondSessionId = sidecarConnection.startSession.mock.calls[1]?.[0].sessionId ?? '';
+
+    await controller.handleAudioCaptureEnded(firstSessionId);
+
+    expect(secondSessionId).not.toBe(firstSessionId);
+    expect(sidecarConnection.requestStopSession).toHaveBeenCalledTimes(1);
+    expect(sidecarConnection.requestStopSession).toHaveBeenCalledWith(firstSessionId);
+    expect(captureStream.stop).toHaveBeenCalledTimes(1);
+    expect(captureStream.sessionId).toBe(secondSessionId);
+    expect(show).toHaveBeenCalledTimes(1);
+    expect(controller.getState()).toBe('listening');
+  });
+
   it('still stops the sidecar session and returns to idle when capture teardown rejects on stop', async () => {
     const captureStream = new FakeCaptureStream();
     const logger = new FakeLogger();

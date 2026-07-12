@@ -112,6 +112,9 @@ export default class LocalSttPlugin extends Plugin {
           message: 'Saved microphone unavailable. Using the default input device.',
         });
       },
+      onUnexpectedEnd: (sessionId) => {
+        void this.dictationController?.handleAudioCaptureEnded(sessionId);
+      },
     });
     this.modelInstallManager = new ModelInstallManager({
       getSettings: () => this.settings,
