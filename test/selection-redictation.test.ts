@@ -28,6 +28,7 @@ describe('selection re-dictation capture', () => {
         documentText: 'Context before selection original',
         editor: editor.editor,
         file,
+        filePath: 'note.md',
         from: { ch: 4, line: 2 },
         to: { ch: 12, line: 2 },
       },
@@ -188,6 +189,21 @@ describe('SelectionRedictationSession', () => {
     );
   });
 
+  it('leaves the note unchanged when the captured file is renamed', () => {
+    const harness = createSessionHarness();
+    harness.renameFile('renamed.md');
+
+    harness.session.acceptTranscript(
+      transcript({ text: 'replacement text', utteranceId: 'selection-1' }),
+    );
+
+    expect(harness.editor.getValue).not.toHaveBeenCalled();
+    expect(harness.editor.transaction).not.toHaveBeenCalled();
+    expect(harness.feedback.show).toHaveBeenCalledWith(
+      expect.objectContaining({ key: 'selection-redictation-stale' }),
+    );
+  });
+
   it('keeps the original selection when the first final is empty', () => {
     const harness = createSessionHarness();
 
@@ -312,6 +328,7 @@ function createSessionHarness() {
     documentText: 'Context before selection original',
     editor: editor.editor,
     file,
+    filePath: 'note.md',
     from: { ch: 4, line: 1 },
     to: { ch: 12, line: 1 },
   };
@@ -328,6 +345,9 @@ function createSessionHarness() {
     emitDelete: (deletedFile: TFile = file) => deleted?.(deletedFile),
     emitLayoutChange: () => layoutChange?.(),
     feedback,
+    renameFile: (path: string) => {
+      Object.assign(file, { path });
+    },
     session,
     snapshot,
     setOpenFile: (nextFile: TFile) => {

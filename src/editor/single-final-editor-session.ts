@@ -9,6 +9,7 @@ export interface SingleFinalEditorSnapshot {
   readonly documentText: string;
   readonly editor: SingleFinalEditor;
   readonly file: TFile;
+  readonly filePath: string;
 }
 
 interface SingleFinalEditorSessionDependencies {
@@ -28,7 +29,11 @@ export function isSingleFinalEditorSnapshotCurrent(
   snapshot: SingleFinalEditorSnapshot,
 ): boolean {
   try {
-    return isTargetOpen(app, snapshot) && snapshot.editor.getValue() === snapshot.documentText;
+    return (
+      snapshot.file.path === snapshot.filePath &&
+      isTargetOpen(app, snapshot) &&
+      snapshot.editor.getValue() === snapshot.documentText
+    );
   } catch {
     return false;
   }

@@ -101,6 +101,7 @@ describe('Markdown command capture and session', () => {
         documentText: 'alpha',
         editor: editor.editor,
         file,
+        filePath: 'note.md',
       },
     });
     expect(editor.transaction).not.toHaveBeenCalled();
@@ -221,6 +222,19 @@ describe('Markdown command capture and session', () => {
       expect.objectContaining({ key: 'markdown-command-stale' }),
     );
   });
+
+  it('fails closed when the captured file is renamed', () => {
+    const harness = createSessionHarness();
+    harness.renameFile('renamed.md');
+
+    harness.session.acceptTranscript(transcript({ text: 'bullet', utteranceId: 'command-1' }));
+
+    expect(harness.editor.getValue).not.toHaveBeenCalled();
+    expect(harness.editor.transaction).not.toHaveBeenCalled();
+    expect(harness.feedback.show).toHaveBeenCalledWith(
+      expect.objectContaining({ key: 'markdown-command-stale' }),
+    );
+  });
 });
 
 function createSessionHarness({
@@ -251,6 +265,7 @@ function createSessionHarness({
     documentText,
     editor: editor.editor,
     file,
+    filePath: 'note.md',
   };
   const session = new MarkdownCommandSession({
     app: { vault, workspace } as unknown as Pick<App, 'vault' | 'workspace'>,
@@ -266,6 +281,9 @@ function createSessionHarness({
   return {
     editor,
     feedback,
+    renameFile: (path: string) => {
+      Object.assign(file, { path });
+    },
     session,
     setDocumentText: (text: string) => {
       currentDocumentText = text;

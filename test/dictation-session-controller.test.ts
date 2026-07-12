@@ -2782,6 +2782,7 @@ function createSelectionSnapshot(): SelectionRedictationSnapshot {
     documentText: 'original',
     editor: {},
     file: { path: 'note.md' },
+    filePath: 'note.md',
     from: { ch: 0, line: 0 },
     to: { ch: 8, line: 0 },
   } as unknown as SelectionRedictationSnapshot;
@@ -2793,6 +2794,7 @@ function createMarkdownCommandSnapshot(): MarkdownCommandSnapshot {
     documentText: '',
     editor: {},
     file: { path: 'note.md' },
+    filePath: 'note.md',
   } as unknown as MarkdownCommandSnapshot;
 }
 

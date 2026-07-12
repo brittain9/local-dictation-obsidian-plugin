@@ -72,6 +72,7 @@ export function captureSelectionRedictation(
       documentText: editor.getValue(),
       editor,
       file,
+      filePath: file.path,
       from: { ...from },
       to: { ...to },
     },

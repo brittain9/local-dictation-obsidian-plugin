@@ -87,6 +87,7 @@ export function captureMarkdownCommand(
       documentText: editor.getValue(),
       editor,
       file,
+      filePath: file.path,
     },
   };
 }
