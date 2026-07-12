@@ -3,6 +3,10 @@ import { IS_PRODUCTION_BUILD } from 'virtual:build-mode';
 import { FileSystemAdapter, Platform, Plugin } from 'obsidian';
 
 import { AudioCaptureStream } from './audio/audio-capture-stream';
+import {
+  describeAudioFileModelRequirement,
+  resolveAudioFileModelSupport,
+} from './audio/audio-file-model-support';
 import { pickAudioFile } from './audio/audio-file-picker';
 import { AudioFileFrameSource } from './audio/audio-file-source';
 import { SidecarAudioLevelMeter } from './audio/sidecar-audio-level-meter';
@@ -428,6 +432,27 @@ export default class LocalSttPlugin extends Plugin {
         intent: 'warning',
         key: 'audio-file-busy',
         message: 'Stop or cancel the current transcription before choosing an audio file.',
+      });
+      return;
+    }
+
+    const modelSupport = resolveAudioFileModelSupport(this.settings);
+    if (modelSupport.kind === 'model_required') {
+      await this.openModelPicker();
+      return;
+    }
+    if (modelSupport.kind !== 'supported') {
+      const requirement = describeAudioFileModelRequirement(modelSupport);
+      this.feedback.show({
+        action: {
+          label: requirement.actionLabel,
+          run: () => {
+            void this.openModelPicker();
+          },
+        },
+        intent: 'action-required',
+        key: 'audio-file-model-required',
+        message: requirement.message,
       });
       return;
     }

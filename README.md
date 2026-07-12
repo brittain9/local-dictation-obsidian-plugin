@@ -39,7 +39,7 @@ All transcription models in the current catalog run locally and support English.
 
 - **Live text.** Moonshine streaming models show provisional words and revise them in place until each utterance finalizes.
 - **Meeting capture.** Include system audio from meetings, calls, or videos alongside your microphone on Windows, Linux, and macOS 14.2 or later.
-- **Audio file transcription.** Transcribe a WAV or MP3 file up to 256 MB and 30 minutes from the ribbon or command palette.
+- **Audio file transcription.** Use a Whisper or Cohere Transcribe batch model to transcribe a WAV or MP3 file up to 256 MB and 30 minutes from the ribbon or command palette.
 - **Speaker labels.** Optional on-device diarization assigns session-stable speaker labels. Speaker embeddings stay in memory and are discarded after the session.
 - **Timestamps.** Add elapsed or wall-clock timestamps at configurable intervals.
 - **Local model choices.** Choose Whisper, Cohere Transcribe, or Moonshine models and download them from Settings.
@@ -53,7 +53,7 @@ All transcription models in the current catalog run locally and support English.
 2. Follow the setup wizard to download the native speech-to-text engine and a starter model.
 3. On the final step, select **Try dictation now** to begin in the open Markdown note. Or select **Done** and start later from the ribbon microphone or **Local Dictation: Toggle dictation** hotkey. Text lands at your cursor.
 
-To transcribe an existing recording into the open note, select the ribbon audio-file icon or run **Local Dictation: Transcribe audio file**. Choose a WAV or MP3 file up to 256 MB and 30 minutes. Use the active ribbon control to stop and keep the audio processed so far, or run **Local Dictation: Cancel dictation** to discard the in-progress session.
+To transcribe an existing recording into the open note, select a Whisper or Cohere Transcribe batch model, then select the ribbon audio-file icon or run **Local Dictation: Transcribe audio file**. Choose a WAV or MP3 file up to 256 MB and 30 minutes. Use the active ribbon control to stop and keep the audio processed so far, or run **Local Dictation: Cancel dictation** to discard the in-progress session.
 
 The engine and models need a one-time download. Transcription then works without an ongoing network connection.
 
