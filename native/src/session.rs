@@ -63,6 +63,13 @@ impl VadTuning {
             silence_gap_min_frames,
         }
     }
+
+    /// The triggering frame is appended separately, so the buffer holds the
+    /// requested pre-roll plus the preceding frames in the confirmation gate.
+    const fn pre_speech_buffer_frames(self) -> usize {
+        self.pre_speech_pad_frames
+            .saturating_add(self.min_speech_frames.saturating_sub(1))
+    }
 }
 
 impl SpeakingStyle {
@@ -202,7 +209,7 @@ impl<TVad: VoiceActivityDetector> ListeningSession<TVad> {
             next_utterance_index: 0,
             next_utterance_is_continuation: false,
             pending_end_start: None,
-            pre_speech_frames: VecDeque::with_capacity(tuning.pre_speech_pad_frames),
+            pre_speech_frames: VecDeque::with_capacity(tuning.pre_speech_buffer_frames()),
             session_frames: 0,
             speech_started: false,
             tuning,
@@ -492,7 +499,12 @@ impl<TVad: VoiceActivityDetector> ListeningSession<TVad> {
             return;
         }
 
-        if self.pre_speech_frames.len() == self.tuning.pre_speech_pad_frames {
+        let buffer_frames = self.tuning.pre_speech_buffer_frames();
+        if buffer_frames == 0 {
+            return;
+        }
+
+        if self.pre_speech_frames.len() == buffer_frames {
             self.pre_speech_frames.pop_front();
         }
 
@@ -642,21 +654,24 @@ mod tests {
 
         let finalized = finalized.expect("utterance should finalize");
 
-        // Retained = pending_end_start (3) + post_speech_pad_frames (2) = 5.
-        assert_eq!(finalized.duration_ms(), 5 * PCM_FRAME_DURATION_MS as u64);
-        assert_eq!(finalized.samples.len(), 5 * PCM_SAMPLES_PER_FRAME);
+        // Retained = pending_end_start (5) + post_speech_pad_frames (2) = 7.
+        assert_eq!(finalized.duration_ms(), 7 * PCM_FRAME_DURATION_MS as u64);
+        assert_eq!(finalized.samples.len(), 7 * PCM_SAMPLES_PER_FRAME);
         assert_eq!(
             finalized.vad_probabilities.len(),
             finalized.samples.len() / PCM_SAMPLES_PER_FRAME
         );
-        assert_eq!(finalized.vad_probabilities, vec![1.0, 1.0, 1.0, 0.0, 0.0]);
-        assert_eq!(finalized.voice_activity.audio_start_ms, 40);
+        assert_eq!(
+            finalized.vad_probabilities,
+            vec![1.0, 1.0, 1.0, 1.0, 1.0, 0.0, 0.0]
+        );
+        assert_eq!(finalized.voice_activity.audio_start_ms, 0);
         assert_eq!(finalized.voice_activity.audio_end_ms, 140);
-        assert_eq!(finalized.voice_activity.speech_start_ms, 40);
+        assert_eq!(finalized.voice_activity.speech_start_ms, 0);
         assert_eq!(finalized.voice_activity.speech_end_ms, 100);
-        assert_eq!(finalized.voice_activity.voiced_ms, 60);
+        assert_eq!(finalized.voice_activity.voiced_ms, 100);
         assert_eq!(finalized.voice_activity.unvoiced_ms, 40);
-        assert_eq!(finalized.voice_activity.mean_probability, 0.6);
+        assert_eq!(finalized.voice_activity.mean_probability, 5.0 / 7.0);
         assert_eq!(finalized.voice_activity.max_probability, 1.0);
         assert_eq!(session.base_state(), SessionBaseState::Listening);
     }
@@ -683,11 +698,11 @@ mod tests {
         }
 
         let finalized = finalized.expect("utterance should finalize");
-        // 2 pre-pad frames + 1 frame that triggered speech + 2 post-pad frames.
-        assert_eq!(finalized.duration_ms(), 5 * PCM_FRAME_DURATION_MS as u64);
-        assert_eq!(finalized.samples.len(), 5 * PCM_SAMPLES_PER_FRAME);
+        // 2 pre-pad frames + all 5 confirmation frames + 2 post-pad frames.
+        assert_eq!(finalized.duration_ms(), 9 * PCM_FRAME_DURATION_MS as u64);
+        assert_eq!(finalized.samples.len(), 9 * PCM_SAMPLES_PER_FRAME);
         assert_eq!(finalized.utterance_index, 0);
-        assert_eq!(finalized.utterance_start_ms_in_session(), 80);
+        assert_eq!(finalized.utterance_start_ms_in_session(), 0);
         assert_eq!(finalized.utterance_end_ms_in_session(), 180);
         assert_eq!(
             finalized.utterance_start_ms_in_session(),
@@ -701,14 +716,71 @@ mod tests {
             finalized.vad_probabilities.len(),
             finalized.samples.len() / PCM_SAMPLES_PER_FRAME
         );
-        assert_eq!(finalized.voice_activity.audio_start_ms, 80);
+        assert_eq!(finalized.voice_activity.audio_start_ms, 0);
         assert_eq!(finalized.voice_activity.audio_end_ms, 180);
-        assert_eq!(finalized.voice_activity.speech_start_ms, 80);
+        assert_eq!(finalized.voice_activity.speech_start_ms, 40);
         assert_eq!(finalized.voice_activity.speech_end_ms, 140);
-        assert_eq!(finalized.voice_activity.voiced_ms, 60);
-        assert_eq!(finalized.voice_activity.unvoiced_ms, 40);
-        assert_eq!(finalized.voice_activity.mean_probability, 0.6);
+        assert_eq!(finalized.voice_activity.voiced_ms, 100);
+        assert_eq!(finalized.voice_activity.unvoiced_ms, 80);
+        assert_eq!(finalized.voice_activity.mean_probability, 5.0 / 9.0);
         assert_eq!(finalized.voice_activity.max_probability, 1.0);
+    }
+
+    #[test]
+    fn speech_onset_keeps_bounded_preroll_and_every_confirmation_frame() {
+        const LEAD_IN_FRAMES: usize = 10;
+
+        for style in [
+            SpeakingStyle::Responsive,
+            SpeakingStyle::Balanced,
+            SpeakingStyle::Patient,
+        ] {
+            let tuning = style.tuning();
+            let decisions = std::iter::repeat_n(0.0_f32, LEAD_IN_FRAMES)
+                .chain(std::iter::repeat_n(1.0_f32, tuning.min_speech_frames));
+            let mut session = create_session_with_style(
+                ListeningMode::AlwaysOn,
+                style,
+                FakeVad::with_decisions(decisions),
+            );
+
+            for frame_index in 0..LEAD_IN_FRAMES + tuning.min_speech_frames {
+                let actions = session
+                    .ingest_audio_frame(&frame_bytes_from_sample(frame_index as i16))
+                    .expect("frame should succeed");
+                assert!(actions.is_empty());
+            }
+
+            let live = session.live_utterance().expect("speech should be active");
+            let retained_markers = live
+                .samples
+                .chunks_exact(PCM_SAMPLES_PER_FRAME)
+                .map(|frame| frame[0])
+                .collect::<Vec<_>>();
+            let expected_markers = ((LEAD_IN_FRAMES - tuning.pre_speech_pad_frames)
+                ..LEAD_IN_FRAMES + tuning.min_speech_frames)
+                .map(|frame| frame as i16)
+                .collect::<Vec<_>>();
+
+            assert_eq!(retained_markers, expected_markers, "style: {style:?}");
+            assert_eq!(
+                live.vad_probabilities,
+                std::iter::repeat_n(0.0, tuning.pre_speech_pad_frames)
+                    .chain(std::iter::repeat_n(1.0, tuning.min_speech_frames))
+                    .collect::<Vec<_>>(),
+                "style: {style:?}",
+            );
+            assert_eq!(
+                live.voice_activity.audio_start_ms,
+                ((LEAD_IN_FRAMES - tuning.pre_speech_pad_frames) * PCM_FRAME_DURATION_MS) as u64,
+                "style: {style:?}",
+            );
+            assert_eq!(
+                live.voice_activity.speech_start_ms,
+                (LEAD_IN_FRAMES * PCM_FRAME_DURATION_MS) as u64,
+                "style: {style:?}",
+            );
+        }
     }
 
     #[test]
@@ -811,7 +883,7 @@ mod tests {
 
         let finalized = finalized.expect("utterance should finalize");
         assert_eq!(finalized_at_frame, 55);
-        assert_eq!(finalized.duration_ms(), 5 * PCM_FRAME_DURATION_MS as u64);
+        assert_eq!(finalized.duration_ms(), 7 * PCM_FRAME_DURATION_MS as u64);
     }
 
     #[test]
@@ -879,12 +951,11 @@ mod tests {
 
     #[test]
     fn boundary_aware_split_carries_forward_at_cap() {
-        // Balanced preset: the min_speech gate fires on frame 5 with pre-pad 2,
-        // so utterance_frames.len() = frame_count - FRAME_OFFSET from that point on.
-        const FRAME_OFFSET: usize = 2;
+        // Balanced retains every frame in the confirmation gate, so the
+        // utterance length matches the number of ingested frames at the cap.
         let gap_start = 1400;
         let gap_len = 20;
-        let total_frames = super::MAX_UTTERANCE_FRAMES + FRAME_OFFSET;
+        let total_frames = super::MAX_UTTERANCE_FRAMES;
         let after_gap = total_frames - gap_start - gap_len;
 
         let decisions = std::iter::repeat_n(1.0_f32, gap_start)
@@ -914,8 +985,8 @@ mod tests {
         assert_eq!(finalized_count, 1);
         let finalized = first_finalized.expect("utterance should finalize at boundary");
         // last_silence_boundary is updated through the end of the gap to
-        // utterance_frames.len() at that moment = (gap_start + gap_len) - FRAME_OFFSET.
-        let expected_boundary = gap_start + gap_len - FRAME_OFFSET;
+        // utterance_frames.len() at that moment = gap_start + gap_len.
+        let expected_boundary = gap_start + gap_len;
         let expected_ms = (expected_boundary * PCM_FRAME_DURATION_MS) as u64;
         assert_eq!(finalized.duration_ms(), expected_ms);
         assert_eq!(
@@ -927,28 +998,20 @@ mod tests {
             expected_boundary,
             "trace must cover every retained frame"
         );
-        // Pre-pad of 2 silent-but-real frames means audio starts at frame index 2.
-        assert_eq!(
-            finalized.voice_activity.audio_start_ms,
-            (FRAME_OFFSET * PCM_FRAME_DURATION_MS) as u64
-        );
+        assert_eq!(finalized.voice_activity.audio_start_ms, 0);
         // Every retained frame is at >= 0.4 (the gap), all >= the fixed 0.35
         // threshold, so the entire window is voiced.
         assert_eq!(
             finalized.voice_activity.voiced_ms, expected_ms,
             "every retained frame in the boundary slice meets the fixed threshold"
         );
-        assert_eq!(
-            finalized.voice_activity.speech_start_ms,
-            (FRAME_OFFSET * PCM_FRAME_DURATION_MS) as u64
-        );
+        assert_eq!(finalized.voice_activity.speech_start_ms, 0);
         assert!(session.speech_started);
     }
 
     #[test]
     fn hard_cut_fallback_when_no_boundary() {
-        const FRAME_OFFSET: usize = 2;
-        let total_frames = super::MAX_UTTERANCE_FRAMES + FRAME_OFFSET;
+        let total_frames = super::MAX_UTTERANCE_FRAMES;
         let decisions = std::iter::repeat_n(1.0_f32, total_frames);
         let mut session =
             create_session(ListeningMode::AlwaysOn, FakeVad::with_decisions(decisions));
@@ -968,8 +1031,8 @@ mod tests {
         let finalized = finalized.expect("utterance should finalize at cap");
         let cap_duration_ms = (super::MAX_UTTERANCE_FRAMES * PCM_FRAME_DURATION_MS) as u64;
         assert_eq!(finalized.duration_ms(), cap_duration_ms);
-        assert_eq!(finalized.voice_activity.audio_start_ms, 40);
-        assert_eq!(finalized.voice_activity.audio_end_ms, 40 + cap_duration_ms);
+        assert_eq!(finalized.voice_activity.audio_start_ms, 0);
+        assert_eq!(finalized.voice_activity.audio_end_ms, cap_duration_ms);
         assert_eq!(
             finalized.vad_probabilities.len(),
             finalized.samples.len() / PCM_SAMPLES_PER_FRAME
@@ -980,8 +1043,8 @@ mod tests {
         );
         assert_eq!(finalized.voice_activity.voiced_ms, cap_duration_ms);
         assert_eq!(finalized.voice_activity.unvoiced_ms, 0);
-        assert_eq!(finalized.voice_activity.speech_start_ms, 40);
-        assert_eq!(finalized.voice_activity.speech_end_ms, 40 + cap_duration_ms);
+        assert_eq!(finalized.voice_activity.speech_start_ms, 0);
+        assert_eq!(finalized.voice_activity.speech_end_ms, cap_duration_ms);
         assert_eq!(session.base_state(), SessionBaseState::Listening);
     }
 
@@ -1016,12 +1079,20 @@ mod tests {
         mode: ListeningMode,
         vad: TVad,
     ) -> ListeningSession<TVad> {
+        create_session_with_style(mode, SpeakingStyle::Balanced, vad)
+    }
+
+    fn create_session_with_style<TVad: VoiceActivityDetector>(
+        mode: ListeningMode,
+        style: SpeakingStyle,
+        vad: TVad,
+    ) -> ListeningSession<TVad> {
         ListeningSession::with_vad(
             SessionConfig {
                 mode,
                 session_start_unix_ms: 1_700_000_000_000,
                 session_id: "session-1".to_string(),
-                style: SpeakingStyle::Balanced,
+                style,
             },
             vad,
         )
