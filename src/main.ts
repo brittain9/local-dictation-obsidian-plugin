@@ -436,24 +436,7 @@ export default class LocalSttPlugin extends Plugin {
       return;
     }
 
-    const modelSupport = resolveAudioFileModelSupport(this.settings);
-    if (modelSupport.kind === 'model_required') {
-      await this.openModelPicker();
-      return;
-    }
-    if (modelSupport.kind !== 'supported') {
-      const requirement = describeAudioFileModelRequirement(modelSupport);
-      this.feedback.show({
-        action: {
-          label: requirement.actionLabel,
-          run: () => {
-            void this.openModelPicker();
-          },
-        },
-        intent: 'action-required',
-        key: 'audio-file-model-required',
-        message: requirement.message,
-      });
+    if (!(await this.ensureAudioFileModelSupported())) {
       return;
     }
 
@@ -467,6 +450,9 @@ export default class LocalSttPlugin extends Plugin {
         key: 'audio-file-busy',
         message: 'Another transcription started while the file picker was open.',
       });
+      return;
+    }
+    if (!(await this.ensureAudioFileModelSupported())) {
       return;
     }
 
@@ -483,6 +469,31 @@ export default class LocalSttPlugin extends Plugin {
       return;
     }
     await controller.transcribeAudioSource(source);
+  }
+
+  private async ensureAudioFileModelSupported(): Promise<boolean> {
+    const modelSupport = resolveAudioFileModelSupport(this.settings);
+    if (modelSupport.kind === 'supported') {
+      return true;
+    }
+    if (modelSupport.kind === 'model_required') {
+      await this.openModelPicker();
+      return false;
+    }
+
+    const requirement = describeAudioFileModelRequirement(modelSupport);
+    this.feedback.show({
+      action: {
+        label: requirement.actionLabel,
+        run: () => {
+          void this.openModelPicker();
+        },
+      },
+      intent: 'action-required',
+      key: 'audio-file-model-required',
+      message: requirement.message,
+    });
+    return false;
   }
 
   private async isSidecarInstalled(): Promise<boolean> {
