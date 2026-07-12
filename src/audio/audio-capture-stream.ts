@@ -9,13 +9,18 @@ type AudioFrameListener = (sessionId: string, frameBytes: Uint8Array) => void;
 interface AudioCaptureStreamOptions {
   logger?: PluginLogger;
   // Invoked when a saved deviceId is unavailable and we transparently fall back
-  // to the OS default. Lets the wiring layer (main.ts) surface a Notice without
-  // pulling Obsidian UI imports into this module.
-  onDeviceFallback?: () => void;
+  // to the OS default. The attempted id lets the settings layer avoid clearing
+  // a newer selection if the user changed it while capture was starting.
+  onDeviceFallback?: (unavailableDeviceId: string) => Promise<void> | void;
   // A track can end while its MediaStream still exists (for example, when a
   // USB microphone is unplugged). Include the session id so a late event from
   // an old track cannot stop a newer capture.
   onUnexpectedEnd?: (sessionId: string) => void;
+}
+
+interface UserMediaRequest {
+  mediaStream: MediaStream;
+  unavailableDeviceId: string | null;
 }
 
 export interface AudioCaptureStartOptions {
@@ -54,7 +59,10 @@ export class AudioCaptureStream {
       throw new Error('Microphone capture is not available in this Obsidian runtime.');
     }
 
-    const mediaStream = await this.requestUserMedia(mediaDevices, audioInputDeviceId);
+    const { mediaStream, unavailableDeviceId } = await this.requestUserMedia(
+      mediaDevices,
+      audioInputDeviceId,
+    );
 
     let audioContext: AudioContext | null = null;
 
@@ -101,6 +109,10 @@ export class AudioCaptureStream {
       this.sourceNode = sourceNode;
       this.observeUnexpectedTrackEnd(mediaStream, sessionId);
       this.options.logger?.debug('audio', 'capture started');
+
+      if (unavailableDeviceId !== null) {
+        void this.handleDeviceFallback(unavailableDeviceId);
+      }
     } catch (error) {
       this.options.logger?.error('audio', 'failed to initialize streaming audio capture', error);
       await stopMediaStream(mediaStream);
@@ -125,7 +137,7 @@ export class AudioCaptureStream {
   private async requestUserMedia(
     mediaDevices: MediaDevices,
     audioInputDeviceId: string | null | undefined,
-  ): Promise<MediaStream> {
+  ): Promise<UserMediaRequest> {
     const baseConstraints: MediaTrackConstraints = {
       autoGainControl: false,
       channelCount: PCM_CHANNEL_COUNT,
@@ -134,14 +146,20 @@ export class AudioCaptureStream {
     };
 
     if (typeof audioInputDeviceId !== 'string' || audioInputDeviceId.length === 0) {
-      return mediaDevices.getUserMedia({ audio: baseConstraints, video: false });
+      return {
+        mediaStream: await mediaDevices.getUserMedia({ audio: baseConstraints, video: false }),
+        unavailableDeviceId: null,
+      };
     }
 
     try {
-      return await mediaDevices.getUserMedia({
-        audio: { ...baseConstraints, deviceId: { exact: audioInputDeviceId } },
-        video: false,
-      });
+      return {
+        mediaStream: await mediaDevices.getUserMedia({
+          audio: { ...baseConstraints, deviceId: { exact: audioInputDeviceId } },
+          video: false,
+        }),
+        unavailableDeviceId: null,
+      };
     } catch (error) {
       if (!isDeviceConstraintError(error)) {
         throw error;
@@ -159,8 +177,21 @@ export class AudioCaptureStream {
         audio: baseConstraints,
         video: false,
       });
-      this.options.onDeviceFallback?.();
-      return mediaStream;
+      return { mediaStream, unavailableDeviceId: audioInputDeviceId };
+    }
+  }
+
+  private async handleDeviceFallback(unavailableDeviceId: string): Promise<void> {
+    try {
+      await this.options.onDeviceFallback?.(unavailableDeviceId);
+    } catch (callbackError) {
+      // Settings repair is secondary to capture. It runs only after the stream
+      // is owned, so failure or indefinite delay cannot block capture teardown.
+      this.options.logger?.warn(
+        'audio',
+        'microphone fallback handler failed; continuing with the default input device',
+        callbackError,
+      );
     }
   }
 

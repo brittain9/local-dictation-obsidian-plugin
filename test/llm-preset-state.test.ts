@@ -13,10 +13,15 @@ function settings(overrides: Partial<PluginSettings> = {}): PluginSettings {
   return { ...DEFAULT_PLUGIN_SETTINGS, ...overrides };
 }
 
-function createStore(args: { current?: PluginSettings; loadData?: () => Promise<unknown> }) {
+function createStore(args: {
+  current?: PluginSettings;
+  loadData?: () => Promise<unknown>;
+  onCommit?: (settings: PluginSettings) => Promise<void>;
+}) {
   let current = args.current ?? settings();
   const commit = vi.fn(async (next: PluginSettings) => {
     current = next;
+    await args.onCommit?.(next);
   });
   const onExternalChange = vi.fn();
   const warn = vi.fn();
@@ -347,5 +352,136 @@ describe('LlmPresetStateStore.mutate', () => {
       userPresets: [externalPreset],
     });
     expect(fixture.commit).toHaveBeenLastCalledWith(expect.any(Object), { persist: true });
+  });
+});
+
+describe('LlmPresetStateStore.commitPreservingPresetStateIf', () => {
+  it('commits when the condition matches and preserves preset state', async () => {
+    const preset = createUserPreset({ id: 'keep' });
+    const fixture = createStore({
+      current: settings({
+        audioInputDevice: { deviceId: 'missing-device', label: 'Desk microphone' },
+        llmPostprocessActivePresetRef: 'user:keep',
+        llmPostprocessUserPresets: [preset],
+      }),
+    });
+
+    const updated = await fixture.store.commitPreservingPresetStateIf(
+      (current) => current.audioInputDevice?.deviceId === 'missing-device',
+      (current) => ({
+        ...current,
+        audioInputDevice: null,
+        llmPostprocessActivePresetRef: 'builtin:clean-up',
+        llmPostprocessUserPresets: [],
+      }),
+    );
+
+    expect(updated).toBe(true);
+    expect(fixture.getCurrent().audioInputDevice).toBeNull();
+    expect(readLlmPresetState(fixture.getCurrent())).toEqual({
+      activePresetRef: 'user:keep',
+      userPresets: [preset],
+    });
+  });
+
+  it('evaluates the condition after earlier queued settings changes', async () => {
+    const fixture = createStore({
+      current: settings({
+        audioInputDevice: { deviceId: 'missing-device', label: 'Desk microphone' },
+      }),
+    });
+    const selectNewMicrophone = fixture.store.commitPreservingPresetState(
+      settings({
+        audioInputDevice: { deviceId: 'new-device', label: 'Headset microphone' },
+      }),
+    );
+    const clearUnavailableMicrophone = fixture.store.commitPreservingPresetStateIf(
+      (current) => current.audioInputDevice?.deviceId === 'missing-device',
+      (current) => ({ ...current, audioInputDevice: null }),
+    );
+
+    await selectNewMicrophone;
+    await expect(clearUnavailableMicrophone).resolves.toBe(false);
+    expect(fixture.getCurrent().audioInputDevice).toEqual({
+      deviceId: 'new-device',
+      label: 'Headset microphone',
+    });
+    expect(fixture.commit).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps a newer selection queued while the conditional commit is in flight', async () => {
+    let finishPersistence: (() => void) | undefined;
+    let commitCount = 0;
+    const fixture = createStore({
+      current: settings({
+        audioInputDevice: { deviceId: 'missing-device', label: 'Desk microphone' },
+      }),
+      onCommit: () => {
+        commitCount += 1;
+        if (commitCount > 1) {
+          return Promise.resolve();
+        }
+        return new Promise<void>((resolve) => {
+          finishPersistence = resolve;
+        });
+      },
+    });
+
+    const clearUnavailableMicrophone = fixture.store.commitPreservingPresetStateIf(
+      (current) => current.audioInputDevice?.deviceId === 'missing-device',
+      (current) => ({ ...current, audioInputDevice: null }),
+    );
+    await vi.waitFor(() => {
+      expect(fixture.commit).toHaveBeenCalledTimes(1);
+    });
+    const selectNewMicrophone = fixture.store.commitPreservingPresetState(
+      settings({
+        audioInputDevice: { deviceId: 'new-device', label: 'Headset microphone' },
+      }),
+    );
+
+    finishPersistence?.();
+    await expect(clearUnavailableMicrophone).resolves.toBe(true);
+    await selectNewMicrophone;
+
+    expect(fixture.getCurrent().audioInputDevice).toEqual({
+      deviceId: 'new-device',
+      label: 'Headset microphone',
+    });
+    expect(fixture.commit).toHaveBeenCalledTimes(2);
+  });
+
+  it('rejects a failed conditional save without blocking later settings commits', async () => {
+    const persistenceError = new Error('data.json is read-only');
+    let commitCount = 0;
+    const fixture = createStore({
+      current: settings({
+        audioInputDevice: { deviceId: 'missing-device', label: 'Desk microphone' },
+      }),
+      onCommit: async () => {
+        commitCount += 1;
+        if (commitCount === 1) {
+          throw persistenceError;
+        }
+      },
+    });
+
+    await expect(
+      fixture.store.commitPreservingPresetStateIf(
+        (current) => current.audioInputDevice?.deviceId === 'missing-device',
+        (current) => ({ ...current, audioInputDevice: null }),
+      ),
+    ).rejects.toBe(persistenceError);
+    await fixture.store.commitPreservingPresetState(
+      settings({
+        audioInputDevice: { deviceId: 'new-device', label: 'Headset microphone' },
+      }),
+    );
+
+    expect(fixture.getCurrent().audioInputDevice).toEqual({
+      deviceId: 'new-device',
+      label: 'Headset microphone',
+    });
+    expect(fixture.commit).toHaveBeenCalledTimes(2);
   });
 });

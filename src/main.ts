@@ -18,6 +18,7 @@ import { ModelInstallManager } from './models/model-install-manager';
 import { Session } from './session/session';
 import { logAccelerationFallbacks } from './settings/acceleration-info';
 import { LlmPresetStateStore } from './settings/llm-preset-state';
+import { handleMicrophoneDeviceFallback } from './settings/microphone-fallback';
 import { getOpenRouterApiKey, loadPluginSettings } from './settings/openrouter-secret-storage';
 import {
   DEFAULT_PLUGIN_SETTINGS,
@@ -105,11 +106,14 @@ export default class LocalSttPlugin extends Plugin {
     this.audioLevelMeter = new SidecarAudioLevelMeter();
     this.audioCaptureStream = new AudioCaptureStream({
       logger: this.logger,
-      onDeviceFallback: () => {
-        this.feedback.show({
-          intent: 'warning',
-          key: 'microphone-device-fallback',
-          message: 'Saved microphone unavailable. Using the default input device.',
+      onDeviceFallback: async (unavailableDeviceId) => {
+        await handleMicrophoneDeviceFallback(unavailableDeviceId, {
+          clearSelectionIfMatches: async (deviceId) =>
+            this.requirePresetStateStore().commitPreservingPresetStateIf(
+              (settings) => settings.audioInputDevice?.deviceId === deviceId,
+              (settings) => ({ ...settings, audioInputDevice: null }),
+            ),
+          feedback: this.feedback,
         });
       },
       onUnexpectedEnd: (sessionId) => {
