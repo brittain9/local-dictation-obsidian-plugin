@@ -2,8 +2,10 @@ import { describe, expect, it, vi } from 'vitest';
 
 import {
   AudioFileFrameSource,
+  type AudioFileLike,
   MAX_AUDIO_FILE_BYTES,
   MAX_AUDIO_FILE_DURATION_SECONDS,
+  probeAudioDuration,
   validateAudioFile,
 } from '../src/audio/audio-file-source';
 import { PCM_BYTES_PER_FRAME } from '../src/shared/pcm-format';
@@ -22,12 +24,10 @@ function createDecodedAudio(
   };
 }
 
-function createFile(overrides: { name?: string; size?: number } = {}) {
-  return {
-    arrayBuffer: vi.fn(async () => new ArrayBuffer(8)),
+function createFile(overrides: { name?: string; size?: number } = {}): AudioFileLike {
+  return Object.assign(new Blob([new Uint8Array(overrides.size ?? 8)]), {
     name: overrides.name ?? 'recording.wav',
-    size: overrides.size ?? 8,
-  };
+  });
 }
 
 describe('AudioFileFrameSource', () => {
@@ -38,6 +38,7 @@ describe('AudioFileFrameSource', () => {
     const onProgress = vi.fn();
     const source = new AudioFileFrameSource(createFile(), {
       decodeAudio: vi.fn(async () => createDecodedAudio({ channels: [left, right] })),
+      probeDuration: vi.fn(async () => 1),
       yieldToEventLoop: vi.fn(async () => {}),
     });
 
@@ -61,6 +62,7 @@ describe('AudioFileFrameSource', () => {
       decodeAudio: vi.fn(async () =>
         createDecodedAudio({ channels: [new Float32Array(100).fill(-1)] }),
       ),
+      probeDuration: vi.fn(async () => 1),
       yieldToEventLoop: vi.fn(async () => {}),
     });
 
@@ -86,6 +88,7 @@ describe('AudioFileFrameSource', () => {
       decodeAudio: vi.fn(async () =>
         createDecodedAudio({ channels: [new Float32Array(640).fill(0.25)] }),
       ),
+      probeDuration: vi.fn(async () => 1),
       yieldToEventLoop: vi.fn(async () => {}),
     });
 
@@ -100,16 +103,18 @@ describe('AudioFileFrameSource', () => {
   });
 
   it('rejects unsupported, empty, oversized, and overlong inputs', async () => {
-    expect(() => validateAudioFile(createFile({ name: 'clip.m4a' }))).toThrow(/WAV or MP3/u);
-    expect(() => validateAudioFile(createFile({ size: 0 }))).toThrow(/empty/u);
-    expect(() => validateAudioFile(createFile({ size: MAX_AUDIO_FILE_BYTES + 1 }))).toThrow(
+    expect(() => validateAudioFile({ name: 'clip.m4a', size: 8 })).toThrow(/WAV or MP3/u);
+    expect(() => validateAudioFile({ name: 'clip.wav', size: 0 })).toThrow(/empty/u);
+    expect(() => validateAudioFile({ name: 'clip.mp3', size: MAX_AUDIO_FILE_BYTES + 1 })).toThrow(
       /larger than 256 MB/u,
     );
 
-    const source = new AudioFileFrameSource(createFile(), {
-      decodeAudio: vi.fn(async () =>
-        createDecodedAudio({ duration: MAX_AUDIO_FILE_DURATION_SECONDS + 1 }),
-      ),
+    const file = createFile();
+    const arrayBuffer = vi.spyOn(file, 'arrayBuffer');
+    const decodeAudio = vi.fn(async () => createDecodedAudio());
+    const source = new AudioFileFrameSource(file, {
+      decodeAudio,
+      probeDuration: vi.fn(async () => MAX_AUDIO_FILE_DURATION_SECONDS + 1),
       yieldToEventLoop: vi.fn(async () => {}),
     });
     await expect(
@@ -119,5 +124,59 @@ describe('AudioFileFrameSource', () => {
         onProgress: vi.fn(),
       }),
     ).rejects.toThrow(/30 minutes or shorter/u);
+    expect(arrayBuffer).not.toHaveBeenCalled();
+    expect(decodeAudio).not.toHaveBeenCalled();
+  });
+});
+
+class FakeMetadataAudio extends EventTarget {
+  duration = 12;
+  preload = '';
+  src = '';
+  readonly load = vi.fn();
+  readonly pause = vi.fn();
+  readonly removeAttribute = vi.fn((name: string) => {
+    if (name === 'src') this.src = '';
+  });
+}
+
+describe('probeAudioDuration', () => {
+  it('reads metadata without the file buffer and always releases the object URL', async () => {
+    const file = createFile();
+    const audio = new FakeMetadataAudio();
+    audio.load.mockImplementationOnce(() => {
+      queueMicrotask(() => audio.dispatchEvent(new Event('loadedmetadata')));
+    });
+    const revokeObjectUrl = vi.fn();
+
+    await expect(
+      probeAudioDuration(file, new AbortController().signal, {
+        createAudioElement: () => audio as unknown as HTMLAudioElement,
+        createObjectUrl: () => 'blob:recording',
+        revokeObjectUrl,
+      }),
+    ).resolves.toBe(12);
+
+    expect(audio.src).toBe('');
+    expect(audio.pause).toHaveBeenCalledOnce();
+    expect(revokeObjectUrl).toHaveBeenCalledWith('blob:recording');
+  });
+
+  it('releases the metadata probe immediately when cancelled', async () => {
+    const file = createFile();
+    const audio = new FakeMetadataAudio();
+    const abortController = new AbortController();
+    const revokeObjectUrl = vi.fn();
+
+    const probing = probeAudioDuration(file, abortController.signal, {
+      createAudioElement: () => audio as unknown as HTMLAudioElement,
+      createObjectUrl: () => 'blob:recording',
+      revokeObjectUrl,
+    });
+    abortController.abort();
+
+    await expect(probing).rejects.toMatchObject({ name: 'AbortError' });
+    expect(audio.pause).toHaveBeenCalledOnce();
+    expect(revokeObjectUrl).toHaveBeenCalledWith('blob:recording');
   });
 });

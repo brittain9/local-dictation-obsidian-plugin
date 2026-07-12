@@ -277,8 +277,104 @@ describe('DictationSessionController', () => {
     expect(controller.getState()).toBe('idle');
   });
 
+  it('pauses file frames while the sidecar queue catches up and resumes only at normal', async () => {
+    const sidecarConnection = new FakeSidecarConnection();
+    let releaseSecondFrame: (() => void) | undefined;
+    const secondFrameReady = new Promise<void>((resolve) => {
+      releaseSecondFrame = resolve;
+    });
+    const source: AudioFrameSource = {
+      stream: vi.fn(async ({ onFrame }) => {
+        await onFrame(new Uint8Array(640).fill(1));
+        await secondFrameReady;
+        await onFrame(new Uint8Array(640).fill(2));
+      }),
+    };
+    const controller = createController({ sidecarConnection });
+
+    const transcription = controller.transcribeAudioSource(source);
+    await vi.waitFor(() => {
+      expect(sidecarConnection.sendAudioFrameWithBackpressure).toHaveBeenCalledOnce();
+    });
+    const sessionId = sidecarConnection.startSession.mock.calls[0]?.[0].sessionId ?? '';
+    sidecarConnection.emit({
+      queuedUtterances: 3,
+      sessionId,
+      tier: 'catching_up',
+      type: 'transcription_queue_changed',
+    });
+    releaseSecondFrame?.();
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(sidecarConnection.sendAudioFrameWithBackpressure).toHaveBeenCalledOnce();
+
+    sidecarConnection.emit({
+      queuedUtterances: 1,
+      sessionId,
+      tier: 'catching_up',
+      type: 'transcription_queue_changed',
+    });
+    await Promise.resolve();
+    expect(sidecarConnection.sendAudioFrameWithBackpressure).toHaveBeenCalledOnce();
+
+    sidecarConnection.emit({
+      queuedUtterances: 0,
+      sessionId,
+      tier: 'normal',
+      type: 'transcription_queue_changed',
+    });
+    await transcription;
+
+    expect(sidecarConnection.sendAudioFrameWithBackpressure).toHaveBeenCalledTimes(2);
+    expect(sidecarConnection.requestStopSession).toHaveBeenCalledWith(sessionId);
+  });
+
+  it('stops file ingestion gracefully and still accepts already processed transcript events', async () => {
+    const sidecarConnection = new FakeSidecarConnection();
+    const sessions: FakeSession[] = [];
+    let firstFrameSent: (() => void) | undefined;
+    const sent = new Promise<void>((resolve) => {
+      firstFrameSent = resolve;
+    });
+    const source: AudioFrameSource = {
+      stream: vi.fn(async ({ abortSignal, onFrame }) => {
+        await onFrame(new Uint8Array(640));
+        firstFrameSent?.();
+        await new Promise<void>((_resolve, reject) => {
+          abortSignal.addEventListener('abort', () => {
+            const error = new Error('stopped');
+            error.name = 'AbortError';
+            reject(error);
+          });
+        });
+      }),
+    };
+    const controller = createController({
+      createSession: (session) => {
+        sessions.push(session);
+      },
+      sidecarConnection,
+    });
+
+    const transcription = controller.transcribeAudioSource(source);
+    await sent;
+    const sessionId = sidecarConnection.startSession.mock.calls[0]?.[0].sessionId ?? '';
+    await controller.stopDictation();
+    await transcription;
+
+    expect(sidecarConnection.requestStopSession).toHaveBeenCalledWith(sessionId);
+    expect(sidecarConnection.cancelSession).not.toHaveBeenCalled();
+    sidecarConnection.emit(transcriptReady(sessionId, 'already accepted audio'));
+    await vi.waitFor(() => {
+      expect(sessions[0]?.acceptTranscript).toHaveBeenCalledWith(
+        expect.objectContaining({ text: 'already accepted audio' }),
+      );
+    });
+  });
+
   it('aborts file ingestion and cancels the shared session when its locked note closes', async () => {
     const sidecarConnection = new FakeSidecarConnection();
+    const sessions: FakeSession[] = [];
     let onLockedNoteClosed: (() => void) | undefined;
     let sourceSignal: AbortSignal | undefined;
     const source: AudioFrameSource = {
@@ -296,6 +392,7 @@ describe('DictationSessionController', () => {
     };
     const controller = createController({
       createSession: (_session, options) => {
+        sessions.push(_session);
         onLockedNoteClosed = options.callbacks.onLockedNoteClosed;
       },
       sidecarConnection,
@@ -317,6 +414,9 @@ describe('DictationSessionController', () => {
       expect(sidecarConnection.cancelSession).toHaveBeenCalledOnce();
     });
     expect(sidecarConnection.requestStopSession).not.toHaveBeenCalled();
+    sidecarConnection.emit(transcriptReady(sessionId, 'must be discarded'));
+    await Promise.resolve();
+    expect(sessions[0]?.acceptTranscript).not.toHaveBeenCalled();
   });
 
   it('cancels file transcription when the backpressure-aware frame sink fails', async () => {

@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { Platform } from 'obsidian';
 
 import type { AudioCaptureStream } from '../audio/audio-capture-stream';
+import { AudioFrameFlowControl } from '../audio/audio-frame-flow-control';
 import type { AudioFrameSource, AudioFrameSourceProgress } from '../audio/audio-frame-source';
 import { formatMicrophoneCaptureErrorMessage } from '../audio/microphone-permission-message';
 import type { SidecarAudioLevelMeter } from '../audio/sidecar-audio-level-meter';
@@ -104,6 +105,7 @@ type TerminalArbitrationState = 'open' | 'feedback-claimed' | 'cancelled';
 interface ManagedSession {
   anchorTimerId: number | null;
   audioSourceAbortController: AbortController | null;
+  audioFrameFlowControl: AudioFrameFlowControl;
   // Final revisions enter this FIFO so concurrent per-utterance cleanups land
   // in final-event order. Partials bypass it and project immediately.
   cleanupChain: Promise<void>;
@@ -347,6 +349,7 @@ export class DictationSessionController {
       await source.stream({
         abortSignal: abortController.signal,
         onFrame: async (frameBytes) => {
+          await entry.audioFrameFlowControl.waitUntilReady(abortController.signal);
           if (
             this.activeSessionId !== sessionId ||
             entry.phase !== 'active' ||
@@ -468,6 +471,7 @@ export class DictationSessionController {
 
     const entry: ManagedSession = {
       anchorTimerId: null,
+      audioFrameFlowControl: new AudioFrameFlowControl(),
       audioSourceAbortController: null,
       cleanupChain: Promise.resolve(),
       cleanupAbortControllers: new Set(),
@@ -834,6 +838,15 @@ export class DictationSessionController {
     const entry = this.sessions.get(event.sessionId);
     if (entry === undefined) {
       return;
+    }
+
+    entry.audioFrameFlowControl.setTier(event.tier);
+    if (entry.source === 'audio_file' && event.tier !== 'normal') {
+      this.dependencies.feedback.show({
+        intent: 'information',
+        key: 'audio-file-progress',
+        message: 'Waiting for the local engine to catch up…',
+      });
     }
 
     if (event.sessionId === this.activeSessionId) {
