@@ -17,6 +17,7 @@ import {
   resetLlmPostprocessDefaults,
   resolvePluginSettings,
   shouldRefreshLlmSidebar,
+  validateTimestampIntervalSeconds,
 } from '../src/settings/plugin-settings';
 
 function makeUserPreset(overrides: Partial<LlmPreset> & { id: string }): LlmPreset {
@@ -333,6 +334,30 @@ describe('resolvePluginSettings', () => {
     expect(
       resolvePluginSettings({ timestampSparseIntervalMs: 999_999 }).timestampSparseIntervalMs,
     ).toBe(600_000);
+  });
+
+  it.each([
+    ['10', 10_000],
+    [' 30 ', 30_000],
+    ['600', 600_000],
+  ])('validates a whole-number timestamp interval of %s seconds', (value, milliseconds) => {
+    expect(validateTimestampIntervalSeconds(value)).toEqual({ milliseconds, valid: true });
+  });
+
+  it.each([
+    '',
+    'ten',
+    'NaN',
+    '9',
+    '10.5',
+    '601',
+    '1e2',
+    '0x10',
+  ])('rejects timestamp interval %j', (value) => {
+    expect(validateTimestampIntervalSeconds(value)).toEqual({
+      message: 'Enter a whole number from 10 to 600 seconds.',
+      valid: false,
+    });
   });
 
   it('defaults smart paragraph thresholds to the legacy meaningful pause threshold', () => {
