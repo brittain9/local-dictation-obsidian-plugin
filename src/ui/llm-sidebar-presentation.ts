@@ -49,13 +49,13 @@ export function resolveLlmSidebarPresentation(
     return {
       emptyState: {
         description:
-          'Dictation inserts the raw Whisper transcript. Turn on Transform when you want cleanup, rewriting, or summaries.',
+          'Dictation inserts the raw local transcript. Turn on Transform when you want cleanup, rewriting, or summaries.',
         icon: 'file-text',
         title: 'Raw transcript mode',
       },
       state: 'off',
       statusLabel: 'Off',
-      summary: 'Raw Whisper transcript',
+      summary: 'Raw transcript',
     };
   }
 

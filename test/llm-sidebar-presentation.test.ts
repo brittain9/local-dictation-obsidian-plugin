@@ -29,7 +29,7 @@ describe('LLM sidebar presentation', () => {
       emptyState: { title: 'Raw transcript mode' },
       state: 'off',
       statusLabel: 'Off',
-      summary: 'Raw Whisper transcript',
+      summary: 'Raw transcript',
     });
   });
 
