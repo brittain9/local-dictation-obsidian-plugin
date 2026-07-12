@@ -25,7 +25,7 @@ body:
       description: Minimal steps to trigger the bug.
       placeholder: |
         1. Open Obsidian
-        2. Enable Local STT plugin
+        2. Enable Local Dictation
         3. ...
     validations:
       required: true
@@ -39,12 +39,46 @@ body:
       required: true
 
   - type: input
+    id: architecture
+    attributes:
+      label: CPU architecture
+      description: On Linux or macOS, `uname -m` reports this value.
+      placeholder: "e.g., x86_64, arm64"
+    validations:
+      required: true
+
+  - type: input
+    id: installation-source
+    attributes:
+      label: Obsidian installation source
+      placeholder: "e.g., official installer, AppImage, Debian package, tarball, Flatpak"
+    validations:
+      required: true
+
+  - type: input
     id: obsidian-version
     attributes:
       label: Obsidian version
       placeholder: "e.g., 1.8.0"
     validations:
       required: true
+
+  - type: input
+    id: plugin-version
+    attributes:
+      label: Local Dictation version
+      placeholder: "e.g., 2026.7.5"
+    validations:
+      required: true
+
+  - type: input
+    id: linux-audio
+    attributes:
+      label: Linux desktop and audio stack (Linux only)
+      description: Include the desktop session and the server name from `pactl info` when the problem involves audio.
+      placeholder: "e.g., KDE Plasma 6 on Wayland; PulseAudio (on PipeWire 1.4)"
+    validations:
+      required: false
 
   - type: dropdown
     id: sidecar-build
