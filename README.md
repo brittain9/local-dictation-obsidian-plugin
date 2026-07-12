@@ -29,6 +29,7 @@ _The first-run wizard installs the native engine and helps you choose between li
 | Workflow | What happens | Model fit |
 | --- | --- | --- |
 | **Live dictation** | Provisional words appear and revise in place while you speak. | Moonshine streaming models |
+| **Selection re-dictation** | Select text and speak a replacement; the original stays untouched until the first final transcript is ready. | Any transcription model |
 | **Notes and drafts** | Final text lands at your cursor after each pause. | Whisper or Cohere Transcribe batch models |
 | **Meetings and calls** | Add computer audio to microphone capture, then optionally label speakers and add timestamps. | Whisper or Cohere Transcribe batch models |
 
@@ -37,6 +38,7 @@ All transcription models in the current catalog run locally and support English.
 ## Features
 
 - **Live text.** Moonshine streaming models show provisional words and revise them in place until each utterance finalizes.
+- **Selection re-dictation.** Select one text range and run **Local Dictation: Re-dictate selection** to replace it with a single spoken utterance.
 - **Meeting capture.** Include system audio from meetings, calls, or videos alongside your microphone on Windows, Linux, and macOS 14.2 or later.
 - **Speaker labels.** Optional on-device diarization assigns session-stable speaker labels. Speaker embeddings stay in memory and are discarded after the session.
 - **Timestamps.** Add elapsed or wall-clock timestamps at configurable intervals.

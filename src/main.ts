@@ -9,6 +9,11 @@ import { DictationSessionController } from './dictation/dictation-session-contro
 import { dictationAnchorExtension } from './editor/dictation-anchor-extension';
 import { noteSurfaceUpdateListenerExtension } from './editor/note-surface';
 import { provisionalTranscriptExtension } from './editor/provisional-transcript-extension';
+import {
+  canCaptureSelectionRedictation,
+  captureSelectionRedictation,
+  SelectionRedictationSession,
+} from './editor/selection-redictation';
 import { sessionProcessingExtension } from './editor/session-processing-extension';
 import { TemporaryLeafPinLeaseManager } from './editor/temporary-leaf-pin';
 import type { LlmCleanupFailure } from './llm/provider';
@@ -169,6 +174,13 @@ export default class LocalSttPlugin extends Plugin {
           rendererOptions,
           sessionId,
         }),
+      createSelectionRedictationSession: ({ callbacks, selection }) =>
+        new SelectionRedictationSession({
+          app: this.app,
+          callbacks,
+          feedback: this.feedback,
+          snapshot: selection,
+        }),
       createLlmRouter: (settings) =>
         createLlmRouter(
           settings,
@@ -230,10 +242,35 @@ export default class LocalSttPlugin extends Plugin {
 
     registerCommands({
       cancelDictation: async () => this.requireDictationController().cancelDictation(),
+      canRedictateSelection: (editor, file) =>
+        !this.requireDictationController().isBusy() && canCaptureSelectionRedictation(editor, file),
       checkSidecarHealth: async () => this.checkSidecarHealth(),
       plugin: this,
       restartSidecar: async () => this.restartSidecar(),
       startDictation: async () => this.requireDictationController().startDictation(),
+      startSelectionRedictation: async (editor, file) => {
+        const controller = this.requireDictationController();
+        if (controller.isBusy()) {
+          this.feedback.show({
+            intent: 'information',
+            key: 'selection-redictation-busy',
+            message: 'Finish or cancel the current dictation before re-dictating a selection.',
+          });
+          return;
+        }
+
+        const capture = captureSelectionRedictation(editor, file);
+        if (capture.kind !== 'captured') {
+          this.feedback.show({
+            intent: 'information',
+            key: 'selection-redictation-unavailable',
+            message: 'Select one non-empty text range and try again.',
+          });
+          return;
+        }
+
+        await controller.startSelectionRedictation(capture.snapshot);
+      },
       stopDictation: async () => this.requireDictationController().stopDictation(),
       toggleDictation: async () => this.requireDictationController().toggleDictation(),
     });

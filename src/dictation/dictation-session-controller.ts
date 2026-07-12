@@ -9,7 +9,8 @@ import {
   formatSystemAudioErrorMessage,
   formatSystemAudioSidecarErrorMessage,
 } from '../audio/system-audio-permission-message';
-import type { NotePlacementOptions, SurfaceDesynchronization } from '../editor/note-surface';
+import type { NotePlacementOptions } from '../editor/note-surface';
+import type { SelectionRedictationSnapshot } from '../editor/selection-redictation';
 import {
   type LlmPostprocessMode,
   type LlmPresetOutput,
@@ -18,7 +19,7 @@ import {
 } from '../llm/presets';
 import { type LlmCleanupFailure, type LlmProviderId, ProviderError } from '../llm/provider';
 import type { LlmRouter } from '../llm/router';
-import type { Session, SessionAcceptResult } from '../session/session';
+import type { Session, SessionAcceptResult, SessionLifecycleCallbacks } from '../session/session';
 import type { StageId, StageOutcome, TranscriptRevision } from '../session/session-journal';
 import type { PluginSettings, SmartParagraphPauseSettings } from '../settings/plugin-settings';
 import { formatErrorMessage } from '../shared/format-utils';
@@ -64,7 +65,7 @@ type ControllerSession = Pick<
   | 'readPriorUtterances'
   | 'replaceSessionRangeWithCleaned'
   | 'setAnchorMode'
->;
+> & { onUserCancellation?: () => void };
 
 interface ActiveSessionSnapshot {
   accelerationPreference: PluginSettings['accelerationPreference'];
@@ -105,6 +106,8 @@ interface ManagedSession {
   cleanupChain: Promise<void>;
   cleanupAbortControllers: Set<AbortController>;
   llmFailureLogged: boolean;
+  oneUtteranceFinalClaimed: boolean;
+  oneUtteranceMode: boolean;
   pendingTranscriptWork: Set<Promise<void>>;
   phase: SessionPhase;
   session: ControllerSession;
@@ -120,13 +123,14 @@ interface DictationSessionControllerDependencies {
   audioLevelMeter: Pick<SidecarAudioLevelMeter, 'bindSession' | 'clearSession' | 'update'>;
   captureStream: Pick<AudioCaptureStream, 'isCapturing' | 'start' | 'stop'>;
   createSession: (options: {
-    callbacks: {
-      onLockedNoteClosed: () => void;
-      onLockedNoteDeleted: () => void;
-      onSurfaceDesynchronized: (failure: SurfaceDesynchronization) => void;
-    };
+    callbacks: SessionLifecycleCallbacks;
     placement: NotePlacementOptions;
     rendererOptions: TranscriptRenderOptions;
+    sessionId: string;
+  }) => ControllerSession;
+  createSelectionRedictationSession: (options: {
+    callbacks: SessionLifecycleCallbacks;
+    selection: SelectionRedictationSnapshot;
     sessionId: string;
   }) => ControllerSession;
   createLlmRouter: (settings: PluginSettings) => LlmRouter;
@@ -232,6 +236,7 @@ export class DictationSessionController {
       return;
     }
 
+    this.sessions.get(sessionId)?.session.onUserCancellation?.();
     await this.cancelSession(sessionId);
   }
 
@@ -272,6 +277,18 @@ export class DictationSessionController {
   }
 
   async startDictation(): Promise<void> {
+    await this.startSession({ kind: 'dictation' });
+  }
+
+  async startSelectionRedictation(selection: SelectionRedictationSnapshot): Promise<void> {
+    await this.startSession({ kind: 'selection_redictation', selection });
+  }
+
+  private async startSession(
+    request:
+      | { kind: 'dictation' }
+      | { kind: 'selection_redictation'; selection: SelectionRedictationSnapshot },
+  ): Promise<void> {
     if (this.activeSessionId !== null || this.sessions.size >= MAX_CONTROLLER_SESSIONS) {
       return;
     }
@@ -307,38 +324,50 @@ export class DictationSessionController {
     }
 
     const sessionId = createSessionId();
-    const snapshot = createSessionSnapshot(
+    const baseSnapshot = createSessionSnapshot(
       settings,
       settings.selectedModel,
       this.dependencies.createLlmRouter(settings),
     );
+    const snapshot =
+      request.kind === 'selection_redictation'
+        ? applySelectionRedictationCleanupPolicy(baseSnapshot)
+        : baseSnapshot;
     let session: ControllerSession;
 
     try {
-      session = this.dependencies.createSession({
-        callbacks: {
-          onLockedNoteClosed: () => {
-            this.cancelOnLockedNoteEvent(sessionId, 'closed');
-          },
-          onLockedNoteDeleted: () => {
-            this.cancelOnLockedNoteEvent(sessionId, 'deleted');
-          },
-          onSurfaceDesynchronized: (failure) => {
-            this.cancelOnFatalTranscriptFailure(
+      const callbacks: SessionLifecycleCallbacks = {
+        onLockedNoteClosed: () => {
+          this.cancelOnLockedNoteEvent(sessionId, 'closed');
+        },
+        onLockedNoteDeleted: () => {
+          this.cancelOnLockedNoteEvent(sessionId, 'deleted');
+        },
+        onSurfaceDesynchronized: (failure) => {
+          this.cancelOnFatalTranscriptFailure(
+            sessionId,
+            FEEDBACK_FAILURES.surfaceDesynchronized,
+            failure,
+          );
+        },
+      };
+      session =
+        request.kind === 'selection_redictation'
+          ? this.dependencies.createSelectionRedictationSession({
+              callbacks,
+              selection: request.selection,
               sessionId,
-              FEEDBACK_FAILURES.surfaceDesynchronized,
-              failure,
-            );
-          },
-        },
-        placement: { anchor: snapshot.dictationAnchor },
-        rendererOptions: {
-          smartParagraphPauses: snapshot.smartParagraphPauses,
-          timestamps: snapshot.timestamps,
-          transcriptFormatting: snapshot.transcriptFormatting,
-        },
-        sessionId,
-      });
+            })
+          : this.dependencies.createSession({
+              callbacks,
+              placement: { anchor: snapshot.dictationAnchor },
+              rendererOptions: {
+                smartParagraphPauses: snapshot.smartParagraphPauses,
+                timestamps: snapshot.timestamps,
+                transcriptFormatting: snapshot.transcriptFormatting,
+              },
+              sessionId,
+            });
     } catch (error) {
       this.handleError(FEEDBACK_FAILURES.startDictation, error);
       return;
@@ -349,6 +378,8 @@ export class DictationSessionController {
       cleanupChain: Promise.resolve(),
       cleanupAbortControllers: new Set(),
       llmFailureLogged: false,
+      oneUtteranceFinalClaimed: false,
+      oneUtteranceMode: request.kind === 'selection_redictation',
       pendingTranscriptWork: new Set(),
       phase: 'starting',
       session,
@@ -432,7 +463,13 @@ export class DictationSessionController {
       return;
     }
 
-    const entry = this.sessions.get(sessionId);
+    await this.requestSessionStop(sessionId, this.sessions.get(sessionId));
+  }
+
+  private async requestSessionStop(
+    sessionId: string,
+    entry: ManagedSession | undefined,
+  ): Promise<void> {
     if (entry !== undefined) {
       entry.phase = 'stopping';
       // Keep the cursor where text will land while queued transcripts drain.
@@ -785,6 +822,21 @@ export class DictationSessionController {
     entry: ManagedSession,
     event: TranscriptReadyEvent,
   ): Promise<void> {
+    if (entry.oneUtteranceMode) {
+      if (entry.oneUtteranceFinalClaimed) {
+        return;
+      }
+      if (event.isFinal) {
+        entry.oneUtteranceFinalClaimed = true;
+        if (this.activeSessionId === event.sessionId) {
+          await this.requestSessionStop(event.sessionId, entry);
+          if (!this.sessions.has(event.sessionId)) {
+            return;
+          }
+        }
+      }
+    }
+
     if (event.isFinal && event.text.length > 0) {
       this.dependencies.logger?.debug(
         'session',
@@ -1542,6 +1594,23 @@ function createSessionSnapshot(
     transcriptFormatting: settings.transcriptFormatting,
     useNoteAsContext: settings.useNoteAsContext,
   };
+}
+
+function applySelectionRedictationCleanupPolicy(
+  snapshot: ActiveSessionSnapshot,
+): ActiveSessionSnapshot {
+  // The selection surface has exactly one atomic replacement target. Batch
+  // rewrites can run on its single final; additive output has no safe target
+  // and must not invoke a provider as an implicit side effect.
+  if (snapshot.llmPostprocessOutput !== 'replace') {
+    return { ...snapshot, llmPostprocessMode: 'off' };
+  }
+
+  if (snapshot.llmPostprocessMode === 'batch') {
+    return { ...snapshot, llmPostprocessMode: 'per_utterance' };
+  }
+
+  return snapshot;
 }
 
 function shouldRunBatchCleanup(

@@ -5,6 +5,7 @@ import {
   DictationSessionController,
 } from '../src/dictation/dictation-session-controller';
 import type { NotePlacementOptions, SurfaceDesynchronization } from '../src/editor/note-surface';
+import type { SelectionRedictationSnapshot } from '../src/editor/selection-redictation';
 import { type LlmCleanupFailure, ProviderError } from '../src/llm/provider';
 import type { LlmRouter, LlmRouterCleanupResult } from '../src/llm/router';
 import type { SessionAcceptResult } from '../src/session/session';
@@ -68,6 +69,7 @@ class FakeSession {
     (_blockText: string, _placement: 'above' | 'below') => true,
   );
   public readonly markSessionRangeAsProcessing = vi.fn(() => true);
+  public readonly onUserCancellation = vi.fn();
   public readonly readCurrentSessionText = vi.fn(() => this.currentSessionText);
   public readonly readNoteGlossary = vi.fn(
     (_maxChars: number): { text: string; truncated: boolean } | null => null,
@@ -162,6 +164,205 @@ describe('DictationSessionController', () => {
 
     expect(sidecarConnection.sendAudioFrame).toHaveBeenCalledWith(startPayload?.sessionId, frame);
     expect(controller.getState()).toBe('listening');
+  });
+
+  it('stops capture on the first selection final and ignores every later revision', async () => {
+    const captureStream = new FakeCaptureStream();
+    const sidecarConnection = new FakeSidecarConnection();
+    const sessions: FakeSession[] = [];
+    const controller = createController({
+      captureStream,
+      createSelectionRedictationSession: (session) => {
+        sessions.push(session);
+      },
+      sidecarConnection,
+    });
+
+    await controller.startSelectionRedictation(createSelectionSnapshot());
+    const sessionId = sidecarConnection.startSession.mock.calls[0]?.[0].sessionId ?? '';
+    const session = sessions[0];
+    if (session === undefined) {
+      throw new Error('expected selection session fixture');
+    }
+
+    sidecarConnection.emit(transcriptReady(sessionId, 'partial', { isFinal: false }));
+    await vi.waitFor(() => {
+      expect(session.acceptTranscript).toHaveBeenCalledWith(
+        expect.objectContaining({ isFinal: false, text: 'partial' }),
+      );
+    });
+    expect(sidecarConnection.requestStopSession).not.toHaveBeenCalled();
+
+    sidecarConnection.emit(transcriptReady(sessionId, 'first final'));
+    sidecarConnection.emit(transcriptReady(sessionId, 'second final'));
+
+    await vi.waitFor(() => {
+      expect(sidecarConnection.requestStopSession).toHaveBeenCalledWith(sessionId);
+      expect(session.acceptTranscript).toHaveBeenCalledWith(
+        expect.objectContaining({ isFinal: true, text: 'first final' }),
+      );
+    });
+    expect(captureStream.stop).toHaveBeenCalledOnce();
+    expect(session.acceptedTexts).toEqual(['partial', 'first final']);
+    expect(controller.getState()).toBe('idle');
+
+    sidecarConnection.emit({ reason: 'user_stop', sessionId, type: 'session_stopped' });
+    await vi.waitFor(() => {
+      expect(session.dispose).toHaveBeenCalledOnce();
+    });
+  });
+
+  it('notifies the selection session before cancellation rejects transcript work', async () => {
+    const sidecarConnection = new FakeSidecarConnection();
+    const sessions: FakeSession[] = [];
+    const controller = createController({
+      createSelectionRedictationSession: (session) => {
+        sessions.push(session);
+      },
+      sidecarConnection,
+    });
+
+    await controller.startSelectionRedictation(createSelectionSnapshot());
+    const sessionId = sidecarConnection.startSession.mock.calls[0]?.[0].sessionId ?? '';
+    const session = sessions[0];
+    if (session === undefined) {
+      throw new Error('expected selection session fixture');
+    }
+
+    await controller.cancelDictation();
+    sidecarConnection.emit(transcriptReady(sessionId, 'late final'));
+
+    expect(session.onUserCancellation).toHaveBeenCalledOnce();
+    expect(session.acceptTranscript).not.toHaveBeenCalled();
+    expect(session.dispose).toHaveBeenCalledOnce();
+  });
+
+  it('converts replace-style batch cleanup to one transform before selection replacement', async () => {
+    const sidecarConnection = new FakeSidecarConnection();
+    const sessions: FakeSession[] = [];
+    const cleanup = vi.fn(
+      async (): Promise<LlmRouterCleanupResult> => ({
+        model: 'm',
+        providerId: 'ollama',
+        text: 'Clean replacement.',
+      }),
+    );
+    const llmRouter = createFakeLlmRouter({ cleanup });
+    const controller = createController({
+      createSelectionRedictationSession: (session) => {
+        sessions.push(session);
+      },
+      getSettings: () =>
+        createSettings({
+          llmFeaturesEnabled: true,
+          llmPostprocessActivePresetRef: 'builtin:markdown-formatting',
+          llmPostprocessMode: 'batch',
+          llmPostprocessSkipMinWords: 0,
+          selectedModel: createExternalModelSelection(),
+        }),
+      llmRouter,
+      sidecarConnection,
+    });
+
+    await controller.startSelectionRedictation(createSelectionSnapshot());
+    const sessionId = sidecarConnection.startSession.mock.calls[0]?.[0].sessionId ?? '';
+    sidecarConnection.emit(transcriptReady(sessionId, 'raw replacement'));
+
+    await vi.waitFor(() => {
+      expect(cleanup).toHaveBeenCalledWith(
+        expect.objectContaining({
+          userMessage: '<utterance>\nraw replacement\n</utterance>',
+        }),
+      );
+      expect(sessions[0]?.acceptTranscript).toHaveBeenCalledWith(
+        expect.objectContaining({ isFinal: true, text: 'Clean replacement.' }),
+      );
+    });
+    sidecarConnection.emit({ reason: 'user_stop', sessionId, type: 'session_stopped' });
+    await vi.waitFor(() => {
+      expect(sessions[0]?.dispose).toHaveBeenCalledOnce();
+    });
+
+    expect(cleanup).toHaveBeenCalledOnce();
+    expect(llmRouter.selectProviderId).toHaveBeenCalledOnce();
+    expect(sessions[0]?.readCurrentSessionText).not.toHaveBeenCalled();
+    expect(sessions[0]?.replaceSessionRangeWithCleaned).not.toHaveBeenCalled();
+    expect(sessions[0]?.insertAdjacentToSessionRange).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    'builtin:tldr',
+    'builtin:action-items',
+  ] as const)('disables additive preset %s for selection re-dictation', async (activePresetRef) => {
+    const sidecarConnection = new FakeSidecarConnection();
+    const sessions: FakeSession[] = [];
+    const cleanup = vi.fn(
+      async (): Promise<LlmRouterCleanupResult> => ({
+        model: 'remote-model',
+        providerId: 'openrouter',
+        text: 'Adjacent content',
+      }),
+    );
+    const llmRouter = createFakeLlmRouter({ cleanup, providerId: 'openrouter' });
+    const controller = createController({
+      createSelectionRedictationSession: (session) => {
+        sessions.push(session);
+      },
+      getSettings: () =>
+        createSettings({
+          llmFeaturesEnabled: true,
+          llmPostprocessActivePresetRef: activePresetRef,
+          llmPostprocessMode: 'batch',
+          llmRemoteFeaturesEnabled: true,
+          llmRouting: 'remote',
+          selectedModel: createExternalModelSelection(),
+        }),
+      llmRouter,
+      sidecarConnection,
+    });
+
+    await controller.startSelectionRedictation(createSelectionSnapshot());
+    const sessionId = sidecarConnection.startSession.mock.calls[0]?.[0].sessionId ?? '';
+    sidecarConnection.emit(transcriptReady(sessionId, 'raw replacement'));
+    await vi.waitFor(() => {
+      expect(sessions[0]?.acceptTranscript).toHaveBeenCalledWith(
+        expect.objectContaining({ isFinal: true, text: 'raw replacement' }),
+      );
+    });
+    sidecarConnection.emit({ reason: 'user_stop', sessionId, type: 'session_stopped' });
+    await vi.waitFor(() => {
+      expect(sessions[0]?.dispose).toHaveBeenCalledOnce();
+    });
+
+    expect(cleanup).not.toHaveBeenCalled();
+    expect(llmRouter.selectProviderId).not.toHaveBeenCalled();
+    expect(sessions[0]?.readCurrentSessionText).not.toHaveBeenCalled();
+    expect(sessions[0]?.replaceSessionRangeWithCleaned).not.toHaveBeenCalled();
+    expect(sessions[0]?.insertAdjacentToSessionRange).not.toHaveBeenCalled();
+  });
+
+  it('stops on an empty first final and ignores a later non-empty selection final', async () => {
+    const sidecarConnection = new FakeSidecarConnection();
+    const sessions: FakeSession[] = [];
+    const controller = createController({
+      createSelectionRedictationSession: (session) => {
+        sessions.push(session);
+      },
+      sidecarConnection,
+    });
+
+    await controller.startSelectionRedictation(createSelectionSnapshot());
+    const sessionId = sidecarConnection.startSession.mock.calls[0]?.[0].sessionId ?? '';
+    sidecarConnection.emit(transcriptReady(sessionId, ''));
+    sidecarConnection.emit(transcriptReady(sessionId, 'late replacement', { revision: 1 }));
+
+    await vi.waitFor(() => {
+      expect(sidecarConnection.requestStopSession).toHaveBeenCalledWith(sessionId);
+      expect(sessions[0]?.acceptTranscript).toHaveBeenCalledWith(
+        expect.objectContaining({ isFinal: true, text: '' }),
+      );
+    });
+    expect(sessions[0]?.acceptedTexts).toEqual(['']);
   });
 
   it('passes smart paragraph thresholds to renderer options', async () => {
@@ -2281,6 +2482,7 @@ function createController({
   captureStream = new FakeCaptureStream(),
   countAudioInputDevices,
   createSession,
+  createSelectionRedictationSession,
   llmRouter = createFakeLlmRouter(),
   getSettings = () => createSettings({ selectedModel: createExternalModelSelection() }),
   logger = new FakeLogger(),
@@ -2293,6 +2495,10 @@ function createController({
   captureStream?: FakeCaptureStream;
   countAudioInputDevices?: () => Promise<number | null>;
   createSession?: (session: FakeSession, options: CreateSessionOptions) => void;
+  createSelectionRedictationSession?: (
+    session: FakeSession,
+    options: CreateSelectionRedictationSessionOptions,
+  ) => void;
   getSettings?: () => PluginSettings;
   llmRouter?: LlmRouter;
   logger?: FakeLogger;
@@ -2308,6 +2514,11 @@ function createController({
     createSession: (_options: CreateSessionOptions) => {
       const session = new FakeSession();
       createSession?.(session, _options);
+      return session;
+    },
+    createSelectionRedictationSession: (_options: CreateSelectionRedictationSessionOptions) => {
+      const session = new FakeSession();
+      createSelectionRedictationSession?.(session, _options);
       return session;
     },
     createLlmRouter: () => llmRouter,
@@ -2335,6 +2546,12 @@ interface CreateSessionOptions {
   sessionId: string;
 }
 
+interface CreateSelectionRedictationSessionOptions {
+  callbacks: CreateSessionOptions['callbacks'];
+  selection: SelectionRedictationSnapshot;
+  sessionId: string;
+}
+
 function createSettings(overrides: Partial<PluginSettings> = {}): PluginSettings {
   return {
     ...DEFAULT_PLUGIN_SETTINGS,
@@ -2349,6 +2566,16 @@ function createExternalModelSelection(): NonNullable<PluginSettings['selectedMod
     kind: 'external_file',
     runtimeId: 'whisper_cpp',
   };
+}
+
+function createSelectionSnapshot(): SelectionRedictationSnapshot {
+  return {
+    editor: {},
+    file: { path: 'note.md' },
+    from: { ch: 0, line: 0 },
+    originalText: 'original',
+    to: { ch: 8, line: 0 },
+  } as unknown as SelectionRedictationSnapshot;
 }
 
 function transcriptReady(

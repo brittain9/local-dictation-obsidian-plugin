@@ -584,7 +584,7 @@ export class NoteSurface {
       return null;
     }
 
-    return buildGlossary(this.view.state.doc.toString(), maxChars);
+    return buildNoteGlossary(this.view.state.doc.toString(), maxChars);
   }
 
   readNoteText(maxChars: number): { text: string; truncated: boolean } | null {
@@ -868,7 +868,7 @@ function isAtSentenceStart(noteText: string, offset: number): boolean {
 // case-insensitively (first-seen casing wins) and bounded by `maxChars`.
 // Stops scanning at the first token that would overflow the budget, including
 // the terminal period.
-function buildGlossary(
+export function buildNoteGlossary(
   noteText: string,
   maxChars: number,
 ): { text: string; truncated: boolean } | null {
