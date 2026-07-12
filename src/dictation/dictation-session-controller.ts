@@ -9,6 +9,7 @@ import {
   formatSystemAudioErrorMessage,
   formatSystemAudioSidecarErrorMessage,
 } from '../audio/system-audio-permission-message';
+import type { MarkdownCommandSnapshot } from '../editor/markdown-command-mode';
 import type { NotePlacementOptions } from '../editor/note-surface';
 import type { SelectionRedictationSnapshot } from '../editor/selection-redictation';
 import {
@@ -100,7 +101,12 @@ type SessionPhase = 'starting' | 'active' | 'stopping' | 'cancelling' | 'stopped
 type TerminalArbitrationState = 'open' | 'feedback-claimed' | 'cancelled';
 type ManagedSessionMode =
   | { kind: 'dictation' }
-  | { finalClaimed: boolean; kind: 'selection_redictation' };
+  | { finalClaimed: boolean; kind: 'markdown_command' | 'selection_redictation' };
+
+type SessionStartRequest =
+  | { kind: 'dictation' }
+  | { command: MarkdownCommandSnapshot; kind: 'markdown_command' }
+  | { kind: 'selection_redictation'; selection: SelectionRedictationSnapshot };
 
 interface ManagedSession {
   anchorTimerId: number | null;
@@ -124,6 +130,11 @@ function rejectsTranscriptWork(entry: ManagedSession): boolean {
 interface DictationSessionControllerDependencies {
   audioLevelMeter: Pick<SidecarAudioLevelMeter, 'bindSession' | 'clearSession' | 'update'>;
   captureStream: Pick<AudioCaptureStream, 'isCapturing' | 'start' | 'stop'>;
+  createMarkdownCommandSession: (options: {
+    callbacks: SessionLifecycleCallbacks;
+    command: MarkdownCommandSnapshot;
+    sessionId: string;
+  }) => ControllerSession;
   createSession: (options: {
     callbacks: SessionLifecycleCallbacks;
     placement: NotePlacementOptions;
@@ -138,6 +149,7 @@ interface DictationSessionControllerDependencies {
   createLlmRouter: (settings: PluginSettings) => LlmRouter;
   feedback: Pick<UserFeedback, 'show'>;
   getSettings: () => PluginSettings;
+  isMarkdownCommandSnapshotCurrent: (command: MarkdownCommandSnapshot) => boolean;
   isSelectionRedictationSnapshotCurrent: (selection: SelectionRedictationSnapshot) => boolean;
   logger?: PluginLogger;
   onLlmCleanupFailure?: (failure: LlmCleanupFailure) => void;
@@ -283,15 +295,15 @@ export class DictationSessionController {
     await this.startSession({ kind: 'dictation' });
   }
 
+  async startMarkdownCommand(command: MarkdownCommandSnapshot): Promise<void> {
+    await this.startSession({ command, kind: 'markdown_command' });
+  }
+
   async startSelectionRedictation(selection: SelectionRedictationSnapshot): Promise<void> {
     await this.startSession({ kind: 'selection_redictation', selection });
   }
 
-  private async startSession(
-    request:
-      | { kind: 'dictation' }
-      | { kind: 'selection_redictation'; selection: SelectionRedictationSnapshot },
-  ): Promise<void> {
+  private async startSession(request: SessionStartRequest): Promise<void> {
     if (this.activeSessionId !== null || this.sessions.size >= MAX_CONTROLLER_SESSIONS) {
       return;
     }
@@ -326,17 +338,7 @@ export class DictationSessionController {
       return;
     }
 
-    if (
-      request.kind === 'selection_redictation' &&
-      !this.dependencies.isSelectionRedictationSnapshotCurrent(request.selection)
-    ) {
-      this.applyUiState('idle');
-      this.dependencies.feedback.show({
-        intent: 'warning',
-        key: 'selection-redictation-start-stale',
-        message:
-          'Re-dictation did not start because the selected note changed or closed. No audio was captured. Select the text again and retry.',
-      });
+    if (!this.validateEditorCommandTarget(request)) {
       return;
     }
 
@@ -346,10 +348,7 @@ export class DictationSessionController {
       settings.selectedModel,
       this.dependencies.createLlmRouter(settings),
     );
-    const snapshot =
-      request.kind === 'selection_redictation'
-        ? applySelectionRedictationPolicy(baseSnapshot)
-        : baseSnapshot;
+    const snapshot = applySessionPolicy(baseSnapshot, request.kind);
     let session: ControllerSession;
 
     try {
@@ -368,23 +367,30 @@ export class DictationSessionController {
           );
         },
       };
-      session =
-        request.kind === 'selection_redictation'
-          ? this.dependencies.createSelectionRedictationSession({
-              callbacks,
-              selection: request.selection,
-              sessionId,
-            })
-          : this.dependencies.createSession({
-              callbacks,
-              placement: { anchor: snapshot.dictationAnchor },
-              rendererOptions: {
-                smartParagraphPauses: snapshot.smartParagraphPauses,
-                timestamps: snapshot.timestamps,
-                transcriptFormatting: snapshot.transcriptFormatting,
-              },
-              sessionId,
-            });
+      if (request.kind === 'selection_redictation') {
+        session = this.dependencies.createSelectionRedictationSession({
+          callbacks,
+          selection: request.selection,
+          sessionId,
+        });
+      } else if (request.kind === 'markdown_command') {
+        session = this.dependencies.createMarkdownCommandSession({
+          callbacks,
+          command: request.command,
+          sessionId,
+        });
+      } else {
+        session = this.dependencies.createSession({
+          callbacks,
+          placement: { anchor: snapshot.dictationAnchor },
+          rendererOptions: {
+            smartParagraphPauses: snapshot.smartParagraphPauses,
+            timestamps: snapshot.timestamps,
+            transcriptFormatting: snapshot.transcriptFormatting,
+          },
+          sessionId,
+        });
+      }
     } catch (error) {
       this.handleError(FEEDBACK_FAILURES.startDictation, error);
       return;
@@ -396,9 +402,9 @@ export class DictationSessionController {
       cleanupAbortControllers: new Set(),
       llmFailureLogged: false,
       mode:
-        request.kind === 'selection_redictation'
-          ? { finalClaimed: false, kind: 'selection_redictation' }
-          : { kind: 'dictation' },
+        request.kind === 'dictation'
+          ? { kind: 'dictation' }
+          : { finalClaimed: false, kind: request.kind },
       pendingTranscriptWork: new Set(),
       phase: 'starting',
       session,
@@ -483,6 +489,38 @@ export class DictationSessionController {
     }
 
     await this.requestSessionStop(sessionId, this.sessions.get(sessionId));
+  }
+
+  private validateEditorCommandTarget(request: SessionStartRequest): boolean {
+    if (request.kind === 'dictation') {
+      return true;
+    }
+
+    const current =
+      request.kind === 'selection_redictation'
+        ? this.dependencies.isSelectionRedictationSnapshotCurrent(request.selection)
+        : this.dependencies.isMarkdownCommandSnapshotCurrent(request.command);
+    if (current) {
+      return true;
+    }
+
+    this.applyUiState('idle');
+    this.dependencies.feedback.show(
+      request.kind === 'selection_redictation'
+        ? {
+            intent: 'warning',
+            key: 'selection-redictation-start-stale',
+            message:
+              'Re-dictation did not start because the selected note changed or closed. No audio was captured. Select the text again and retry.',
+          }
+        : {
+            intent: 'warning',
+            key: 'markdown-command-start-stale',
+            message:
+              'The Markdown command did not start because the note changed or closed. No audio was captured. Run the command again.',
+          },
+    );
+    return false;
   }
 
   private async requestSessionStop(
@@ -841,7 +879,7 @@ export class DictationSessionController {
     entry: ManagedSession,
     event: TranscriptReadyEvent,
   ): Promise<void> {
-    if (entry.mode.kind === 'selection_redictation') {
+    if (entry.mode.kind !== 'dictation') {
       if (entry.mode.finalClaimed) {
         return;
       }
@@ -1634,6 +1672,32 @@ function applySelectionRedictationPolicy(snapshot: ActiveSessionSnapshot): Activ
     includeSystemAudio: false,
     llmPostprocessMode,
   };
+}
+
+function applyMarkdownCommandPolicy(snapshot: ActiveSessionSnapshot): ActiveSessionSnapshot {
+  return {
+    ...snapshot,
+    diarizationEnabled: false,
+    includeSystemAudio: false,
+    llmFeaturesEnabled: false,
+    llmPostprocessMode: 'off',
+    llmPostprocessNoteContextChars: 0,
+    llmPostprocessPriorUtterancesN: 0,
+    useNoteAsContext: false,
+  };
+}
+
+function applySessionPolicy(
+  snapshot: ActiveSessionSnapshot,
+  kind: SessionStartRequest['kind'],
+): ActiveSessionSnapshot {
+  if (kind === 'selection_redictation') {
+    return applySelectionRedictationPolicy(snapshot);
+  }
+  if (kind === 'markdown_command') {
+    return applyMarkdownCommandPolicy(snapshot);
+  }
+  return snapshot;
 }
 
 function shouldRunBatchCleanup(

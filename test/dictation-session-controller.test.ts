@@ -4,6 +4,7 @@ import {
   type DictationControllerState,
   DictationSessionController,
 } from '../src/dictation/dictation-session-controller';
+import type { MarkdownCommandSnapshot } from '../src/editor/markdown-command-mode';
 import type { NotePlacementOptions, SurfaceDesynchronization } from '../src/editor/note-surface';
 import type { SelectionRedictationSnapshot } from '../src/editor/selection-redictation';
 import { type LlmCleanupFailure, ProviderError } from '../src/llm/provider';
@@ -234,6 +235,122 @@ describe('DictationSessionController', () => {
         includeSystemAudio: false,
       }),
     );
+  });
+
+  it('does not start a Markdown command when its target becomes stale during preflight', async () => {
+    const captureStream = new FakeCaptureStream();
+    const feedback = { show: vi.fn() };
+    const sidecarConnection = new FakeSidecarConnection();
+    const preflight: { finish?: () => void } = {};
+    sidecarConnection.ensureStarted.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          preflight.finish = resolve;
+        }),
+    );
+    let targetCurrent = true;
+    const isMarkdownCommandSnapshotCurrent = vi.fn(() => targetCurrent);
+    const createMarkdownCommandSession = vi.fn();
+    const controller = createController({
+      captureStream,
+      createMarkdownCommandSession,
+      feedback,
+      isMarkdownCommandSnapshotCurrent,
+      sidecarConnection,
+    });
+    const command = createMarkdownCommandSnapshot();
+
+    const start = controller.startMarkdownCommand(command);
+    await vi.waitFor(() => {
+      expect(sidecarConnection.ensureStarted).toHaveBeenCalledOnce();
+    });
+    targetCurrent = false;
+    const finishPreflight = preflight.finish;
+    if (finishPreflight === undefined) {
+      throw new Error('sidecar preflight did not start');
+    }
+    finishPreflight();
+    await start;
+
+    expect(isMarkdownCommandSnapshotCurrent).toHaveBeenCalledWith(command);
+    expect(createMarkdownCommandSession).not.toHaveBeenCalled();
+    expect(sidecarConnection.startSession).not.toHaveBeenCalled();
+    expect(captureStream.start).not.toHaveBeenCalled();
+    expect(controller.getState()).toBe('idle');
+    expect(feedback.show).toHaveBeenCalledWith({
+      intent: 'warning',
+      key: 'markdown-command-start-stale',
+      message:
+        'The Markdown command did not start because the note changed or closed. No audio was captured. Run the command again.',
+    });
+  });
+
+  it('runs one microphone-only Markdown command without context or provider cleanup', async () => {
+    const sidecarConnection = new FakeSidecarConnection();
+    const sessions: FakeSession[] = [];
+    const cleanup = vi.fn(
+      async (): Promise<LlmRouterCleanupResult> => ({
+        model: 'remote-model',
+        providerId: 'openrouter',
+        text: 'provider output',
+      }),
+    );
+    const llmRouter = createFakeLlmRouter({ cleanup, providerId: 'openrouter' });
+    const controller = createController({
+      createMarkdownCommandSession: (session) => {
+        sessions.push(session);
+      },
+      getSettings: () =>
+        createSettings({
+          diarizationEnabled: true,
+          includeSystemAudio: true,
+          llmFeaturesEnabled: true,
+          llmPostprocessActivePresetRef: 'builtin:markdown-formatting',
+          llmPostprocessMode: 'batch',
+          llmPostprocessSkipMinWords: 0,
+          llmRemoteFeaturesEnabled: true,
+          llmRouting: 'remote',
+          selectedModel: createExternalModelSelection(),
+          useLlmNoteContext: true,
+          useNoteAsContext: true,
+        }),
+      llmRouter,
+      sidecarConnection,
+    });
+
+    await controller.startMarkdownCommand(createMarkdownCommandSnapshot());
+    const startPayload = sidecarConnection.startSession.mock.calls[0]?.[0];
+    const sessionId = startPayload?.sessionId ?? '';
+    expect(startPayload).toEqual(
+      expect.objectContaining({
+        diarizationEnabled: false,
+        includeSystemAudio: false,
+      }),
+    );
+
+    sidecarConnection.emit({
+      budgetChars: 200,
+      correlationId: 'markdown-context',
+      sessionId,
+      type: 'context_request',
+      utteranceId: crypto.randomUUID(),
+    });
+    expect(sidecarConnection.sendContextResponse).toHaveBeenCalledWith('markdown-context', null);
+    expect(sessions[0]?.readNoteGlossary).not.toHaveBeenCalled();
+
+    sidecarConnection.emit(transcriptReady(sessionId, 'bull', { isFinal: false }));
+    sidecarConnection.emit(transcriptReady(sessionId, 'bullet'));
+    sidecarConnection.emit(transcriptReady(sessionId, 'horizontal rule', { revision: 1 }));
+
+    await vi.waitFor(() => {
+      expect(sidecarConnection.requestStopSession).toHaveBeenCalledWith(sessionId);
+      expect(sessions[0]?.acceptTranscript).toHaveBeenCalledWith(
+        expect.objectContaining({ isFinal: true, text: 'bullet' }),
+      );
+    });
+    expect(sessions[0]?.acceptedTexts).toEqual(['bull', 'bullet']);
+    expect(cleanup).not.toHaveBeenCalled();
+    expect(llmRouter.selectProviderId).not.toHaveBeenCalled();
   });
 
   it('stops capture on the first selection final and ignores every later revision', async () => {
@@ -2551,10 +2668,12 @@ function createController({
   audioLevelMeter = new FakeAudioLevelMeter(),
   captureStream = new FakeCaptureStream(),
   countAudioInputDevices,
+  createMarkdownCommandSession,
   createSession,
   createSelectionRedictationSession,
   llmRouter = createFakeLlmRouter(),
   getSettings = () => createSettings({ selectedModel: createExternalModelSelection() }),
+  isMarkdownCommandSnapshotCurrent = () => true,
   isSelectionRedictationSnapshotCurrent = () => true,
   logger = new FakeLogger(),
   feedback = { show: vi.fn() },
@@ -2565,12 +2684,17 @@ function createController({
   audioLevelMeter?: FakeAudioLevelMeter;
   captureStream?: FakeCaptureStream;
   countAudioInputDevices?: () => Promise<number | null>;
+  createMarkdownCommandSession?: (
+    session: FakeSession,
+    options: CreateMarkdownCommandSessionOptions,
+  ) => void;
   createSession?: (session: FakeSession, options: CreateSessionOptions) => void;
   createSelectionRedictationSession?: (
     session: FakeSession,
     options: CreateSelectionRedictationSessionOptions,
   ) => void;
   getSettings?: () => PluginSettings;
+  isMarkdownCommandSnapshotCurrent?: (command: MarkdownCommandSnapshot) => boolean;
   isSelectionRedictationSnapshotCurrent?: (selection: SelectionRedictationSnapshot) => boolean;
   llmRouter?: LlmRouter;
   logger?: FakeLogger;
@@ -2583,6 +2707,11 @@ function createController({
     captureStream,
     audioLevelMeter,
     ...(countAudioInputDevices !== undefined ? { countAudioInputDevices } : {}),
+    createMarkdownCommandSession: (_options: CreateMarkdownCommandSessionOptions) => {
+      const session = new FakeSession();
+      createMarkdownCommandSession?.(session, _options);
+      return session;
+    },
     createSession: (_options: CreateSessionOptions) => {
       const session = new FakeSession();
       createSession?.(session, _options);
@@ -2596,6 +2725,7 @@ function createController({
     createLlmRouter: () => llmRouter,
     feedback,
     getSettings,
+    isMarkdownCommandSnapshotCurrent,
     isSelectionRedictationSnapshotCurrent,
     logger,
     ...(onLlmCleanupFailure !== undefined ? { onLlmCleanupFailure } : {}),
@@ -2616,6 +2746,12 @@ interface CreateSessionOptions {
   };
   placement: NotePlacementOptions;
   rendererOptions: TranscriptRenderOptions;
+  sessionId: string;
+}
+
+interface CreateMarkdownCommandSessionOptions {
+  callbacks: CreateSessionOptions['callbacks'];
+  command: MarkdownCommandSnapshot;
   sessionId: string;
 }
 
@@ -2649,6 +2785,15 @@ function createSelectionSnapshot(): SelectionRedictationSnapshot {
     from: { ch: 0, line: 0 },
     to: { ch: 8, line: 0 },
   } as unknown as SelectionRedictationSnapshot;
+}
+
+function createMarkdownCommandSnapshot(): MarkdownCommandSnapshot {
+  return {
+    cursor: { ch: 0, line: 0 },
+    documentText: '',
+    editor: {},
+    file: { path: 'note.md' },
+  } as unknown as MarkdownCommandSnapshot;
 }
 
 function transcriptReady(

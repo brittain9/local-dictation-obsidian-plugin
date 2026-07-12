@@ -4,15 +4,19 @@ const START_DICTATION_COMMAND_ID = 'start-dictation-session';
 const STOP_DICTATION_COMMAND_ID = 'stop-dictation-session';
 const CANCEL_DICTATION_COMMAND_ID = 'cancel-dictation-session';
 const TOGGLE_DICTATION_COMMAND_ID = 'toggle-dictation-session';
+const MARKDOWN_COMMAND_MODE_COMMAND_ID = 'markdown-command-mode';
 const REDICTATE_SELECTION_COMMAND_ID = 'redictate-selection';
 
 interface CommandDependencies {
   cancelDictation: () => Promise<void>;
+  canCaptureMarkdownCommand: (editor: Editor, file: TFile | null) => boolean;
   canRedictateSelection: (editor: Editor, file: TFile | null) => boolean;
   checkSidecarHealth: () => Promise<void>;
+  onMarkdownCommandError: (error: unknown) => void;
   onSelectionRedictationError: (error: unknown) => void;
   plugin: Plugin;
   restartSidecar: () => Promise<void>;
+  startMarkdownCommand: (editor: Editor, file: TFile | null) => Promise<void>;
   startSelectionRedictation: (editor: Editor, file: TFile | null) => Promise<void>;
   startDictation: () => Promise<void>;
   stopDictation: () => Promise<void>;
@@ -49,6 +53,22 @@ export function registerCommands(dependencies: CommandDependencies): void {
     name: 'Cancel dictation',
     callback: async () => {
       await dependencies.cancelDictation();
+    },
+  });
+
+  dependencies.plugin.addCommand({
+    id: MARKDOWN_COMMAND_MODE_COMMAND_ID,
+    name: 'Apply Markdown by voice',
+    editorCheckCallback: (checking, editor, context) => {
+      if (!dependencies.canCaptureMarkdownCommand(editor, context.file)) {
+        return false;
+      }
+      if (!checking) {
+        void dependencies
+          .startMarkdownCommand(editor, context.file)
+          .catch(dependencies.onMarkdownCommandError);
+      }
+      return true;
     },
   });
 

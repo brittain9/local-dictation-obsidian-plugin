@@ -7,6 +7,12 @@ import { SidecarAudioLevelMeter } from './audio/sidecar-audio-level-meter';
 import { registerCommands } from './commands/register-commands';
 import { DictationSessionController } from './dictation/dictation-session-controller';
 import { dictationAnchorExtension } from './editor/dictation-anchor-extension';
+import {
+  canCaptureMarkdownCommand,
+  captureMarkdownCommand,
+  isMarkdownCommandSnapshotCurrent,
+  MarkdownCommandSession,
+} from './editor/markdown-command-mode';
 import { noteSurfaceUpdateListenerExtension } from './editor/note-surface';
 import { provisionalTranscriptExtension } from './editor/provisional-transcript-extension';
 import {
@@ -166,6 +172,13 @@ export default class LocalSttPlugin extends Plugin {
     this.dictationController = new DictationSessionController({
       audioLevelMeter: this.audioLevelMeter,
       captureStream: this.audioCaptureStream,
+      createMarkdownCommandSession: ({ callbacks, command }) =>
+        new MarkdownCommandSession({
+          app: this.app,
+          callbacks,
+          feedback: this.feedback,
+          snapshot: command,
+        }),
       createSession: ({ callbacks, placement, rendererOptions, sessionId }) =>
         Session.createFromActiveEditor(this.app, {
           callbacks,
@@ -190,6 +203,8 @@ export default class LocalSttPlugin extends Plugin {
           () => this.getOpenRouterApiKey(),
         ),
       getSettings: () => this.settings,
+      isMarkdownCommandSnapshotCurrent: (command) =>
+        isMarkdownCommandSnapshotCurrent(this.app, command),
       isSelectionRedictationSnapshotCurrent: (selection) =>
         isSelectionRedictationSnapshotCurrent(this.app, selection),
       feedback: this.feedback,
@@ -245,9 +260,20 @@ export default class LocalSttPlugin extends Plugin {
 
     registerCommands({
       cancelDictation: async () => this.requireDictationController().cancelDictation(),
+      canCaptureMarkdownCommand: (editor, file) =>
+        !this.requireDictationController().isBusy() && canCaptureMarkdownCommand(editor, file),
       canRedictateSelection: (editor, file) =>
         !this.requireDictationController().isBusy() && canCaptureSelectionRedictation(editor, file),
       checkSidecarHealth: async () => this.checkSidecarHealth(),
+      onMarkdownCommandError: (error) => {
+        this.logger.error('session', 'Markdown voice command failed', error);
+        this.feedback.show({
+          cause: error,
+          intent: 'error',
+          key: 'markdown-command-start-failed',
+          message: 'Could not start the Markdown voice command. Run the command and try again.',
+        });
+      },
       onSelectionRedictationError: (error) => {
         this.logger.error('session', 'selection re-dictation command failed', error);
         this.feedback.show({
@@ -260,6 +286,29 @@ export default class LocalSttPlugin extends Plugin {
       plugin: this,
       restartSidecar: async () => this.restartSidecar(),
       startDictation: async () => this.requireDictationController().startDictation(),
+      startMarkdownCommand: async (editor, file) => {
+        const controller = this.requireDictationController();
+        if (controller.isBusy()) {
+          this.feedback.show({
+            intent: 'information',
+            key: 'markdown-command-busy',
+            message: 'Finish or cancel the current dictation before running a Markdown command.',
+          });
+          return;
+        }
+
+        const capture = captureMarkdownCommand(editor, file);
+        if (capture.kind !== 'captured') {
+          this.feedback.show({
+            intent: 'information',
+            key: 'markdown-command-unavailable',
+            message: 'Open a Markdown note, place the cursor, and try again.',
+          });
+          return;
+        }
+
+        await controller.startMarkdownCommand(capture.snapshot);
+      },
       startSelectionRedictation: async (editor, file) => {
         const controller = this.requireDictationController();
         if (controller.isBusy()) {
