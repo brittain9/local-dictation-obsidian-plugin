@@ -31,6 +31,7 @@ _The first-run wizard installs the native engine and helps you choose between li
 | **Live dictation** | Provisional words appear and revise in place while you speak. | Moonshine streaming models |
 | **Notes and drafts** | Final text lands at your cursor after each pause. | Whisper or Cohere Transcribe batch models |
 | **Meetings and calls** | Add computer audio to microphone capture, then optionally label speakers and add timestamps. | Whisper or Cohere Transcribe batch models |
+| **Audio files** | Choose a WAV or MP3 file and insert its transcript into the open note. | Whisper or Cohere Transcribe batch models |
 
 All transcription models in the current catalog run locally and support English. Moonshine is optimized for live dictation; speaker labels currently require a batch model.
 
@@ -38,6 +39,7 @@ All transcription models in the current catalog run locally and support English.
 
 - **Live text.** Moonshine streaming models show provisional words and revise them in place until each utterance finalizes.
 - **Meeting capture.** Include system audio from meetings, calls, or videos alongside your microphone on Windows, Linux, and macOS 14.2 or later.
+- **Audio file transcription.** Transcribe a WAV or MP3 file up to 256 MB and 30 minutes from the ribbon or command palette.
 - **Speaker labels.** Optional on-device diarization assigns session-stable speaker labels. Speaker embeddings stay in memory and are discarded after the session.
 - **Timestamps.** Add elapsed or wall-clock timestamps at configurable intervals.
 - **Local model choices.** Choose Whisper, Cohere Transcribe, or Moonshine models and download them from Settings.
@@ -50,6 +52,8 @@ All transcription models in the current catalog run locally and support English.
 1. [Install **Local Dictation** from Community Plugins](https://obsidian.md/plugins?id=local-dictation).
 2. Follow the setup wizard to download the native speech-to-text engine and a starter model.
 3. On the final step, select **Try dictation now** to begin in the open Markdown note. Or select **Done** and start later from the ribbon microphone or **Local Dictation: Toggle dictation** hotkey. Text lands at your cursor.
+
+To transcribe an existing recording into the open note, select the ribbon audio-file icon or run **Local Dictation: Transcribe audio file**. Choose a WAV or MP3 file up to 256 MB and 30 minutes. Use the active ribbon control to stop and keep the audio processed so far, or run **Local Dictation: Cancel dictation** to discard the in-progress session.
 
 The engine and models need a one-time download. Transcription then works without an ongoing network connection.
 
@@ -72,6 +76,7 @@ For CUDA requirements and Flatpak-specific setup, see the [CUDA setup guide](doc
 ## Privacy
 
 - **Transcription stays local.** Audio is processed by the native sidecar on your computer and is not uploaded for transcription.
+- **Selected files stay local.** WAV/MP3 files are decoded in Obsidian memory, sent only to the local sidecar as PCM, and never copied into your vault by Local Dictation.
 - **Downloads are explicit.** The sidecar comes from GitHub Releases and is installed with the plugin. Model files come from the source URLs shown in the catalog and use a shared local data directory outside your vault by default.
 - **Remote cleanup uses text, not audio.** If you configure and select OpenRouter, it receives the transcript plus any note context you choose to include. Ollama requests stay on your computer through its loopback interface.
 - **Remote processing is optional.** You can disable OpenRouter routing or all LLM features from Settings. If you use OpenRouter, configure its provider and zero-data-retention controls to match your requirements.

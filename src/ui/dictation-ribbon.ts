@@ -232,6 +232,8 @@ function iconForState(state: DictationControllerState): RibbonIcon {
     case 'listening':
     case 'speech_detected':
       return 'audio-lines';
+    case 'processing_file':
+      return 'loader';
     case 'error':
       return 'mic-off';
     default:
@@ -249,6 +251,8 @@ function buildRibbonLabel(state: DictationControllerState): string {
       return 'Local Dictation — listening';
     case 'speech_detected':
       return 'Local Dictation — hearing speech';
+    case 'processing_file':
+      return 'Local Dictation — transcribing audio file';
     case 'error':
       return 'Local Dictation — error';
     default:

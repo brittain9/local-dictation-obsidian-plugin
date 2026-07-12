@@ -77,6 +77,18 @@ export class PcmFrameProcessor {
     return completedFrames;
   }
 
+  finish(): Int16Array | null {
+    if (this.frameOffset === 0) {
+      this.reset();
+      return null;
+    }
+
+    this.frameBuffer.fill(0, this.frameOffset);
+    const finalFrame = this.frameBuffer.slice();
+    this.reset();
+    return finalFrame;
+  }
+
   reset(): void {
     this.frameBuffer.fill(0);
     this.frameOffset = 0;

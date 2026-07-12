@@ -31,6 +31,7 @@ describe('registerCommands', () => {
       startDictation: vi.fn(async () => {}),
       stopDictation: vi.fn(async () => {}),
       toggleDictation: vi.fn(async () => {}),
+      transcribeAudioFile: vi.fn(async () => {}),
     });
     const reinsertCommand = commands.find(({ id }) => id === 'reinsert-last-utterance');
     const clearCommand = commands.find(({ id }) => id === 'clear-last-utterance');
@@ -87,6 +88,7 @@ describe('registerCommands', () => {
       startDictation: vi.fn(async () => {}),
       stopDictation: vi.fn(async () => {}),
       toggleDictation: vi.fn(async () => {}),
+      transcribeAudioFile: vi.fn(async () => {}),
     });
     const restoreCommand = commands.find(({ id }) => id === 'restore-raw-transcript');
     const copyCommand = commands.find(({ id }) => id === 'copy-raw-transcript');
@@ -114,5 +116,38 @@ describe('registerCommands', () => {
     expect(copyRawTranscript).toHaveBeenCalledOnce();
     expect(clearRawTranscriptRecovery).toHaveBeenCalledOnce();
     expect(restoreCommand?.checkCallback?.(true)).toBe(false);
+  });
+
+  it('registers audio file transcription as a first-class command', async () => {
+    const commands: Command[] = [];
+    const transcribeAudioFile = vi.fn(async () => {});
+    const plugin = {
+      addCommand: vi.fn((command: Command) => {
+        commands.push(command);
+      }),
+    } as unknown as Plugin;
+
+    registerCommands({
+      cancelDictation: vi.fn(async () => {}),
+      clearLastUtterance: vi.fn(),
+      clearRawTranscriptRecovery: vi.fn(),
+      checkSidecarHealth: vi.fn(async () => {}),
+      copyRawTranscript: vi.fn(),
+      hasLastUtterance: () => false,
+      hasRawTranscriptRecovery: () => false,
+      plugin,
+      reinsertLastUtterance: vi.fn(),
+      restoreRawTranscript: vi.fn(),
+      restartSidecar: vi.fn(async () => {}),
+      startDictation: vi.fn(async () => {}),
+      stopDictation: vi.fn(async () => {}),
+      toggleDictation: vi.fn(async () => {}),
+      transcribeAudioFile,
+    });
+
+    const command = commands.find(({ id }) => id === 'transcribe-audio-file');
+    expect(command?.name).toBe('Transcribe audio file');
+    await command?.callback?.();
+    expect(transcribeAudioFile).toHaveBeenCalledOnce();
   });
 });

@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { Platform } from 'obsidian';
 
 import type { AudioCaptureStream } from '../audio/audio-capture-stream';
+import type { AudioFrameSource, AudioFrameSourceProgress } from '../audio/audio-frame-source';
 import { formatMicrophoneCaptureErrorMessage } from '../audio/microphone-permission-message';
 import type { SidecarAudioLevelMeter } from '../audio/sidecar-audio-level-meter';
 import {
@@ -50,6 +51,7 @@ export type DictationControllerState =
   | 'starting'
   | 'listening'
   | 'speech_detected'
+  | 'processing_file'
   | 'error';
 
 type ControllerSession = Pick<
@@ -101,6 +103,7 @@ type TerminalArbitrationState = 'open' | 'feedback-claimed' | 'cancelled';
 
 interface ManagedSession {
   anchorTimerId: number | null;
+  audioSourceAbortController: AbortController | null;
   // Final revisions enter this FIFO so concurrent per-utterance cleanups land
   // in final-event order. Partials bypass it and project immediately.
   cleanupChain: Promise<void>;
@@ -110,6 +113,7 @@ interface ManagedSession {
   phase: SessionPhase;
   session: ControllerSession;
   snapshot: ActiveSessionSnapshot;
+  source: 'audio_file' | 'microphone';
   terminalArbitration: TerminalArbitrationState;
 }
 
@@ -149,6 +153,7 @@ interface DictationSessionControllerDependencies {
     | 'ensureStarted'
     | 'requestStopSession'
     | 'sendAudioFrame'
+    | 'sendAudioFrameWithBackpressure'
     | 'sendContextResponse'
     | 'startSession'
     | 'subscribe'
@@ -166,6 +171,10 @@ const FEEDBACK_FAILURES = {
   recordTranscript: {
     key: 'transcript-record-failed',
     message: 'Could not record the transcript.',
+  },
+  startAudioFile: {
+    key: 'audio-file-transcription-failed',
+    message: 'Could not transcribe the audio file.',
   },
   microphoneDisconnected: {
     key: 'microphone-capture-ended',
@@ -280,119 +289,14 @@ export class DictationSessionController {
   }
 
   async startDictation(): Promise<void> {
-    if (this.activeSessionId !== null || this.sessions.size >= MAX_CONTROLLER_SESSIONS) {
+    const started = await this.startManagedSession('microphone');
+    if (started === null) {
       return;
     }
-
-    this.applyUiState('starting');
-
-    const settings = this.dependencies.getSettings();
-    if (settings.selectedModel === null) {
-      this.dependencies.logger?.debug('session', 'no model selected; prompting model picker');
-      this.applyUiState('idle');
-      this.dependencies.onModelMissing?.();
-      return;
-    }
+    const { sessionId } = started;
 
     try {
-      await this.assertMicrophoneInputAvailable();
-    } catch (error) {
-      this.handleError(FEEDBACK_FAILURES.startDictation, error);
-      return;
-    }
-
-    try {
-      await this.dependencies.sidecarConnection.ensureStarted();
-    } catch (error) {
-      if (error instanceof SidecarNotInstalledError) {
-        this.dependencies.logger?.debug('sidecar', 'sidecar not installed; prompting install');
-        this.applyUiState('idle');
-        this.dependencies.onSidecarMissing?.();
-        return;
-      }
-      this.handleError(FEEDBACK_FAILURES.startDictation, error);
-      return;
-    }
-
-    const sessionId = createSessionId();
-    const snapshot = createSessionSnapshot(
-      settings,
-      settings.selectedModel,
-      this.dependencies.createLlmRouter(settings),
-    );
-    let session: ControllerSession;
-
-    try {
-      session = this.dependencies.createSession({
-        callbacks: {
-          onLockedNoteClosed: () => {
-            this.cancelOnLockedNoteEvent(sessionId, 'closed');
-          },
-          onLockedNoteDeleted: () => {
-            this.cancelOnLockedNoteEvent(sessionId, 'deleted');
-          },
-          onSurfaceDesynchronized: (failure) => {
-            this.cancelOnFatalTranscriptFailure(
-              sessionId,
-              FEEDBACK_FAILURES.surfaceDesynchronized,
-              failure,
-            );
-          },
-        },
-        placement: { anchor: snapshot.dictationAnchor },
-        rendererOptions: {
-          smartParagraphPauses: snapshot.smartParagraphPauses,
-          timestamps: snapshot.timestamps,
-          transcriptFormatting: snapshot.transcriptFormatting,
-        },
-        sessionId,
-      });
-    } catch (error) {
-      this.handleError(FEEDBACK_FAILURES.startDictation, error);
-      return;
-    }
-
-    const entry: ManagedSession = {
-      anchorTimerId: null,
-      cleanupChain: Promise.resolve(),
-      cleanupAbortControllers: new Set(),
-      llmFailureLogged: false,
-      pendingTranscriptWork: new Set(),
-      phase: 'starting',
-      session,
-      snapshot,
-      terminalArbitration: 'open',
-    };
-    this.sessions.set(sessionId, entry);
-    this.activeSessionId = sessionId;
-    this.dependencies.audioLevelMeter.bindSession(sessionId);
-    this.dependencies.logger?.debug('session', `starting dictation session ${sessionId}`);
-
-    try {
-      await this.dependencies.sidecarConnection.startSession({
-        accelerationPreference: snapshot.accelerationPreference,
-        diarizationEnabled: snapshot.diarizationEnabled,
-        includeSystemAudio: snapshot.includeSystemAudio,
-        language: 'en',
-        mode: snapshot.listeningMode,
-        modelSelection: snapshot.modelSelection,
-        sessionStartUnixMs: snapshot.sessionStartUnixMs,
-        sessionId,
-        speakingStyle: snapshot.speakingStyle,
-        ...(snapshot.modelStorePathOverride.length > 0
-          ? { modelStorePathOverride: snapshot.modelStorePathOverride }
-          : {}),
-      });
-
-      if (entry.phase !== 'starting' || this.activeSessionId !== sessionId) {
-        return;
-      }
-      entry.phase = 'active';
-
-      // Read the saved deviceId at session-start time so a settings change
-      // applies on the next dictation rather than mid-session.
       const audioInputDeviceId = this.dependencies.getSettings().audioInputDevice?.deviceId ?? null;
-
       await this.dependencies.captureStream.start(
         { sessionId, audioInputDeviceId },
         (frameSessionId, frameBytes) => {
@@ -428,6 +332,189 @@ export class DictationSessionController {
     }
   }
 
+  async transcribeAudioSource(source: AudioFrameSource): Promise<void> {
+    const started = await this.startManagedSession('audio_file');
+    if (started === null) {
+      return;
+    }
+    const { entry, sessionId } = started;
+    const abortController = new AbortController();
+    entry.audioSourceAbortController = abortController;
+    let lastProgressBucket = -1;
+    this.applyUiState('processing_file');
+
+    try {
+      await source.stream({
+        abortSignal: abortController.signal,
+        onFrame: async (frameBytes) => {
+          if (
+            this.activeSessionId !== sessionId ||
+            entry.phase !== 'active' ||
+            abortController.signal.aborted
+          ) {
+            return;
+          }
+          await this.dependencies.sidecarConnection.sendAudioFrameWithBackpressure(
+            sessionId,
+            frameBytes,
+          );
+        },
+        onProgress: (progress) => {
+          if (
+            this.activeSessionId === sessionId &&
+            entry.phase === 'active' &&
+            !abortController.signal.aborted
+          ) {
+            lastProgressBucket = this.reportAudioFileProgress(progress, lastProgressBucket);
+          }
+        },
+      });
+
+      if (this.activeSessionId !== sessionId || entry.phase !== 'active') {
+        return;
+      }
+      this.dependencies.feedback.show({
+        intent: 'information',
+        key: 'audio-file-progress',
+        message: 'Audio sent to the local engine. Finishing transcription…',
+      });
+      await this.stopDictation();
+    } catch (error) {
+      if (isAbortError(error) && abortController.signal.aborted) {
+        return;
+      }
+      this.handleError(
+        {
+          ...FEEDBACK_FAILURES.startAudioFile,
+          message: `${FEEDBACK_FAILURES.startAudioFile.message} ${formatErrorMessage(error)}`,
+        },
+        error,
+        entry,
+      );
+      await this.cancelSession(sessionId);
+    }
+  }
+
+  private async startManagedSession(
+    source: ManagedSession['source'],
+  ): Promise<{ entry: ManagedSession; sessionId: string } | null> {
+    if (this.activeSessionId !== null || this.sessions.size >= MAX_CONTROLLER_SESSIONS) {
+      return null;
+    }
+
+    const failure =
+      source === 'audio_file' ? FEEDBACK_FAILURES.startAudioFile : FEEDBACK_FAILURES.startDictation;
+    this.applyUiState('starting');
+    const settings = this.dependencies.getSettings();
+    if (settings.selectedModel === null) {
+      this.dependencies.logger?.debug('session', 'no model selected; prompting model picker');
+      this.applyUiState('idle');
+      this.dependencies.onModelMissing?.();
+      return null;
+    }
+
+    try {
+      if (source === 'microphone') {
+        await this.assertMicrophoneInputAvailable();
+      }
+      await this.dependencies.sidecarConnection.ensureStarted();
+    } catch (error) {
+      if (error instanceof SidecarNotInstalledError) {
+        this.dependencies.logger?.debug('sidecar', 'sidecar not installed; prompting install');
+        this.applyUiState('idle');
+        this.dependencies.onSidecarMissing?.();
+        return null;
+      }
+      this.handleError(failure, error);
+      return null;
+    }
+
+    const sessionId = createSessionId();
+    const snapshot = createSessionSnapshot(
+      settings,
+      settings.selectedModel,
+      this.dependencies.createLlmRouter(settings),
+    );
+    let session: ControllerSession;
+    try {
+      session = this.dependencies.createSession({
+        callbacks: {
+          onLockedNoteClosed: () => {
+            this.cancelOnLockedNoteEvent(sessionId, 'closed');
+          },
+          onLockedNoteDeleted: () => {
+            this.cancelOnLockedNoteEvent(sessionId, 'deleted');
+          },
+          onSurfaceDesynchronized: (surfaceFailure) => {
+            this.cancelOnFatalTranscriptFailure(
+              sessionId,
+              FEEDBACK_FAILURES.surfaceDesynchronized,
+              surfaceFailure,
+            );
+          },
+        },
+        placement: { anchor: snapshot.dictationAnchor },
+        rendererOptions: {
+          smartParagraphPauses: snapshot.smartParagraphPauses,
+          timestamps: snapshot.timestamps,
+          transcriptFormatting: snapshot.transcriptFormatting,
+        },
+        sessionId,
+      });
+    } catch (error) {
+      this.handleError(failure, error);
+      return null;
+    }
+
+    const entry: ManagedSession = {
+      anchorTimerId: null,
+      audioSourceAbortController: null,
+      cleanupChain: Promise.resolve(),
+      cleanupAbortControllers: new Set(),
+      llmFailureLogged: false,
+      pendingTranscriptWork: new Set(),
+      phase: 'starting',
+      session,
+      snapshot,
+      source,
+      terminalArbitration: 'open',
+    };
+    this.sessions.set(sessionId, entry);
+    this.activeSessionId = sessionId;
+    if (source === 'microphone') {
+      this.dependencies.audioLevelMeter.bindSession(sessionId);
+    }
+    this.dependencies.logger?.debug(
+      'session',
+      `starting ${source === 'microphone' ? 'dictation' : 'audio file'} session ${sessionId}`,
+    );
+
+    try {
+      await this.dependencies.sidecarConnection.startSession({
+        accelerationPreference: snapshot.accelerationPreference,
+        diarizationEnabled: snapshot.diarizationEnabled,
+        includeSystemAudio: source === 'microphone' && snapshot.includeSystemAudio,
+        language: 'en',
+        mode: source === 'audio_file' ? 'always_on' : snapshot.listeningMode,
+        modelSelection: snapshot.modelSelection,
+        sessionStartUnixMs: snapshot.sessionStartUnixMs,
+        sessionId,
+        speakingStyle: snapshot.speakingStyle,
+        ...(snapshot.modelStorePathOverride.length > 0
+          ? { modelStorePathOverride: snapshot.modelStorePathOverride }
+          : {}),
+      });
+      if (entry.phase !== 'starting' || this.activeSessionId !== sessionId) {
+        return null;
+      }
+      entry.phase = 'active';
+      return { entry, sessionId };
+    } catch (error) {
+      await this.cleanupFailedStart(sessionId, error, failure);
+      return null;
+    }
+  }
+
   async stopDictation(): Promise<void> {
     const sessionId = this.activeSessionId;
 
@@ -442,6 +529,7 @@ export class DictationSessionController {
 
     const entry = this.sessions.get(sessionId);
     if (entry !== undefined) {
+      entry.audioSourceAbortController?.abort();
       entry.phase = 'stopping';
       // Keep the cursor where text will land while queued transcripts drain.
       // It is cleared when the session is finally disposed (after the drain),
@@ -480,7 +568,11 @@ export class DictationSessionController {
     await this.stopDictation();
   }
 
-  private async cleanupFailedStart(sessionId: string, error: unknown): Promise<void> {
+  private async cleanupFailedStart(
+    sessionId: string,
+    error: unknown,
+    failure: FeedbackFailure = FEEDBACK_FAILURES.startDictation,
+  ): Promise<void> {
     const entry = this.sessions.get(sessionId);
     if (entry === undefined) {
       if (this.activeSessionId === sessionId) {
@@ -496,7 +588,7 @@ export class DictationSessionController {
       return;
     }
 
-    this.handleError(FEEDBACK_FAILURES.startDictation, error, entry);
+    this.handleError(failure, error, entry);
     if (entry.phase === 'starting') {
       this.disposeLocalSession(sessionId);
     } else {
@@ -534,6 +626,7 @@ export class DictationSessionController {
     // duplicate cancellation commands to the sidecar.
     entry.terminalArbitration = 'cancelled';
     entry.phase = 'cancelling';
+    entry.audioSourceAbortController?.abort();
     this.abortProviderCleanups(entry);
     const cancellation = Promise.resolve().then(() => this.completeSessionCancellation(sessionId));
     this.cancellationPromises.set(sessionId, cancellation);
@@ -609,6 +702,7 @@ export class DictationSessionController {
     }
 
     this.clearAnchorTimer(entry);
+    entry.audioSourceAbortController?.abort();
     this.abortProviderCleanups(entry);
     entry.session.clearSessionProcessingMark();
     entry.session.dispose();
@@ -713,6 +807,15 @@ export class DictationSessionController {
     }
 
     this.applySessionStateToAnchor(entry, event.state);
+
+    if (
+      entry.source === 'audio_file' &&
+      event.sessionId === this.activeSessionId &&
+      entry.phase === 'active'
+    ) {
+      this.applyUiState('processing_file');
+      return;
+    }
 
     const audioActive = this.dependencies.captureStream.isCapturing();
     if (event.sessionId !== this.activeSessionId || entry.phase !== 'active' || !audioActive) {
@@ -1085,7 +1188,7 @@ export class DictationSessionController {
       return;
     }
     const entry = this.sessions.get(event.sessionId);
-    if (entry === undefined || entry.phase !== 'active') {
+    if (entry === undefined || entry.phase !== 'active' || entry.source !== 'microphone') {
       return;
     }
     this.dependencies.audioLevelMeter.update(event);
@@ -1485,6 +1588,34 @@ export class DictationSessionController {
       this.applyUiState('error');
     }
   }
+
+  private reportAudioFileProgress(
+    progress: AudioFrameSourceProgress,
+    previousBucket: number,
+  ): number {
+    if (progress.phase === 'decoding') {
+      this.dependencies.feedback.show({
+        intent: 'information',
+        key: 'audio-file-progress',
+        message: 'Decoding WAV/MP3 audio locally…',
+      });
+      return -1;
+    }
+
+    const normalizedFraction = Number.isFinite(progress.fraction)
+      ? Math.max(0, Math.min(1, progress.fraction))
+      : 0;
+    const bucket = Math.floor(normalizedFraction * 10) * 10;
+    if (bucket === previousBucket) {
+      return previousBucket;
+    }
+    this.dependencies.feedback.show({
+      intent: 'information',
+      key: 'audio-file-progress',
+      message: `Sending decoded audio to the local engine… ${bucket}%`,
+    });
+    return bucket;
+  }
 }
 
 function createSessionId(): string {
@@ -1493,6 +1624,10 @@ function createSessionId(): string {
 
 function isCapacityExceededStartError(error: unknown): boolean {
   return error instanceof SidecarError && error.code === 'session_capacity_exceeded';
+}
+
+function isAbortError(error: unknown): boolean {
+  return (error as { name?: unknown } | null)?.name === 'AbortError';
 }
 
 async function countBrowserAudioInputDevices(): Promise<number | null> {

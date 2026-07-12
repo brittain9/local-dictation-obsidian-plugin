@@ -188,6 +188,18 @@ describe('DictationRibbonController paintIcon', () => {
     controller.setState('speech_detected');
     controller.setState('error');
     expect(setIcon).toHaveBeenLastCalledWith(expect.anything(), 'mic-off');
+
+    controller.setState('processing_file');
+    expect(setIcon).toHaveBeenLastCalledWith(expect.anything(), 'loader');
+  });
+
+  it('announces file transcription without implying the microphone is listening', () => {
+    const { controller, element } = makeController();
+
+    controller.setState('processing_file');
+
+    expect(element.attributes['aria-label']).toBe('Local Dictation — transcribing audio file');
+    expect(element.title).toBe('Local Dictation — transcribing audio file');
   });
 
   it('does not call setIcon when entering the animated speech state', () => {

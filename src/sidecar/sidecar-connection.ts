@@ -71,6 +71,7 @@ interface SidecarProcessLike {
   start(): Promise<void>;
   stop(): Promise<void>;
   write(frameBytes: Uint8Array): void;
+  writeWithBackpressure(frameBytes: Uint8Array): Promise<void>;
 }
 
 interface SidecarConnectionOptions {
@@ -314,6 +315,10 @@ export class SidecarConnection {
 
   sendAudioFrame(sessionId: string, frameBytes: Uint8Array): void {
     this.process.write(encodeAudioFrame(sessionId, frameBytes));
+  }
+
+  async sendAudioFrameWithBackpressure(sessionId: string, frameBytes: Uint8Array): Promise<void> {
+    await this.process.writeWithBackpressure(encodeAudioFrame(sessionId, frameBytes));
   }
 
   sendContextResponse(correlationId: string, context: ContextWindow | null): void {

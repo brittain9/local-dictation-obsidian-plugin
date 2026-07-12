@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
+import type { AudioFrameSource } from '../src/audio/audio-frame-source';
 import { formatMicrophonePermissionDeniedMessage } from '../src/audio/microphone-permission-message';
 import {
   type DictationControllerState,
@@ -128,6 +129,9 @@ class FakeSidecarConnection {
   public readonly listeners = new Set<(event: SidecarEvent) => void>();
   public readonly requestStopSession = vi.fn((_sessionId: string) => {});
   public readonly sendAudioFrame = vi.fn((_sessionId: string, _frameBytes: Uint8Array) => {});
+  public readonly sendAudioFrameWithBackpressure = vi.fn(
+    async (_sessionId: string, _frameBytes: Uint8Array) => {},
+  );
   public readonly sendContextResponse = vi.fn(
     (_correlationId: string, _context: ContextWindow | null) => {},
   );
@@ -226,6 +230,118 @@ describe('DictationSessionController', () => {
 
     expect(sidecarConnection.sendAudioFrame).toHaveBeenCalledWith(startPayload?.sessionId, frame);
     expect(controller.getState()).toBe('listening');
+  });
+
+  it('streams an audio file through the existing sidecar session without microphone capture', async () => {
+    const captureStream = new FakeCaptureStream();
+    const feedback = { show: vi.fn() };
+    const sidecarConnection = new FakeSidecarConnection();
+    const source: AudioFrameSource = {
+      stream: vi.fn(async ({ onFrame, onProgress }) => {
+        onProgress({ fraction: 0, phase: 'decoding' });
+        onProgress({ fraction: 0.5, phase: 'streaming' });
+        await onFrame(new Uint8Array(640).fill(4));
+        onProgress({ fraction: 1, phase: 'streaming' });
+      }),
+    };
+    const controller = createController({
+      captureStream,
+      feedback,
+      getSettings: () =>
+        createSettings({
+          includeSystemAudio: true,
+          listeningMode: 'one_sentence',
+          selectedModel: createExternalModelSelection(),
+        }),
+      sidecarConnection,
+    });
+
+    await controller.transcribeAudioSource(source);
+
+    expect(captureStream.start).not.toHaveBeenCalled();
+    expect(sidecarConnection.startSession).toHaveBeenCalledWith(
+      expect.objectContaining({ includeSystemAudio: false, mode: 'always_on' }),
+    );
+    const sessionId = sidecarConnection.startSession.mock.calls[0]?.[0].sessionId ?? '';
+    expect(sidecarConnection.sendAudioFrameWithBackpressure).toHaveBeenCalledWith(
+      sessionId,
+      expect.objectContaining({ byteLength: 640 }),
+    );
+    expect(sidecarConnection.requestStopSession).toHaveBeenCalledWith(sessionId);
+    expect(feedback.show).toHaveBeenCalledWith(
+      expect.objectContaining({
+        key: 'audio-file-progress',
+        message: expect.stringContaining('100%'),
+      }),
+    );
+    expect(controller.getState()).toBe('idle');
+  });
+
+  it('aborts file ingestion and cancels the shared session when its locked note closes', async () => {
+    const sidecarConnection = new FakeSidecarConnection();
+    let onLockedNoteClosed: (() => void) | undefined;
+    let sourceSignal: AbortSignal | undefined;
+    const source: AudioFrameSource = {
+      stream: vi.fn(
+        ({ abortSignal }) =>
+          new Promise<void>((_resolve, reject) => {
+            sourceSignal = abortSignal;
+            abortSignal.addEventListener('abort', () => {
+              const error = new Error('cancelled');
+              error.name = 'AbortError';
+              reject(error);
+            });
+          }),
+      ),
+    };
+    const controller = createController({
+      createSession: (_session, options) => {
+        onLockedNoteClosed = options.callbacks.onLockedNoteClosed;
+      },
+      sidecarConnection,
+    });
+
+    const transcription = controller.transcribeAudioSource(source);
+    await vi.waitFor(() => {
+      expect(sourceSignal).toBeDefined();
+    });
+    expect(controller.getState()).toBe('processing_file');
+    const sessionId = sidecarConnection.startSession.mock.calls[0]?.[0].sessionId ?? '';
+    sidecarConnection.emit({ sessionId, state: 'speech_detected', type: 'session_state_changed' });
+    expect(controller.getState()).toBe('processing_file');
+    onLockedNoteClosed?.();
+
+    await transcription;
+    expect(sourceSignal?.aborted).toBe(true);
+    await vi.waitFor(() => {
+      expect(sidecarConnection.cancelSession).toHaveBeenCalledOnce();
+    });
+    expect(sidecarConnection.requestStopSession).not.toHaveBeenCalled();
+  });
+
+  it('cancels file transcription when the backpressure-aware frame sink fails', async () => {
+    const feedback = { show: vi.fn() };
+    const sidecarConnection = new FakeSidecarConnection();
+    sidecarConnection.sendAudioFrameWithBackpressure.mockRejectedValueOnce(
+      new Error('sidecar write failed'),
+    );
+    const source: AudioFrameSource = {
+      stream: vi.fn(async ({ onFrame }) => {
+        await onFrame(new Uint8Array(640));
+      }),
+    };
+    const controller = createController({ feedback, sidecarConnection });
+
+    await controller.transcribeAudioSource(source);
+
+    expect(sidecarConnection.cancelSession).toHaveBeenCalledOnce();
+    expect(feedback.show).toHaveBeenCalledWith(
+      expect.objectContaining({
+        intent: 'error',
+        key: 'audio-file-transcription-failed',
+        message: expect.stringContaining('sidecar write failed'),
+      }),
+    );
   });
 
   it('binds ribbon audio levels to the active session and ignores stale level events', async () => {

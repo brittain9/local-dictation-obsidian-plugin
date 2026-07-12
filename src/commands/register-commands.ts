@@ -9,6 +9,7 @@ const CLEAR_LAST_UTTERANCE_COMMAND_ID = 'clear-last-utterance';
 const RESTORE_RAW_TRANSCRIPT_COMMAND_ID = 'restore-raw-transcript';
 const COPY_RAW_TRANSCRIPT_COMMAND_ID = 'copy-raw-transcript';
 const CLEAR_RAW_RECOVERY_COMMAND_ID = 'clear-raw-transcript-recovery';
+const TRANSCRIBE_AUDIO_FILE_COMMAND_ID = 'transcribe-audio-file';
 
 interface CommandDependencies {
   cancelDictation: () => Promise<void>;
@@ -25,6 +26,7 @@ interface CommandDependencies {
   startDictation: () => Promise<void>;
   stopDictation: () => Promise<void>;
   toggleDictation: () => Promise<void>;
+  transcribeAudioFile: () => Promise<void>;
 }
 
 export function registerCommands(dependencies: CommandDependencies): void {
@@ -57,6 +59,14 @@ export function registerCommands(dependencies: CommandDependencies): void {
     name: 'Cancel dictation',
     callback: async () => {
       await dependencies.cancelDictation();
+    },
+  });
+
+  dependencies.plugin.addCommand({
+    id: TRANSCRIBE_AUDIO_FILE_COMMAND_ID,
+    name: 'Transcribe audio file',
+    callback: async () => {
+      await dependencies.transcribeAudioFile();
     },
   });
 

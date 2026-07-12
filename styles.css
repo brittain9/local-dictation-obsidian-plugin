@@ -388,6 +388,16 @@
   animation-delay: 1.05s;
 }
 
+.side-dock-ribbon-action[data-local-stt-state="processing_file"] > svg {
+  animation: local-stt-processing-spin 1.2s linear infinite;
+}
+
+@keyframes local-stt-processing-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 .side-dock-ribbon-action[data-local-stt-state="listening"] > svg {
   opacity: 0.45;
 }

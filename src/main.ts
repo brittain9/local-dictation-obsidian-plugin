@@ -3,6 +3,8 @@ import { IS_PRODUCTION_BUILD } from 'virtual:build-mode';
 import { FileSystemAdapter, Platform, Plugin } from 'obsidian';
 
 import { AudioCaptureStream } from './audio/audio-capture-stream';
+import { pickAudioFile } from './audio/audio-file-picker';
+import { AudioFileFrameSource } from './audio/audio-file-source';
 import { SidecarAudioLevelMeter } from './audio/sidecar-audio-level-meter';
 import { registerCommands } from './commands/register-commands';
 import { DictationSessionController } from './dictation/dictation-session-controller';
@@ -34,6 +36,7 @@ import {
   type SidecarInstallActionDeps,
 } from './settings/sidecar-settings-section';
 import { SetupWizardModal } from './setup/setup-wizard-modal';
+import { formatErrorMessage } from './shared/format-utils';
 import { createObsidianFeedbackPresenter } from './shared/obsidian-feedback-presenter';
 import { createPluginLogger, type PluginLogger } from './shared/plugin-logger';
 import { createUserFeedback, type UserFeedback } from './shared/user-feedback';
@@ -172,6 +175,9 @@ export default class LocalSttPlugin extends Plugin {
     const ribbonElement = this.addRibbonIcon('mic', 'Local Dictation — start dictation', () => {
       void this.requireDictationController().toggleDictation();
     });
+    this.addRibbonIcon('file-audio', 'Local Dictation — transcribe audio file', () => {
+      void this.transcribeAudioFile();
+    });
     this.ribbonController = new DictationRibbonController(ribbonElement);
     this.ribbonController.setVisualizer(this.audioLevelMeter);
     this.dictationController = new DictationSessionController({
@@ -281,6 +287,7 @@ export default class LocalSttPlugin extends Plugin {
       startDictation: async () => this.requireDictationController().startDictation(),
       stopDictation: async () => this.requireDictationController().stopDictation(),
       toggleDictation: async () => this.requireDictationController().toggleDictation(),
+      transcribeAudioFile: async () => this.transcribeAudioFile(),
     });
 
     this.app.workspace.onLayoutReady(() => {
@@ -412,6 +419,45 @@ export default class LocalSttPlugin extends Plugin {
         void this.openSetupWizard();
       },
     }).open();
+  }
+
+  private async transcribeAudioFile(): Promise<void> {
+    const controller = this.requireDictationController();
+    if (controller.isBusy()) {
+      this.feedback.show({
+        intent: 'warning',
+        key: 'audio-file-busy',
+        message: 'Stop or cancel the current transcription before choosing an audio file.',
+      });
+      return;
+    }
+
+    const file = await pickAudioFile();
+    if (file === null) {
+      return;
+    }
+    if (controller.isBusy()) {
+      this.feedback.show({
+        intent: 'warning',
+        key: 'audio-file-busy',
+        message: 'Another transcription started while the file picker was open.',
+      });
+      return;
+    }
+
+    let source: AudioFileFrameSource;
+    try {
+      source = new AudioFileFrameSource(file);
+    } catch (error) {
+      this.feedback.show({
+        cause: error,
+        intent: 'error',
+        key: 'audio-file-invalid',
+        message: formatErrorMessage(error),
+      });
+      return;
+    }
+    await controller.transcribeAudioSource(source);
   }
 
   private async isSidecarInstalled(): Promise<boolean> {

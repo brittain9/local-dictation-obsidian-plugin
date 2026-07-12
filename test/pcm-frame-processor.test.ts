@@ -152,6 +152,20 @@ describe('PcmFrameProcessor', () => {
     }
   });
 
+  it('pads the final partial frame with silence and resets the stream', () => {
+    const processor = new PcmFrameProcessor({ sourceSampleRate: 16000, targetSampleRate: 16000 });
+    processor.push(constantF32(100, 0.5));
+
+    const finalFrame = processor.finish();
+
+    expect(finalFrame).not.toBeNull();
+    expect(finalFrame?.slice(0, 100)).toEqual(new Int16Array(100).fill(quantize(0.5)));
+    expect(finalFrame?.slice(100)).toEqual(new Int16Array(FRAME_SIZE - 100));
+    expect(processor.finish()).toBeNull();
+
+    expect(processor.push(constantF32(FRAME_SIZE, -0.5))).toHaveLength(1);
+  });
+
   it('rejects non-positive sample rates and non-integer frame sizes', () => {
     expect(() => new PcmFrameProcessor({ sourceSampleRate: 0, targetSampleRate: 16000 })).toThrow(
       /positive numbers/,
