@@ -99,7 +99,28 @@ export class LlmPresetStateStore {
     });
   }
 
-  private enqueue(operation: () => Promise<void>): Promise<void> {
+  commitPreservingPresetStateIf(
+    condition: (settings: Readonly<PluginSettings>) => boolean,
+    createNextSettings: (settings: Readonly<PluginSettings>) => PluginSettings,
+  ): Promise<boolean> {
+    return this.enqueue(async () => {
+      const currentSettings = this.dependencies.getSettings();
+      if (!condition(currentSettings)) {
+        return false;
+      }
+
+      await this.dependencies.commit(
+        withLlmPresetState(
+          createNextSettings(currentSettings),
+          readLlmPresetState(currentSettings),
+        ),
+        { persist: true },
+      );
+      return true;
+    });
+  }
+
+  private enqueue<T>(operation: () => Promise<T>): Promise<T> {
     const result = this.operationTail.then(operation, operation);
     this.operationTail = result.then(
       () => undefined,

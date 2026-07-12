@@ -9,9 +9,9 @@ type AudioFrameListener = (sessionId: string, frameBytes: Uint8Array) => void;
 interface AudioCaptureStreamOptions {
   logger?: PluginLogger;
   // Invoked when a saved deviceId is unavailable and we transparently fall back
-  // to the OS default. Lets the wiring layer (main.ts) surface a Notice without
-  // pulling Obsidian UI imports into this module.
-  onDeviceFallback?: () => void;
+  // to the OS default. The attempted id lets the settings layer avoid clearing
+  // a newer selection if the user changed it while capture was starting.
+  onDeviceFallback?: (unavailableDeviceId: string) => Promise<void> | void;
   // A track can end while its MediaStream still exists (for example, when a
   // USB microphone is unplugged). Include the session id so a late event from
   // an old track cannot stop a newer capture.
@@ -159,7 +159,17 @@ export class AudioCaptureStream {
         audio: baseConstraints,
         video: false,
       });
-      this.options.onDeviceFallback?.();
+      try {
+        await this.options.onDeviceFallback?.(audioInputDeviceId);
+      } catch (callbackError) {
+        // Settings repair is secondary to capture. The default device is open,
+        // so keep dictation usable even if persisting the fallback failed.
+        this.options.logger?.warn(
+          'audio',
+          'microphone fallback handler failed; continuing with the default input device',
+          callbackError,
+        );
+      }
       return mediaStream;
     }
   }
