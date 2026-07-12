@@ -6,6 +6,7 @@ import { AudioCaptureStream } from './audio/audio-capture-stream';
 import { SidecarAudioLevelMeter } from './audio/sidecar-audio-level-meter';
 import { registerCommands } from './commands/register-commands';
 import { DictationSessionController } from './dictation/dictation-session-controller';
+import { LastUtteranceRecovery } from './dictation/last-utterance-recovery';
 import { dictationAnchorExtension } from './editor/dictation-anchor-extension';
 import { noteSurfaceUpdateListenerExtension } from './editor/note-surface';
 import { provisionalTranscriptExtension } from './editor/provisional-transcript-extension';
@@ -62,6 +63,7 @@ export default class LocalSttPlugin extends Plugin {
     presenter: createObsidianFeedbackPresenter(),
   });
   private llmCleanupFailure: LlmCleanupFailure | null = null;
+  private readonly lastUtteranceRecovery = new LastUtteranceRecovery(this.feedback);
   private readonly llmCleanupFailureSubscribers = new Set<() => void>();
   private modelInstallManager: ModelInstallManager | null = null;
   private presetStateStore: LlmPresetStateStore | null = null;
@@ -196,6 +198,9 @@ export default class LocalSttPlugin extends Plugin {
           this.notifyLlmCleanupFailureSubscribers();
         }
       },
+      onFinalizedUtteranceAccepted: (text) => {
+        this.lastUtteranceRecovery.recordFinalizedUtterance(text);
+      },
       onModelMissing: () => {
         void this.openModelPicker();
       },
@@ -237,8 +242,12 @@ export default class LocalSttPlugin extends Plugin {
 
     registerCommands({
       cancelDictation: async () => this.requireDictationController().cancelDictation(),
+      canReinsertLastUtterance: () => this.lastUtteranceRecovery.hasUtterance(),
       checkSidecarHealth: async () => this.checkSidecarHealth(),
       plugin: this,
+      reinsertLastUtterance: (editor) => {
+        this.lastUtteranceRecovery.reinsert(editor);
+      },
       restartSidecar: async () => this.restartSidecar(),
       startDictation: async () => this.requireDictationController().startDictation(),
       stopDictation: async () => this.requireDictationController().stopDictation(),
@@ -393,6 +402,8 @@ export default class LocalSttPlugin extends Plugin {
   }
 
   private async disposeAll(): Promise<void> {
+    this.lastUtteranceRecovery.clear();
+
     try {
       this.modelInstallManager?.dispose();
     } catch (error) {

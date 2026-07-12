@@ -135,6 +135,7 @@ interface DictationSessionControllerDependencies {
   logger?: PluginLogger;
   onLlmCleanupFailure?: (failure: LlmCleanupFailure) => void;
   onLlmCleanupSuccess?: () => void;
+  onFinalizedUtteranceAccepted?: (text: string) => void;
   onModelMissing?: () => void;
   onSidecarMissing?: () => void;
   countAudioInputDevices?: () => Promise<number | null>;
@@ -877,6 +878,10 @@ export class DictationSessionController {
     if (result.kind === 'rejected') {
       this.handleError(FEEDBACK_FAILURES.recordTranscript, new Error(result.reason), entry);
       await this.cancelSession(sessionId);
+      return;
+    }
+    if (result.kind === 'accepted' && revision.isFinal && revision.text.trim().length > 0) {
+      this.dependencies.onFinalizedUtteranceAccepted?.(revision.text);
     }
   }
 
