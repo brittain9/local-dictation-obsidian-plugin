@@ -32,7 +32,7 @@ class FakeAudioWorkletNode extends FakeAudioNode {
 }
 
 function createMediaStream(tracks: MediaStreamTrack[] = []): MediaStream {
-  return { getTracks: () => tracks } as unknown as MediaStream;
+  return { getAudioTracks: () => [], getTracks: () => tracks } as unknown as MediaStream;
 }
 
 function createUnavailableDeviceError(): Error {
