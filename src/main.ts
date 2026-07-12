@@ -6,6 +6,7 @@ import { AudioCaptureStream } from './audio/audio-capture-stream';
 import { SidecarAudioLevelMeter } from './audio/sidecar-audio-level-meter';
 import { registerCommands } from './commands/register-commands';
 import { DictationSessionController } from './dictation/dictation-session-controller';
+import { LastUtteranceRecovery } from './dictation/last-utterance-recovery';
 import { dictationAnchorExtension } from './editor/dictation-anchor-extension';
 import { noteSurfaceUpdateListenerExtension } from './editor/note-surface';
 import { provisionalTranscriptExtension } from './editor/provisional-transcript-extension';
@@ -62,6 +63,7 @@ export default class LocalSttPlugin extends Plugin {
     presenter: createObsidianFeedbackPresenter(),
   });
   private llmCleanupFailure: LlmCleanupFailure | null = null;
+  private readonly lastUtteranceRecovery = new LastUtteranceRecovery(this.feedback);
   private readonly llmCleanupFailureSubscribers = new Set<() => void>();
   private modelInstallManager: ModelInstallManager | null = null;
   private presetStateStore: LlmPresetStateStore | null = null;
@@ -74,6 +76,7 @@ export default class LocalSttPlugin extends Plugin {
   override async onload(): Promise<void> {
     const loadedSettings = loadPluginSettings(await this.loadData(), this.app.secretStorage);
     this.settings = loadedSettings.settings;
+    this.lastUtteranceRecovery.setEnabled(this.settings.retainLastUtterance);
     if (loadedSettings.shouldPersist) {
       await this.saveData(this.settings);
     }
@@ -196,6 +199,9 @@ export default class LocalSttPlugin extends Plugin {
           this.notifyLlmCleanupFailureSubscribers();
         }
       },
+      onFinalizedUtteranceAccepted: (text) => {
+        this.lastUtteranceRecovery.recordFinalizedUtterance(text);
+      },
       onModelMissing: () => {
         void this.openModelPicker();
       },
@@ -237,8 +243,20 @@ export default class LocalSttPlugin extends Plugin {
 
     registerCommands({
       cancelDictation: async () => this.requireDictationController().cancelDictation(),
+      clearLastUtterance: () => {
+        this.lastUtteranceRecovery.clear();
+        this.feedback.show({
+          intent: 'success',
+          key: 'last-utterance-cleared',
+          message: 'Cleared the last retained utterance.',
+        });
+      },
       checkSidecarHealth: async () => this.checkSidecarHealth(),
+      hasLastUtterance: () => this.lastUtteranceRecovery.hasUtterance(),
       plugin: this,
+      reinsertLastUtterance: (editor) => {
+        this.lastUtteranceRecovery.reinsert(editor);
+      },
       restartSidecar: async () => this.restartSidecar(),
       startDictation: async () => this.requireDictationController().startDictation(),
       stopDictation: async () => this.requireDictationController().stopDictation(),
@@ -393,6 +411,8 @@ export default class LocalSttPlugin extends Plugin {
   }
 
   private async disposeAll(): Promise<void> {
+    this.lastUtteranceRecovery.clear();
+
     try {
       this.modelInstallManager?.dispose();
     } catch (error) {
@@ -493,6 +513,7 @@ export default class LocalSttPlugin extends Plugin {
   ): Promise<void> {
     const previousSettings = this.settings;
     this.settings = resolvePluginSettings(nextSettings);
+    this.lastUtteranceRecovery.setEnabled(this.settings.retainLastUtterance);
     if (options.persist) {
       await this.saveData(this.settings);
     }

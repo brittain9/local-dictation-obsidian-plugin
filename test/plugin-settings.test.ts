@@ -53,6 +53,12 @@ describe('resolvePluginSettings', () => {
     expect(resolvePluginSettings({ diarizationEnabled: 'yes' }).diarizationEnabled).toBe(false);
   });
 
+  it('retains the last utterance by default and honors only a persisted boolean opt-out', () => {
+    expect(DEFAULT_PLUGIN_SETTINGS.retainLastUtterance).toBe(true);
+    expect(resolvePluginSettings({ retainLastUtterance: false }).retainLastUtterance).toBe(false);
+    expect(resolvePluginSettings({ retainLastUtterance: 'no' }).retainLastUtterance).toBe(true);
+  });
+
   it('migrates legacy speaker label setting to diarization', () => {
     expect(resolvePluginSettings({ speakerLabelsEnabled: true }).diarizationEnabled).toBe(true);
     expect(

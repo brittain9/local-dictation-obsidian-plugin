@@ -1,14 +1,19 @@
-import type { Plugin } from 'obsidian';
+import type { Editor, Plugin } from 'obsidian';
 
 const START_DICTATION_COMMAND_ID = 'start-dictation-session';
 const STOP_DICTATION_COMMAND_ID = 'stop-dictation-session';
 const CANCEL_DICTATION_COMMAND_ID = 'cancel-dictation-session';
 const TOGGLE_DICTATION_COMMAND_ID = 'toggle-dictation-session';
+const REINSERT_LAST_UTTERANCE_COMMAND_ID = 'reinsert-last-utterance';
+const CLEAR_LAST_UTTERANCE_COMMAND_ID = 'clear-last-utterance';
 
 interface CommandDependencies {
   cancelDictation: () => Promise<void>;
+  clearLastUtterance: () => void;
   checkSidecarHealth: () => Promise<void>;
   plugin: Plugin;
+  hasLastUtterance: () => boolean;
+  reinsertLastUtterance: (editor: Editor) => void;
   restartSidecar: () => Promise<void>;
   startDictation: () => Promise<void>;
   stopDictation: () => Promise<void>;
@@ -45,6 +50,34 @@ export function registerCommands(dependencies: CommandDependencies): void {
     name: 'Cancel dictation',
     callback: async () => {
       await dependencies.cancelDictation();
+    },
+  });
+
+  dependencies.plugin.addCommand({
+    id: REINSERT_LAST_UTTERANCE_COMMAND_ID,
+    name: 'Reinsert last utterance',
+    editorCheckCallback: (checking, editor) => {
+      if (!dependencies.hasLastUtterance()) {
+        return false;
+      }
+      if (!checking) {
+        dependencies.reinsertLastUtterance(editor);
+      }
+      return true;
+    },
+  });
+
+  dependencies.plugin.addCommand({
+    id: CLEAR_LAST_UTTERANCE_COMMAND_ID,
+    name: 'Clear last utterance',
+    checkCallback: (checking) => {
+      if (!dependencies.hasLastUtterance()) {
+        return false;
+      }
+      if (!checking) {
+        dependencies.clearLastUtterance();
+      }
+      return true;
     },
   });
 

@@ -417,6 +417,50 @@ describe('DictationSessionController', () => {
     });
   });
 
+  it('offers only accepted non-empty final revisions for last-utterance recovery', async () => {
+    const onFinalizedUtteranceAccepted = vi.fn();
+    const sidecarConnection = new FakeSidecarConnection();
+    const sessions: FakeSession[] = [];
+    const controller = createController({
+      createSession: (session) => {
+        sessions.push(session);
+      },
+      onFinalizedUtteranceAccepted,
+      sidecarConnection,
+    });
+
+    await controller.startDictation();
+    const sessionId = sidecarConnection.startSession.mock.calls[0]?.[0].sessionId ?? '';
+    const session = sessions[0];
+    if (session === undefined) {
+      throw new Error('expected session fixture');
+    }
+
+    sidecarConnection.emit(transcriptReady(sessionId, 'partial', { isFinal: false }));
+    await vi.waitFor(() => {
+      expect(session.acceptTranscript).toHaveBeenCalledTimes(1);
+    });
+    expect(onFinalizedUtteranceAccepted).not.toHaveBeenCalled();
+
+    sidecarConnection.emit(transcriptReady(sessionId, ''));
+    await vi.waitFor(() => {
+      expect(session.acceptTranscript).toHaveBeenCalledTimes(2);
+    });
+    expect(onFinalizedUtteranceAccepted).not.toHaveBeenCalled();
+
+    sidecarConnection.emit(transcriptReady(sessionId, 'recover this'));
+    await vi.waitFor(() => {
+      expect(onFinalizedUtteranceAccepted).toHaveBeenCalledWith('recover this');
+    });
+
+    session.acceptTranscript.mockReturnValueOnce({ kind: 'duplicate' });
+    sidecarConnection.emit(transcriptReady(sessionId, 'do not replace recovery'));
+    await vi.waitFor(() => {
+      expect(session.acceptTranscript).toHaveBeenCalledTimes(4);
+    });
+    expect(onFinalizedUtteranceAccepted).toHaveBeenCalledTimes(1);
+  });
+
   it('silently enforces the five-session active plus draining cap', async () => {
     const sidecarConnection = new FakeSidecarConnection();
     const controller = createController({ sidecarConnection });
@@ -2354,6 +2398,7 @@ function createController({
   sidecarConnection = new FakeSidecarConnection(),
   onLlmCleanupFailure,
   onLlmCleanupSuccess,
+  onFinalizedUtteranceAccepted,
 }: {
   audioLevelMeter?: FakeAudioLevelMeter;
   captureStream?: FakeCaptureStream;
@@ -2365,6 +2410,7 @@ function createController({
   feedback?: Pick<UserFeedback, 'show'>;
   onLlmCleanupFailure?: (failure: LlmCleanupFailure) => void;
   onLlmCleanupSuccess?: () => void;
+  onFinalizedUtteranceAccepted?: (text: string) => void;
   sidecarConnection?: FakeSidecarConnection;
 } = {}): DictationSessionController {
   return new DictationSessionController({
@@ -2382,6 +2428,7 @@ function createController({
     logger,
     ...(onLlmCleanupFailure !== undefined ? { onLlmCleanupFailure } : {}),
     ...(onLlmCleanupSuccess !== undefined ? { onLlmCleanupSuccess } : {}),
+    ...(onFinalizedUtteranceAccepted !== undefined ? { onFinalizedUtteranceAccepted } : {}),
     onModelMissing: vi.fn(),
     onSidecarMissing: vi.fn(),
     setRibbonQueueTier: vi.fn((_tier: QueueBackpressureTier) => {}),
