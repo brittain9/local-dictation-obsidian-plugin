@@ -28,6 +28,13 @@ export const MAX_FRAME_PAYLOAD_BYTES = 16 * 1024 * 1024;
 export type AccelerationPreference = 'auto' | 'cpu_only';
 export type SpeakingStyle = 'responsive' | 'balanced' | 'patient';
 
+export interface UserRule {
+  caseSensitive: boolean;
+  replacement: string;
+  source: string;
+  wholeWord: boolean;
+}
+
 export const LISTENING_MODES = ['always_on', 'one_sentence'] as const;
 export type ListeningMode = (typeof LISTENING_MODES)[number];
 
@@ -119,6 +126,7 @@ export interface StartSessionCommand extends EnvelopeBase<'start_session'> {
   sessionStartUnixMs: number;
   sessionId: string;
   speakingStyle: SpeakingStyle;
+  userRules: UserRule[];
 }
 
 export interface ContextResponseCommand extends EnvelopeBase<'context_response'> {

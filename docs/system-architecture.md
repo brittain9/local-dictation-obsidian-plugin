@@ -25,7 +25,7 @@ flowchart LR
     subgraph Sidecar ["Native sidecar (Rust)"]
         VAD["VAD · speech boundaries"]
         INF["Inference · engine registry"]
-        STAGE["Post-engine stages<br/>(hallucination filter)"]
+        STAGE["Post-engine stages<br/>(hallucination filter + personal corrections)"]
         DIA["Diarization<br/>(optional)"]
         VAD --> INF --> STAGE --> DIA
     end
@@ -339,7 +339,7 @@ utterance duration. A panicking stage is caught and recorded as
 (`Ok` / `Skipped` / `Failed` with revision and payload), and the full history
 ships in `transcript_ready.stageResults[]`.
 
-**Registered today:** the **hallucination filter** — a conservative filter that
+**Registered first:** the **hallucination filter** — a conservative filter that
 drops whole hallucinated segments while preserving timing. Hard text artifacts
 (empty text, punctuation-only output, known non-speech tags, caption/source
 attributions) can drop on text alone; soft artifacts (courtesy endings, CTAs,
@@ -348,8 +348,14 @@ combines Whisper/Cohere decoder diagnostics with per-segment voiced fraction and
 utterance-level VAD evidence. If nothing is dropped it records
 `Skipped { reason: "no_hallucinations" }`.
 
-`StageId::Punctuation` and `StageId::UserRules` exist as reserved identifiers but
-have no registered processor yet.
+Final transcripts then pass through **personal corrections** when the session
+has enabled rules. Rules are literal, ordered, and independently configure case
+and whole-word matching. Each rule consumes the prior rule's output, so ordering
+is explicit. The stage preserves segment timing and reports only rule and
+replacement counts in its payload; transcript and rule content are not copied
+into diagnostics.
+
+`StageId::Punctuation` remains reserved and has no registered processor yet.
 
 ---
 

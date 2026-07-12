@@ -190,6 +190,46 @@ describe('DictationSessionController', () => {
     });
   });
 
+  it('captures enabled personal corrections in session order without UI metadata', async () => {
+    const sidecarConnection = new FakeSidecarConnection();
+    const controller = createController({
+      sidecarConnection,
+      getSettings: () =>
+        createSettings({
+          personalCorrectionRules: [
+            {
+              caseSensitive: false,
+              enabled: true,
+              id: 'first',
+              replacement: 'Kubernetes',
+              source: 'kuber netes',
+              wholeWord: true,
+            },
+            {
+              caseSensitive: true,
+              enabled: false,
+              id: 'disabled',
+              replacement: 'ignored',
+              source: 'ignore me',
+              wholeWord: false,
+            },
+          ],
+          selectedModel: createExternalModelSelection(),
+        }),
+    });
+
+    await controller.startDictation();
+
+    expect(sidecarConnection.startSession.mock.calls[0]?.[0].userRules).toEqual([
+      {
+        caseSensitive: false,
+        replacement: 'Kubernetes',
+        source: 'kuber netes',
+        wholeWord: true,
+      },
+    ]);
+  });
+
   it('includes system audio without skipping microphone capture', async () => {
     const captureStream = new FakeCaptureStream();
     const sidecarConnection = new FakeSidecarConnection();

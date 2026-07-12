@@ -238,6 +238,14 @@ describe('command serialization', () => {
         sessionStartUnixMs: 1_700_000_000_000,
         sessionId: 'session-gpu',
         speakingStyle: 'balanced',
+        userRules: [
+          {
+            caseSensitive: false,
+            replacement: 'Kubernetes',
+            source: 'kuber netes',
+            wholeWord: true,
+          },
+        ],
       }),
     );
     const payload = readPayload(frame) as Record<string, unknown>;
@@ -247,6 +255,14 @@ describe('command serialization', () => {
     expect(payload.includeSystemAudio).toBe(true);
     expect(payload).not.toHaveProperty('audioSource');
     expect(payload.sessionId).toBe('session-gpu');
+    expect(payload.userRules).toEqual([
+      {
+        caseSensitive: false,
+        replacement: 'Kubernetes',
+        source: 'kuber netes',
+        wholeWord: true,
+      },
+    ]);
   });
 
   it('encodes session-addressed lifecycle commands with sessionId echoed in the payload', () => {

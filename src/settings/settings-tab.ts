@@ -16,6 +16,7 @@ import {
   type SidecarInstallManager,
 } from '../sidecar/sidecar-install-manager';
 import { readInstallManifest, variantDirectoryPath } from '../sidecar/sidecar-installer';
+import { CorrectionRulesModal } from '../ui/correction-rules-modal';
 import { diarizationSettingDescription } from './diarization-setting';
 import { renderActiveInstallCard } from './install-progress-row';
 import { renderMicrophonePicker } from './microphone-picker';
@@ -227,6 +228,30 @@ export class LocalSttSettingTab extends PluginSettingTab {
     });
 
     this.renderTranscriptFormattingSetting(outputCard);
+
+    const correctionRules = settings.personalCorrectionRules;
+    const enabledCorrectionCount = correctionRules.filter((rule) => rule.enabled).length;
+    new Setting(outputCard)
+      .setName('Personal corrections')
+      .setDesc(
+        correctionRules.length === 0
+          ? 'Fix recurring names, terms, and transcription mistakes locally.'
+          : `${enabledCorrectionCount} of ${correctionRules.length} enabled.`,
+      )
+      .addButton((button) => {
+        button.setButtonText('Manage').onClick(() => {
+          new CorrectionRulesModal(this.app, {
+            getRules: () => this.dependencies.getSettings().personalCorrectionRules,
+            saveRules: async (rules) => {
+              await this.dependencies.saveSettings({
+                ...this.dependencies.getSettings(),
+                personalCorrectionRules: rules,
+              });
+              this.display();
+            },
+          }).open();
+        });
+      });
 
     const diarizationSetting = addToggleSetting(outputCard, this.access, {
       name: 'Speaker labels (diarization)',

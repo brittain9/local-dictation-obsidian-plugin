@@ -4,10 +4,11 @@ use std::time::Instant;
 use crate::audio_metadata::VoiceActivityEvidence;
 use crate::engine::capabilities::ModelFamilyCapabilities;
 use crate::panic_util::format_panic_message;
-use crate::protocol::{StageId, StageOutcome, StageStatus, TranscriptSegment};
+use crate::protocol::{StageId, StageOutcome, StageStatus, TranscriptSegment, UserRule};
 use crate::transcription::{SegmentDiagnostics, Transcript};
 
 mod hallucination_filter;
+mod user_rules;
 
 /// Boolean opt-out for stages that always have a runtime config to consume.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -67,8 +68,13 @@ pub trait StageProcessor: Send + Sync {
 
 /// Build the registered post-engine processor chain in canonical order. The
 /// engine stage outcome is appended separately by `assemble_transcript`.
-pub fn post_engine_processors() -> Vec<Box<dyn StageProcessor>> {
-    vec![Box::new(hallucination_filter::HallucinationFilterStage)]
+pub fn post_engine_processors(user_rules: &[UserRule]) -> Vec<Box<dyn StageProcessor>> {
+    let mut processors: Vec<Box<dyn StageProcessor>> =
+        vec![Box::new(hallucination_filter::HallucinationFilterStage)];
+    if !user_rules.is_empty() {
+        processors.push(Box::new(user_rules::UserRulesStage::new(user_rules)));
+    }
+    processors
 }
 
 pub fn run_post_engine(
@@ -320,6 +326,27 @@ mod tests {
         fn process(&self, _transcript: &Transcript, _ctx: &StageContext<'_>) -> StageProcess {
             panic!("synthetic stage panic");
         }
+    }
+
+    #[test]
+    fn canonical_chain_places_user_rules_after_hallucination_filter() {
+        let rules = [UserRule {
+            case_sensitive: false,
+            replacement: "Kubernetes".to_string(),
+            source: "kuber netes".to_string(),
+            whole_word: true,
+        }];
+
+        let stage_ids: Vec<StageId> = post_engine_processors(&rules)
+            .iter()
+            .map(|processor| processor.id())
+            .collect();
+
+        assert_eq!(
+            stage_ids,
+            vec![StageId::HallucinationFilter, StageId::UserRules]
+        );
+        assert_eq!(post_engine_processors(&[]).len(), 1);
     }
 
     fn run(transcript: &mut Transcript, processors: Vec<Box<dyn StageProcessor>>) {

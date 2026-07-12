@@ -9,6 +9,7 @@ import {
   formatSystemAudioErrorMessage,
   formatSystemAudioSidecarErrorMessage,
 } from '../audio/system-audio-permission-message';
+import { toActiveUserRules } from '../corrections/correction-rules';
 import type { NotePlacementOptions, SurfaceDesynchronization } from '../editor/note-surface';
 import {
   type LlmPostprocessMode,
@@ -33,6 +34,7 @@ import type {
   SessionState,
   SidecarEvent,
   TranscriptReadyEvent,
+  UserRule,
 } from '../sidecar/protocol';
 import { type SidecarConnection, SidecarError } from '../sidecar/sidecar-connection';
 import { SidecarNotInstalledError } from '../sidecar/sidecar-paths';
@@ -91,6 +93,7 @@ interface ActiveSessionSnapshot {
   timestamps: TranscriptRenderOptions['timestamps'];
   transcriptFormatting: PluginSettings['transcriptFormatting'];
   useNoteAsContext: PluginSettings['useNoteAsContext'];
+  userRules: UserRule[];
 }
 
 type SessionPhase = 'starting' | 'active' | 'stopping' | 'cancelling' | 'stopped';
@@ -371,6 +374,7 @@ export class DictationSessionController {
         sessionStartUnixMs: snapshot.sessionStartUnixMs,
         sessionId,
         speakingStyle: snapshot.speakingStyle,
+        userRules: snapshot.userRules,
         ...(snapshot.modelStorePathOverride.length > 0
           ? { modelStorePathOverride: snapshot.modelStorePathOverride }
           : {}),
@@ -1541,6 +1545,7 @@ function createSessionSnapshot(
     },
     transcriptFormatting: settings.transcriptFormatting,
     useNoteAsContext: settings.useNoteAsContext,
+    userRules: toActiveUserRules(settings.personalCorrectionRules),
   };
 }
 

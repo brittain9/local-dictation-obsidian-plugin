@@ -61,6 +61,45 @@ describe('resolvePluginSettings', () => {
     ).toBe(false);
   });
 
+  it('loads valid personal corrections and rejects unsafe persisted entries', () => {
+    expect(
+      resolvePluginSettings({
+        personalCorrectionRules: [
+          null,
+          {
+            caseSensitive: false,
+            enabled: true,
+            id: 'valid',
+            replacement: 'Kubernetes',
+            source: 'kuber netes',
+            wholeWord: true,
+          },
+          {
+            enabled: true,
+            id: 'blank',
+            replacement: 'dangerous',
+            source: '   ',
+          },
+          {
+            enabled: true,
+            id: 'valid',
+            replacement: 'duplicate',
+            source: 'dupe',
+          },
+        ],
+      }).personalCorrectionRules,
+    ).toEqual([
+      {
+        caseSensitive: false,
+        enabled: true,
+        id: 'valid',
+        replacement: 'Kubernetes',
+        source: 'kuber netes',
+        wholeWord: true,
+      },
+    ]);
+  });
+
   it('merges valid persisted values', () => {
     expect(
       resolvePluginSettings({

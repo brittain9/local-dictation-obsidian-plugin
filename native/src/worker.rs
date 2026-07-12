@@ -19,6 +19,7 @@ use crate::engine::traits::{LoadedModel, StreamingModel};
 use crate::panic_util::format_panic_message;
 use crate::protocol::{
     ContextWindow, EngineStagePayload, StageId, StageOutcome, StageStatus, TranscriptSegment,
+    UserRule,
 };
 use crate::session::{FinalizedUtterance, LiveUtterance};
 use crate::stages::{
@@ -40,6 +41,7 @@ pub struct SessionMetadata {
     pub session_start_unix_ms: u64,
     pub session_id: String,
     pub stage_enablement: StageEnablement,
+    pub user_rules: Vec<UserRule>,
 }
 
 #[derive(Debug)]
@@ -293,13 +295,14 @@ fn worker_main(
                         } else {
                             None
                         };
+                        let processors = post_engine_processors(&metadata.user_rules);
                         sessions.insert(
                             metadata.session_id.clone(),
                             WorkerSession {
                                 metadata,
                                 family_capabilities: resources.family_capabilities,
                                 model: resources.model,
-                                processors: post_engine_processors(),
+                                processors,
                                 diarizer,
                                 warnings,
                             },
@@ -1050,6 +1053,7 @@ mod tests {
             session_start_unix_ms: 0,
             session_id: "streaming-test".to_string(),
             stage_enablement: StageEnablement::default(),
+            user_rules: Vec::new(),
         };
         let mut worker_session = WorkerSession {
             metadata,
@@ -1058,7 +1062,7 @@ mod tests {
                 model: Box::new(FixtureStreamingModel::default()),
                 utterance: None,
             },
-            processors: post_engine_processors(),
+            processors: post_engine_processors(&[]),
             diarizer: None,
             warnings: Vec::new(),
         };
@@ -1378,6 +1382,7 @@ mod tests {
             session_start_unix_ms: 0,
             session_id: session_id.to_string(),
             stage_enablement: StageEnablement::default(),
+            user_rules: Vec::new(),
         }
     }
 
@@ -1690,6 +1695,7 @@ mod tests {
                 session_start_unix_ms: 0,
                 session_id: "streaming-reconcile-test".to_string(),
                 stage_enablement: StageEnablement::default(),
+                user_rules: Vec::new(),
             },
             family_capabilities: streaming_caps(),
             model: SessionModel::Streaming {

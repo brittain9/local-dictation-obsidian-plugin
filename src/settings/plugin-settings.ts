@@ -1,5 +1,8 @@
 import { randomUUID } from 'node:crypto';
-
+import {
+  type PersonalCorrectionRule,
+  readPersonalCorrectionRules,
+} from '../corrections/correction-rules';
 import {
   DEFAULT_LLM_BUILTIN_PRESET_ID,
   formatStyleRef,
@@ -128,6 +131,7 @@ export interface PluginSettings {
   llmRouting: LlmRouting;
   localTranscriptSidebarBootstrapped: boolean;
   modelStorePathOverride: string;
+  personalCorrectionRules: PersonalCorrectionRule[];
   schemaVersion: 2;
   selectedModel: SelectedModel | null;
   // Last-known-good capabilities for `selectedModel`, captured on a successful
@@ -182,6 +186,7 @@ export const DEFAULT_PLUGIN_SETTINGS: PluginSettings = {
   llmRouting: 'local',
   localTranscriptSidebarBootstrapped: false,
   modelStorePathOverride: '',
+  personalCorrectionRules: [],
   schemaVersion: 2,
   selectedModel: null,
   selectedModelCapabilitiesSnapshot: null,
@@ -303,6 +308,7 @@ export function resolvePluginSettings(data: unknown): PluginSettings {
       raw.modelStorePathOverride,
       DEFAULT_PLUGIN_SETTINGS.modelStorePathOverride,
     ),
+    personalCorrectionRules: readPersonalCorrectionRules(raw.personalCorrectionRules),
     // Bump `schemaVersion` and add a migration step when renaming a key or changing default semantics.
     schemaVersion: 2,
     selectedModel: readSelectedModel(raw.selectedModel),

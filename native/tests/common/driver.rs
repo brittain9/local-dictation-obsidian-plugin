@@ -305,6 +305,7 @@ fn start_session_command(
         session_start_unix_ms: SESSION_START_UNIX_MS,
         session_id: session_id.to_string(),
         speaking_style: style,
+        user_rules: Vec::new(),
     }
 }
 

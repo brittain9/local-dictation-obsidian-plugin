@@ -17,8 +17,9 @@ use crate::model_store::{
 };
 use crate::protocol::{
     AccelerationPreference, AudioFrame, Command, CompiledAdapterInfo, CompiledRuntimeInfo,
-    ContextWindow, Event, HealthStatus, ListeningMode, ModelInstallState, ModelProbeStatus,
-    QueueBackpressureTier, SelectedModel, SessionState, SessionStopReason, system_info_string,
+    ContextWindow, Event, HealthStatus, ListeningMode, MAX_USER_RULES, ModelInstallState,
+    ModelProbeStatus, QueueBackpressureTier, SelectedModel, SessionState, SessionStopReason,
+    system_info_string,
 };
 use crate::session::{
     FinalizedUtterance, ListeningSession, SessionAction, SessionBaseState, SessionConfig,
@@ -459,7 +460,27 @@ impl AppState {
                 session_start_unix_ms,
                 session_id,
                 speaking_style,
+                user_rules,
             } => {
+                let invalid_user_rules = if user_rules.len() > MAX_USER_RULES {
+                    Some(format!(
+                        "received {} correction rules; maximum is {MAX_USER_RULES}",
+                        user_rules.len()
+                    ))
+                } else {
+                    user_rules.iter().find_map(|rule| rule.validate().err())
+                };
+                if let Some(details) = invalid_user_rules {
+                    events.push(Event::Error {
+                        code: "invalid_user_rules".to_string(),
+                        details: Some(details),
+                        message: "Personal correction rules are invalid. Review them in Settings and try again."
+                            .to_string(),
+                        session_id: Some(session_id),
+                    });
+                    return (ControlFlow::Continue, events);
+                }
+
                 if self.active_sessions.len() >= MAX_ACTIVE_SESSIONS {
                     events.push(Event::Error {
                         code: "session_capacity_exceeded".to_string(),
@@ -544,6 +565,7 @@ impl AppState {
                                 session_start_unix_ms,
                                 session_id: session_id.clone(),
                                 stage_enablement: StageEnablement::default(),
+                                user_rules,
                             }))
                             .is_err()
                         {
@@ -1659,6 +1681,7 @@ mod tests {
         AccelerationPreference, AudioFrame, Command, ContextWindow, ContextWindowSource, Event,
         HealthStatus, ListeningMode, ModelProbeStatus, PCM_BYTES_PER_FRAME, QueueBackpressureTier,
         SelectedModel, SessionState, SessionStopReason, StageId, StageOutcome, StageStatus,
+        UserRule,
     };
     use crate::session::{FinalizedUtterance, ListeningSession, SessionInitError, SpeakingStyle};
     use crate::system_audio::{AudioFrameSink, SystemAudioCapture, SystemAudioError};
@@ -2337,6 +2360,32 @@ mod tests {
             }
             other => panic!("expected invalid ModelProbeResult, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn start_session_rejects_invalid_user_rules_before_allocating_a_session() {
+        let model_file_path = create_model_file();
+        let mut command = start_session_command("session-invalid-rules", &model_file_path);
+        let Command::StartSession { user_rules, .. } = &mut command else {
+            panic!("expected start session command");
+        };
+        user_rules.push(UserRule {
+            case_sensitive: false,
+            replacement: "replacement".to_string(),
+            source: "   ".to_string(),
+            whole_word: true,
+        });
+        let mut app = test_app();
+
+        let (_, events) = app.handle_command(command);
+
+        assert!(matches!(
+            events.as_slice(),
+            [Event::Error { code, session_id, .. }]
+                if code == "invalid_user_rules"
+                    && session_id.as_deref() == Some("session-invalid-rules")
+        ));
+        assert!(!app.active_sessions.contains_key("session-invalid-rules"));
     }
 
     #[test]
@@ -3405,6 +3454,7 @@ mod tests {
             session_start_unix_ms: 1_700_000_000_000,
             session_id: session_id.to_string(),
             speaking_style: SpeakingStyle::Balanced,
+            user_rules: Vec::new(),
         }
     }
 

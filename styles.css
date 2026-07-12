@@ -549,6 +549,45 @@
   margin: var(--size-2-2) 0;
 }
 
+/* --- Personal corrections ---------------------------------------- */
+
+.local-stt-correction-rules__back {
+  margin-bottom: var(--size-4-2);
+}
+
+.local-stt-correction-rules__empty {
+  color: var(--text-muted);
+  margin: var(--size-4-2) 0;
+}
+
+.local-stt-correction-rules__row .setting-item-name {
+  overflow-wrap: anywhere;
+}
+
+.local-stt-correction-rules__preview {
+  display: grid;
+  gap: var(--size-2-2);
+  margin: var(--size-4-2) 0;
+}
+
+.local-stt-correction-rules__preview-label {
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+}
+
+.local-stt-correction-rules__preview code {
+  display: block;
+  min-height: 2.5em;
+  overflow-wrap: anywhere;
+  padding: var(--size-4-2);
+  white-space: pre-wrap;
+}
+
+.local-stt-correction-rules__error {
+  color: var(--text-error);
+  margin: var(--size-2-2) 0;
+}
+
 /* --- Batch LLM processing pulse ----------------------------------- */
 
 .local-stt-transcript-provisional {

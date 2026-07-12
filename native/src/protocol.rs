@@ -182,6 +182,41 @@ pub enum StageId {
     UserRules,
 }
 
+pub const MAX_USER_RULES: usize = 100;
+pub const MAX_USER_RULE_SOURCE_CHARS: usize = 120;
+pub const MAX_USER_RULE_REPLACEMENT_CHARS: usize = 300;
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UserRule {
+    pub case_sensitive: bool,
+    pub replacement: String,
+    pub source: String,
+    pub whole_word: bool,
+}
+
+impl UserRule {
+    pub fn validate(&self) -> Result<(), String> {
+        if self.source.trim().is_empty() {
+            return Err("correction rule source must not be blank".to_string());
+        }
+        if self.source.chars().count() > MAX_USER_RULE_SOURCE_CHARS {
+            return Err(format!(
+                "correction rule source exceeds {MAX_USER_RULE_SOURCE_CHARS} characters"
+            ));
+        }
+        if self.replacement.chars().count() > MAX_USER_RULE_REPLACEMENT_CHARS {
+            return Err(format!(
+                "correction rule replacement exceeds {MAX_USER_RULE_REPLACEMENT_CHARS} characters"
+            ));
+        }
+        if self.source == self.replacement {
+            return Err("correction rule source and replacement must differ".to_string());
+        }
+        Ok(())
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum StageStatus {
@@ -283,6 +318,8 @@ pub enum Command {
         session_id: String,
         #[serde(default)]
         speaking_style: SpeakingStyle,
+        #[serde(default)]
+        user_rules: Vec<UserRule>,
     },
     ContextResponse {
         correlation_id: Uuid,
@@ -629,8 +666,8 @@ mod tests {
         AUDIO_FRAME_KIND, AccelerationPreference, AudioFrame, Command, Event, EventEnvelope,
         FRAME_HEADER_LENGTH, IncomingFrame, JSON_FRAME_KIND, ListeningMode, MAX_FRAME_PAYLOAD,
         ModelInstallState, ModelProbeStatus, PCM_BYTES_PER_FRAME, QueueBackpressureTier,
-        SelectedModel, SessionStopReason, SpeakingStyle, encode_audio_frame_envelope, read_frame,
-        write_event_frame, write_frame,
+        SelectedModel, SessionStopReason, SpeakingStyle, UserRule, encode_audio_frame_envelope,
+        read_frame, write_event_frame, write_frame,
     };
     use crate::engine::capabilities::{ModelFamilyId, RuntimeId};
     use uuid::Uuid;
@@ -676,7 +713,51 @@ mod tests {
                 session_start_unix_ms: 1_700_000_000_000,
                 session_id: "session-1".to_string(),
                 speaking_style: SpeakingStyle::Balanced,
+                user_rules: Vec::new(),
             })
+        );
+    }
+
+    #[test]
+    fn start_session_round_trip_preserves_user_rules() {
+        let payload = serde_json::to_vec(&serde_json::json!({
+            "type": "start_session",
+            "sessionId": "session-rules",
+            "mode": "always_on",
+            "modelSelection": {
+                "kind": "external_file",
+                "runtimeId": "whisper_cpp",
+                "familyId": "whisper",
+                "filePath": "/tmp/model.bin"
+            },
+            "language": "en",
+            "sessionStartUnixMs": 1_700_000_000_000_u64,
+            "userRules": [{
+                "caseSensitive": false,
+                "replacement": "Kubernetes",
+                "source": "kuber netes",
+                "wholeWord": true
+            }]
+        }))
+        .expect("payload should serialize");
+        let mut framed = Vec::new();
+        write_frame(&mut framed, JSON_FRAME_KIND, &payload).expect("frame should write");
+
+        let parsed = read_frame(&mut framed.as_slice())
+            .expect("frame should parse")
+            .expect("frame should exist");
+        let IncomingFrame::Command(Command::StartSession { user_rules, .. }) = parsed else {
+            panic!("expected start session");
+        };
+
+        assert_eq!(
+            user_rules,
+            vec![UserRule {
+                case_sensitive: false,
+                replacement: "Kubernetes".to_string(),
+                source: "kuber netes".to_string(),
+                whole_word: true,
+            }]
         );
     }
 
