@@ -98,6 +98,9 @@ type SessionPhase = 'starting' | 'active' | 'stopping' | 'cancelling' | 'stopped
 // Stable across sidecar lifecycle acknowledgements. Terminal causes claim the
 // feedback slot, while cancellation also permanently rejects transcript work.
 type TerminalArbitrationState = 'open' | 'feedback-claimed' | 'cancelled';
+type ManagedSessionMode =
+  | { kind: 'dictation' }
+  | { finalClaimed: boolean; kind: 'selection_redictation' };
 
 interface ManagedSession {
   anchorTimerId: number | null;
@@ -106,8 +109,7 @@ interface ManagedSession {
   cleanupChain: Promise<void>;
   cleanupAbortControllers: Set<AbortController>;
   llmFailureLogged: boolean;
-  oneUtteranceFinalClaimed: boolean;
-  oneUtteranceMode: boolean;
+  mode: ManagedSessionMode;
   pendingTranscriptWork: Set<Promise<void>>;
   phase: SessionPhase;
   session: ControllerSession;
@@ -136,6 +138,7 @@ interface DictationSessionControllerDependencies {
   createLlmRouter: (settings: PluginSettings) => LlmRouter;
   feedback: Pick<UserFeedback, 'show'>;
   getSettings: () => PluginSettings;
+  isSelectionRedictationSnapshotCurrent: (selection: SelectionRedictationSnapshot) => boolean;
   logger?: PluginLogger;
   onLlmCleanupFailure?: (failure: LlmCleanupFailure) => void;
   onLlmCleanupSuccess?: () => void;
@@ -323,6 +326,20 @@ export class DictationSessionController {
       return;
     }
 
+    if (
+      request.kind === 'selection_redictation' &&
+      !this.dependencies.isSelectionRedictationSnapshotCurrent(request.selection)
+    ) {
+      this.applyUiState('idle');
+      this.dependencies.feedback.show({
+        intent: 'warning',
+        key: 'selection-redictation-start-stale',
+        message:
+          'Re-dictation did not start because the selected note changed or closed. No audio was captured. Select the text again and retry.',
+      });
+      return;
+    }
+
     const sessionId = createSessionId();
     const baseSnapshot = createSessionSnapshot(
       settings,
@@ -331,7 +348,7 @@ export class DictationSessionController {
     );
     const snapshot =
       request.kind === 'selection_redictation'
-        ? applySelectionRedictationCleanupPolicy(baseSnapshot)
+        ? applySelectionRedictationPolicy(baseSnapshot)
         : baseSnapshot;
     let session: ControllerSession;
 
@@ -378,8 +395,10 @@ export class DictationSessionController {
       cleanupChain: Promise.resolve(),
       cleanupAbortControllers: new Set(),
       llmFailureLogged: false,
-      oneUtteranceFinalClaimed: false,
-      oneUtteranceMode: request.kind === 'selection_redictation',
+      mode:
+        request.kind === 'selection_redictation'
+          ? { finalClaimed: false, kind: 'selection_redictation' }
+          : { kind: 'dictation' },
       pendingTranscriptWork: new Set(),
       phase: 'starting',
       session,
@@ -822,12 +841,12 @@ export class DictationSessionController {
     entry: ManagedSession,
     event: TranscriptReadyEvent,
   ): Promise<void> {
-    if (entry.oneUtteranceMode) {
-      if (entry.oneUtteranceFinalClaimed) {
+    if (entry.mode.kind === 'selection_redictation') {
+      if (entry.mode.finalClaimed) {
         return;
       }
       if (event.isFinal) {
-        entry.oneUtteranceFinalClaimed = true;
+        entry.mode.finalClaimed = true;
         if (this.activeSessionId === event.sessionId) {
           await this.requestSessionStop(event.sessionId, entry);
           if (!this.sessions.has(event.sessionId)) {
@@ -1596,21 +1615,25 @@ function createSessionSnapshot(
   };
 }
 
-function applySelectionRedictationCleanupPolicy(
-  snapshot: ActiveSessionSnapshot,
-): ActiveSessionSnapshot {
+function applySelectionRedictationPolicy(snapshot: ActiveSessionSnapshot): ActiveSessionSnapshot {
   // The selection surface has exactly one atomic replacement target. Batch
   // rewrites can run on its single final; additive output has no safe target
-  // and must not invoke a provider as an implicit side effect.
-  if (snapshot.llmPostprocessOutput !== 'replace') {
-    return { ...snapshot, llmPostprocessMode: 'off' };
-  }
+  // and must not invoke a provider as an implicit side effect. Capture is
+  // microphone-only because mixed system audio could claim the first final;
+  // diarization has no meaningful single-source output in this workflow.
+  const llmPostprocessMode =
+    snapshot.llmPostprocessOutput !== 'replace'
+      ? 'off'
+      : snapshot.llmPostprocessMode === 'batch'
+        ? 'per_utterance'
+        : snapshot.llmPostprocessMode;
 
-  if (snapshot.llmPostprocessMode === 'batch') {
-    return { ...snapshot, llmPostprocessMode: 'per_utterance' };
-  }
-
-  return snapshot;
+  return {
+    ...snapshot,
+    diarizationEnabled: false,
+    includeSystemAudio: false,
+    llmPostprocessMode,
+  };
 }
 
 function shouldRunBatchCleanup(

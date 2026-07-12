@@ -35,6 +35,8 @@ _The first-run wizard installs the native engine and helps you choose between li
 
 All transcription models in the current catalog run locally and support English. Moonshine is optimized for live dictation; speaker labels currently require a batch model.
 
+Selection re-dictation applies active replace-style AI cleanup. Presets that add summaries or action items above or below a transcript are skipped because this workflow has only the selected replacement target.
+
 ## Features
 
 - **Live text.** Moonshine streaming models show provisional words and revise them in place until each utterance finalizes.

@@ -25,10 +25,10 @@ describe('selection re-dictation capture', () => {
     expect(result).toEqual({
       kind: 'captured',
       snapshot: {
+        documentText: 'Context before selection original',
         editor: editor.editor,
         file,
         from: { ch: 4, line: 2 },
-        originalText: 'original',
         to: { ch: 12, line: 2 },
       },
     });
@@ -124,11 +124,9 @@ describe('SelectionRedictationSession', () => {
     expect(harness.editor.transaction).toHaveBeenCalledOnce();
   });
 
-  it('leaves the note unchanged when the selected range content becomes stale', () => {
+  it('leaves the note unchanged when its captured document changes', () => {
     const harness = createSessionHarness();
-    harness.editor.getRange.mockImplementation((from: EditorPosition) =>
-      from.line === 0 ? 'Context before selection' : 'user-edited',
-    );
+    harness.editor.getValue.mockReturnValue('user-edited document');
 
     harness.session.acceptTranscript(
       transcript({ text: 'replacement text', utteranceId: 'selection-1' }),
@@ -139,8 +137,25 @@ describe('SelectionRedictationSession', () => {
       intent: 'warning',
       key: 'selection-redictation-stale',
       message:
-        'The selection changed while re-dictating. No text was replaced. Select it again and retry.',
+        'The note changed while re-dictating. No text was replaced. Select the text again and retry.',
     });
+  });
+
+  it('rejects a prepended repeated string even when the old range still matches', () => {
+    const harness = createSessionHarness();
+    harness.editor.getRange.mockReturnValue('original');
+    harness.editor.getValue.mockReturnValue(`original ${harness.snapshot.documentText}`);
+
+    expect(harness.editor.getRange(harness.snapshot.from, harness.snapshot.to)).toBe('original');
+
+    harness.session.acceptTranscript(
+      transcript({ text: 'replacement text', utteranceId: 'selection-1' }),
+    );
+
+    expect(harness.editor.transaction).not.toHaveBeenCalled();
+    expect(harness.feedback.show).toHaveBeenCalledWith(
+      expect.objectContaining({ key: 'selection-redictation-stale' }),
+    );
   });
 
   it('leaves the note unchanged when the target editor is no longer open', () => {
@@ -151,7 +166,7 @@ describe('SelectionRedictationSession', () => {
       transcript({ text: 'replacement text', utteranceId: 'selection-1' }),
     );
 
-    expect(harness.editor.getRange).not.toHaveBeenCalled();
+    expect(harness.editor.getValue).not.toHaveBeenCalled();
     expect(harness.editor.transaction).not.toHaveBeenCalled();
     expect(harness.feedback.show).toHaveBeenCalledWith(
       expect.objectContaining({ key: 'selection-redictation-stale' }),
@@ -166,7 +181,7 @@ describe('SelectionRedictationSession', () => {
       transcript({ text: 'replacement text', utteranceId: 'selection-1' }),
     );
 
-    expect(harness.editor.getRange).not.toHaveBeenCalled();
+    expect(harness.editor.getValue).not.toHaveBeenCalled();
     expect(harness.editor.transaction).not.toHaveBeenCalled();
     expect(harness.feedback.show).toHaveBeenCalledWith(
       expect.objectContaining({ key: 'selection-redictation-stale' }),
@@ -294,10 +309,10 @@ function createSessionHarness() {
   };
   const feedback = { show: vi.fn() };
   const snapshot: SelectionRedictationSnapshot = {
+    documentText: 'Context before selection original',
     editor: editor.editor,
     file,
     from: { ch: 4, line: 1 },
-    originalText: 'original',
     to: { ch: 12, line: 1 },
   };
   const session = new SelectionRedictationSession({
@@ -314,6 +329,7 @@ function createSessionHarness() {
     emitLayoutChange: () => layoutChange?.(),
     feedback,
     session,
+    snapshot,
     setOpenFile: (nextFile: TFile) => {
       openFile = nextFile;
     },
@@ -332,7 +348,7 @@ function createEditor({
   selectedText: string;
   selection: { anchor: EditorPosition; head: EditorPosition };
 }) {
-  const getRange = vi.fn((from: EditorPosition) =>
+  const getRange = vi.fn((from: EditorPosition, _to?: EditorPosition) =>
     from.line === 0 ? 'Context before selection' : selectedText,
   );
   const getValue = vi.fn(() => `Context before selection ${selectedText}`);

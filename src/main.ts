@@ -12,6 +12,7 @@ import { provisionalTranscriptExtension } from './editor/provisional-transcript-
 import {
   canCaptureSelectionRedictation,
   captureSelectionRedictation,
+  isSelectionRedictationSnapshotCurrent,
   SelectionRedictationSession,
 } from './editor/selection-redictation';
 import { sessionProcessingExtension } from './editor/session-processing-extension';
@@ -189,6 +190,8 @@ export default class LocalSttPlugin extends Plugin {
           () => this.getOpenRouterApiKey(),
         ),
       getSettings: () => this.settings,
+      isSelectionRedictationSnapshotCurrent: (selection) =>
+        isSelectionRedictationSnapshotCurrent(this.app, selection),
       feedback: this.feedback,
       logger: this.logger,
       onLlmCleanupFailure: (failure) => {
@@ -245,6 +248,15 @@ export default class LocalSttPlugin extends Plugin {
       canRedictateSelection: (editor, file) =>
         !this.requireDictationController().isBusy() && canCaptureSelectionRedictation(editor, file),
       checkSidecarHealth: async () => this.checkSidecarHealth(),
+      onSelectionRedictationError: (error) => {
+        this.logger.error('session', 'selection re-dictation command failed', error);
+        this.feedback.show({
+          cause: error,
+          intent: 'error',
+          key: 'selection-redictation-command-failed',
+          message: 'Could not start selection re-dictation. Select the text and try again.',
+        });
+      },
       plugin: this,
       restartSidecar: async () => this.restartSidecar(),
       startDictation: async () => this.requireDictationController().startDictation(),

@@ -9,10 +9,10 @@ import { buildNoteGlossary } from './note-surface';
 type SelectionEditor = Pick<Editor, 'getRange' | 'getValue' | 'listSelections' | 'transaction'>;
 
 export interface SelectionRedictationSnapshot {
+  readonly documentText: string;
   readonly editor: SelectionEditor;
   readonly file: TFile;
   readonly from: EditorPosition;
-  readonly originalText: string;
   readonly to: EditorPosition;
 }
 
@@ -66,21 +66,35 @@ export function captureSelectionRedictation(
     return { kind: 'empty_selection' };
   }
 
-  const originalText = editor.getRange(from, to);
-  if (originalText.length === 0) {
+  if (editor.getRange(from, to).length === 0) {
     return { kind: 'empty_selection' };
   }
 
   return {
     kind: 'captured',
     snapshot: {
+      documentText: editor.getValue(),
       editor,
       file,
       from: { ...from },
-      originalText,
       to: { ...to },
     },
   };
+}
+
+export function isSelectionRedictationSnapshotCurrent(
+  app: Pick<App, 'workspace'>,
+  snapshot: SelectionRedictationSnapshot,
+): boolean {
+  if (!isSelectionRedictationTargetOpen(app, snapshot)) {
+    return false;
+  }
+
+  try {
+    return snapshot.editor.getValue() === snapshot.documentText;
+  } catch {
+    return false;
+  }
 }
 
 export class SelectionRedictationSession {
@@ -202,18 +216,13 @@ export class SelectionRedictationSession {
       return;
     }
 
-    const { editor, from, originalText, to } = this.dependencies.snapshot;
+    const { editor, from, to } = this.dependencies.snapshot;
     if (!this.canReadTarget()) {
       this.reportStaleSelection();
       return;
     }
 
     try {
-      if (editor.getRange(from, to) !== originalText) {
-        this.reportStaleSelection();
-        return;
-      }
-
       editor.transaction(
         {
           changes: [{ from, text, to }],
@@ -237,15 +246,15 @@ export class SelectionRedictationSession {
   }
 
   private canReadTarget(): boolean {
-    return !this.disposed && !this.targetUnavailable && this.isTargetOpen();
+    return (
+      !this.disposed &&
+      !this.targetUnavailable &&
+      isSelectionRedictationSnapshotCurrent(this.dependencies.app, this.dependencies.snapshot)
+    );
   }
 
   private isTargetOpen(): boolean {
-    const { editor, file } = this.dependencies.snapshot;
-    return this.dependencies.app.workspace.getLeavesOfType('markdown').some((leaf) => {
-      const view = leaf.view as unknown as MarkdownEditorViewLike;
-      return view.editor === editor && view.file === file;
-    });
+    return isSelectionRedictationTargetOpen(this.dependencies.app, this.dependencies.snapshot);
   }
 
   private reportStaleSelection(): void {
@@ -253,7 +262,7 @@ export class SelectionRedictationSession {
       intent: 'warning',
       key: 'selection-redictation-stale',
       message:
-        'The selection changed while re-dictating. No text was replaced. Select it again and retry.',
+        'The note changed while re-dictating. No text was replaced. Select the text again and retry.',
     });
   }
 
@@ -292,6 +301,16 @@ export class SelectionRedictationSession {
       }
     }
   }
+}
+
+function isSelectionRedictationTargetOpen(
+  app: Pick<App, 'workspace'>,
+  snapshot: SelectionRedictationSnapshot,
+): boolean {
+  return app.workspace.getLeavesOfType('markdown').some((leaf) => {
+    const view = leaf.view as unknown as MarkdownEditorViewLike;
+    return view.editor === snapshot.editor && view.file === snapshot.file;
+  });
 }
 
 function orderPositions(

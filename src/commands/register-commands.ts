@@ -10,6 +10,7 @@ interface CommandDependencies {
   cancelDictation: () => Promise<void>;
   canRedictateSelection: (editor: Editor, file: TFile | null) => boolean;
   checkSidecarHealth: () => Promise<void>;
+  onSelectionRedictationError: (error: unknown) => void;
   plugin: Plugin;
   restartSidecar: () => Promise<void>;
   startSelectionRedictation: (editor: Editor, file: TFile | null) => Promise<void>;
@@ -59,7 +60,9 @@ export function registerCommands(dependencies: CommandDependencies): void {
         return false;
       }
       if (!checking) {
-        void dependencies.startSelectionRedictation(editor, context.file);
+        void dependencies
+          .startSelectionRedictation(editor, context.file)
+          .catch(dependencies.onSelectionRedictationError);
       }
       return true;
     },

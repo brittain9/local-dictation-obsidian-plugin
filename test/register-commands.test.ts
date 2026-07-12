@@ -4,7 +4,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { registerCommands } from '../src/commands/register-commands';
 
 describe('registerCommands', () => {
-  it('checks re-dictation eligibility without starting capture and executes only when available', () => {
+  it('checks eligibility and contains an unexpected re-dictation startup rejection', async () => {
     const commands: Command[] = [];
     const plugin = {
       addCommand: vi.fn((command: Command) => {
@@ -13,11 +13,16 @@ describe('registerCommands', () => {
     } as unknown as Plugin;
     let available = false;
     const canRedictateSelection = vi.fn(() => available);
-    const startSelectionRedictation = vi.fn(async () => {});
+    const startError = new Error('unexpected startup failure');
+    const startSelectionRedictation = vi.fn(async () => {
+      throw startError;
+    });
+    const onSelectionRedictationError = vi.fn();
     registerCommands({
       cancelDictation: vi.fn(async () => {}),
       canRedictateSelection,
       checkSidecarHealth: vi.fn(async () => {}),
+      onSelectionRedictationError,
       plugin,
       restartSidecar: vi.fn(async () => {}),
       startDictation: vi.fn(async () => {}),
@@ -41,5 +46,8 @@ describe('registerCommands', () => {
     expect(command?.editorCheckCallback?.(false, editor, context)).toBe(true);
     expect(startSelectionRedictation).toHaveBeenCalledOnce();
     expect(startSelectionRedictation).toHaveBeenCalledWith(editor, file);
+    await vi.waitFor(() => {
+      expect(onSelectionRedictationError).toHaveBeenCalledWith(startError);
+    });
   });
 });

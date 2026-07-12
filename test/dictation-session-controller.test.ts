@@ -166,6 +166,76 @@ describe('DictationSessionController', () => {
     expect(controller.getState()).toBe('listening');
   });
 
+  it('does not start selection capture when its target becomes stale during preflight', async () => {
+    const captureStream = new FakeCaptureStream();
+    const feedback = { show: vi.fn() };
+    const sidecarConnection = new FakeSidecarConnection();
+    const preflight: { finish?: () => void } = {};
+    sidecarConnection.ensureStarted.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          preflight.finish = resolve;
+        }),
+    );
+    let targetCurrent = true;
+    const isSelectionRedictationSnapshotCurrent = vi.fn(() => targetCurrent);
+    const createSelectionRedictationSession = vi.fn();
+    const controller = createController({
+      captureStream,
+      createSelectionRedictationSession,
+      feedback,
+      isSelectionRedictationSnapshotCurrent,
+      sidecarConnection,
+    });
+    const selection = createSelectionSnapshot();
+
+    const start = controller.startSelectionRedictation(selection);
+    await vi.waitFor(() => {
+      expect(sidecarConnection.ensureStarted).toHaveBeenCalledOnce();
+    });
+    targetCurrent = false;
+    const finishPreflight = preflight.finish;
+    if (finishPreflight === undefined) {
+      throw new Error('sidecar preflight did not start');
+    }
+    finishPreflight();
+    await start;
+
+    expect(isSelectionRedictationSnapshotCurrent).toHaveBeenCalledWith(selection);
+    expect(createSelectionRedictationSession).not.toHaveBeenCalled();
+    expect(sidecarConnection.startSession).not.toHaveBeenCalled();
+    expect(captureStream.start).not.toHaveBeenCalled();
+    expect(controller.getState()).toBe('idle');
+    expect(feedback.show).toHaveBeenCalledWith({
+      intent: 'warning',
+      key: 'selection-redictation-start-stale',
+      message:
+        'Re-dictation did not start because the selected note changed or closed. No audio was captured. Select the text again and retry.',
+    });
+  });
+
+  it('starts selection re-dictation with microphone-only capture and no diarization', async () => {
+    const sidecarConnection = new FakeSidecarConnection();
+    const controller = createController({
+      getSettings: () =>
+        createSettings({
+          diarizationEnabled: true,
+          includeSystemAudio: true,
+          selectedModel: createExternalModelSelection(),
+        }),
+      sidecarConnection,
+    });
+
+    await controller.startSelectionRedictation(createSelectionSnapshot());
+
+    expect(sidecarConnection.startSession).toHaveBeenCalledWith(
+      expect.objectContaining({
+        diarizationEnabled: false,
+        includeSystemAudio: false,
+      }),
+    );
+  });
+
   it('stops capture on the first selection final and ignores every later revision', async () => {
     const captureStream = new FakeCaptureStream();
     const sidecarConnection = new FakeSidecarConnection();
@@ -2485,6 +2555,7 @@ function createController({
   createSelectionRedictationSession,
   llmRouter = createFakeLlmRouter(),
   getSettings = () => createSettings({ selectedModel: createExternalModelSelection() }),
+  isSelectionRedictationSnapshotCurrent = () => true,
   logger = new FakeLogger(),
   feedback = { show: vi.fn() },
   sidecarConnection = new FakeSidecarConnection(),
@@ -2500,6 +2571,7 @@ function createController({
     options: CreateSelectionRedictationSessionOptions,
   ) => void;
   getSettings?: () => PluginSettings;
+  isSelectionRedictationSnapshotCurrent?: (selection: SelectionRedictationSnapshot) => boolean;
   llmRouter?: LlmRouter;
   logger?: FakeLogger;
   feedback?: Pick<UserFeedback, 'show'>;
@@ -2524,6 +2596,7 @@ function createController({
     createLlmRouter: () => llmRouter,
     feedback,
     getSettings,
+    isSelectionRedictationSnapshotCurrent,
     logger,
     ...(onLlmCleanupFailure !== undefined ? { onLlmCleanupFailure } : {}),
     ...(onLlmCleanupSuccess !== undefined ? { onLlmCleanupSuccess } : {}),
@@ -2570,10 +2643,10 @@ function createExternalModelSelection(): NonNullable<PluginSettings['selectedMod
 
 function createSelectionSnapshot(): SelectionRedictationSnapshot {
   return {
+    documentText: 'original',
     editor: {},
     file: { path: 'note.md' },
     from: { ch: 0, line: 0 },
-    originalText: 'original',
     to: { ch: 8, line: 0 },
   } as unknown as SelectionRedictationSnapshot;
 }
