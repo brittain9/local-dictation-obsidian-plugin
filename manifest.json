@@ -3,7 +3,7 @@
   "name": "Local Dictation",
   "version": "2026.7.4",
   "minAppVersion": "1.11.5",
-  "description": "Private, offline speech-to-text and meeting transcription for Obsidian. Dictate voice notes live or transcribe meetings and system audio with local Whisper, speaker labels, timestamps, and optional AI cleanup.",
+  "description": "Private, offline speech-to-text and meeting transcription. Dictate voice notes live or transcribe meetings and system audio with local Whisper, speaker labels, timestamps, and optional AI cleanup.",
   "author": "Alexander Brittain",
   "authorUrl": "https://github.com/brittain9",
   "helpUrl": "https://github.com/brittain9/local-dictation-obsidian-plugin",
