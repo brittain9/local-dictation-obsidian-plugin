@@ -38,7 +38,7 @@ All transcription models in the current catalog run locally and support English.
 
 - **Live text.** Moonshine streaming models show provisional words and revise them in place until each utterance finalizes.
 - **Meeting capture.** Include system audio from meetings, calls, or videos alongside your microphone on Windows, Linux, and macOS 14.2 or later.
-- **Speaker labels.** Optional on-device diarization assigns session-stable speaker labels. Speaker embeddings stay in memory and are discarded after the session.
+- **Speaker labels.** Optional on-device diarization assigns session-stable speaker labels. Set an expected maximum when automatic detection creates extra labels. Speaker embeddings stay in memory and are discarded after the session.
 - **Timestamps.** Add elapsed or wall-clock timestamps at configurable intervals.
 - **Local model choices.** Choose Whisper, Cohere Transcribe, or Moonshine models and download them from Settings.
 - **Optional text transformation.** Clean up, summarize, extract action items, or apply a custom prompt through local Ollama or remote OpenRouter models.

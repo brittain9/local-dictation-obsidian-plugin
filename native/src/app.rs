@@ -451,6 +451,7 @@ impl AppState {
             Command::StartSession {
                 acceleration_preference,
                 diarization_enabled,
+                diarization_max_speakers,
                 include_system_audio,
                 language,
                 mode,
@@ -477,6 +478,19 @@ impl AppState {
                         code: "session_already_exists".to_string(),
                         details: None,
                         message: "A dictation session with this id already exists.".to_string(),
+                        session_id: Some(session_id),
+                    });
+                    return (ControlFlow::Continue, events);
+                }
+
+                if diarization_max_speakers == Some(0) {
+                    events.push(Event::Error {
+                        code: "invalid_diarization_speaker_limit".to_string(),
+                        details: Some(
+                            "diarizationMaxSpeakers must be a positive integer".to_string(),
+                        ),
+                        message: "Maximum speakers must be at least 1 or set to Automatic."
+                            .to_string(),
                         session_id: Some(session_id),
                     });
                     return (ControlFlow::Continue, events);
@@ -538,6 +552,7 @@ impl AppState {
                                 family_id: resolved_model.family_id,
                                 gpu_config: GpuConfig { use_gpu },
                                 diarization_enabled,
+                                diarization_max_speakers,
                                 language,
                                 model_file_path: resolved_model.resolved_path.clone(),
                                 cancel_rx,
@@ -2249,6 +2264,27 @@ mod tests {
     }
 
     #[test]
+    fn start_session_rejects_zero_max_speakers() {
+        let model_file_path = create_model_file();
+        let mut command = start_session_command("session-1", &model_file_path);
+        let Command::StartSession {
+            diarization_max_speakers,
+            ..
+        } = &mut command
+        else {
+            panic!("expected start session command");
+        };
+        *diarization_max_speakers = Some(0);
+
+        let (_, events) = test_app().handle_command(command);
+
+        assert!(matches!(
+            events.first(),
+            Some(Event::Error { code, .. }) if code == "invalid_diarization_speaker_limit"
+        ));
+    }
+
+    #[test]
     fn probe_model_selection_reports_missing_managed_model() {
         let (_, events) = test_app().handle_command(Command::ProbeModelSelection {
             model_selection: SelectedModel::CatalogModel {
@@ -3393,6 +3429,7 @@ mod tests {
         Command::StartSession {
             acceleration_preference: AccelerationPreference::Auto,
             diarization_enabled: false,
+            diarization_max_speakers: None,
             include_system_audio,
             language: "en".to_string(),
             mode: ListeningMode::AlwaysOn,

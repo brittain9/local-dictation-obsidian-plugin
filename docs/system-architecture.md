@@ -371,6 +371,13 @@ A single VAD utterance can contain more than one speaker, so segmentation finds
 are, and the worker aligns transcript segments to those turns. Speaker indices
 stay stable across the session because turns reconcile by voice.
 
+By default, a sufficiently distinct long turn may create another session
+speaker. When `diarizationMaxSpeakers` is set and the registry reaches that
+count, subsequent turns attach to the nearest existing centroid instead. This
+prevents known two-person recordings from accumulating extra labels, at the
+explicit cost of merging a real additional speaker if the configured limit is
+too low.
+
 All speaker data lives in memory for the session and is discarded when it ends —
 no enrollment, no persisted voiceprints, no network. The bundled models are
 `pyannote/segmentation-3.0` (MIT) and `wespeaker_en_voxceleb_resnet34_LM`
@@ -449,6 +456,7 @@ A representative slice of user-facing settings (full list and defaults in
 | `accelerationPreference` | `auto` | GPU when available vs CPU-only |
 | `includeSystemAudio` | `false` | Capture system output instead of the mic |
 | `diarizationEnabled` | `false` | Label speakers (Speaker 1, 2, …) |
+| `diarizationMaxSpeakers` | `null` | Optional positive cap on session-stable speaker labels; `null` detects automatically |
 | `dictationAnchor` | `at_cursor` | Where transcript text lands (`at_cursor` / `end_of_note`) |
 | `transcriptFormatting` | `smart` | How utterance boundaries render |
 | `timestampsEnabled` | `false` | Render timestamps in the note |

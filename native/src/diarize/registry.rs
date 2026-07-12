@@ -12,6 +12,8 @@
 //!   to the nearest speaker instead of over-splitting.
 //! - a short-utterance guard: very short utterances never spawn a new speaker,
 //!   because embeddings are unreliable on little audio.
+//! - an optional user limit: once the expected speaker count is reached, new
+//!   voices attach to the nearest existing cluster instead of creating labels.
 
 use super::{l2_norm, l2_normalize};
 
@@ -33,6 +35,7 @@ pub struct Assignment {
 
 #[derive(Default)]
 pub struct SpeakerRegistry {
+    max_speakers: Option<usize>,
     speakers: Vec<SpeakerCluster>,
 }
 
@@ -42,8 +45,17 @@ struct SpeakerCluster {
 }
 
 impl SpeakerRegistry {
+    #[cfg(test)]
     pub fn new() -> Self {
         Self::default()
+    }
+
+    pub fn with_max_speakers(max_speakers: Option<usize>) -> Self {
+        debug_assert!(max_speakers.is_none_or(|limit| limit > 0));
+        Self {
+            max_speakers,
+            speakers: Vec::new(),
+        }
     }
 
     /// Assign `embedding` (need not be normalised) to a session-stable speaker.
@@ -60,6 +72,12 @@ impl SpeakerRegistry {
                     speaker_count: self.speakers.len(),
                 }
             }
+            Some((idx, sim)) if self.speaker_limit_reached() => Assignment {
+                speaker_index: idx as u32,
+                similarity: sim,
+                is_new_speaker: false,
+                speaker_count: self.speakers.len(),
+            },
             other => {
                 let similarity = other.map_or(0.0, |(_, sim)| sim);
                 let idx = self.add_speaker(embedding);
@@ -71,6 +89,11 @@ impl SpeakerRegistry {
                 }
             }
         }
+    }
+
+    fn speaker_limit_reached(&self) -> bool {
+        self.max_speakers
+            .is_some_and(|limit| self.speakers.len() >= limit)
     }
 
     fn best_match(&self, embedding: &[f32]) -> Option<(usize, f32)> {
@@ -197,5 +220,32 @@ mod tests {
         );
         assert!(!first_again.is_new_speaker);
         assert_eq!(first_again.speaker_count, 2);
+    }
+
+    #[test]
+    fn speaker_limit_assigns_new_voices_to_the_nearest_existing_cluster() {
+        let mut registry = SpeakerRegistry::with_max_speakers(Some(2));
+        registry.assign(&[1.0, 0.0, 0.0], LONG);
+        registry.assign(&[0.0, 1.0, 0.0], LONG);
+        let centroids_before = registry
+            .speakers
+            .iter()
+            .map(|speaker| speaker.centroid.clone())
+            .collect::<Vec<_>>();
+
+        let third_voice = registry.assign(&[0.1, 0.2, 1.0], LONG);
+
+        assert!(!third_voice.is_new_speaker);
+        assert!(third_voice.speaker_index < 2);
+        assert_eq!(third_voice.speaker_count, 2);
+        assert_eq!(
+            registry
+                .speakers
+                .iter()
+                .map(|speaker| speaker.centroid.clone())
+                .collect::<Vec<_>>(),
+            centroids_before,
+            "a forced assignment must not contaminate an existing voice centroid"
+        );
     }
 }

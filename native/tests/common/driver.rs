@@ -297,6 +297,7 @@ fn start_session_command(
     Command::StartSession {
         acceleration_preference: AccelerationPreference::CpuOnly,
         diarization_enabled,
+        diarization_max_speakers: None,
         include_system_audio: false,
         language: "en".to_string(),
         mode: ListeningMode::AlwaysOn,

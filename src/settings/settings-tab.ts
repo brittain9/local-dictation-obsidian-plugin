@@ -29,7 +29,9 @@ import {
   isTimestampClock,
   isTimestampDensity,
   isTranscriptFormattingMode,
+  MAX_DIARIZATION_MAX_SPEAKERS,
   MAX_TIMESTAMP_SPARSE_INTERVAL_MS,
+  MIN_DIARIZATION_MAX_SPEAKERS,
   MIN_TIMESTAMP_SPARSE_INTERVAL_MS,
   type PluginSettings,
   type TimestampClock,
@@ -228,10 +230,14 @@ export class LocalSttSettingTab extends PluginSettingTab {
 
     this.renderTranscriptFormattingSetting(outputCard);
 
+    let setSpeakerLimitEnabled = (_enabled: boolean): void => {};
     const diarizationSetting = addToggleSetting(outputCard, this.access, {
       name: 'Speaker labels (diarization)',
       desc: '',
       key: 'diarizationEnabled',
+      onChange: (enabled) => {
+        setSpeakerLimitEnabled(enabled);
+      },
     });
     const updateDiarizationDesc = (): void => {
       const caps = manager.getState().selectedModelCapabilities;
@@ -243,6 +249,39 @@ export class LocalSttSettingTab extends PluginSettingTab {
     };
     updateDiarizationDesc();
     this.disposeDiarizationDesc = manager.subscribe(updateDiarizationDesc);
+
+    const speakerLimitSetting = new Setting(outputCard)
+      .setName('Maximum speakers')
+      .setDesc(
+        'Use Automatic unless extra speaker labels appear. Setting the expected count prevents the session from creating labels beyond that limit.',
+      );
+    speakerLimitSetting.addDropdown((dropdown) => {
+      dropdown.addOption('auto', 'Automatic');
+      for (
+        let count = MIN_DIARIZATION_MAX_SPEAKERS;
+        count <= MAX_DIARIZATION_MAX_SPEAKERS;
+        count += 1
+      ) {
+        dropdown.addOption(String(count), String(count));
+      }
+      dropdown.setValue(settings.diarizationMaxSpeakers?.toString() ?? 'auto');
+      dropdown.setDisabled(!settings.diarizationEnabled);
+      setSpeakerLimitEnabled = (enabled) => {
+        dropdown.setDisabled(!enabled);
+      };
+      dropdown.onChange(async (value) => {
+        const parsed = value === 'auto' ? null : Number(value);
+        if (
+          parsed !== null &&
+          (!Number.isInteger(parsed) ||
+            parsed < MIN_DIARIZATION_MAX_SPEAKERS ||
+            parsed > MAX_DIARIZATION_MAX_SPEAKERS)
+        ) {
+          return;
+        }
+        await this.access.persistOne('diarizationMaxSpeakers', parsed);
+      });
+    });
 
     addToggleSetting(outputCard, this.access, {
       name: 'Keep recovery text in memory',
