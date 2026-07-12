@@ -325,6 +325,10 @@ export class NoteSurface {
     return this.view.state.doc.sliceString(range.from, range.to);
   }
 
+  readDocumentText(): string {
+    return this.view.state.doc.toString();
+  }
+
   rewriteRegion(
     range: RewriteRange,
     newText: string,

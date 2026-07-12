@@ -14,6 +14,7 @@ import {
   type RewriteResult,
   type SurfaceDesynchronization,
 } from '../editor/note-surface';
+import type { RawTranscriptRecoveryReceipt } from '../editor/raw-transcript-recovery';
 import type {
   PinnableLeaf,
   TemporaryLeafPinLease,
@@ -58,6 +59,10 @@ export type SessionAcceptResult =
   | { kind: 'rejected'; reason: string }
   | { kind: 'stale' };
 
+export type SessionRangeReplacementResult =
+  | { kind: 'denied' }
+  | { kind: 'replaced'; recovery: RawTranscriptRecoveryReceipt };
+
 export interface SessionLifecycleCallbacks {
   onLockedNoteClosed: () => void;
   onLockedNoteDeleted: () => void;
@@ -89,6 +94,7 @@ interface NoteSurfaceLike {
   readNoteGlossary(maxChars: number): { text: string; truncated: boolean } | null;
   readNoteText(maxChars: number): { text: string; truncated: boolean } | null;
   readProjectionContext(): NoteProjectionContext;
+  readDocumentText(): string;
   replaceAnchor(
     utteranceId: string,
     newText: string,
@@ -247,14 +253,19 @@ export class Session {
       rawTextForCallout?: string;
       showRawBelow?: boolean;
     } = {},
-  ): boolean {
+  ): SessionRangeReplacementResult {
     if (this.surface === null || this.rawSessionEntries.length === 0) {
-      return false;
+      return { kind: 'denied' };
     }
 
     const range = this.resolveSessionRange();
     if (range === null) {
-      return false;
+      return { kind: 'denied' };
+    }
+
+    const rawText = this.surface.readRange(range);
+    if (rawText === null) {
+      return { kind: 'denied' };
     }
 
     const replacement = this.buildCleanedReplacement(
@@ -275,10 +286,26 @@ export class Session {
 
     if (result.kind === 'denied' && result.reason.kind === 'surface_desynchronized') {
       this.handleSurfaceDesynchronization(result.reason);
-      return false;
+      return { kind: 'denied' };
     }
 
-    return result.kind === 'rewritten';
+    if (result.kind !== 'rewritten') {
+      return { kind: 'denied' };
+    }
+
+    return {
+      kind: 'replaced',
+      recovery: {
+        documentText: this.surface.readDocumentText(),
+        file: this.dependencies.lockedFile,
+        filePath: this.dependencies.lockedFile.path,
+        from: result.range.from,
+        rawText,
+        to: result.range.from + replacement.length,
+        transformedText: replacement,
+        view: this.dependencies.view,
+      },
+    };
   }
 
   insertAdjacentToSessionRange(blockText: string, placement: 'above' | 'below'): boolean {

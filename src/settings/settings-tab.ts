@@ -245,8 +245,8 @@ export class LocalSttSettingTab extends PluginSettingTab {
     this.disposeDiarizationDesc = manager.subscribe(updateDiarizationDesc);
 
     addToggleSetting(outputCard, this.access, {
-      name: 'Keep last utterance for recovery',
-      desc: 'Keep the latest finalized utterance in memory for the Reinsert last utterance command. The text is never saved to disk and is cleared when disabled or the plugin unloads.',
+      name: 'Keep recovery text in memory',
+      desc: 'Keep the latest utterance and one raw/transformed batch-cleanup record with its document snapshot. Nothing is saved to disk; disabling this clears it immediately.',
       key: 'retainLastUtterance',
     });
 

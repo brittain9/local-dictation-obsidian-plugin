@@ -141,6 +141,10 @@ class FakeSurface {
     return this.documentText.slice(range.from, range.to);
   }
 
+  readDocumentText(): string {
+    return this.documentText;
+  }
+
   rewriteRegion(
     range: RewriteRange,
     newText: string,
@@ -693,7 +697,7 @@ describe('Session', () => {
   });
 
   it('tracks transcript revisions through batch-cleaned range replacement', () => {
-    const { session, surface } = createSessionHarness();
+    const { lockedFile, session, surface, targetLeaf } = createSessionHarness();
 
     session.acceptTranscript(transcript({ revision: 0, text: 'rough', utteranceId: 'u1' }));
     session.acceptTranscript(transcript({ revision: 1, text: 'polished', utteranceId: 'u1' }));
@@ -701,7 +705,24 @@ describe('Session', () => {
 
     expect(surface.documentText).toBe('polished tail');
     expect(session.joinRawSessionText()).toBe('polished tail');
-    expect(session.replaceSessionRangeWithCleaned('Polished tail.')).toBe(true);
+    const replacement = session.replaceSessionRangeWithCleaned('Polished tail.');
+
+    expect(replacement).toMatchObject({
+      kind: 'replaced',
+      recovery: {
+        documentText: 'Polished tail.',
+        from: 0,
+        rawText: 'polished tail',
+        to: 'Polished tail.'.length,
+        transformedText: 'Polished tail.',
+      },
+    });
+    if (replacement.kind !== 'replaced') {
+      throw new Error('expected batch replacement receipt');
+    }
+    expect(replacement.recovery.file).toBe(lockedFile);
+    expect(replacement.recovery.filePath).toBe('note.md');
+    expect(replacement.recovery.view).toBe(targetLeaf.view.editor.cm);
 
     expect(surface.rewriteCalls).toEqual([
       {
@@ -732,7 +753,7 @@ describe('Session', () => {
     session.acceptTranscript(transcript({ text: 'raw words', utteranceId: 'u1' }));
     surface.documentText = 'raw words tail';
 
-    expect(session.replaceSessionRangeWithCleaned('Cleaned words.')).toBe(true);
+    expect(session.replaceSessionRangeWithCleaned('Cleaned words.').kind).toBe('replaced');
     expect(surface.rewriteCalls).toEqual([
       {
         newText: 'Cleaned words.',
@@ -751,8 +772,8 @@ describe('Session', () => {
     expect(
       session.replaceSessionRangeWithCleaned('Cleaned words.', {
         showRawBelow: true,
-      }),
-    ).toBe(true);
+      }).kind,
+    ).toBe('replaced');
     expect(surface.documentText).toBe('Cleaned words.\n\n> [!note]- raw\n> raw words');
   });
 
@@ -838,7 +859,7 @@ describe('Session', () => {
     session.acceptTranscript(transcript({ text: 'raw words', utteranceId: 'u1' }));
 
     expect(surface.documentText).toBe('Existing raw words');
-    expect(session.replaceSessionRangeWithCleaned('Cleaned words.')).toBe(true);
+    expect(session.replaceSessionRangeWithCleaned('Cleaned words.').kind).toBe('replaced');
     expect(surface.documentText).toBe('Existing Cleaned words.');
   });
 
@@ -853,7 +874,7 @@ describe('Session', () => {
 
     expect(surface.documentText).toBe('[2026-05-16 14:32]\n(0:00) raw words');
     expect(session.readCurrentSessionText()).toBe('[2026-05-16 14:32]\n(0:00) raw words');
-    expect(session.replaceSessionRangeWithCleaned('Cleaned words.')).toBe(true);
+    expect(session.replaceSessionRangeWithCleaned('Cleaned words.').kind).toBe('replaced');
     expect(surface.documentText).toBe('Cleaned words.');
   });
 

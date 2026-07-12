@@ -19,10 +19,14 @@ describe('registerCommands', () => {
     registerCommands({
       cancelDictation: vi.fn(async () => {}),
       clearLastUtterance,
+      clearRawTranscriptRecovery: vi.fn(),
       checkSidecarHealth: vi.fn(async () => {}),
+      copyRawTranscript: vi.fn(),
       hasLastUtterance: () => available,
+      hasRawTranscriptRecovery: () => false,
       plugin,
       reinsertLastUtterance,
+      restoreRawTranscript: vi.fn(),
       restartSidecar: vi.fn(async () => {}),
       startDictation: vi.fn(async () => {}),
       stopDictation: vi.fn(async () => {}),
@@ -53,5 +57,62 @@ describe('registerCommands', () => {
     expect(clearLastUtterance).toHaveBeenCalledOnce();
     expect(reinsertCommand?.editorCheckCallback?.(true, editor, {} as never)).toBe(false);
     expect(clearCommand?.checkCallback?.(true)).toBe(false);
+  });
+
+  it('gates raw transcript recovery commands on one shared availability source', () => {
+    const commands: Command[] = [];
+    const plugin = {
+      addCommand: vi.fn((command: Command) => {
+        commands.push(command);
+      }),
+    } as unknown as Plugin;
+    let available = false;
+    const clearRawTranscriptRecovery = vi.fn(() => {
+      available = false;
+    });
+    const copyRawTranscript = vi.fn();
+    const restoreRawTranscript = vi.fn();
+    registerCommands({
+      cancelDictation: vi.fn(async () => {}),
+      clearLastUtterance: vi.fn(),
+      clearRawTranscriptRecovery,
+      checkSidecarHealth: vi.fn(async () => {}),
+      copyRawTranscript,
+      hasLastUtterance: () => false,
+      hasRawTranscriptRecovery: () => available,
+      plugin,
+      reinsertLastUtterance: vi.fn(),
+      restoreRawTranscript,
+      restartSidecar: vi.fn(async () => {}),
+      startDictation: vi.fn(async () => {}),
+      stopDictation: vi.fn(async () => {}),
+      toggleDictation: vi.fn(async () => {}),
+    });
+    const restoreCommand = commands.find(({ id }) => id === 'restore-raw-transcript');
+    const copyCommand = commands.find(({ id }) => id === 'copy-raw-transcript');
+    const clearCommand = commands.find(({ id }) => id === 'clear-raw-transcript-recovery');
+
+    expect(restoreCommand?.name).toBe('Restore raw transcript');
+    expect(copyCommand?.name).toBe('Copy raw transcript');
+    expect(clearCommand?.name).toBe('Clear raw recovery');
+    expect(restoreCommand?.checkCallback?.(true)).toBe(false);
+    expect(copyCommand?.checkCallback?.(true)).toBe(false);
+    expect(clearCommand?.checkCallback?.(true)).toBe(false);
+
+    available = true;
+    expect(restoreCommand?.checkCallback?.(true)).toBe(true);
+    expect(copyCommand?.checkCallback?.(true)).toBe(true);
+    expect(clearCommand?.checkCallback?.(true)).toBe(true);
+    expect(restoreRawTranscript).not.toHaveBeenCalled();
+    expect(copyRawTranscript).not.toHaveBeenCalled();
+    expect(clearRawTranscriptRecovery).not.toHaveBeenCalled();
+
+    expect(restoreCommand?.checkCallback?.(false)).toBe(true);
+    expect(copyCommand?.checkCallback?.(false)).toBe(true);
+    expect(clearCommand?.checkCallback?.(false)).toBe(true);
+    expect(restoreRawTranscript).toHaveBeenCalledOnce();
+    expect(copyRawTranscript).toHaveBeenCalledOnce();
+    expect(clearRawTranscriptRecovery).toHaveBeenCalledOnce();
+    expect(restoreCommand?.checkCallback?.(true)).toBe(false);
   });
 });

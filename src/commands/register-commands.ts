@@ -6,14 +6,21 @@ const CANCEL_DICTATION_COMMAND_ID = 'cancel-dictation-session';
 const TOGGLE_DICTATION_COMMAND_ID = 'toggle-dictation-session';
 const REINSERT_LAST_UTTERANCE_COMMAND_ID = 'reinsert-last-utterance';
 const CLEAR_LAST_UTTERANCE_COMMAND_ID = 'clear-last-utterance';
+const RESTORE_RAW_TRANSCRIPT_COMMAND_ID = 'restore-raw-transcript';
+const COPY_RAW_TRANSCRIPT_COMMAND_ID = 'copy-raw-transcript';
+const CLEAR_RAW_RECOVERY_COMMAND_ID = 'clear-raw-transcript-recovery';
 
 interface CommandDependencies {
   cancelDictation: () => Promise<void>;
   clearLastUtterance: () => void;
+  clearRawTranscriptRecovery: () => void;
   checkSidecarHealth: () => Promise<void>;
+  copyRawTranscript: () => void;
+  hasRawTranscriptRecovery: () => boolean;
   plugin: Plugin;
   hasLastUtterance: () => boolean;
   reinsertLastUtterance: (editor: Editor) => void;
+  restoreRawTranscript: () => void;
   restartSidecar: () => Promise<void>;
   startDictation: () => Promise<void>;
   stopDictation: () => Promise<void>;
@@ -82,6 +89,39 @@ export function registerCommands(dependencies: CommandDependencies): void {
   });
 
   dependencies.plugin.addCommand({
+    id: RESTORE_RAW_TRANSCRIPT_COMMAND_ID,
+    name: 'Restore raw transcript',
+    checkCallback: (checking) =>
+      runAvailableCommand(
+        checking,
+        dependencies.hasRawTranscriptRecovery,
+        dependencies.restoreRawTranscript,
+      ),
+  });
+
+  dependencies.plugin.addCommand({
+    id: COPY_RAW_TRANSCRIPT_COMMAND_ID,
+    name: 'Copy raw transcript',
+    checkCallback: (checking) =>
+      runAvailableCommand(
+        checking,
+        dependencies.hasRawTranscriptRecovery,
+        dependencies.copyRawTranscript,
+      ),
+  });
+
+  dependencies.plugin.addCommand({
+    id: CLEAR_RAW_RECOVERY_COMMAND_ID,
+    name: 'Clear raw recovery',
+    checkCallback: (checking) =>
+      runAvailableCommand(
+        checking,
+        dependencies.hasRawTranscriptRecovery,
+        dependencies.clearRawTranscriptRecovery,
+      ),
+  });
+
+  dependencies.plugin.addCommand({
     id: 'check-sidecar-health',
     name: 'Check sidecar health',
     callback: async () => {
@@ -96,4 +136,18 @@ export function registerCommands(dependencies: CommandDependencies): void {
       await dependencies.restartSidecar();
     },
   });
+}
+
+function runAvailableCommand(
+  checking: boolean,
+  isAvailable: () => boolean,
+  run: () => void,
+): boolean {
+  if (!isAvailable()) {
+    return false;
+  }
+  if (!checking) {
+    run();
+  }
+  return true;
 }
