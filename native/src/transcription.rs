@@ -60,14 +60,7 @@ impl Transcript {
     /// joins with single spaces. Idempotent with respect to leading/trailing
     /// whitespace inside any individual segment.
     pub fn joined_text(&self) -> String {
-        let mut pieces = Vec::with_capacity(self.segments.len());
-        for segment in &self.segments {
-            let trimmed = segment.text.trim();
-            if !trimmed.is_empty() {
-                pieces.push(trimmed);
-            }
-        }
-        pieces.join(" ")
+        join_segment_text(&self.segments)
     }
 
     /// The engine stage outcome is the canonical record of whether a revision
@@ -81,6 +74,17 @@ impl Transcript {
             .map(|stage| stage.is_final)
             .unwrap_or(false)
     }
+}
+
+pub fn join_segment_text(segments: &[TranscriptSegment]) -> String {
+    let mut pieces = Vec::with_capacity(segments.len());
+    for segment in segments {
+        let trimmed = segment.text.trim();
+        if !trimmed.is_empty() {
+            pieces.push(trimmed);
+        }
+    }
+    pieces.join(" ")
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

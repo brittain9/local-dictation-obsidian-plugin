@@ -1,0 +1,83 @@
+[
+  {
+    "name": "disabled draft is ignored",
+    "existingRules": [
+      {
+        "caseSensitive": false,
+        "enabled": false,
+        "id": "disabled",
+        "replacement": "beta",
+        "source": "alpha",
+        "wholeWord": true
+      }
+    ],
+    "draft": {
+      "caseSensitive": false,
+      "enabled": false,
+      "id": "disabled",
+      "replacement": "gamma",
+      "source": "alpha",
+      "wholeWord": true
+    },
+    "isNew": false,
+    "inputText": "alpha",
+    "inputSegments": [{ "endMs": 400, "speaker": null, "startMs": 0, "text": "alpha" }],
+    "expectedSegmentTexts": ["alpha"],
+    "expectedText": "alpha"
+  },
+  {
+    "name": "draft participates in configured cascade order",
+    "existingRules": [
+      {
+        "caseSensitive": false,
+        "enabled": true,
+        "id": "first",
+        "replacement": "beta",
+        "source": "alpha",
+        "wholeWord": true
+      },
+      {
+        "caseSensitive": false,
+        "enabled": true,
+        "id": "second",
+        "replacement": "old value",
+        "source": "beta",
+        "wholeWord": true
+      }
+    ],
+    "draft": {
+      "caseSensitive": false,
+      "enabled": true,
+      "id": "second",
+      "replacement": "gamma",
+      "source": "beta",
+      "wholeWord": true
+    },
+    "isNew": false,
+    "inputText": "alpha",
+    "inputSegments": [{ "endMs": 400, "speaker": null, "startMs": 0, "text": "alpha" }],
+    "expectedSegmentTexts": ["gamma"],
+    "expectedText": "gamma"
+  },
+  {
+    "name": "multiword rule crosses same-speaker segment boundaries",
+    "existingRules": [],
+    "draft": {
+      "caseSensitive": false,
+      "enabled": true,
+      "id": "new-york",
+      "replacement": "NYC",
+      "source": "New York",
+      "wholeWord": true
+    },
+    "isNew": true,
+    "inputText": "New York, then Albany",
+    "inputSegments": [
+      { "endMs": 300, "speaker": null, "startMs": 0, "text": "New" },
+      { "endMs": 700, "speaker": null, "startMs": 300, "text": "York," },
+      { "endMs": 1200, "speaker": null, "startMs": 700, "text": "then Albany" }
+    ],
+    "expectedSegmentTexts": ["NYC,", "", "then Albany"],
+    "expectedText": "NYC, then Albany"
+  }
+]

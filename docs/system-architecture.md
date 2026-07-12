@@ -351,9 +351,22 @@ utterance-level VAD evidence. If nothing is dropped it records
 Final transcripts then pass through **personal corrections** when the session
 has enabled rules. Rules are literal, ordered, and independently configure case
 and whole-word matching. Each rule consumes the prior rule's output, so ordering
-is explicit. The stage preserves segment timing and reports only rule and
-replacement counts in its payload; transcript and rule content are not copied
-into diagnostics.
+is explicit. Matching uses the same canonical text users see: trimmed non-empty
+segments joined with one space. A match may therefore cross adjacent segments
+belonging to the same speaker, but never crosses a speaker boundary.
+Leading or trailing whitespace in either side of a rule is rejected because
+canonical segment joining cannot preserve it reliably.
+
+Corrections preserve every segment record, timestamp, and speaker assignment.
+For a cross-segment match, the replacement is stored in the first affected
+segment and consumed text is cleared from subsequent affected segments. A
+suffix remains in its original segment whenever that produces the same
+canonical text; otherwise it moves beside the replacement to avoid introducing
+an artificial space before punctuation or a word continuation. This keeps
+unrelated timing boundaries available to later diarization, at the cost of
+assigning replacement text that spans boundaries to the first affected
+segment's time range. The stage reports only rule and replacement counts in its
+payload; transcript and rule content are not copied into diagnostics.
 
 `StageId::Punctuation` remains reserved and has no registered processor yet.
 

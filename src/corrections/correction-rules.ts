@@ -34,6 +34,8 @@ export function readPersonalCorrectionRules(value: unknown): PersonalCorrectionR
       id.length > 100 ||
       seenIds.has(id) ||
       source.trim().length === 0 ||
+      source !== source.trim() ||
+      replacement !== replacement.trim() ||
       countCharacters(source) > MAX_CORRECTION_SOURCE_CHARS ||
       countCharacters(replacement) > MAX_CORRECTION_REPLACEMENT_CHARS ||
       source === replacement
@@ -70,12 +72,39 @@ export function toActiveUserRules(rules: readonly PersonalCorrectionRule[]): Use
     }));
 }
 
+export function mergePersonalCorrectionDraft(
+  rules: readonly PersonalCorrectionRule[],
+  draft: PersonalCorrectionRule,
+  isNew: boolean,
+): PersonalCorrectionRule[] {
+  if (isNew) return [...rules, { ...draft }];
+  return rules.map((rule) => (rule.id === draft.id ? { ...draft } : { ...rule }));
+}
+
+export function previewPersonalCorrectionDraft(
+  text: string,
+  rules: readonly PersonalCorrectionRule[],
+  draft: PersonalCorrectionRule,
+  isNew: boolean,
+): CorrectionPreview {
+  return previewPersonalCorrections(
+    text,
+    toActiveUserRules(mergePersonalCorrectionDraft(rules, draft, isNew)),
+  );
+}
+
 export function validatePersonalCorrectionRule(
   rule: PersonalCorrectionRule,
   existingRules: readonly PersonalCorrectionRule[],
 ): string | null {
   if (rule.source.trim().length === 0) {
     return 'Enter the text Local Dictation should replace.';
+  }
+  if (rule.source !== rule.source.trim()) {
+    return 'Text to replace cannot begin or end with whitespace.';
+  }
+  if (rule.replacement !== rule.replacement.trim()) {
+    return 'Replacement cannot begin or end with whitespace.';
   }
   if (countCharacters(rule.source) > MAX_CORRECTION_SOURCE_CHARS) {
     return `Text to replace must be ${MAX_CORRECTION_SOURCE_CHARS} characters or fewer.`;

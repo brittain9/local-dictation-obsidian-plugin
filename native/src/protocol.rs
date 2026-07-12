@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::io::{ErrorKind, Read, Write};
 
 use anyhow::{Context, Result, anyhow, bail, ensure};
@@ -200,6 +201,14 @@ impl UserRule {
         if self.source.trim().is_empty() {
             return Err("correction rule source must not be blank".to_string());
         }
+        if self.source != self.source.trim() {
+            return Err("correction rule source must not begin or end with whitespace".to_string());
+        }
+        if self.replacement != self.replacement.trim() {
+            return Err(
+                "correction rule replacement must not begin or end with whitespace".to_string(),
+            );
+        }
         if self.source.chars().count() > MAX_USER_RULE_SOURCE_CHARS {
             return Err(format!(
                 "correction rule source exceeds {MAX_USER_RULE_SOURCE_CHARS} characters"
@@ -215,6 +224,30 @@ impl UserRule {
         }
         Ok(())
     }
+}
+
+pub fn validate_user_rules(rules: &[UserRule]) -> Result<(), String> {
+    if rules.len() > MAX_USER_RULES {
+        return Err(format!(
+            "received {} correction rules; maximum is {MAX_USER_RULES}",
+            rules.len()
+        ));
+    }
+
+    let mut matchers = HashSet::with_capacity(rules.len());
+    for rule in rules {
+        rule.validate()?;
+        let source = if rule.case_sensitive {
+            rule.source.clone()
+        } else {
+            rule.source.to_lowercase()
+        };
+        if !matchers.insert((source, rule.case_sensitive, rule.whole_word)) {
+            return Err("correction rules contain duplicate matching semantics".to_string());
+        }
+    }
+
+    Ok(())
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -667,7 +700,7 @@ mod tests {
         FRAME_HEADER_LENGTH, IncomingFrame, JSON_FRAME_KIND, ListeningMode, MAX_FRAME_PAYLOAD,
         ModelInstallState, ModelProbeStatus, PCM_BYTES_PER_FRAME, QueueBackpressureTier,
         SelectedModel, SessionStopReason, SpeakingStyle, UserRule, encode_audio_frame_envelope,
-        read_frame, write_event_frame, write_frame,
+        read_frame, validate_user_rules, write_event_frame, write_frame,
     };
     use crate::engine::capabilities::{ModelFamilyId, RuntimeId};
     use uuid::Uuid;
@@ -758,6 +791,29 @@ mod tests {
                 source: "kuber netes".to_string(),
                 whole_word: true,
             }]
+        );
+    }
+
+    #[test]
+    fn user_rule_validation_rejects_duplicate_matchers() {
+        let rules = [
+            UserRule {
+                case_sensitive: false,
+                replacement: "Kubernetes".to_string(),
+                source: "kuber netes".to_string(),
+                whole_word: true,
+            },
+            UserRule {
+                case_sensitive: false,
+                replacement: "K8s".to_string(),
+                source: "KUBER NETES".to_string(),
+                whole_word: true,
+            },
+        ];
+
+        assert_eq!(
+            validate_user_rules(&rules),
+            Err("correction rules contain duplicate matching semantics".to_string())
         );
     }
 

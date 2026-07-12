@@ -4,11 +4,10 @@ import type { App } from 'obsidian';
 import { Modal, Setting } from 'obsidian';
 
 import {
-  MAX_CORRECTION_REPLACEMENT_CHARS,
-  MAX_CORRECTION_SOURCE_CHARS,
   MAX_PERSONAL_CORRECTION_RULES,
+  mergePersonalCorrectionDraft,
   type PersonalCorrectionRule,
-  previewPersonalCorrections,
+  previewPersonalCorrectionDraft,
   validatePersonalCorrectionRule,
 } from '../corrections/correction-rules';
 import { ConfirmModal } from './confirm-modal';
@@ -184,12 +183,18 @@ export class CorrectionRulesModal extends Modal {
     const previewAfter = this.contentEl.createEl('code');
     const renderPreview = (): void => {
       previewBefore.setText(editor.previewText);
-      previewAfter.setText(previewPersonalCorrections(editor.previewText, [editor.draft]).text);
+      previewAfter.setText(
+        previewPersonalCorrectionDraft(
+          editor.previewText,
+          this.dependencies.getRules(),
+          editor.draft,
+          editor.isNew,
+        ).text,
+      );
     };
 
     new Setting(this.contentEl).setName('Text to replace').addText((text) => {
       text.setPlaceholder('kuber netes').setValue(editor.draft.source);
-      text.inputEl.maxLength = MAX_CORRECTION_SOURCE_CHARS;
       text.onChange((value) => {
         editor.draft.source = value;
         if (!editor.previewTouched) editor.previewText = value;
@@ -198,7 +203,6 @@ export class CorrectionRulesModal extends Modal {
     });
     new Setting(this.contentEl).setName('Replace with').addText((text) => {
       text.setPlaceholder('Kubernetes').setValue(editor.draft.replacement);
-      text.inputEl.maxLength = MAX_CORRECTION_REPLACEMENT_CHARS;
       text.onChange((value) => {
         editor.draft.replacement = value;
         renderPreview();
@@ -219,14 +223,17 @@ export class CorrectionRulesModal extends Modal {
         renderPreview();
       });
     });
-    new Setting(this.contentEl).setName('Try it on').addText((text) => {
-      text.setPlaceholder('Type sample text').setValue(editor.previewText);
-      text.onChange((value) => {
-        editor.previewText = value;
-        editor.previewTouched = true;
-        renderPreview();
+    new Setting(this.contentEl)
+      .setName('Try it on')
+      .setDesc('Preview the final text after all enabled corrections run in list order.')
+      .addText((text) => {
+        text.setPlaceholder('Type sample text').setValue(editor.previewText);
+        text.onChange((value) => {
+          editor.previewText = value;
+          editor.previewTouched = true;
+          renderPreview();
+        });
       });
-    });
 
     const preview = this.contentEl.createDiv({ cls: 'local-stt-correction-rules__preview' });
     preview.createDiv({ cls: 'local-stt-correction-rules__preview-label', text: 'Before' });
@@ -272,9 +279,7 @@ export class CorrectionRulesModal extends Modal {
       return;
     }
 
-    const next = editor.isNew
-      ? [...current, { ...editor.draft }]
-      : current.map((rule) => (rule.id === editor.draft.id ? { ...editor.draft } : rule));
+    const next = mergePersonalCorrectionDraft(current, editor.draft, editor.isNew);
     await this.dependencies.saveRules(next);
     this.editor = null;
     this.render();

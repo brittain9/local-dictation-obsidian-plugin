@@ -17,9 +17,9 @@ use crate::model_store::{
 };
 use crate::protocol::{
     AccelerationPreference, AudioFrame, Command, CompiledAdapterInfo, CompiledRuntimeInfo,
-    ContextWindow, Event, HealthStatus, ListeningMode, MAX_USER_RULES, ModelInstallState,
-    ModelProbeStatus, QueueBackpressureTier, SelectedModel, SessionState, SessionStopReason,
-    system_info_string,
+    ContextWindow, Event, HealthStatus, ListeningMode, ModelInstallState, ModelProbeStatus,
+    QueueBackpressureTier, SelectedModel, SessionState, SessionStopReason, system_info_string,
+    validate_user_rules,
 };
 use crate::session::{
     FinalizedUtterance, ListeningSession, SessionAction, SessionBaseState, SessionConfig,
@@ -462,15 +462,7 @@ impl AppState {
                 speaking_style,
                 user_rules,
             } => {
-                let invalid_user_rules = if user_rules.len() > MAX_USER_RULES {
-                    Some(format!(
-                        "received {} correction rules; maximum is {MAX_USER_RULES}",
-                        user_rules.len()
-                    ))
-                } else {
-                    user_rules.iter().find_map(|rule| rule.validate().err())
-                };
-                if let Some(details) = invalid_user_rules {
+                if let Err(details) = validate_user_rules(&user_rules) {
                     events.push(Event::Error {
                         code: "invalid_user_rules".to_string(),
                         details: Some(details),

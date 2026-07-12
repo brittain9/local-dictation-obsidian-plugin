@@ -1,12 +1,24 @@
 import { describe, expect, it } from 'vitest';
-
 import {
   type PersonalCorrectionRule,
+  previewPersonalCorrectionDraft,
   previewPersonalCorrections,
   readPersonalCorrectionRules,
   toActiveUserRules,
   validatePersonalCorrectionRule,
 } from '../src/corrections/correction-rules';
+import correctionGoldenCases from './fixtures/personal-corrections-golden.json';
+
+interface CorrectionGoldenCase {
+  draft: PersonalCorrectionRule;
+  existingRules: PersonalCorrectionRule[];
+  expectedText: string;
+  inputText: string;
+  isNew: boolean;
+  name: string;
+}
+
+const goldenCases = correctionGoldenCases as CorrectionGoldenCase[];
 
 function rule(overrides: Partial<PersonalCorrectionRule> = {}): PersonalCorrectionRule {
   return {
@@ -21,6 +33,12 @@ function rule(overrides: Partial<PersonalCorrectionRule> = {}): PersonalCorrecti
 }
 
 describe('personal correction rules', () => {
+  it.each(goldenCases)('$name', ({ draft, existingRules, expectedText, inputText, isNew }) => {
+    expect(previewPersonalCorrectionDraft(inputText, existingRules, draft, isNew).text).toBe(
+      expectedText,
+    );
+  });
+
   it('applies literal rules in order and treats replacement metacharacters literally', () => {
     const preview = previewPersonalCorrections('A KUBER NETES cluster.', [
       rule(),
@@ -83,5 +101,14 @@ describe('personal correction rules', () => {
     expect(
       validatePersonalCorrectionRule(rule({ caseSensitive: true, id: 'new' }), [rule()]),
     ).toBeNull();
+  });
+
+  it('rejects edge whitespace that canonical segment joining cannot preserve', () => {
+    expect(validatePersonalCorrectionRule(rule({ source: ' kuber netes' }), [])).toMatch(
+      /whitespace/u,
+    );
+    expect(validatePersonalCorrectionRule(rule({ replacement: 'Kubernetes ' }), [])).toMatch(
+      /whitespace/u,
+    );
   });
 });
