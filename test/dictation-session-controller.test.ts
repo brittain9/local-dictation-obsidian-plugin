@@ -5,9 +5,10 @@ import {
   DictationSessionController,
 } from '../src/dictation/dictation-session-controller';
 import type { NotePlacementOptions, SurfaceDesynchronization } from '../src/editor/note-surface';
+import type { RawTranscriptRecoveryReceipt } from '../src/editor/raw-transcript-recovery';
 import { type LlmCleanupFailure, ProviderError } from '../src/llm/provider';
 import type { LlmRouter, LlmRouterCleanupResult } from '../src/llm/router';
-import type { SessionAcceptResult } from '../src/session/session';
+import type { SessionAcceptResult, SessionRangeReplacementResult } from '../src/session/session';
 import type { TranscriptRevision } from '../src/session/session-journal';
 import { DEFAULT_PLUGIN_SETTINGS, type PluginSettings } from '../src/settings/plugin-settings';
 import type { UserFeedback } from '../src/shared/user-feedback';
@@ -91,9 +92,22 @@ class FakeSession {
         rawTextForCallout?: string;
         showRawBelow?: boolean;
       },
-    ) => {
+    ): SessionRangeReplacementResult => {
+      const rawText = this.currentSessionText;
       this.currentSessionText = cleanText;
-      return true;
+      return {
+        kind: 'replaced' as const,
+        recovery: {
+          documentText: cleanText,
+          file: {} as never,
+          filePath: 'note.md',
+          from: 0,
+          rawText,
+          to: cleanText.length,
+          transformedText: cleanText,
+          view: {} as never,
+        },
+      };
     },
   );
   public readonly setAnchorMode = vi.fn((_mode: 'hidden' | 'visible') => {});
@@ -1369,6 +1383,8 @@ describe('DictationSessionController', () => {
   it('runs batch cleanup through the router and replaces the session range', async () => {
     const sidecarConnection = new FakeSidecarConnection();
     const sessions: FakeSession[] = [];
+    const logger = new FakeLogger();
+    const onRawTranscriptRecoveryAvailable = vi.fn();
     const cleanup = vi.fn(
       async (): Promise<LlmRouterCleanupResult> => ({
         model: 'llama3.2:latest',
@@ -1387,6 +1403,8 @@ describe('DictationSessionController', () => {
           selectedModel: createExternalModelSelection(),
         }),
       llmRouter: createFakeLlmRouter({ cleanup }),
+      logger,
+      onRawTranscriptRecoveryAvailable,
       sidecarConnection,
     });
 
@@ -1409,7 +1427,59 @@ describe('DictationSessionController', () => {
         expect.objectContaining({ rawTextForCallout: 'raw transcript' }),
       );
     });
+    expect(onRawTranscriptRecoveryAvailable).toHaveBeenCalledOnce();
+    expect(onRawTranscriptRecoveryAvailable).toHaveBeenCalledWith(
+      expect.objectContaining({
+        rawText: 'raw transcript',
+        transformedText: 'Clean batch.',
+      }),
+    );
+    const serializedLogs = JSON.stringify([
+      logger.debug.mock.calls,
+      logger.error.mock.calls,
+      logger.warn.mock.calls,
+    ]);
+    expect(serializedLogs).not.toContain('raw transcript');
+    expect(serializedLogs).not.toContain('Clean batch.');
     expect(sessions[0]?.dispose).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not capture raw recovery when the batch replacement is denied', async () => {
+    const sidecarConnection = new FakeSidecarConnection();
+    const sessions: FakeSession[] = [];
+    const onRawTranscriptRecoveryAvailable = vi.fn();
+    const controller = createController({
+      createSession: (session) => {
+        sessions.push(session);
+        session.replaceSessionRangeWithCleaned.mockReturnValueOnce({ kind: 'denied' });
+      },
+      getSettings: () =>
+        createSettings({
+          llmFeaturesEnabled: true,
+          llmPostprocessMode: 'batch',
+          selectedModel: createExternalModelSelection(),
+        }),
+      llmRouter: createFakeLlmRouter({
+        cleanup: vi.fn(async () => ({
+          model: 'm',
+          providerId: 'ollama' as const,
+          text: 'Clean batch.',
+        })),
+      }),
+      onRawTranscriptRecoveryAvailable,
+      sidecarConnection,
+    });
+
+    await controller.startDictation();
+    const sessionId = sidecarConnection.startSession.mock.calls[0]?.[0].sessionId ?? '';
+    sidecarConnection.emit(transcriptReady(sessionId, 'raw transcript'));
+    await controller.stopDictation();
+    sidecarConnection.emit({ reason: 'user_stop', sessionId, type: 'session_stopped' });
+
+    await vi.waitFor(() => {
+      expect(sessions[0]?.replaceSessionRangeWithCleaned).toHaveBeenCalledOnce();
+    });
+    expect(onRawTranscriptRecoveryAvailable).not.toHaveBeenCalled();
   });
 
   it('keeps the raw utterance and reports failure when per-utterance cleanup returns empty text', async () => {
@@ -1503,6 +1573,7 @@ describe('DictationSessionController', () => {
         text: 'TLDR\n- point',
       }),
     );
+    const onRawTranscriptRecoveryAvailable = vi.fn();
     const controller = createController({
       createSession: (session) => {
         sessions.push(session);
@@ -1515,6 +1586,7 @@ describe('DictationSessionController', () => {
           selectedModel: createExternalModelSelection(),
         }),
       llmRouter: createFakeLlmRouter({ cleanup }),
+      onRawTranscriptRecoveryAvailable,
       sidecarConnection,
     });
 
@@ -1531,6 +1603,7 @@ describe('DictationSessionController', () => {
       );
     });
     expect(sessions[0]?.replaceSessionRangeWithCleaned).not.toHaveBeenCalled();
+    expect(onRawTranscriptRecoveryAvailable).not.toHaveBeenCalled();
     expect(sessions[0]?.dispose).toHaveBeenCalledTimes(1);
   });
 
@@ -1902,12 +1975,17 @@ describe('DictationSessionController', () => {
         kind: 'surface_desynchronized',
         trackedPosition: 4314,
       });
-      return false;
     };
     if (activePresetRef === undefined) {
-      session.replaceSessionRangeWithCleaned.mockImplementationOnce(reportFatalFailure);
+      session.replaceSessionRangeWithCleaned.mockImplementationOnce(() => {
+        reportFatalFailure();
+        return { kind: 'denied' };
+      });
     } else {
-      session.insertAdjacentToSessionRange.mockImplementationOnce(reportFatalFailure);
+      session.insertAdjacentToSessionRange.mockImplementationOnce(() => {
+        reportFatalFailure();
+        return false;
+      });
     }
     sidecarConnection.emit({ reason: 'user_stop', sessionId, type: 'session_stopped' });
 
@@ -2399,6 +2477,7 @@ function createController({
   onLlmCleanupFailure,
   onLlmCleanupSuccess,
   onFinalizedUtteranceAccepted,
+  onRawTranscriptRecoveryAvailable,
 }: {
   audioLevelMeter?: FakeAudioLevelMeter;
   captureStream?: FakeCaptureStream;
@@ -2411,6 +2490,7 @@ function createController({
   onLlmCleanupFailure?: (failure: LlmCleanupFailure) => void;
   onLlmCleanupSuccess?: () => void;
   onFinalizedUtteranceAccepted?: (text: string) => void;
+  onRawTranscriptRecoveryAvailable?: (receipt: RawTranscriptRecoveryReceipt) => void;
   sidecarConnection?: FakeSidecarConnection;
 } = {}): DictationSessionController {
   return new DictationSessionController({
@@ -2429,6 +2509,7 @@ function createController({
     ...(onLlmCleanupFailure !== undefined ? { onLlmCleanupFailure } : {}),
     ...(onLlmCleanupSuccess !== undefined ? { onLlmCleanupSuccess } : {}),
     ...(onFinalizedUtteranceAccepted !== undefined ? { onFinalizedUtteranceAccepted } : {}),
+    ...(onRawTranscriptRecoveryAvailable !== undefined ? { onRawTranscriptRecoveryAvailable } : {}),
     onModelMissing: vi.fn(),
     onSidecarMissing: vi.fn(),
     setRibbonQueueTier: vi.fn((_tier: QueueBackpressureTier) => {}),

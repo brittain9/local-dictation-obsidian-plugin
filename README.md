@@ -42,6 +42,7 @@ All transcription models in the current catalog run locally and support English.
 - **Timestamps.** Add elapsed or wall-clock timestamps at configurable intervals.
 - **Local model choices.** Choose Whisper, Cohere Transcribe, or Moonshine models and download them from Settings.
 - **Optional text transformation.** Clean up, summarize, extract action items, or apply a custom prompt through local Ollama or remote OpenRouter models.
+- **Short-lived recovery.** Reinsert the latest finalized utterance, or copy and safely restore the raw text from the most recent replace-style batch cleanup.
 - **Explicit remote controls.** Keep transformations local, allow OpenRouter only for oversized transcripts, or disable remote and LLM features entirely.
 
 ## Getting started
@@ -75,6 +76,7 @@ For CUDA requirements and Flatpak-specific setup, see the [CUDA setup guide](doc
 - **Remote cleanup uses text, not audio.** If you configure and select OpenRouter, it receives the transcript plus any note context you choose to include. Ollama requests stay on your computer through its loopback interface.
 - **Remote processing is optional.** You can disable OpenRouter routing or all LLM features from Settings. If you use OpenRouter, configure its provider and zero-data-retention controls to match your requirements.
 - **Speaker identity is session-only.** Diarization embeddings are held in memory for the active session and are not persisted as voice profiles.
+- **Recovery text is memory-only.** At most one recent utterance and one raw/transformed batch-cleanup record with its document snapshot are retained. Disable retention or use the clear commands to discard them immediately; none of this recovery state is written to disk.
 
 ## Contributing
 

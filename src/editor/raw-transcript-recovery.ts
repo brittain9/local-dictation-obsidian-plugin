@@ -1,0 +1,228 @@
+import type { EditorView } from '@codemirror/view';
+import type { App, TFile } from 'obsidian';
+
+import type { UserFeedback } from '../shared/user-feedback';
+
+interface ClipboardWriter {
+  writeText(text: string): Promise<void>;
+}
+
+interface MarkdownLeafLike {
+  view?: {
+    editor?: { cm?: EditorView };
+    file: TFile | null;
+  };
+}
+
+export interface RawTranscriptRecoveryReceipt {
+  readonly documentText: string;
+  readonly file: TFile;
+  readonly filePath: string;
+  readonly from: number;
+  readonly rawText: string;
+  readonly to: number;
+  readonly transformedText: string;
+  readonly view: EditorView;
+}
+
+interface RawTranscriptRecoveryDependencies {
+  feedback: Pick<UserFeedback, 'show'>;
+  getClipboard: () => ClipboardWriter | null | undefined;
+  workspace: Pick<App['workspace'], 'getLeavesOfType'>;
+}
+
+export class RawTranscriptRecovery {
+  private enabled = true;
+  private receipt: RawTranscriptRecoveryReceipt | null = null;
+
+  constructor(private readonly dependencies: RawTranscriptRecoveryDependencies) {}
+
+  hasRecovery(): boolean {
+    return this.enabled && this.receipt !== null;
+  }
+
+  setEnabled(enabled: boolean): void {
+    this.enabled = enabled;
+    if (!enabled) {
+      this.clear();
+    }
+  }
+
+  record(receipt: RawTranscriptRecoveryReceipt): void {
+    if (!this.enabled) {
+      return;
+    }
+
+    this.receipt = { ...receipt };
+  }
+
+  clear(): void {
+    this.receipt = null;
+  }
+
+  clearWithFeedback(): boolean {
+    if (!this.hasRecovery()) {
+      this.reportUnavailable();
+      return false;
+    }
+
+    this.clear();
+    this.dependencies.feedback.show({
+      intent: 'success',
+      key: 'raw-transcript-recovery-cleared',
+      message: 'Cleared the raw transcript recovery.',
+    });
+    return true;
+  }
+
+  async copyRawTranscript(): Promise<boolean> {
+    const receipt = this.receipt;
+    if (!this.enabled || receipt === null) {
+      this.reportUnavailable();
+      return false;
+    }
+
+    try {
+      const clipboard = this.dependencies.getClipboard();
+      if (clipboard === null || clipboard === undefined) {
+        throw new Error('Clipboard API unavailable.');
+      }
+      await clipboard.writeText(receipt.rawText);
+    } catch {
+      // Do not attach the clipboard error as feedback cause: a hostile or buggy
+      // implementation could echo the private text it was asked to copy.
+      this.dependencies.feedback.show({
+        intent: 'error',
+        key: 'raw-transcript-copy-failed',
+        message: 'Could not copy the raw transcript.',
+      });
+      return false;
+    }
+
+    this.dependencies.feedback.show({
+      intent: 'success',
+      key: 'raw-transcript-copied',
+      message: 'Copied the raw transcript.',
+    });
+    return true;
+  }
+
+  restoreRawTranscript(): boolean {
+    const receipt = this.receipt;
+    if (!this.enabled || receipt === null) {
+      this.reportUnavailable();
+      return false;
+    }
+
+    if (!this.isExactTargetOpen(receipt)) {
+      this.dependencies.feedback.show({
+        intent: 'warning',
+        key: 'raw-transcript-target-unavailable',
+        message:
+          'Could not restore the raw transcript because its original note is no longer open in the same editor.',
+      });
+      return false;
+    }
+
+    let currentDocument: string;
+    try {
+      currentDocument = receipt.view.state.doc.toString();
+    } catch {
+      this.dependencies.feedback.show({
+        intent: 'error',
+        key: 'raw-transcript-restore-failed',
+        message: 'Could not restore the raw transcript.',
+      });
+      return false;
+    }
+    if (
+      currentDocument !== receipt.documentText ||
+      !isValidRange(receipt.from, receipt.to, currentDocument.length) ||
+      currentDocument.slice(receipt.from, receipt.to) !== receipt.transformedText
+    ) {
+      this.dependencies.feedback.show({
+        intent: 'warning',
+        key: 'raw-transcript-restore-stale',
+        message: 'Could not restore the raw transcript because the note changed after cleanup.',
+      });
+      return false;
+    }
+
+    let actualRestoredDocument: string;
+    try {
+      // One dispatch produces one undoable document edit. No selection or
+      // follow-up transaction is needed; CodeMirror maps the existing caret.
+      receipt.view.dispatch({
+        changes: {
+          from: receipt.from,
+          insert: receipt.rawText,
+          to: receipt.to,
+        },
+      });
+      actualRestoredDocument = receipt.view.state.doc.toString();
+    } catch {
+      this.dependencies.feedback.show({
+        intent: 'error',
+        key: 'raw-transcript-restore-failed',
+        message: 'Could not restore the raw transcript.',
+      });
+      return false;
+    }
+
+    const restoredDocument = `${currentDocument.slice(0, receipt.from)}${receipt.rawText}${currentDocument.slice(receipt.to)}`;
+    if (actualRestoredDocument !== restoredDocument) {
+      this.dependencies.feedback.show({
+        intent: 'error',
+        key: 'raw-transcript-restore-failed',
+        message: 'Could not restore the raw transcript.',
+      });
+      return false;
+    }
+
+    if (this.receipt === receipt) {
+      this.clear();
+    }
+    this.dependencies.feedback.show({
+      intent: 'success',
+      key: 'raw-transcript-restored',
+      message: 'Restored the raw transcript.',
+    });
+    return true;
+  }
+
+  private isExactTargetOpen(receipt: RawTranscriptRecoveryReceipt): boolean {
+    if (receipt.file.path !== receipt.filePath) {
+      return false;
+    }
+
+    let matchingLeaves = 0;
+    for (const leaf of this.dependencies.workspace.getLeavesOfType(
+      'markdown',
+    ) as unknown as MarkdownLeafLike[]) {
+      if (leaf.view?.file !== receipt.file || leaf.view.editor?.cm !== receipt.view) {
+        continue;
+      }
+      matchingLeaves += 1;
+    }
+
+    return matchingLeaves === 1;
+  }
+
+  private reportUnavailable(): void {
+    this.dependencies.feedback.show({
+      intent: 'information',
+      key: 'raw-transcript-recovery-unavailable',
+      message: 'No raw transcript recovery is available.',
+    });
+  }
+}
+
+function isValidRange(from: number, to: number, documentLength: number): boolean {
+  return (
+    Number.isInteger(from) &&
+    Number.isInteger(to) &&
+    from >= 0 &&
+    to >= from &&
+    to <= documentLength
+  );
+}

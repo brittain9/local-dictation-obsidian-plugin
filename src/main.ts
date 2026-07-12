@@ -10,6 +10,7 @@ import { LastUtteranceRecovery } from './dictation/last-utterance-recovery';
 import { dictationAnchorExtension } from './editor/dictation-anchor-extension';
 import { noteSurfaceUpdateListenerExtension } from './editor/note-surface';
 import { provisionalTranscriptExtension } from './editor/provisional-transcript-extension';
+import { RawTranscriptRecovery } from './editor/raw-transcript-recovery';
 import { sessionProcessingExtension } from './editor/session-processing-extension';
 import { TemporaryLeafPinLeaseManager } from './editor/temporary-leaf-pin';
 import type { LlmCleanupFailure } from './llm/provider';
@@ -67,6 +68,11 @@ export default class LocalSttPlugin extends Plugin {
   private readonly llmCleanupFailureSubscribers = new Set<() => void>();
   private modelInstallManager: ModelInstallManager | null = null;
   private presetStateStore: LlmPresetStateStore | null = null;
+  private readonly rawTranscriptRecovery = new RawTranscriptRecovery({
+    feedback: this.feedback,
+    getClipboard: () => window.navigator.clipboard,
+    workspace: this.app.workspace,
+  });
   private ribbonController: DictationRibbonController | null = null;
   private settings: PluginSettings = DEFAULT_PLUGIN_SETTINGS;
   private sidecarConnection: SidecarConnection | null = null;
@@ -77,6 +83,7 @@ export default class LocalSttPlugin extends Plugin {
     const loadedSettings = loadPluginSettings(await this.loadData(), this.app.secretStorage);
     this.settings = loadedSettings.settings;
     this.lastUtteranceRecovery.setEnabled(this.settings.retainLastUtterance);
+    this.rawTranscriptRecovery.setEnabled(this.settings.retainLastUtterance);
     if (loadedSettings.shouldPersist) {
       await this.saveData(this.settings);
     }
@@ -202,6 +209,9 @@ export default class LocalSttPlugin extends Plugin {
       onFinalizedUtteranceAccepted: (text) => {
         this.lastUtteranceRecovery.recordFinalizedUtterance(text);
       },
+      onRawTranscriptRecoveryAvailable: (receipt) => {
+        this.rawTranscriptRecovery.record(receipt);
+      },
       onModelMissing: () => {
         void this.openModelPicker();
       },
@@ -251,11 +261,21 @@ export default class LocalSttPlugin extends Plugin {
           message: 'Cleared the last retained utterance.',
         });
       },
+      clearRawTranscriptRecovery: () => {
+        this.rawTranscriptRecovery.clearWithFeedback();
+      },
       checkSidecarHealth: async () => this.checkSidecarHealth(),
+      copyRawTranscript: () => {
+        void this.rawTranscriptRecovery.copyRawTranscript();
+      },
       hasLastUtterance: () => this.lastUtteranceRecovery.hasUtterance(),
+      hasRawTranscriptRecovery: () => this.rawTranscriptRecovery.hasRecovery(),
       plugin: this,
       reinsertLastUtterance: (editor) => {
         this.lastUtteranceRecovery.reinsert(editor);
+      },
+      restoreRawTranscript: () => {
+        this.rawTranscriptRecovery.restoreRawTranscript();
       },
       restartSidecar: async () => this.restartSidecar(),
       startDictation: async () => this.requireDictationController().startDictation(),
@@ -412,6 +432,7 @@ export default class LocalSttPlugin extends Plugin {
 
   private async disposeAll(): Promise<void> {
     this.lastUtteranceRecovery.clear();
+    this.rawTranscriptRecovery.clear();
 
     try {
       this.modelInstallManager?.dispose();
@@ -514,6 +535,7 @@ export default class LocalSttPlugin extends Plugin {
     const previousSettings = this.settings;
     this.settings = resolvePluginSettings(nextSettings);
     this.lastUtteranceRecovery.setEnabled(this.settings.retainLastUtterance);
+    this.rawTranscriptRecovery.setEnabled(this.settings.retainLastUtterance);
     if (options.persist) {
       await this.saveData(this.settings);
     }

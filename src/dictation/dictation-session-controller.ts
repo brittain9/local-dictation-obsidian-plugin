@@ -10,6 +10,7 @@ import {
   formatSystemAudioSidecarErrorMessage,
 } from '../audio/system-audio-permission-message';
 import type { NotePlacementOptions, SurfaceDesynchronization } from '../editor/note-surface';
+import type { RawTranscriptRecoveryReceipt } from '../editor/raw-transcript-recovery';
 import {
   type LlmPostprocessMode,
   type LlmPresetOutput,
@@ -136,6 +137,7 @@ interface DictationSessionControllerDependencies {
   onLlmCleanupFailure?: (failure: LlmCleanupFailure) => void;
   onLlmCleanupSuccess?: () => void;
   onFinalizedUtteranceAccepted?: (text: string) => void;
+  onRawTranscriptRecoveryAvailable?: (receipt: RawTranscriptRecoveryReceipt) => void;
   onModelMissing?: () => void;
   onSidecarMissing?: () => void;
   countAudioInputDevices?: () => Promise<number | null>;
@@ -1208,7 +1210,7 @@ export class DictationSessionController {
         throw new ProviderError('Provider returned empty cleaned text.', 'invalid_response');
       }
 
-      const replaced = entry.session.replaceSessionRangeWithCleaned(cleanedText, {
+      const replacement = entry.session.replaceSessionRangeWithCleaned(cleanedText, {
         rawTextForCallout: transcriptText,
         showRawBelow: entry.snapshot.llmPostprocessShowRawBelow,
       });
@@ -1216,12 +1218,13 @@ export class DictationSessionController {
         return;
       }
 
-      if (!replaced) {
+      if (replacement.kind === 'denied') {
         this.dependencies.logger?.warn(
           'llm',
           'batch cleanup replacement skipped; session range no longer available',
         );
       } else {
+        this.dependencies.onRawTranscriptRecoveryAvailable?.(replacement.recovery);
         this.dependencies.logger?.debug('llm', 'batch cleanup complete', {
           chars: cleanedText.length,
         });
