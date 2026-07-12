@@ -1,7 +1,7 @@
 {
   "id": "local-dictation",
   "name": "Local Dictation",
-  "version": "2026.7.4",
+  "version": "2026.7.5",
   "minAppVersion": "1.11.5",
   "description": "Private, offline speech-to-text and meeting transcription. Dictate voice notes live or transcribe meetings and system audio with local Whisper, speaker labels, timestamps, and optional AI cleanup.",
   "author": "Alexander Brittain",
