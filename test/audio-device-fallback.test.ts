@@ -31,8 +31,8 @@ class FakeAudioWorkletNode extends FakeAudioNode {
   readonly port = { onmessage: null as ((event: MessageEvent<ArrayBuffer>) => void) | null };
 }
 
-function createMediaStream(): MediaStream {
-  return { getTracks: () => [] } as unknown as MediaStream;
+function createMediaStream(tracks: MediaStreamTrack[] = []): MediaStream {
+  return { getTracks: () => tracks } as unknown as MediaStream;
 }
 
 function createUnavailableDeviceError(): Error {
@@ -55,7 +55,7 @@ describe('audio device fallback', () => {
     vi.unstubAllGlobals();
   });
 
-  it('reports the unavailable device and waits for settings repair after default capture opens', async () => {
+  it('starts capture without waiting for fallback settings repair', async () => {
     const defaultStream = createMediaStream();
     let openDefaultMicrophone: ((stream: MediaStream) => void) | undefined;
     const getUserMedia = vi
@@ -102,6 +102,11 @@ describe('audio device fallback', () => {
     await vi.waitFor(() => {
       expect(onDeviceFallback).toHaveBeenCalledWith('missing-device');
     });
+    await vi.waitFor(() => {
+      expect(startSettled).toBe(true);
+    });
+
+    expect(capture.isCapturing()).toBe(true);
 
     const finishRepair = repairControl.finish;
     if (finishRepair === undefined) {
@@ -109,7 +114,28 @@ describe('audio device fallback', () => {
     }
     finishRepair();
     await start;
+    await capture.stop();
+  });
+
+  it('stops fallback media while settings repair remains pending', async () => {
+    const stopTrack = vi.fn();
+    const defaultStream = createMediaStream([{ stop: stopTrack } as unknown as MediaStreamTrack]);
+    const getUserMedia = vi
+      .fn()
+      .mockRejectedValueOnce(createUnavailableDeviceError())
+      .mockResolvedValueOnce(defaultStream);
+    vi.stubGlobal('navigator', { mediaDevices: { getUserMedia } });
+    const onDeviceFallback = vi.fn(() => new Promise<void>(() => {}));
+    const capture = new AudioCaptureStream({ onDeviceFallback });
+
+    await capture.start({ audioInputDeviceId: 'missing-device', sessionId: 'session-a' }, vi.fn());
+    expect(onDeviceFallback).toHaveBeenCalledWith('missing-device');
     expect(capture.isCapturing()).toBe(true);
+
+    await capture.stop();
+
+    expect(stopTrack).toHaveBeenCalledOnce();
+    expect(capture.isCapturing()).toBe(false);
   });
 
   it('does not announce fallback when opening the default microphone also fails', async () => {
@@ -178,10 +204,12 @@ describe('audio device fallback', () => {
     await capture.start({ audioInputDeviceId: 'missing-device', sessionId: 'session-a' }, vi.fn());
 
     expect(capture.isCapturing()).toBe(true);
-    expect(logger.warn).toHaveBeenCalledWith(
-      'audio',
-      'microphone fallback handler failed; continuing with the default input device',
-      callbackError,
-    );
+    await vi.waitFor(() => {
+      expect(logger.warn).toHaveBeenCalledWith(
+        'audio',
+        'microphone fallback handler failed; continuing with the default input device',
+        callbackError,
+      );
+    });
   });
 });
