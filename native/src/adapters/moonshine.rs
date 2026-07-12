@@ -18,6 +18,11 @@ use crate::transcription::{
 const SAMPLE_RATE: usize = 16_000;
 const FRONTEND_CHUNK_SAMPLES: usize = 1_280;
 const MAX_TOKENS_PER_SECOND: f32 = 6.5;
+/// Final-only slack above the duration guard. The tensor-validated Moonshine
+/// Streaming port in `handy-computer/transcribe.cpp` calls the same 24-token
+/// floor "headroom for very short clips". Partials keep the strict rate limit
+/// so live runaway decodes remain bounded while final decodes can reach EOS.
+const FINAL_GENERATION_HEADROOM_TOKENS: usize = 24;
 /// Tokens at the partial frontier that may be revised as encoder memory grows.
 const PARTIAL_REDECODE_WINDOW_TOKENS: usize = 12;
 
@@ -888,10 +893,10 @@ impl OrtMoonshineInference {
     fn generate_tokens(
         &mut self,
         mut generated: Vec<i64>,
+        is_final: bool,
     ) -> Result<(Vec<i64>, bool), TranscriptionError> {
-        let duration_seconds = self.state.sample_count as f32 / SAMPLE_RATE as f32;
-        let max_tokens = ((duration_seconds * MAX_TOKENS_PER_SECOND).ceil() as usize)
-            .min(self.config.max_seq_len);
+        let max_tokens =
+            generation_token_budget(self.state.sample_count, self.config.max_seq_len, is_final);
         let mut current = generated.last().copied().unwrap_or(self.config.bos_id);
         let mut reached_eos = false;
 
@@ -933,7 +938,7 @@ impl OrtMoonshineInference {
             .saturating_sub(PARTIAL_REDECODE_WINDOW_TOKENS);
         self.truncate_self_kv(commit);
         let (generated, reached_eos) =
-            self.generate_tokens(self.state.partial_tokens[..commit].to_vec())?;
+            self.generate_tokens(self.state.partial_tokens[..commit].to_vec(), false)?;
 
         self.state.partial_tokens.clone_from(&generated);
         self.decoded_transcript(&generated, reached_eos)
@@ -945,9 +950,25 @@ impl OrtMoonshineInference {
         }
 
         self.reset_decoder();
-        let (generated, reached_eos) = self.generate_tokens(Vec::new())?;
+        let (generated, reached_eos) = self.generate_tokens(Vec::new(), true)?;
         self.decoded_transcript(&generated, reached_eos)
     }
+}
+
+fn generation_token_budget(sample_count: usize, max_seq_len: usize, is_final: bool) -> usize {
+    if sample_count == 0 {
+        return 0;
+    }
+
+    let duration_seconds = sample_count as f32 / SAMPLE_RATE as f32;
+    let duration_budget = (duration_seconds * MAX_TOKENS_PER_SECOND).ceil() as usize;
+    let headroom = if is_final {
+        FINAL_GENERATION_HEADROOM_TOKENS
+    } else {
+        0
+    };
+
+    duration_budget.saturating_add(headroom).min(max_seq_len)
 }
 
 impl MoonshineInference for OrtMoonshineInference {
@@ -1132,6 +1153,32 @@ mod tests {
         assert_eq!(final_output.segments[0].text, "fixture final.");
         assert_eq!(final_output.segments[0].end_ms, 1_000);
         assert_eq!(model.partial().unwrap().segments, Vec::new());
+    }
+
+    #[test]
+    fn final_generation_budget_adds_bounded_headroom_without_expanding_partials() {
+        let max_seq_len = 448;
+
+        for (sample_count, partial_budget, final_budget) in [
+            (SAMPLE_RATE / 10, 1, 25),
+            (SAMPLE_RATE * 2, 13, 37),
+            (SAMPLE_RATE * 66, 429, max_seq_len),
+        ] {
+            assert_eq!(
+                generation_token_budget(sample_count, max_seq_len, false),
+                partial_budget,
+            );
+            assert_eq!(
+                generation_token_budget(sample_count, max_seq_len, true),
+                final_budget,
+            );
+        }
+    }
+
+    #[test]
+    fn generation_budget_is_zero_for_empty_audio() {
+        assert_eq!(generation_token_budget(0, 448, false), 0);
+        assert_eq!(generation_token_budget(0, 448, true), 0);
     }
 
     /// Characterizes why the cross-KV projection cannot be cached incrementally.
