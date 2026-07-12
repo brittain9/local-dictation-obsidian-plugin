@@ -4,6 +4,11 @@ import { Modal, Setting } from 'obsidian';
 import { formatBytes } from '../shared/format-utils';
 import type { UserFeedback } from '../shared/user-feedback';
 import { buildCapabilityLabels } from './capability-view';
+import {
+  EXTERNAL_FILE_ENGINES,
+  formatExternalModelValidationError,
+  getExternalFileEngineOption,
+} from './external-model-file';
 import type { ModelInstallManager } from './model-install-manager';
 import {
   type CatalogModelRecord,
@@ -18,22 +23,10 @@ interface ExternalModelFileModalDependencies {
   onChanged: () => Promise<void>;
 }
 
-const EXTERNAL_FILE_ENGINES: Array<{
-  label: string;
-  selection: Pick<ExternalFileModelSelection, 'familyId' | 'runtimeId'>;
-}> = [
-  {
-    label: 'Moonshine (ONNX Runtime)',
-    selection: { familyId: 'moonshine', runtimeId: 'onnx_runtime' },
-  },
-  {
-    label: 'Whisper (whisper.cpp)',
-    selection: { familyId: 'whisper', runtimeId: 'whisper_cpp' },
-  },
-];
-
 export class ExternalModelFileModal extends Modal {
   private engine: Pick<ExternalFileModelSelection, 'familyId' | 'runtimeId'>;
+  private errorEl: HTMLParagraphElement | null = null;
+  private guidanceEl: HTMLDivElement | null = null;
   private inputEl: HTMLInputElement | null = null;
 
   constructor(
@@ -49,12 +42,14 @@ export class ExternalModelFileModal extends Modal {
     this.titleEl.setText('Use external file');
     this.contentEl.empty();
     this.contentEl.createEl('p', {
-      text: 'Validate an absolute model file path. External files bypass managed downloads and managed updates.',
+      text: 'External models are for advanced use. Local Dictation does not download, update, or checksum-verify these files.',
     });
 
     new Setting(this.contentEl)
       .setName('Model family')
-      .setDesc('Choose the runtime and graph format for the external model.')
+      .setDesc(
+        'Choose the loader that matches the model. The family is not inferred from its filename.',
+      )
       .addDropdown((dropdown) => {
         for (const option of EXTERNAL_FILE_ENGINES) {
           dropdown.addOption(engineKey(option.selection), option.label);
@@ -66,26 +61,51 @@ export class ExternalModelFileModal extends Modal {
           );
           if (option !== undefined) {
             this.engine = option.selection;
+            this.renderGuidance();
+            this.inputEl?.setAttr('placeholder', option.placeholder);
+            this.setValidationError(null);
           }
         });
       });
 
+    this.guidanceEl = this.contentEl.createDiv({ cls: 'local-stt-external-model-guidance' });
+    this.renderGuidance();
+
     new Setting(this.contentEl)
       .setName('Model file path')
-      .setDesc('Enter the absolute path to the primary model artifact.')
+      .setDesc(
+        'Enter the absolute path to the primary model artifact. It is validated before this selection is saved.',
+      )
       .addText((text) => {
-        text.setPlaceholder('/absolute/path/to/ggml-small.en-q5_1.bin');
+        const option = getExternalFileEngineOption(this.engine);
+        text.setPlaceholder(option?.placeholder ?? '/absolute/path/to/model');
         text.setValue(this.currentPath);
         this.inputEl = text.inputEl;
+        this.inputEl.addEventListener('input', () => {
+          this.setValidationError(null);
+        });
       });
 
     this.inputEl?.focus();
 
+    this.errorEl = this.contentEl.createEl('p', {
+      attr: { 'aria-live': 'polite' },
+      cls: 'local-stt-external-model-error local-stt-hidden',
+    });
+
+    let validating = false;
     new Setting(this.contentEl).addButton((button) => {
       button
         .setCta()
         .setButtonText('Validate and use')
         .onClick(async () => {
+          if (validating) {
+            return;
+          }
+
+          validating = true;
+          button.setDisabled(true).setButtonText('Validating…');
+          this.setValidationError(null);
           const nextPath = this.inputEl?.value.trim() ?? '';
 
           try {
@@ -97,25 +117,53 @@ export class ExternalModelFileModal extends Modal {
             });
             this.close();
           } catch (error) {
+            const message = formatExternalModelValidationError(error);
+            this.setValidationError(message);
             this.dependencies.feedback.show({
               cause: error,
               intent: 'error',
-              message:
-                'Could not validate the external model file. Check the file path and model family, then try again.',
+              message,
             });
+          } finally {
+            validating = false;
+            button.setDisabled(false).setButtonText('Validate and use');
           }
         });
     });
   }
 
+  private renderGuidance(): void {
+    if (this.guidanceEl === null) {
+      return;
+    }
+
+    this.guidanceEl.empty();
+    const option = getExternalFileEngineOption(this.engine);
+    if (option === null) {
+      return;
+    }
+
+    this.guidanceEl.createEl('strong', { text: 'File requirements' });
+    const requirements = this.guidanceEl.createEl('ul');
+    for (const requirement of option.requirements) {
+      requirements.createEl('li', { text: requirement });
+    }
+  }
+
+  private setValidationError(message: string | null): void {
+    if (this.errorEl === null) {
+      return;
+    }
+
+    this.errorEl.setText(message ?? '');
+    this.errorEl.toggleClass('local-stt-hidden', message === null);
+  }
+
   private initialEngine(): Pick<ExternalFileModelSelection, 'familyId' | 'runtimeId'> {
     const selected = this.dependencies.manager.getState().selectedModel;
     if (selected?.kind === 'external_file') {
-      const selectedKey = engineKey(selected);
-      const option = EXTERNAL_FILE_ENGINES.find(
-        (candidate) => engineKey(candidate.selection) === selectedKey,
-      );
-      if (option !== undefined) {
+      const option = getExternalFileEngineOption(selected);
+      if (option !== null) {
         return option.selection;
       }
     }

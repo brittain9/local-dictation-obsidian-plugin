@@ -9,6 +9,7 @@ import type {
   SystemInfoEvent,
 } from '../sidecar/protocol';
 import type { SidecarConnection } from '../sidecar/sidecar-connection';
+import { validateExternalModelFilePath } from './external-model-file';
 import {
   type CatalogModelSelection,
   type ExternalFileModelSelection,
@@ -458,9 +459,10 @@ export class ModelInstallManager {
       runtimeId: 'whisper_cpp',
     },
   ): Promise<ModelProbeResultEvent> {
+    const validatedPath = await validateExternalModelFilePath(filePath, engine);
     const selection: SelectedModel = {
       familyId: engine.familyId,
-      filePath: filePath.trim(),
+      filePath: validatedPath,
       kind: 'external_file',
       runtimeId: engine.runtimeId,
     };

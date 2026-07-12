@@ -4,6 +4,7 @@ import { Modal, Setting, setIcon } from 'obsidian';
 import { formatBytes } from '../shared/format-utils';
 import type { UserFeedback } from '../shared/user-feedback';
 import { resolveEngineCapabilities } from './capability-view';
+import { formatModelTagLabel } from './model-guidance';
 import { isCancellingPhase, type ModelInstallManager } from './model-install-manager';
 import {
   createInstallProgressElement,
@@ -515,7 +516,7 @@ export class ManageModelsModal extends Modal {
     for (const tag of model.uxTags) {
       tagsContainer.createSpan({
         cls: 'local-stt-tag',
-        text: tag,
+        text: formatModelTagLabel(tag),
       });
     }
 
