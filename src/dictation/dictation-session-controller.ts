@@ -164,6 +164,11 @@ const FEEDBACK_FAILURES = {
     key: 'transcript-record-failed',
     message: 'Could not record the transcript.',
   },
+  microphoneDisconnected: {
+    key: 'microphone-capture-ended',
+    message:
+      'Microphone disconnected. Dictation stopped and will finish processing audio already captured. Reconnect the microphone, then start dictation again.',
+  },
   sidecar: {
     key: 'sidecar-session-error',
     message: 'The speech engine reported an error.',
@@ -448,6 +453,28 @@ export class DictationSessionController {
       this.disposeLocalSession(sessionId);
       this.handleError(FEEDBACK_FAILURES.stopDictation, error, entry);
     }
+  }
+
+  async handleAudioCaptureEnded(sessionId: string): Promise<void> {
+    const entry = this.sessions.get(sessionId);
+    if (entry === undefined || entry.phase !== 'active' || this.activeSessionId !== sessionId) {
+      return;
+    }
+
+    this.dependencies.logger?.warn(
+      'audio',
+      `microphone capture ended unexpectedly for session ${sessionId}`,
+    );
+    this.reportTerminalFeedback(entry, {
+      cause: { reason: 'microphone_disconnected', sessionId },
+      intent: 'warning',
+      key: FEEDBACK_FAILURES.microphoneDisconnected.key,
+      message: FEEDBACK_FAILURES.microphoneDisconnected.message,
+    });
+
+    // Stop rather than cancel so the sidecar drains and emits transcripts for
+    // audio already accepted before the device disappeared.
+    await this.stopDictation();
   }
 
   private async cleanupFailedStart(sessionId: string, error: unknown): Promise<void> {

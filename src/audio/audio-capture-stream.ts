@@ -12,6 +12,10 @@ interface AudioCaptureStreamOptions {
   // to the OS default. Lets the wiring layer (main.ts) surface a Notice without
   // pulling Obsidian UI imports into this module.
   onDeviceFallback?: () => void;
+  // A track can end while its MediaStream still exists (for example, when a
+  // USB microphone is unplugged). Include the session id so a late event from
+  // an old track cannot stop a newer capture.
+  onUnexpectedEnd?: (sessionId: string) => void;
 }
 
 export interface AudioCaptureStartOptions {
@@ -26,6 +30,10 @@ export class AudioCaptureStream {
   private muteNode: GainNode | null = null;
   private recorderNode: AudioWorkletNode | null = null;
   private sourceNode: MediaStreamAudioSourceNode | null = null;
+  private trackEndListener: {
+    listener: () => void;
+    tracks: MediaStreamTrack[];
+  } | null = null;
 
   constructor(private readonly options: AudioCaptureStreamOptions) {}
 
@@ -91,6 +99,7 @@ export class AudioCaptureStream {
       this.muteNode = muteNode;
       this.recorderNode = recorderNode;
       this.sourceNode = sourceNode;
+      this.observeUnexpectedTrackEnd(mediaStream, sessionId);
       this.options.logger?.debug('audio', 'capture started');
     } catch (error) {
       this.options.logger?.error('audio', 'failed to initialize streaming audio capture', error);
@@ -162,6 +171,7 @@ export class AudioCaptureStream {
     const recorderNode = this.recorderNode;
     const sourceNode = this.sourceNode;
 
+    this.clearTrackEndListener();
     this.audioContext = null;
     this.frameListener = null;
     this.mediaStream = null;
@@ -191,6 +201,41 @@ export class AudioCaptureStream {
 
     if (audioContext !== null) {
       await closeAudioContext(audioContext);
+    }
+  }
+
+  private observeUnexpectedTrackEnd(mediaStream: MediaStream, sessionId: string): void {
+    const tracks = mediaStream.getAudioTracks();
+    let reported = false;
+    const listener = (): void => {
+      if (reported || this.mediaStream !== mediaStream) {
+        return;
+      }
+      reported = true;
+      this.options.logger?.warn('audio', 'microphone track ended unexpectedly');
+      this.options.onUnexpectedEnd?.(sessionId);
+    };
+
+    for (const track of tracks) {
+      track.addEventListener('ended', listener);
+    }
+    this.trackEndListener = { listener, tracks };
+
+    // Cover a device that disappeared after getUserMedia resolved but before
+    // the audio graph and event listeners finished initializing.
+    if (tracks.some((track) => track.readyState === 'ended')) {
+      listener();
+    }
+  }
+
+  private clearTrackEndListener(): void {
+    const registration = this.trackEndListener;
+    this.trackEndListener = null;
+    if (registration === null) {
+      return;
+    }
+    for (const track of registration.tracks) {
+      track.removeEventListener('ended', registration.listener);
     }
   }
 }
