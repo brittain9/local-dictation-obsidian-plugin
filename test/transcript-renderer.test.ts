@@ -1,7 +1,13 @@
 import { describe, expect, it } from 'vitest';
 
 import { DEFAULT_SMART_PARAGRAPH_PAUSE_MS } from '../src/settings/plugin-settings';
-import { buildSpeakerSpans, formatLandmark, TranscriptRenderer } from '../src/transcript/renderer';
+import {
+  buildSpeakerSpans,
+  buildTranscriptSpans,
+  formatDetailedLandmark,
+  formatLandmark,
+  TranscriptRenderer,
+} from '../src/transcript/renderer';
 import {
   DEFAULT_SESSION_START_MS,
   DEFAULT_SPARSE_INTERVAL_MS,
@@ -20,8 +26,88 @@ describe('formatLandmark', () => {
     expect(formatLandmark(elapsedMs, DEFAULT_SESSION_START_MS, 'elapsed')).toBe(expected);
   });
 
-  it('formats wall-clock landmarks without seconds', () => {
-    expect(formatLandmark(65_000, DEFAULT_SESSION_START_MS, 'wallclock')).toBe('(14:33)');
+  it('formats wall-clock landmarks with seconds so short intervals remain distinct', () => {
+    expect(formatLandmark(65_000, DEFAULT_SESSION_START_MS, 'wallclock')).toBe('(14:33:05)');
+  });
+});
+
+describe('formatDetailedLandmark', () => {
+  it('includes tenths for word-level elapsed and wall-clock timing', () => {
+    expect(formatDetailedLandmark(65_432, DEFAULT_SESSION_START_MS, 'elapsed')).toBe('(1:05.4)');
+    expect(formatDetailedLandmark(65_432, DEFAULT_SESSION_START_MS, 'wallclock')).toBe(
+      '(14:33:05.4)',
+    );
+  });
+});
+
+describe('buildTranscriptSpans detailed timestamps', () => {
+  const detailedOptions = {
+    timestamps: timestamps({ density: 'detailed', enabled: true, header: false }),
+    utteranceStartMsInSession: 10_000,
+  } as const;
+
+  it('uses complete word timing before coarser segment timing', () => {
+    const spans = buildTranscriptSpans(
+      [
+        {
+          endMs: 1_000,
+          speaker: null,
+          startMs: 0,
+          text: 'Hello world.',
+          timestampGranularity: 'segment',
+          timestampSource: 'engine',
+          words: [
+            { endMs: 400, startMs: 100, text: 'Hello', timestampSource: 'engine' },
+            { endMs: 900, startMs: 500, text: 'world.', timestampSource: 'engine' },
+          ],
+        },
+      ],
+      'Hello world.',
+      null,
+      detailedOptions,
+    );
+
+    expect(spans).toEqual([{ speakerIndex: null, text: '(0:10.1) Hello (0:10.5) world.' }]);
+  });
+
+  it('uses engine segment timing when word timing is incomplete', () => {
+    const spans = buildTranscriptSpans(
+      [
+        {
+          endMs: 1_000,
+          speaker: null,
+          startMs: 250,
+          text: 'Segment text.',
+          timestampGranularity: 'segment',
+          timestampSource: 'engine',
+        },
+      ],
+      'Segment text.',
+      null,
+      detailedOptions,
+    );
+
+    expect(spans[0]?.text).toBe('(0:10.2) Segment text.');
+  });
+
+  it('falls back to one phrase marker without dropping text from an untimed model', () => {
+    const spans = buildTranscriptSpans(
+      [
+        {
+          endMs: 1_000,
+          speaker: null,
+          startMs: 0,
+          text: 'Live phrase.',
+          timestampGranularity: 'utterance',
+          timestampSource: 'vad',
+        },
+      ],
+      'Live phrase.',
+      null,
+      detailedOptions,
+    );
+
+    expect(spans).toEqual([{ speakerIndex: null, text: '(0:10.0) Live phrase.' }]);
   });
 });
 
@@ -254,7 +340,19 @@ describe('TranscriptRenderer', () => {
 
     const first = planAndCommit(renderer, { text: 'first', utteranceStartMsInSession: 60_000 });
 
-    expect(first.projectedText).toBe('(14:33) first');
+    expect(first.projectedText).toBe('(14:33:00) first');
+  });
+
+  it('does not duplicate a phrase prefix when detailed timing is rendered in the body', () => {
+    const renderer = new TranscriptRenderer({
+      timestamps: timestamps({ density: 'detailed', enabled: true, header: false }),
+      transcriptFormatting: 'space',
+    });
+
+    const first = planAndCommit(renderer, { text: '(0:00.1) first' });
+
+    expect(first.projectedText).toBe('(0:00.1) first');
+    expect(first.emittedTimestamp).toBeNull();
   });
 });
 

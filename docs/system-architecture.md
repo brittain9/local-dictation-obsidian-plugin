@@ -402,7 +402,9 @@ The plugin consumes every accepted `transcript_ready` revision:
    to. Lives in `src/llm/`.
 2. **Render.** The transcript renderer (`src/transcript/renderer.ts`) applies the
    user's formatting (`smart` / `space` / `new_line` / `new_paragraph`), optional
-   elapsed- or wall-clock timestamps, and speaker labels.
+   elapsed- or wall-clock timestamps, and speaker labels. Detailed timestamp
+   mode uses engine word alignments when available (Whisper), then engine
+   segments, then falls back to the VAD phrase boundary without dropping text.
 3. **Insert or revise.** The first revision lands at the dictation anchor;
    later revisions compare-and-swap the tracked utterance span. Non-final text
    has a theme-neutral provisional opacity decoration. A user edit latches the
@@ -461,7 +463,7 @@ A representative slice of user-facing settings (full list and defaults in
 | `transcriptFormatting` | `smart` | How utterance boundaries render |
 | `timestampsEnabled` | `false` | Render timestamps in the note |
 | `timestampClock` | `elapsed` | `elapsed` session time vs `wallclock` |
-| `timestampDensity` | `sparse` | `sparse` (interval) vs `every_utterance` |
+| `timestampDensity` | `sparse` | `sparse` (interval), `every_utterance`, or model-aware `detailed` |
 | `llmPostprocessMode` | `off` | LLM transform: `off` / `per_utterance` / `batch` |
 | `llmRouting` | `local` | `local` (Ollama) vs `remote` (OpenRouter) |
 | `llmRemoteThresholdChars` | `6000` | Size above which jobs auto-route to OpenRouter |

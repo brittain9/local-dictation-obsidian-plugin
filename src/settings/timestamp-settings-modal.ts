@@ -1,6 +1,7 @@
 import type { App, ButtonComponent, TextComponent } from 'obsidian';
 import { Modal, Setting } from 'obsidian';
 
+import type { ModelFamilyCapabilitiesRecord } from '../models/model-management-types';
 import {
   DEFAULT_PLUGIN_SETTINGS,
   isTimestampClock,
@@ -13,8 +14,10 @@ import {
   validateTimestampIntervalSeconds,
 } from './plugin-settings';
 import type { DropdownOption } from './setting-helpers';
+import { timestampCapabilityPresentation } from './timestamp-capability';
 
 interface TimestampSettingsModalDependencies {
+  getModelCapabilities: () => ModelFamilyCapabilitiesRecord | null;
   getSettings: () => PluginSettings;
   onSave?: () => void;
   saveSettings: (settings: PluginSettings) => Promise<void>;
@@ -45,6 +48,7 @@ export class TimestampSettingsModal extends Modal {
   private draft: TimestampSettingsDraft;
   private intervalInput: TextComponent | null = null;
   private intervalSetting: Setting | null = null;
+  private frequencySetting: Setting | null = null;
   private saveButton: ButtonComponent | null = null;
 
   constructor(
@@ -64,6 +68,7 @@ export class TimestampSettingsModal extends Modal {
     this.contentEl.empty();
     this.intervalInput = null;
     this.intervalSetting = null;
+    this.frequencySetting = null;
     this.saveButton = null;
   }
 
@@ -71,11 +76,12 @@ export class TimestampSettingsModal extends Modal {
     this.contentEl.empty();
     this.intervalInput = null;
     this.intervalSetting = null;
+    this.frequencySetting = null;
     this.saveButton = null;
 
     this.contentEl.createEl('p', {
       cls: 'setting-item-description',
-      text: 'Timestamps use phrase start times from voice activity detection, not model-provided word timing. This makes them available with every transcription model.',
+      text: 'Interval and phrase timestamps work with every model. Detailed timing uses engine-provided words or segments when available and falls back safely to phrase timing.',
     });
 
     new Setting(this.contentEl)
@@ -102,12 +108,20 @@ export class TimestampSettingsModal extends Modal {
         });
       });
 
-    new Setting(this.contentEl)
+    const capability = timestampCapabilityPresentation(this.deps.getModelCapabilities());
+    this.frequencySetting = new Setting(this.contentEl)
       .setName('Frequency')
-      .setDesc('Add a timestamp at intervals, or at every voice-detected phrase boundary.')
+      .setDesc('Choose how often timestamps appear.')
       .addDropdown((dropdown) => {
         for (const option of TIMESTAMP_DENSITY_OPTIONS) {
           dropdown.addOption(option.value, option.label);
+        }
+        dropdown.addOption('detailed', capability.detailedOptionLabel);
+        const detailedOption = [...dropdown.selectEl.options].find(
+          (option) => option.value === 'detailed',
+        );
+        if (detailedOption !== undefined && capability.support === 'unavailable') {
+          detailedOption.disabled = true;
         }
         dropdown.setValue(this.draft.density);
         dropdown.onChange((value) => {
@@ -161,6 +175,15 @@ export class TimestampSettingsModal extends Modal {
   private refreshIntervalState(): void {
     const intervalIsActive = this.draft.density === 'sparse';
     const validation = validateTimestampIntervalSeconds(this.draft.sparseIntervalSeconds);
+    const capability = timestampCapabilityPresentation(this.deps.getModelCapabilities());
+
+    this.frequencySetting?.setDesc(
+      this.draft.density === 'sparse'
+        ? 'Add readable landmarks at the configured interval.'
+        : this.draft.density === 'every_utterance'
+          ? 'Add one timestamp at every voice-detected phrase boundary.'
+          : capability.detailedDescription,
+    );
 
     this.intervalInput?.setDisabled(!intervalIsActive);
     this.intervalInput?.inputEl.setCustomValidity(

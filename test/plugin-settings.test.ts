@@ -349,6 +349,12 @@ describe('resolvePluginSettings', () => {
     ).toBe(600_000);
   });
 
+  it('persists detailed model timing as an explicit timestamp frequency', () => {
+    expect(resolvePluginSettings({ timestampDensity: 'detailed' }).timestampDensity).toBe(
+      'detailed',
+    );
+  });
+
   it.each([
     ['10', 10_000],
     [' 30 ', 30_000],

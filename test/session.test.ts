@@ -306,6 +306,38 @@ describe('Session', () => {
     expect(surface.replaceCalls).toHaveLength(2);
   });
 
+  it('preserves detailed timing carried by a single rendered span across revisions', () => {
+    const { session, surface } = createSessionHarness({
+      rendererOptions: renderOptions({
+        timestamps: timestamps({ density: 'detailed', enabled: true, header: false }),
+      }),
+    });
+
+    session.acceptTranscript(
+      transcript({
+        isFinal: false,
+        revision: 0,
+        spans: [{ speakerIndex: null, text: '(0:10.0) first' }],
+        text: 'first',
+        utteranceId: 'u1',
+      }),
+    );
+    session.acceptTranscript(
+      transcript({
+        isFinal: true,
+        revision: 1,
+        spans: [{ speakerIndex: null, text: '(0:10.0) final' }],
+        text: 'final',
+        utteranceId: 'u1',
+      }),
+    );
+
+    expect(surface.documentText).toBe('(0:10.0) final');
+    expect(surface.replaceCalls).toEqual([
+      { expectedOldText: '(0:10.0) first', newText: '(0:10.0) final', utteranceId: 'u1' },
+    ]);
+  });
+
   it('preserves the separator and timestamp across an empty partial revision', () => {
     const { session, surface } = createSessionHarness({
       rendererOptions: renderOptions({
