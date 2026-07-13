@@ -43,9 +43,12 @@ const TIMESTAMP_DENSITY_OPTIONS: ReadonlyArray<DropdownOption<TimestampDensity>>
 const MIN_INTERVAL_SECONDS = MIN_TIMESTAMP_SPARSE_INTERVAL_MS / 1000;
 const MAX_INTERVAL_SECONDS = MAX_TIMESTAMP_SPARSE_INTERVAL_MS / 1000;
 const INTERVAL_DESCRIPTION = `Seconds between timestamp landmarks (${MIN_INTERVAL_SECONDS}-${MAX_INTERVAL_SECONDS}).`;
+let nextIntervalDescriptionId = 0;
 
 export class TimestampSettingsModal extends Modal {
   private draft: TimestampSettingsDraft;
+  private readonly intervalDescriptionId =
+    `local-dictation-timestamp-interval-description-${++nextIntervalDescriptionId}`;
   private intervalInput: TextComponent | null = null;
   private intervalSetting: Setting | null = null;
   private frequencySetting: Setting | null = null;
@@ -140,12 +143,16 @@ export class TimestampSettingsModal extends Modal {
         text.inputEl.min = String(MIN_INTERVAL_SECONDS);
         text.inputEl.max = String(MAX_INTERVAL_SECONDS);
         text.inputEl.step = '1';
+        text.inputEl.setAttribute('aria-label', 'Interval');
+        text.inputEl.setAttribute('aria-describedby', this.intervalDescriptionId);
         text.setValue(this.draft.sparseIntervalSeconds);
         text.onChange((value) => {
           this.draft = { ...this.draft, sparseIntervalSeconds: value };
           this.refreshIntervalState();
         });
       });
+    this.intervalSetting.descEl.id = this.intervalDescriptionId;
+    this.intervalSetting.descEl.setAttribute('aria-live', 'polite');
 
     new Setting(this.contentEl)
       .addButton((button) => {
@@ -188,6 +195,10 @@ export class TimestampSettingsModal extends Modal {
     this.intervalInput?.setDisabled(!intervalIsActive);
     this.intervalInput?.inputEl.setCustomValidity(
       intervalIsActive && !validation.valid ? validation.message : '',
+    );
+    this.intervalInput?.inputEl.toggleAttribute(
+      'aria-invalid',
+      intervalIsActive && !validation.valid,
     );
     this.intervalSetting?.setDesc(
       intervalIsActive && !validation.valid

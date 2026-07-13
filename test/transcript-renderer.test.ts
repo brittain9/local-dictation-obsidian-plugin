@@ -70,6 +70,27 @@ describe('buildTranscriptSpans detailed timestamps', () => {
     expect(spans).toEqual([{ speakerIndex: null, text: '(0:10.1) Hello (0:10.5) world.' }]);
   });
 
+  it('falls back to complete segment text when word timing covers only part of it', () => {
+    const spans = buildTranscriptSpans(
+      [
+        {
+          endMs: 1_000,
+          speaker: null,
+          startMs: 250,
+          text: 'Hello world.',
+          timestampGranularity: 'segment',
+          timestampSource: 'engine',
+          words: [{ endMs: 500, startMs: 300, text: 'Hello', timestampSource: 'engine' }],
+        },
+      ],
+      'Hello world.',
+      null,
+      detailedOptions,
+    );
+
+    expect(spans).toEqual([{ speakerIndex: null, text: '(0:10.2) Hello world.' }]);
+  });
+
   it('uses engine segment timing when word timing is incomplete', () => {
     const spans = buildTranscriptSpans(
       [

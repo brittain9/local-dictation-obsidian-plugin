@@ -805,7 +805,7 @@ describe('ModelInstallManager', () => {
       });
     });
 
-    it('re-selecting a model whose probe now fails invalidates its persisted snapshot', async () => {
+    it('re-selecting a now-unavailable model clears stale ready capabilities and notifies', async () => {
       harness = createManagerHarness({
         selectedModel: sampleSelection(),
         selectedModelCapabilitiesSnapshot: {
@@ -816,6 +816,9 @@ describe('ModelInstallManager', () => {
       configureSidecarForInit(harness.sidecarConnection);
       await harness.manager.init();
       expect(harness.sidecarConnection.probeModelSelection).not.toHaveBeenCalled();
+      expect(harness.manager.getState().selectedModelCapabilities.status).toBe('ready');
+      const onStateChange = vi.fn();
+      harness.manager.subscribe(onStateChange);
 
       harness.sidecarConnection.probeModelSelection.mockResolvedValueOnce({
         ...sampleReadyProbeResult(),
@@ -832,7 +835,14 @@ describe('ModelInstallManager', () => {
       await expect(harness.manager.select(sampleSelection())).rejects.toThrow(
         'Model is not installed. (file removed)',
       );
+      expect(harness.manager.getState().selectedModelCapabilities).toEqual({
+        details: 'Model is not installed. (file removed)',
+        reason: 'missing',
+        selection: sampleSelection(),
+        status: 'unavailable',
+      });
       expect(harness.getSettings().selectedModelCapabilitiesSnapshot).toBeNull();
+      expect(onStateChange).toHaveBeenCalledOnce();
     });
 
     it('clearSelection() clears the persisted capabilities snapshot', async () => {

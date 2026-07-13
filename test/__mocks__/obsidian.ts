@@ -25,19 +25,22 @@ export class TestElement {
     this.className = [this.className, className].filter(Boolean).join(' ');
   }
 
-  createDiv(options: { cls?: string; text?: string } = {}): TestElement {
+  createDiv(options: TestElementOptions = {}): TestElement {
     return this.createEl('div', options);
   }
 
-  createEl(_tag: string, options: { cls?: string; text?: string } = {}): TestElement {
+  createEl(_tag: string, options: TestElementOptions = {}): TestElement {
     const element = new TestElement();
     element.className = options.cls ?? '';
     element.textContent = options.text ?? '';
+    for (const [name, value] of Object.entries(options.attr ?? {})) {
+      element.setAttribute(name, value);
+    }
     this.children.push(element);
     return element;
   }
 
-  createSpan(options: { cls?: string; text?: string } = {}): TestElement {
+  createSpan(options: TestElementOptions = {}): TestElement {
     return this.createEl('span', options);
   }
 
@@ -49,6 +52,17 @@ export class TestElement {
 
   setAttribute(name: string, value: string): void {
     this.attributes.set(name, value);
+  }
+
+  findByClass(className: string): TestElement | undefined {
+    if (this.className.split(/\s+/u).includes(className)) {
+      return this;
+    }
+    for (const child of this.children) {
+      const match = child.findByClass(className);
+      if (match !== undefined) return match;
+    }
+    return undefined;
   }
 
   setText(text: string): void {
@@ -63,6 +77,23 @@ export class TestElement {
       this.attributes.delete(name);
     }
   }
+
+  toggleClass(className: string, force?: boolean): void {
+    const classes = new Set(this.className.split(/\s+/u).filter(Boolean));
+    const enabled = force ?? !classes.has(className);
+    if (enabled) {
+      classes.add(className);
+    } else {
+      classes.delete(className);
+    }
+    this.className = [...classes].join(' ');
+  }
+}
+
+interface TestElementOptions {
+  attr?: Record<string, string>;
+  cls?: string;
+  text?: string;
 }
 
 export class TestInputElement extends TestElement {
@@ -142,15 +173,84 @@ export class ButtonComponent {
   }
 }
 
+interface TestSelectOption {
+  disabled: boolean;
+  label: string;
+  value: string;
+}
+
+class TestSelectElement extends TestElement {
+  readonly options: TestSelectOption[] = [];
+  value = '';
+}
+
+export class DropdownComponent {
+  readonly selectEl = new TestSelectElement();
+  private changeHandler: (value: string) => unknown = () => {};
+
+  addOption(value: string, label: string): this {
+    this.selectEl.options.push({ disabled: false, label, value });
+    return this;
+  }
+
+  change(value: string): void {
+    this.selectEl.value = value;
+    this.changeHandler(value);
+  }
+
+  onChange(callback: (value: string) => unknown): this {
+    this.changeHandler = callback;
+    return this;
+  }
+
+  setDisabled(disabled: boolean): this {
+    this.selectEl.disabled = disabled;
+    return this;
+  }
+
+  setValue(value: string): this {
+    this.selectEl.value = value;
+    return this;
+  }
+}
+
+export class ToggleComponent {
+  readonly toggleEl = new TestInputElement();
+  private changeHandler: (value: boolean) => unknown = () => {};
+  value = false;
+
+  change(value: boolean): void {
+    this.value = value;
+    this.changeHandler(value);
+  }
+
+  onChange(callback: (value: boolean) => unknown): this {
+    this.changeHandler = callback;
+    return this;
+  }
+
+  setDisabled(disabled: boolean): this {
+    this.toggleEl.disabled = disabled;
+    return this;
+  }
+
+  setValue(value: boolean): this {
+    this.value = value;
+    return this;
+  }
+}
+
 export class Setting {
   static readonly instances: Setting[] = [];
 
   readonly buttonComponents: ButtonComponent[] = [];
   readonly controlEl = new TestElement();
   readonly descEl = new TestElement();
+  readonly dropdownComponents: DropdownComponent[] = [];
   readonly nameEl = new TestElement();
   readonly settingEl = new TestElement();
   readonly textComponents: TextComponent[] = [];
+  readonly toggleComponents: ToggleComponent[] = [];
   name = '';
 
   constructor(parent?: TestElement) {
@@ -183,6 +283,13 @@ export class Setting {
     return this;
   }
 
+  addDropdown(callback: (dropdown: DropdownComponent) => void): this {
+    const dropdown = new DropdownComponent();
+    this.dropdownComponents.push(dropdown);
+    callback(dropdown);
+    return this;
+  }
+
   addText(callback: (text: TextComponent) => void): this {
     const text = new TextComponent();
     this.textComponents.push(text);
@@ -190,11 +297,32 @@ export class Setting {
     return this;
   }
 
+  addToggle(callback: (toggle: ToggleComponent) => void): this {
+    const toggle = new ToggleComponent();
+    this.toggleComponents.push(toggle);
+    callback(toggle);
+    return this;
+  }
+
+  onlyDropdown(): DropdownComponent {
+    if (this.dropdownComponents.length !== 1) {
+      throw new Error(`Expected one dropdown component for ${this.name}`);
+    }
+    return this.dropdownComponents[0] as DropdownComponent;
+  }
+
   onlyText(): TextComponent {
     if (this.textComponents.length !== 1) {
       throw new Error(`Expected one text component for ${this.name}`);
     }
     return this.textComponents[0] as TextComponent;
+  }
+
+  onlyToggle(): ToggleComponent {
+    if (this.toggleComponents.length !== 1) {
+      throw new Error(`Expected one toggle component for ${this.name}`);
+    }
+    return this.toggleComponents[0] as ToggleComponent;
   }
 
   setDesc(description: string): this {
@@ -230,6 +358,17 @@ export class Modal {
   open(): void {
     this.onOpen();
   }
+}
+
+export class ItemView {
+  readonly app: unknown;
+  readonly contentEl = new TestElement();
+
+  constructor(readonly leaf: { app?: unknown }) {
+    this.app = leaf.app ?? {};
+  }
+
+  registerDomEvent(): void {}
 }
 
 export class SecretComponent {

@@ -525,7 +525,7 @@ fn write_frame(writer: &mut impl Write, kind: u8, payload: &[u8]) {
     writer.write_all(payload).expect("write frame payload");
 }
 
-fn write_command_frame(writer: &mut impl Write, command: &serde_json::Value) {
+pub fn write_command_frame(writer: &mut impl Write, command: &serde_json::Value) {
     let payload = serde_json::to_vec(command).expect("serialize command");
     write_frame(writer, JSON_FRAME_KIND, &payload);
 }
@@ -536,9 +536,12 @@ fn write_audio_frame(writer: &mut impl Write, session_id: &str, frame_bytes: &[u
     write_frame(writer, AUDIO_FRAME_KIND, &envelope);
 }
 
-fn read_event_frame(reader: &mut impl Read) -> Option<serde_json::Value> {
+pub fn read_event_frame(reader: &mut impl Read) -> Option<serde_json::Value> {
     let mut header = [0_u8; FRAME_HEADER_LEN];
     read_exact_or_eof(reader, &mut header)?;
+    if header[0] != JSON_FRAME_KIND {
+        return None;
+    }
     let len = u32::from_le_bytes([header[1], header[2], header[3], header[4]]) as usize;
     let mut payload = vec![0_u8; len];
     reader.read_exact(&mut payload).ok()?;
@@ -559,7 +562,7 @@ fn read_exact_or_eof(reader: &mut impl Read, buffer: &mut [u8]) -> Option<()> {
     Some(())
 }
 
-fn wait_with_timeout(child: &mut Child, timeout: Duration) -> Option<std::process::ExitStatus> {
+pub fn wait_with_timeout(child: &mut Child, timeout: Duration) -> Option<std::process::ExitStatus> {
     let deadline = Instant::now() + timeout;
     loop {
         match child.try_wait() {

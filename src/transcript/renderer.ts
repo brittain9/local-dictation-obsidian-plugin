@@ -360,10 +360,7 @@ export function buildTranscriptSpans(
   }
 
   const textSegments = segments.filter((segment) => segment.text.trim().length > 0);
-  if (
-    textSegments.length > 0 &&
-    textSegments.every((segment) => (segment.words?.length ?? 0) > 0)
-  ) {
+  if (textSegments.length > 0 && textSegments.every(hasCompleteWordTiming)) {
     return groupDetailedSegments(
       textSegments.map((segment) => ({
         speakerIndex: segment.speaker,
@@ -412,6 +409,22 @@ export function buildTranscriptSpans(
     return [{ speakerIndex: normalizeSpeakerIndex(fallbackSpeakerIndex), text: phraseLandmark }];
   }
   return [{ ...first, text: `${phraseLandmark} ${first.text}` }, ...rest];
+}
+
+function hasCompleteWordTiming(segment: TranscriptSegment): boolean {
+  const words = segment.words;
+  if (words === undefined || words.length === 0 || words.some((word) => word.text.trim() === '')) {
+    return false;
+  }
+
+  return (
+    normalizeWhitespace(words.map((word) => word.text).join(' ')) ===
+    normalizeWhitespace(segment.text)
+  );
+}
+
+function normalizeWhitespace(value: string): string {
+  return value.trim().split(/\s+/u).join(' ');
 }
 
 function groupDetailedSegments(

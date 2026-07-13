@@ -208,6 +208,9 @@ export class LocalDictationView extends ItemView {
     });
 
     const status = header.createDiv({ cls: 'local-dictation-sidebar__summary' });
+    status.setAttribute('role', 'status');
+    status.setAttribute('aria-live', 'polite');
+    status.setAttribute('aria-atomic', 'true');
     status.createSpan({
       cls: `local-dictation-sidebar__badge local-dictation-sidebar__badge--${presentation.state}`,
       text: presentation.statusLabel,

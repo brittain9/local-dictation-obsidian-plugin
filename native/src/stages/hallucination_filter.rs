@@ -674,7 +674,7 @@ mod tests {
     use super::*;
     use crate::audio_metadata::VoiceActivityEvidence;
     use crate::engine::capabilities::{LanguageSupport, ModelFamilyCapabilities};
-    use crate::protocol::{ContextWindow, TimestampGranularity, TimestampSource};
+    use crate::protocol::{ContextWindow, TimestampGranularity, TimestampSource, TranscriptWord};
     use crate::stages::StageEnablement;
     use uuid::Uuid;
 
@@ -950,6 +950,45 @@ mod tests {
                 .and_then(|value| value.as_str()),
             Some("Gorglosa: Let me join"),
         );
+    }
+
+    #[test]
+    fn speaker_label_scrub_clears_the_stale_word_alignment() {
+        let mut transcript = transcript("Gorglosa: Let me join");
+        transcript.segments[0].words = vec![
+            TranscriptWord {
+                end_ms: 200,
+                start_ms: 0,
+                text: "Gorglosa:".to_string(),
+                timestamp_source: TimestampSource::Engine,
+            },
+            TranscriptWord {
+                end_ms: 400,
+                start_ms: 200,
+                text: "Let".to_string(),
+                timestamp_source: TimestampSource::Engine,
+            },
+            TranscriptWord {
+                end_ms: 600,
+                start_ms: 400,
+                text: "me".to_string(),
+                timestamp_source: TimestampSource::Engine,
+            },
+            TranscriptWord {
+                end_ms: 800,
+                start_ms: 600,
+                text: "join".to_string(),
+                timestamp_source: TimestampSource::Engine,
+            },
+        ];
+
+        let result = HallucinationFilterStage.process(&transcript, &ctx(&[], &[], None, true));
+        let StageProcess::Ok { segments, .. } = result else {
+            panic!("expected speaker label edit");
+        };
+
+        assert_eq!(segments[0].text, "Let me join");
+        assert!(segments[0].words.is_empty());
     }
 
     #[test]
