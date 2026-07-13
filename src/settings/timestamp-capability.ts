@@ -15,7 +15,7 @@ export function timestampCapabilityPresentation(
   if (capabilities?.supportsWordTimestamps) {
     return {
       detailedDescription:
-        'Add an engine-timed marker before every word. Best for exact review; this creates dense output, may add processing time, and requires raw transcript mode.',
+        'Add a model-timed marker before every word. Best for locating specific words; this creates dense output and may add processing time. Text transforms remove these detailed timestamps.',
       detailedOptionLabel: 'Every word · model timed',
       settingDescription:
         'Add interval, phrase, or word-level timestamps. The selected model provides engine-timed words.',
@@ -26,7 +26,7 @@ export function timestampCapabilityPresentation(
   if (capabilities?.supportsSegmentTimestamps) {
     return {
       detailedDescription:
-        'Add an engine-timed marker before every model segment. Best for exact review; this creates denser output and requires raw transcript mode.',
+        'Add a model-timed marker before every model segment. This creates denser output. Text transforms remove these detailed timestamps.',
       detailedOptionLabel: 'Every model segment',
       settingDescription:
         'Add interval, phrase, or model-segment timestamps. The selected model provides engine-timed segments.',

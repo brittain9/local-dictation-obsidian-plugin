@@ -3,6 +3,13 @@ import { describe, expect, it } from 'vitest';
 import catalog from '../native/catalog.json';
 
 describe('model catalog presentation', () => {
+  it('explains the Whisper timestamp advantage at the family level', () => {
+    const whisper = catalog.families.find((family) => family.familyId === 'whisper');
+
+    expect(whisper?.summary).toContain('more accurate timestamps than other model families');
+    expect(whisper?.summary).toContain('word-level timing');
+  });
+
   it('keeps artifact precision out of primary Whisper names', () => {
     const whisperModels = catalog.models.filter((model) => model.familyId === 'whisper');
 

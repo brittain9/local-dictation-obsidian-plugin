@@ -81,7 +81,7 @@ export class TimestampSettingsModal extends Modal {
 
     this.contentEl.createEl('p', {
       cls: 'setting-item-description',
-      text: 'Interval and phrase timestamps work with every model. Detailed timing uses engine-provided words or segments when available and falls back safely to phrase timing.',
+      text: 'Interval and phrase timestamps work with every model. Detailed timing uses model-provided words or segments when available; otherwise, it uses one timestamp per phrase.',
     });
 
     new Setting(this.contentEl)
