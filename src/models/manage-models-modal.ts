@@ -4,6 +4,10 @@ import { Modal, Setting, setIcon } from 'obsidian';
 import { formatBytes } from '../shared/format-utils';
 import type { UserFeedback } from '../shared/user-feedback';
 import { resolveEngineCapabilities } from './capability-view';
+import {
+  CURRENT_LANGUAGE_SUPPORT_NOTICE,
+  describeCatalogLanguageSupport,
+} from './language-support';
 import { formatModelTagLabel } from './model-guidance';
 import { isCancellingPhase, type ModelInstallManager } from './model-install-manager';
 import {
@@ -216,6 +220,11 @@ export class ManageModelsModal extends Modal {
       });
       return;
     }
+
+    this.listContainer.createEl('p', {
+      cls: 'local-stt-family-summary',
+      text: CURRENT_LANGUAGE_SUPPORT_NOTICE,
+    });
 
     const activeFamily = state.catalog.families.find(
       (f) => f.runtimeId === this.activeTab?.runtimeId && f.familyId === this.activeTab?.familyId,
@@ -512,6 +521,11 @@ export class ManageModelsModal extends Modal {
   private buildTagsFragment(model: CatalogModelRecord): DocumentFragment {
     const frag = createFragment();
     const tagsContainer = frag.createSpan({ cls: 'local-stt-tags' });
+
+    tagsContainer.createSpan({
+      cls: 'local-stt-tag',
+      text: describeCatalogLanguageSupport(model.languageTags),
+    });
 
     for (const tag of model.uxTags) {
       tagsContainer.createSpan({
