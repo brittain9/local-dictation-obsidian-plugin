@@ -116,10 +116,14 @@ export const LLM_USER_PRESET_MAX_LABEL_CHARS = 60;
 export const LLM_USER_PRESET_MAX_DESCRIPTION_CHARS = 240;
 export const LLM_USER_PRESET_MAX_COUNT = 50;
 
-// Shared bounds for the min-words skip gate and sampling temperature, used by
-// the settings reader, the preset editor, and the preset draft validator.
+// Shared LLM bounds keep persisted-value normalization and configuration UIs aligned.
+// Min words and temperature also apply to per-preset overrides.
 export const LLM_MIN_WORDS_MAX = 50;
+export const LLM_PRIOR_UTTERANCES_MAX = 5;
+export const LLM_TOTAL_CONTEXT_CAP_MAX = 30_000;
 export const LLM_TEMPERATURE_MAX = 2;
+export const MAX_LLM_REMOTE_TIMEOUT_SEC = 600;
+export const MIN_LLM_REMOTE_TIMEOUT_SEC = 5;
 
 export interface AudioInputDevice {
   deviceId: string;
@@ -289,7 +293,7 @@ export function resolvePluginSettings(data: unknown): PluginSettings {
       raw.llmPostprocessPriorUtterancesN,
       DEFAULT_PLUGIN_SETTINGS.llmPostprocessPriorUtterancesN,
       0,
-      5,
+      LLM_PRIOR_UTTERANCES_MAX,
     ),
     llmPostprocessShowRawBelow: readBoolean(
       raw.llmPostprocessShowRawBelow,
@@ -311,7 +315,7 @@ export function resolvePluginSettings(data: unknown): PluginSettings {
       raw.llmPostprocessTotalContextCap,
       DEFAULT_PLUGIN_SETTINGS.llmPostprocessTotalContextCap,
       0,
-      30_000,
+      LLM_TOTAL_CONTEXT_CAP_MAX,
     ),
     llmPostprocessUserPresets: userPresets,
     llmProviderModels,
@@ -324,8 +328,8 @@ export function resolvePluginSettings(data: unknown): PluginSettings {
     llmRemoteTimeoutSec: readClampedInteger(
       raw.llmRemoteTimeoutSec,
       DEFAULT_PLUGIN_SETTINGS.llmRemoteTimeoutSec,
-      5,
-      600,
+      MIN_LLM_REMOTE_TIMEOUT_SEC,
+      MAX_LLM_REMOTE_TIMEOUT_SEC,
     ),
     llmRouting: resolveLlmRouting(raw),
     localTranscriptSidebarBootstrapped: readBoolean(
@@ -427,9 +431,11 @@ export function resetLlmPostprocessDefaults(settings: PluginSettings): PluginSet
   return {
     ...settings,
     llmPostprocessLastEnabledMode: 'per_utterance',
-    // Not the 'off' default: the reset button is only reachable while the
-    // transform is on, and resetting should not silently disable it.
-    llmPostprocessMode: 'per_utterance',
+    // Resetting configuration must not change whether transformation is enabled.
+    llmPostprocessMode:
+      settings.llmPostprocessMode === 'off'
+        ? 'off'
+        : DEFAULT_PLUGIN_SETTINGS.llmPostprocessLastEnabledMode,
     llmPostprocessNoteContextChars: DEFAULT_PLUGIN_SETTINGS.llmPostprocessNoteContextChars,
     llmPostprocessPriorUtterancesN: DEFAULT_PLUGIN_SETTINGS.llmPostprocessPriorUtterancesN,
     llmPostprocessSkipMinWords: DEFAULT_PLUGIN_SETTINGS.llmPostprocessSkipMinWords,
