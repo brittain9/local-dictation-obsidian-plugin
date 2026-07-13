@@ -315,6 +315,28 @@
   width: min(600px, 90vw);
 }
 
+.local-stt-external-model-guidance {
+  margin: 12px 0;
+  padding: 10px 12px;
+  border: 1px solid var(--background-modifier-border, rgba(128, 128, 128, 0.18));
+  border-radius: var(--radius-s, 6px);
+  background: var(--background-secondary-alt, rgba(128, 128, 128, 0.06));
+  color: var(--text-muted);
+  font-size: var(--font-ui-small);
+}
+
+.local-stt-external-model-guidance ul {
+  margin: 6px 0 0;
+  padding-inline-start: 20px;
+}
+
+.local-stt-external-model-error {
+  margin: 8px 0 0;
+  color: var(--text-error);
+  font-size: var(--font-ui-small);
+  white-space: pre-wrap;
+}
+
 /* --- Ribbon icon animations --------------------------------------- */
 
 /* Opacity chase: one spoke bright at a time, cycling clockwise */
