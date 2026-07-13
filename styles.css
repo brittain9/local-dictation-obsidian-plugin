@@ -787,6 +787,11 @@
   max-width: 100%;
 }
 
+.local-dictation-sidebar .local-dictation-preset-setting .setting-item-control > select {
+  flex: 1 1 10rem;
+  min-width: min(10rem, 100%);
+}
+
 /* When the sidebar is dragged narrow, stack setting rows vertically so labels
    and controls don't get squeezed onto a single short line. */
 
