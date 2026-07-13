@@ -110,6 +110,9 @@ impl StageProcessor for HallucinationFilterStage {
                     original_text: segment.text.clone(),
                 });
                 processed_segment.text = text;
+                // The rewritten text no longer has a trustworthy one-to-one
+                // relationship with the engine's word alignment.
+                processed_segment.words.clear();
             }
 
             let evidence = SegmentEvidence::from_segment(&processed_segment, diagnostics, ctx);
@@ -683,6 +686,7 @@ mod tests {
             text: text.to_string(),
             timestamp_granularity: TimestampGranularity::Segment,
             timestamp_source: TimestampSource::Engine,
+            words: Vec::new(),
         }
     }
 
@@ -1282,6 +1286,7 @@ mod tests {
             text: "Thank you for watching.".to_string(),
             timestamp_granularity: TimestampGranularity::Segment,
             timestamp_source: TimestampSource::Engine,
+            words: Vec::new(),
         };
         let transcript = Transcript {
             utterance_id: Uuid::nil(),
@@ -1371,6 +1376,7 @@ mod tests {
                     text: "[music]".to_string(),
                     timestamp_granularity: TimestampGranularity::Segment,
                     timestamp_source: TimestampSource::Engine,
+                    words: Vec::new(),
                 },
                 TranscriptSegment {
                     end_ms: 1_000,
@@ -1379,6 +1385,7 @@ mod tests {
                     text: "Hello world.".to_string(),
                     timestamp_granularity: TimestampGranularity::Segment,
                     timestamp_source: TimestampSource::Engine,
+                    words: Vec::new(),
                 },
             ],
             stage_history: Vec::new(),

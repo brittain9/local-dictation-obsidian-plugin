@@ -201,6 +201,32 @@ fn validate_stage_segments(
                 segment.start_ms, segment.end_ms, utterance_duration_ms,
             ));
         }
+
+        for word in &segment.words {
+            if word.text.trim().is_empty() {
+                return Err("word timestamp has empty text".to_string());
+            }
+            if word.start_ms > word.end_ms {
+                return Err(format!(
+                    "word {}-{} ms has start past end",
+                    word.start_ms, word.end_ms,
+                ));
+            }
+            if word.start_ms < segment.start_ms || word.end_ms > segment.end_ms {
+                return Err(format!(
+                    "word {}-{} ms falls outside segment {}-{} ms",
+                    word.start_ms, word.end_ms, segment.start_ms, segment.end_ms,
+                ));
+            }
+        }
+        for window in segment.words.windows(2) {
+            if window[1].start_ms < window[0].end_ms {
+                return Err(format!(
+                    "words {}-{} ms and {}-{} ms overlap or are out of order",
+                    window[0].start_ms, window[0].end_ms, window[1].start_ms, window[1].end_ms,
+                ));
+            }
+        }
     }
 
     for window in new_segments.windows(2) {
@@ -264,6 +290,7 @@ mod tests {
                 text: "hello".to_string(),
                 timestamp_granularity: TimestampGranularity::Segment,
                 timestamp_source: TimestampSource::Engine,
+                words: Vec::new(),
             }],
             stage_history: vec![StageOutcome {
                 duration_ms: 0,
@@ -407,6 +434,7 @@ mod tests {
                     text: "filtered".to_string(),
                     timestamp_granularity: TimestampGranularity::Segment,
                     timestamp_source: TimestampSource::Engine,
+                    words: Vec::new(),
                 }],
                 payload: Some(json!({ "rule": "test" })),
             },
@@ -602,6 +630,7 @@ mod tests {
                     text: "overrun".to_string(),
                     timestamp_granularity: TimestampGranularity::Segment,
                     timestamp_source: TimestampSource::Engine,
+                    words: Vec::new(),
                 }],
                 payload: Some(json!({ "tried": "overrun" })),
             },
@@ -646,6 +675,7 @@ mod tests {
                     text: "shrunk".to_string(),
                     timestamp_granularity: TimestampGranularity::Segment,
                     timestamp_source: TimestampSource::Engine,
+                    words: Vec::new(),
                 }],
                 payload: None,
             },
@@ -675,6 +705,7 @@ mod tests {
                     text: "first".to_string(),
                     timestamp_granularity: TimestampGranularity::Segment,
                     timestamp_source: TimestampSource::Engine,
+                    words: Vec::new(),
                 },
                 TranscriptSegment {
                     end_ms: 1_000,
@@ -683,6 +714,7 @@ mod tests {
                     text: "second".to_string(),
                     timestamp_granularity: TimestampGranularity::Segment,
                     timestamp_source: TimestampSource::Engine,
+                    words: Vec::new(),
                 },
             ],
             stage_history: vec![StageOutcome {
@@ -705,6 +737,7 @@ mod tests {
                     text: "first".to_string(),
                     timestamp_granularity: TimestampGranularity::Segment,
                     timestamp_source: TimestampSource::Engine,
+                    words: Vec::new(),
                 }],
                 payload: None,
             },
@@ -731,6 +764,7 @@ mod tests {
                     text: "first".to_string(),
                     timestamp_granularity: TimestampGranularity::Segment,
                     timestamp_source: TimestampSource::Engine,
+                    words: Vec::new(),
                 },
                 TranscriptSegment {
                     end_ms: 1_000,
@@ -739,6 +773,7 @@ mod tests {
                     text: "second".to_string(),
                     timestamp_granularity: TimestampGranularity::Segment,
                     timestamp_source: TimestampSource::Engine,
+                    words: Vec::new(),
                 },
             ],
             ..fresh_transcript()
@@ -753,6 +788,7 @@ mod tests {
                         text: "collapsed".to_string(),
                         timestamp_granularity: TimestampGranularity::Utterance,
                         timestamp_source: TimestampSource::None,
+                        words: Vec::new(),
                     }],
                     payload: None,
                 },

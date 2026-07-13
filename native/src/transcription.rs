@@ -15,6 +15,9 @@ pub struct GpuConfig {
 #[derive(Debug, Clone, PartialEq)]
 pub struct TranscriptionRequest {
     pub audio_samples: Vec<f32>,
+    /// Whether the user selected dense model timing. Adapters must avoid the
+    /// additional alignment work when this is false.
+    pub detailed_timestamps_enabled: bool,
     pub gpu_config: GpuConfig,
     pub language: String,
     pub model_file_path: PathBuf,
@@ -226,6 +229,7 @@ mod tests {
                     text: " Hello".to_string(),
                     timestamp_granularity: TimestampGranularity::Segment,
                     timestamp_source: TimestampSource::Engine,
+                    words: Vec::new(),
                 },
                 TranscriptSegment {
                     end_ms: 0,
@@ -234,6 +238,7 @@ mod tests {
                     text: "world ".to_string(),
                     timestamp_granularity: TimestampGranularity::Segment,
                     timestamp_source: TimestampSource::Engine,
+                    words: Vec::new(),
                 },
             ],
             stage_history: Vec::new(),
@@ -255,6 +260,7 @@ mod tests {
                     text: "Hello".to_string(),
                     timestamp_granularity: TimestampGranularity::Segment,
                     timestamp_source: TimestampSource::Engine,
+                    words: Vec::new(),
                 },
                 TranscriptSegment {
                     end_ms: 0,
@@ -263,6 +269,7 @@ mod tests {
                     text: "   ".to_string(),
                     timestamp_granularity: TimestampGranularity::Segment,
                     timestamp_source: TimestampSource::Engine,
+                    words: Vec::new(),
                 },
                 TranscriptSegment {
                     end_ms: 0,
@@ -271,6 +278,7 @@ mod tests {
                     text: "world".to_string(),
                     timestamp_granularity: TimestampGranularity::Segment,
                     timestamp_source: TimestampSource::Engine,
+                    words: Vec::new(),
                 },
             ],
             stage_history: Vec::new(),

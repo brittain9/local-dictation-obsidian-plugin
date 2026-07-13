@@ -375,6 +375,7 @@ mod tests {
     fn request_with_context(context: Option<ContextWindow>) -> TranscriptionRequest {
         TranscriptionRequest {
             audio_samples: vec![0.0; 16_000],
+            detailed_timestamps_enabled: false,
             gpu_config: GpuConfig::default(),
             language: "en".to_string(),
             model_file_path: PathBuf::from("/tmp/model.bin"),

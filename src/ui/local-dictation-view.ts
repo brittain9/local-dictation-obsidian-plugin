@@ -498,7 +498,10 @@ export class LocalDictationView extends ItemView {
     if (settings.timestampsEnabled) {
       items.createEl('p', {
         cls: 'local-dictation-muted',
-        text: 'Per-utterance preserves timestamps. Batch may rewrite or drop them — your prompt controls what happens.',
+        text:
+          settings.timestampDensity === 'detailed'
+            ? 'Detailed word or segment timing is available in raw transcript mode. A transform rewrites those words, so exact alignment is removed instead of showing inaccurate timestamps.'
+            : 'Per-utterance preserves timestamp landmarks. Batch may rewrite or drop them — your prompt controls what happens.',
       });
     }
 

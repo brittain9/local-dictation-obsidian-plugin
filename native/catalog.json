@@ -17,7 +17,7 @@
       "familyId": "whisper",
       "runtimeId": "whisper_cpp",
       "displayName": "Whisper",
-      "summary": "Transcribes after each pause. Tiny and Base favor speed, Small balances speed and quality, and Medium and Large favor quality."
+      "summary": "Transcribes after each pause. Whisper provides more accurate timestamps than other model families, including optional word-level timing. Tiny and Base favor speed, Small balances speed and quality, and Medium and Large favor quality."
     },
     {
       "familyId": "cohere_transcribe",

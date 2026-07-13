@@ -19,6 +19,15 @@ export interface TranscriptSegment {
   text: string;
   timestampGranularity: 'segment' | 'utterance' | 'word';
   timestampSource: 'engine' | 'interpolated' | 'none' | 'vad';
+  /** Engine-provided word alignments, relative to this utterance. */
+  words?: readonly TranscriptWord[];
+}
+
+export interface TranscriptWord {
+  endMs: number;
+  startMs: number;
+  text: string;
+  timestampSource: 'engine' | 'interpolated' | 'none' | 'vad';
 }
 
 /** A speaker-homogeneous run of text within an utterance — the unit the renderer

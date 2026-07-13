@@ -43,7 +43,7 @@ export const TIMESTAMP_CLOCKS = ['elapsed', 'wallclock'] as const;
 
 export type TimestampClock = (typeof TIMESTAMP_CLOCKS)[number];
 
-export const TIMESTAMP_DENSITIES = ['sparse', 'every_utterance'] as const;
+export const TIMESTAMP_DENSITIES = ['sparse', 'every_utterance', 'detailed'] as const;
 
 export type TimestampDensity = (typeof TIMESTAMP_DENSITIES)[number];
 

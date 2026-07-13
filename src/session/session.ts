@@ -524,7 +524,7 @@ export class Session {
     const replacementText =
       revision.spans.length > 1
         ? this.renderer.composeReplacementBody(revision.spans, state.precedingSpeakerIndex)
-        : revision.text;
+        : (revision.spans[0]?.text ?? revision.text);
 
     // Fold the raw callout into the same atomic replace as the cleaned text so
     // it lands directly beneath this utterance. A separate tail append would

@@ -433,6 +433,7 @@ fn engine_output(decoded: DecodedTranscript, sample_count: usize) -> EngineTrans
         text: text.to_string(),
         timestamp_granularity: TimestampGranularity::Utterance,
         timestamp_source: TimestampSource::Vad,
+        words: Vec::new(),
     };
     let diagnostics = SegmentDiagnostics {
         avg_logprob: None,

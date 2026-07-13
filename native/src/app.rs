@@ -450,6 +450,7 @@ impl AppState {
             }
             Command::StartSession {
                 acceleration_preference,
+                detailed_timestamps_enabled,
                 diarization_enabled,
                 diarization_max_speakers,
                 include_system_audio,
@@ -551,6 +552,7 @@ impl AppState {
                                 runtime_id: resolved_model.runtime_id,
                                 family_id: resolved_model.family_id,
                                 gpu_config: GpuConfig { use_gpu },
+                                detailed_timestamps_enabled,
                                 diarization_enabled,
                                 diarization_max_speakers,
                                 language,
@@ -3428,6 +3430,7 @@ mod tests {
     ) -> Command {
         Command::StartSession {
             acceleration_preference: AccelerationPreference::Auto,
+            detailed_timestamps_enabled: false,
             diarization_enabled: false,
             diarization_max_speakers: None,
             include_system_audio,

@@ -153,6 +153,17 @@ pub struct TranscriptSegment {
     pub text: String,
     pub timestamp_granularity: TimestampGranularity,
     pub timestamp_source: TimestampSource,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub words: Vec<TranscriptWord>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TranscriptWord {
+    pub end_ms: u64,
+    pub start_ms: u64,
+    pub text: String,
+    pub timestamp_source: TimestampSource,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -270,6 +281,8 @@ pub enum Command {
     StartSession {
         #[serde(default)]
         acceleration_preference: AccelerationPreference,
+        #[serde(default)]
+        detailed_timestamps_enabled: bool,
         #[serde(default)]
         diarization_enabled: bool,
         #[serde(default)]
@@ -631,7 +644,8 @@ mod tests {
         AUDIO_FRAME_KIND, AccelerationPreference, AudioFrame, Command, Event, EventEnvelope,
         FRAME_HEADER_LENGTH, IncomingFrame, JSON_FRAME_KIND, ListeningMode, MAX_FRAME_PAYLOAD,
         ModelInstallState, ModelProbeStatus, PCM_BYTES_PER_FRAME, QueueBackpressureTier,
-        SelectedModel, SessionStopReason, SpeakingStyle, encode_audio_frame_envelope, read_frame,
+        SelectedModel, SessionStopReason, SpeakingStyle, TimestampGranularity, TimestampSource,
+        TranscriptSegment, TranscriptWord, encode_audio_frame_envelope, read_frame,
         write_event_frame, write_frame,
     };
     use crate::engine::capabilities::{ModelFamilyId, RuntimeId};
@@ -665,6 +679,7 @@ mod tests {
             parsed,
             IncomingFrame::Command(Command::StartSession {
                 acceleration_preference: AccelerationPreference::Auto,
+                detailed_timestamps_enabled: false,
                 diarization_enabled: false,
                 diarization_max_speakers: None,
                 include_system_audio: true,
@@ -727,6 +742,7 @@ mod tests {
             },
             "language": "en",
             "sessionStartUnixMs": 1_700_000_000_000_u64,
+            "detailedTimestampsEnabled": true,
             "diarizationEnabled": true,
             "diarizationMaxSpeakers": 2
         }))
@@ -738,6 +754,7 @@ mod tests {
             .expect("frame should parse")
             .expect("frame should exist");
         let IncomingFrame::Command(Command::StartSession {
+            detailed_timestamps_enabled,
             diarization_enabled,
             diarization_max_speakers,
             ..
@@ -746,6 +763,7 @@ mod tests {
             panic!("expected start session command");
         };
 
+        assert!(detailed_timestamps_enabled);
         assert!(diarization_enabled);
         assert_eq!(diarization_max_speakers, Some(2));
     }
@@ -963,6 +981,32 @@ mod tests {
         );
         let round_tripped: Event = serde_json::from_value(json).expect("event should parse back");
         assert_eq!(round_tripped, with_null);
+    }
+
+    #[test]
+    fn transcript_segment_serializes_word_timing_and_omits_an_empty_alignment() {
+        let mut segment = TranscriptSegment {
+            end_ms: 900,
+            speaker: None,
+            start_ms: 100,
+            text: "hello".to_string(),
+            timestamp_granularity: TimestampGranularity::Segment,
+            timestamp_source: TimestampSource::Engine,
+            words: vec![TranscriptWord {
+                end_ms: 900,
+                start_ms: 100,
+                text: "hello".to_string(),
+                timestamp_source: TimestampSource::Engine,
+            }],
+        };
+
+        let json = serde_json::to_value(&segment).expect("segment should serialize");
+        assert_eq!(json["words"][0]["startMs"], 100);
+        assert_eq!(json["words"][0]["timestampSource"], "engine");
+
+        segment.words.clear();
+        let json = serde_json::to_value(&segment).expect("segment should serialize");
+        assert!(json.get("words").is_none());
     }
 
     #[test]

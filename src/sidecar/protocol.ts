@@ -66,6 +66,16 @@ export interface TranscriptSegment {
   text: string;
   timestampGranularity: TimestampGranularity;
   timestampSource: TimestampSource;
+  /** Engine-provided word alignments when the selected model supports them.
+   * Omitted by older sidecars and empty for models without word timing. */
+  words?: TranscriptWord[];
+}
+
+export interface TranscriptWord {
+  endMs: number;
+  startMs: number;
+  text: string;
+  timestampSource: TimestampSource;
 }
 
 export const TIMESTAMP_SOURCES = ['engine', 'interpolated', 'none', 'vad'] as const;
@@ -110,6 +120,8 @@ export type ProbeSystemAudioCommand = EnvelopeBase<'probe_system_audio'>;
 
 export interface StartSessionCommand extends EnvelopeBase<'start_session'> {
   accelerationPreference: AccelerationPreference;
+  /** Opt in to adapter work needed for dense word alignment. */
+  detailedTimestampsEnabled: boolean;
   diarizationEnabled: boolean;
   diarizationMaxSpeakers: number | null;
   includeSystemAudio: boolean;

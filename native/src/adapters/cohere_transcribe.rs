@@ -161,6 +161,7 @@ impl LoadedModel for LoadedCohereModel {
                 text: trimmed,
                 timestamp_granularity: TimestampGranularity::Utterance,
                 timestamp_source: TimestampSource::Vad,
+                words: Vec::new(),
             }]
         };
         let diagnostics = if segments.is_empty() {

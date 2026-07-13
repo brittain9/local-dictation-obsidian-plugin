@@ -296,6 +296,7 @@ fn start_session_command(
 ) -> Command {
     Command::StartSession {
         acceleration_preference: AccelerationPreference::CpuOnly,
+        detailed_timestamps_enabled: false,
         diarization_enabled,
         diarization_max_speakers: None,
         include_system_audio: false,
