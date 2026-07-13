@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest';
 
-import { phraseFinalizationDescription } from '../src/settings/phrase-finalization-setting';
+import {
+  PHRASE_FINALIZATION_TOOLTIP,
+  phraseFinalizationDescription,
+} from '../src/settings/phrase-finalization-setting';
 
 describe('phraseFinalizationDescription', () => {
   it.each([
@@ -14,13 +17,8 @@ describe('phraseFinalizationDescription', () => {
     expect(description).toContain(outcome);
   });
 
-  it.each([
-    'responsive',
-    'balanced',
-    'patient',
-  ] as const)('makes live-model behavior explicit for %s', (style) => {
-    expect(phraseFinalizationDescription(style)).toContain(
-      'every transcription model, including live models',
-    );
+  it('keeps shared model behavior in the tooltip', () => {
+    expect(PHRASE_FINALIZATION_TOOLTIP).toContain('every transcription model');
+    expect(PHRASE_FINALIZATION_TOOLTIP).toContain('Live words can still update');
   });
 });
