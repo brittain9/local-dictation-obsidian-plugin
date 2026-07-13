@@ -17,26 +17,26 @@
       "familyId": "whisper",
       "runtimeId": "whisper_cpp",
       "displayName": "Whisper",
-      "summary": "Batch transcription after each pause. Start with Small for everyday English dictation; Tiny and Base prioritize speed, while Medium and Large prioritize accuracy."
+      "summary": "Transcribes after each pause. Tiny and Base favor speed, Small balances speed and quality, and Medium and Large favor quality."
     },
     {
       "familyId": "cohere_transcribe",
       "runtimeId": "onnx_runtime",
       "displayName": "Cohere Transcribe",
-      "summary": "Cohere Transcribe (2B parameters) running on ONNX Runtime. Local Dictation currently enables English only."
+      "summary": "High-quality batch transcription with multi-gigabyte download and memory requirements."
     },
     {
       "familyId": "moonshine",
       "runtimeId": "onnx_runtime",
       "displayName": "Moonshine",
-      "summary": "Live English transcription while you speak. Start with Small for the recommended balance; Tiny uses fewer resources, while Medium is the most accurate and uses more CPU time and memory."
+      "summary": "Shows words while you speak. Tiny favors lower resource use, Small balances speed and quality, and Medium favors quality."
     }
   ],
   "collections": [
     {
       "collectionId": "english_cpu_first",
       "displayName": "English CPU First",
-      "summary": "Recommended English-first CPU models for the current desktop dictation scope."
+      "summary": "CPU-friendly models for the current desktop dictation scope."
     },
     {
       "collectionId": "cohere_transcribe",
@@ -55,7 +55,7 @@
       "familyId": "whisper",
       "modelId": "whisper_tiny_en_q8_0",
       "collectionId": "english_cpu_first",
-      "displayName": "Whisper Tiny English Q8_0",
+      "displayName": "Whisper Tiny",
       "summary": "Fastest model with lowest resource cost. Good for testing or low-power machines.",
       "languageTags": ["en"],
       "uxTags": ["fast", "lightweight", "cpu"],
@@ -84,7 +84,7 @@
       "familyId": "whisper",
       "modelId": "whisper_base_en_q8_0",
       "collectionId": "english_cpu_first",
-      "displayName": "Whisper Base English Q8_0",
+      "displayName": "Whisper Base",
       "summary": "Fast model with decent accuracy. A good choice for quick drafts on CPU.",
       "languageTags": ["en"],
       "uxTags": ["fast", "cpu"],
@@ -113,17 +113,17 @@
       "familyId": "whisper",
       "modelId": "whisper_small_en_q5_1",
       "collectionId": "english_cpu_first",
-      "displayName": "Whisper Small English Q5_1",
-      "summary": "Recommended starter model with a good balance of accuracy and speed.",
+      "displayName": "Whisper Small",
+      "summary": "Balances transcription quality, download size, and CPU speed.",
       "languageTags": ["en"],
-      "uxTags": ["starter", "cpu"],
+      "uxTags": ["balanced", "cpu"],
       "licenseLabel": "MIT",
       "licenseUrl": "https://raw.githubusercontent.com/ggml-org/whisper.cpp/master/LICENSE",
       "sourceUrl": "https://huggingface.co/ggerganov/whisper.cpp/tree/5359861c739e955e79d9a303bcbc70fb988958b1",
       "modelCardUrl": "https://github.com/ggml-org/whisper.cpp",
       "notes": [
-        "Start here for everyday English dictation.",
-        "Best tradeoff between download size, inference speed, and transcription quality."
+        "A middle ground between the faster Base model and the more accurate Medium model.",
+        "Uses the Q5_1 artifact listed below."
       ],
       "artifacts": [
         {
@@ -142,7 +142,7 @@
       "familyId": "whisper",
       "modelId": "whisper_medium_en_q5_0",
       "collectionId": "english_cpu_first",
-      "displayName": "Whisper Medium English Q5_0",
+      "displayName": "Whisper Medium",
       "summary": "High-accuracy model for users who prioritize transcription quality over speed.",
       "languageTags": ["en"],
       "uxTags": ["accuracy", "cpu"],
@@ -171,7 +171,7 @@
       "familyId": "whisper",
       "modelId": "whisper_large_v3_turbo_q8_0",
       "collectionId": "english_cpu_first",
-      "displayName": "Whisper Large V3 Turbo Q8_0",
+      "displayName": "Whisper Large V3 Turbo",
       "summary": "Best accuracy with an architecture optimized for GPU acceleration.",
       "languageTags": ["en"],
       "uxTags": ["accuracy", "gpu"],
@@ -201,17 +201,14 @@
       "modelId": "cohere_transcribe_fp16",
       "collectionId": "cohere_transcribe",
       "displayName": "Cohere Transcribe FP16",
-      "summary": "Full-precision model with the highest accuracy. Recommended for users with sufficient RAM and storage.",
+      "summary": "Largest Cohere variant, preserving full model precision.",
       "languageTags": ["en"],
-      "uxTags": ["accuracy"],
+      "uxTags": ["full-precision"],
       "licenseLabel": "Apache-2.0",
       "licenseUrl": "https://huggingface.co/CohereForAI/cohere-transcribe-03-2026/blob/main/LICENSE",
       "sourceUrl": "https://huggingface.co/onnx-community/cohere-transcribe-03-2026-ONNX",
       "modelCardUrl": "https://huggingface.co/CohereForAI/cohere-transcribe-03-2026",
-      "notes": [
-        "Leads the HuggingFace Open ASR Leaderboard at 5.42% average WER.",
-        "FP16 is effectively lossless for inference and half the size of FP32."
-      ],
+      "notes": ["Uses FP16 encoder and decoder weights.", "Requires roughly 4 GB for model files."],
       "artifacts": [
         {
           "artifactId": "encoder",
@@ -275,16 +272,16 @@
       "modelId": "cohere_transcribe_int8",
       "collectionId": "cohere_transcribe",
       "displayName": "Cohere Transcribe INT8",
-      "summary": "Balanced quantized model offering near-full accuracy at reduced size and memory use.",
+      "summary": "Middle Cohere variant by download size, using 8-bit quantization.",
       "languageTags": ["en"],
-      "uxTags": ["balanced"],
+      "uxTags": ["reduced-size"],
       "licenseLabel": "Apache-2.0",
       "licenseUrl": "https://huggingface.co/CohereForAI/cohere-transcribe-03-2026/blob/main/LICENSE",
       "sourceUrl": "https://huggingface.co/onnx-community/cohere-transcribe-03-2026-ONNX",
       "modelCardUrl": "https://huggingface.co/CohereForAI/cohere-transcribe-03-2026",
       "notes": [
-        "INT8 quantization with minimal accuracy loss compared to FP16.",
-        "Good choice when storage or memory is a concern."
+        "Uses quantized encoder and decoder weights.",
+        "Smaller than FP16 but still a multi-gigabyte model."
       ],
       "artifacts": [
         {
@@ -349,16 +346,16 @@
       "modelId": "cohere_transcribe_q4",
       "collectionId": "cohere_transcribe",
       "displayName": "Cohere Transcribe Q4",
-      "summary": "Compact 4-bit quantized model for constrained storage or memory environments.",
+      "summary": "Smallest Cohere variant; 4-bit quantization reduces size at a quality cost.",
       "languageTags": ["en"],
-      "uxTags": ["compact", "lightweight"],
+      "uxTags": ["smallest"],
       "licenseLabel": "Apache-2.0",
       "licenseUrl": "https://huggingface.co/CohereForAI/cohere-transcribe-03-2026/blob/main/LICENSE",
       "sourceUrl": "https://huggingface.co/onnx-community/cohere-transcribe-03-2026-ONNX",
       "modelCardUrl": "https://huggingface.co/CohereForAI/cohere-transcribe-03-2026",
       "notes": [
-        "Aggressive 4-bit quantization trades some accuracy for the smallest download.",
-        "Best for trying Cohere Transcribe on space-constrained systems."
+        "Smallest Cohere download, at about 2 GB.",
+        "Compare its accuracy with the larger variants before relying on it."
       ],
       "artifacts": [
         {
@@ -497,16 +494,16 @@
       "modelId": "moonshine_small_streaming_en",
       "collectionId": "moonshine_streaming",
       "displayName": "Moonshine Small",
-      "summary": "Recommended Moonshine model for live dictation — 123M parameters balancing streaming accuracy and CPU speed.",
+      "summary": "Balanced live-dictation model at 123M parameters.",
       "languageTags": ["en"],
-      "uxTags": ["balanced", "starter"],
+      "uxTags": ["balanced"],
       "licenseLabel": "MIT",
       "licenseUrl": "https://github.com/moonshine-ai/moonshine/blob/main/LICENSE",
       "sourceUrl": "https://github.com/moonshine-ai/moonshine",
       "modelCardUrl": "https://huggingface.co/UsefulSensors/moonshine-streaming-small",
       "notes": [
         "English-only model for live, streaming dictation.",
-        "Quantized (int8) precision; the recommended default for everyday use."
+        "Quantized (int8) precision with a middle ground between Tiny and Medium."
       ],
       "artifacts": [
         {

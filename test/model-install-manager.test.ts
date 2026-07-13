@@ -1016,7 +1016,7 @@ function sampleReadyProbeResult(selection: CatalogModelSelection = sampleSelecti
   return {
     available: true,
     details: null,
-    displayName: isMoonshine ? 'Moonshine Small' : 'Whisper Large V3 Turbo Q8_0',
+    displayName: isMoonshine ? 'Moonshine Small' : 'Whisper Large V3 Turbo',
     familyId: selection.familyId,
     installed: true,
     mergedCapabilities: {

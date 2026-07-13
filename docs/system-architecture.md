@@ -301,14 +301,14 @@ than a silent failure.
 |-------|--------|-------|------|-------|
 | Whisper Tiny EN | `whisper_cpp` · `whisper` | Q8_0 | 42 MB | Fastest, lowest quality |
 | Whisper Base EN | `whisper_cpp` · `whisper` | Q8_0 | 78 MB | |
-| Whisper Small EN | `whisper_cpp` · `whisper` | Q5_1 | 181 MB | Recommended starter |
+| Whisper Small EN | `whisper_cpp` · `whisper` | Q5_1 | 181 MB | Balanced |
 | Whisper Medium EN | `whisper_cpp` · `whisper` | Q5_0 | 514 MB | |
 | Whisper Large V3 Turbo | `whisper_cpp` · `whisper` | Q8_0 | 834 MB | Best with GPU |
 | Cohere Transcribe FP16 | `onnx_runtime` · `cohere_transcribe` | FP16 | 3.8 GB | 2B params |
 | Cohere Transcribe INT8 | `onnx_runtime` · `cohere_transcribe` | INT8 | 2.9 GB | |
 | Cohere Transcribe Q4 | `onnx_runtime` · `cohere_transcribe` | Q4 | 2.0 GB | |
 | Moonshine Tiny | `onnx_runtime` · `moonshine` | Quantized | 49 MB | Streaming (live), 34M params |
-| Moonshine Small | `onnx_runtime` · `moonshine` | Quantized | 157 MB | Streaming (live), recommended, 123M params |
+| Moonshine Small | `onnx_runtime` · `moonshine` | Quantized | 157 MB | Streaming (live), balanced, 123M params |
 | Moonshine Medium | `onnx_runtime` · `moonshine` | Quantized | 289 MB | Streaming (live), 245M params |
 
 Moonshine models are streaming (live-dictation) entries in the managed catalog,
