@@ -11,15 +11,13 @@ import {
 } from '../llm/presets';
 import type { LlmCleanupFailure } from '../llm/provider';
 import type { LlmPresetStateMutation } from '../settings/llm-preset-state';
-import { type PluginSettings, resetLlmPostprocessDefaults } from '../settings/plugin-settings';
-import {
-  addNumberInputSetting,
-  appendInfoTooltip,
-  createSettingGroup,
-} from '../settings/setting-helpers';
+import type { PluginSettings } from '../settings/plugin-settings';
+import { createSettingGroup } from '../settings/setting-helpers';
 import type { PluginLogger } from '../shared/plugin-logger';
 import type { UserFeedback } from '../shared/user-feedback';
 import { FocusRefreshController } from './focus-refresh-controller';
+import { LlmContextSettingsModal } from './llm-context-settings-modal';
+import { LlmModelSettingsModal } from './llm-model-settings-modal';
 import { activePresetOverride } from './llm-preset-overrides';
 import { formatCleanupFailureBanner } from './llm-provider-ui';
 import { LlmRoutingControls } from './llm-routing-controls';
@@ -28,7 +26,7 @@ import {
   resolveLlmSidebarPresentation,
 } from './llm-sidebar-presentation';
 import { INLINE_STATUS_PRESENTATION } from './llm-status';
-import { LlmTransformSettingsModal } from './llm-transform-settings-modal';
+import { LlmTimingSettingsModal } from './llm-timing-settings-modal';
 import { PresetManagerModal } from './preset-manager-modal';
 
 export const LOCAL_DICTATION_VIEW_TYPE = 'local-dictation-sidebar';
@@ -72,6 +70,9 @@ export class LocalDictationView extends ItemView {
       getOpenRouterApiKey: () => this.dependencies.getOpenRouterApiKey(),
       getSettings: () => this.dependencies.getSettings(),
       logger: this.dependencies.logger,
+      openModelSettings: () => {
+        this.openModelSettings();
+      },
       persist: (settings, options) => this.persistSettings(settings, options),
       requestRerender: () => {
         this.scheduleRender();
@@ -176,18 +177,18 @@ export class LocalDictationView extends ItemView {
       return;
     }
 
+    this.renderOriginalTranscriptToggle(transformItems, settings);
     this.renderRuntimeFailureBanner(transformItems);
 
     const styleGroup = createSettingGroup(contentEl, 'Preset');
     this.renderPresetPicker(styleGroup, settings);
     this.renderCleanupMode(styleGroup, settings);
 
-    const whereGroup = createSettingGroup(contentEl, 'Provider');
+    const whereGroup = createSettingGroup(contentEl, 'Model');
     this.routingControls.render(whereGroup, settings);
 
     const contextGroup = createSettingGroup(contentEl, 'Context');
     this.renderUseNoteContextToggle(contextGroup, settings);
-    this.renderNoteContextChars(contextGroup, settings);
   }
 
   requestRefresh(): void {
@@ -233,30 +234,34 @@ export class LocalDictationView extends ItemView {
 
   private renderCleanupToggle(parent: HTMLElement, settings: PluginSettings): void {
     const enabled = settings.llmPostprocessMode !== 'off';
-    const setting = new Setting(parent)
+    new Setting(parent)
       .setName('Enabled')
-      .setDesc('Apply the active preset to new dictated text.');
-    setting.addToggle((toggle) => {
-      toggle.setValue(enabled);
-      toggle.onChange(async (value) => {
-        const current = this.dependencies.getSettings();
-        await this.persistSettings({
-          ...current,
-          llmPostprocessMode: value ? current.llmPostprocessLastEnabledMode : 'off',
+      .setDesc('Apply the active preset to new dictated text.')
+      .addToggle((toggle) => {
+        toggle.setValue(enabled);
+        toggle.onChange(async (value) => {
+          const current = this.dependencies.getSettings();
+          await this.persistSettings({
+            ...current,
+            llmPostprocessMode: value ? current.llmPostprocessLastEnabledMode : 'off',
+          });
+          if (value) {
+            void this.routingControls.refreshActiveProviders({ forceLocal: true });
+          }
         });
-        if (value) {
-          void this.routingControls.refreshActiveProviders({ forceLocal: true });
-        }
       });
-    });
-    setting.addExtraButton((button) => {
-      button
-        .setIcon('sliders-horizontal')
-        .setTooltip('Transform settings')
-        .onClick(() => {
-          this.openTransformSettings();
+  }
+
+  private renderOriginalTranscriptToggle(parent: HTMLElement, settings: PluginSettings): void {
+    new Setting(parent)
+      .setName('Show original transcript')
+      .setDesc('Keep it in a collapsible callout below each transformed result.')
+      .addToggle((toggle) => {
+        toggle.setValue(settings.llmPostprocessShowRawBelow);
+        toggle.onChange(async (value) => {
+          await this.saveField('llmPostprocessShowRawBelow', value, { rerender: false });
         });
-    });
+      });
   }
 
   private renderCleanupMode(parent: HTMLElement, settings: PluginSettings): void {
@@ -269,7 +274,7 @@ export class LocalDictationView extends ItemView {
     );
     const pinned = preset.timing;
 
-    new Setting(parent)
+    const setting = new Setting(parent)
       .setName('Run transform')
       .setDesc(
         pinned !== undefined
@@ -293,6 +298,15 @@ export class LocalDictationView extends ItemView {
           });
         });
       });
+    setting.addExtraButton((button) => {
+      button
+        .setIcon('sliders-horizontal')
+        .setTooltip('Timing settings')
+        .onClick(() => {
+          this.openTimingSettings();
+        });
+      button.extraSettingsEl.setAttribute('aria-label', 'Timing settings');
+    });
   }
 
   private renderPresetPicker(parent: HTMLElement, settings: PluginSettings): void {
@@ -329,6 +343,7 @@ export class LocalDictationView extends ItemView {
         .onClick(() => {
           void this.openPresetManager();
         });
+      button.extraSettingsEl.setAttribute('aria-label', 'Manage presets');
     });
   }
 
@@ -343,23 +358,35 @@ export class LocalDictationView extends ItemView {
     }).open();
   }
 
-  private openTransformSettings(): void {
-    new LlmTransformSettingsModal(this.app, {
+  private openTimingSettings(): void {
+    new LlmTimingSettingsModal(this.app, {
       getSettings: () => this.dependencies.getSettings(),
       onSave: () => {
         this.requestRefresh();
       },
-      resetDefaults: async () => {
-        await this.mutatePresetState(
-          (state) => ({
-            ...state,
-            activePresetRef: resolveActivePresetEntry(null, []).ref,
-          }),
-          { rerender: false },
-        );
-        await this.dependencies.saveSettings(
-          resetLlmPostprocessDefaults(this.dependencies.getSettings()),
-        );
+      saveSettings: async (settings) => {
+        await this.dependencies.saveSettings(settings);
+      },
+    }).open();
+  }
+
+  private openModelSettings(): void {
+    new LlmModelSettingsModal(this.app, {
+      getSettings: () => this.dependencies.getSettings(),
+      onSave: () => {
+        this.requestRefresh();
+      },
+      saveSettings: async (settings) => {
+        await this.dependencies.saveSettings(settings);
+      },
+    }).open();
+  }
+
+  private openContextSettings(): void {
+    new LlmContextSettingsModal(this.app, {
+      getSettings: () => this.dependencies.getSettings(),
+      onSave: () => {
+        this.requestRefresh();
       },
       saveSettings: async (settings) => {
         await this.dependencies.saveSettings(settings);
@@ -376,7 +403,10 @@ export class LocalDictationView extends ItemView {
     const row = parent.createDiv({
       cls: `local-dictation-status ${INLINE_STATUS_PRESENTATION.warning.className}`,
     });
+    row.setAttribute('aria-live', 'polite');
+    row.setAttribute('role', 'alert');
     const iconEl = row.createSpan({ cls: 'local-dictation-status__icon' });
+    iconEl.setAttribute('aria-hidden', 'true');
     setIcon(iconEl, INLINE_STATUS_PRESENTATION.warning.icon);
     row.createSpan({
       cls: 'local-dictation-status__text',
@@ -387,11 +417,11 @@ export class LocalDictationView extends ItemView {
   private renderUseNoteContextToggle(parent: HTMLElement, settings: PluginSettings): void {
     const override = activePresetOverride(settings, 'useNoteContext');
     const setting = new Setting(parent)
-      .setName('Use note as LLM context')
+      .setName('Use current note as context')
       .setDesc(
         override !== null
-          ? `Set by preset "${override.label}". Edit the preset to change.`
-          : 'Include the open note above the cursor in the LLM prompt.',
+          ? `Managed by “${override.label}”. Edit that preset to change this value.`
+          : 'Include text above the cursor in each prompt.',
       )
       .addToggle((toggle) => {
         toggle.setValue(override !== null ? override.value === true : settings.useLlmNoteContext);
@@ -400,51 +430,14 @@ export class LocalDictationView extends ItemView {
           await this.saveField('useLlmNoteContext', value);
         });
       });
-    appendInfoTooltip(
-      setting,
-      'Experimental: results vary with note length and model. The note text is sent with every transform — on OpenRouter that adds input-token cost; on local models it adds latency.',
-    );
-  }
-
-  private renderNoteContextChars(parent: HTMLElement, settings: PluginSettings): void {
-    const override = activePresetOverride(settings, 'useNoteContext');
-    const effectiveNoteContext =
-      override !== null ? override.value === true : settings.useLlmNoteContext;
-    if (!effectiveNoteContext) {
-      return;
-    }
-    this.addNumberSetting(
-      parent,
-      'Note context chars',
-      'Chars of note text',
-      settings.llmPostprocessNoteContextChars,
-      (value) => this.saveField('llmPostprocessNoteContextChars', value, { rerender: false }),
-      'Characters of surrounding note text fed to the model as context.',
-    );
-  }
-
-  private addNumberSetting(
-    parent: HTMLElement,
-    name: string,
-    desc: string,
-    value: number,
-    onChange: (value: number) => Promise<void>,
-    tooltip: string,
-    options: { disabled?: boolean } = {},
-  ): void {
-    addNumberInputSetting(parent, {
-      desc,
-      name,
-      onChange,
-      onElement: (element) => {
-        if (options.disabled === true) {
-          element.disabled = true;
-          return;
-        }
-        this.trackInputFocus(element);
-      },
-      tooltip,
-      value,
+    setting.addExtraButton((button) => {
+      button
+        .setIcon('sliders-horizontal')
+        .setTooltip('Context settings')
+        .onClick(() => {
+          this.openContextSettings();
+        });
+      button.extraSettingsEl.setAttribute('aria-label', 'Context settings');
     });
   }
 

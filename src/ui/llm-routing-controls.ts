@@ -20,9 +20,9 @@ import {
   withProviderModel,
 } from '../llm/provider';
 import { isLlmRouting, type PluginSettings } from '../settings/plugin-settings';
-import { appendInfoTooltip } from '../settings/setting-helpers';
 import type { PluginLogger } from '../shared/plugin-logger';
 import type { UserFeedback } from '../shared/user-feedback';
+import { describeModelBehavior } from './llm-model-settings-presentation';
 import { formatCleanupFailureBanner, priceTier, providerHealthFromError } from './llm-provider-ui';
 import { deriveInlineStatus, INLINE_STATUS_PRESENTATION } from './llm-status';
 
@@ -32,6 +32,7 @@ export interface LlmRoutingControlsDependencies {
   getOpenRouterApiKey: () => string;
   getSettings: () => PluginSettings;
   logger?: PluginLogger | undefined;
+  openModelSettings: () => void;
   persist: (settings: PluginSettings, options?: { rerender?: boolean }) => Promise<void>;
   requestRerender: () => void;
 }
@@ -42,8 +43,6 @@ const ROUTING_SEGMENTS: ReadonlyArray<{ label: string; value: LlmRouting }> = [
   { label: 'Auto', value: 'auto' },
 ];
 
-// Rough chars-per-token ratio used only for the human-readable threshold hint.
-const CHARS_PER_TOKEN = 4;
 const API_KEY_REFRESH_DEBOUNCE_MS = 500;
 const TEST_RESULT_ICON_MS = 2500;
 
@@ -186,11 +185,13 @@ export class LlmRoutingControls {
 
   render(parent: HTMLElement, settings: PluginSettings): void {
     if (!settings.llmRemoteFeaturesEnabled) {
+      this.renderModelBehavior(parent, settings);
       this.renderModelDropdown(parent, settings, 'ollama');
       return;
     }
 
     this.renderSegmentedControl(parent, settings);
+    this.renderModelBehavior(parent, settings);
 
     switch (settings.llmRouting) {
       case 'local':
@@ -210,6 +211,7 @@ export class LlmRoutingControls {
     const field = parent.createDiv({ cls: 'local-dictation-route-field' });
     const segmented = field.createDiv({ cls: 'local-dictation-segmented' });
     segmented.setAttribute('role', 'group');
+    segmented.setAttribute('aria-label', 'Run transforms with');
     for (const segment of ROUTING_SEGMENTS) {
       const isActive = settings.llmRouting === segment.value;
       const button = segmented.createEl('button', {
@@ -242,8 +244,6 @@ export class LlmRoutingControls {
   }
 
   private renderAutoControls(parent: HTMLElement, settings: PluginSettings): void {
-    this.renderThreshold(parent, settings);
-
     this.renderLeg(parent, 'Local · Ollama');
     this.renderModelDropdown(parent, settings, 'ollama');
 
@@ -252,32 +252,19 @@ export class LlmRoutingControls {
     this.renderOpenRouterModel(parent, settings);
   }
 
-  private renderThreshold(parent: HTMLElement, settings: PluginSettings): void {
-    const setting = new Setting(parent)
-      .setName('Route to OpenRouter above')
-      .setDesc(thresholdDesc(settings.llmRemoteThresholdChars))
-      .addText((text) => {
-        text.inputEl.type = 'number';
-        text.inputEl.inputMode = 'numeric';
-        text.setValue(String(settings.llmRemoteThresholdChars));
-        this.onModelInput?.(text.inputEl);
-        text.onChange(async (value) => {
-          const parsed = Number.parseInt(value, 10);
-          if (!Number.isInteger(parsed)) {
-            return;
-          }
-          setting.descEl.setText(thresholdDesc(parsed));
-          await this.dependencies.persist(
-            { ...this.dependencies.getSettings(), llmRemoteThresholdChars: parsed },
-            { rerender: false },
-          );
-        });
+  private renderModelBehavior(parent: HTMLElement, settings: PluginSettings): void {
+    new Setting(parent)
+      .setName('Model behavior')
+      .setDesc(describeModelBehavior(settings))
+      .addExtraButton((button) => {
+        button
+          .setIcon('sliders-horizontal')
+          .setTooltip('Model settings')
+          .onClick(() => {
+            this.dependencies.openModelSettings();
+          });
+        button.extraSettingsEl.setAttribute('aria-label', 'Model settings');
       });
-
-    appendInfoTooltip(
-      setting,
-      'Large transcripts can overflow a local model’s context or run slowly — Auto sends just those to OpenRouter.',
-    );
   }
 
   private renderLeg(parent: HTMLElement, label: string): void {
@@ -403,6 +390,8 @@ export class LlmRoutingControls {
   // a full settings re-render (which would steal focus from the text input).
   private renderStatusRow(parent: HTMLElement, providerId: LlmProviderId): () => void {
     const row = parent.createDiv();
+    row.setAttribute('aria-live', 'polite');
+    row.setAttribute('role', 'status');
     const update = (): void => {
       row.empty();
       const state = this.providers[providerId];
@@ -419,6 +408,7 @@ export class LlmRoutingControls {
       const { className, icon } = INLINE_STATUS_PRESENTATION[status.variant];
       row.className = `local-dictation-status ${className}`;
       const iconEl = row.createSpan({ cls: 'local-dictation-status__icon' });
+      iconEl.setAttribute('aria-hidden', 'true');
       setIcon(iconEl, icon);
       row.createSpan({ cls: 'local-dictation-status__text', text: status.text });
     };
@@ -568,9 +558,4 @@ function routingHint(routing: LlmRouting): string {
     case 'auto':
       return 'Stays on-device, and hands large transcripts to OpenRouter.';
   }
-}
-
-function thresholdDesc(chars: number): string {
-  const tokens = Math.round(chars / CHARS_PER_TOKEN);
-  return `${chars.toLocaleString()} characters  ·  ≈ ${tokens.toLocaleString()} tokens`;
 }

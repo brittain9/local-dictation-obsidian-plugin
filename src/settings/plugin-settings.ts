@@ -89,7 +89,7 @@ export const SPEAKING_STYLES = [
   'patient',
 ] as const satisfies readonly SpeakingStyle[];
 
-const DEFAULT_LLM_ACTIVE_PRESET_REF = formatStyleRef({
+export const DEFAULT_LLM_ACTIVE_PRESET_REF = formatStyleRef({
   kind: 'builtin',
   id: DEFAULT_LLM_BUILTIN_PRESET_ID,
 });
@@ -119,6 +119,7 @@ export const LLM_USER_PRESET_MAX_COUNT = 50;
 // Shared LLM bounds keep persisted-value normalization and configuration UIs aligned.
 // Min words and temperature also apply to per-preset overrides.
 export const LLM_MIN_WORDS_MAX = 50;
+export const LLM_NOTE_CONTEXT_CHARS_MAX = 12_000;
 export const LLM_PRIOR_UTTERANCES_MAX = 5;
 export const LLM_TOTAL_CONTEXT_CAP_MAX = 30_000;
 export const LLM_TEMPERATURE_MAX = 2;
@@ -287,7 +288,7 @@ export function resolvePluginSettings(data: unknown): PluginSettings {
       raw.llmPostprocessNoteContextChars,
       DEFAULT_PLUGIN_SETTINGS.llmPostprocessNoteContextChars,
       0,
-      12_000,
+      LLM_NOTE_CONTEXT_CHARS_MAX,
     ),
     llmPostprocessPriorUtterancesN: readClampedInteger(
       raw.llmPostprocessPriorUtterancesN,

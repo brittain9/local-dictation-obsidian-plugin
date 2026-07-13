@@ -829,14 +829,6 @@
   overflow: hidden;
 }
 
-/* --- LLM muted paragraph ----------------------------------------- */
-
-.local-dictation-muted {
-  margin: 0.4em 0;
-  color: var(--text-muted);
-  font-size: var(--font-ui-smaller);
-}
-
 /* --- LLM sidebar inline status row -------------------------------- */
 
 .local-dictation-status {

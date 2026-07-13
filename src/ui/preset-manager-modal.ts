@@ -300,9 +300,9 @@ export class PresetManagerModal extends Modal {
     let timingDropdown: DropdownComponent | null = null;
     new Setting(this.contentEl)
       .setName('Timing')
-      .setDesc('When the transform runs. "Either" follows the panel Mode setting.')
+      .setDesc('When the transform runs. “Either” follows the sidebar timing.')
       .addDropdown((dropdown) => {
-        dropdown.addOption('either', 'Either (follow Mode)');
+        dropdown.addOption('either', 'Either (follow sidebar)');
         dropdown.addOption('per_utterance', 'After each phrase');
         dropdown.addOption('batch', 'Once on stop');
         dropdown.setValue(draft.timing);
@@ -365,7 +365,7 @@ export class PresetManagerModal extends Modal {
       });
     });
 
-    new Setting(this.contentEl).setName('Use note as LLM context').addDropdown((dropdown) => {
+    new Setting(this.contentEl).setName('Use current note as context').addDropdown((dropdown) => {
       dropdown.addOption('inherit', 'Inherit');
       dropdown.addOption('on', 'On');
       dropdown.addOption('off', 'Off');
