@@ -75,7 +75,7 @@ probing):
   `float/` does not exist on the CDN): published fp32 open-ASR average WER
   is tiny 12.01%, small 7.84%, medium 6.65% (medium beats Whisper Large v3
   with ~6× fewer parameters). We catalog **all three**: tiny for low-end
-  CPUs, small as the recommended balance, medium for accuracy.
+  CPUs, small as the balanced option, and medium for accuracy.
 
 ## Design decisions
 
@@ -94,8 +94,8 @@ Add to `native/catalog.json` (schema unchanged):
   Medium Streaming"). Suggested guidance content:
   - tiny — `uxTags: ["fast", "cpu"]`; ~51 MB; 34M params; first choice for
     low-end hardware.
-  - small — `uxTags: ["balanced", "starter"]`; ~165 MB; 123M params; the
-    recommended default (mirror the "starter" convention Whisper uses).
+  - small — `uxTags: ["balanced"]`; ~165 MB; 123M params; the middle option
+    for speed and quality.
   - medium — `uxTags: ["accuracy"]`; ~303 MB; 245M params; note it beats
     Whisper Large v3 on open-ASR WER.
   - All: `languageTags: ["en"]`; notes must state English-only, live/

@@ -1,6 +1,5 @@
 import type { App } from 'obsidian';
 import { Modal, Platform, setIcon } from 'obsidian';
-import { CURRENT_LANGUAGE_SUPPORT_NOTICE } from '../models/language-support';
 import { ManageModelsModal } from '../models/manage-models-modal';
 import type { ModelInstallManager } from '../models/model-install-manager';
 import type { PluginLogger } from '../shared/plugin-logger';
@@ -209,11 +208,6 @@ export class SetupWizardModal extends Modal {
       cls: 'local-stt-wizard-step__title',
       text: this.modelReady ? 'Model selected' : 'Pick a transcription model',
     });
-    body.createEl('p', {
-      cls: 'local-stt-wizard-step__muted',
-      text: CURRENT_LANGUAGE_SUPPORT_NOTICE,
-    });
-
     if (this.modelReady) {
       body.createEl('p', {
         text: 'A transcription model is installed and selected. You can install more or switch later from Settings.',

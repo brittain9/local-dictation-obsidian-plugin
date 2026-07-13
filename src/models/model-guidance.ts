@@ -1,7 +1,8 @@
 const MODEL_TAG_LABELS: Readonly<Record<string, string>> = {
   cpu: 'CPU',
+  'full-precision': 'Full precision',
   gpu: 'GPU',
-  starter: 'Recommended',
+  'reduced-size': 'Reduced size',
 };
 
 export function formatModelTagLabel(tag: string): string {

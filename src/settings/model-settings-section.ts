@@ -9,10 +9,10 @@ import { renderActiveInstallCard } from './install-progress-row';
 // Badge helper (maps installedLabel -> CSS modifier + display text)
 // ---------------------------------------------------------------------------
 
-function getBadgeInfo(installedLabel: string): { modifier: string; text: string } {
+function getBadgeInfo(installedLabel: string): { modifier: string; text: string } | null {
   switch (installedLabel) {
     case 'Installed':
-      return { modifier: 'ready', text: 'Ready' };
+      return null;
     case 'Not installed':
       return { modifier: 'missing', text: 'Not installed' };
     case 'External validated':
@@ -61,24 +61,40 @@ export function renderModelSection(
 
     // --- Current model row ---
     const descFragment = createFragment();
+    let hasMetadata = false;
+    const appendSeparator = (): void => {
+      if (hasMetadata) {
+        descFragment.createSpan({ text: ' \u00b7 ' });
+      }
+      hasMetadata = true;
+    };
+
     if (currentModel.engineLabel.length > 0) {
-      descFragment.createSpan({ text: `${currentModel.engineLabel} \u00b7 ` });
+      appendSeparator();
+      descFragment.createSpan({ text: currentModel.engineLabel });
     }
     const caps = state.selectedModelCapabilities;
     if (caps.status === 'ready' && caps.capabilities.family.supportsStreaming) {
+      appendSeparator();
       descFragment.createSpan({
         cls: 'local-stt-badge local-stt-badge--streaming',
         text: 'Streaming',
       });
-      descFragment.createSpan({ text: ' \u00b7 ' });
     }
     const badge = getBadgeInfo(currentModel.installedLabel);
-    descFragment.createSpan({
-      cls: `local-stt-badge local-stt-badge--${badge.modifier}`,
-      text: badge.text,
-    });
-    descFragment.createEl('br');
-    descFragment.createSpan({ text: currentModel.detail });
+    if (badge !== null) {
+      appendSeparator();
+      descFragment.createSpan({
+        cls: `local-stt-badge local-stt-badge--${badge.modifier}`,
+        text: badge.text,
+      });
+    }
+    if (currentModel.detail.length > 0) {
+      if (hasMetadata) {
+        descFragment.createEl('br');
+      }
+      descFragment.createSpan({ text: currentModel.detail });
+    }
 
     const cardSetting = new Setting(container)
       .setName(currentModel.displayName)
