@@ -273,6 +273,8 @@ pub enum Command {
         #[serde(default)]
         diarization_enabled: bool,
         #[serde(default)]
+        diarization_max_speakers: Option<u32>,
+        #[serde(default)]
         include_system_audio: bool,
         language: String,
         mode: ListeningMode,
@@ -664,6 +666,7 @@ mod tests {
             IncomingFrame::Command(Command::StartSession {
                 acceleration_preference: AccelerationPreference::Auto,
                 diarization_enabled: false,
+                diarization_max_speakers: None,
                 include_system_audio: true,
                 language: "en".to_string(),
                 mode: ListeningMode::AlwaysOn,
@@ -708,6 +711,43 @@ mod tests {
             parsed,
             IncomingFrame::Command(Command::StartSession { .. })
         ));
+    }
+
+    #[test]
+    fn start_session_speaker_limit_round_trips() {
+        let payload = serde_json::to_vec(&serde_json::json!({
+            "type": "start_session",
+            "sessionId": "session-speakers",
+            "mode": "always_on",
+            "modelSelection": {
+                "kind": "external_file",
+                "runtimeId": "whisper_cpp",
+                "familyId": "whisper",
+                "filePath": "/tmp/model.bin"
+            },
+            "language": "en",
+            "sessionStartUnixMs": 1_700_000_000_000_u64,
+            "diarizationEnabled": true,
+            "diarizationMaxSpeakers": 2
+        }))
+        .expect("payload should serialize");
+        let mut framed = Vec::new();
+        write_frame(&mut framed, JSON_FRAME_KIND, &payload).expect("frame should write");
+
+        let parsed = read_frame(&mut framed.as_slice())
+            .expect("frame should parse")
+            .expect("frame should exist");
+        let IncomingFrame::Command(Command::StartSession {
+            diarization_enabled,
+            diarization_max_speakers,
+            ..
+        }) = parsed
+        else {
+            panic!("expected start session command");
+        };
+
+        assert!(diarization_enabled);
+        assert_eq!(diarization_max_speakers, Some(2));
     }
 
     #[test]

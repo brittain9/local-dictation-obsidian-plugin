@@ -50,8 +50,21 @@ describe('resolvePluginSettings', () => {
 
   it('defaults speaker diarization off and honors a persisted boolean', () => {
     expect(DEFAULT_PLUGIN_SETTINGS.diarizationEnabled).toBe(false);
+    expect(DEFAULT_PLUGIN_SETTINGS.diarizationMaxSpeakers).toBeNull();
     expect(resolvePluginSettings({ diarizationEnabled: true }).diarizationEnabled).toBe(true);
     expect(resolvePluginSettings({ diarizationEnabled: 'yes' }).diarizationEnabled).toBe(false);
+  });
+
+  it('accepts automatic or bounded maximum speaker counts', () => {
+    expect(
+      resolvePluginSettings({ diarizationMaxSpeakers: null }).diarizationMaxSpeakers,
+    ).toBeNull();
+    expect(resolvePluginSettings({ diarizationMaxSpeakers: 2 }).diarizationMaxSpeakers).toBe(2);
+    expect(resolvePluginSettings({ diarizationMaxSpeakers: 0 }).diarizationMaxSpeakers).toBeNull();
+    expect(resolvePluginSettings({ diarizationMaxSpeakers: 99 }).diarizationMaxSpeakers).toBeNull();
+    expect(
+      resolvePluginSettings({ diarizationMaxSpeakers: '2' }).diarizationMaxSpeakers,
+    ).toBeNull();
   });
 
   it('retains the last utterance by default and honors only a persisted boolean opt-out', () => {

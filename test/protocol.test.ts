@@ -231,6 +231,7 @@ describe('command serialization', () => {
       createStartSessionCommand({
         accelerationPreference: 'auto',
         diarizationEnabled: true,
+        diarizationMaxSpeakers: 2,
         includeSystemAudio: true,
         language: 'en',
         mode: 'always_on',
@@ -244,6 +245,7 @@ describe('command serialization', () => {
 
     expect(payload.accelerationPreference).toBe('auto');
     expect(payload.diarizationEnabled).toBe(true);
+    expect(payload.diarizationMaxSpeakers).toBe(2);
     expect(payload.includeSystemAudio).toBe(true);
     expect(payload).not.toHaveProperty('audioSource');
     expect(payload.sessionId).toBe('session-gpu');

@@ -34,6 +34,7 @@ pub struct SessionMetadata {
     pub family_id: ModelFamilyId,
     pub gpu_config: GpuConfig,
     pub diarization_enabled: bool,
+    pub diarization_max_speakers: Option<u32>,
     pub language: String,
     pub model_file_path: PathBuf,
     pub cancel_rx: watch::Receiver<bool>,
@@ -281,7 +282,11 @@ fn worker_main(
                             &metadata.language,
                         );
                         let diarizer = if metadata.diarization_enabled && !streaming {
-                            match SessionDiarizer::new() {
+                            match SessionDiarizer::with_max_speakers(
+                                metadata
+                                    .diarization_max_speakers
+                                    .map(|value| value as usize),
+                            ) {
                                 Ok(diarizer) => Some(diarizer),
                                 Err(error) => {
                                     eprintln!(
@@ -1044,6 +1049,7 @@ mod tests {
             family_id: ModelFamilyId::Moonshine,
             gpu_config: GpuConfig::default(),
             diarization_enabled: false,
+            diarization_max_speakers: None,
             language: "en".to_string(),
             model_file_path: PathBuf::from("/tmp/frontend.ort"),
             cancel_rx,
@@ -1372,6 +1378,7 @@ mod tests {
             family_id: ModelFamilyId::Moonshine,
             gpu_config: GpuConfig::default(),
             diarization_enabled: false,
+            diarization_max_speakers: None,
             language: "en".to_string(),
             model_file_path: PathBuf::from("/tmp/frontend.ort"),
             cancel_rx,
@@ -1684,6 +1691,7 @@ mod tests {
                 family_id: ModelFamilyId::Moonshine,
                 gpu_config: GpuConfig::default(),
                 diarization_enabled: false,
+                diarization_max_speakers: None,
                 language: "en".to_string(),
                 model_file_path: PathBuf::from("/tmp/frontend.ort"),
                 cancel_rx,

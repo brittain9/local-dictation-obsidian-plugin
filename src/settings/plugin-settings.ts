@@ -80,6 +80,9 @@ export const DEFAULT_SMART_PARAGRAPH_PAUSE_MS = 3_000;
 export const MIN_SMART_PARAGRAPH_PAUSE_MS = 500;
 export const MAX_SMART_PARAGRAPH_PAUSE_MS = 30_000;
 
+export const MIN_DIARIZATION_MAX_SPEAKERS = 1;
+export const MAX_DIARIZATION_MAX_SPEAKERS = 8;
+
 export const SPEAKING_STYLES = [
   'responsive',
   'balanced',
@@ -130,6 +133,7 @@ export interface PluginSettings {
   cudaLibraryPath: string;
   developerMode: boolean;
   diarizationEnabled: boolean;
+  diarizationMaxSpeakers: number | null;
   dictationAnchor: DictationAnchor;
   listeningMode: ListeningMode;
   llmFeaturesEnabled: boolean;
@@ -184,6 +188,7 @@ export const DEFAULT_PLUGIN_SETTINGS: PluginSettings = {
   cudaLibraryPath: '',
   developerMode: false,
   diarizationEnabled: false,
+  diarizationMaxSpeakers: null,
   dictationAnchor: 'at_cursor',
   listeningMode: 'always_on',
   llmFeaturesEnabled: true,
@@ -251,6 +256,7 @@ export function resolvePluginSettings(data: unknown): PluginSettings {
     cudaLibraryPath: readString(raw.cudaLibraryPath, DEFAULT_PLUGIN_SETTINGS.cudaLibraryPath),
     developerMode: readBoolean(raw.developerMode, DEFAULT_PLUGIN_SETTINGS.developerMode),
     diarizationEnabled: readDiarizationEnabled(raw),
+    diarizationMaxSpeakers: readDiarizationMaxSpeakers(raw.diarizationMaxSpeakers),
     dictationAnchor: isDictationAnchor(raw.dictationAnchor)
       ? raw.dictationAnchor
       : DEFAULT_PLUGIN_SETTINGS.dictationAnchor,
@@ -510,6 +516,18 @@ function readSetupCompletedAt(value: unknown): string | null {
 
 function readPositiveInteger(value: unknown, fallback: number): number {
   return typeof value === 'number' && Number.isInteger(value) && value > 0 ? value : fallback;
+}
+
+function readDiarizationMaxSpeakers(value: unknown): number | null {
+  if (
+    typeof value !== 'number' ||
+    !Number.isInteger(value) ||
+    value < MIN_DIARIZATION_MAX_SPEAKERS ||
+    value > MAX_DIARIZATION_MAX_SPEAKERS
+  ) {
+    return null;
+  }
+  return value;
 }
 
 function readClampedInteger(value: unknown, fallback: number, min: number, max: number): number {

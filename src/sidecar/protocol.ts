@@ -111,6 +111,7 @@ export type ProbeSystemAudioCommand = EnvelopeBase<'probe_system_audio'>;
 export interface StartSessionCommand extends EnvelopeBase<'start_session'> {
   accelerationPreference: AccelerationPreference;
   diarizationEnabled: boolean;
+  diarizationMaxSpeakers: number | null;
   includeSystemAudio: boolean;
   language: 'en';
   mode: ListeningMode;

@@ -55,10 +55,14 @@ pub struct SessionDiarizer {
 
 impl SessionDiarizer {
     pub fn new() -> Result<Self, String> {
+        Self::with_max_speakers(None)
+    }
+
+    pub fn with_max_speakers(max_speakers: Option<usize>) -> Result<Self, String> {
         Ok(Self {
             segmenter: Segmenter::new()?,
             extractor: EmbeddingExtractor::new()?,
-            registry: SpeakerRegistry::new(),
+            registry: SpeakerRegistry::with_max_speakers(max_speakers),
         })
     }
 

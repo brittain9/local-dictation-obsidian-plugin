@@ -204,6 +204,25 @@ describe('DictationSessionController', () => {
     });
   });
 
+  it('passes the configured speaker limit to the sidecar session', async () => {
+    const sidecarConnection = new FakeSidecarConnection();
+    const controller = createController({
+      sidecarConnection,
+      getSettings: () =>
+        createSettings({
+          diarizationEnabled: true,
+          diarizationMaxSpeakers: 2,
+          selectedModel: createExternalModelSelection(),
+        }),
+    });
+
+    await controller.startDictation();
+
+    expect(sidecarConnection.startSession).toHaveBeenCalledWith(
+      expect.objectContaining({ diarizationEnabled: true, diarizationMaxSpeakers: 2 }),
+    );
+  });
+
   it('includes system audio without skipping microphone capture', async () => {
     const captureStream = new FakeCaptureStream();
     const sidecarConnection = new FakeSidecarConnection();

@@ -70,6 +70,7 @@ type ControllerSession = Pick<
 interface ActiveSessionSnapshot {
   accelerationPreference: PluginSettings['accelerationPreference'];
   diarizationEnabled: PluginSettings['diarizationEnabled'];
+  diarizationMaxSpeakers: PluginSettings['diarizationMaxSpeakers'];
   includeSystemAudio: PluginSettings['includeSystemAudio'];
   dictationAnchor: PluginSettings['dictationAnchor'];
   listeningMode: PluginSettings['listeningMode'];
@@ -372,6 +373,7 @@ export class DictationSessionController {
       await this.dependencies.sidecarConnection.startSession({
         accelerationPreference: snapshot.accelerationPreference,
         diarizationEnabled: snapshot.diarizationEnabled,
+        diarizationMaxSpeakers: snapshot.diarizationMaxSpeakers,
         includeSystemAudio: snapshot.includeSystemAudio,
         language: 'en',
         mode: snapshot.listeningMode,
@@ -1544,6 +1546,7 @@ function createSessionSnapshot(
   return {
     accelerationPreference: settings.accelerationPreference,
     diarizationEnabled: settings.diarizationEnabled,
+    diarizationMaxSpeakers: settings.diarizationMaxSpeakers,
     includeSystemAudio: settings.includeSystemAudio,
     dictationAnchor: settings.dictationAnchor,
     listeningMode: settings.listeningMode,
