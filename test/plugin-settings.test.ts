@@ -834,4 +834,16 @@ describe('resetLlmPostprocessDefaults', () => {
       },
     });
   });
+
+  it('preserves a disabled transform while resetting its configuration', () => {
+    const reset = resetLlmPostprocessDefaults({
+      ...DEFAULT_PLUGIN_SETTINGS,
+      llmPostprocessMode: 'off',
+      llmPostprocessTemperature: 1.5,
+    });
+
+    expect(reset.llmPostprocessMode).toBe('off');
+    expect(reset.llmPostprocessLastEnabledMode).toBe('per_utterance');
+    expect(reset.llmPostprocessTemperature).toBe(DEFAULT_PLUGIN_SETTINGS.llmPostprocessTemperature);
+  });
 });

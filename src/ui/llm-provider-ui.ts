@@ -56,9 +56,9 @@ export function formatCleanupFailureBanner(failure: LlmCleanupFailure): string {
     case 'timeout':
       return `Network error reaching ${providerName}.`;
     case 'model_not_configured':
-      return `${providerName} model is not configured. Pick one under Where it runs.`;
+      return `${providerName} model is not configured. Choose one under Model.`;
     case 'unknown_model':
-      return `${providerName} model not found. Pick another under Where it runs.`;
+      return `${providerName} model not found. Choose another under Model.`;
     default:
       return 'LLM transform failed. See console.';
   }

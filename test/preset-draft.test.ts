@@ -54,6 +54,17 @@ describe('preset draft validation', () => {
     expect(validatePresetDraft({ ...base, temperature: 'abc' }, NO_LABELS).kind).toBe('error');
   });
 
+  it.each([
+    ['fractional min words', { minWords: '7.5' }],
+    ['partial min words', { minWords: '7 words' }],
+    ['exponent temperature', { temperature: '1e0' }],
+    ['partial temperature', { temperature: '0.7 degrees' }],
+  ])('rejects %s input instead of accepting its numeric prefix', (_case, override) => {
+    const base = { ...emptyPresetDraft(), label: 'Mine', prompt: 'p' };
+
+    expect(validatePresetDraft({ ...base, ...override }, NO_LABELS).kind).toBe('error');
+  });
+
   it('forces batch timing for additive output', () => {
     const result = validatePresetDraft(
       { ...emptyPresetDraft(), label: 'Adder', output: 'add_below', prompt: 'p', timing: 'either' },

@@ -20,6 +20,7 @@ function createControls(overrides: Partial<PluginSettings> = {}, openRouterApiKe
     feedback: { show },
     getOpenRouterApiKey: () => openRouterApiKey,
     getSettings: () => ({ ...DEFAULT_PLUGIN_SETTINGS, ...overrides }),
+    openModelSettings: vi.fn(),
     persist: vi.fn(async () => {}),
     requestRerender,
   });
@@ -151,7 +152,7 @@ describe('LlmRoutingControls.testOpenRouter', () => {
     const { controls } = createControls(configured, 'sk-or-test');
 
     await expect(controls.testOpenRouter()).resolves.toBe(
-      'OpenRouter model not found. Pick another under Where it runs.',
+      'OpenRouter model not found. Choose another under Model.',
     );
   });
 
@@ -167,7 +168,7 @@ describe('LlmRoutingControls.testOpenRouter', () => {
     );
 
     await expect(controls.testOpenRouter()).resolves.toBe(
-      'OpenRouter model is not configured. Pick one under Where it runs.',
+      'OpenRouter model is not configured. Choose one under Model.',
     );
     expect(cleanup).not.toHaveBeenCalled();
   });

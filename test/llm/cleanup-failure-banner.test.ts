@@ -10,7 +10,7 @@ describe('formatCleanupFailureBanner', () => {
         message: 'Ollama model is not configured.',
         providerId: 'ollama',
       }),
-    ).toBe('Ollama model is not configured. Pick one under Where it runs.');
+    ).toBe('Ollama model is not configured. Choose one under Model.');
   });
 
   it('names the provider that rejected the selected model', () => {
@@ -20,6 +20,6 @@ describe('formatCleanupFailureBanner', () => {
         message: 'OpenRouter model was not found.',
         providerId: 'openrouter',
       }),
-    ).toBe('OpenRouter model not found. Pick another under Where it runs.');
+    ).toBe('OpenRouter model not found. Choose another under Model.');
   });
 });

@@ -16,6 +16,7 @@ import {
   type SidecarInstallManager,
 } from '../sidecar/sidecar-install-manager';
 import { readInstallManifest, variantDirectoryPath } from '../sidecar/sidecar-installer';
+import { ConfirmModal } from '../ui/confirm-modal';
 import { diarizationSettingDescription } from './diarization-setting';
 import { DiarizationSettingsModal } from './diarization-settings-modal';
 import { renderActiveInstallCard } from './install-progress-row';
@@ -64,6 +65,7 @@ interface SettingsTabDependencies {
   openSetupWizard: () => Promise<void>;
   pluginVersion: string;
   resolvePluginDirectory: () => Promise<string>;
+  resetLlmTransformation: () => Promise<void>;
   restartSidecar: () => Promise<void>;
   saveSettings: (settings: PluginSettings) => Promise<void>;
   sidecarConnection: Pick<SidecarConnection, 'probeSystemAudio' | 'shutdown'>;
@@ -257,6 +259,7 @@ export class LocalSttSettingTab extends PluginSettingTab {
             },
           }).open();
         });
+      button.extraSettingsEl.setAttribute('aria-label', 'Speaker label settings');
     });
 
     const timestampsCard = createSettingGroup(containerEl, 'Timestamps');
@@ -287,6 +290,30 @@ export class LocalSttSettingTab extends PluginSettingTab {
         await this.access.persistOne('llmRemoteFeaturesEnabled', value);
       });
     });
+
+    new Setting(llmCard)
+      .setName('Restore transform defaults')
+      .setDesc(
+        'Reset preset, timing, context, minimum words, and temperature. Saved presets and models are kept.',
+      )
+      .addButton((button) => {
+        button
+          .setButtonText('Restore')
+          .setWarning()
+          .onClick(() => {
+            new ConfirmModal(this.app, {
+              confirmLabel: 'Restore',
+              destructive: true,
+              message:
+                'Restore the default preset, timing, context, minimum words, and temperature? Saved presets and models are kept.',
+              onConfirm: async () => {
+                await this.dependencies.resetLlmTransformation();
+                this.display();
+              },
+              title: 'Restore transform defaults',
+            }).open();
+          });
+      });
 
     // --- Engine options ---
     // Built inline (rather than via createSettingGroup) so renderEngineOptions
@@ -419,6 +446,7 @@ export class LocalSttSettingTab extends PluginSettingTab {
             },
           }).open();
         });
+      button.extraSettingsEl.setAttribute('aria-label', 'Smart paragraph settings');
     });
   }
 
@@ -459,6 +487,7 @@ export class LocalSttSettingTab extends PluginSettingTab {
             },
           }).open();
         });
+      button.extraSettingsEl.setAttribute('aria-label', 'Timestamp settings');
     });
   }
 

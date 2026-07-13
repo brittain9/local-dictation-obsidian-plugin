@@ -20,6 +20,7 @@ import { ModelInstallManager } from './models/model-install-manager';
 import { Session } from './session/session';
 import { logAccelerationFallbacks } from './settings/acceleration-info';
 import { LlmPresetStateStore } from './settings/llm-preset-state';
+import { restoreLlmTransformationDefaults } from './settings/llm-transformation-reset';
 import { handleMicrophoneDeviceFallback } from './settings/microphone-fallback';
 import { getOpenRouterApiKey, loadPluginSettings } from './settings/openrouter-secret-storage';
 import {
@@ -238,6 +239,10 @@ export default class LocalSttPlugin extends Plugin {
         openSetupWizard: () => this.openSetupWizard(),
         pluginVersion: this.manifest.version,
         resolvePluginDirectory: () => this.resolvePluginDirectoryPath(),
+        resetLlmTransformation: () =>
+          restoreLlmTransformationDefaults({
+            mutateSettings: (mutation) => this.requirePresetStateStore().mutateSettings(mutation),
+          }),
         restartSidecar: async () => {
           await this.requireSidecarConnection().restart(
             this.settings.sidecarStartupTimeoutSeconds * 1000,
