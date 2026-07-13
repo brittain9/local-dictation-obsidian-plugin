@@ -21,6 +21,10 @@ import { renderActiveInstallCard } from './install-progress-row';
 import { renderMicrophonePicker } from './microphone-picker';
 import { renderModelSection } from './model-settings-section';
 import {
+  PHRASE_FINALIZATION_TOOLTIP,
+  phraseFinalizationDescription,
+} from './phrase-finalization-setting';
+import {
   type DictationAnchor,
   isDictationAnchor,
   isListeningMode,
@@ -40,6 +44,7 @@ import {
   addEnumSetting,
   addTextSetting,
   addToggleSetting,
+  appendInfoTooltip,
   createSettingGroup,
   type DropdownOption,
   type SettingAccess,
@@ -86,9 +91,9 @@ const TRANSCRIPT_FORMATTING_OPTIONS: ReadonlyArray<DropdownOption<TranscriptForm
 ];
 
 const SPEAKING_STYLE_OPTIONS: ReadonlyArray<DropdownOption<SpeakingStyle>> = [
-  { label: 'Responsive', value: 'responsive' },
-  { label: 'Balanced', value: 'balanced' },
-  { label: 'Patient', value: 'patient' },
+  { label: 'Responsive — short pauses', value: 'responsive' },
+  { label: 'Balanced — standard', value: 'balanced' },
+  { label: 'Patient — long pauses', value: 'patient' },
 ];
 
 const TIMESTAMP_CLOCK_OPTIONS: ReadonlyArray<DropdownOption<TimestampClock>> = [
@@ -206,15 +211,21 @@ export class LocalSttSettingTab extends PluginSettingTab {
       isValid: isListeningMode,
     });
 
-    addEnumSetting(captureCard, this.access, {
-      name: 'Speaking style',
-      desc: "How quickly the engine decides you've stopped speaking.",
-      tooltip:
-        'Responsive ends quickly. Balanced uses standard detection (default). Patient waits longer through pauses.',
-      key: 'speakingStyle',
-      options: SPEAKING_STYLE_OPTIONS,
-      isValid: isSpeakingStyle,
+    const phraseFinalizationSetting = new Setting(captureCard)
+      .setName('Phrase finalization')
+      .setDesc(phraseFinalizationDescription(settings.speakingStyle));
+    phraseFinalizationSetting.addDropdown((dropdown) => {
+      for (const option of SPEAKING_STYLE_OPTIONS) {
+        dropdown.addOption(option.value, option.label);
+      }
+      dropdown.setValue(settings.speakingStyle);
+      dropdown.onChange(async (value) => {
+        if (!isSpeakingStyle(value)) return;
+        await this.access.persistOne('speakingStyle', value);
+        phraseFinalizationSetting.setDesc(phraseFinalizationDescription(value));
+      });
     });
+    appendInfoTooltip(phraseFinalizationSetting, PHRASE_FINALIZATION_TOOLTIP);
 
     const outputCard = createSettingGroup(containerEl, 'Transcript output');
 
