@@ -2,7 +2,8 @@ import type { App, ButtonComponent } from 'obsidian';
 import { Modal, Setting } from 'obsidian';
 
 import { LLM_MIN_WORDS_MAX, type PluginSettings } from '../settings/plugin-settings';
-import { activePresetOverride, resolveEffectiveTransformTiming } from './llm-preset-overrides';
+import { activePresetOverride } from './llm-preset-overrides';
+import { describeTimestampTransformInteraction } from './llm-timing-settings-presentation';
 import { addValidatedNumberSetting } from './validated-number-setting';
 
 interface LlmTimingSettingsModalDependencies {
@@ -41,14 +42,11 @@ export class LlmTimingSettingsModal extends Modal {
     this.saveButton = null;
 
     const settings = this.dependencies.getSettings();
-    const effectiveTiming = resolveEffectiveTransformTiming(settings);
-    if (settings.timestampsEnabled) {
+    const timestampInteraction = describeTimestampTransformInteraction(settings);
+    if (timestampInteraction !== null) {
       this.contentEl.createEl('p', {
         cls: 'setting-item-description',
-        text:
-          effectiveTiming === 'per_utterance'
-            ? 'After each phrase preserves timestamp boundaries.'
-            : 'All at once may rewrite or remove timestamps, depending on the preset.',
+        text: timestampInteraction,
       });
     }
 

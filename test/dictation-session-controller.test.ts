@@ -223,6 +223,25 @@ describe('DictationSessionController', () => {
     );
   });
 
+  it('requests engine word timing only for enabled detailed timestamps', async () => {
+    const sidecarConnection = new FakeSidecarConnection();
+    const controller = createController({
+      sidecarConnection,
+      getSettings: () =>
+        createSettings({
+          selectedModel: createExternalModelSelection(),
+          timestampDensity: 'detailed',
+          timestampsEnabled: true,
+        }),
+    });
+
+    await controller.startDictation();
+
+    expect(sidecarConnection.startSession).toHaveBeenCalledWith(
+      expect.objectContaining({ detailedTimestampsEnabled: true }),
+    );
+  });
+
   it('includes system audio without skipping microphone capture', async () => {
     const captureStream = new FakeCaptureStream();
     const sidecarConnection = new FakeSidecarConnection();

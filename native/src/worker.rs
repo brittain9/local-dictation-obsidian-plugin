@@ -33,6 +33,7 @@ pub struct SessionMetadata {
     pub runtime_id: RuntimeId,
     pub family_id: ModelFamilyId,
     pub gpu_config: GpuConfig,
+    pub detailed_timestamps_enabled: bool,
     pub diarization_enabled: bool,
     pub diarization_max_speakers: Option<u32>,
     pub language: String,
@@ -462,6 +463,7 @@ fn worker_main(
 
                 let mut request = TranscriptionRequest {
                     audio_samples,
+                    detailed_timestamps_enabled: session.metadata.detailed_timestamps_enabled,
                     gpu_config: session.metadata.gpu_config,
                     language: session.metadata.language.clone(),
                     model_file_path: session.metadata.model_file_path.clone(),
@@ -1048,6 +1050,7 @@ mod tests {
             runtime_id: RuntimeId::OnnxRuntime,
             family_id: ModelFamilyId::Moonshine,
             gpu_config: GpuConfig::default(),
+            detailed_timestamps_enabled: false,
             diarization_enabled: false,
             diarization_max_speakers: None,
             language: "en".to_string(),
@@ -1377,6 +1380,7 @@ mod tests {
             runtime_id: RuntimeId::OnnxRuntime,
             family_id: ModelFamilyId::Moonshine,
             gpu_config: GpuConfig::default(),
+            detailed_timestamps_enabled: false,
             diarization_enabled: false,
             diarization_max_speakers: None,
             language: "en".to_string(),
@@ -1690,6 +1694,7 @@ mod tests {
                 runtime_id: RuntimeId::OnnxRuntime,
                 family_id: ModelFamilyId::Moonshine,
                 gpu_config: GpuConfig::default(),
+                detailed_timestamps_enabled: false,
                 diarization_enabled: false,
                 diarization_max_speakers: None,
                 language: "en".to_string(),
@@ -1845,6 +1850,7 @@ mod tests {
                 text,
                 timestamp_granularity: TimestampGranularity::Utterance,
                 timestamp_source: TimestampSource::Vad,
+                words: Vec::new(),
             }],
         }
     }
@@ -2159,6 +2165,7 @@ mod tests {
                 text: "hello".to_string(),
                 timestamp_granularity: TimestampGranularity::Segment,
                 timestamp_source: TimestampSource::Engine,
+                words: Vec::new(),
             }],
         }
     }
@@ -2204,6 +2211,7 @@ mod tests {
                 text: text.to_string(),
                 timestamp_granularity: TimestampGranularity::Segment,
                 timestamp_source: TimestampSource::Engine,
+                words: Vec::new(),
             }]
         };
         Transcript {

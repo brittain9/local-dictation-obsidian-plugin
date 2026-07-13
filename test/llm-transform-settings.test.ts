@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import { DEFAULT_PLUGIN_SETTINGS } from '../src/settings/plugin-settings';
 import { resolveEffectiveTransformTiming } from '../src/ui/llm-preset-overrides';
+import { describeTimestampTransformInteraction } from '../src/ui/llm-timing-settings-presentation';
 import { validateBoundedNumber } from '../src/ui/validated-number-setting';
 
 describe('resolveEffectiveTransformTiming', () => {
@@ -23,6 +24,21 @@ describe('resolveEffectiveTransformTiming', () => {
         llmPostprocessMode: 'off',
       }),
     ).toBe('batch');
+  });
+});
+
+describe('describeTimestampTransformInteraction', () => {
+  it('warns that transforms discard detailed word alignment', () => {
+    expect(
+      describeTimestampTransformInteraction({
+        ...DEFAULT_PLUGIN_SETTINGS,
+        llmPostprocessMode: 'per_utterance',
+        timestampDensity: 'detailed',
+        timestampsEnabled: true,
+      }),
+    ).toBe(
+      'Detailed word or segment timing is available in raw transcript mode. A transform rewrites those words, so exact alignment is removed instead of showing inaccurate timestamps.',
+    );
   });
 });
 

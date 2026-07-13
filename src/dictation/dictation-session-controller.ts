@@ -37,7 +37,11 @@ import type {
 } from '../sidecar/protocol';
 import { type SidecarConnection, SidecarError } from '../sidecar/sidecar-connection';
 import { SidecarNotInstalledError } from '../sidecar/sidecar-paths';
-import { buildSpeakerSpans, type TranscriptRenderOptions } from '../transcript/renderer';
+import {
+  buildSpeakerSpans,
+  buildTranscriptSpans,
+  type TranscriptRenderOptions,
+} from '../transcript/renderer';
 
 export interface ProviderContextSource {
   kind: 'note_text' | 'prior_utterance';
@@ -372,6 +376,8 @@ export class DictationSessionController {
     try {
       await this.dependencies.sidecarConnection.startSession({
         accelerationPreference: snapshot.accelerationPreference,
+        detailedTimestampsEnabled:
+          snapshot.timestamps.enabled && snapshot.timestamps.density === 'detailed',
         diarizationEnabled: snapshot.diarizationEnabled,
         diarizationMaxSpeakers: snapshot.diarizationMaxSpeakers,
         includeSystemAudio: snapshot.includeSystemAudio,
@@ -893,7 +899,7 @@ export class DictationSessionController {
     entry: ManagedSession,
     event: TranscriptReadyEvent,
   ): Promise<TranscriptRevision | null> {
-    const baseRevision = toTranscriptRevision(event);
+    const baseRevision = toTranscriptRevision(event, entry.snapshot.timestamps);
 
     // A single-text rewrite cannot be re-attributed across speakers without
     // losing who-said-what, so per-utterance cleanup is skipped when diarization
@@ -1608,7 +1614,10 @@ function shouldRunProviderPerUtteranceCleanup(
   );
 }
 
-function toTranscriptRevision(event: TranscriptReadyEvent): TranscriptRevision {
+function toTranscriptRevision(
+  event: TranscriptReadyEvent,
+  timestamps: TranscriptRenderOptions['timestamps'],
+): TranscriptRevision {
   // RAW-BELOW is TS-only now: the success path in resolveTranscriptRevision sets
   // llmPostprocessRawText when a cleanup ran and showRawBelow is on.
   const text = event.text.trim();
@@ -1620,7 +1629,10 @@ function toTranscriptRevision(event: TranscriptReadyEvent): TranscriptRevision {
     segments: event.segments,
     sessionId: event.sessionId,
     speakerIndex: event.speakerIndex,
-    spans: buildSpeakerSpans(event.segments, text, event.speakerIndex),
+    spans: buildTranscriptSpans(event.segments, text, event.speakerIndex, {
+      timestamps,
+      utteranceStartMsInSession: event.utteranceStartMsInSession,
+    }),
     stageResults: event.stageResults,
     text,
     utteranceEndMsInSession: event.utteranceEndMsInSession,

@@ -9,6 +9,7 @@ import type {
   SystemInfoEvent,
 } from '../sidecar/protocol';
 import type { SidecarConnection } from '../sidecar/sidecar-connection';
+import { resolveEngineCapabilities } from './capability-view';
 import { validateExternalModelFilePath } from './external-model-file';
 import {
   type CatalogModelSelection,
@@ -201,15 +202,18 @@ export class ModelInstallManager {
     if (persistedSelection !== null) {
       const snapshot = this.deps.getSettings().selectedModelCapabilitiesSnapshot;
       if (snapshot !== null && selectedModelEquals(snapshot.selection, persistedSelection)) {
-        // Trust the capabilities captured the last time this exact selection
-        // was probed successfully (on select() or install completion)
-        // instead of re-probing the sidecar on every plugin startup —
-        // probing forces a full model load just to populate UI badges
-        // (issue #195). A stale snapshot only affects those badges; a
-        // genuinely broken model still fails loudly the moment dictation
-        // starts.
+        // Trust the snapshot's successful probe instead of loading the model on
+        // every startup (issue #195), but refresh its capability metadata from
+        // the running sidecar. Adapter capabilities can evolve across releases
+        // without making the already-probed model selection invalid.
+        const currentCapabilities = resolveEngineCapabilities(
+          this.compiledRuntimes,
+          this.compiledAdapters,
+          persistedSelection.runtimeId,
+          persistedSelection.familyId,
+        );
         this.selectedModelCapabilities = {
-          capabilities: snapshot.capabilities,
+          capabilities: currentCapabilities ?? snapshot.capabilities,
           selection: persistedSelection,
           status: 'ready',
         };

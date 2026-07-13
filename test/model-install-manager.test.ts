@@ -739,11 +739,35 @@ describe('ModelInstallManager', () => {
       await harness.manager.init();
 
       expect(harness.sidecarConnection.probeModelSelection).not.toHaveBeenCalled();
-      expect(harness.manager.getState().selectedModelCapabilities).toEqual({
-        capabilities: sampleMergedCapabilities(),
+      expect(harness.manager.getState().selectedModelCapabilities).toMatchObject({
+        capabilities: { familyId: 'whisper', runtimeId: 'whisper_cpp' },
         selection: sampleSelection(),
         status: 'ready',
       });
+    });
+
+    it('refreshes cached capability metadata from the running sidecar without loading the model', async () => {
+      harness = createManagerHarness({
+        selectedModel: sampleSelection(),
+        selectedModelCapabilitiesSnapshot: {
+          capabilities: sampleMergedCapabilities(),
+          selection: sampleSelection(),
+        },
+      });
+      configureSidecarForInit(harness.sidecarConnection);
+      const systemInfo = sampleSystemInfo();
+      const whisper = systemInfo.compiledAdapters.find((adapter) => adapter.familyId === 'whisper');
+      if (whisper === undefined) throw new Error('Whisper fixture missing');
+      whisper.familyCapabilities.supportsWordTimestamps = true;
+      harness.sidecarConnection.getSystemInfo.mockResolvedValue(systemInfo);
+
+      await harness.manager.init();
+
+      expect(harness.sidecarConnection.probeModelSelection).not.toHaveBeenCalled();
+      const capabilityState = harness.manager.getState().selectedModelCapabilities;
+      expect(capabilityState.status).toBe('ready');
+      if (capabilityState.status !== 'ready') throw new Error('Expected ready capabilities');
+      expect(capabilityState.capabilities.family.supportsWordTimestamps).toBe(true);
     });
 
     it('falls back to probing when the persisted snapshot belongs to a different selection', async () => {

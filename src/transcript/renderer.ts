@@ -198,6 +198,13 @@ export class TranscriptRenderer {
       return false;
     }
 
+    // Detailed timestamps are rendered inside the transcript body from engine
+    // segment/word alignments. Emitting the phrase prefix as well would duplicate
+    // the first landmark.
+    if (this.options.timestamps.density === 'detailed') {
+      return false;
+    }
+
     if (this.options.timestamps.density === 'every_utterance') {
       return true;
     }
@@ -233,7 +240,7 @@ export function formatLandmark(
 ): string {
   if (clock === 'wallclock') {
     const date = new Date(sessionStartUnixMs + elapsedMs);
-    return `(${padTwo(date.getHours())}:${padTwo(date.getMinutes())})`;
+    return `(${padTwo(date.getHours())}:${padTwo(date.getMinutes())}:${padTwo(date.getSeconds())})`;
   }
 
   const totalSeconds = Math.floor(elapsedMs / 1000);
@@ -247,6 +254,32 @@ export function formatLandmark(
   }
 
   return `(${totalMinutes}:${padTwo(seconds)})`;
+}
+
+/** Format dense engine timing to tenths of a second. Whole-second landmarks are
+ * too coarse for adjacent words and can repeat several times in a row. */
+export function formatDetailedLandmark(
+  elapsedMs: number,
+  sessionStartUnixMs: number,
+  clock: TimestampClock,
+): string {
+  const safeElapsedMs = Math.max(0, elapsedMs);
+  const tenths = Math.floor((safeElapsedMs % 1000) / 100);
+
+  if (clock === 'wallclock') {
+    const date = new Date(sessionStartUnixMs + safeElapsedMs);
+    return `(${padTwo(date.getHours())}:${padTwo(date.getMinutes())}:${padTwo(date.getSeconds())}.${tenths})`;
+  }
+
+  const totalSeconds = Math.floor(safeElapsedMs / 1000);
+  const seconds = totalSeconds % 60;
+  const totalMinutes = Math.floor(totalSeconds / 60);
+  const minutes = totalMinutes % 60;
+  const hours = Math.floor(totalMinutes / 60);
+
+  return hours > 0
+    ? `(${hours}:${padTwo(minutes)}:${padTwo(seconds)}.${tenths})`
+    : `(${totalMinutes}:${padTwo(seconds)}.${tenths})`;
 }
 
 export function formatSessionHeader(sessionStartUnixMs: number): string {
@@ -304,6 +337,104 @@ export function buildSpeakerSpans(
   return spans.length > 0
     ? spans
     : [{ speakerIndex: normalizeSpeakerIndex(fallbackSpeakerIndex), text: fallbackText }];
+}
+
+export interface TranscriptSpanBuildOptions {
+  timestamps: TranscriptTimestampRenderOptions;
+  utteranceStartMsInSession: number;
+}
+
+/** Build the visible body for one utterance. Detailed mode chooses the finest
+ * complete timing source available for the whole utterance: words first,
+ * engine segments second, then one VAD phrase marker. It never mixes timing
+ * granularities inside an utterance or drops untimed text. */
+export function buildTranscriptSpans(
+  segments: readonly TranscriptSegment[],
+  fallbackText: string,
+  fallbackSpeakerIndex: number | null,
+  options: TranscriptSpanBuildOptions,
+): TranscriptSpan[] {
+  const fallbackSpans = buildSpeakerSpans(segments, fallbackText, fallbackSpeakerIndex);
+  if (!options.timestamps.enabled || options.timestamps.density !== 'detailed') {
+    return fallbackSpans;
+  }
+
+  const textSegments = segments.filter((segment) => segment.text.trim().length > 0);
+  if (
+    textSegments.length > 0 &&
+    textSegments.every((segment) => (segment.words?.length ?? 0) > 0)
+  ) {
+    return groupDetailedSegments(
+      textSegments.map((segment) => ({
+        speakerIndex: segment.speaker,
+        text: (segment.words ?? [])
+          .map((word) => {
+            const landmark = formatDetailedLandmark(
+              options.utteranceStartMsInSession + word.startMs,
+              options.timestamps.sessionStartUnixMs,
+              options.timestamps.clock,
+            );
+            return `${landmark} ${word.text.trim()}`;
+          })
+          .join(' '),
+      })),
+      fallbackSpeakerIndex,
+    );
+  }
+
+  if (
+    textSegments.length > 0 &&
+    textSegments.every(
+      (segment) =>
+        segment.timestampSource === 'engine' && segment.timestampGranularity !== 'utterance',
+    )
+  ) {
+    return groupDetailedSegments(
+      textSegments.map((segment) => ({
+        speakerIndex: segment.speaker,
+        text: `${formatDetailedLandmark(
+          options.utteranceStartMsInSession + segment.startMs,
+          options.timestamps.sessionStartUnixMs,
+          options.timestamps.clock,
+        )} ${segment.text.trim()}`,
+      })),
+      fallbackSpeakerIndex,
+    );
+  }
+
+  const phraseLandmark = formatDetailedLandmark(
+    options.utteranceStartMsInSession,
+    options.timestamps.sessionStartUnixMs,
+    options.timestamps.clock,
+  );
+  const [first, ...rest] = fallbackSpans;
+  if (first === undefined) {
+    return [{ speakerIndex: normalizeSpeakerIndex(fallbackSpeakerIndex), text: phraseLandmark }];
+  }
+  return [{ ...first, text: `${phraseLandmark} ${first.text}` }, ...rest];
+}
+
+function groupDetailedSegments(
+  segments: readonly TranscriptSpan[],
+  fallbackSpeakerIndex: number | null,
+): TranscriptSpan[] {
+  const spans: TranscriptSpan[] = [];
+  for (const segment of segments) {
+    const text = segment.text.trim();
+    if (text.length === 0) continue;
+
+    const speakerIndex = normalizeSpeakerIndex(segment.speakerIndex);
+    const last = spans.at(-1);
+    if (last !== undefined && last.speakerIndex === speakerIndex) {
+      last.text = `${last.text} ${text}`;
+    } else {
+      spans.push({ speakerIndex, text });
+    }
+  }
+
+  return spans.length > 0
+    ? spans
+    : [{ speakerIndex: normalizeSpeakerIndex(fallbackSpeakerIndex), text: '' }];
 }
 
 // Compose speaker spans into one rendered body: a `**Speaker N:**` label whenever

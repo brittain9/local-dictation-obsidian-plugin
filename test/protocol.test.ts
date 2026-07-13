@@ -230,6 +230,7 @@ describe('command serialization', () => {
     const frame = encodeJsonFrame(
       createStartSessionCommand({
         accelerationPreference: 'auto',
+        detailedTimestampsEnabled: true,
         diarizationEnabled: true,
         diarizationMaxSpeakers: 2,
         includeSystemAudio: true,
@@ -244,6 +245,7 @@ describe('command serialization', () => {
     const payload = readPayload(frame) as Record<string, unknown>;
 
     expect(payload.accelerationPreference).toBe('auto');
+    expect(payload.detailedTimestampsEnabled).toBe(true);
     expect(payload.diarizationEnabled).toBe(true);
     expect(payload.diarizationMaxSpeakers).toBe(2);
     expect(payload.includeSystemAudio).toBe(true);
@@ -495,6 +497,26 @@ describe('event parsing', () => {
     if (event.type === 'transcript_ready') {
       expect(event.speakerIndex).toBeNull();
     }
+  });
+
+  it('preserves engine word timing on transcript segments', () => {
+    const segments: TranscriptReadyEvent['segments'] = [
+      {
+        endMs: 900,
+        speaker: null,
+        startMs: 100,
+        text: 'hello world',
+        timestampGranularity: 'segment',
+        timestampSource: 'engine',
+        words: [
+          { endMs: 400, startMs: 100, text: 'hello', timestampSource: 'engine' },
+          { endMs: 900, startMs: 500, text: 'world', timestampSource: 'engine' },
+        ],
+      },
+    ];
+    const event = parseEventFrame(JSON.stringify(transcriptReadyPayload({ segments })));
+
+    expect(event).toMatchObject({ segments, type: 'transcript_ready' });
   });
 
   it('parses transcript_ready carrying a non-empty stageResults history', () => {
