@@ -30,14 +30,8 @@ import {
   isListeningMode,
   isRemoteLlmEffectivelyEnabled,
   isSpeakingStyle,
-  isTimestampClock,
-  isTimestampDensity,
   isTranscriptFormattingMode,
-  MAX_TIMESTAMP_SPARSE_INTERVAL_MS,
-  MIN_TIMESTAMP_SPARSE_INTERVAL_MS,
   type PluginSettings,
-  type TimestampClock,
-  type TimestampDensity,
   type TranscriptFormattingMode,
 } from './plugin-settings';
 import {
@@ -56,6 +50,7 @@ import {
 } from './sidecar-settings-section';
 import { SmartParagraphSettingsModal } from './smart-paragraph-settings-modal';
 import { isSystemAudioSupportedOnCurrentPlatform } from './system-audio-support';
+import { TimestampSettingsModal } from './timestamp-settings-modal';
 
 interface SettingsTabDependencies {
   feedback: Pick<UserFeedback, 'show'>;
@@ -94,16 +89,6 @@ const SPEAKING_STYLE_OPTIONS: ReadonlyArray<DropdownOption<SpeakingStyle>> = [
   { label: 'Responsive — short pauses', value: 'responsive' },
   { label: 'Balanced — standard', value: 'balanced' },
   { label: 'Patient — long pauses', value: 'patient' },
-];
-
-const TIMESTAMP_CLOCK_OPTIONS: ReadonlyArray<DropdownOption<TimestampClock>> = [
-  { label: 'Elapsed', value: 'elapsed' },
-  { label: 'Wall clock', value: 'wallclock' },
-];
-
-const TIMESTAMP_DENSITY_OPTIONS: ReadonlyArray<DropdownOption<TimestampDensity>> = [
-  { label: 'Sparse', value: 'sparse' },
-  { label: 'Every phrase', value: 'every_utterance' },
 ];
 
 export class LocalSttSettingTab extends PluginSettingTab {
@@ -418,59 +403,34 @@ export class LocalSttSettingTab extends PluginSettingTab {
   }
 
   private renderTimestampSettings(parent: HTMLElement, settings: PluginSettings): void {
-    new Setting(parent)
+    const setting = new Setting(parent)
       .setName('Use timestamps')
-      .setDesc('Stamp each phrase with the time it was spoken.')
+      .setDesc(
+        'Add timestamps at voice-detected phrase boundaries. Works with every model; word-level timing is not available yet.',
+      )
       .addToggle((toggle) => {
         toggle.setValue(settings.timestampsEnabled);
         toggle.onChange(async (value) => {
           await this.access.persistOne('timestampsEnabled', value);
-          this.display();
         });
       });
 
-    if (!settings.timestampsEnabled) return;
-
-    addToggleSetting(parent, this.access, {
-      name: 'Session header',
-      desc: 'Insert [YYYY-MM-DD HH:MM] at the top of the session.',
-      key: 'timestampSessionHeader',
-    });
-
-    addEnumSetting(parent, this.access, {
-      name: 'Reference clock',
-      desc: 'Elapsed time, or wall-clock time.',
-      key: 'timestampClock',
-      options: TIMESTAMP_CLOCK_OPTIONS,
-      isValid: isTimestampClock,
-    });
-
-    addEnumSetting(parent, this.access, {
-      name: 'Density',
-      desc: 'Stamp every phrase, or at fixed intervals.',
-      key: 'timestampDensity',
-      options: TIMESTAMP_DENSITY_OPTIONS,
-      isValid: isTimestampDensity,
-    });
-
-    const minSeconds = MIN_TIMESTAMP_SPARSE_INTERVAL_MS / 1000;
-    const maxSeconds = MAX_TIMESTAMP_SPARSE_INTERVAL_MS / 1000;
-    new Setting(parent)
-      .setName('Sparse interval')
-      .setDesc(`Seconds between landmarks (${minSeconds}-${maxSeconds}).`)
-      .addText((text) => {
-        text.inputEl.type = 'number';
-        text.inputEl.min = String(minSeconds);
-        text.inputEl.max = String(maxSeconds);
-        text.inputEl.step = '1';
-        text.setValue(String(Math.round(settings.timestampSparseIntervalMs / 1000)));
-        text.onChange(async (value) => {
-          const parsed = Number.parseInt(value, 10);
-          if (!Number.isInteger(parsed)) return;
-          const clamped = Math.min(maxSeconds, Math.max(minSeconds, parsed));
-          await this.access.persistOne('timestampSparseIntervalMs', clamped * 1000);
+    setting.addExtraButton((button) => {
+      button
+        .setIcon('sliders-horizontal')
+        .setTooltip('Timestamp settings')
+        .onClick(() => {
+          new TimestampSettingsModal(this.app, {
+            getSettings: () => this.dependencies.getSettings(),
+            onSave: () => {
+              this.display();
+            },
+            saveSettings: async (nextSettings) => {
+              await this.dependencies.saveSettings(nextSettings);
+            },
+          }).open();
         });
-      });
+    });
   }
 
   private buildModelInfoCallback(
