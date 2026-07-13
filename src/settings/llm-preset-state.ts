@@ -8,6 +8,7 @@ export interface LlmPresetState {
 }
 
 export type LlmPresetStateMutation = (state: Readonly<LlmPresetState>) => LlmPresetState;
+export type PluginSettingsMutation = (settings: Readonly<PluginSettings>) => PluginSettings;
 
 export interface LlmPresetStateStoreDependencies {
   commit: (settings: PluginSettings, options: { persist: boolean }) => Promise<void>;
@@ -86,6 +87,14 @@ export class LlmPresetStateStore {
       await this.dependencies.commit(withLlmPresetState(currentSettings, normalizedState), {
         persist: true,
       });
+    });
+  }
+
+  mutateSettings(mutation: PluginSettingsMutation): Promise<void> {
+    return this.enqueue(async () => {
+      await this.synchronizeNow();
+      const nextSettings = resolvePluginSettings(mutation(this.dependencies.getSettings()));
+      await this.dependencies.commit(nextSettings, { persist: true });
     });
   }
 

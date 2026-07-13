@@ -15,6 +15,7 @@ import {
   LLM_USER_PRESET_MAX_DESCRIPTION_CHARS,
   LLM_USER_PRESET_MAX_LABEL_CHARS,
 } from '../settings/plugin-settings';
+import { type BoundedNumberOptions, validateBoundedNumber } from './validated-number-setting';
 
 export interface LlmPresetDraft {
   description: string;
@@ -97,14 +98,21 @@ export function validatePresetDraft(
     return { kind: 'error', message: 'Enter a prompt for this preset.' };
   }
 
-  const minWords = parseOptionalInteger(draft.minWords, 0, LLM_MIN_WORDS_MAX);
+  const minWords = parseOptionalBoundedNumber(draft.minWords, {
+    integer: true,
+    max: LLM_MIN_WORDS_MAX,
+    min: 0,
+  });
   if (minWords === 'invalid') {
     return {
       kind: 'error',
       message: `Min words must be a whole number between 0 and ${LLM_MIN_WORDS_MAX}.`,
     };
   }
-  const temperature = parseOptionalNumber(draft.temperature, 0, LLM_TEMPERATURE_MAX);
+  const temperature = parseOptionalBoundedNumber(draft.temperature, {
+    max: LLM_TEMPERATURE_MAX,
+    min: 0,
+  });
   if (temperature === 'invalid') {
     return {
       kind: 'error',
@@ -192,32 +200,13 @@ export function applyPresetDraftSave(
   };
 }
 
-function parseOptionalInteger(
+function parseOptionalBoundedNumber(
   value: string,
-  min: number,
-  max: number,
+  options: BoundedNumberOptions,
 ): number | undefined | 'invalid' {
   if (value.trim() === '') {
     return undefined;
   }
-  const parsed = Number.parseInt(value, 10);
-  if (!Number.isInteger(parsed) || parsed < min || parsed > max) {
-    return 'invalid';
-  }
-  return parsed;
-}
-
-function parseOptionalNumber(
-  value: string,
-  min: number,
-  max: number,
-): number | undefined | 'invalid' {
-  if (value.trim() === '') {
-    return undefined;
-  }
-  const parsed = Number.parseFloat(value);
-  if (!Number.isFinite(parsed) || parsed < min || parsed > max) {
-    return 'invalid';
-  }
-  return parsed;
+  const validation = validateBoundedNumber(value, options);
+  return validation.valid ? validation.value : 'invalid';
 }

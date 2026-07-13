@@ -28,6 +28,23 @@ describe('resolveEffectiveTransformTiming', () => {
 });
 
 describe('describeTimestampTransformInteraction', () => {
+  it('omits timestamp guidance when timestamps are disabled', () => {
+    expect(describeTimestampTransformInteraction(DEFAULT_PLUGIN_SETTINGS)).toBeNull();
+  });
+
+  it.each([
+    ['per_utterance', 'After each phrase preserves timestamp boundaries.'],
+    ['batch', 'All at once may rewrite or remove timestamps, depending on the preset.'],
+  ] as const)('describes the %s transform interaction', (mode, expected) => {
+    expect(
+      describeTimestampTransformInteraction({
+        ...DEFAULT_PLUGIN_SETTINGS,
+        llmPostprocessMode: mode,
+        timestampsEnabled: true,
+      }),
+    ).toBe(expected);
+  });
+
   it('warns that transforms discard detailed word alignment', () => {
     expect(
       describeTimestampTransformInteraction({

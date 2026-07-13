@@ -9,7 +9,7 @@ import {
   MIN_LLM_REMOTE_TIMEOUT_SEC,
   type PluginSettings,
 } from '../settings/plugin-settings';
-import { activePresetOverride } from './llm-preset-overrides';
+import { resolveModelSettingsPresentation } from './llm-model-settings-presentation';
 import { addValidatedNumberSetting } from './validated-number-setting';
 
 interface LlmModelSettingsModalDependencies {
@@ -55,24 +55,24 @@ export class LlmModelSettingsModal extends Modal {
     this.saveButton = null;
 
     const settings = this.dependencies.getSettings();
-    const temperatureOverride = activePresetOverride(settings, 'temperature');
+    const presentation = resolveModelSettingsPresentation(settings);
     this.addNumberField('llmPostprocessTemperature', {
       desc:
-        temperatureOverride === null
+        presentation.temperature.presetLabel === null
           ? 'Sampling variation. 0 is deterministic; higher values are more varied.'
-          : `Managed by “${temperatureOverride.label}”. Edit that preset to change this value.`,
-      disabled: temperatureOverride !== null,
+          : `Managed by “${presentation.temperature.presetLabel}”. Edit that preset to change this value.`,
+      disabled: presentation.temperature.presetLabel !== null,
       max: LLM_TEMPERATURE_MAX,
       min: 0,
       name: 'Temperature',
       step: 0.1,
       value:
-        typeof temperatureOverride?.value === 'number'
-          ? temperatureOverride.value
+        presentation.temperature.presetLabel !== null
+          ? presentation.temperature.value
           : this.draft.llmPostprocessTemperature,
     });
 
-    if (settings.llmRemoteFeaturesEnabled && settings.llmRouting === 'auto') {
+    if (presentation.remoteThresholdChars !== null) {
       this.addNumberField('llmRemoteThresholdChars', {
         desc: 'Transcript length that sends Auto transforms to OpenRouter (characters).',
         integer: true,
@@ -82,7 +82,7 @@ export class LlmModelSettingsModal extends Modal {
       });
     }
 
-    if (settings.llmRemoteFeaturesEnabled && settings.llmRouting !== 'local') {
+    if (presentation.remoteTimeoutSec !== null) {
       this.addNumberField('llmRemoteTimeoutSec', {
         desc: 'Stop waiting for OpenRouter after this many seconds. The original transcript is kept.',
         integer: true,
