@@ -51,6 +51,31 @@ export const DEFAULT_TIMESTAMP_SPARSE_INTERVAL_MS = 30_000;
 export const MIN_TIMESTAMP_SPARSE_INTERVAL_MS = 10_000;
 export const MAX_TIMESTAMP_SPARSE_INTERVAL_MS = 600_000;
 
+export type TimestampIntervalValidation =
+  | { milliseconds: number; valid: true }
+  | { message: string; valid: false };
+
+export function validateTimestampIntervalSeconds(value: string): TimestampIntervalValidation {
+  const trimmed = value.trim();
+  const seconds = Number(trimmed);
+  const minSeconds = MIN_TIMESTAMP_SPARSE_INTERVAL_MS / 1000;
+  const maxSeconds = MAX_TIMESTAMP_SPARSE_INTERVAL_MS / 1000;
+
+  if (
+    !/^\d+$/u.test(trimmed) ||
+    !Number.isInteger(seconds) ||
+    seconds < minSeconds ||
+    seconds > maxSeconds
+  ) {
+    return {
+      message: `Enter a whole number from ${minSeconds} to ${maxSeconds} seconds.`,
+      valid: false,
+    };
+  }
+
+  return { milliseconds: seconds * 1000, valid: true };
+}
+
 export const DEFAULT_SMART_PARAGRAPH_PAUSE_MS = 3_000;
 export const MIN_SMART_PARAGRAPH_PAUSE_MS = 500;
 export const MAX_SMART_PARAGRAPH_PAUSE_MS = 30_000;

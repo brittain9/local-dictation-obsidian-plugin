@@ -63,11 +63,11 @@ Published sidecar builds currently target Apple silicon on macOS and x86-64 on W
 | **Windows (x86-64)** | Supported | Optional CUDA on a recent NVIDIA GPU | Supported |
 | **Linux (x86-64)** | Supported | Optional CUDA on a recent NVIDIA GPU | Supported through PulseAudio/PipeWire |
 
-macOS and Windows are the primary tested targets. On Linux, the plugin is used daily on Fedora (native and Flatpak); other distributions should work but are not routinely verified.
+macOS and Windows are the primary tested targets. On Linux, the plugin is used daily on Fedora (native and Flatpak); other x86-64 glibc distributions are compatibility targets rather than distro-specific guarantees. See the [Linux support guide](docs/guides/linux-support.md) for package, audio-stack, Flatpak, and troubleshooting details.
 
 If something breaks on your distribution, [open an issue](https://github.com/brittain9/local-dictation-obsidian-plugin/issues).
 
-For CUDA requirements and Flatpak-specific setup, see the [CUDA setup guide](docs/guides/cuda-setup.md).
+For GPU requirements and sandbox-specific setup, see the [CUDA setup guide](docs/guides/cuda-setup.md).
 
 ## Privacy
 

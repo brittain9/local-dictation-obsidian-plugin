@@ -183,6 +183,8 @@ export function deriveCurrentModelDisplay(state: ModelManagerState): CurrentMode
   }
 
   if (selectedModel.kind === 'external_file') {
+    const capabilities = state.selectedModelCapabilities;
+    const status = deriveExternalModelStatus(capabilities);
     return {
       displayName: basename(selectedModel.filePath),
       engineLabel: resolveFamilyDisplayName(
@@ -190,8 +192,8 @@ export function deriveCurrentModelDisplay(state: ModelManagerState): CurrentMode
         selectedModel.runtimeId,
         selectedModel.familyId,
       ),
-      detail: 'The selected external file has not been validated yet.',
-      installedLabel: 'External file',
+      detail: status.detail,
+      installedLabel: status.installedLabel,
       sourceLabel: 'External file',
       sizeBytes: null,
       installLocation: null,
@@ -234,6 +236,35 @@ export function deriveCurrentModelDisplay(state: ModelManagerState): CurrentMode
     installLocation: installedModel?.installPath ?? null,
     resolvedPath: installedModel?.runtimePath ?? null,
   };
+}
+
+function deriveExternalModelStatus(
+  capabilities: ModelManagerState['selectedModelCapabilities'],
+): Pick<CurrentModelDisplay, 'detail' | 'installedLabel'> {
+  switch (capabilities.status) {
+    case 'ready':
+      return {
+        detail: 'External model passed its most recent validation.',
+        installedLabel: 'External validated',
+      };
+    case 'pending':
+      return {
+        detail: 'Checking the external model file.',
+        installedLabel: 'Checking',
+      };
+    case 'unavailable':
+      return {
+        detail:
+          capabilities.details ??
+          'The external model is unavailable. Validate the file again to see details.',
+        installedLabel: 'Unavailable',
+      };
+    case 'none':
+      return {
+        detail: 'Validate the external model file before dictating.',
+        installedLabel: 'External file',
+      };
+  }
 }
 
 // ---------------------------------------------------------------------------

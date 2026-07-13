@@ -17,7 +17,7 @@
       "familyId": "whisper",
       "runtimeId": "whisper_cpp",
       "displayName": "Whisper",
-      "summary": "OpenAI Whisper architecture loaded via whisper.cpp-compatible GGML model files."
+      "summary": "Batch transcription after each pause. Start with Small for everyday English dictation; Tiny and Base prioritize speed, while Medium and Large prioritize accuracy."
     },
     {
       "familyId": "cohere_transcribe",
@@ -29,7 +29,7 @@
       "familyId": "moonshine",
       "runtimeId": "onnx_runtime",
       "displayName": "Moonshine",
-      "summary": "Moonshine v2 streaming models for live dictation (English, MIT) running on ONNX Runtime."
+      "summary": "Live English transcription while you speak. Start with Small for the recommended balance; Tiny uses fewer resources, while Medium is the most accurate and uses more CPU time and memory."
     }
   ],
   "collections": [

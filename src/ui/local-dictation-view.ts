@@ -24,6 +24,10 @@ import { ConfirmModal } from './confirm-modal';
 import { FocusRefreshController } from './focus-refresh-controller';
 import { formatCleanupFailureBanner } from './llm-provider-ui';
 import { LlmRoutingControls } from './llm-routing-controls';
+import {
+  type LlmSidebarPresentation,
+  resolveLlmSidebarPresentation,
+} from './llm-sidebar-presentation';
 import { INLINE_STATUS_PRESENTATION } from './llm-status';
 import { PresetManagerModal } from './preset-manager-modal';
 
@@ -156,36 +160,48 @@ export class LocalDictationView extends ItemView {
     contentEl.empty();
     contentEl.addClass('local-dictation-sidebar');
 
+    const presentation = resolveLlmSidebarPresentation(settings);
+    this.renderOverview(contentEl, presentation);
+
     if (!settings.llmFeaturesEnabled) {
+      this.renderEmptyState(contentEl, presentation);
       return;
     }
 
-    const headerGroup = createSettingGroup(contentEl, 'LLM transformation', HEADING_TOOLTIP);
+    const headerGroup = createSettingGroup(contentEl, 'Transform', HEADING_TOOLTIP);
     this.renderCleanupToggle(headerGroup, settings);
 
     if (settings.llmPostprocessMode === 'off') {
-      headerGroup.createEl('p', {
-        cls: 'local-dictation-muted',
-        text: 'Raw Whisper text is inserted as-is. Turn on to clean, rewrite, or summarize the transcript with an LLM.',
-      });
+      this.renderEmptyState(contentEl, presentation);
       return;
     }
 
     this.renderRuntimeFailureBanner(headerGroup);
 
-    const whereGroup = createSettingGroup(contentEl, 'Where it runs');
-    this.routingControls.render(whereGroup, settings);
-
-    const styleGroup = createSettingGroup(contentEl, 'Style');
+    const styleGroup = createSettingGroup(contentEl, 'Preset');
     this.renderPresetPicker(styleGroup, settings);
     this.renderCleanupMode(styleGroup, settings);
+
+    const whereGroup = createSettingGroup(contentEl, 'Provider');
+    this.routingControls.render(whereGroup, settings);
 
     const contextGroup = createSettingGroup(contentEl, 'Context');
     this.renderUseNoteContextToggle(contextGroup, settings);
     this.renderNoteContextChars(contextGroup, settings);
 
     const advanced = contentEl.createEl('details', { cls: 'local-dictation-advanced' });
-    advanced.createEl('summary', { text: 'Advanced' });
+    const advancedSummary = advanced.createEl('summary');
+    const advancedSummaryText = advancedSummary.createSpan({
+      cls: 'local-dictation-advanced__summary',
+    });
+    advancedSummaryText.createSpan({
+      cls: 'local-dictation-advanced__title',
+      text: 'Advanced settings',
+    });
+    advancedSummaryText.createSpan({
+      cls: 'local-dictation-advanced__description',
+      text: 'Limits, generation, and diagnostics',
+    });
     advanced.open = this.advancedOpen;
     advanced.addEventListener('toggle', () => {
       this.advancedOpen = advanced.open;
@@ -200,11 +216,48 @@ export class LocalDictationView extends ItemView {
     this.scheduleRender();
   }
 
+  private renderOverview(parent: HTMLElement, presentation: LlmSidebarPresentation): void {
+    const header = parent.createEl('header', { cls: 'local-dictation-sidebar__header' });
+    header.createDiv({ cls: 'local-dictation-sidebar__eyebrow', text: 'Transcript workflow' });
+    header.createEl('h2', {
+      cls: 'local-dictation-sidebar__title',
+      text: 'Transform dictation',
+    });
+    header.createEl('p', {
+      cls: 'local-dictation-sidebar__description',
+      text: 'Choose how spoken text is shaped before it reaches your note.',
+    });
+
+    const status = header.createDiv({ cls: 'local-dictation-sidebar__summary' });
+    status.createSpan({
+      cls: `local-dictation-sidebar__badge local-dictation-sidebar__badge--${presentation.state}`,
+      text: presentation.statusLabel,
+    });
+    status.createSpan({
+      cls: 'local-dictation-sidebar__summary-text',
+      text: presentation.summary,
+      title: presentation.summary,
+    });
+  }
+
+  private renderEmptyState(parent: HTMLElement, presentation: LlmSidebarPresentation): void {
+    if (presentation.emptyState === null) {
+      return;
+    }
+
+    const emptyState = parent.createDiv({ cls: 'local-dictation-sidebar__empty' });
+    const icon = emptyState.createDiv({ cls: 'local-dictation-sidebar__empty-icon' });
+    icon.setAttribute('aria-hidden', 'true');
+    setIcon(icon, presentation.emptyState.icon);
+    emptyState.createEl('h3', { text: presentation.emptyState.title });
+    emptyState.createEl('p', { text: presentation.emptyState.description });
+  }
+
   private renderCleanupToggle(parent: HTMLElement, settings: PluginSettings): void {
     const enabled = settings.llmPostprocessMode !== 'off';
     new Setting(parent)
-      .setName('Transform')
-      .setDesc('')
+      .setName('Enabled')
+      .setDesc('Apply the active preset to new dictated text.')
       .addToggle((toggle) => {
         toggle.setValue(enabled);
         toggle.onChange(async (value) => {
@@ -231,7 +284,7 @@ export class LocalDictationView extends ItemView {
     const pinned = preset.timing;
 
     new Setting(parent)
-      .setName('Mode')
+      .setName('Run transform')
       .setDesc(
         pinned !== undefined
           ? `Set by ${preset.label} — ${describePresetTiming(pinned).toLowerCase()}.`
@@ -263,14 +316,17 @@ export class LocalDictationView extends ItemView {
       settings.llmPostprocessUserPresets,
     );
 
+    const description = active.preset.description ?? describePresetBehavior(active.preset);
+    const activeLabel = formatPresetOptionLabel(active.preset);
     const setting = new Setting(parent)
-      .setName('Preset')
-      .setDesc(active.preset.description ?? describePresetBehavior(active.preset))
+      .setName('Active preset')
+      .setDesc(description)
       .addDropdown((dropdown) => {
         for (const entry of entries) {
           dropdown.addOption(entry.ref, formatPresetOptionLabel(entry.preset));
         }
         dropdown.setValue(active.ref);
+        dropdown.selectEl.setAttribute('title', activeLabel);
         dropdown.onChange(async (value) => {
           await this.mutatePresetState((state) => ({
             ...state,
@@ -278,10 +334,12 @@ export class LocalDictationView extends ItemView {
           }));
         });
       });
+    setting.settingEl.addClass('local-dictation-preset-setting');
+    setting.descEl.setAttribute('title', description);
     appendInfoTooltip(setting, STYLE_PICKER_TOOLTIP);
 
-    setting.addExtraButton((button) => {
-      button.setIcon('sliders-horizontal');
+    setting.addButton((button) => {
+      button.setButtonText('Manage presets');
       button.setTooltip('Manage presets');
       button.onClick(() => {
         void this.openPresetManager();

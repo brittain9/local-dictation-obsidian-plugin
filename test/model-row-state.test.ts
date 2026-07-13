@@ -389,4 +389,58 @@ describe('deriveCurrentModelDisplay', () => {
       sourceLabel: 'External file',
     });
   });
+
+  it('reports a successfully probed external model as ready', () => {
+    const selection = {
+      familyId: 'whisper' as const,
+      filePath: '/tmp/models/custom-model.bin',
+      kind: 'external_file' as const,
+      runtimeId: 'whisper_cpp' as const,
+    };
+    const state = buildState({
+      selectedModel: selection,
+      selectedModelCapabilities: {
+        capabilities: {
+          family: compiledAdapter('whisper', 'whisper_cpp').familyCapabilities,
+          familyId: 'whisper',
+          runtime: {
+            acceleratorDetails: {},
+            availableAccelerators: ['cpu'],
+            supportedModelFormats: ['ggml', 'gguf'],
+          },
+          runtimeId: 'whisper_cpp',
+        },
+        selection,
+        status: 'ready',
+      },
+    });
+
+    expect(deriveCurrentModelDisplay(state)).toMatchObject({
+      detail: 'External model passed its most recent validation.',
+      installedLabel: 'External validated',
+    });
+  });
+
+  it('surfaces the external probe failure details in the current-model status', () => {
+    const selection = {
+      familyId: 'moonshine' as const,
+      filePath: '/models/moonshine/frontend.ort',
+      kind: 'external_file' as const,
+      runtimeId: 'onnx_runtime' as const,
+    };
+    const state = buildState({
+      selectedModel: selection,
+      selectedModelCapabilities: {
+        details: 'required Moonshine asset missing: encoder.ort',
+        reason: 'invalid',
+        selection,
+        status: 'unavailable',
+      },
+    });
+
+    expect(deriveCurrentModelDisplay(state)).toMatchObject({
+      detail: 'required Moonshine asset missing: encoder.ort',
+      installedLabel: 'Unavailable',
+    });
+  });
 });
