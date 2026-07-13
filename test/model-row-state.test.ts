@@ -295,7 +295,8 @@ describe('deriveCurrentModelDisplay', () => {
     );
 
     expect(display).toMatchObject({
-      displayName: 'Whisper Large V3 Turbo Q8_0',
+      detail: '',
+      displayName: 'Whisper Large V3 Turbo',
       engineLabel: 'Whisper',
       installLocation: '/models/whisper_cpp/whisper_large_v3_turbo_q8_0',
       installedLabel: 'Installed',
@@ -313,7 +314,7 @@ describe('deriveCurrentModelDisplay', () => {
     );
 
     expect(display).toMatchObject({
-      displayName: 'Whisper Small English Q5_1',
+      displayName: 'Whisper Small',
       installLocation: null,
       installedLabel: 'Not installed',
       resolvedPath: null,
@@ -416,7 +417,7 @@ describe('deriveCurrentModelDisplay', () => {
     });
 
     expect(deriveCurrentModelDisplay(state)).toMatchObject({
-      detail: 'External model passed its most recent validation.',
+      detail: '',
       installedLabel: 'External validated',
     });
   });

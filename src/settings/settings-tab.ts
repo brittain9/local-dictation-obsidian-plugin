@@ -17,6 +17,7 @@ import {
 } from '../sidecar/sidecar-install-manager';
 import { readInstallManifest, variantDirectoryPath } from '../sidecar/sidecar-installer';
 import { diarizationSettingDescription } from './diarization-setting';
+import { DiarizationSettingsModal } from './diarization-settings-modal';
 import { renderActiveInstallCard } from './install-progress-row';
 import { renderMicrophonePicker } from './microphone-picker';
 import { renderModelSection } from './model-settings-section';
@@ -31,8 +32,6 @@ import {
   isRemoteLlmEffectivelyEnabled,
   isSpeakingStyle,
   isTranscriptFormattingMode,
-  MAX_DIARIZATION_MAX_SPEAKERS,
-  MIN_DIARIZATION_MAX_SPEAKERS,
   type PluginSettings,
   type TranscriptFormattingMode,
 } from './plugin-settings';
@@ -228,14 +227,10 @@ export class LocalSttSettingTab extends PluginSettingTab {
 
     this.renderTranscriptFormattingSetting(outputCard);
 
-    let setSpeakerLimitEnabled = (_enabled: boolean): void => {};
     const diarizationSetting = addToggleSetting(outputCard, this.access, {
-      name: 'Speaker labels (diarization)',
+      name: 'Speaker labels',
       desc: '',
       key: 'diarizationEnabled',
-      onChange: (enabled) => {
-        setSpeakerLimitEnabled(enabled);
-      },
     });
     const updateDiarizationDesc = (): void => {
       const caps = manager.getState().selectedModelCapabilities;
@@ -247,44 +242,21 @@ export class LocalSttSettingTab extends PluginSettingTab {
     };
     updateDiarizationDesc();
     this.disposeDiarizationDesc = manager.subscribe(updateDiarizationDesc);
-
-    const speakerLimitSetting = new Setting(outputCard)
-      .setName('Maximum speakers')
-      .setDesc(
-        'Use Automatic unless extra speaker labels appear. Setting the expected count prevents the session from creating labels beyond that limit.',
-      );
-    speakerLimitSetting.addDropdown((dropdown) => {
-      dropdown.addOption('auto', 'Automatic');
-      for (
-        let count = MIN_DIARIZATION_MAX_SPEAKERS;
-        count <= MAX_DIARIZATION_MAX_SPEAKERS;
-        count += 1
-      ) {
-        dropdown.addOption(String(count), String(count));
-      }
-      dropdown.setValue(settings.diarizationMaxSpeakers?.toString() ?? 'auto');
-      dropdown.setDisabled(!settings.diarizationEnabled);
-      setSpeakerLimitEnabled = (enabled) => {
-        dropdown.setDisabled(!enabled);
-      };
-      dropdown.onChange(async (value) => {
-        const parsed = value === 'auto' ? null : Number(value);
-        if (
-          parsed !== null &&
-          (!Number.isInteger(parsed) ||
-            parsed < MIN_DIARIZATION_MAX_SPEAKERS ||
-            parsed > MAX_DIARIZATION_MAX_SPEAKERS)
-        ) {
-          return;
-        }
-        await this.access.persistOne('diarizationMaxSpeakers', parsed);
-      });
-    });
-
-    addToggleSetting(outputCard, this.access, {
-      name: 'Keep recovery text in memory',
-      desc: 'Keep the latest utterance and one raw/transformed batch-cleanup record with its document snapshot. Nothing is saved to disk; disabling this clears it immediately.',
-      key: 'retainLastUtterance',
+    diarizationSetting.addExtraButton((button) => {
+      button
+        .setIcon('sliders-horizontal')
+        .setTooltip('Speaker label settings')
+        .onClick(() => {
+          new DiarizationSettingsModal(this.app, {
+            getSettings: () => this.dependencies.getSettings(),
+            onSave: () => {
+              this.display();
+            },
+            saveSettings: async (nextSettings) => {
+              await this.dependencies.saveSettings(nextSettings);
+            },
+          }).open();
+        });
     });
 
     const timestampsCard = createSettingGroup(containerEl, 'Timestamps');
@@ -341,6 +313,12 @@ export class LocalSttSettingTab extends PluginSettingTab {
       resolvePluginDirectory: this.dependencies.resolvePluginDirectory,
     });
     this.disposeSidecarSection = sidecarSection.init();
+
+    addToggleSetting(advancedSection, this.access, {
+      name: 'Keep recovery text in memory',
+      desc: 'Keep the latest recoverable text and note snapshot in memory. Nothing is written to disk.',
+      key: 'retainLastUtterance',
+    });
 
     addTextSetting(advancedSection, this.access, {
       name: 'Model store folder override',
@@ -421,7 +399,6 @@ export class LocalSttSettingTab extends PluginSettingTab {
     const setting = addEnumSetting(parent, this.access, {
       name: 'Transcript formatting',
       desc: 'How phrases are joined together.',
-      tooltip: 'Smart paragraphs use longer pauses as line or paragraph breaks.',
       key: 'transcriptFormatting',
       options: TRANSCRIPT_FORMATTING_OPTIONS,
       isValid: isTranscriptFormattingMode,

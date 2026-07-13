@@ -42,11 +42,12 @@ Multilingual support is first-class only when all of these are true:
 
 ## Staged delivery
 
-### 0. Truthful English-only UX
+### 0. Truthful English-only documentation
 
-- State the current English-only product constraint during setup and model
-  choice.
-- Display catalog language metadata on model rows.
+- State the current English-only product constraint in the README and model
+  documentation without repeating it throughout the model picker.
+- Keep catalog language metadata authoritative even when it is not shown on
+  primary model rows.
 - Remove upstream language-count claims from product copy when the integration
   does not expose those languages.
 

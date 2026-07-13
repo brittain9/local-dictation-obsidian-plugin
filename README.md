@@ -32,7 +32,7 @@ _The first-run wizard installs the native engine and helps you choose between li
 | **Notes and drafts** | Final text lands at your cursor after each pause. | Whisper or Cohere Transcribe batch models |
 | **Meetings and calls** | Add computer audio to microphone capture, then optionally label speakers and add timestamps. | Whisper or Cohere Transcribe batch models |
 
-All transcription models in the current catalog run locally and support English. Moonshine is optimized for live dictation; speaker labels currently require a batch model.
+Local Dictation currently transcribes English only. All catalog models run locally. Moonshine is optimized for live dictation; speaker labels currently require a batch model.
 
 ## Features
 
@@ -48,7 +48,7 @@ All transcription models in the current catalog run locally and support English.
 ## Getting started
 
 1. [Install **Local Dictation** from Community Plugins](https://obsidian.md/plugins?id=local-dictation).
-2. Follow the setup wizard to download the native speech-to-text engine and a starter model.
+2. Follow the setup wizard to download the native speech-to-text engine and a model.
 3. On the final step, select **Try dictation now** to begin in the open Markdown note. Or select **Done** and start later from the ribbon microphone or **Local Dictation: Toggle dictation** hotkey. Text lands at your cursor.
 
 The engine and models need a one-time download. Transcription then works without an ongoing network connection.

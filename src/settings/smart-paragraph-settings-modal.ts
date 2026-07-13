@@ -42,6 +42,11 @@ export class SmartParagraphSettingsModal extends Modal {
   private render(): void {
     this.contentEl.empty();
 
+    this.contentEl.createEl('p', {
+      cls: 'setting-item-description',
+      text: 'Smart paragraphs turn longer pauses into line or paragraph breaks. These values apply only when transcript formatting is set to Smart paragraphs.',
+    });
+
     this.addSecondsSetting({
       desc: `Seconds before a single line break (${MIN_PAUSE_SECONDS}-${MAX_PAUSE_SECONDS}).`,
       name: 'Line break pause',

@@ -69,7 +69,7 @@ export function sampleMoonshineCatalogModel(): CatalogModelRecord {
     runtimeId: 'onnx_runtime',
     sourceUrl: 'https://example.com/moonshine',
     summary: 'Test Moonshine streaming model',
-    uxTags: ['balanced', 'starter'],
+    uxTags: ['balanced'],
   };
 }
 
@@ -110,12 +110,12 @@ export function sampleCatalog(): ModelCatalogRecord {
     ],
     models: [
       sampleCatalogModel({
-        displayName: 'Whisper Large V3 Turbo Q8_0',
+        displayName: 'Whisper Large V3 Turbo',
         modelId: 'whisper_large_v3_turbo_q8_0',
         sizeBytes: 900,
       }),
       sampleCatalogModel({
-        displayName: 'Whisper Small English Q5_1',
+        displayName: 'Whisper Small',
         modelId: 'whisper_small_en_q5_1',
         sizeBytes: 100,
       }),

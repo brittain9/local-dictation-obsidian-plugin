@@ -226,10 +226,7 @@ export function deriveCurrentModelDisplay(state: ModelManagerState): CurrentMode
   return {
     displayName,
     engineLabel,
-    detail:
-      installedModel !== null
-        ? 'Model is installed and ready.'
-        : 'The selected managed model is not installed.',
+    detail: installedModel !== null ? '' : 'The selected managed model is not installed.',
     installedLabel: installedModel !== null ? 'Installed' : 'Not installed',
     sourceLabel: 'Managed download',
     sizeBytes,
@@ -244,12 +241,12 @@ function deriveExternalModelStatus(
   switch (capabilities.status) {
     case 'ready':
       return {
-        detail: 'External model passed its most recent validation.',
+        detail: '',
         installedLabel: 'External validated',
       };
     case 'pending':
       return {
-        detail: 'Checking the external model file.',
+        detail: '',
         installedLabel: 'Checking',
       };
     case 'unavailable':

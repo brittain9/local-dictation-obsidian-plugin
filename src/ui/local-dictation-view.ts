@@ -36,8 +36,7 @@ const LOCAL_DICTATION_VIEW_TITLE = 'Local Dictation';
 const LOCAL_DICTATION_VIEW_ICON = 'audio-lines';
 const HEADING_TOOLTIP =
   'Uses an LLM provider to transform the dictated transcript — cleaning, rewriting, summarizing, reformatting, or running custom prompts.';
-const STYLE_PICKER_TOOLTIP =
-  'A preset bundles a transform prompt with optional timing, output behavior, and setting overrides. Use Manage presets to view a prompt or create, edit, duplicate, and delete presets.';
+const NARROW_SIDEBAR_WIDTH_PX = 420;
 
 const CLEANUP_MODE_OPTIONS: ReadonlyArray<{ label: string; value: LlmPresetTiming }> = [
   { label: 'After each phrase', value: 'per_utterance' },
@@ -145,7 +144,10 @@ export class LocalDictationView extends ItemView {
     this.narrowObserver = new ResizeObserver((entries) => {
       for (const entry of entries) {
         const width = entry.contentRect.width;
-        target.toggleClass('local-dictation-sidebar--narrow', width > 0 && width < 360);
+        target.toggleClass(
+          'local-dictation-sidebar--narrow',
+          width > 0 && width < NARROW_SIDEBAR_WIDTH_PX,
+        );
       }
     });
     this.narrowObserver.observe(target);
@@ -335,15 +337,14 @@ export class LocalDictationView extends ItemView {
         });
       });
     setting.settingEl.addClass('local-dictation-preset-setting');
-    setting.descEl.setAttribute('title', description);
-    appendInfoTooltip(setting, STYLE_PICKER_TOOLTIP);
 
-    setting.addButton((button) => {
-      button.setButtonText('Manage presets');
-      button.setTooltip('Manage presets');
-      button.onClick(() => {
-        void this.openPresetManager();
-      });
+    setting.addExtraButton((button) => {
+      button
+        .setIcon('settings')
+        .setTooltip('Manage presets')
+        .onClick(() => {
+          void this.openPresetManager();
+        });
     });
   }
 

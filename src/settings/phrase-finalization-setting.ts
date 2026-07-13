@@ -6,12 +6,9 @@ const STYLE_DESCRIPTIONS: Record<SpeakingStyle, string> = {
   patient: 'Waits through longer pauses so a thought is less likely to be split.',
 };
 
-const SHARED_DESCRIPTION =
-  'Applies to every transcription model, including live models; live words can still update before the phrase is final.';
-
 export const PHRASE_FINALIZATION_TOOLTIP =
-  'This changes voice-activity boundaries, not writing style or model accuracy. Responsive favors speed; Patient favors keeping pauses inside one phrase.';
+  'Applies to every transcription model. Live words can still update before the phrase is final. This changes voice-activity boundaries, not writing style or model accuracy. Responsive favors speed; Patient favors keeping pauses inside one phrase.';
 
 export function phraseFinalizationDescription(style: SpeakingStyle): string {
-  return `${STYLE_DESCRIPTIONS[style]} ${SHARED_DESCRIPTION}`;
+  return STYLE_DESCRIPTIONS[style];
 }
