@@ -28,19 +28,19 @@ _The first-run wizard installs the native engine and helps you choose between li
 
 | Workflow | What happens | Model fit |
 | --- | --- | --- |
-| **Live dictation** | Provisional words appear and revise in place while you speak. | Moonshine streaming models |
+| **Live dictation** | Provisional words appear and revise in place while you speak. | Moonshine or Parakeet Unified streaming models |
 | **Notes and drafts** | Final text lands at your cursor after each pause. | Whisper or Cohere Transcribe batch models |
 | **Meetings and calls** | Add computer audio to microphone capture, then optionally label speakers and add timestamps. | Whisper or Cohere Transcribe batch models |
 
-All transcription models in the current catalog run locally and support English. Moonshine is optimized for live dictation; speaker labels currently require a batch model.
+All transcription models in the current catalog run locally and support English. Moonshine is the recommended live-dictation default; the experimental Parakeet Unified model offers another high-accuracy streaming option at a much higher CPU and memory cost. Speaker labels currently require a batch model.
 
 ## Features
 
-- **Live text.** Moonshine streaming models show provisional words and revise them in place until each utterance finalizes.
+- **Live text.** Moonshine and Parakeet Unified streaming models show provisional words while each utterance remains open.
 - **Meeting capture.** Include system audio from meetings, calls, or videos alongside your microphone on Windows, Linux, and macOS 14.2 or later.
 - **Speaker labels.** Optional on-device diarization assigns session-stable speaker labels. Set an expected maximum when automatic detection creates extra labels. Speaker embeddings stay in memory and are discarded after the session.
 - **Timestamps.** Add elapsed or wall-clock timestamps at configurable intervals.
-- **Local model choices.** Choose Whisper, Cohere Transcribe, or Moonshine models and download them from Settings.
+- **Local model choices.** Choose Whisper, Cohere Transcribe, Moonshine, or NVIDIA Parakeet Unified models and download them from Settings.
 - **Optional text transformation.** Clean up, summarize, extract action items, or apply a custom prompt through local Ollama or remote OpenRouter models.
 - **Short-lived recovery.** Reinsert the latest finalized utterance, or copy and safely restore the raw text from the most recent replace-style batch cleanup.
 - **Explicit remote controls.** Keep transformations local, allow OpenRouter only for oversized transcripts, or disable remote and LLM features entirely.

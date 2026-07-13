@@ -29,7 +29,11 @@ impl EngineRegistry {
             registry.register_adapter(Box::new(crate::adapters::whisper::WhisperAdapter));
         }
 
-        #[cfg(any(feature = "engine-cohere-transcribe", feature = "engine-moonshine"))]
+        #[cfg(any(
+            feature = "engine-cohere-transcribe",
+            feature = "engine-moonshine",
+            feature = "engine-parakeet-unified"
+        ))]
         registry.register_runtime(Box::new(crate::runtimes::onnx::OnnxRuntime::probe()));
 
         #[cfg(feature = "engine-cohere-transcribe")]
@@ -41,6 +45,11 @@ impl EngineRegistry {
 
         #[cfg(feature = "engine-moonshine")]
         registry.register_adapter(Box::new(crate::adapters::moonshine::MoonshineAdapter));
+
+        #[cfg(feature = "engine-parakeet-unified")]
+        registry.register_adapter(Box::new(
+            crate::adapters::parakeet_unified::ParakeetUnifiedAdapter,
+        ));
 
         registry
     }

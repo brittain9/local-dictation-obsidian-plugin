@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Build sidecar: Whisper + Cohere + CUDA GPU. Linux only.
+# Build sidecar: all speech families + CUDA GPU. Linux only.
 # Output goes to target-cuda/ to avoid overwriting the CPU binary.
 set -euo pipefail
 
@@ -7,7 +7,7 @@ usage() {
   cat <<'EOF'
 Usage: bash scripts/build-cuda.sh [OPTIONS]
 
-Build the CUDA-enabled native sidecar (Whisper+CUDA, Cohere+CUDA).
+Build the CUDA-enabled native sidecar (Whisper, Cohere, Moonshine, and Parakeet Unified).
 Output: native/target-cuda/{debug|release}/local-dictation-sidecar
 
 Options:

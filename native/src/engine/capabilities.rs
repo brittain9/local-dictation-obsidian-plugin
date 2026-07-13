@@ -32,6 +32,7 @@ impl RuntimeId {
 pub enum ModelFamilyId {
     CohereTranscribe,
     Moonshine,
+    ParakeetUnified,
     Whisper,
 }
 
@@ -40,6 +41,7 @@ impl ModelFamilyId {
         match self {
             Self::CohereTranscribe => "cohere_transcribe",
             Self::Moonshine => "moonshine",
+            Self::ParakeetUnified => "parakeet_unified",
             Self::Whisper => "whisper",
         }
     }
@@ -48,6 +50,7 @@ impl ModelFamilyId {
         match self {
             Self::CohereTranscribe => "Cohere Transcribe",
             Self::Moonshine => "Moonshine",
+            Self::ParakeetUnified => "NVIDIA Parakeet Unified",
             Self::Whisper => "Whisper",
         }
     }

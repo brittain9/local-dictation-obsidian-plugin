@@ -1,5 +1,5 @@
 {
-  "catalogVersion": 2,
+  "catalogVersion": 3,
   "runtimes": [
     {
       "runtimeId": "whisper_cpp",
@@ -30,6 +30,12 @@
       "runtimeId": "onnx_runtime",
       "displayName": "Moonshine",
       "summary": "Live English transcription while you speak. Start with Small for the recommended balance; Tiny uses fewer resources, while Medium is the most accurate and uses more CPU time and memory."
+    },
+    {
+      "familyId": "parakeet_unified",
+      "runtimeId": "onnx_runtime",
+      "displayName": "NVIDIA Parakeet Unified",
+      "summary": "High-accuracy live English transcription through a buffered 560 ms RNNT model. It is a larger download and substantially more CPU-intensive than Moonshine."
     }
   ],
   "collections": [
@@ -47,6 +53,11 @@
       "collectionId": "moonshine_streaming",
       "displayName": "Moonshine Streaming",
       "summary": "English live-dictation models in three quality tiers."
+    },
+    {
+      "collectionId": "parakeet_streaming",
+      "displayName": "NVIDIA Parakeet Unified",
+      "summary": "English buffered-streaming transcription using the 560 ms int8 Parakeet Unified export."
     }
   ],
   "models": [
@@ -654,6 +665,99 @@
           "downloadUrl": "https://download.moonshine.ai/model/medium-streaming-en/quantized/tokenizer.bin",
           "sha256": "6884b35fd6377d4c4d32336a0bc152f36b64d1e45b6503683cdc238250a8472d",
           "sizeBytes": 249974
+        }
+      ]
+    },
+    {
+      "runtimeId": "onnx_runtime",
+      "familyId": "parakeet_unified",
+      "modelId": "parakeet_unified_en_int8_streaming_560ms",
+      "collectionId": "parakeet_streaming",
+      "displayName": "Parakeet Unified 560 ms",
+      "summary": "NVIDIA's 0.6B English RNNT model with punctuation and capitalization, exported to int8 ONNX for buffered live transcription.",
+      "languageTags": ["en"],
+      "uxTags": ["streaming", "accuracy", "cpu", "experimental"],
+      "licenseLabel": "NVIDIA Open Model License",
+      "licenseUrl": "https://www.nvidia.com/en-us/agreements/enterprise-software/nvidia-open-model-license/",
+      "sourceUrl": "https://huggingface.co/csukuangfj2/sherpa-onnx-nemo-parakeet-unified-en-0.6b-int8-streaming-560ms/tree/7551fd26fc810cc1e4e043e608db4d13b59be31e",
+      "modelCardUrl": "https://huggingface.co/nvidia/parakeet-unified-en-0.6b/tree/fe53cd885760c96b6a5f51a0bfd362cb4584a98b",
+      "notes": [
+        "Streams stable incremental text with a 560 ms latency configuration; its 5.6-second left context is recomputed for each chunk.",
+        "The 632 MiB int8 ONNX download is derived from NVIDIA checkpoint fe53cd885760c96b6a5f51a0bfd362cb4584a98b by the sherpa-onnx v1.13.2 export workflow.",
+        "Model weights are separately licensed under the NVIDIA Open Model License, not this project's MIT license. Installing or using the model accepts NVIDIA's terms."
+      ],
+      "artifacts": [
+        {
+          "artifactId": "encoder",
+          "role": "transcription_model",
+          "required": true,
+          "filename": "encoder.int8.onnx",
+          "downloadUrl": "https://huggingface.co/csukuangfj2/sherpa-onnx-nemo-parakeet-unified-en-0.6b-int8-streaming-560ms/resolve/7551fd26fc810cc1e4e043e608db4d13b59be31e/encoder.int8.onnx",
+          "sha256": "e566c3f014598a41724f2df028779a2d4cf7943cbefa324964f6a72e8ee255fb",
+          "sizeBytes": 654046389
+        },
+        {
+          "artifactId": "decoder",
+          "role": "supporting_file",
+          "required": true,
+          "filename": "decoder.int8.onnx",
+          "downloadUrl": "https://huggingface.co/csukuangfj2/sherpa-onnx-nemo-parakeet-unified-en-0.6b-int8-streaming-560ms/resolve/7551fd26fc810cc1e4e043e608db4d13b59be31e/decoder.int8.onnx",
+          "sha256": "34fea72425d2506600772ba191a6d3f99c0710abdb68d9a3dc89fa8cb2aa473a",
+          "sizeBytes": 7257777
+        },
+        {
+          "artifactId": "joiner",
+          "role": "supporting_file",
+          "required": true,
+          "filename": "joiner.int8.onnx",
+          "downloadUrl": "https://huggingface.co/csukuangfj2/sherpa-onnx-nemo-parakeet-unified-en-0.6b-int8-streaming-560ms/resolve/7551fd26fc810cc1e4e043e608db4d13b59be31e/joiner.int8.onnx",
+          "sha256": "869f43f7d24595c55581ad3bf249a935fb8a71389fbdaa7504b9f46f93140f8a",
+          "sizeBytes": 1735860
+        },
+        {
+          "artifactId": "tokens",
+          "role": "supporting_file",
+          "required": true,
+          "filename": "tokens.txt",
+          "downloadUrl": "https://huggingface.co/csukuangfj2/sherpa-onnx-nemo-parakeet-unified-en-0.6b-int8-streaming-560ms/resolve/7551fd26fc810cc1e4e043e608db4d13b59be31e/tokens.txt",
+          "sha256": "dc0b4584ab2e4ddbf888425c076c61b736e7356a015250db7d307e6f1a8188ff",
+          "sizeBytes": 8952
+        },
+        {
+          "artifactId": "bias_documentation",
+          "role": "supporting_file",
+          "required": true,
+          "filename": "bias.md",
+          "downloadUrl": "https://huggingface.co/csukuangfj2/sherpa-onnx-nemo-parakeet-unified-en-0.6b-int8-streaming-560ms/resolve/7551fd26fc810cc1e4e043e608db4d13b59be31e/bias.md",
+          "sha256": "634920adfccd7897759e495166aef1561a04f3d13026afa4fa64fb4097edb9e0",
+          "sizeBytes": 1008
+        },
+        {
+          "artifactId": "explainability_documentation",
+          "role": "supporting_file",
+          "required": true,
+          "filename": "explainability.md",
+          "downloadUrl": "https://huggingface.co/csukuangfj2/sherpa-onnx-nemo-parakeet-unified-en-0.6b-int8-streaming-560ms/resolve/7551fd26fc810cc1e4e043e608db4d13b59be31e/explainability.md",
+          "sha256": "bd13ed3acf31895d29327ad9649cf1c27f45a0e0acaeb8faf8c1e12feba1a748",
+          "sizeBytes": 2428
+        },
+        {
+          "artifactId": "privacy_documentation",
+          "role": "supporting_file",
+          "required": true,
+          "filename": "privacy.md",
+          "downloadUrl": "https://huggingface.co/csukuangfj2/sherpa-onnx-nemo-parakeet-unified-en-0.6b-int8-streaming-560ms/resolve/7551fd26fc810cc1e4e043e608db4d13b59be31e/privacy.md",
+          "sha256": "10ec3440299669a2430cf5450732b3c2b04f7af2008350c231b335797fbec55c",
+          "sizeBytes": 4066
+        },
+        {
+          "artifactId": "safety_documentation",
+          "role": "supporting_file",
+          "required": true,
+          "filename": "safety.md",
+          "downloadUrl": "https://huggingface.co/csukuangfj2/sherpa-onnx-nemo-parakeet-unified-en-0.6b-int8-streaming-560ms/resolve/7551fd26fc810cc1e4e043e608db4d13b59be31e/safety.md",
+          "sha256": "6307181203b91a766440a7b8276d4d53893fb30c8058636ea2965c1756bf5e8c",
+          "sizeBytes": 782
         }
       ]
     }

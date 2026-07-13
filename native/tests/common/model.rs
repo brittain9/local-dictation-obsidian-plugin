@@ -22,6 +22,13 @@ const MOONSHINE_SIBLINGS: &[&str] = &[
     "tokenizer.bin",
 ];
 
+const PARAKEET_SIBLINGS: &[&str] = &[
+    "encoder.int8.onnx",
+    "decoder.int8.onnx",
+    "joiner.int8.onnx",
+    "tokens.txt",
+];
+
 /// Smallest bundled whisper model — fast to download and load on CPU, which
 /// keeps the suite cheap while still exercising the real inference path.
 pub const TEST_MODEL_ID: &str = "whisper_tiny_en_q8_0";
@@ -137,6 +144,33 @@ pub fn require_moonshine_model(tier: MoonshineTier) -> PathBuf {
              to reuse local assets, or ensure network access for the catalog download."
         )
     })
+}
+
+/// Resolve the entry point for a local Parakeet Unified buffered-streaming
+/// export. The 632 MiB model is intentionally not auto-downloaded by the test
+/// helper; installing it through the catalog separately exercises the normal
+/// download and integrity-verification path without surprising test runners.
+pub fn require_parakeet_model() -> PathBuf {
+    let dir = std::env::var_os("STT_TEST_PARAKEET_DIR")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| {
+            panic!(
+                "STT_TEST_PARAKEET_DIR must point at a directory containing {}",
+                PARAKEET_SIBLINGS.join(", ")
+            )
+        });
+    let missing: Vec<&str> = PARAKEET_SIBLINGS
+        .iter()
+        .copied()
+        .filter(|filename| !dir.join(filename).is_file())
+        .collect();
+    assert!(
+        missing.is_empty(),
+        "Parakeet model directory {} is missing: {}",
+        dir.display(),
+        missing.join(", ")
+    );
+    dir.join("encoder.int8.onnx")
 }
 
 fn verify_moonshine_siblings(dir: &Path) -> Result<(), String> {

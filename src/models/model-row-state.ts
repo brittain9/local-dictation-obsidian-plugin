@@ -285,6 +285,8 @@ function resolveFamilyDisplayName(
       return 'Cohere Transcribe';
     case 'moonshine':
       return 'Moonshine';
+    case 'parakeet_unified':
+      return 'NVIDIA Parakeet Unified';
     case 'whisper':
       return 'Whisper';
   }

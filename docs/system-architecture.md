@@ -270,10 +270,11 @@ reports what's actually available.
 | Runtime | Crate | Model format | Adapter |
 |---|---|---|---|
 | `whisper_cpp` | whisper-rs (whisper.cpp) | GGML `.bin` | `whisper` |
-| `onnx_runtime` | ort (ONNX Runtime) | ONNX / ORT | `cohere_transcribe`, `moonshine` |
+| `onnx_runtime` | ort (ONNX Runtime) | ONNX / ORT | `cohere_transcribe`, `moonshine`, `parakeet_unified` |
 
 Cargo features: `engine-whisper`, `engine-cohere-transcribe`,
-`engine-moonshine`, `gpu-metal`, `gpu-cuda`, `gpu-ort-cuda`. A missing
+`engine-moonshine`, `engine-parakeet-unified`, `gpu-metal`, `gpu-cuda`,
+`gpu-ort-cuda`. A missing
 `(runtimeId, familyId)` pair surfaces as an `unsupported_engine` error rather
 than a silent failure.
 
@@ -287,6 +288,11 @@ than a silent failure.
   state for the open utterance. It attempts a changed-text partial every 500 ms;
   the single worker thread guarantees one decode in flight, and the wall-time
   gate drops catch-up partials while preserving all PCM for the next decode.
+- Parakeet Unified computes a NeMo-compatible 128-bin frontend, reruns its
+  buffered encoder over 5.6 seconds of left context, and carries the RNNT
+  predictor's two LSTM states across 160 ms center chunks. It uses the same
+  `StreamingModel` lifecycle and partial cadence as Moonshine without linking
+  sherpa-onnx or invoking Python.
 - Partials carry only the engine stage outcome. Finals run the normal post-engine
   chain and receive a revision greater than every emitted partial.
 - Back-pressure: finalized utterances queue while inference is in flight; queue
@@ -310,6 +316,7 @@ than a silent failure.
 | Moonshine Tiny | `onnx_runtime` · `moonshine` | Quantized | 49 MB | Streaming (live), 34M params |
 | Moonshine Small | `onnx_runtime` · `moonshine` | Quantized | 157 MB | Streaming (live), recommended, 123M params |
 | Moonshine Medium | `onnx_runtime` · `moonshine` | Quantized | 289 MB | Streaming (live), 245M params |
+| Parakeet Unified 560 ms | `onnx_runtime` · `parakeet_unified` | INT8 | 632 MiB | Buffered streaming (live), experimental, 600M params |
 
 Moonshine models are streaming (live-dictation) entries in the managed catalog,
 installed through Manage Models like any other model. Each is a multi-file ORT
@@ -318,6 +325,14 @@ tokenizer) fetched from Moonshine AI and verified against pinned sizes and
 SHA-256 hashes. They are English-only and do not apply speaker labels. See
 [`docs/guides/moonshine-live-testing.md`](guides/moonshine-live-testing.md) for
 install and manual acceptance testing.
+
+Parakeet Unified is a separately licensed, English-only streaming entry. Its
+encoder, predictor, joiner, tokenizer, and model documents are pinned by
+revision, size, and SHA-256. The Rust adapter runs those graphs directly through
+the existing ONNX Runtime and owns feature extraction, buffered windowing, and
+RNNT greedy decoding. See
+[`docs/specs/parakeet-unified.md`](specs/parakeet-unified.md) for provenance,
+the exact graph contract, test commands, and NVIDIA license handling.
 
 **Inference is the bottleneck.** Time depends on model size, hardware, and
 utterance length, and is reported as `processing_duration_ms` on each transcript.
@@ -478,7 +493,7 @@ A representative slice of user-facing settings (full list and defaults in
 | **Obsidian Plugin API** | Host runtime: editor access, commands, settings, UI hooks |
 | **Web Audio API / AudioWorklet** | Microphone capture and PCM frame production at 50 fps |
 | **whisper-rs / whisper.cpp** | Primary engine; runs GGML-quantized Whisper on CPU, Metal, or CUDA |
-| **ort (ONNX Runtime)** | Engine for Cohere Transcribe and Moonshine; also runs Silero VAD and diarization models |
+| **ort (ONNX Runtime)** | Engine for Cohere Transcribe, Moonshine, and Parakeet Unified; also runs Silero VAD and diarization models |
 | **Silero VAD** | Speech probability per 32 ms window; drives boundary detection |
 | **Node.js child_process** | Spawns and manages the Rust sidecar |
 | **reqwest + sha2** | Downloads model files and verifies their SHA-256 |

@@ -81,6 +81,30 @@ fn moonshine_pair_is_registered_when_compiled() {
     );
 }
 
+#[cfg(feature = "engine-parakeet-unified")]
+#[test]
+fn parakeet_unified_pair_is_registered_when_compiled() {
+    let registry = EngineRegistry::build();
+
+    let adapter = registry
+        .adapter(RuntimeId::OnnxRuntime, ModelFamilyId::ParakeetUnified)
+        .expect("Parakeet Unified adapter must be registered when its engine feature is on");
+    assert_eq!(adapter.runtime_id(), RuntimeId::OnnxRuntime);
+    assert_eq!(adapter.family_id(), ModelFamilyId::ParakeetUnified);
+
+    let merged = registry
+        .merged_capabilities(RuntimeId::OnnxRuntime, ModelFamilyId::ParakeetUnified)
+        .expect("merged capabilities must be present for compiled pair");
+    assert!(merged.family.supports_streaming);
+    assert!(merged.family.produces_punctuation);
+    assert!(
+        merged
+            .runtime
+            .available_accelerators
+            .contains(&AcceleratorId::Cpu)
+    );
+}
+
 #[test]
 fn probe_against_missing_path_surfaces_structured_error_for_registered_pair() {
     let registry = EngineRegistry::build();

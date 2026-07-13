@@ -10,7 +10,22 @@ export interface ExternalFileEngineOption {
   selection: Pick<ExternalFileModelSelection, 'familyId' | 'runtimeId'>;
 }
 
+export const DEFAULT_EXTERNAL_FILE_ENGINE_SELECTION = {
+  familyId: 'whisper',
+  runtimeId: 'whisper_cpp',
+} as const satisfies Pick<ExternalFileModelSelection, 'familyId' | 'runtimeId'>;
+
 export const EXTERNAL_FILE_ENGINES: readonly ExternalFileEngineOption[] = [
+  {
+    label: 'NVIDIA Parakeet Unified (ONNX Runtime)',
+    placeholder: '/absolute/path/to/parakeet/encoder.int8.onnx',
+    requirements: [
+      'Select encoder.int8.onnx from a Parakeet Unified buffered-streaming export.',
+      'The same directory must contain decoder.int8.onnx, joiner.int8.onnx, and tokens.txt.',
+      'Legacy Parakeet TDT and non-streaming exports are not compatible.',
+    ],
+    selection: { familyId: 'parakeet_unified', runtimeId: 'onnx_runtime' },
+  },
   {
     label: 'Moonshine (ONNX Runtime)',
     placeholder: '/absolute/path/to/moonshine/frontend.ort',
@@ -29,7 +44,7 @@ export const EXTERNAL_FILE_ENGINES: readonly ExternalFileEngineOption[] = [
       'The loader validates the file contents; a filename extension alone does not establish compatibility.',
       'Local Dictation currently runs Whisper models in English.',
     ],
-    selection: { familyId: 'whisper', runtimeId: 'whisper_cpp' },
+    selection: DEFAULT_EXTERNAL_FILE_ENGINE_SELECTION,
   },
 ];
 
@@ -54,6 +69,12 @@ export async function validateExternalModelFilePath(
   if (engine.familyId === 'moonshine' && basename(normalizedPath) !== 'frontend.ort') {
     throw new Error(
       'Moonshine requires its primary frontend.ort artifact. Select frontend.ort from the streaming model directory.',
+    );
+  }
+
+  if (engine.familyId === 'parakeet_unified' && basename(normalizedPath) !== 'encoder.int8.onnx') {
+    throw new Error(
+      'Parakeet Unified requires its encoder.int8.onnx artifact. Select encoder.int8.onnx from the buffered-streaming model directory.',
     );
   }
 

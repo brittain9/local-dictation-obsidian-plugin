@@ -38,5 +38,8 @@ describe('stageSidecarBaseFiles', () => {
     expect(notices).toContain('Silero VAD');
     expect(notices).toContain('Copyright (c) 2020-present Silero Team');
     expect(notices).toContain('MIT License');
+    expect(notices).toContain('NVIDIA Parakeet Unified');
+    expect(notices).toContain('NVIDIA Open Model License Agreement');
+    expect(notices).toContain('Licensed by NVIDIA Corporation under the NVIDIA Open Model License');
   });
 });

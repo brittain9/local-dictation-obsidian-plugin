@@ -301,6 +301,33 @@ mod tests {
     }
 
     #[test]
+    fn bundled_parakeet_model_is_pinned_and_within_footprint_gate() {
+        let catalog = ModelCatalog::load_bundled().expect("bundled catalog should load");
+        let model = catalog
+            .find_model(
+                RuntimeId::OnnxRuntime,
+                ModelFamilyId::ParakeetUnified,
+                "parakeet_unified_en_int8_streaming_560ms",
+            )
+            .expect("Parakeet Unified 560 ms model should be cataloged");
+
+        assert_eq!(model.license_label, "NVIDIA Open Model License");
+        assert_eq!(model.artifacts.len(), 8);
+        assert!(model.artifacts.iter().all(|artifact| {
+            artifact
+                .download_url
+                .contains("7551fd26fc810cc1e4e043e608db4d13b59be31e")
+        }));
+        assert!(model.required_download_bytes() <= 700 * 1024 * 1024);
+        assert_eq!(
+            model
+                .primary_artifact()
+                .map(|artifact| artifact.filename.as_str()),
+            Some("encoder.int8.onnx")
+        );
+    }
+
+    #[test]
     fn validate_rejects_duplicate_runtime_ids() {
         let error = ModelCatalog {
             catalog_version: 2,
