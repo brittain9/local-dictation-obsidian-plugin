@@ -8,6 +8,7 @@ import {
   CURRENT_LANGUAGE_SUPPORT_NOTICE,
   describeCatalogLanguageSupport,
 } from './language-support';
+import { formatModelTagLabel } from './model-guidance';
 import { isCancellingPhase, type ModelInstallManager } from './model-install-manager';
 import {
   createInstallProgressElement,
@@ -529,7 +530,7 @@ export class ManageModelsModal extends Modal {
     for (const tag of model.uxTags) {
       tagsContainer.createSpan({
         cls: 'local-stt-tag',
-        text: tag,
+        text: formatModelTagLabel(tag),
       });
     }
 

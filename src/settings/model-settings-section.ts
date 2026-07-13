@@ -15,8 +15,14 @@ function getBadgeInfo(installedLabel: string): { modifier: string; text: string 
       return { modifier: 'ready', text: 'Ready' };
     case 'Not installed':
       return { modifier: 'missing', text: 'Not installed' };
+    case 'External validated':
+      return { modifier: 'ready', text: 'Validated · external' };
     case 'External file':
-      return { modifier: 'external', text: 'Unverified' };
+      return { modifier: 'external', text: 'External' };
+    case 'Checking':
+      return { modifier: 'external', text: 'Checking…' };
+    case 'Unavailable':
+      return { modifier: 'missing', text: 'Unavailable' };
     default:
       return { modifier: 'none', text: 'No model' };
   }
@@ -71,6 +77,8 @@ export function renderModelSection(
       cls: `local-stt-badge local-stt-badge--${badge.modifier}`,
       text: badge.text,
     });
+    descFragment.createEl('br');
+    descFragment.createSpan({ text: currentModel.detail });
 
     const cardSetting = new Setting(container)
       .setName(currentModel.displayName)

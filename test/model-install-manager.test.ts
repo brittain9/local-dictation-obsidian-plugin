@@ -1,3 +1,7 @@
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   createInstallLifecycleLogMessage,
@@ -439,9 +443,12 @@ describe('ModelInstallManager', () => {
     });
 
     it('validates and selects Moonshine through the external-file path', async () => {
+      const modelDirectory = await mkdtemp(join(tmpdir(), 'manager-external-model-test-'));
+      const frontendPath = join(modelDirectory, 'frontend.ort');
+      await writeFile(frontendPath, 'fixture', 'utf8');
       const selection = {
         familyId: 'moonshine' as const,
-        filePath: '/models/moonshine/frontend.ort',
+        filePath: frontendPath,
         kind: 'external_file' as const,
         runtimeId: 'onnx_runtime' as const,
       };
@@ -465,12 +472,25 @@ describe('ModelInstallManager', () => {
         selection,
       });
 
-      await harness.manager.validateAndSelectExternalFile(selection.filePath, selection);
+      try {
+        await harness.manager.validateAndSelectExternalFile(selection.filePath, selection);
+      } finally {
+        await rm(modelDirectory, { force: true, recursive: true });
+      }
 
       expect(harness.sidecarConnection.probeModelSelection).toHaveBeenCalledWith(
         expect.objectContaining({ modelSelection: selection }),
       );
       expect(harness.getSettings().selectedModel).toEqual(selection);
+    });
+
+    it('rejects an invalid external path before contacting the sidecar', async () => {
+      await expect(
+        harness.manager.validateAndSelectExternalFile('relative/model.bin'),
+      ).rejects.toThrow('Model file path must be an absolute path.');
+
+      expect(harness.sidecarConnection.probeModelSelection).not.toHaveBeenCalled();
+      expect(harness.getSettings().selectedModel).toBeNull();
     });
 
     it('refuses to persist when the probe reports the model as unavailable', async () => {

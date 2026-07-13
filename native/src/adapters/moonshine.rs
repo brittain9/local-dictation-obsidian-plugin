@@ -1,3 +1,4 @@
+use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
 
 use ndarray::{Array, Array1, Array2, Array3, IxDyn};
@@ -169,6 +170,14 @@ struct ModelPaths {
 
 fn resolve_model_paths(path: &Path) -> Result<ModelPaths, TranscriptionError> {
     validate_model_path(path)?;
+
+    if path.file_name() != Some(OsStr::new(FRONTEND_FILENAME)) {
+        return Err(TranscriptionError::invalid_model_with_details(format!(
+            "Moonshine external models must be selected via {FRONTEND_FILENAME}; received {}",
+            path.display()
+        )));
+    }
+
     let model_dir = path.parent().ok_or_else(|| {
         TranscriptionError::invalid_model_with_details(
             "cannot determine model directory from artifact path".to_string(),
@@ -1134,6 +1143,25 @@ mod tests {
         let error = MoonshineAdapter.probe_model(&frontend).unwrap_err();
         assert_eq!(error.code, "invalid_model_file");
         assert!(error.details.unwrap_or_default().contains(ENCODER_FILENAME));
+
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn probe_requires_frontend_as_the_selected_artifact() {
+        let root = temp_dir("wrong-primary-artifact");
+        fs::create_dir_all(&root).unwrap();
+        let encoder = root.join(ENCODER_FILENAME);
+        fs::write(&encoder, b"not a graph").unwrap();
+
+        let error = MoonshineAdapter.probe_model(&encoder).unwrap_err();
+        assert_eq!(error.code, "invalid_model_file");
+        assert!(
+            error
+                .details
+                .unwrap_or_default()
+                .contains(FRONTEND_FILENAME)
+        );
 
         fs::remove_dir_all(root).unwrap();
     }
