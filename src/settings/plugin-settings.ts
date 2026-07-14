@@ -76,7 +76,8 @@ export function validateTimestampIntervalSeconds(value: string): TimestampInterv
   return { milliseconds: seconds * 1000, valid: true };
 }
 
-export const DEFAULT_SMART_PARAGRAPH_PAUSE_MS = 3_000;
+export const DEFAULT_SMART_PARAGRAPH_LINE_BREAK_PAUSE_MS = 4_000;
+export const DEFAULT_SMART_PARAGRAPH_PARAGRAPH_PAUSE_MS = 10_000;
 export const MIN_SMART_PARAGRAPH_PAUSE_MS = 500;
 export const MAX_SMART_PARAGRAPH_PAUSE_MS = 30_000;
 
@@ -226,8 +227,8 @@ export const DEFAULT_PLUGIN_SETTINGS: PluginSettings = {
   sidecarPathOverride: '',
   sidecarRequestTimeoutSeconds: 300,
   sidecarStartupTimeoutSeconds: 4,
-  smartParagraphLineBreakPauseMs: DEFAULT_SMART_PARAGRAPH_PAUSE_MS,
-  smartParagraphParagraphPauseMs: DEFAULT_SMART_PARAGRAPH_PAUSE_MS,
+  smartParagraphLineBreakPauseMs: DEFAULT_SMART_PARAGRAPH_LINE_BREAK_PAUSE_MS,
+  smartParagraphParagraphPauseMs: DEFAULT_SMART_PARAGRAPH_PARAGRAPH_PAUSE_MS,
   speakingStyle: 'balanced',
   timestampClock: 'elapsed',
   timestampDensity: 'sparse',

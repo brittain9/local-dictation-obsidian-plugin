@@ -5,11 +5,14 @@ import type {
   TimestampDensity,
   TranscriptFormattingMode,
 } from '../settings/plugin-settings';
-import { DEFAULT_SMART_PARAGRAPH_PAUSE_MS } from '../settings/plugin-settings';
+import {
+  DEFAULT_SMART_PARAGRAPH_LINE_BREAK_PAUSE_MS,
+  DEFAULT_SMART_PARAGRAPH_PARAGRAPH_PAUSE_MS,
+} from '../settings/plugin-settings';
 
 const DEFAULT_SMART_PARAGRAPH_PAUSES: SmartParagraphPauseSettings = {
-  lineBreakPauseMs: DEFAULT_SMART_PARAGRAPH_PAUSE_MS,
-  paragraphPauseMs: DEFAULT_SMART_PARAGRAPH_PAUSE_MS,
+  lineBreakPauseMs: DEFAULT_SMART_PARAGRAPH_LINE_BREAK_PAUSE_MS,
+  paragraphPauseMs: DEFAULT_SMART_PARAGRAPH_PARAGRAPH_PAUSE_MS,
 };
 
 export interface TranscriptRenderOptions {

@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest';
 
-import { DEFAULT_SMART_PARAGRAPH_PAUSE_MS } from '../src/settings/plugin-settings';
+import {
+  DEFAULT_SMART_PARAGRAPH_LINE_BREAK_PAUSE_MS,
+  DEFAULT_SMART_PARAGRAPH_PARAGRAPH_PAUSE_MS,
+} from '../src/settings/plugin-settings';
 import {
   buildSpeakerSpans,
   buildTranscriptSpans,
@@ -150,7 +153,7 @@ describe('TranscriptRenderer', () => {
 
     planAndCommit(renderer, { text: 'first', utteranceStartMsInSession: 0 });
     const second = planAndCommit(renderer, {
-      pauseMsBeforeUtterance: DEFAULT_SMART_PARAGRAPH_PAUSE_MS,
+      pauseMsBeforeUtterance: DEFAULT_SMART_PARAGRAPH_PARAGRAPH_PAUSE_MS,
       text: 'later',
       utteranceStartMsInSession: DEFAULT_SPARSE_INTERVAL_MS,
     });
@@ -182,7 +185,7 @@ describe('TranscriptRenderer', () => {
     expect(planAndCommit(renderer, { text: 'third' }, '\n\n').projectedText).toBe('third');
   });
 
-  it('uses the meaningful pause threshold for smart paragraphs', () => {
+  it('uses the default line and paragraph pause thresholds', () => {
     const renderer = new TranscriptRenderer({
       timestamps: timestamps(),
       transcriptFormatting: 'smart',
@@ -193,7 +196,7 @@ describe('TranscriptRenderer', () => {
       planAndCommit(
         renderer,
         {
-          pauseMsBeforeUtterance: DEFAULT_SMART_PARAGRAPH_PAUSE_MS - 1,
+          pauseMsBeforeUtterance: DEFAULT_SMART_PARAGRAPH_LINE_BREAK_PAUSE_MS - 1,
           text: 'short',
         },
         't',
@@ -201,10 +204,16 @@ describe('TranscriptRenderer', () => {
     ).toBe(' short');
     expect(
       planAndCommit(renderer, {
-        pauseMsBeforeUtterance: DEFAULT_SMART_PARAGRAPH_PAUSE_MS,
-        text: 'long',
+        pauseMsBeforeUtterance: DEFAULT_SMART_PARAGRAPH_LINE_BREAK_PAUSE_MS,
+        text: 'line',
       }).projectedText,
-    ).toBe('\n\nlong');
+    ).toBe('\nline');
+    expect(
+      planAndCommit(renderer, {
+        pauseMsBeforeUtterance: DEFAULT_SMART_PARAGRAPH_PARAGRAPH_PAUSE_MS,
+        text: 'paragraph',
+      }).projectedText,
+    ).toBe('\n\nparagraph');
   });
 
   it('uses custom smart paragraph line and paragraph thresholds', () => {
