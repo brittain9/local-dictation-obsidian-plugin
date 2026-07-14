@@ -198,15 +198,21 @@ export class TranscriptRenderer {
       return false;
     }
 
-    // Detailed timestamps are rendered inside the transcript body from engine
-    // segment/word alignments. Emitting the phrase prefix as well would duplicate
-    // the first landmark.
-    if (this.options.timestamps.density === 'detailed') {
+    // Every-phrase timestamps are rendered inside the transcript body so engine
+    // segment landmarks can use their exact offsets without duplicating a prefix.
+    if (this.options.timestamps.density === 'every_utterance') {
       return false;
     }
 
-    if (this.options.timestamps.density === 'every_utterance') {
-      return true;
+    if (this.options.timestamps.density === 'paragraph') {
+      if (!this.hasRenderedText) {
+        return true;
+      }
+
+      return (
+        this.options.transcriptFormatting === 'smart' &&
+        this.resolveFormattingMode(input.pauseMsBeforeUtterance) === 'new_paragraph'
+      );
     }
 
     if (this.lastTimestampMsInSession === null) {
@@ -344,10 +350,9 @@ export interface TranscriptSpanBuildOptions {
   utteranceStartMsInSession: number;
 }
 
-/** Build the visible body for one utterance. Detailed mode chooses the finest
- * complete timing source available for the whole utterance: words first,
- * engine segments second, then one VAD phrase marker. It never mixes timing
- * granularities inside an utterance or drops untimed text. */
+/** Build the visible body for one utterance. Every-phrase mode uses engine
+ * segment timing when it covers the complete utterance, otherwise one VAD
+ * phrase marker. It never mixes timing sources or drops untimed text. */
 export function buildTranscriptSpans(
   segments: readonly TranscriptSegment[],
   fallbackText: string,
@@ -355,30 +360,11 @@ export function buildTranscriptSpans(
   options: TranscriptSpanBuildOptions,
 ): TranscriptSpan[] {
   const fallbackSpans = buildSpeakerSpans(segments, fallbackText, fallbackSpeakerIndex);
-  if (!options.timestamps.enabled || options.timestamps.density !== 'detailed') {
+  if (!options.timestamps.enabled || options.timestamps.density !== 'every_utterance') {
     return fallbackSpans;
   }
 
   const textSegments = segments.filter((segment) => segment.text.trim().length > 0);
-  if (textSegments.length > 0 && textSegments.every(hasCompleteWordTiming)) {
-    return groupDetailedSegments(
-      textSegments.map((segment) => ({
-        speakerIndex: segment.speaker,
-        text: (segment.words ?? [])
-          .map((word) => {
-            const landmark = formatDetailedLandmark(
-              options.utteranceStartMsInSession + word.startMs,
-              options.timestamps.sessionStartUnixMs,
-              options.timestamps.clock,
-            );
-            return `${landmark} ${word.text.trim()}`;
-          })
-          .join(' '),
-      })),
-      fallbackSpeakerIndex,
-    );
-  }
-
   if (
     textSegments.length > 0 &&
     textSegments.every(
@@ -386,7 +372,7 @@ export function buildTranscriptSpans(
         segment.timestampSource === 'engine' && segment.timestampGranularity !== 'utterance',
     )
   ) {
-    return groupDetailedSegments(
+    return groupTimedSegments(
       textSegments.map((segment) => ({
         speakerIndex: segment.speaker,
         text: `${formatDetailedLandmark(
@@ -399,7 +385,7 @@ export function buildTranscriptSpans(
     );
   }
 
-  const phraseLandmark = formatDetailedLandmark(
+  const phraseLandmark = formatLandmark(
     options.utteranceStartMsInSession,
     options.timestamps.sessionStartUnixMs,
     options.timestamps.clock,
@@ -411,23 +397,7 @@ export function buildTranscriptSpans(
   return [{ ...first, text: `${phraseLandmark} ${first.text}` }, ...rest];
 }
 
-function hasCompleteWordTiming(segment: TranscriptSegment): boolean {
-  const words = segment.words;
-  if (words === undefined || words.length === 0 || words.some((word) => word.text.trim() === '')) {
-    return false;
-  }
-
-  return (
-    normalizeWhitespace(words.map((word) => word.text).join(' ')) ===
-    normalizeWhitespace(segment.text)
-  );
-}
-
-function normalizeWhitespace(value: string): string {
-  return value.trim().split(/\s+/u).join(' ');
-}
-
-function groupDetailedSegments(
+function groupTimedSegments(
   segments: readonly TranscriptSpan[],
   fallbackSpeakerIndex: number | null,
 ): TranscriptSpan[] {

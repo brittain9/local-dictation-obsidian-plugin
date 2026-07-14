@@ -349,9 +349,9 @@ describe('resolvePluginSettings', () => {
     ).toBe(600_000);
   });
 
-  it('persists detailed model timing as an explicit timestamp frequency', () => {
+  it('migrates detailed model timing to every-phrase timestamps', () => {
     expect(resolvePluginSettings({ timestampDensity: 'detailed' }).timestampDensity).toBe(
-      'detailed',
+      'every_utterance',
     );
   });
 

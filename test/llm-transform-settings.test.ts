@@ -44,19 +44,6 @@ describe('describeTimestampTransformInteraction', () => {
       }),
     ).toBe(expected);
   });
-
-  it('warns that transforms discard detailed word alignment', () => {
-    expect(
-      describeTimestampTransformInteraction({
-        ...DEFAULT_PLUGIN_SETTINGS,
-        llmPostprocessMode: 'per_utterance',
-        timestampDensity: 'detailed',
-        timestampsEnabled: true,
-      }),
-    ).toBe(
-      'Detailed word or segment timing is available in raw transcript mode. A transform rewrites those words, so exact alignment is removed instead of showing inaccurate timestamps.',
-    );
-  });
 });
 
 describe('validateBoundedNumber', () => {

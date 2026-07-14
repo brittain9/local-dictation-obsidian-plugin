@@ -224,10 +224,11 @@ describe('DictationSessionController', () => {
   });
 
   it.each([
-    [true, 'detailed', true],
-    [false, 'detailed', false],
+    [false, 'every_utterance', true],
+    [false, 'every_utterance', false],
     [false, 'sparse', true],
-  ] as const)('sets detailedTimestampsEnabled=%s when density=%s and timestampsEnabled=%s', async (expected, timestampDensity, timestampsEnabled) => {
+    [false, 'paragraph', true],
+  ] as const)('does not request word timing when density=%s and timestampsEnabled=%s', async (expected, timestampDensity, timestampsEnabled) => {
     const sidecarConnection = new FakeSidecarConnection();
     const controller = createController({
       sidecarConnection,
@@ -244,54 +245,6 @@ describe('DictationSessionController', () => {
     expect(sidecarConnection.startSession).toHaveBeenCalledWith(
       expect.objectContaining({ detailedTimestampsEnabled: expected }),
     );
-  });
-
-  it('projects sidecar word timing through the controller into detailed transcript spans', async () => {
-    const sidecarConnection = new FakeSidecarConnection();
-    const sessions: FakeSession[] = [];
-    const controller = createController({
-      createSession: (session) => {
-        sessions.push(session);
-      },
-      sidecarConnection,
-      getSettings: () =>
-        createSettings({
-          selectedModel: createExternalModelSelection(),
-          timestampDensity: 'detailed',
-          timestampsEnabled: true,
-        }),
-    });
-
-    await controller.startDictation();
-    const sessionId = sidecarConnection.startSession.mock.calls[0]?.[0].sessionId ?? '';
-    sidecarConnection.emit(
-      transcriptReady(sessionId, 'Hello world.', {
-        segments: [
-          {
-            endMs: 1_000,
-            speaker: null,
-            startMs: 0,
-            text: 'Hello world.',
-            timestampGranularity: 'segment',
-            timestampSource: 'engine',
-            words: [
-              { endMs: 400, startMs: 100, text: 'Hello', timestampSource: 'engine' },
-              { endMs: 900, startMs: 500, text: 'world.', timestampSource: 'engine' },
-            ],
-          },
-        ],
-        utteranceEndMsInSession: 11_000,
-        utteranceStartMsInSession: 10_000,
-      }),
-    );
-
-    await vi.waitFor(() => {
-      expect(sessions[0]?.acceptTranscript).toHaveBeenCalledWith(
-        expect.objectContaining({
-          spans: [{ speakerIndex: null, text: '(0:10.1) Hello (0:10.5) world.' }],
-        }),
-      );
-    });
   });
 
   it('includes system audio without skipping microphone capture', async () => {

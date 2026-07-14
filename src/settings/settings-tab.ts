@@ -52,7 +52,6 @@ import {
 } from './sidecar-settings-section';
 import { SmartParagraphSettingsModal } from './smart-paragraph-settings-modal';
 import { isSystemAudioSupportedOnCurrentPlatform } from './system-audio-support';
-import { timestampCapabilityPresentation } from './timestamp-capability';
 import { TimestampSettingsModal } from './timestamp-settings-modal';
 
 interface SettingsTabDependencies {
@@ -105,7 +104,6 @@ export class LocalSttSettingTab extends PluginSettingTab {
   private disposeMissingSidecarBanner: (() => void) | null = null;
   private disposeModelSection: (() => void) | null = null;
   private disposeSidecarSection: (() => void) | null = null;
-  private disposeTimestampDesc: (() => void) | null = null;
   private missingSidecarProgressEl: HTMLDivElement | null = null;
 
   constructor(
@@ -263,7 +261,7 @@ export class LocalSttSettingTab extends PluginSettingTab {
     });
 
     const timestampsCard = createSettingGroup(containerEl, 'Timestamps');
-    this.renderTimestampSettings(timestampsCard, settings, manager);
+    this.renderTimestampSettings(timestampsCard, settings);
 
     const llmCard = createSettingGroup(containerEl, 'LLM transformation');
     const enableLlmSetting = new Setting(llmCard)
@@ -390,8 +388,6 @@ export class LocalSttSettingTab extends PluginSettingTab {
     this.disposeMicrophoneSection = null;
     this.disposeSidecarSection?.();
     this.disposeSidecarSection = null;
-    this.disposeTimestampDesc?.();
-    this.disposeTimestampDesc = null;
     this.disposeMissingSidecarBanner?.();
     this.disposeMissingSidecarBanner = null;
     this.missingSidecarProgressEl = null;
@@ -450,26 +446,16 @@ export class LocalSttSettingTab extends PluginSettingTab {
     });
   }
 
-  private renderTimestampSettings(
-    parent: HTMLElement,
-    settings: PluginSettings,
-    manager: ModelInstallManager,
-  ): void {
-    const getModelCapabilities = () => {
-      const state = manager.getState().selectedModelCapabilities;
-      return state.status === 'ready' ? state.capabilities.family : null;
-    };
-    const setting = new Setting(parent).setName('Use timestamps').addToggle((toggle) => {
-      toggle.setValue(settings.timestampsEnabled);
-      toggle.onChange(async (value) => {
-        await this.access.persistOne('timestampsEnabled', value);
+  private renderTimestampSettings(parent: HTMLElement, settings: PluginSettings): void {
+    const setting = new Setting(parent)
+      .setName('Use timestamps')
+      .setDesc('Add timestamp landmarks to dictated transcripts.')
+      .addToggle((toggle) => {
+        toggle.setValue(settings.timestampsEnabled);
+        toggle.onChange(async (value) => {
+          await this.access.persistOne('timestampsEnabled', value);
+        });
       });
-    });
-    const updateDescription = () => {
-      setting.setDesc(timestampCapabilityPresentation(getModelCapabilities()).settingDescription);
-    };
-    updateDescription();
-    this.disposeTimestampDesc = manager.subscribe(updateDescription);
 
     setting.addExtraButton((button) => {
       button
@@ -477,7 +463,6 @@ export class LocalSttSettingTab extends PluginSettingTab {
         .setTooltip('Timestamp settings')
         .onClick(() => {
           new TimestampSettingsModal(this.app, {
-            getModelCapabilities,
             getSettings: () => this.dependencies.getSettings(),
             onSave: () => {
               this.display();

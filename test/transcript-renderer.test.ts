@@ -32,7 +32,7 @@ describe('formatLandmark', () => {
 });
 
 describe('formatDetailedLandmark', () => {
-  it('includes tenths for word-level elapsed and wall-clock timing', () => {
+  it('includes tenths for engine-segment elapsed and wall-clock timing', () => {
     expect(formatDetailedLandmark(65_432, DEFAULT_SESSION_START_MS, 'elapsed')).toBe('(1:05.4)');
     expect(formatDetailedLandmark(65_432, DEFAULT_SESSION_START_MS, 'wallclock')).toBe(
       '(14:33:05.4)',
@@ -40,75 +40,43 @@ describe('formatDetailedLandmark', () => {
   });
 });
 
-describe('buildTranscriptSpans detailed timestamps', () => {
-  const detailedOptions = {
-    timestamps: timestamps({ density: 'detailed', enabled: true, header: false }),
+describe('buildTranscriptSpans every-phrase timestamps', () => {
+  const everyPhraseOptions = {
+    timestamps: timestamps({ density: 'every_utterance', enabled: true, header: false }),
     utteranceStartMsInSession: 10_000,
   } as const;
 
-  it('uses complete word timing before coarser segment timing', () => {
+  it('uses each engine segment as a phrase landmark', () => {
     const spans = buildTranscriptSpans(
       [
         {
           endMs: 1_000,
           speaker: null,
           startMs: 0,
-          text: 'Hello world.',
+          text: 'First sentence.',
           timestampGranularity: 'segment',
           timestampSource: 'engine',
-          words: [
-            { endMs: 400, startMs: 100, text: 'Hello', timestampSource: 'engine' },
-            { endMs: 900, startMs: 500, text: 'world.', timestampSource: 'engine' },
-          ],
         },
-      ],
-      'Hello world.',
-      null,
-      detailedOptions,
-    );
-
-    expect(spans).toEqual([{ speakerIndex: null, text: '(0:10.1) Hello (0:10.5) world.' }]);
-  });
-
-  it('falls back to complete segment text when word timing covers only part of it', () => {
-    const spans = buildTranscriptSpans(
-      [
         {
-          endMs: 1_000,
+          endMs: 2_000,
           speaker: null,
-          startMs: 250,
-          text: 'Hello world.',
-          timestampGranularity: 'segment',
-          timestampSource: 'engine',
-          words: [{ endMs: 500, startMs: 300, text: 'Hello', timestampSource: 'engine' }],
-        },
-      ],
-      'Hello world.',
-      null,
-      detailedOptions,
-    );
-
-    expect(spans).toEqual([{ speakerIndex: null, text: '(0:10.2) Hello world.' }]);
-  });
-
-  it('uses engine segment timing when word timing is incomplete', () => {
-    const spans = buildTranscriptSpans(
-      [
-        {
-          endMs: 1_000,
-          speaker: null,
-          startMs: 250,
-          text: 'Segment text.',
+          startMs: 1_000,
+          text: 'Second sentence.',
           timestampGranularity: 'segment',
           timestampSource: 'engine',
         },
       ],
-      'Segment text.',
+      'First sentence. Second sentence.',
       null,
-      detailedOptions,
+      everyPhraseOptions,
     );
 
-    expect(spans[0]?.text).toBe('(0:10.2) Segment text.');
+    expect(spans).toEqual([
+      {
+        speakerIndex: null,
+        text: '(0:10.0) First sentence. (0:11.0) Second sentence.',
+      },
+    ]);
   });
 
   it('falls back to one phrase marker without dropping text from an untimed model', () => {
@@ -125,10 +93,10 @@ describe('buildTranscriptSpans detailed timestamps', () => {
       ],
       'Live phrase.',
       null,
-      detailedOptions,
+      everyPhraseOptions,
     );
 
-    expect(spans).toEqual([{ speakerIndex: null, text: '(0:10.0) Live phrase.' }]);
+    expect(spans).toEqual([{ speakerIndex: null, text: '(0:10) Live phrase.' }]);
   });
 });
 
@@ -313,23 +281,16 @@ describe('TranscriptRenderer', () => {
     expect(second.projectedText).toBe(' (0:30) second');
   });
 
-  it('emits a landmark for every utterance when density is every utterance', () => {
+  it('does not duplicate a phrase landmark rendered in the body', () => {
     const renderer = new TranscriptRenderer({
       timestamps: timestamps({ density: 'every_utterance', enabled: true, header: false }),
       transcriptFormatting: 'space',
     });
 
-    planAndCommit(renderer, { text: 'first', utteranceStartMsInSession: 0 });
-    const second = planAndCommit(
-      renderer,
-      {
-        text: 'second',
-        utteranceStartMsInSession: 1_000,
-      },
-      't',
-    );
+    const first = planAndCommit(renderer, { text: '(0:00.1) first' });
 
-    expect(second.projectedText).toBe(' (0:01) second');
+    expect(first.projectedText).toBe('(0:00.1) first');
+    expect(first.emittedTimestamp).toBeNull();
   });
 
   it('uses the configured sparse interval', () => {
@@ -364,16 +325,48 @@ describe('TranscriptRenderer', () => {
     expect(first.projectedText).toBe('(14:33:00) first');
   });
 
-  it('does not duplicate a phrase prefix when detailed timing is rendered in the body', () => {
+  it('emits landmarks at session start and smart paragraph breaks only', () => {
     const renderer = new TranscriptRenderer({
-      timestamps: timestamps({ density: 'detailed', enabled: true, header: false }),
-      transcriptFormatting: 'space',
+      smartParagraphPauses: { lineBreakPauseMs: 4_000, paragraphPauseMs: 10_000 },
+      timestamps: timestamps({ density: 'paragraph', enabled: true, header: false }),
+      transcriptFormatting: 'smart',
     });
 
-    const first = planAndCommit(renderer, { text: '(0:00.1) first' });
+    expect(
+      planAndCommit(renderer, { text: 'first', utteranceStartMsInSession: 0 }).projectedText,
+    ).toBe('(0:00) first');
+    expect(
+      planAndCommit(renderer, {
+        pauseMsBeforeUtterance: 4_000,
+        text: 'same paragraph',
+        utteranceStartMsInSession: 5_000,
+      }).projectedText,
+    ).toBe('\nsame paragraph');
+    expect(
+      planAndCommit(renderer, {
+        pauseMsBeforeUtterance: 10_000,
+        text: 'next paragraph',
+        utteranceStartMsInSession: 15_000,
+      }).projectedText,
+    ).toBe('\n\n(0:15) next paragraph');
+  });
 
-    expect(first.projectedText).toBe('(0:00.1) first');
-    expect(first.emittedTimestamp).toBeNull();
+  it('does not emit paragraph landmarks for non-smart formatting', () => {
+    const renderer = new TranscriptRenderer({
+      timestamps: timestamps({ density: 'paragraph', enabled: true, header: false }),
+      transcriptFormatting: 'new_paragraph',
+    });
+
+    expect(
+      planAndCommit(renderer, { text: 'first', utteranceStartMsInSession: 0 }).projectedText,
+    ).toBe('(0:00) first');
+    expect(
+      planAndCommit(renderer, {
+        pauseMsBeforeUtterance: 15_000,
+        text: 'next',
+        utteranceStartMsInSession: 15_000,
+      }).projectedText,
+    ).toBe('\n\nnext');
   });
 });
 

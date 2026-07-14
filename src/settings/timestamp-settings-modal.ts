@@ -1,7 +1,6 @@
 import type { App, ButtonComponent, TextComponent } from 'obsidian';
 import { Modal, Setting } from 'obsidian';
 
-import type { ModelFamilyCapabilitiesRecord } from '../models/model-management-types';
 import {
   DEFAULT_PLUGIN_SETTINGS,
   isTimestampClock,
@@ -14,10 +13,8 @@ import {
   validateTimestampIntervalSeconds,
 } from './plugin-settings';
 import type { DropdownOption } from './setting-helpers';
-import { timestampCapabilityPresentation } from './timestamp-capability';
 
 interface TimestampSettingsModalDependencies {
-  getModelCapabilities: () => ModelFamilyCapabilitiesRecord | null;
   getSettings: () => PluginSettings;
   onSave?: () => void;
   saveSettings: (settings: PluginSettings) => Promise<void>;
@@ -38,6 +35,7 @@ const TIMESTAMP_CLOCK_OPTIONS: ReadonlyArray<DropdownOption<TimestampClock>> = [
 const TIMESTAMP_DENSITY_OPTIONS: ReadonlyArray<DropdownOption<TimestampDensity>> = [
   { label: 'At intervals', value: 'sparse' },
   { label: 'Every phrase', value: 'every_utterance' },
+  { label: 'At paragraph breaks', value: 'paragraph' },
 ];
 
 const MIN_INTERVAL_SECONDS = MIN_TIMESTAMP_SPARSE_INTERVAL_MS / 1000;
@@ -84,7 +82,7 @@ export class TimestampSettingsModal extends Modal {
 
     this.contentEl.createEl('p', {
       cls: 'setting-item-description',
-      text: 'Interval and phrase timestamps work with every model. Detailed timing uses model-provided words or segments when available; otherwise, it uses one timestamp per phrase.',
+      text: 'Choose landmarks at intervals, phrase boundaries, or Smart paragraph breaks.',
     });
 
     new Setting(this.contentEl)
@@ -111,20 +109,12 @@ export class TimestampSettingsModal extends Modal {
         });
       });
 
-    const capability = timestampCapabilityPresentation(this.deps.getModelCapabilities());
     this.frequencySetting = new Setting(this.contentEl)
       .setName('Frequency')
       .setDesc('Choose how often timestamps appear.')
       .addDropdown((dropdown) => {
         for (const option of TIMESTAMP_DENSITY_OPTIONS) {
           dropdown.addOption(option.value, option.label);
-        }
-        dropdown.addOption('detailed', capability.detailedOptionLabel);
-        const detailedOption = [...dropdown.selectEl.options].find(
-          (option) => option.value === 'detailed',
-        );
-        if (detailedOption !== undefined && capability.support === 'unavailable') {
-          detailedOption.disabled = true;
         }
         dropdown.setValue(this.draft.density);
         dropdown.onChange((value) => {
@@ -182,14 +172,22 @@ export class TimestampSettingsModal extends Modal {
   private refreshIntervalState(): void {
     const intervalIsActive = this.draft.density === 'sparse';
     const validation = validateTimestampIntervalSeconds(this.draft.sparseIntervalSeconds);
-    const capability = timestampCapabilityPresentation(this.deps.getModelCapabilities());
+    const paragraphFormattingUnavailable =
+      this.draft.density === 'paragraph' &&
+      this.deps.getSettings().transcriptFormatting !== 'smart';
 
     this.frequencySetting?.setDesc(
       this.draft.density === 'sparse'
         ? 'Add readable landmarks at the configured interval.'
         : this.draft.density === 'every_utterance'
-          ? 'Add one timestamp at every voice-detected phrase boundary.'
-          : capability.detailedDescription,
+          ? 'Add a timestamp before each model-timed segment when available, otherwise at each voice-detected phrase.'
+          : paragraphFormattingUnavailable
+            ? 'Requires Smart paragraphs formatting.'
+            : 'Add a timestamp at the start of the session and at each Smart paragraph break.',
+    );
+    this.frequencySetting?.descEl.toggleClass(
+      'local-dictation-status--warning',
+      paragraphFormattingUnavailable,
     );
 
     this.intervalInput?.setDisabled(!intervalIsActive);

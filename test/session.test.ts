@@ -311,10 +311,10 @@ describe('Session', () => {
     expect(surface.replaceCalls).toHaveLength(2);
   });
 
-  it('preserves detailed timing carried by a single rendered span across revisions', () => {
+  it('preserves phrase timing carried by a single rendered span across revisions', () => {
     const { session, surface } = createSessionHarness({
       rendererOptions: renderOptions({
-        timestamps: timestamps({ density: 'detailed', enabled: true, header: false }),
+        timestamps: timestamps({ density: 'every_utterance', enabled: true, header: false }),
       }),
     });
 

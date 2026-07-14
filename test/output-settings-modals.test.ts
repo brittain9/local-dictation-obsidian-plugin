@@ -1,7 +1,6 @@
 import type { App } from 'obsidian';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import type { ModelFamilyCapabilitiesRecord } from '../src/models/model-management-types';
 import { DiarizationSettingsModal } from '../src/settings/diarization-settings-modal';
 import { DEFAULT_PLUGIN_SETTINGS, type PluginSettings } from '../src/settings/plugin-settings';
 import { TimestampSettingsModal } from '../src/settings/timestamp-settings-modal';
@@ -15,7 +14,6 @@ describe('transcript output settings modals', () => {
   it('announces an invalid timestamp interval and blocks saving it', async () => {
     const saveSettings = vi.fn(async () => {});
     new TimestampSettingsModal({} as App, {
-      getModelCapabilities: () => capabilities({ supportsWordTimestamps: true }),
       getSettings: () => DEFAULT_PLUGIN_SETTINGS,
       saveSettings,
     }).open();
@@ -35,7 +33,7 @@ describe('transcript output settings modals', () => {
     expect(saveSettings).not.toHaveBeenCalled();
   });
 
-  it('renders model-aware detailed timing and persists a merged draft', async () => {
+  it('renders fixed frequency choices and persists a merged draft', async () => {
     let settings: PluginSettings = {
       ...DEFAULT_PLUGIN_SETTINGS,
       timestampSparseIntervalMs: 45_000,
@@ -45,20 +43,18 @@ describe('transcript output settings modals', () => {
     });
     const onSave = vi.fn();
     new TimestampSettingsModal({} as App, {
-      getModelCapabilities: () =>
-        capabilities({ supportsSegmentTimestamps: true, supportsWordTimestamps: true }),
       getSettings: () => settings,
       onSave,
       saveSettings,
     }).open();
 
     const frequency = MockSetting.named('Frequency').onlyDropdown();
-    expect(frequency.selectEl.options).toContainEqual({
-      disabled: false,
-      label: 'Every word · model timed',
-      value: 'detailed',
-    });
-    frequency.change('detailed');
+    expect(frequency.selectEl.options).toEqual([
+      { disabled: false, label: 'At intervals', value: 'sparse' },
+      { disabled: false, label: 'Every phrase', value: 'every_utterance' },
+      { disabled: false, label: 'At paragraph breaks', value: 'paragraph' },
+    ]);
+    frequency.change('paragraph');
     MockSetting.named('Reference clock').onlyDropdown().change('wallclock');
     MockSetting.named('Session header').onlyToggle().change(false);
     expect(MockSetting.named('Interval').onlyText().inputEl.disabled).toBe(true);
@@ -72,27 +68,10 @@ describe('transcript output settings modals', () => {
     expect(saveSettings).toHaveBeenCalledWith({
       ...concurrentSettings,
       timestampClock: 'wallclock',
-      timestampDensity: 'detailed',
+      timestampDensity: 'paragraph',
       timestampSessionHeader: false,
     });
     expect(onSave).toHaveBeenCalledOnce();
-  });
-
-  it('prevents selecting detailed timing when the model cannot provide it', () => {
-    new TimestampSettingsModal({} as App, {
-      getModelCapabilities: () => capabilities(),
-      getSettings: () => DEFAULT_PLUGIN_SETTINGS,
-      saveSettings: vi.fn(async () => {}),
-    }).open();
-
-    const detailed = MockSetting.named('Frequency')
-      .onlyDropdown()
-      .selectEl.options.find((option) => option.value === 'detailed');
-    expect(detailed).toEqual({
-      disabled: true,
-      label: 'Detailed model timing · unavailable',
-      value: 'detailed',
-    });
   });
 
   it('disables speaker-limit editing while speaker labels are off', () => {
@@ -125,19 +104,3 @@ describe('transcript output settings modals', () => {
     expect(onSave).toHaveBeenCalledOnce();
   });
 });
-
-function capabilities(
-  overrides: Partial<ModelFamilyCapabilitiesRecord> = {},
-): ModelFamilyCapabilitiesRecord {
-  return {
-    maxAudioDurationSecs: null,
-    producesPunctuation: true,
-    supportedLanguages: { kind: 'english_only' },
-    supportsInitialPrompt: false,
-    supportsLanguageSelection: false,
-    supportsSegmentTimestamps: false,
-    supportsStreaming: false,
-    supportsWordTimestamps: false,
-    ...overrides,
-  };
-}

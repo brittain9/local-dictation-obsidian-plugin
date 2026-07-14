@@ -43,7 +43,7 @@ export const TIMESTAMP_CLOCKS = ['elapsed', 'wallclock'] as const;
 
 export type TimestampClock = (typeof TIMESTAMP_CLOCKS)[number];
 
-export const TIMESTAMP_DENSITIES = ['sparse', 'every_utterance', 'detailed'] as const;
+export const TIMESTAMP_DENSITIES = ['sparse', 'every_utterance', 'paragraph'] as const;
 
 export type TimestampDensity = (typeof TIMESTAMP_DENSITIES)[number];
 
@@ -372,9 +372,12 @@ export function resolvePluginSettings(data: unknown): PluginSettings {
     timestampClock: isTimestampClock(raw.timestampClock)
       ? raw.timestampClock
       : DEFAULT_PLUGIN_SETTINGS.timestampClock,
-    timestampDensity: isTimestampDensity(raw.timestampDensity)
-      ? raw.timestampDensity
-      : DEFAULT_PLUGIN_SETTINGS.timestampDensity,
+    timestampDensity:
+      raw.timestampDensity === 'detailed'
+        ? 'every_utterance'
+        : isTimestampDensity(raw.timestampDensity)
+          ? raw.timestampDensity
+          : DEFAULT_PLUGIN_SETTINGS.timestampDensity,
     timestampsEnabled: readBoolean(
       raw.timestampsEnabled,
       DEFAULT_PLUGIN_SETTINGS.timestampsEnabled,
