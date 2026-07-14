@@ -15,7 +15,6 @@ export interface ValidatedNumberSettingOptions extends BoundedNumberOptions {
   disabled?: boolean;
   name: string;
   onChange: (value: number) => void;
-  onValidityChange: (valid: boolean) => void;
   step?: number;
   value: number;
 }
@@ -76,7 +75,6 @@ export function addValidatedNumberSetting(
       text.inputEl.setCustomValidity(message);
       text.inputEl.toggleAttribute('aria-invalid', !validation.valid);
       setting.setDesc(validation.valid ? options.desc : validation.message);
-      options.onValidityChange(validation.valid);
       if (validation.valid) {
         options.onChange(validation.value);
       }

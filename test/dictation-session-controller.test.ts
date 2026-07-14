@@ -224,10 +224,11 @@ describe('DictationSessionController', () => {
   });
 
   it.each([
-    [true, 'detailed', true],
-    [false, 'detailed', false],
+    [false, 'every_utterance', true],
+    [false, 'every_utterance', false],
     [false, 'sparse', true],
-  ] as const)('sets detailedTimestampsEnabled=%s when density=%s and timestampsEnabled=%s', async (expected, timestampDensity, timestampsEnabled) => {
+    [false, 'paragraph', true],
+  ] as const)('does not request word timing when density=%s and timestampsEnabled=%s', async (expected, timestampDensity, timestampsEnabled) => {
     const sidecarConnection = new FakeSidecarConnection();
     const controller = createController({
       sidecarConnection,
@@ -244,54 +245,6 @@ describe('DictationSessionController', () => {
     expect(sidecarConnection.startSession).toHaveBeenCalledWith(
       expect.objectContaining({ detailedTimestampsEnabled: expected }),
     );
-  });
-
-  it('projects sidecar word timing through the controller into detailed transcript spans', async () => {
-    const sidecarConnection = new FakeSidecarConnection();
-    const sessions: FakeSession[] = [];
-    const controller = createController({
-      createSession: (session) => {
-        sessions.push(session);
-      },
-      sidecarConnection,
-      getSettings: () =>
-        createSettings({
-          selectedModel: createExternalModelSelection(),
-          timestampDensity: 'detailed',
-          timestampsEnabled: true,
-        }),
-    });
-
-    await controller.startDictation();
-    const sessionId = sidecarConnection.startSession.mock.calls[0]?.[0].sessionId ?? '';
-    sidecarConnection.emit(
-      transcriptReady(sessionId, 'Hello world.', {
-        segments: [
-          {
-            endMs: 1_000,
-            speaker: null,
-            startMs: 0,
-            text: 'Hello world.',
-            timestampGranularity: 'segment',
-            timestampSource: 'engine',
-            words: [
-              { endMs: 400, startMs: 100, text: 'Hello', timestampSource: 'engine' },
-              { endMs: 900, startMs: 500, text: 'world.', timestampSource: 'engine' },
-            ],
-          },
-        ],
-        utteranceEndMsInSession: 11_000,
-        utteranceStartMsInSession: 10_000,
-      }),
-    );
-
-    await vi.waitFor(() => {
-      expect(sessions[0]?.acceptTranscript).toHaveBeenCalledWith(
-        expect.objectContaining({
-          spans: [{ speakerIndex: null, text: '(0:10.1) Hello (0:10.5) world.' }],
-        }),
-      );
-    });
   });
 
   it('includes system audio without skipping microphone capture', async () => {
@@ -518,6 +471,62 @@ describe('DictationSessionController', () => {
       expect(sessions[0]?.acceptTranscript).toHaveBeenCalledWith(
         expect.objectContaining({ isFinal: true, revision: 3, text: '' }),
       );
+    });
+  });
+
+  it('logs each capability drop once per session and reason', async () => {
+    const logger = new FakeLogger();
+    const sidecarConnection = new FakeSidecarConnection();
+    const controller = createController({ logger, sidecarConnection });
+    const diarizationUnsupported = {
+      field: 'diarizationEnabled',
+      reason: 'selected model does not support diarization',
+    };
+    const runtimeUnavailable = {
+      field: 'diarizationEnabled',
+      reason: 'diarization runtime is unavailable',
+    };
+
+    await controller.startDictation();
+    const firstSessionId = sidecarConnection.startSession.mock.calls[0]?.[0].sessionId ?? '';
+    logger.debug.mockClear();
+    sidecarConnection.emit(
+      transcriptReady(firstSessionId, 'first revision', {
+        isFinal: false,
+        warnings: [diarizationUnsupported],
+      }),
+    );
+    sidecarConnection.emit(
+      transcriptReady(firstSessionId, 'second revision', {
+        isFinal: false,
+        revision: 1,
+        warnings: [diarizationUnsupported, runtimeUnavailable],
+      }),
+    );
+
+    await vi.waitFor(() => {
+      expect(capabilityDropMessages(logger)).toEqual([
+        'capability gate dropped "diarizationEnabled": selected model does not support diarization',
+        'capability gate dropped "diarizationEnabled": diarization runtime is unavailable',
+      ]);
+    });
+
+    await controller.stopDictation();
+    await controller.startDictation();
+    const secondSessionId = sidecarConnection.startSession.mock.calls[1]?.[0].sessionId ?? '';
+    sidecarConnection.emit(
+      transcriptReady(secondSessionId, 'new session', {
+        isFinal: false,
+        warnings: [diarizationUnsupported],
+      }),
+    );
+
+    await vi.waitFor(() => {
+      expect(capabilityDropMessages(logger)).toEqual([
+        'capability gate dropped "diarizationEnabled": selected model does not support diarization',
+        'capability gate dropped "diarizationEnabled": diarization runtime is unavailable',
+        'capability gate dropped "diarizationEnabled": selected model does not support diarization',
+      ]);
     });
   });
 
@@ -2681,6 +2690,15 @@ function createSettings(overrides: Partial<PluginSettings> = {}): PluginSettings
     ...DEFAULT_PLUGIN_SETTINGS,
     ...overrides,
   };
+}
+
+function capabilityDropMessages(logger: FakeLogger): string[] {
+  return logger.debug.mock.calls
+    .filter(
+      ([category, message]) =>
+        category === 'session' && String(message).startsWith('capability gate dropped'),
+    )
+    .map(([, message]) => String(message));
 }
 
 function createExternalModelSelection(): NonNullable<PluginSettings['selectedModel']> {

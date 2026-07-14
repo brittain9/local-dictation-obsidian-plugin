@@ -37,11 +37,7 @@ import type {
 } from '../sidecar/protocol';
 import { type SidecarConnection, SidecarError } from '../sidecar/sidecar-connection';
 import { SidecarNotInstalledError } from '../sidecar/sidecar-paths';
-import {
-  buildSpeakerSpans,
-  buildTranscriptSpans,
-  type TranscriptRenderOptions,
-} from '../transcript/renderer';
+import { buildTranscriptSpans, type TranscriptRenderOptions } from '../transcript/renderer';
 
 export interface ProviderContextSource {
   kind: 'note_text' | 'prior_utterance';
@@ -106,6 +102,7 @@ type TerminalArbitrationState = 'open' | 'feedback-claimed' | 'cancelled';
 
 interface ManagedSession {
   anchorTimerId: number | null;
+  capabilityDropLogKeys: Set<string>;
   // Final revisions enter this FIFO so concurrent per-utterance cleanups land
   // in final-event order. Partials bypass it and project immediately.
   cleanupChain: Promise<void>;
@@ -359,6 +356,7 @@ export class DictationSessionController {
 
     const entry: ManagedSession = {
       anchorTimerId: null,
+      capabilityDropLogKeys: new Set(),
       cleanupChain: Promise.resolve(),
       cleanupAbortControllers: new Set(),
       llmFailureLogged: false,
@@ -376,8 +374,10 @@ export class DictationSessionController {
     try {
       await this.dependencies.sidecarConnection.startSession({
         accelerationPreference: snapshot.accelerationPreference,
-        detailedTimestampsEnabled:
-          snapshot.timestamps.enabled && snapshot.timestamps.density === 'detailed',
+        // Engine segment timing is always present when the model provides it.
+        // This legacy protocol flag only enables dense word alignment, which no
+        // supported timestamp frequency renders.
+        detailedTimestampsEnabled: false,
         diarizationEnabled: snapshot.diarizationEnabled,
         diarizationMaxSpeakers: snapshot.diarizationMaxSpeakers,
         includeSystemAudio: snapshot.includeSystemAudio,
@@ -831,6 +831,11 @@ export class DictationSessionController {
     }
 
     for (const warning of event.warnings) {
+      const logKey = JSON.stringify([warning.field, warning.reason]);
+      if (entry.capabilityDropLogKeys.has(logKey)) {
+        continue;
+      }
+      entry.capabilityDropLogKeys.add(logKey);
       this.dependencies.logger?.debug(
         'session',
         `capability gate dropped "${warning.field}": ${warning.reason}`,
@@ -948,7 +953,10 @@ export class DictationSessionController {
       return {
         ...baseRevision,
         llmPostprocessRawText: entry.snapshot.llmPostprocessShowRawBelow ? rawText : null,
-        spans: buildSpeakerSpans(baseRevision.segments, cleanedText, baseRevision.speakerIndex),
+        spans: buildTranscriptSpans([], cleanedText, baseRevision.speakerIndex, {
+          timestamps: entry.snapshot.timestamps,
+          utteranceStartMsInSession: event.utteranceStartMsInSession,
+        }),
         stageResults: [
           ...baseRevision.stageResults,
           createProviderStageOutcome({

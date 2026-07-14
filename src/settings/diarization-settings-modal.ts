@@ -1,20 +1,16 @@
 import type { App } from 'obsidian';
 import { Modal, Setting } from 'obsidian';
-
+import { ModalSettingsAutoSaver, type ModalSettingsPersistence } from './modal-settings-auto-saver';
 import {
   DEFAULT_PLUGIN_SETTINGS,
   MAX_DIARIZATION_MAX_SPEAKERS,
   MIN_DIARIZATION_MAX_SPEAKERS,
-  type PluginSettings,
 } from './plugin-settings';
 
-interface DiarizationSettingsModalDependencies {
-  getSettings: () => PluginSettings;
-  onSave?: () => void;
-  saveSettings: (settings: PluginSettings) => Promise<void>;
-}
+type DiarizationSettingsModalDependencies = ModalSettingsPersistence;
 
 export class DiarizationSettingsModal extends Modal {
+  private readonly autoSaver: ModalSettingsAutoSaver;
   private maxSpeakers: number | null;
 
   constructor(
@@ -22,6 +18,7 @@ export class DiarizationSettingsModal extends Modal {
     private readonly deps: DiarizationSettingsModalDependencies,
   ) {
     super(app);
+    this.autoSaver = new ModalSettingsAutoSaver(deps);
     this.maxSpeakers = deps.getSettings().diarizationMaxSpeakers;
   }
 
@@ -64,6 +61,7 @@ export class DiarizationSettingsModal extends Modal {
         dropdown.onChange((value) => {
           if (value === 'auto') {
             this.maxSpeakers = null;
+            void this.autoSaver.persist({ diarizationMaxSpeakers: null });
             return;
           }
 
@@ -74,38 +72,19 @@ export class DiarizationSettingsModal extends Modal {
             parsed <= MAX_DIARIZATION_MAX_SPEAKERS
           ) {
             this.maxSpeakers = parsed;
+            void this.autoSaver.persist({ diarizationMaxSpeakers: parsed });
           }
         });
       });
 
-    new Setting(this.contentEl)
-      .addButton((button) => {
-        button.setButtonText('Reset').onClick(() => {
-          this.maxSpeakers = DEFAULT_PLUGIN_SETTINGS.diarizationMaxSpeakers;
-          this.render();
+    new Setting(this.contentEl).addButton((button) => {
+      button.setButtonText('Reset').onClick(async () => {
+        this.maxSpeakers = DEFAULT_PLUGIN_SETTINGS.diarizationMaxSpeakers;
+        this.render();
+        await this.autoSaver.persist({
+          diarizationMaxSpeakers: DEFAULT_PLUGIN_SETTINGS.diarizationMaxSpeakers,
         });
-      })
-      .addButton((button) => {
-        button.setButtonText('Cancel').onClick(() => {
-          this.close();
-        });
-      })
-      .addButton((button) => {
-        button
-          .setCta()
-          .setButtonText('Save')
-          .onClick(() => {
-            void this.handleSave();
-          });
       });
-  }
-
-  private async handleSave(): Promise<void> {
-    await this.deps.saveSettings({
-      ...this.deps.getSettings(),
-      diarizationMaxSpeakers: this.maxSpeakers,
     });
-    this.deps.onSave?.();
-    this.close();
   }
 }

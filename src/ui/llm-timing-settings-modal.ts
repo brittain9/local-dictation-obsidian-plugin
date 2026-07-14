@@ -1,27 +1,27 @@
-import type { App, ButtonComponent } from 'obsidian';
+import type { App } from 'obsidian';
 import { Modal, Setting } from 'obsidian';
 
-import { LLM_MIN_WORDS_MAX, type PluginSettings } from '../settings/plugin-settings';
+import {
+  ModalSettingsAutoSaver,
+  type ModalSettingsPersistence,
+} from '../settings/modal-settings-auto-saver';
+import { DEFAULT_PLUGIN_SETTINGS, LLM_MIN_WORDS_MAX } from '../settings/plugin-settings';
 import { activePresetOverride } from './llm-preset-overrides';
 import { describeTimestampTransformInteraction } from './llm-timing-settings-presentation';
 import { addValidatedNumberSetting } from './validated-number-setting';
 
-interface LlmTimingSettingsModalDependencies {
-  getSettings: () => PluginSettings;
-  onSave?: () => void;
-  saveSettings: (settings: PluginSettings) => Promise<void>;
-}
+type LlmTimingSettingsModalDependencies = ModalSettingsPersistence;
 
 export class LlmTimingSettingsModal extends Modal {
-  private invalid = false;
+  private readonly autoSaver: ModalSettingsAutoSaver;
   private minimumWords: number;
-  private saveButton: ButtonComponent | null = null;
 
   constructor(
     app: App,
     private readonly dependencies: LlmTimingSettingsModalDependencies,
   ) {
     super(app);
+    this.autoSaver = new ModalSettingsAutoSaver(dependencies);
     this.minimumWords = dependencies.getSettings().llmPostprocessSkipMinWords;
   }
 
@@ -32,14 +32,10 @@ export class LlmTimingSettingsModal extends Modal {
 
   override onClose(): void {
     this.contentEl.empty();
-    this.invalid = false;
-    this.saveButton = null;
   }
 
   private render(): void {
     this.contentEl.empty();
-    this.invalid = false;
-    this.saveButton = null;
 
     const settings = this.dependencies.getSettings();
     const timestampInteraction = describeTimestampTransformInteraction(settings);
@@ -63,40 +59,19 @@ export class LlmTimingSettingsModal extends Modal {
       name: 'Minimum words',
       onChange: (value) => {
         this.minimumWords = value;
-      },
-      onValidityChange: (valid) => {
-        this.invalid = !valid;
-        this.saveButton?.setDisabled(this.invalid);
+        void this.autoSaver.persist({ llmPostprocessSkipMinWords: value });
       },
       value: typeof override?.value === 'number' ? override.value : this.minimumWords,
     });
 
-    new Setting(this.contentEl)
-      .addButton((button) => {
-        button.setButtonText('Cancel').onClick(() => {
-          this.close();
+    new Setting(this.contentEl).addButton((button) => {
+      button.setButtonText('Reset').onClick(async () => {
+        this.minimumWords = DEFAULT_PLUGIN_SETTINGS.llmPostprocessSkipMinWords;
+        this.render();
+        await this.autoSaver.persist({
+          llmPostprocessSkipMinWords: DEFAULT_PLUGIN_SETTINGS.llmPostprocessSkipMinWords,
         });
-      })
-      .addButton((button) => {
-        this.saveButton = button;
-        button
-          .setCta()
-          .setButtonText('Save')
-          .onClick(() => {
-            void this.handleSave();
-          });
       });
-  }
-
-  private async handleSave(): Promise<void> {
-    if (this.invalid) {
-      return;
-    }
-    await this.dependencies.saveSettings({
-      ...this.dependencies.getSettings(),
-      llmPostprocessSkipMinWords: this.minimumWords,
     });
-    this.dependencies.onSave?.();
-    this.close();
   }
 }

@@ -7,7 +7,8 @@ import {
 } from '../src/llm/presets';
 import {
   DEFAULT_PLUGIN_SETTINGS,
-  DEFAULT_SMART_PARAGRAPH_PAUSE_MS,
+  DEFAULT_SMART_PARAGRAPH_LINE_BREAK_PAUSE_MS,
+  DEFAULT_SMART_PARAGRAPH_PARAGRAPH_PAUSE_MS,
   isRemoteLlmEffectivelyEnabled,
   LLM_USER_PRESET_MAX_COUNT,
   LLM_USER_PRESET_MAX_DESCRIPTION_CHARS,
@@ -349,9 +350,9 @@ describe('resolvePluginSettings', () => {
     ).toBe(600_000);
   });
 
-  it('persists detailed model timing as an explicit timestamp frequency', () => {
+  it('migrates detailed model timing to every-phrase timestamps', () => {
     expect(resolvePluginSettings({ timestampDensity: 'detailed' }).timestampDensity).toBe(
-      'detailed',
+      'every_utterance',
     );
   });
 
@@ -379,16 +380,16 @@ describe('resolvePluginSettings', () => {
     });
   });
 
-  it('defaults smart paragraph thresholds to the legacy meaningful pause threshold', () => {
+  it('defaults smart paragraph thresholds to separate line and paragraph pauses', () => {
     expect(DEFAULT_PLUGIN_SETTINGS.smartParagraphLineBreakPauseMs).toBe(
-      DEFAULT_SMART_PARAGRAPH_PAUSE_MS,
+      DEFAULT_SMART_PARAGRAPH_LINE_BREAK_PAUSE_MS,
     );
     expect(DEFAULT_PLUGIN_SETTINGS.smartParagraphParagraphPauseMs).toBe(
-      DEFAULT_SMART_PARAGRAPH_PAUSE_MS,
+      DEFAULT_SMART_PARAGRAPH_PARAGRAPH_PAUSE_MS,
     );
     expect(resolvePluginSettings({})).toMatchObject({
-      smartParagraphLineBreakPauseMs: DEFAULT_SMART_PARAGRAPH_PAUSE_MS,
-      smartParagraphParagraphPauseMs: DEFAULT_SMART_PARAGRAPH_PAUSE_MS,
+      smartParagraphLineBreakPauseMs: 4_000,
+      smartParagraphParagraphPauseMs: 10_000,
     });
   });
 

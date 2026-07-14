@@ -13,7 +13,7 @@ describe('LLM transform settings modals', () => {
     MockSetting.reset();
   });
 
-  it('blocks saving a fractional minimum-word value', async () => {
+  it('does not persist a fractional minimum-word value', async () => {
     const saveSettings = vi.fn(async () => {});
     const modal = new LlmTimingSettingsModal({} as App, {
       getSettings: () => DEFAULT_PLUGIN_SETTINGS,
@@ -32,30 +32,29 @@ describe('LLM transform settings modals', () => {
     );
     expect(minimumWords.inputEl.attributes.has('aria-invalid')).toBe(true);
     expect(minimumWordsSetting.descEl.attributes.get('aria-live')).toBe('polite');
-    const save = MockSetting.buttonNamed('Save');
-    expect(save.disabled).toBe(true);
-
-    await save.click();
+    await Promise.resolve();
     expect(saveSettings).not.toHaveBeenCalled();
   });
 
-  it('persists a valid minimum-word value through the modal save boundary', async () => {
-    const saveSettings = vi.fn(async () => {});
+  it('persists a valid minimum-word value when it changes', async () => {
+    let settings = DEFAULT_PLUGIN_SETTINGS;
+    const saveSettings = vi.fn(async (next) => {
+      settings = next;
+    });
     const onSave = vi.fn();
     const modal = new LlmTimingSettingsModal({} as App, {
-      getSettings: () => DEFAULT_PLUGIN_SETTINGS,
+      getSettings: () => settings,
       onSave,
       saveSettings,
     });
 
     modal.open();
     MockSetting.named('Minimum words').onlyText().change('8');
-    await MockSetting.buttonNamed('Save').click();
 
-    expect(saveSettings).toHaveBeenCalledWith({
-      ...DEFAULT_PLUGIN_SETTINGS,
-      llmPostprocessSkipMinWords: 8,
+    await vi.waitFor(() => {
+      expect(settings.llmPostprocessSkipMinWords).toBe(8);
     });
+    expect(saveSettings).toHaveBeenCalledOnce();
     expect(onSave).toHaveBeenCalledOnce();
   });
 
@@ -65,7 +64,10 @@ describe('LLM transform settings modals', () => {
       llmPostprocessActivePresetRef: 'builtin:tldr',
       llmPostprocessMode: 'per_utterance' as const,
     };
-    const saveSettings = vi.fn(async () => {});
+    let persistedSettings = settings;
+    const saveSettings = vi.fn(async (next) => {
+      persistedSettings = next;
+    });
     const modal = new LlmContextSettingsModal({} as App, {
       getSettings: () => settings,
       saveSettings,
@@ -75,12 +77,11 @@ describe('LLM transform settings modals', () => {
     expect(MockSetting.named('Previous phrases').onlyText().inputEl.disabled).toBe(true);
     expect(MockSetting.named('Context limit').onlyText().inputEl.disabled).toBe(true);
     MockSetting.named('Note context length').onlyText().change('9000');
-    await MockSetting.buttonNamed('Save').click();
 
-    expect(saveSettings).toHaveBeenCalledWith({
-      ...settings,
-      llmPostprocessNoteContextChars: 9000,
+    await vi.waitFor(() => {
+      expect(persistedSettings.llmPostprocessNoteContextChars).toBe(9000);
     });
+    expect(saveSettings).toHaveBeenCalledOnce();
   });
 
   it('shows preset-owned numeric settings without allowing global edits', () => {
@@ -111,13 +112,15 @@ describe('LLM transform settings modals', () => {
     expect(temperature.disabled).toBe(true);
   });
 
-  it('persists all applicable Auto-routing model settings together', async () => {
-    const settings = {
+  it('persists each applicable Auto-routing model setting when it changes', async () => {
+    let settings = {
       ...DEFAULT_PLUGIN_SETTINGS,
       llmRemoteFeaturesEnabled: true,
       llmRouting: 'auto' as const,
     };
-    const saveSettings = vi.fn(async () => {});
+    const saveSettings = vi.fn(async (next) => {
+      settings = next;
+    });
     const modal = new LlmModelSettingsModal({} as App, {
       getSettings: () => settings,
       saveSettings,
@@ -127,14 +130,15 @@ describe('LLM transform settings modals', () => {
     MockSetting.named('Temperature').onlyText().change('0.8');
     MockSetting.named('Remote routing threshold').onlyText().change('7000');
     MockSetting.named('Remote timeout').onlyText().change('45');
-    await MockSetting.buttonNamed('Save').click();
 
-    expect(saveSettings).toHaveBeenCalledWith({
-      ...settings,
-      llmPostprocessTemperature: 0.8,
-      llmRemoteThresholdChars: 7000,
-      llmRemoteTimeoutSec: 45,
+    await vi.waitFor(() => {
+      expect(settings).toMatchObject({
+        llmPostprocessTemperature: 0.8,
+        llmRemoteThresholdChars: 7000,
+        llmRemoteTimeoutSec: 45,
+      });
     });
+    expect(saveSettings).toHaveBeenCalledTimes(3);
   });
 
   it('hides remote-only model settings for local routing', () => {

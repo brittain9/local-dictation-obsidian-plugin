@@ -1,7 +1,12 @@
-import type { App, ButtonComponent } from 'obsidian';
+import type { App } from 'obsidian';
 import { Modal, Setting } from 'obsidian';
 
 import {
+  ModalSettingsAutoSaver,
+  type ModalSettingsPersistence,
+} from '../settings/modal-settings-auto-saver';
+import {
+  DEFAULT_PLUGIN_SETTINGS,
   LLM_NOTE_CONTEXT_CHARS_MAX,
   LLM_PRIOR_UTTERANCES_MAX,
   LLM_TOTAL_CONTEXT_CAP_MAX,
@@ -10,11 +15,7 @@ import {
 import { resolveEffectiveTransformTiming } from './llm-preset-overrides';
 import { addValidatedNumberSetting } from './validated-number-setting';
 
-interface LlmContextSettingsModalDependencies {
-  getSettings: () => PluginSettings;
-  onSave?: () => void;
-  saveSettings: (settings: PluginSettings) => Promise<void>;
-}
+type LlmContextSettingsModalDependencies = ModalSettingsPersistence;
 
 type ContextDraft = Pick<
   PluginSettings,
@@ -26,15 +27,15 @@ type ContextDraft = Pick<
 type ContextField = keyof ContextDraft;
 
 export class LlmContextSettingsModal extends Modal {
+  private readonly autoSaver: ModalSettingsAutoSaver;
   private draft: ContextDraft;
-  private readonly invalidFields = new Set<ContextField>();
-  private saveButton: ButtonComponent | null = null;
 
   constructor(
     app: App,
     private readonly dependencies: LlmContextSettingsModalDependencies,
   ) {
     super(app);
+    this.autoSaver = new ModalSettingsAutoSaver(dependencies);
     this.draft = draftFromSettings(dependencies.getSettings());
   }
 
@@ -45,14 +46,10 @@ export class LlmContextSettingsModal extends Modal {
 
   override onClose(): void {
     this.contentEl.empty();
-    this.invalidFields.clear();
-    this.saveButton = null;
   }
 
   private render(): void {
     this.contentEl.empty();
-    this.invalidFields.clear();
-    this.saveButton = null;
 
     const afterEachPhrase =
       resolveEffectiveTransformTiming(this.dependencies.getSettings()) === 'per_utterance';
@@ -89,21 +86,13 @@ export class LlmContextSettingsModal extends Modal {
       name: 'Context limit',
     });
 
-    new Setting(this.contentEl)
-      .addButton((button) => {
-        button.setButtonText('Cancel').onClick(() => {
-          this.close();
-        });
-      })
-      .addButton((button) => {
-        this.saveButton = button;
-        button
-          .setCta()
-          .setButtonText('Save')
-          .onClick(() => {
-            void this.handleSave();
-          });
+    new Setting(this.contentEl).addButton((button) => {
+      button.setButtonText('Reset').onClick(async () => {
+        this.draft = draftFromSettings(DEFAULT_PLUGIN_SETTINGS);
+        this.render();
+        await this.autoSaver.persist(this.draft);
       });
+    });
   }
 
   private addNumberField(
@@ -122,29 +111,10 @@ export class LlmContextSettingsModal extends Modal {
       ...options,
       onChange: (value) => {
         this.draft = { ...this.draft, [key]: value };
-      },
-      onValidityChange: (valid) => {
-        if (valid) {
-          this.invalidFields.delete(key);
-        } else {
-          this.invalidFields.add(key);
-        }
-        this.saveButton?.setDisabled(this.invalidFields.size > 0);
+        void this.autoSaver.persist({ [key]: value });
       },
       value: this.draft[key],
     });
-  }
-
-  private async handleSave(): Promise<void> {
-    if (this.invalidFields.size > 0) {
-      return;
-    }
-    await this.dependencies.saveSettings({
-      ...this.dependencies.getSettings(),
-      ...this.draft,
-    });
-    this.dependencies.onSave?.();
-    this.close();
   }
 }
 
