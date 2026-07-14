@@ -175,7 +175,7 @@ export class TimestampSettingsModal extends Modal {
         : this.draft.density === 'every_utterance'
           ? 'Add a timestamp before each model-timed segment when available, otherwise at each voice-detected phrase.'
           : paragraphFormattingUnavailable
-            ? 'Requires Smart paragraphs formatting.'
+            ? 'Set Transcript formatting to Smart paragraphs to get paragraph breaks.'
             : 'Add a timestamp at the start of the session and at each Smart paragraph break.',
     );
     this.frequencySetting?.descEl.toggleClass(
