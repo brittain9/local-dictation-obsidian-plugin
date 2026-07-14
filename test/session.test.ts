@@ -2,6 +2,7 @@ import type { EditorView } from '@codemirror/view';
 import type { App, EventRef, TFile } from 'obsidian';
 import { describe, expect, it, vi } from 'vitest';
 
+import { dictationAnchorExtension } from '../src/editor/dictation-anchor-extension';
 import type {
   AppendResult,
   NotePlacementOptions,
@@ -12,6 +13,9 @@ import type {
   RewriteResult,
   SurfaceDesynchronization,
 } from '../src/editor/note-surface';
+import { provisionalTranscriptExtension } from '../src/editor/provisional-transcript-extension';
+import { RawTranscriptRecovery } from '../src/editor/raw-transcript-recovery';
+import { sessionProcessingExtension } from '../src/editor/session-processing-extension';
 import { TemporaryLeafPinLeaseManager } from '../src/editor/temporary-leaf-pin';
 import { Session } from '../src/session/session';
 import type { PluginLogger } from '../src/shared/plugin-logger';
@@ -19,6 +23,7 @@ import type {
   TranscriptInsertProjection,
   TranscriptRenderOptions,
 } from '../src/transcript/renderer';
+import { StateBackedEditorView } from './fixtures/state-backed-editor-view';
 import { transcript } from './fixtures/transcript';
 import { renderOptions, timestamps } from './helpers/render-options';
 
@@ -766,6 +771,43 @@ describe('Session', () => {
     expect(surface.documentText).toBe('Polished tail.');
   });
 
+  it('restores the exact raw session range after replace-style batch cleanup', () => {
+    const { recovery, session, view } = createRecoveryIntegrationHarness('Existing note');
+    const rawTranscript = 'raw transcript';
+    const cleanedTranscript = 'Cleaned transcript.';
+
+    expect(
+      session.acceptTranscript(
+        transcript({
+          isFinal: true,
+          sessionId: 'recovery-integration',
+          text: rawTranscript,
+          utteranceId: 'recoverable',
+        }),
+      ),
+    ).toEqual({ kind: 'accepted' });
+    const originalDocument = view.state.doc.toString();
+    expect(originalDocument).toBe('Existing note raw transcript');
+
+    const replacement = session.replaceSessionRangeWithCleaned(cleanedTranscript, {
+      rawTextForCallout: rawTranscript,
+      showRawBelow: true,
+    });
+    if (replacement.kind !== 'replaced') {
+      throw new Error('expected batch replacement receipt');
+    }
+    recovery.record(replacement.recovery);
+
+    expect(view.state.doc.toString()).toBe(
+      'Existing note Cleaned transcript.\n\n> [!note]- raw\n> raw transcript',
+    );
+    expect(recovery.restoreRawTranscript()).toBe(true);
+    expect(view.state.doc.toString()).toBe(originalDocument);
+    expect(recovery.hasRecovery()).toBe(false);
+
+    session.dispose();
+  });
+
   it('omits emptied finalized utterances from joined raw session text', () => {
     const { session } = createSessionHarness();
 
@@ -1011,6 +1053,52 @@ function createSessionHarness(
     vault,
     workspace,
   };
+}
+
+function createRecoveryIntegrationHarness(documentText: string): {
+  recovery: RawTranscriptRecovery;
+  session: Session;
+  view: StateBackedEditorView;
+} {
+  const lockedFile = fakeFile('note.md');
+  const vault = new FakeEvents();
+  const workspace = new FakeWorkspace(lockedFile);
+  const targetLeaf = workspace.leaves[0];
+  if (targetLeaf === undefined) {
+    throw new Error('expected target leaf fixture');
+  }
+  const view = new StateBackedEditorView(documentText, {
+    extensions: [
+      dictationAnchorExtension(),
+      provisionalTranscriptExtension(),
+      sessionProcessingExtension(),
+    ],
+    selectionHead: documentText.length,
+  });
+  targetLeaf.view.editor.cm = view as unknown as EditorView;
+  workspace.activeEditor = targetLeaf.view;
+  const app = { vault, workspace } as unknown as Pick<App, 'vault' | 'workspace'>;
+  const session = new Session({
+    app,
+    callbacks: {
+      onLockedNoteClosed: vi.fn(),
+      onLockedNoteDeleted: vi.fn(),
+      onSurfaceDesynchronized: vi.fn(),
+    },
+    leafPinManager: new TemporaryLeafPinLeaseManager(),
+    lockedFile,
+    placement: { anchor: 'at_cursor' },
+    rendererOptions: renderOptions(),
+    sessionId: 'recovery-integration',
+    view: view as unknown as EditorView,
+  });
+  const recovery = new RawTranscriptRecovery({
+    feedback: { show: vi.fn() },
+    getClipboard: () => null,
+    workspace: workspace as never,
+  });
+
+  return { recovery, session, view };
 }
 
 class FakeEvents {

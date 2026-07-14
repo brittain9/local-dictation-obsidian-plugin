@@ -385,6 +385,7 @@ export class ModelInstallManager {
       // The user explicitly (re-)probed this exact selection and it's
       // confirmed broken now — drop any cached "ready" snapshot for it so a
       // future startup doesn't trust stale, now-incorrect capabilities.
+      await this.applyProbeResultToCapabilities(selection, probeResult);
       await this.invalidateCapabilitiesSnapshot(selection);
       throw new Error(createProbeFailureMessage(probeResult));
     }

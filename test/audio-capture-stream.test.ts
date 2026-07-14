@@ -113,6 +113,24 @@ describe('AudioCaptureStream', () => {
     expect(track.listenerCount()).toBe(1);
   });
 
+  it('reports a device that ends while the capture graph is being initialized', async () => {
+    const track = new FakeMediaStreamTrack();
+    track.readyState = 'ended';
+    const mediaStream = new FakeMediaStream(track);
+    vi.stubGlobal('navigator', {
+      mediaDevices: { getUserMedia: vi.fn(async () => mediaStream as unknown as MediaStream) },
+    });
+    const onUnexpectedEnd = vi.fn();
+    const capture = new AudioCaptureStream({ onUnexpectedEnd });
+
+    await capture.start({ sessionId: 'session-raced' }, vi.fn());
+
+    expect(onUnexpectedEnd).toHaveBeenCalledOnce();
+    expect(onUnexpectedEnd).toHaveBeenCalledWith('session-raced');
+    await capture.stop();
+    expect(onUnexpectedEnd).toHaveBeenCalledOnce();
+  });
+
   it('removes the old track listener before teardown and rapid restart', async () => {
     const firstTrack = new FakeMediaStreamTrack();
     const secondTrack = new FakeMediaStreamTrack();

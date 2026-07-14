@@ -223,9 +223,36 @@ describe('DictationSessionController', () => {
     );
   });
 
-  it('requests engine word timing only for enabled detailed timestamps', async () => {
+  it.each([
+    [true, 'detailed', true],
+    [false, 'detailed', false],
+    [false, 'sparse', true],
+  ] as const)('sets detailedTimestampsEnabled=%s when density=%s and timestampsEnabled=%s', async (expected, timestampDensity, timestampsEnabled) => {
     const sidecarConnection = new FakeSidecarConnection();
     const controller = createController({
+      sidecarConnection,
+      getSettings: () =>
+        createSettings({
+          selectedModel: createExternalModelSelection(),
+          timestampDensity,
+          timestampsEnabled,
+        }),
+    });
+
+    await controller.startDictation();
+
+    expect(sidecarConnection.startSession).toHaveBeenCalledWith(
+      expect.objectContaining({ detailedTimestampsEnabled: expected }),
+    );
+  });
+
+  it('projects sidecar word timing through the controller into detailed transcript spans', async () => {
+    const sidecarConnection = new FakeSidecarConnection();
+    const sessions: FakeSession[] = [];
+    const controller = createController({
+      createSession: (session) => {
+        sessions.push(session);
+      },
       sidecarConnection,
       getSettings: () =>
         createSettings({
@@ -236,10 +263,35 @@ describe('DictationSessionController', () => {
     });
 
     await controller.startDictation();
-
-    expect(sidecarConnection.startSession).toHaveBeenCalledWith(
-      expect.objectContaining({ detailedTimestampsEnabled: true }),
+    const sessionId = sidecarConnection.startSession.mock.calls[0]?.[0].sessionId ?? '';
+    sidecarConnection.emit(
+      transcriptReady(sessionId, 'Hello world.', {
+        segments: [
+          {
+            endMs: 1_000,
+            speaker: null,
+            startMs: 0,
+            text: 'Hello world.',
+            timestampGranularity: 'segment',
+            timestampSource: 'engine',
+            words: [
+              { endMs: 400, startMs: 100, text: 'Hello', timestampSource: 'engine' },
+              { endMs: 900, startMs: 500, text: 'world.', timestampSource: 'engine' },
+            ],
+          },
+        ],
+        utteranceEndMsInSession: 11_000,
+        utteranceStartMsInSession: 10_000,
+      }),
     );
+
+    await vi.waitFor(() => {
+      expect(sessions[0]?.acceptTranscript).toHaveBeenCalledWith(
+        expect.objectContaining({
+          spans: [{ speakerIndex: null, text: '(0:10.1) Hello (0:10.5) world.' }],
+        }),
+      );
+    });
   });
 
   it('includes system audio without skipping microphone capture', async () => {
@@ -511,6 +563,63 @@ describe('DictationSessionController', () => {
       expect(session.acceptTranscript).toHaveBeenCalledTimes(4);
     });
     expect(onFinalizedUtteranceAccepted).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps the accepted cleaned final as the last recoverable utterance', async () => {
+    let lastRecoverableUtterance: string | null = null;
+    const sidecarConnection = new FakeSidecarConnection();
+    const sessions: FakeSession[] = [];
+    const cleanup = vi
+      .fn<() => Promise<LlmRouterCleanupResult>>()
+      .mockResolvedValueOnce({ model: 'm', providerId: 'ollama', text: 'Clean recovery text.' })
+      .mockResolvedValueOnce({ model: 'm', providerId: 'ollama', text: 'Stale cleaned text.' })
+      .mockResolvedValueOnce({ model: 'm', providerId: 'ollama', text: 'Rejected cleaned text.' });
+    const controller = createController({
+      createSession: (session) => {
+        sessions.push(session);
+      },
+      getSettings: () =>
+        createSettings({
+          llmFeaturesEnabled: true,
+          llmPostprocessMode: 'per_utterance',
+          llmPostprocessSkipMinWords: 0,
+          selectedModel: createExternalModelSelection(),
+        }),
+      llmRouter: createFakeLlmRouter({ cleanup }),
+      onFinalizedUtteranceAccepted: (text) => {
+        lastRecoverableUtterance = text;
+      },
+      sidecarConnection,
+    });
+
+    await controller.startDictation();
+    const sessionId = sidecarConnection.startSession.mock.calls[0]?.[0].sessionId ?? '';
+    const session = sessions[0];
+    if (session === undefined) {
+      throw new Error('expected session fixture');
+    }
+
+    sidecarConnection.emit(transcriptReady(sessionId, 'raw recovery text'));
+    await vi.waitFor(() => {
+      expect(lastRecoverableUtterance).toBe('Clean recovery text.');
+    });
+
+    session.acceptTranscript.mockReturnValueOnce({ kind: 'stale' });
+    sidecarConnection.emit(transcriptReady(sessionId, 'stale raw text'));
+    await vi.waitFor(() => {
+      expect(session.acceptTranscript).toHaveBeenCalledTimes(2);
+    });
+
+    session.acceptTranscript.mockReturnValueOnce({
+      kind: 'rejected',
+      reason: 'note no longer accepts transcript updates',
+    });
+    sidecarConnection.emit(transcriptReady(sessionId, 'rejected raw text'));
+    await vi.waitFor(() => {
+      expect(sidecarConnection.cancelSession).toHaveBeenCalledWith(sessionId);
+    });
+
+    expect(lastRecoverableUtterance).toBe('Clean recovery text.');
   });
 
   it('silently enforces the five-session active plus draining cap', async () => {

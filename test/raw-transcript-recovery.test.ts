@@ -1,4 +1,4 @@
-import { EditorState, type TransactionSpec } from '@codemirror/state';
+import { EditorState } from '@codemirror/state';
 import type { EditorView } from '@codemirror/view';
 import type { TFile } from 'obsidian';
 import { describe, expect, it, vi } from 'vitest';
@@ -7,17 +7,7 @@ import {
   RawTranscriptRecovery,
   type RawTranscriptRecoveryReceipt,
 } from '../src/editor/raw-transcript-recovery';
-
-class StateBackedEditorView {
-  state: EditorState;
-  readonly dispatch = vi.fn((spec: TransactionSpec) => {
-    this.state = this.state.update(spec).state;
-  });
-
-  constructor(documentText: string) {
-    this.state = EditorState.create({ doc: documentText });
-  }
-}
+import { StateBackedEditorView } from './fixtures/state-backed-editor-view';
 
 describe('RawTranscriptRecovery', () => {
   it('overwrites the prior record and copies only the latest raw transcript', async () => {
@@ -116,6 +106,33 @@ describe('RawTranscriptRecovery', () => {
 
     expect(harness.view.dispatch).toHaveBeenCalledOnce();
     expect(harness.recovery.hasRecovery()).toBe(true);
+    expect(harness.feedback.show).toHaveBeenLastCalledWith({
+      intent: 'error',
+      key: 'raw-transcript-restore-failed',
+      message: 'Could not restore the raw transcript.',
+    });
+  });
+
+  it('retains recovery without exposing transcript content when the restore edit fails', () => {
+    const rawText = 'private raw transcript';
+    const transformedText = 'private transformed transcript';
+    const harness = createHarness(transformedText, {
+      rawText,
+      to: transformedText.length,
+      transformedText,
+    });
+    harness.recovery.record(harness.receipt());
+    harness.view.dispatch.mockImplementationOnce(() => {
+      throw new Error(`editor rejected ${rawText} after reading ${transformedText}`);
+    });
+
+    expect(harness.recovery.restoreRawTranscript()).toBe(false);
+
+    expect(harness.recovery.hasRecovery()).toBe(true);
+    expect(harness.view.state.doc.toString()).toBe(transformedText);
+    const serializedFeedback = JSON.stringify(harness.feedback.show.mock.calls);
+    expect(serializedFeedback).not.toContain(rawText);
+    expect(serializedFeedback).not.toContain(transformedText);
     expect(harness.feedback.show).toHaveBeenLastCalledWith({
       intent: 'error',
       key: 'raw-transcript-restore-failed',

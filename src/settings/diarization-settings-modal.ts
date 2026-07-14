@@ -36,6 +36,7 @@ export class DiarizationSettingsModal extends Modal {
 
   private render(): void {
     this.contentEl.empty();
+    const diarizationEnabled = this.deps.getSettings().diarizationEnabled;
 
     this.contentEl.createEl('p', {
       cls: 'setting-item-description',
@@ -45,7 +46,9 @@ export class DiarizationSettingsModal extends Modal {
     new Setting(this.contentEl)
       .setName('Maximum speakers')
       .setDesc(
-        'Automatic determines the speaker count. Set a limit only if extra speaker labels appear.',
+        diarizationEnabled
+          ? 'Automatic determines the speaker count. Set a limit only if extra speaker labels appear.'
+          : 'Enable speaker labels before configuring a speaker limit.',
       )
       .addDropdown((dropdown) => {
         dropdown.addOption('auto', 'Automatic');
@@ -57,6 +60,7 @@ export class DiarizationSettingsModal extends Modal {
           dropdown.addOption(String(count), String(count));
         }
         dropdown.setValue(this.maxSpeakers?.toString() ?? 'auto');
+        dropdown.setDisabled(!diarizationEnabled);
         dropdown.onChange((value) => {
           if (value === 'auto') {
             this.maxSpeakers = null;

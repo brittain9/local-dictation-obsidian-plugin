@@ -63,7 +63,10 @@ impl SpeakerRegistry {
         let best = self.best_match(embedding);
 
         match best {
-            Some((idx, sim)) if sim >= NEW_SPEAKER_THRESHOLD || voiced_ms < MIN_NEW_SPEAKER_MS => {
+            Some((idx, sim))
+                if sim >= NEW_SPEAKER_THRESHOLD
+                    || (voiced_ms < MIN_NEW_SPEAKER_MS && !self.speaker_limit_reached()) =>
+            {
                 self.update_centroid(idx, embedding);
                 Assignment {
                     speaker_index: idx as u32,
@@ -236,7 +239,7 @@ mod tests {
         let third_voice = registry.assign(&[0.1, 0.2, 1.0], LONG);
 
         assert!(!third_voice.is_new_speaker);
-        assert!(third_voice.speaker_index < 2);
+        assert_eq!(third_voice.speaker_index, 1);
         assert_eq!(third_voice.speaker_count, 2);
         assert_eq!(
             registry
@@ -246,6 +249,41 @@ mod tests {
                 .collect::<Vec<_>>(),
             centroids_before,
             "a forced assignment must not contaminate an existing voice centroid"
+        );
+    }
+
+    #[test]
+    fn speaker_limit_does_not_learn_from_a_short_dissimilar_forced_assignment() {
+        let mut registry = SpeakerRegistry::with_max_speakers(Some(1));
+        registry.assign(&[1.0, 0.0], LONG);
+
+        let noise = registry.assign(&[0.0, 1.0], 300);
+        let original_voice = registry.assign(&[1.0, 0.0], LONG);
+
+        assert_eq!(noise.speaker_index, 0);
+        assert!(!noise.is_new_speaker);
+        assert_eq!(noise.speaker_count, 1);
+        assert!(
+            original_voice.similarity > 0.99,
+            "forced noise changed the enrolled voice centroid: {}",
+            original_voice.similarity,
+        );
+    }
+
+    #[test]
+    fn speaker_limit_still_learns_from_a_matching_voice() {
+        let mut registry = SpeakerRegistry::with_max_speakers(Some(1));
+        registry.assign(&[1.0, 0.0], LONG);
+
+        let first_match = registry.assign(&[0.8, 0.6], LONG);
+        let second_match = registry.assign(&[0.8, 0.6], LONG);
+
+        assert_eq!(first_match.speaker_count, 1);
+        assert!(
+            second_match.similarity > first_match.similarity,
+            "matching speech should refine a capped cluster: {} <= {}",
+            second_match.similarity,
+            first_match.similarity,
         );
     }
 }
