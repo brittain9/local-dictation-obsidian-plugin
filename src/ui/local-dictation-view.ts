@@ -177,12 +177,12 @@ export class LocalDictationView extends ItemView {
       return;
     }
 
-    this.renderOriginalTranscriptToggle(transformItems, settings);
     this.renderRuntimeFailureBanner(transformItems);
 
     const styleGroup = createSettingGroup(contentEl, 'Preset');
     this.renderPresetPicker(styleGroup, settings);
     this.renderCleanupMode(styleGroup, settings);
+    this.renderOriginalTranscriptToggle(styleGroup, settings);
 
     const whereGroup = createSettingGroup(contentEl, 'Model');
     this.routingControls.render(whereGroup, settings);
