@@ -102,6 +102,7 @@ type TerminalArbitrationState = 'open' | 'feedback-claimed' | 'cancelled';
 
 interface ManagedSession {
   anchorTimerId: number | null;
+  capabilityDropLogKeys: Set<string>;
   // Final revisions enter this FIFO so concurrent per-utterance cleanups land
   // in final-event order. Partials bypass it and project immediately.
   cleanupChain: Promise<void>;
@@ -355,6 +356,7 @@ export class DictationSessionController {
 
     const entry: ManagedSession = {
       anchorTimerId: null,
+      capabilityDropLogKeys: new Set(),
       cleanupChain: Promise.resolve(),
       cleanupAbortControllers: new Set(),
       llmFailureLogged: false,
@@ -829,6 +831,11 @@ export class DictationSessionController {
     }
 
     for (const warning of event.warnings) {
+      const logKey = JSON.stringify([warning.field, warning.reason]);
+      if (entry.capabilityDropLogKeys.has(logKey)) {
+        continue;
+      }
+      entry.capabilityDropLogKeys.add(logKey);
       this.dependencies.logger?.debug(
         'session',
         `capability gate dropped "${warning.field}": ${warning.reason}`,

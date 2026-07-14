@@ -474,6 +474,62 @@ describe('DictationSessionController', () => {
     });
   });
 
+  it('logs each capability drop once per session and reason', async () => {
+    const logger = new FakeLogger();
+    const sidecarConnection = new FakeSidecarConnection();
+    const controller = createController({ logger, sidecarConnection });
+    const diarizationUnsupported = {
+      field: 'diarizationEnabled',
+      reason: 'selected model does not support diarization',
+    };
+    const runtimeUnavailable = {
+      field: 'diarizationEnabled',
+      reason: 'diarization runtime is unavailable',
+    };
+
+    await controller.startDictation();
+    const firstSessionId = sidecarConnection.startSession.mock.calls[0]?.[0].sessionId ?? '';
+    logger.debug.mockClear();
+    sidecarConnection.emit(
+      transcriptReady(firstSessionId, 'first revision', {
+        isFinal: false,
+        warnings: [diarizationUnsupported],
+      }),
+    );
+    sidecarConnection.emit(
+      transcriptReady(firstSessionId, 'second revision', {
+        isFinal: false,
+        revision: 1,
+        warnings: [diarizationUnsupported, runtimeUnavailable],
+      }),
+    );
+
+    await vi.waitFor(() => {
+      expect(capabilityDropMessages(logger)).toEqual([
+        'capability gate dropped "diarizationEnabled": selected model does not support diarization',
+        'capability gate dropped "diarizationEnabled": diarization runtime is unavailable',
+      ]);
+    });
+
+    await controller.stopDictation();
+    await controller.startDictation();
+    const secondSessionId = sidecarConnection.startSession.mock.calls[1]?.[0].sessionId ?? '';
+    sidecarConnection.emit(
+      transcriptReady(secondSessionId, 'new session', {
+        isFinal: false,
+        warnings: [diarizationUnsupported],
+      }),
+    );
+
+    await vi.waitFor(() => {
+      expect(capabilityDropMessages(logger)).toEqual([
+        'capability gate dropped "diarizationEnabled": selected model does not support diarization',
+        'capability gate dropped "diarizationEnabled": diarization runtime is unavailable',
+        'capability gate dropped "diarizationEnabled": selected model does not support diarization',
+      ]);
+    });
+  });
+
   it('offers only accepted non-empty final revisions for last-utterance recovery', async () => {
     const onFinalizedUtteranceAccepted = vi.fn();
     const sidecarConnection = new FakeSidecarConnection();
@@ -2634,6 +2690,15 @@ function createSettings(overrides: Partial<PluginSettings> = {}): PluginSettings
     ...DEFAULT_PLUGIN_SETTINGS,
     ...overrides,
   };
+}
+
+function capabilityDropMessages(logger: FakeLogger): string[] {
+  return logger.debug.mock.calls
+    .filter(
+      ([category, message]) =>
+        category === 'session' && String(message).startsWith('capability gate dropped'),
+    )
+    .map(([, message]) => String(message));
 }
 
 function createExternalModelSelection(): NonNullable<PluginSettings['selectedModel']> {
