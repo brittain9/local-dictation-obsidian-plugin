@@ -11,7 +11,7 @@ describe('transcript output settings modals', () => {
     MockSetting.reset();
   });
 
-  it('announces an invalid timestamp interval and blocks saving it', async () => {
+  it('announces an invalid timestamp interval without persisting it', async () => {
     const saveSettings = vi.fn(async () => {});
     new TimestampSettingsModal({} as App, {
       getSettings: () => DEFAULT_PLUGIN_SETTINGS,
@@ -27,13 +27,12 @@ describe('transcript output settings modals', () => {
     expect(interval.inputEl.attributes.get('aria-describedby')).toBe(intervalSetting.descEl.id);
     expect(interval.inputEl.attributes.has('aria-invalid')).toBe(true);
     expect(intervalSetting.descEl.attributes.get('aria-live')).toBe('polite');
-    expect(MockSetting.buttonNamed('Save').disabled).toBe(true);
-
-    await MockSetting.buttonNamed('Save').click();
+    expect(modalButtonLabels()).toEqual(['Reset']);
+    await Promise.resolve();
     expect(saveSettings).not.toHaveBeenCalled();
   });
 
-  it('renders fixed frequency choices and persists a merged draft', async () => {
+  it('renders fixed frequency choices and persists each change', async () => {
     let settings: PluginSettings = {
       ...DEFAULT_PLUGIN_SETTINGS,
       timestampSparseIntervalMs: 45_000,
@@ -59,19 +58,20 @@ describe('transcript output settings modals', () => {
     MockSetting.named('Session header').onlyToggle().change(false);
     expect(MockSetting.named('Interval').onlyText().inputEl.disabled).toBe(true);
 
-    // Settings may change elsewhere while the modal is open. Saving should
-    // merge the draft onto the latest authoritative object.
     const concurrentSettings = { ...settings, developerMode: true };
     settings = concurrentSettings;
-    await MockSetting.buttonNamed('Save').click();
 
-    expect(saveSettings).toHaveBeenCalledWith({
-      ...concurrentSettings,
-      timestampClock: 'wallclock',
-      timestampDensity: 'paragraph',
-      timestampSessionHeader: false,
+    await vi.waitFor(() => {
+      expect(settings).toMatchObject({
+        developerMode: true,
+        timestampClock: 'wallclock',
+        timestampDensity: 'paragraph',
+        timestampSessionHeader: false,
+      });
     });
-    expect(onSave).toHaveBeenCalledOnce();
+    expect(saveSettings).toHaveBeenCalledTimes(3);
+    expect(onSave).toHaveBeenCalledTimes(3);
+    expect(modalButtonLabels()).toEqual(['Reset']);
   });
 
   it('disables speaker-limit editing while speaker labels are off', () => {
@@ -85,9 +85,11 @@ describe('transcript output settings modals', () => {
     expect(maximumSpeakers.descEl.textContent).toContain('Enable speaker labels');
   });
 
-  it('persists an enabled speaker limit through the modal boundary', async () => {
-    const settings = { ...DEFAULT_PLUGIN_SETTINGS, diarizationEnabled: true };
-    const saveSettings = vi.fn(async () => {});
+  it('persists an enabled speaker limit when it changes', async () => {
+    let settings = { ...DEFAULT_PLUGIN_SETTINGS, diarizationEnabled: true };
+    const saveSettings = vi.fn(async (next: PluginSettings) => {
+      settings = next;
+    });
     const onSave = vi.fn();
     new DiarizationSettingsModal({} as App, {
       getSettings: () => settings,
@@ -98,9 +100,18 @@ describe('transcript output settings modals', () => {
     const maximumSpeakers = MockSetting.named('Maximum speakers').onlyDropdown();
     expect(maximumSpeakers.selectEl.disabled).toBe(false);
     maximumSpeakers.change('4');
-    await MockSetting.buttonNamed('Save').click();
 
-    expect(saveSettings).toHaveBeenCalledWith({ ...settings, diarizationMaxSpeakers: 4 });
+    await vi.waitFor(() => {
+      expect(settings.diarizationMaxSpeakers).toBe(4);
+    });
+    expect(saveSettings).toHaveBeenCalledOnce();
     expect(onSave).toHaveBeenCalledOnce();
+    expect(modalButtonLabels()).toEqual(['Reset']);
   });
 });
+
+function modalButtonLabels(): string[] {
+  return MockSetting.instances.flatMap((setting) =>
+    setting.buttonComponents.map((button) => button.text),
+  );
+}
