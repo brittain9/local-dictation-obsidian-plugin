@@ -113,7 +113,6 @@ export class LlmContextSettingsModal extends Modal {
         this.draft = { ...this.draft, [key]: value };
         void this.autoSaver.persist({ [key]: value });
       },
-      onValidityChange: () => {},
       value: this.draft[key],
     });
   }

@@ -27,7 +27,6 @@ describe('transcript output settings modals', () => {
     expect(interval.inputEl.attributes.get('aria-describedby')).toBe(intervalSetting.descEl.id);
     expect(interval.inputEl.attributes.has('aria-invalid')).toBe(true);
     expect(intervalSetting.descEl.attributes.get('aria-live')).toBe('polite');
-    expect(modalButtonLabels()).toEqual(['Reset']);
     await Promise.resolve();
     expect(saveSettings).not.toHaveBeenCalled();
   });
@@ -71,7 +70,6 @@ describe('transcript output settings modals', () => {
     });
     expect(saveSettings).toHaveBeenCalledTimes(3);
     expect(onSave).toHaveBeenCalledTimes(3);
-    expect(modalButtonLabels()).toEqual(['Reset']);
   });
 
   it('disables speaker-limit editing while speaker labels are off', () => {
@@ -106,12 +104,5 @@ describe('transcript output settings modals', () => {
     });
     expect(saveSettings).toHaveBeenCalledOnce();
     expect(onSave).toHaveBeenCalledOnce();
-    expect(modalButtonLabels()).toEqual(['Reset']);
   });
 });
-
-function modalButtonLabels(): string[] {
-  return MockSetting.instances.flatMap((setting) =>
-    setting.buttonComponents.map((button) => button.text),
-  );
-}

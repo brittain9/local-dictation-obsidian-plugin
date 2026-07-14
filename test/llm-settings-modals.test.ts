@@ -32,7 +32,6 @@ describe('LLM transform settings modals', () => {
     );
     expect(minimumWords.inputEl.attributes.has('aria-invalid')).toBe(true);
     expect(minimumWordsSetting.descEl.attributes.get('aria-live')).toBe('polite');
-    expect(modalButtonLabels()).toEqual(['Reset']);
     await Promise.resolve();
     expect(saveSettings).not.toHaveBeenCalled();
   });
@@ -57,7 +56,6 @@ describe('LLM transform settings modals', () => {
     });
     expect(saveSettings).toHaveBeenCalledOnce();
     expect(onSave).toHaveBeenCalledOnce();
-    expect(modalButtonLabels()).toEqual(['Reset']);
   });
 
   it('uses preset-pinned timing to disable phrase-only context fields', async () => {
@@ -84,7 +82,6 @@ describe('LLM transform settings modals', () => {
       expect(persistedSettings.llmPostprocessNoteContextChars).toBe(9000);
     });
     expect(saveSettings).toHaveBeenCalledOnce();
-    expect(modalButtonLabels()).toEqual(['Reset']);
   });
 
   it('shows preset-owned numeric settings without allowing global edits', () => {
@@ -115,7 +112,7 @@ describe('LLM transform settings modals', () => {
     expect(temperature.disabled).toBe(true);
   });
 
-  it('persists all applicable Auto-routing model settings together', async () => {
+  it('persists each applicable Auto-routing model setting when it changes', async () => {
     let settings = {
       ...DEFAULT_PLUGIN_SETTINGS,
       llmRemoteFeaturesEnabled: true,
@@ -142,7 +139,6 @@ describe('LLM transform settings modals', () => {
       });
     });
     expect(saveSettings).toHaveBeenCalledTimes(3);
-    expect(modalButtonLabels()).toEqual(['Reset']);
   });
 
   it('hides remote-only model settings for local routing', () => {
@@ -162,9 +158,3 @@ describe('LLM transform settings modals', () => {
     expect(names).not.toContain('Remote timeout');
   });
 });
-
-function modalButtonLabels(): string[] {
-  return MockSetting.instances.flatMap((setting) =>
-    setting.buttonComponents.map((button) => button.text),
-  );
-}

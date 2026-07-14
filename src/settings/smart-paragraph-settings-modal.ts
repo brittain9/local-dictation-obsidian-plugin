@@ -89,7 +89,6 @@ export class SmartParagraphSettingsModal extends Modal {
       onChange: (value) => {
         options.onChange(Math.round(value * 1000));
       },
-      onValidityChange: () => {},
       step: 0.1,
       value: options.value / 1000,
     });

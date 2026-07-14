@@ -61,7 +61,6 @@ export class LlmTimingSettingsModal extends Modal {
         this.minimumWords = value;
         void this.autoSaver.persist({ llmPostprocessSkipMinWords: value });
       },
-      onValidityChange: () => {},
       value: typeof override?.value === 'number' ? override.value : this.minimumWords,
     });
 

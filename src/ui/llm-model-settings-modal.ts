@@ -117,7 +117,6 @@ export class LlmModelSettingsModal extends Modal {
         this.draft = { ...this.draft, [key]: value };
         void this.autoSaver.persist({ [key]: value });
       },
-      onValidityChange: () => {},
       value: options.value ?? this.draft[key],
     });
   }
