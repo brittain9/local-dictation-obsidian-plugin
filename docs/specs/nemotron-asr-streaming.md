@@ -17,11 +17,20 @@ that kept Parakeet Unified experimental:
   the engine that removes the "multilingual costs us live transcription"
   trade-off (see `docs/specs/multilingual-support.md`).
 
-Delivery is staged: Stage A ships Nemotron as an English engine inside the
-current English-only product boundary. Stage B enables multilingual live
-transcription once the multilingual-support spec's stages 1–3 (per-model
-eligibility, persisted language, protocol threading) are in place. Stage A must
-not block on Stage B, and Stage B must not require reworking Stage A.
+Multilingual live transcription is the purpose of this engine. English live
+transcription is already served by Moonshine, so Nemotron is not a second
+answer to a solved problem: it exists to cover what no current engine does,
+and together with multilingual Whisper (batch) it completes language coverage
+across both transcription modes.
+
+Delivery is still staged, because the runtime contract must be proven before
+the language infrastructure is built around it. Stage A is bring-up: get
+Nemotron working in the current app as-is, inside today's English-only product
+boundary — an integration milestone, not a product goal. Stage B enables
+multilingual live transcription once the multilingual-support spec's stages
+1–3 (per-model eligibility, persisted language, protocol threading) are in
+place. Stage A must not block on Stage B, and Stage B must not require
+reworking Stage A.
 
 ## Model facts
 
@@ -80,11 +89,13 @@ Default chunk size: 560 ms, matching the validated Parakeet configuration and
 the existing worker cadence. Lower-latency configs are a follow-up experiment,
 not part of this integration.
 
-## Stage A — English engine in the current product
+## Stage A — bring-up in the current app
 
-Adds a `nemotron_asr` family on the existing `onnx_runtime` runtime. No
-protocol, settings, or UI language changes; `language` remains `'en'`
-end-to-end and the catalog entry ships `languageTags: ["en"]`.
+Adds a `nemotron_asr` family on the existing `onnx_runtime` runtime and proves
+the runtime contract end-to-end. No protocol, settings, or UI language
+changes; `language` remains `'en'` end-to-end and the catalog entry ships
+`languageTags: ["en"]`. Moonshine remains the recommended English streaming
+default throughout.
 
 Reusable from the Parakeet Unified adapter work (PR #258): the NeMo-compatible
 128-bin frontend (verify parity for this checkpoint — gate A0.4), RNNT greedy
@@ -144,10 +155,11 @@ persisted `dictationLanguage` + protocol widening). Nemotron-specific work:
 
 ## Product positioning
 
-- Moonshine remains the low-resource English streaming default. Nemotron is
-  the accuracy/multilingual streaming engine; its catalog copy states download
-  size and CPU cost honestly.
-- Whisper multilingual remains the batch multilingual path; Cohere and
+- Moonshine remains the English streaming default. Nemotron covers what
+  Moonshine does not: multilingual live transcription. It also transcribes
+  English well, but it is not positioned as a Moonshine replacement; its
+  catalog copy states download size and CPU cost honestly.
+- Whisper multilingual becomes the batch multilingual path; Cohere and
   Moonshine stay explicitly English-only in their family copy, per the
   truthful-readiness rules already shipped in PR #255.
 - The Parakeet Unified engine is not added. Its adapter techniques carry into
