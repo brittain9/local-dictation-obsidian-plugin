@@ -94,10 +94,11 @@ contiguous entries and ends with blank token `<blk>` at id 13,087. The decoder
 accepts the token/length pair and two `f32 [2, B, 640]` predictor states; the
 joiner returns 13,088 logits.
 
-The feature frontend is 16 kHz mono, 128-bin log-mel, 25 ms periodic Hann
-windows, 10 ms stride, 512-point FFT, preemphasis 0.97, centered reflected-edge
-framing, and no normalization. Random dither is disabled for deterministic
-inference, matching the sherpa runtime contract.
+The feature frontend is 16 kHz mono, 128-bin log-mel, 25 ms symmetric Hann
+windows, 10 ms stride, 512-point FFT, global preemphasis 0.97, centered
+zero-padded framing, additive `2^-24` log guarding, and no normalization.
+Random dither is disabled for deterministic inference. These details match the
+pinned NVIDIA NeMo frontend and are enforced by the committed numeric oracle.
 
 ## NeMo golden parity
 
@@ -122,6 +123,22 @@ streaming script was also run separately and produced the same final text:
 
 The fixture preserves the model's `inhabits` error instead of correcting the
 oracle to the LibriSpeech reference.
+
+## Local acceptance and performance
+
+The pinned int8 export was exercised on an Apple M2 Pro with 16 GiB RAM, CPU
+only, using a release build. The full VAD/worker/revision test includes model
+load, LibriSpeech `7021-79740-0000`, and the harness's trailing-silence path.
+Running the release test executable directly under `/usr/bin/time -l` recorded:
+
+- 13.50 seconds process wall time (12.81 seconds inside the test);
+- 1,354,842,112 bytes maximum resident set size (1.355 GB); and
+- 0.115 WER on the VAD-trimmed worker transcript, with all required anchors.
+
+PR #258 recorded 15.24 seconds and 1.557 GB for the equivalent Parakeet worker
+path. On this comparison, Nemotron Stage A reduces wall time by about 11% and
+peak RSS by about 13%. A separate direct load-plus-one-shot run, excluding the
+real-time worker cadence, completed inference in 1.893 seconds with 0.000 WER.
 
 ## License
 

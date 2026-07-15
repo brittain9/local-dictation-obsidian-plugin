@@ -22,6 +22,13 @@ const MOONSHINE_SIBLINGS: &[&str] = &[
     "tokenizer.bin",
 ];
 
+const NEMOTRON_SIBLINGS: &[&str] = &[
+    "encoder.int8.onnx",
+    "decoder.int8.onnx",
+    "joiner.int8.onnx",
+    "tokens.txt",
+];
+
 /// Smallest bundled whisper model — fast to download and load on CPU, which
 /// keeps the suite cheap while still exercising the real inference path.
 pub const TEST_MODEL_ID: &str = "whisper_tiny_en_q8_0";
@@ -137,6 +144,31 @@ pub fn require_moonshine_model(tier: MoonshineTier) -> PathBuf {
              to reuse local assets, or ensure network access for the catalog download."
         )
     })
+}
+
+/// Resolve the pinned Nemotron 3.5 ASR 560 ms export without implicitly
+/// downloading roughly 651 MiB during an ignored test run.
+pub fn require_nemotron_model() -> PathBuf {
+    let dir = std::env::var_os("STT_TEST_NEMOTRON_DIR")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| {
+            panic!(
+                "STT_TEST_NEMOTRON_DIR must point at a directory containing {}",
+                NEMOTRON_SIBLINGS.join(", ")
+            )
+        });
+    let missing: Vec<&str> = NEMOTRON_SIBLINGS
+        .iter()
+        .copied()
+        .filter(|filename| !dir.join(filename).is_file())
+        .collect();
+    assert!(
+        missing.is_empty(),
+        "Nemotron model directory {} is missing: {}",
+        dir.display(),
+        missing.join(", ")
+    );
+    dir.join("encoder.int8.onnx")
 }
 
 fn verify_moonshine_siblings(dir: &Path) -> Result<(), String> {

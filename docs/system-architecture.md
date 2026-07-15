@@ -270,10 +270,11 @@ reports what's actually available.
 | Runtime | Crate | Model format | Adapter |
 |---|---|---|---|
 | `whisper_cpp` | whisper-rs (whisper.cpp) | GGML `.bin` | `whisper` |
-| `onnx_runtime` | ort (ONNX Runtime) | ONNX / ORT | `cohere_transcribe`, `moonshine` |
+| `onnx_runtime` | ort (ONNX Runtime) | ONNX / ORT | `cohere_transcribe`, `moonshine`, `nemotron_asr` |
 
 Cargo features: `engine-whisper`, `engine-cohere-transcribe`,
-`engine-moonshine`, `gpu-metal`, `gpu-cuda`, `gpu-ort-cuda`. A missing
+`engine-moonshine`, `engine-nemotron-asr`, `gpu-metal`, `gpu-cuda`,
+`gpu-ort-cuda`. A missing
 `(runtimeId, familyId)` pair surfaces as an `unsupported_engine` error rather
 than a silent failure.
 
@@ -287,6 +288,9 @@ than a silent failure.
   state for the open utterance. It attempts a changed-text partial every 500 ms;
   the single worker thread guarantees one decode in flight, and the wall-time
   gate drops catch-up partials while preserving all PCM for the next decode.
+- Nemotron keeps the pinned encoder's channel/time caches and RNNT predictor
+  states across 560 ms chunks. Stage A forces the `en-US` prompt and resets all
+  graph state on finalization or inference failure.
 - Partials carry only the engine stage outcome. Finals run the normal post-engine
   chain and receive a revision greater than every emitted partial.
 - Back-pressure: finalized utterances queue while inference is in flight; queue
@@ -310,6 +314,7 @@ than a silent failure.
 | Moonshine Tiny | `onnx_runtime` · `moonshine` | Quantized | 49 MB | Streaming (live), 34M params |
 | Moonshine Small | `onnx_runtime` · `moonshine` | Quantized | 157 MB | Streaming (live), balanced, 123M params |
 | Moonshine Medium | `onnx_runtime` · `moonshine` | Quantized | 289 MB | Streaming (live), 245M params |
+| Nemotron 3.5 ASR 560 ms | `onnx_runtime` · `nemotron_asr` | INT8 | 651 MB | Experimental streaming, English-only Stage A |
 
 Moonshine models are streaming (live-dictation) entries in the managed catalog,
 installed through Manage Models like any other model. Each is a multi-file ORT
@@ -318,6 +323,13 @@ tokenizer) fetched from Moonshine AI and verified against pinned sizes and
 SHA-256 hashes. They are English-only and do not apply speaker labels. See
 [`docs/guides/moonshine-live-testing.md`](guides/moonshine-live-testing.md) for
 install and manual acceptance testing.
+
+Nemotron 3.5 ASR is a separate experimental managed entry; Moonshine Small
+remains the recommended live-dictation default. Its encoder, decoder, joiner,
+and tokenizer are pinned by revision, size, and SHA-256. Stage A supports only
+the 560 ms int8 export and fixed English-US prompt. See
+[`docs/specs/nemotron-asr-stage-a.md`](specs/nemotron-asr-stage-a.md) for the
+artifact, graph-contract, golden-oracle, and license record.
 
 **Inference is the bottleneck.** Time depends on model size, hardware, and
 utterance length, and is reported as `processing_duration_ms` on each transcript.
@@ -480,7 +492,7 @@ A representative slice of user-facing settings (full list and defaults in
 | **Obsidian Plugin API** | Host runtime: editor access, commands, settings, UI hooks |
 | **Web Audio API / AudioWorklet** | Microphone capture and PCM frame production at 50 fps |
 | **whisper-rs / whisper.cpp** | Primary engine; runs GGML-quantized Whisper on CPU, Metal, or CUDA |
-| **ort (ONNX Runtime)** | Engine for Cohere Transcribe and Moonshine; also runs Silero VAD and diarization models |
+| **ort (ONNX Runtime)** | Engine for Cohere Transcribe, Moonshine, and Nemotron; also runs Silero VAD and diarization models |
 | **Silero VAD** | Speech probability per 32 ms window; drives boundary detection |
 | **Node.js child_process** | Spawns and manages the Rust sidecar |
 | **reqwest + sha2** | Downloads model files and verifies their SHA-256 |

@@ -38,5 +38,8 @@ describe('stageSidecarBaseFiles', () => {
     expect(notices).toContain('Silero VAD');
     expect(notices).toContain('Copyright (c) 2020-present Silero Team');
     expect(notices).toContain('MIT License');
+    expect(notices).toContain('NVIDIA Nemotron 3.5 ASR');
+    expect(notices).toContain('OpenMDW License Agreement, version 1.1');
+    expect(notices).toContain('numerical representation');
   });
 });

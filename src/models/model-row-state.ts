@@ -282,6 +282,8 @@ function resolveFamilyDisplayName(
       return 'Cohere Transcribe';
     case 'moonshine':
       return 'Moonshine';
+    case 'nemotron_asr':
+      return 'NVIDIA Nemotron 3.5 ASR';
     case 'whisper':
       return 'Whisper';
   }

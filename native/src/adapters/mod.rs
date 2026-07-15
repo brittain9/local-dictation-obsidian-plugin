@@ -4,5 +4,8 @@ pub mod cohere_transcribe;
 #[cfg(feature = "engine-moonshine")]
 pub mod moonshine;
 
+#[cfg(feature = "engine-nemotron-asr")]
+pub mod nemotron_asr;
+
 #[cfg(feature = "engine-whisper")]
 pub mod whisper;
