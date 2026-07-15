@@ -794,6 +794,7 @@ mod tests {
         supports_initial_prompt: true,
         supports_streaming: false,
         supports_language_selection: false,
+        supports_automatic_language_detection: false,
         supported_languages: LanguageSupport::EnglishOnly,
         max_audio_duration_secs: None,
         produces_punctuation: true,

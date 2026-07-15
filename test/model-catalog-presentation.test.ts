@@ -28,7 +28,6 @@ describe('model catalog presentation', () => {
       true,
     );
     expect(whisperModels[4]?.languageTags).toEqual([
-      'auto',
       'en',
       'es',
       'de',
@@ -38,6 +37,7 @@ describe('model catalog presentation', () => {
       'nl',
       'ja',
     ]);
+    expect(whisperModels[4]?.supportsAutomaticLanguageDetection).toBe(true);
   });
 
   it('does not use a generic recommendation tag', () => {

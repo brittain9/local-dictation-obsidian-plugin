@@ -9,6 +9,7 @@ mod common;
 
 use common::manifest::Corpus;
 use common::model::require_nemotron_model;
+use common::quality_report::{self, QualityMeasurement};
 use common::text::{joined_text, missing_anchors, word_error_rate};
 use common::{audio, driver};
 use local_dictation_sidecar::adapters::nemotron_asr::NemotronAsrAdapter;
@@ -124,6 +125,27 @@ fn nemotron_runs_through_vad_worker_and_revision_protocol() {
         real_time_factor <= WORKER_MAX_REAL_TIME_FACTOR,
         "worker RTF {real_time_factor:.3} exceeded {WORKER_MAX_REAL_TIME_FACTOR:.3}",
     );
+    let mut measurement = QualityMeasurement::new(
+        "nemotron-streaming-product-path",
+        common::model::NEMOTRON_MODEL_ID,
+        "NVIDIA Nemotron 3.5 ASR Streaming 0.6B Int8",
+        "en",
+        "manual",
+        &fixture.id,
+        "wer",
+        wer,
+        WORKER_MAX_WER,
+        audio_duration_ms,
+        outcome.processing_ms,
+        WORKER_MAX_REAL_TIME_FACTOR,
+    );
+    measurement.first_partial_audio_ms = outcome
+        .partials
+        .first()
+        .map(|partial| partial.utterance_duration_ms);
+    measurement.first_partial_audio_budget_ms = Some(WORKER_MAX_FIRST_PARTIAL_AUDIO_MS);
+    measurement.partial_count = Some(outcome.partials.len());
+    quality_report::record(&measurement);
 }
 
 #[test]

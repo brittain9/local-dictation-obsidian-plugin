@@ -107,6 +107,7 @@ struct ResolvedModelSelection {
     family_id: ModelFamilyId,
     installed: bool,
     language_support: LanguageSupport,
+    supports_automatic_language_detection: bool,
     model_id: Option<String>,
     resolved_path: PathBuf,
     selection: SelectedModel,
@@ -726,6 +727,8 @@ impl AppState {
                     );
                     capabilities.family.supported_languages =
                         resolved_model.language_support.clone();
+                    capabilities.family.supports_automatic_language_detection =
+                        resolved_model.supports_automatic_language_detection;
                 }
                 Event::ModelProbeResult {
                     available: true,
@@ -1290,7 +1293,11 @@ impl AppState {
                     None,
                 )),
             })?;
-        if !language_supports(&resolved.language_support, language) {
+        if !language_supports(
+            &resolved.language_support,
+            resolved.supports_automatic_language_detection,
+            language,
+        ) {
             let supported = match &resolved.language_support {
                 LanguageSupport::All => "all languages".to_string(),
                 LanguageSupport::List { tags } => tags.join(", "),
@@ -1405,7 +1412,7 @@ impl AppState {
                 if model
                     .language_tags
                     .iter()
-                    .any(|tag| !language_supports(&adapter_language_support, tag))
+                    .any(|tag| !language_supports(&adapter_language_support, false, tag))
                 {
                     return Err(probe_error(
                         ModelProbeStatus::Invalid,
@@ -1414,6 +1421,29 @@ impl AppState {
                             details: Some(format!(
                                 "catalog={:?}, adapter={adapter_language_support:?}",
                                 model.language_tags
+                            )),
+                            display_name: Some(model.display_name.clone()),
+                            installed: true,
+                            model_id: Some(model_id.clone()),
+                            resolved_path: Some(resolved_path.display().to_string()),
+                        },
+                    ));
+                }
+                let adapter_supports_automatic_language_detection = self
+                    .registry
+                    .merged_capabilities(runtime_id, family_id)
+                    .is_some_and(|capabilities| {
+                        capabilities.family.supports_automatic_language_detection
+                    });
+                if model.supports_automatic_language_detection
+                    && !adapter_supports_automatic_language_detection
+                {
+                    return Err(probe_error(
+                        ModelProbeStatus::Invalid,
+                        "The model catalog automatic-language metadata does not match the installed model.",
+                        ProbeErrorFields {
+                            details: Some(format!(
+                                "catalog=true, adapter={adapter_supports_automatic_language_detection}"
                             )),
                             display_name: Some(model.display_name.clone()),
                             installed: true,
@@ -1432,6 +1462,8 @@ impl AppState {
                     language_support: LanguageSupport::List {
                         tags: model.language_tags,
                     },
+                    supports_automatic_language_detection: model
+                        .supports_automatic_language_detection,
                     model_id: Some(model_id.clone()),
                     resolved_path,
                     selection: selection.clone(),
@@ -1484,6 +1516,16 @@ impl AppState {
                         )
                     })?;
                 let size_bytes = file_size(model_path);
+                let supports_automatic_language_detection = self
+                    .registry
+                    .merged_capabilities(runtime_id, family_id)
+                    .is_some_and(|capabilities| {
+                        capabilities.family.supports_automatic_language_detection
+                            && !matches!(
+                                &language_support,
+                                LanguageSupport::EnglishOnly | LanguageSupport::Unknown
+                            )
+                    });
 
                 Ok(ResolvedModelSelection {
                     display_name: file_name_or_path(model_path),
@@ -1491,6 +1533,7 @@ impl AppState {
                     family_id,
                     installed: false,
                     language_support,
+                    supports_automatic_language_detection,
                     model_id: None,
                     resolved_path: model_path.to_path_buf(),
                     selection: selection.clone(),
@@ -1501,7 +1544,14 @@ impl AppState {
     }
 }
 
-fn language_supports(support: &LanguageSupport, language: &str) -> bool {
+fn language_supports(
+    support: &LanguageSupport,
+    supports_automatic_language_detection: bool,
+    language: &str,
+) -> bool {
+    if language == "auto" {
+        return supports_automatic_language_detection;
+    }
     match support {
         LanguageSupport::All => true,
         LanguageSupport::EnglishOnly | LanguageSupport::Unknown => language == "en",
@@ -1839,6 +1889,7 @@ mod tests {
                     supports_initial_prompt,
                     supports_streaming: false,
                     supports_language_selection: false,
+                    supports_automatic_language_detection: false,
                     supported_languages: LanguageSupport::EnglishOnly,
                     max_audio_duration_secs: None,
                     produces_punctuation: true,
@@ -3632,6 +3683,7 @@ mod tests {
                 runtime_id: RuntimeId::WhisperCpp,
                 family_id: ModelFamilyId::Whisper,
                 language_tags: vec!["en".to_string()],
+                supports_automatic_language_detection: false,
                 license_label: "MIT".to_string(),
                 license_url: "https://example.com/license".to_string(),
                 model_card_url: None,
@@ -3646,18 +3698,35 @@ mod tests {
 }
 #[test]
 fn exact_language_support_never_promotes_english_only_models() {
-    assert!(language_supports(&LanguageSupport::EnglishOnly, "en"));
-    assert!(!language_supports(&LanguageSupport::EnglishOnly, "ja"));
+    assert!(language_supports(
+        &LanguageSupport::EnglishOnly,
+        false,
+        "en"
+    ));
+    assert!(!language_supports(
+        &LanguageSupport::EnglishOnly,
+        false,
+        "ja"
+    ));
     assert!(language_supports(
         &LanguageSupport::List {
             tags: vec!["en".to_string(), "ja".to_string()],
         },
+        false,
         "ja"
+    ));
+    assert!(language_supports(
+        &LanguageSupport::List {
+            tags: vec!["en".to_string(), "ja".to_string()],
+        },
+        true,
+        "auto"
     ));
     assert!(!language_supports(
         &LanguageSupport::List {
             tags: vec!["en".to_string()],
         },
+        false,
         "auto"
     ));
 }

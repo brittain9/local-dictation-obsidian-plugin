@@ -21,6 +21,7 @@ const FAMILY_CAPS_DEFAULT: ModelFamilyCapabilitiesRecord = {
   supportsInitialPrompt: false,
   supportsStreaming: false,
   supportsLanguageSelection: false,
+  supportsAutomaticLanguageDetection: false,
   supportsSegmentTimestamps: false,
   supportsWordTimestamps: false,
 };

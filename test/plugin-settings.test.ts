@@ -36,7 +36,7 @@ describe('resolvePluginSettings', () => {
   });
 
   it('defaults missing schemaVersion to the current settings schema', () => {
-    expect(resolvePluginSettings({}).schemaVersion).toBe(3);
+    expect(resolvePluginSettings({}).schemaVersion).toBe(4);
   });
 
   it('migrates missing or invalid dictation language to English', () => {
@@ -244,6 +244,7 @@ describe('resolvePluginSettings', () => {
         supportedLanguages: { kind: 'all' as const },
         supportsInitialPrompt: true,
         supportsLanguageSelection: true,
+        supportsAutomaticLanguageDetection: true,
         supportsSegmentTimestamps: true,
         supportsStreaming: false,
         supportsWordTimestamps: false,
@@ -259,14 +260,14 @@ describe('resolvePluginSettings', () => {
 
     expect(
       resolvePluginSettings({
-        schemaVersion: 3,
+        schemaVersion: 4,
         selectedModelCapabilitiesSnapshot: { capabilities, selection },
       }).selectedModelCapabilitiesSnapshot,
     ).toEqual({ capabilities, selection });
 
     expect(
       resolvePluginSettings({
-        schemaVersion: 2,
+        schemaVersion: 3,
         selectedModelCapabilitiesSnapshot: { capabilities, selection },
       }).selectedModelCapabilitiesSnapshot,
     ).toBeNull();

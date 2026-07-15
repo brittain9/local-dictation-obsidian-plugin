@@ -1,7 +1,10 @@
 import type { App } from 'obsidian';
 import { Modal, Setting, setIcon } from 'obsidian';
 
-import { dictationLanguageLabel } from '../language/dictation-language';
+import {
+  catalogModelSupportsLanguage,
+  dictationLanguageLabel,
+} from '../language/dictation-language';
 import { formatBytes } from '../shared/format-utils';
 import type { UserFeedback } from '../shared/user-feedback';
 import { resolveEngineCapabilities } from './capability-view';
@@ -255,7 +258,7 @@ export class ManageModelsModal extends Modal {
     setting.settingEl.addClass('local-stt-model-row');
     setting.setName(row.model.displayName);
     const selectedLanguage = this.deps.manager.getDictationLanguage();
-    const supportsSelectedLanguage = row.model.languageTags.includes(selectedLanguage);
+    const supportsSelectedLanguage = catalogModelSupportsLanguage(row.model, selectedLanguage);
 
     // Description: install progress when installing/canceling, tags + size otherwise.
     if (row.isInstalling || row.isCanceling) {

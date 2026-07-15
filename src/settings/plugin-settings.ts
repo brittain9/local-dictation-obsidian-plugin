@@ -169,7 +169,7 @@ export interface PluginSettings {
   localTranscriptSidebarBootstrapped: boolean;
   modelStorePathOverride: string;
   retainLastUtterance: boolean;
-  schemaVersion: 3;
+  schemaVersion: 4;
   selectedModel: SelectedModel | null;
   // Last-known-good capabilities for `selectedModel`, captured on a successful
   // probe. Lets startup skip re-probing the sidecar (which forces a full
@@ -226,7 +226,7 @@ export const DEFAULT_PLUGIN_SETTINGS: PluginSettings = {
   localTranscriptSidebarBootstrapped: false,
   modelStorePathOverride: '',
   retainLastUtterance: true,
-  schemaVersion: 3,
+  schemaVersion: 4,
   selectedModel: null,
   selectedModelCapabilitiesSnapshot: null,
   setupCompletedAt: null,
@@ -356,13 +356,13 @@ export function resolvePluginSettings(data: unknown): PluginSettings {
       DEFAULT_PLUGIN_SETTINGS.retainLastUtterance,
     ),
     // Bump `schemaVersion` and add a migration step when renaming a key or changing default semantics.
-    schemaVersion: 3,
+    schemaVersion: 4,
     selectedModel: readSelectedModel(raw.selectedModel),
-    // Exact-model language support changed in schema 3. Older family-level
-    // snapshots could incorrectly promote `.en` Whisper weights or hide new
-    // multilingual support, so force one fresh probe during migration.
+    // Automatic detection became a capability separate from language tags in
+    // schema 4. Older snapshots cannot prove that exact-model behavior, so
+    // force one fresh probe during migration.
     selectedModelCapabilitiesSnapshot:
-      raw.schemaVersion === 3
+      raw.schemaVersion === 4
         ? readSelectedModelCapabilitiesSnapshot(raw.selectedModelCapabilitiesSnapshot)
         : null,
     setupCompletedAt: readSetupCompletedAt(raw.setupCompletedAt),

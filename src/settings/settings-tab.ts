@@ -141,8 +141,9 @@ export class LocalSttSettingTab extends PluginSettingTab {
 
     // --- Model ---
     const modelSection = createSettingGroup(containerEl, 'Model');
+    const modelSummary = modelSection.createDiv();
     const manager = this.dependencies.modelInstallManager;
-    this.disposeModelSection = renderModelSection(modelSection, manager, {
+    this.disposeModelSection = renderModelSection(modelSummary, manager, {
       onManageModels: () => {
         void this.dependencies.openModelPicker({
           onChanged: () => {
@@ -172,7 +173,13 @@ export class LocalSttSettingTab extends PluginSettingTab {
       selectedCapabilities.status === 'ready'
         ? selectedCapabilities.capabilities.family.supportedLanguages
         : ({ kind: 'english_only' } as const);
-    const languageOptions = supportedDictationLanguageOptions(languageSupport);
+    const supportsAutomaticLanguageDetection =
+      selectedCapabilities.status === 'ready' &&
+      selectedCapabilities.capabilities.family.supportsAutomaticLanguageDetection;
+    const languageOptions = supportedDictationLanguageOptions(
+      languageSupport,
+      supportsAutomaticLanguageDetection,
+    );
     const selectedLanguage = settings.dictationLanguage;
     const languageSetting = new Setting(modelSection)
       .setName('Dictation language')

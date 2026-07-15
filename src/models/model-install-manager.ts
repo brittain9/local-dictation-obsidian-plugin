@@ -1,4 +1,5 @@
 import {
+  catalogModelSupportsLanguage,
   type DictationLanguage,
   dictationLanguageLabel,
   languageSupportIncludes,
@@ -226,6 +227,8 @@ export class ModelInstallManager {
                   ...currentCapabilities.family,
                   supportedLanguages: snapshot.capabilities.family.supportedLanguages,
                   supportsLanguageSelection: snapshot.capabilities.family.supportsLanguageSelection,
+                  supportsAutomaticLanguageDetection:
+                    snapshot.capabilities.family.supportsAutomaticLanguageDetection,
                 },
               };
         this.selectedModelCapabilities = {
@@ -302,7 +305,7 @@ export class ModelInstallManager {
       matchesModelTriple(candidate, selection.runtimeId, selection.familyId, selection.modelId),
     );
     const language = this.getDictationLanguage();
-    if (model !== undefined && !model.languageTags.includes(language)) {
+    if (model !== undefined && !catalogModelSupportsLanguage(model, language)) {
       throw incompatibleLanguageError(model.displayName, language);
     }
 
@@ -429,7 +432,13 @@ export class ModelInstallManager {
     const languageSupport = probeResult.mergedCapabilities?.family.supportedLanguages ?? {
       kind: 'unknown' as const,
     };
-    if (!languageSupportIncludes(languageSupport, currentLanguage)) {
+    if (
+      !languageSupportIncludes(
+        languageSupport,
+        currentLanguage,
+        probeResult.mergedCapabilities?.family.supportsAutomaticLanguageDetection ?? false,
+      )
+    ) {
       const displayName =
         probeResult.displayName ??
         (selection.kind === 'catalog_model' ? selection.modelId : selection.filePath);

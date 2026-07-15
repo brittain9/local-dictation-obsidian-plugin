@@ -820,6 +820,7 @@ describe('ModelInstallManager', () => {
         kind: 'english_only',
       });
       expect(capabilityState.capabilities.family.supportsLanguageSelection).toBe(false);
+      expect(capabilityState.capabilities.family.supportsAutomaticLanguageDetection).toBe(false);
     });
 
     it('falls back to probing when the persisted snapshot belongs to a different selection', async () => {
@@ -1004,6 +1005,7 @@ function sampleSystemInfo(): SystemInfoEvent {
           supportsInitialPrompt: false,
           supportsStreaming: false,
           supportsLanguageSelection: true,
+          supportsAutomaticLanguageDetection: false,
           supportsSegmentTimestamps: true,
           supportsWordTimestamps: false,
         },
@@ -1019,6 +1021,7 @@ function sampleSystemInfo(): SystemInfoEvent {
           supportsInitialPrompt: false,
           supportsStreaming: true,
           supportsLanguageSelection: false,
+          supportsAutomaticLanguageDetection: false,
           supportsSegmentTimestamps: false,
           supportsWordTimestamps: false,
         },
@@ -1034,6 +1037,7 @@ function sampleSystemInfo(): SystemInfoEvent {
           supportsInitialPrompt: true,
           supportsStreaming: false,
           supportsLanguageSelection: true,
+          supportsAutomaticLanguageDetection: true,
           supportsSegmentTimestamps: true,
           supportsWordTimestamps: false,
         },
@@ -1080,6 +1084,7 @@ function sampleMergedCapabilities(): EngineCapabilitiesRecord {
       supportsInitialPrompt: true,
       supportsStreaming: false,
       supportsLanguageSelection: false,
+      supportsAutomaticLanguageDetection: false,
       supportsSegmentTimestamps: true,
       supportsWordTimestamps: false,
     },

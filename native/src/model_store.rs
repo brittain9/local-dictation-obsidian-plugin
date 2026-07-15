@@ -516,6 +516,7 @@ mod tests {
                 runtime_id: RuntimeId::WhisperCpp,
                 family_id: ModelFamilyId::Whisper,
                 language_tags: vec!["en".to_string()],
+                supports_automatic_language_detection: false,
                 license_label: "MIT".to_string(),
                 license_url: "https://example.com/license".to_string(),
                 model_card_url: None,

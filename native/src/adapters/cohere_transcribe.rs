@@ -48,6 +48,7 @@ const CAPABILITIES: ModelFamilyCapabilities = ModelFamilyCapabilities {
     supports_initial_prompt: false,
     supports_streaming: false,
     supports_language_selection: false,
+    supports_automatic_language_detection: false,
     supported_languages: LanguageSupport::EnglishOnly,
     max_audio_duration_secs: Some(MAX_AUDIO_DURATION_SECS),
     produces_punctuation: true,

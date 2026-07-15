@@ -1,4 +1,4 @@
-import type { LanguageSupport } from '../models/model-management-types';
+import type { CatalogModelRecord, LanguageSupport } from '../models/model-management-types';
 
 export const DICTATION_LANGUAGE_OPTIONS = [
   { label: 'Auto detect', value: 'auto' },
@@ -27,7 +27,9 @@ export function isDictationLanguage(value: unknown): value is DictationLanguage 
 export function languageSupportIncludes(
   support: LanguageSupport,
   language: DictationLanguage,
+  supportsAutomaticLanguageDetection = false,
 ): boolean {
+  if (language === 'auto') return supportsAutomaticLanguageDetection;
   switch (support.kind) {
     case 'all':
       return true;
@@ -40,8 +42,20 @@ export function languageSupportIncludes(
   }
 }
 
-export function supportedDictationLanguageOptions(support: LanguageSupport) {
+export function supportedDictationLanguageOptions(
+  support: LanguageSupport,
+  supportsAutomaticLanguageDetection = false,
+) {
   return DICTATION_LANGUAGE_OPTIONS.filter((option) =>
-    languageSupportIncludes(support, option.value),
+    languageSupportIncludes(support, option.value, supportsAutomaticLanguageDetection),
   );
+}
+
+export function catalogModelSupportsLanguage(
+  model: Pick<CatalogModelRecord, 'languageTags' | 'supportsAutomaticLanguageDetection'>,
+  language: DictationLanguage,
+): boolean {
+  return language === 'auto'
+    ? model.supportsAutomaticLanguageDetection
+    : model.languageTags.includes(language);
 }

@@ -18,6 +18,7 @@ pub mod diarize;
 pub mod driver;
 pub mod manifest;
 pub mod model;
+pub mod quality_report;
 pub mod score;
 pub mod text;
 

@@ -98,9 +98,10 @@ fn nemotron_asr_pair_is_registered_when_compiled() {
     assert!(merged.family.supports_streaming);
     assert!(merged.family.produces_punctuation);
     assert!(merged.family.supports_language_selection);
+    assert!(merged.family.supports_automatic_language_detection);
     assert!(matches!(
         merged.family.supported_languages,
-        LanguageSupport::List { ref tags } if tags.contains(&"ja".to_string()) && tags.contains(&"auto".to_string())
+        LanguageSupport::List { ref tags } if tags.contains(&"ja".to_string()) && !tags.contains(&"auto".to_string())
     ));
     assert!(
         merged

@@ -7,7 +7,8 @@ use crate::protocol::{ContextWindow, StageId, StageOutcome, TranscriptSegment};
 
 pub(crate) const SUPPORTED_LANGUAGE: &str = "en";
 pub(crate) const VERIFIED_MULTILINGUAL_LANGUAGE_TAGS: &[&str] =
-    &["auto", "en", "es", "de", "fr", "pt", "it", "nl", "ja"];
+    &["en", "es", "de", "fr", "pt", "it", "nl", "ja"];
+pub(crate) const AUTOMATIC_LANGUAGE_TAG: &str = "auto";
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct GpuConfig {

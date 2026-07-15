@@ -175,6 +175,9 @@ fn run_in_process(
         language,
     ));
     apply_events(&mut app, events, &mut outcome, context.as_ref());
+    if !outcome.errors.is_empty() {
+        return outcome;
+    }
 
     for frame in frames {
         let events = app.handle_audio_frame(AudioFrame {
@@ -186,6 +189,9 @@ fn run_in_process(
         // request is answered promptly and the worker queue never wedges.
         let drained = app.drain_pending_outputs();
         apply_events(&mut app, drained, &mut outcome, context.as_ref());
+        if !outcome.errors.is_empty() {
+            return outcome;
+        }
     }
 
     let (_flow, events) = app.handle_command(Command::StopSession {
@@ -228,6 +234,9 @@ pub fn stream_in_process_language(
         language,
     ));
     apply_streaming_events(&mut app, events, &mut outcome);
+    if !outcome.errors.is_empty() {
+        return outcome;
+    }
 
     let mut cadence_has_audio = false;
     for (index, frame) in frames.iter().enumerate() {
@@ -238,6 +247,9 @@ pub fn stream_in_process_language(
         apply_streaming_events(&mut app, events, &mut outcome);
         let drained = app.drain_pending_outputs();
         apply_streaming_events(&mut app, drained, &mut outcome);
+        if !outcome.errors.is_empty() {
+            return outcome;
+        }
 
         cadence_has_audio |= frame.iter().any(|byte| *byte != 0);
         if (index + 1) % STREAMING_CADENCE_FRAMES == 0 {

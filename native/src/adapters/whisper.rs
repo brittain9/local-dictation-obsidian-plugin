@@ -9,9 +9,9 @@ use crate::engine::capabilities::{
 use crate::engine::traits::{LoadedModel, ModelFamilyAdapter};
 use crate::protocol::{TimestampGranularity, TimestampSource, TranscriptSegment, TranscriptWord};
 use crate::transcription::{
-    EngineTranscriptOutput, GpuConfig, SegmentDiagnostics, TranscriptionError,
-    TranscriptionRequest, VERIFIED_MULTILINGUAL_LANGUAGE_TAGS, validate_audio_samples,
-    validate_model_path,
+    AUTOMATIC_LANGUAGE_TAG, EngineTranscriptOutput, GpuConfig, SegmentDiagnostics,
+    TranscriptionError, TranscriptionRequest, VERIFIED_MULTILINGUAL_LANGUAGE_TAGS,
+    validate_audio_samples, validate_model_path,
 };
 
 #[derive(Default)]
@@ -24,6 +24,7 @@ static CAPABILITIES: LazyLock<ModelFamilyCapabilities> =
         supports_initial_prompt: true,
         supports_streaming: false,
         supports_language_selection: true,
+        supports_automatic_language_detection: true,
         supported_languages: verified_multilingual_language_support(),
         max_audio_duration_secs: None,
         produces_punctuation: true,
@@ -105,7 +106,9 @@ impl LoadedModel for LoadedWhisperModel {
         &mut self,
         request: &TranscriptionRequest,
     ) -> Result<EngineTranscriptOutput, TranscriptionError> {
-        if !VERIFIED_MULTILINGUAL_LANGUAGE_TAGS.contains(&request.language.as_str()) {
+        if request.language != AUTOMATIC_LANGUAGE_TAG
+            && !VERIFIED_MULTILINGUAL_LANGUAGE_TAGS.contains(&request.language.as_str())
+        {
             return Err(TranscriptionError::unsupported_language(
                 &request.language,
                 "This release has not verified that language with Whisper.",
