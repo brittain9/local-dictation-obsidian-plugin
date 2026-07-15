@@ -9,7 +9,7 @@
 use std::path::Path;
 
 use local_dictation_sidecar::engine::{
-    AcceleratorId, EngineRegistry, ModelFamilyId, RuntimeId, missing_adapter_error,
+    AcceleratorId, EngineRegistry, LanguageSupport, ModelFamilyId, RuntimeId, missing_adapter_error,
 };
 
 #[cfg(feature = "engine-whisper")]
@@ -97,7 +97,11 @@ fn nemotron_asr_pair_is_registered_when_compiled() {
         .expect("merged capabilities must be present for the compiled pair");
     assert!(merged.family.supports_streaming);
     assert!(merged.family.produces_punctuation);
-    assert!(!merged.family.supports_language_selection);
+    assert!(merged.family.supports_language_selection);
+    assert!(matches!(
+        merged.family.supported_languages,
+        LanguageSupport::List { ref tags } if tags.contains(&"ja".to_string()) && tags.contains(&"auto".to_string())
+    ));
     assert!(
         merged
             .runtime

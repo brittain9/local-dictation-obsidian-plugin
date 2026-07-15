@@ -53,3 +53,13 @@ boundary, not just easily-separated voices.
 LibriSpeech is derived from public-domain LibriVox audiobooks and distributed
 under CC BY 4.0 (Panayotov et al., 2015); attribution is recorded per clip in
 [`audio/manifest.json`](audio/manifest.json).
+
+## Multilingual regression corpus
+
+`multilingual.json` records deterministic eSpeak NG 1.52.0 fixtures for Spanish,
+German, French, Portuguese, Italian, Dutch, and Japanese. They were resampled by
+FFmpeg to the same PCM contract and are hash-pinned. Together with the English
+LibriSpeech fixture above, the heavy multilingual suite drives every enabled
+language through both exact shipping models and the complete AppState/VAD/worker
+pipeline. Synthetic speech is a stable regression floor, not a substitute for
+native-speaker release review.

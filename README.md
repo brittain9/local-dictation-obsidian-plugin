@@ -32,7 +32,12 @@ _The first-run wizard installs the native engine and helps you choose between li
 | **Notes and drafts** | Final text lands at your cursor after each pause. | Whisper or Cohere Transcribe batch models |
 | **Meetings and calls** | Add computer audio to microphone capture, then optionally label speakers and add timestamps. | Whisper or Cohere Transcribe batch models |
 
-Local Dictation currently transcribes English only. All catalog models run locally. Moonshine remains the recommended live-dictation default; Nemotron 3.5 ASR is an experimental, higher-resource streaming option. Speaker labels currently require a batch model.
+Local Dictation supports English, Spanish, German, French, Portuguese, Italian, Dutch, and Japanese with the multilingual Whisper Large V3 Turbo and Nemotron 3.5 ASR models; those models can also auto-detect. Cohere Transcribe, Moonshine, and the `.en` Whisper models remain English-only. All catalog models run locally. Moonshine remains the recommended English live-dictation default; Nemotron 3.5 ASR is the multilingual streaming option. Speaker labels currently require a batch model.
+
+Language choices use base tags (for example, Portuguese rather than a separate
+Brazilian Portuguese option). Manual selection gives the most predictable
+cleanup. Auto detection chooses one language per utterance; mixed-language
+code-switching within one utterance is not yet a quality guarantee.
 
 ## Features
 

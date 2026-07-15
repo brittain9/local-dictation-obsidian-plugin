@@ -22,9 +22,22 @@ describe('model catalog presentation', () => {
     ]);
     for (const model of whisperModels) {
       expect(model.displayName).not.toMatch(/\b(?:English|Q\d)/u);
-      expect(model.languageTags).toEqual(['en']);
       expect(model.artifacts[0]?.filename).toMatch(/q(?:5|8)_\d/u);
     }
+    expect(whisperModels.slice(0, 4).every((model) => model.languageTags.join() === 'en')).toBe(
+      true,
+    );
+    expect(whisperModels[4]?.languageTags).toEqual([
+      'auto',
+      'en',
+      'es',
+      'de',
+      'fr',
+      'pt',
+      'it',
+      'nl',
+      'ja',
+    ]);
   });
 
   it('does not use a generic recommendation tag', () => {

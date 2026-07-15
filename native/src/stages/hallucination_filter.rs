@@ -101,6 +101,7 @@ impl StageProcessor for HallucinationFilterStage {
 
             let mut processed_segment = segment.clone();
             if ctx.is_final
+                && ctx.language == "en"
                 && let Some((stripped_prefix, text)) =
                     strip_speaker_label(&segment.text, context_label_tokens.as_deref())
             {
@@ -120,6 +121,7 @@ impl StageProcessor for HallucinationFilterStage {
                 &processed_segment,
                 &evidence,
                 ctx.is_final,
+                ctx.language == "en",
                 normalized_context.as_deref(),
             ) {
                 dropped.push(DroppedSegment::from_segment(
@@ -349,9 +351,14 @@ fn classify_drop(
     segment: &TranscriptSegment,
     evidence: &SegmentEvidence,
     is_final: bool,
+    apply_english_blocklist: bool,
     normalized_context: Option<&str>,
 ) -> Option<DropReason> {
-    let class = classify_text(&evidence.normalized_text, &segment.text);
+    let class = classify_text_for_language(
+        &evidence.normalized_text,
+        &segment.text,
+        apply_english_blocklist,
+    );
     if class == TextClass::Hard {
         return Some(DropReason::BlocklistHard);
     }
@@ -392,20 +399,31 @@ fn classify_drop(
     None
 }
 
-fn classify_text(normalized: &str, raw: &str) -> TextClass {
+fn classify_text_for_language(
+    normalized: &str,
+    raw: &str,
+    apply_english_blocklist: bool,
+) -> TextClass {
     if raw.trim().is_empty() || is_punctuation_only(raw) {
         return TextClass::Hard;
     }
 
-    if is_hard_nonspeech_tag(normalized) || is_caption_attribution(normalized) {
+    if apply_english_blocklist
+        && (is_hard_nonspeech_tag(normalized) || is_caption_attribution(normalized))
+    {
         return TextClass::Hard;
     }
 
-    if is_soft_artifact(normalized) || is_bare_domain(normalized) {
+    if apply_english_blocklist && (is_soft_artifact(normalized) || is_bare_domain(normalized)) {
         return TextClass::Soft;
     }
 
     TextClass::Normal
+}
+
+#[cfg(test)]
+fn classify_text(normalized: &str, raw: &str) -> TextClass {
+    classify_text_for_language(normalized, raw, true)
 }
 
 fn normalize_text(text: &str) -> String {
@@ -714,6 +732,16 @@ mod tests {
         context: Option<&'a ContextWindow>,
         is_final: bool,
     ) -> StageContext<'a> {
+        ctx_for_language(diagnostics, vad_probabilities, context, is_final, "en")
+    }
+
+    fn ctx_for_language<'a>(
+        diagnostics: &'a [SegmentDiagnostics],
+        vad_probabilities: &'a [f32],
+        context: Option<&'a ContextWindow>,
+        is_final: bool,
+        language: &'a str,
+    ) -> StageContext<'a> {
         let runtime = Box::leak(Box::new(
             tokio::runtime::Builder::new_current_thread()
                 .enable_all()
@@ -727,6 +755,7 @@ mod tests {
             context,
             family_capabilities: &CAPS,
             is_final,
+            language,
             pause_ms_before_utterance: None,
             segment_diagnostics: diagnostics,
             stage_enabled: &ENABLEMENT,
@@ -734,6 +763,29 @@ mod tests {
             vad_probabilities,
             voice_activity: &VOICE,
         }
+    }
+
+    #[test]
+    fn non_english_transcripts_bypass_english_phrase_and_speaker_rules() {
+        let diagnostics = [SegmentDiagnostics {
+            avg_logprob: Some(-1.2),
+            no_speech_prob: Some(0.72),
+            token_count: Some(2),
+            decode_reached_eos: None,
+        }];
+        let context = ctx_for_language(&diagnostics, &[], None, true, "ja");
+
+        let result = HallucinationFilterStage.process(&transcript("Thank you."), &context);
+        assert!(matches!(
+            result,
+            StageProcess::Skipped { reason, .. } if reason == "no_hallucinations"
+        ));
+
+        let result = HallucinationFilterStage.process(&transcript("Taro: こんにちは"), &context);
+        assert!(matches!(
+            result,
+            StageProcess::Skipped { reason, .. } if reason == "no_hallucinations"
+        ));
     }
 
     static CAPS: ModelFamilyCapabilities = ModelFamilyCapabilities {
@@ -1284,6 +1336,7 @@ mod tests {
             context: None,
             family_capabilities: &CAPS,
             is_final: true,
+            language: "en",
             pause_ms_before_utterance: None,
             segment_diagnostics: &[],
             stage_enabled: &OFF,

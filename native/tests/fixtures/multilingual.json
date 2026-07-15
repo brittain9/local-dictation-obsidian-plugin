@@ -1,0 +1,71 @@
+{
+  "schemaVersion": 1,
+  "generator": {
+    "engine": "eSpeak NG 1.52.0",
+    "resampler": "FFmpeg PCM s16le, 16 kHz mono",
+    "purpose": "Deterministic multilingual integration regression floor; not a native-speaker quality corpus"
+  },
+  "fixtures": [
+    {
+      "language": "es",
+      "voice": "es",
+      "speed": 145,
+      "audioPath": "audio/es-espeak-local-privacy.wav",
+      "sha256": "67c9702c53f8f198139c328c789a4c6d8baded439e8ca8bd7e8aa44bbb7bdf33",
+      "reference": "La tecnología local protege la privacidad y convierte la voz en texto sin enviar datos a internet."
+    },
+    {
+      "language": "de",
+      "voice": "de",
+      "speed": 145,
+      "audioPath": "audio/de-espeak-local-privacy.wav",
+      "sha256": "760ce3f26bc51007c70212a4cb5c74c2ce01e19a8a921dd7d2a7642af7ba3670",
+      "reference": "Lokale Spracherkennung schützt die Privatsphäre und wandelt Sprache in Text um, ohne Daten an das Internet zu senden."
+    },
+    {
+      "language": "fr",
+      "voice": "fr",
+      "speed": 145,
+      "audioPath": "audio/fr-espeak-local-privacy.wav",
+      "sha256": "089d17b4ae3a14d4240c2745680e30d36d25f3cfebc1f096ff569c47bf079b87",
+      "reference": "La reconnaissance vocale locale protège la vie privée et convertit la voix en texte sans envoyer de données sur Internet."
+    },
+    {
+      "language": "pt",
+      "voice": "pt",
+      "speed": 145,
+      "audioPath": "audio/pt-espeak-local-privacy.wav",
+      "sha256": "0c0ae4480d6dd77cd8469b668c7dc2e97a2995e917257fa93749bcf52c1d2f7f",
+      "reference": "O reconhecimento de voz local protege a privacidade e converte a fala em texto sem enviar dados para a internet."
+    },
+    {
+      "language": "it",
+      "voice": "it",
+      "speed": 145,
+      "audioPath": "audio/it-espeak-local-privacy.wav",
+      "sha256": "7e582400151754f30947ee09c0b079262b92bd5e264e140e589cf4fa1340957d",
+      "reference": "Il riconoscimento vocale locale protegge la privacy e converte la voce in testo senza inviare dati a internet."
+    },
+    {
+      "language": "nl",
+      "voice": "nl",
+      "speed": 145,
+      "audioPath": "audio/nl-espeak-local-privacy.wav",
+      "sha256": "980007c7e5435ee97fe02bbcb328ce2b8caa4f18c42e00ec35f3a4446b58ce77",
+      "reference": "Lokale spraakherkenning beschermt de privacy en zet spraak om in tekst zonder gegevens naar internet te sturen."
+    },
+    {
+      "language": "ja",
+      "voice": "ja",
+      "speed": 135,
+      "audioPath": "audio/ja-espeak-local-privacy.wav",
+      "sha256": "9580ae210692a9c24d6bf18418f4b41c382c38873296b7fbe8baf60851c41b87",
+      "reference": "ローカル音声認識はプライバシーを守り、音声をインターネットに送信せずにテキストへ変換します。"
+    }
+  ],
+  "englishRegression": {
+    "audioPath": "audio/7021-79740-0000.wav",
+    "manifest": "audio/manifest.json",
+    "fixtureId": "7021-79740-0000"
+  }
+}

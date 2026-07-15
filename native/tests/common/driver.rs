@@ -24,8 +24,8 @@ use local_dictation_sidecar::app::AppState;
 use local_dictation_sidecar::catalog::ModelCatalog;
 use local_dictation_sidecar::engine::{ModelFamilyId, RuntimeId};
 use local_dictation_sidecar::protocol::{
-    AccelerationPreference, AudioFrame, Command, Event, ListeningMode, SelectedModel,
-    encode_audio_frame_envelope,
+    AccelerationPreference, AudioFrame, Command, ContextWindow, Event, ListeningMode,
+    SelectedModel, encode_audio_frame_envelope,
 };
 use local_dictation_sidecar::session::SpeakingStyle;
 use uuid::Uuid;
@@ -101,7 +101,40 @@ pub fn transcribe_in_process(
     frames: &[Vec<u8>],
     style: SpeakingStyle,
 ) -> TranscriptionOutcome {
-    run_in_process(whisper_selection(model_path), frames, style, false)
+    transcribe_in_process_language(model_path, frames, style, "en")
+}
+
+pub fn transcribe_in_process_language(
+    model_path: &Path,
+    frames: &[Vec<u8>],
+    style: SpeakingStyle,
+    language: &str,
+) -> TranscriptionOutcome {
+    run_in_process(
+        whisper_selection(model_path),
+        frames,
+        style,
+        false,
+        language,
+        None,
+    )
+}
+
+pub fn transcribe_in_process_language_with_context(
+    model_path: &Path,
+    frames: &[Vec<u8>],
+    style: SpeakingStyle,
+    language: &str,
+    context: ContextWindow,
+) -> TranscriptionOutcome {
+    run_in_process(
+        whisper_selection(model_path),
+        frames,
+        style,
+        false,
+        language,
+        Some(context),
+    )
 }
 
 /// Like [`transcribe_in_process`] but with diarization on, so each utterance in
@@ -111,7 +144,14 @@ pub fn diarize_in_process(
     frames: &[Vec<u8>],
     style: SpeakingStyle,
 ) -> TranscriptionOutcome {
-    run_in_process(whisper_selection(model_path), frames, style, true)
+    run_in_process(
+        whisper_selection(model_path),
+        frames,
+        style,
+        true,
+        "en",
+        None,
+    )
 }
 
 fn run_in_process(
@@ -119,6 +159,8 @@ fn run_in_process(
     frames: &[Vec<u8>],
     style: SpeakingStyle,
     diarization_enabled: bool,
+    language: &str,
+    context: Option<ContextWindow>,
 ) -> TranscriptionOutcome {
     let catalog = ModelCatalog::load_bundled().expect("bundled catalog should load");
     let mut app = AppState::new("e2e-test", catalog);
@@ -130,25 +172,26 @@ fn run_in_process(
         model_selection,
         style,
         diarization_enabled,
+        language,
     ));
-    apply_events(&mut app, events, &mut outcome);
+    apply_events(&mut app, events, &mut outcome, context.as_ref());
 
     for frame in frames {
         let events = app.handle_audio_frame(AudioFrame {
             frame_bytes: frame.clone(),
             session_id: session_id.clone(),
         });
-        apply_events(&mut app, events, &mut outcome);
+        apply_events(&mut app, events, &mut outcome, context.as_ref());
         // Pump async worker output between frames so the engine's context
         // request is answered promptly and the worker queue never wedges.
         let drained = app.drain_pending_outputs();
-        apply_events(&mut app, drained, &mut outcome);
+        apply_events(&mut app, drained, &mut outcome, context.as_ref());
     }
 
     let (_flow, events) = app.handle_command(Command::StopSession {
         session_id: session_id.clone(),
     });
-    apply_events(&mut app, events, &mut outcome);
+    apply_events(&mut app, events, &mut outcome, context.as_ref());
 
     let deadline = Instant::now() + DRIVE_TIMEOUT;
     while !outcome.stopped && Instant::now() < deadline {
@@ -157,13 +200,21 @@ fn run_in_process(
             thread::sleep(POLL_INTERVAL);
             continue;
         }
-        apply_events(&mut app, events, &mut outcome);
+        apply_events(&mut app, events, &mut outcome, context.as_ref());
     }
 
     outcome
 }
 
 pub fn stream_in_process(model: SelectedModel, frames: &[Vec<u8>]) -> StreamingOutcome {
+    stream_in_process_language(model, frames, "en")
+}
+
+pub fn stream_in_process_language(
+    model: SelectedModel,
+    frames: &[Vec<u8>],
+    language: &str,
+) -> StreamingOutcome {
     let catalog = ModelCatalog::load_bundled().expect("bundled catalog should load");
     let mut app = AppState::new("streaming-e2e", catalog);
     let session_id = Uuid::new_v4().to_string();
@@ -174,6 +225,7 @@ pub fn stream_in_process(model: SelectedModel, frames: &[Vec<u8>]) -> StreamingO
         model,
         SpeakingStyle::Patient,
         false,
+        language,
     ));
     apply_streaming_events(&mut app, events, &mut outcome);
 
@@ -214,16 +266,21 @@ pub fn stream_in_process(model: SelectedModel, frames: &[Vec<u8>]) -> StreamingO
     outcome
 }
 
-fn apply_events(app: &mut AppState, events: Vec<Event>, outcome: &mut TranscriptionOutcome) {
+fn apply_events(
+    app: &mut AppState,
+    events: Vec<Event>,
+    outcome: &mut TranscriptionOutcome,
+    context: Option<&ContextWindow>,
+) {
     for event in events {
         match event {
             Event::ContextRequest { correlation_id, .. } => {
                 // Answer with no context; we only need the worker to proceed.
                 let (_flow, more) = app.handle_command(Command::ContextResponse {
                     correlation_id,
-                    context: None,
+                    context: context.cloned(),
                 });
-                apply_events(app, more, outcome);
+                apply_events(app, more, outcome, context);
             }
             Event::TranscriptReady {
                 text,
@@ -300,6 +357,7 @@ fn start_session_command(
     model_selection: SelectedModel,
     style: SpeakingStyle,
     diarization_enabled: bool,
+    language: &str,
 ) -> Command {
     Command::StartSession {
         acceleration_preference: AccelerationPreference::CpuOnly,
@@ -307,7 +365,7 @@ fn start_session_command(
         diarization_enabled,
         diarization_max_speakers: None,
         include_system_audio: false,
-        language: "en".to_string(),
+        language: language.to_string(),
         mode: ListeningMode::AlwaysOn,
         model_selection,
         model_store_path_override: None,

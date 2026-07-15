@@ -9,23 +9,13 @@ mod common;
 
 use common::manifest::Corpus;
 use common::model::require_nemotron_model;
-use common::text::{missing_anchors, word_error_rate};
+use common::text::{joined_text, missing_anchors, word_error_rate};
 use common::{audio, driver};
 use local_dictation_sidecar::adapters::nemotron_asr::NemotronAsrAdapter;
 use local_dictation_sidecar::engine::traits::ModelFamilyAdapter;
 use local_dictation_sidecar::engine::{ModelFamilyId, RuntimeId};
 use local_dictation_sidecar::protocol::SelectedModel;
-use local_dictation_sidecar::transcription::{EngineTranscriptOutput, GpuConfig};
-
-fn joined_text(output: &EngineTranscriptOutput) -> String {
-    output
-        .segments
-        .iter()
-        .map(|segment| segment.text.trim())
-        .filter(|text| !text.is_empty())
-        .collect::<Vec<_>>()
-        .join(" ")
-}
+use local_dictation_sidecar::transcription::GpuConfig;
 
 fn selection(encoder: &std::path::Path) -> SelectedModel {
     SelectedModel::ExternalFile {

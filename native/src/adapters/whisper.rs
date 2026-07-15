@@ -1,4 +1,5 @@
 use std::path::Path;
+use std::sync::LazyLock;
 
 use whisper_rs::{FullParams, SamplingStrategy, WhisperContext, WhisperContextParameters};
 
@@ -9,22 +10,33 @@ use crate::engine::traits::{LoadedModel, ModelFamilyAdapter};
 use crate::protocol::{TimestampGranularity, TimestampSource, TranscriptSegment, TranscriptWord};
 use crate::transcription::{
     EngineTranscriptOutput, GpuConfig, SegmentDiagnostics, TranscriptionError,
-    TranscriptionRequest, validate_audio_samples, validate_language, validate_model_path,
+    TranscriptionRequest, VERIFIED_MULTILINGUAL_LANGUAGE_TAGS, validate_audio_samples,
+    validate_model_path,
 };
 
 #[derive(Default)]
 pub struct WhisperAdapter;
 
-const CAPABILITIES: ModelFamilyCapabilities = ModelFamilyCapabilities {
-    supports_segment_timestamps: true,
-    supports_word_timestamps: true,
-    supports_initial_prompt: true,
-    supports_streaming: false,
-    supports_language_selection: false,
-    supported_languages: LanguageSupport::EnglishOnly,
-    max_audio_duration_secs: None,
-    produces_punctuation: true,
-};
+static CAPABILITIES: LazyLock<ModelFamilyCapabilities> =
+    LazyLock::new(|| ModelFamilyCapabilities {
+        supports_segment_timestamps: true,
+        supports_word_timestamps: true,
+        supports_initial_prompt: true,
+        supports_streaming: false,
+        supports_language_selection: true,
+        supported_languages: verified_multilingual_language_support(),
+        max_audio_duration_secs: None,
+        produces_punctuation: true,
+    });
+
+fn verified_multilingual_language_support() -> LanguageSupport {
+    LanguageSupport::List {
+        tags: VERIFIED_MULTILINGUAL_LANGUAGE_TAGS
+            .iter()
+            .map(|tag| (*tag).to_string())
+            .collect(),
+    }
+}
 
 impl ModelFamilyAdapter for WhisperAdapter {
     fn runtime_id(&self) -> RuntimeId {
@@ -45,6 +57,21 @@ impl ModelFamilyAdapter for WhisperAdapter {
         Ok(())
     }
 
+    fn model_language_support(&self, path: &Path) -> Result<LanguageSupport, TranscriptionError> {
+        validate_model_path(path)?;
+        let context = load_whisper_context(path, &GpuConfig { use_gpu: false })?;
+        Ok(language_support_for_context(&context))
+    }
+
+    fn probe_model_and_language_support(
+        &self,
+        path: &Path,
+    ) -> Result<LanguageSupport, TranscriptionError> {
+        validate_model_path(path)?;
+        let context = load_whisper_context(path, &GpuConfig { use_gpu: false })?;
+        Ok(language_support_for_context(&context))
+    }
+
     fn load(
         &self,
         path: &Path,
@@ -52,12 +79,25 @@ impl ModelFamilyAdapter for WhisperAdapter {
     ) -> Result<Box<dyn LoadedModel>, TranscriptionError> {
         validate_model_path(path)?;
         let context = load_whisper_context(path, &gpu)?;
-        Ok(Box::new(LoadedWhisperModel { context }))
+        let is_multilingual = context.is_multilingual();
+        Ok(Box::new(LoadedWhisperModel {
+            context,
+            is_multilingual,
+        }))
+    }
+}
+
+fn language_support_for_context(context: &WhisperContext) -> LanguageSupport {
+    if context.is_multilingual() {
+        verified_multilingual_language_support()
+    } else {
+        LanguageSupport::EnglishOnly
     }
 }
 
 pub struct LoadedWhisperModel {
     context: WhisperContext,
+    is_multilingual: bool,
 }
 
 impl LoadedModel for LoadedWhisperModel {
@@ -65,7 +105,18 @@ impl LoadedModel for LoadedWhisperModel {
         &mut self,
         request: &TranscriptionRequest,
     ) -> Result<EngineTranscriptOutput, TranscriptionError> {
-        validate_language(&request.language)?;
+        if !VERIFIED_MULTILINGUAL_LANGUAGE_TAGS.contains(&request.language.as_str()) {
+            return Err(TranscriptionError::unsupported_language(
+                &request.language,
+                "This release has not verified that language with Whisper.",
+            ));
+        }
+        if request.language != "en" && !self.is_multilingual {
+            return Err(TranscriptionError::unsupported_language(
+                &request.language,
+                "The selected Whisper model contains English-only weights.",
+            ));
+        }
         validate_audio_samples(&request.audio_samples)?;
 
         let mut state = self.context.create_state().map_err(|error| {
@@ -77,7 +128,7 @@ impl LoadedModel for LoadedWhisperModel {
         let mut params = FullParams::new(SamplingStrategy::Greedy { best_of: 5 });
 
         params.set_n_threads(recommended_thread_count(request.gpu_config.use_gpu));
-        params.set_language(Some(&request.language));
+        params.set_language((request.language != "auto").then_some(request.language.as_str()));
         params.set_translate(false);
         params.set_print_special(false);
         params.set_print_progress(false);

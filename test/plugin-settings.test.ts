@@ -36,7 +36,13 @@ describe('resolvePluginSettings', () => {
   });
 
   it('defaults missing schemaVersion to the current settings schema', () => {
-    expect(resolvePluginSettings({}).schemaVersion).toBe(2);
+    expect(resolvePluginSettings({}).schemaVersion).toBe(3);
+  });
+
+  it('migrates missing or invalid dictation language to English', () => {
+    expect(resolvePluginSettings({}).dictationLanguage).toBe('en');
+    expect(resolvePluginSettings({ dictationLanguage: 'ja' }).dictationLanguage).toBe('ja');
+    expect(resolvePluginSettings({ dictationLanguage: 'xx' }).dictationLanguage).toBe('en');
   });
 
   it('enables LLM capabilities but keeps transformation off by default', () => {
@@ -252,9 +258,18 @@ describe('resolvePluginSettings', () => {
     };
 
     expect(
-      resolvePluginSettings({ selectedModelCapabilitiesSnapshot: { capabilities, selection } })
-        .selectedModelCapabilitiesSnapshot,
+      resolvePluginSettings({
+        schemaVersion: 3,
+        selectedModelCapabilitiesSnapshot: { capabilities, selection },
+      }).selectedModelCapabilitiesSnapshot,
     ).toEqual({ capabilities, selection });
+
+    expect(
+      resolvePluginSettings({
+        schemaVersion: 2,
+        selectedModelCapabilitiesSnapshot: { capabilities, selection },
+      }).selectedModelCapabilitiesSnapshot,
+    ).toBeNull();
   });
 
   it.each([

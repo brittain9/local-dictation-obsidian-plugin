@@ -2,22 +2,42 @@
 
 ## Status and scope
 
-Local Dictation is English-only today. This document defines the staged path to
-first-class multilingual support; it does not authorize a language selector or
-new catalog entries before the corresponding model and adapter paths are
-verified end to end.
+Implementation status: the first verified matrix is implemented for English,
+Spanish, German, French, Portuguese, Italian, Dutch, and Japanese on Nemotron
+3.5 ASR and Whisper Large V3 Turbo, including explicit automatic detection.
+Cohere Transcribe, Moonshine, and `.en` Whisper artifacts remain English-only.
+Plugin UI localization remains out of scope.
 
-The current constraint exists at every layer:
+## Language policy
 
-- Every managed model in `native/catalog.json` has `languageTags: ["en"]`.
-- `StartSessionCommand.language` is the literal type `'en'`, and the plugin sends
+- Persisted values use the base tags shown in the settings UI. Regional tags
+  such as `pt-BR`, `fr-CA`, or `es-MX` are not accepted yet; users select the
+  corresponding base language. This avoids claiming dialect-specific quality
+  without separate evidence.
+- Automatic detection chooses one language for each utterance. Continuous
+  code-switching within an utterance is not a supported quality guarantee;
+  start a new utterance or select the dominant language for predictable output.
+- Manual selection is recommended when the language is known. In `auto` mode
+  the engines do not currently return a normalized detected-language tag to the
+  post-processing pipeline, so only language-neutral hallucination rules run.
+  This prevents English cleanup rules from damaging non-English text at the
+  cost of less aggressive cleanup for automatically detected English.
+- The committed synthetic corpus covers every enabled base language as a
+  deterministic regression floor. Release validation still includes human
+  review with native-speaker recordings before broadening the matrix.
+
+The former English-only constraint existed at every layer. This migration
+replaced the following behaviors:
+
+- Every managed model in `native/catalog.json` had `languageTags: ["en"]`.
+- `StartSessionCommand.language` was the literal type `'en'`, and the plugin sent
   that value from `DictationSessionController`.
-- `App::resolve_runtime_model_path` rejects any language other than `en` before
+- `App::resolve_runtime_model_path` rejected any language other than `en` before
   resolving the selected model. Batch adapters repeat the check through
   `validate_language`.
-- Whisper, Cohere Transcribe, and Moonshine all advertise
+- Whisper, Cohere Transcribe, and Moonshine all advertised
   `LanguageSupport::EnglishOnly` and no language selection.
-- Cohere decoding currently inserts the fixed `<|en|>` token. The current
+- Cohere decoding still inserts the fixed `<|en|>` token. The current
   Moonshine streaming assets are English-only.
 
 An upstream family supporting several languages therefore does not mean the

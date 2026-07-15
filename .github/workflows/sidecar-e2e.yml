@@ -101,3 +101,39 @@ jobs:
         env:
           STT_TEST_MODEL_DIR: ${{ env.MODEL_CACHE_DIR }}
         run: npm run test:sidecar:nemotron:e2e
+
+  multilingual-e2e:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup Node.js + npm
+        uses: ./.github/actions/setup-node-npm
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'true'
+          upgrade-npm: 'true'
+
+      - name: Setup Rust
+        uses: ./.github/actions/setup-sidecar-rust
+        with:
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
+          components: rustfmt, clippy
+          cache-workspaces: native -> target
+          cache-shared-key: multilingual-e2e
+
+      - name: Cache pinned multilingual models
+        uses: actions/cache@v6
+        with:
+          path: ${{ env.MODEL_CACHE_DIR }}
+          key: multilingual-asr-${{ hashFiles('native/catalog.json') }}
+
+      - name: Install JavaScript dependencies
+        run: npm ci
+
+      - name: Run multilingual product-path quality suite
+        env:
+          STT_TEST_MODEL_DIR: ${{ env.MODEL_CACHE_DIR }}
+        run: npm run test:sidecar:multilingual:e2e

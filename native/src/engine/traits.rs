@@ -2,10 +2,10 @@ use std::path::Path;
 use std::time::Duration;
 
 use crate::engine::capabilities::{
-    ModelFamilyCapabilities, ModelFamilyId, RuntimeCapabilities, RuntimeId,
+    LanguageSupport, ModelFamilyCapabilities, ModelFamilyId, RuntimeCapabilities, RuntimeId,
 };
 use crate::transcription::{
-    EngineTranscriptOutput, GpuConfig, TranscriptionError, TranscriptionRequest,
+    EngineTranscriptOutput, GpuConfig, TranscriptionError, TranscriptionRequest, validate_language,
 };
 
 /// Execution-framework layer. Owns accelerator registration/probe and the
@@ -23,6 +23,16 @@ pub trait ModelFamilyAdapter: Send + Sync {
     fn capabilities(&self) -> &ModelFamilyCapabilities;
 
     fn probe_model(&self, path: &Path) -> Result<(), TranscriptionError>;
+    fn model_language_support(&self, _path: &Path) -> Result<LanguageSupport, TranscriptionError> {
+        Ok(self.capabilities().supported_languages.clone())
+    }
+    fn probe_model_and_language_support(
+        &self,
+        path: &Path,
+    ) -> Result<LanguageSupport, TranscriptionError> {
+        self.probe_model(path)?;
+        self.model_language_support(path)
+    }
     fn load(&self, path: &Path, gpu: GpuConfig)
     -> Result<Box<dyn LoadedModel>, TranscriptionError>;
 
@@ -62,6 +72,9 @@ pub trait StreamingModel: Send {
     }
 
     fn accept_audio(&mut self, samples: &[i16]) -> Result<(), TranscriptionError>;
+    fn set_language(&mut self, language: &str) -> Result<(), TranscriptionError> {
+        validate_language(language)
+    }
     fn partial(&mut self) -> Result<EngineTranscriptOutput, TranscriptionError>;
     fn finalize_utterance(&mut self) -> Result<EngineTranscriptOutput, TranscriptionError>;
     fn reset_utterance(&mut self);

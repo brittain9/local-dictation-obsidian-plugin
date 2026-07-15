@@ -21,6 +21,8 @@ mod common;
 
 #[cfg(feature = "engine-whisper")]
 use common::driver;
+#[cfg(feature = "engine-nemotron-asr")]
+use common::text::joined_text;
 use common::{audio, manifest::Corpus, model};
 #[cfg(feature = "engine-nemotron-asr")]
 use local_dictation_sidecar::adapters::nemotron_asr::NemotronAsrAdapter;
@@ -117,17 +119,6 @@ fn transcribe_nemotron(model: &mut dyn StreamingModel, samples: &[i16]) -> Engin
     model
         .finalize_utterance()
         .expect("finalize benchmark utterance")
-}
-
-#[cfg(feature = "engine-nemotron-asr")]
-fn joined_text(output: &EngineTranscriptOutput) -> String {
-    output
-        .segments
-        .iter()
-        .map(|segment| segment.text.trim())
-        .filter(|text| !text.is_empty())
-        .collect::<Vec<_>>()
-        .join(" ")
 }
 
 fn all_benchmarks(criterion: &mut Criterion) {

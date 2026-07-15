@@ -27,7 +27,7 @@ export const EXTERNAL_FILE_ENGINES: readonly ExternalFileEngineOption[] = [
     requirements: [
       'Select encoder.int8.onnx from the pinned Nemotron 3.5 ASR 560 ms int8 export.',
       'The same directory must contain decoder.int8.onnx, joiner.int8.onnx, and tokens.txt.',
-      'Other chunk sizes, ORT GenAI exports, and automatic language detection are not compatible with Stage A.',
+      'Other chunk sizes and ORT GenAI exports are not compatible with this adapter.',
     ],
     selection: { familyId: 'nemotron_asr', runtimeId: 'onnx_runtime' },
   },
@@ -50,7 +50,7 @@ export const EXTERNAL_FILE_ENGINES: readonly ExternalFileEngineOption[] = [
     requirements: [
       'Select one whisper.cpp-compatible GGML or GGUF model file.',
       'The loader validates the file contents; a filename extension alone does not establish compatibility.',
-      'Local Dictation currently runs Whisper models in English.',
+      'Whisper files with .en weights are English-only; multilingual weights expose the verified language selector and automatic detection.',
     ],
     selection: DEFAULT_EXTERNAL_FILE_ENGINE_SELECTION,
   },

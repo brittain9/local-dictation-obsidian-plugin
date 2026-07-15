@@ -249,8 +249,29 @@ describe('command serialization', () => {
     expect(payload.diarizationEnabled).toBe(true);
     expect(payload.diarizationMaxSpeakers).toBe(2);
     expect(payload.includeSystemAudio).toBe(true);
+    expect(payload.language).toBe('en');
     expect(payload).not.toHaveProperty('audioSource');
     expect(payload.sessionId).toBe('session-gpu');
+  });
+
+  it('serializes an explicit multilingual dictation language', () => {
+    const frame = encodeJsonFrame(
+      createStartSessionCommand({
+        accelerationPreference: 'cpu_only',
+        detailedTimestampsEnabled: false,
+        diarizationEnabled: false,
+        diarizationMaxSpeakers: null,
+        includeSystemAudio: false,
+        language: 'ja',
+        mode: 'one_sentence',
+        modelSelection: externalModelSelection(),
+        sessionStartUnixMs: 1_700_000_000_000,
+        sessionId: 'session-ja',
+        speakingStyle: 'patient',
+      }),
+    );
+
+    expect((readPayload(frame) as Record<string, unknown>).language).toBe('ja');
   });
 
   it('encodes session-addressed lifecycle commands with sessionId echoed in the payload', () => {

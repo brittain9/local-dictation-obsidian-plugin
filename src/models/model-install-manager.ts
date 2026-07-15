@@ -1,3 +1,8 @@
+import {
+  type DictationLanguage,
+  dictationLanguageLabel,
+  languageSupportIncludes,
+} from '../language/dictation-language';
 import type { PluginSettings } from '../settings/plugin-settings';
 import type { PluginLogger } from '../shared/plugin-logger';
 import type {
@@ -212,8 +217,19 @@ export class ModelInstallManager {
           persistedSelection.runtimeId,
           persistedSelection.familyId,
         );
+        const refreshedCapabilities =
+          currentCapabilities === null
+            ? snapshot.capabilities
+            : {
+                ...currentCapabilities,
+                family: {
+                  ...currentCapabilities.family,
+                  supportedLanguages: snapshot.capabilities.family.supportedLanguages,
+                  supportsLanguageSelection: snapshot.capabilities.family.supportsLanguageSelection,
+                },
+              };
         this.selectedModelCapabilities = {
-          capabilities: currentCapabilities ?? snapshot.capabilities,
+          capabilities: refreshedCapabilities,
           selection: persistedSelection,
           status: 'ready',
         };
@@ -270,6 +286,10 @@ export class ModelInstallManager {
     };
   }
 
+  getDictationLanguage(): DictationLanguage {
+    return this.deps.getSettings().dictationLanguage;
+  }
+
   // -----------------------------------------------------------------------
   // Install operations
   // -----------------------------------------------------------------------
@@ -277,6 +297,13 @@ export class ModelInstallManager {
   async install(selection: CatalogModelSelection): Promise<ModelInstallUpdateEvent> {
     if (this.activeInstall !== null) {
       throw new Error('Another model is already being installed.');
+    }
+    const model = this.catalog.models.find((candidate) =>
+      matchesModelTriple(candidate, selection.runtimeId, selection.familyId, selection.modelId),
+    );
+    const language = this.getDictationLanguage();
+    if (model !== undefined && !model.languageTags.includes(language)) {
+      throw incompatibleLanguageError(model.displayName, language);
     }
 
     this.deps.logger?.debug(
@@ -398,6 +425,16 @@ export class ModelInstallManager {
           : selection.filePath
       }`,
     );
+    const currentLanguage = this.deps.getSettings().dictationLanguage;
+    const languageSupport = probeResult.mergedCapabilities?.family.supportedLanguages ?? {
+      kind: 'unknown' as const,
+    };
+    if (!languageSupportIncludes(languageSupport, currentLanguage)) {
+      const displayName =
+        probeResult.displayName ??
+        (selection.kind === 'catalog_model' ? selection.modelId : selection.filePath);
+      throw incompatibleLanguageError(displayName, currentLanguage);
+    }
     await this.updateSettings({ selectedModel: selection });
     await this.applyProbeResultToCapabilities(selection, probeResult);
     return probeResult;
@@ -664,4 +701,10 @@ export class ModelInstallManager {
       listener();
     }
   }
+}
+
+function incompatibleLanguageError(modelName: string, language: DictationLanguage): Error {
+  return new Error(
+    `${modelName} does not support ${dictationLanguageLabel(language)}. Change Dictation language before installing or selecting this model.`,
+  );
 }

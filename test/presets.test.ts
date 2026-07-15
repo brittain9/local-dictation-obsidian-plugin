@@ -24,6 +24,13 @@ describe('LLM presets', () => {
     ]);
   });
 
+  it('forbids implicit translation in every built-in transform', () => {
+    for (const preset of LLM_BUILTIN_PRESETS) {
+      expect(preset.prompt).toContain('original language');
+      expect(preset.prompt).toContain('Never translate');
+    }
+  });
+
   it('tldr and action-items are batch-only additive presets', () => {
     const tldr = getLlmBuiltinPreset('tldr');
     expect(tldr.timing).toBe('batch');

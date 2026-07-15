@@ -8,7 +8,7 @@ use uuid::Uuid;
 
 use crate::audio_mixer::{AudioMixer, AudioMixerError, MixedAudioFrame};
 use crate::catalog::ModelCatalog;
-use crate::engine::capabilities::{AcceleratorId, ModelFamilyId, RuntimeId};
+use crate::engine::capabilities::{AcceleratorId, LanguageSupport, ModelFamilyId, RuntimeId};
 use crate::engine::registry::EngineRegistry;
 use crate::installer::{InstallRequest, ModelInstallManager, ModelProbe};
 use crate::model_store::{
@@ -106,6 +106,7 @@ struct ResolvedModelSelection {
     runtime_id: RuntimeId,
     family_id: ModelFamilyId,
     installed: bool,
+    language_support: LanguageSupport,
     model_id: Option<String>,
     resolved_path: PathBuf,
     selection: SelectedModel,
@@ -715,9 +716,17 @@ impl AppState {
     ) -> Event {
         match self.resolve_selected_model(&selection, model_store_path_override) {
             Ok(resolved_model) => {
-                let merged_capabilities = self
+                let mut merged_capabilities = self
                     .registry
                     .merged_capabilities(resolved_model.runtime_id, resolved_model.family_id);
+                if let Some(capabilities) = &mut merged_capabilities {
+                    capabilities.family.supports_language_selection = !matches!(
+                        resolved_model.language_support,
+                        LanguageSupport::EnglishOnly | LanguageSupport::Unknown
+                    );
+                    capabilities.family.supported_languages =
+                        resolved_model.language_support.clone();
+                }
                 Event::ModelProbeResult {
                     available: true,
                     details: None,
@@ -1252,16 +1261,8 @@ impl AppState {
         selection: &SelectedModel,
         model_store_path_override: Option<&str>,
     ) -> Result<ResolvedModelSelection, Box<Event>> {
-        if language != "en" {
-            return Err(Box::new(Event::Error {
-                code: "unsupported_language".to_string(),
-                details: Some(language.to_string()),
-                message: "Only English dictation is supported in this build.".to_string(),
-                session_id: None,
-            }));
-        }
-
-        self.resolve_selected_model(selection, model_store_path_override)
+        let resolved = self
+            .resolve_selected_model(selection, model_store_path_override)
             .map_err(|event| match *event {
                 Event::ModelProbeResult {
                     details,
@@ -1288,7 +1289,28 @@ impl AppState {
                     "Failed to resolve the selected model.",
                     None,
                 )),
-            })
+            })?;
+        if !language_supports(&resolved.language_support, language) {
+            let supported = match &resolved.language_support {
+                LanguageSupport::All => "all languages".to_string(),
+                LanguageSupport::List { tags } => tags.join(", "),
+                LanguageSupport::EnglishOnly => "en".to_string(),
+                LanguageSupport::Unknown => "en (safe default)".to_string(),
+            };
+            return Err(Box::new(Event::Error {
+                code: "unsupported_language".to_string(),
+                details: Some(format!(
+                    "model={}, selected={language}, supported={supported}",
+                    resolved.display_name
+                )),
+                message: format!(
+                    "{} does not support {language}. Choose one of: {supported}.",
+                    resolved.display_name
+                ),
+                session_id: None,
+            }));
+        }
+        Ok(resolved)
     }
 
     fn resolve_selected_model(
@@ -1364,8 +1386,9 @@ impl AppState {
                         },
                     )
                 })?;
-                self.registry
-                    .probe_model(runtime_id, family_id, &resolved_path)
+                let adapter_language_support = self
+                    .registry
+                    .probe_model_and_language_support(runtime_id, family_id, &resolved_path)
                     .map_err(|error| {
                         probe_error(
                             ModelProbeStatus::Invalid,
@@ -1379,6 +1402,26 @@ impl AppState {
                             },
                         )
                     })?;
+                if model
+                    .language_tags
+                    .iter()
+                    .any(|tag| !language_supports(&adapter_language_support, tag))
+                {
+                    return Err(probe_error(
+                        ModelProbeStatus::Invalid,
+                        "The model catalog language metadata does not match the installed model.",
+                        ProbeErrorFields {
+                            details: Some(format!(
+                                "catalog={:?}, adapter={adapter_language_support:?}",
+                                model.language_tags
+                            )),
+                            display_name: Some(model.display_name.clone()),
+                            installed: true,
+                            model_id: Some(model_id.clone()),
+                            resolved_path: Some(resolved_path.display().to_string()),
+                        },
+                    ));
+                }
                 let size_bytes = file_size(&resolved_path);
 
                 Ok(ResolvedModelSelection {
@@ -1386,6 +1429,9 @@ impl AppState {
                     runtime_id,
                     family_id,
                     installed: true,
+                    language_support: LanguageSupport::List {
+                        tags: model.language_tags,
+                    },
                     model_id: Some(model_id.clone()),
                     resolved_path,
                     selection: selection.clone(),
@@ -1417,8 +1463,9 @@ impl AppState {
                     ));
                 }
 
-                self.registry
-                    .probe_model(runtime_id, family_id, model_path)
+                let language_support = self
+                    .registry
+                    .probe_model_and_language_support(runtime_id, family_id, model_path)
                     .map_err(|error| {
                         let status = if error.code == "missing_model_file" {
                             ModelProbeStatus::Missing
@@ -1443,6 +1490,7 @@ impl AppState {
                     runtime_id,
                     family_id,
                     installed: false,
+                    language_support,
                     model_id: None,
                     resolved_path: model_path.to_path_buf(),
                     selection: selection.clone(),
@@ -1450,6 +1498,14 @@ impl AppState {
                 })
             }
         }
+    }
+}
+
+fn language_supports(support: &LanguageSupport, language: &str) -> bool {
+    match support {
+        LanguageSupport::All => true,
+        LanguageSupport::EnglishOnly | LanguageSupport::Unknown => language == "en",
+        LanguageSupport::List { tags } => tags.iter().any(|tag| tag == language),
     }
 }
 
@@ -2268,6 +2324,27 @@ mod tests {
         assert!(
             matches!(events.first(), Some(Event::Error { code, .. }) if code == "missing_model_file")
         );
+    }
+
+    #[test]
+    fn start_session_rejects_language_unsupported_by_the_exact_model() {
+        let model_file_path = create_model_file();
+        let mut command = start_session_command("session-1", &model_file_path);
+        let Command::StartSession { language, .. } = &mut command else {
+            panic!("expected start session command");
+        };
+        *language = "ja".to_string();
+
+        let (_, events) = test_app().handle_command(command);
+
+        assert!(matches!(
+            events.first(),
+            Some(Event::Error { code, details, .. })
+                if code == "unsupported_language"
+                    && details.as_deref().is_some_and(|value| {
+                        value.contains("selected=ja") && value.contains("supported=en")
+                    })
+        ));
     }
 
     #[test]
@@ -3566,4 +3643,21 @@ mod tests {
             }],
         }
     }
+}
+#[test]
+fn exact_language_support_never_promotes_english_only_models() {
+    assert!(language_supports(&LanguageSupport::EnglishOnly, "en"));
+    assert!(!language_supports(&LanguageSupport::EnglishOnly, "ja"));
+    assert!(language_supports(
+        &LanguageSupport::List {
+            tags: vec!["en".to_string(), "ja".to_string()],
+        },
+        "ja"
+    ));
+    assert!(!language_supports(
+        &LanguageSupport::List {
+            tags: vec!["en".to_string()],
+        },
+        "auto"
+    ));
 }

@@ -5,13 +5,27 @@
 //! a Word Error Rate budget plus a set of must-appear "anchor" words. Both are
 //! computed over a normalized token stream (lowercased, punctuation stripped).
 
-/// Normalize text into comparable word tokens: lowercase, drop everything that
-/// is not an ASCII alphanumeric or whitespace, then split on whitespace.
+use local_dictation_sidecar::transcription::EngineTranscriptOutput;
+
+/// User-visible transcript text, with empty engine segments omitted.
+pub fn joined_text(output: &EngineTranscriptOutput) -> String {
+    output
+        .segments
+        .iter()
+        .map(|segment| segment.text.trim())
+        .filter(|text| !text.is_empty())
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+/// Normalize text into comparable word tokens: lowercase, retain Unicode
+/// letters/numbers and whitespace, then split on whitespace.
 pub fn normalize(text: &str) -> Vec<String> {
-    text.chars()
-        .map(|c| {
-            if c.is_ascii_alphanumeric() || c.is_whitespace() {
-                c.to_ascii_lowercase()
+    text.to_lowercase()
+        .chars()
+        .map(|character| {
+            if character.is_alphanumeric() {
+                character
             } else {
                 ' '
             }
@@ -19,6 +33,23 @@ pub fn normalize(text: &str) -> Vec<String> {
         .collect::<String>()
         .split_whitespace()
         .map(str::to_owned)
+        .collect()
+}
+
+/// Character error rate for scripts whose words are not separated by spaces.
+pub fn character_error_rate(reference: &str, hypothesis: &str) -> f64 {
+    let reference = normalized_characters(reference);
+    let hypothesis = normalized_characters(hypothesis);
+    if reference.is_empty() {
+        return if hypothesis.is_empty() { 0.0 } else { 1.0 };
+    }
+    edit_distance(&reference, &hypothesis) as f64 / reference.len() as f64
+}
+
+fn normalized_characters(text: &str) -> Vec<char> {
+    text.to_lowercase()
+        .chars()
+        .filter(|character| character.is_alphanumeric())
         .collect()
 }
 
@@ -52,7 +83,7 @@ pub fn missing_anchors(hypothesis: &str, anchors: &[String]) -> Vec<String> {
 }
 
 /// Classic two-row Levenshtein over token slices.
-fn edit_distance(reference: &[String], hypothesis: &[String]) -> usize {
+fn edit_distance<T: PartialEq>(reference: &[T], hypothesis: &[T]) -> usize {
     let mut previous: Vec<usize> = (0..=hypothesis.len()).collect();
     let mut current = vec![0_usize; hypothesis.len() + 1];
 

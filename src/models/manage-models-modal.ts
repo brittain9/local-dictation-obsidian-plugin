@@ -1,6 +1,7 @@
 import type { App } from 'obsidian';
 import { Modal, Setting, setIcon } from 'obsidian';
 
+import { dictationLanguageLabel } from '../language/dictation-language';
 import { formatBytes } from '../shared/format-utils';
 import type { UserFeedback } from '../shared/user-feedback';
 import { resolveEngineCapabilities } from './capability-view';
@@ -253,6 +254,8 @@ export class ManageModelsModal extends Modal {
     const setting = new Setting(container);
     setting.settingEl.addClass('local-stt-model-row');
     setting.setName(row.model.displayName);
+    const selectedLanguage = this.deps.manager.getDictationLanguage();
+    const supportsSelectedLanguage = row.model.languageTags.includes(selectedLanguage);
 
     // Description: install progress when installing/canceling, tags + size otherwise.
     if (row.isInstalling || row.isCanceling) {
@@ -265,7 +268,15 @@ export class ManageModelsModal extends Modal {
         setting.setDesc(fragment);
       }
     } else {
-      setting.setDesc(this.buildTagsFragment(row.model));
+      const tags = this.buildTagsFragment(row.model);
+      if (!supportsSelectedLanguage) {
+        tags.append(
+          document.createTextNode(
+            ` · Does not support ${dictationLanguageLabel(selectedLanguage)}. Change Dictation language to install or use this model.`,
+          ),
+        );
+      }
+      setting.setDesc(tags);
     }
 
     // Action buttons based on allowedActions.
@@ -276,7 +287,7 @@ export class ManageModelsModal extends Modal {
             button
               .setCta()
               .setButtonText('Install')
-              .setDisabled(this.actionInProgress)
+              .setDisabled(this.actionInProgress || !supportsSelectedLanguage)
               .onClick(() => {
                 void this.runAction(
                   async () => {
@@ -298,7 +309,7 @@ export class ManageModelsModal extends Modal {
             button
               .setCta()
               .setButtonText('Use')
-              .setDisabled(this.actionInProgress)
+              .setDisabled(this.actionInProgress || !supportsSelectedLanguage)
               .onClick(() => {
                 void this.runAction(
                   async () => {

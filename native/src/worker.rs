@@ -202,8 +202,10 @@ fn load_session_resources(
         .ok_or_else(|| missing_adapter_error(metadata.runtime_id, metadata.family_id))?;
     let family_capabilities = adapter.capabilities().clone();
     let model = if family_capabilities.supports_streaming {
+        let mut model = adapter.load_streaming(&metadata.model_file_path, metadata.gpu_config)?;
+        model.set_language(&metadata.language)?;
         SessionModel::Streaming {
-            model: adapter.load_streaming(&metadata.model_file_path, metadata.gpu_config)?,
+            model,
             utterance: Box::new(None),
         }
     } else {
@@ -489,6 +491,7 @@ fn worker_main(
                             engine_output,
                             engine_duration_ms,
                             is_final: true,
+                            language: &session.metadata.language,
                             pause_ms_before_utterance,
                             vad_probabilities: &vad_probabilities,
                             voice_activity,
@@ -649,6 +652,7 @@ fn stream_audio(
             engine_output,
             engine_duration_ms,
             is_final: false,
+            language: &session.metadata.language,
             pause_ms_before_utterance: open.utterance.pause_ms_before_utterance,
             vad_probabilities: &open.utterance.vad_probabilities,
             voice_activity,
@@ -742,6 +746,7 @@ fn finalize_streaming_utterance(
             engine_output,
             engine_duration_ms,
             is_final: true,
+            language: &session.metadata.language,
             pause_ms_before_utterance,
             vad_probabilities: &vad_probabilities,
             voice_activity,
@@ -845,6 +850,7 @@ struct TranscriptAssembly<'a> {
     engine_output: EngineTranscriptOutput,
     engine_duration_ms: u64,
     is_final: bool,
+    language: &'a str,
     pause_ms_before_utterance: Option<u64>,
     vad_probabilities: &'a [f32],
     voice_activity: crate::audio_metadata::VoiceActivityEvidence,
@@ -1000,6 +1006,7 @@ fn assemble_transcript(input: TranscriptAssembly<'_>) -> Transcript {
         family_capabilities: input.family_capabilities,
         stage_enabled: input.stage_enablement,
         is_final: input.is_final,
+        language: input.language,
         tokio_runtime: input.tokio_runtime,
         cancel_rx: input.cancel_rx,
         pause_ms_before_utterance: input.pause_ms_before_utterance,
@@ -1993,6 +2000,7 @@ mod tests {
             engine_output: engine_output(),
             family_capabilities: &whisper_caps(),
             is_final: true,
+            language: "en",
             pause_ms_before_utterance: None,
             processors: &[],
             stage_enablement: &StageEnablement::default(),
@@ -2031,6 +2039,7 @@ mod tests {
             engine_output: engine_output(),
             family_capabilities: &whisper_caps(),
             is_final: true,
+            language: "en",
             pause_ms_before_utterance: None,
             processors: &processors,
             stage_enablement: &StageEnablement::default(),
@@ -2061,6 +2070,7 @@ mod tests {
             engine_output: engine_output(),
             family_capabilities: &whisper_caps(),
             is_final: true,
+            language: "en",
             pause_ms_before_utterance: Some(420),
             processors: &[],
             stage_enablement: &StageEnablement::default(),
@@ -2096,6 +2106,7 @@ mod tests {
             engine_output: engine_output(),
             family_capabilities: &whisper_caps(),
             is_final: true,
+            language: "en",
             pause_ms_before_utterance: Some(150),
             processors: &processors,
             stage_enablement: &StageEnablement::default(),
@@ -2129,6 +2140,7 @@ mod tests {
             engine_output: engine_output(),
             family_capabilities: &whisper_caps(),
             is_final: true,
+            language: "en",
             pause_ms_before_utterance: None,
             processors: &processors,
             stage_enablement: &StageEnablement::default(),
@@ -2157,6 +2169,7 @@ mod tests {
             engine_output: engine_output(),
             family_capabilities: &whisper_caps(),
             is_final: true,
+            language: "en",
             pause_ms_before_utterance: None,
             processors: &processors,
             stage_enablement: &StageEnablement::default(),

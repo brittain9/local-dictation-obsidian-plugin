@@ -183,8 +183,8 @@
       "modelId": "whisper_large_v3_turbo_q8_0",
       "collectionId": "english_cpu_first",
       "displayName": "Whisper Large V3 Turbo",
-      "summary": "Best accuracy with an architecture optimized for GPU acceleration.",
-      "languageTags": ["en"],
+      "summary": "Multilingual high-accuracy transcription with an architecture optimized for GPU acceleration.",
+      "languageTags": ["auto", "en", "es", "de", "fr", "pt", "it", "nl", "ja"],
       "uxTags": ["accuracy", "gpu"],
       "licenseLabel": "MIT",
       "licenseUrl": "https://raw.githubusercontent.com/ggml-org/whisper.cpp/master/LICENSE",
@@ -192,6 +192,7 @@
       "modelCardUrl": "https://github.com/ggml-org/whisper.cpp",
       "notes": [
         "Highest accuracy available. The Turbo architecture is faster than standard Large V3.",
+        "Supports automatic detection or explicit selection for the verified language list.",
         "CPU inference is slow — best paired with hardware acceleration."
       ],
       "artifacts": [
@@ -671,15 +672,15 @@
       "modelId": "nemotron_asr_0_6b_int8_streaming_560ms",
       "collectionId": "nemotron_asr_streaming",
       "displayName": "Nemotron 3.5 ASR 560 ms",
-      "summary": "NVIDIA's 0.6B multilingual RNNT forced to English (US), exported to int8 ONNX for cache-aware live transcription.",
-      "languageTags": ["en"],
+      "summary": "NVIDIA's 0.6B multilingual RNNT, exported to int8 ONNX for cache-aware live transcription in eight verified languages.",
+      "languageTags": ["auto", "en", "es", "de", "fr", "pt", "it", "nl", "ja"],
       "uxTags": ["streaming", "accuracy", "cpu", "experimental"],
       "licenseLabel": "OpenMDW-1.1",
       "licenseUrl": "https://openmdw.ai/license/1-1/",
       "sourceUrl": "https://huggingface.co/csukuangfj2/sherpa-onnx-nemotron-3.5-asr-streaming-0.6b-560ms-int8-2026-06-11/tree/ab43d895f5985b1bbab8b6eac8607fcdc05343f3",
       "modelCardUrl": "https://huggingface.co/nvidia/nemotron-3.5-asr-streaming-0.6b/tree/f3d333391852ba876df169dcc9ba902d25b6ab0b",
       "notes": [
-        "Stage A is English-only and always sends the pinned graph's en-US prompt index; language selection and auto-detection are not exposed.",
+        "Supports manual English, Spanish, German, French, Portuguese, Italian, Dutch, and Japanese selection, plus automatic detection.",
         "The four required artifacts total about 651 MiB and use the cache-aware 560 ms encoder contract.",
         "The derived model weights are licensed under OpenMDW-1.1, not this project's MIT license. Installing or using the model accepts those terms."
       ],
