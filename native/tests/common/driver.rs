@@ -77,6 +77,7 @@ pub struct StreamingRevision {
     pub revision: u32,
     pub text: String,
     pub processing_ms: u64,
+    pub utterance_duration_ms: u64,
 }
 
 #[derive(Debug, Default, Clone)]
@@ -264,6 +265,7 @@ fn apply_streaming_events(app: &mut AppState, events: Vec<Event>, outcome: &mut 
                 processing_duration_ms,
                 revision,
                 text,
+                utterance_duration_ms,
                 ..
             } => {
                 let text = text.trim().to_string();
@@ -276,6 +278,7 @@ fn apply_streaming_events(app: &mut AppState, events: Vec<Event>, outcome: &mut 
                         revision,
                         text,
                         processing_ms: processing_duration_ms,
+                        utterance_duration_ms,
                     });
                 }
             }

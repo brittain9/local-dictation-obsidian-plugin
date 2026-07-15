@@ -8,6 +8,8 @@ Two tiers of tests live here, on top of the per-module unit tests in `src/`:
 | `harness_unit.rs` | Unit (harness + fixtures) | no | yes |
 | `transcription_e2e.rs` | End-to-end accuracy (in-process) | yes | only with `--ignored` |
 | `sidecar_protocol_e2e.rs` | End-to-end contract (real binary, wire protocol) | yes | only with `--ignored` |
+| `nemotron_asr_e2e.rs` | Nemotron VAD/worker/revision quality | yes (651 MiB) | only with `--ignored` |
+| `nemotron_asr_tails.rs` | Nemotron arbitrary-finalize regression | yes (651 MiB) | only with `--ignored` |
 
 The end-to-end tier is the quality suite: it feeds known audio fixtures through
 the **full sidecar** and asserts the transcript. The benchmark in
@@ -48,26 +50,40 @@ cargo test --manifest-path native/Cargo.toml --release \
   --test transcription_e2e --test sidecar_protocol_e2e -- --ignored --nocapture
 ```
 
+Pinned Nemotron quality suite (downloads and SHA-verifies all four catalog
+artifacts on first run):
+
+```sh
+npm run test:sidecar:nemotron:e2e
+```
+
 > Use `--release`: whisper.cpp inference in a debug build is dramatically slower.
 
 Benchmark:
 
 ```sh
 cargo bench --manifest-path native/Cargo.toml --bench transcription
+
+# Nemotron steady-state streaming (catalog cache or explicit verified model)
+STT_TEST_NEMOTRON_DIR=/path/to/model cargo bench \
+  --manifest-path native/Cargo.toml --no-default-features \
+  --features engine-nemotron-asr --bench transcription
 ```
 
 ## Model acquisition
 
 The e2e tests and the benchmark resolve a whisper model in this order:
 
-1. `STT_TEST_WHISPER_MODEL` — absolute path to an existing `ggml-*.bin` model.
+1. An engine-specific explicit path (`STT_TEST_WHISPER_MODEL`,
+   `STT_TEST_MOONSHINE_DIR`, or `STT_TEST_NEMOTRON_DIR`). Multi-file model
+   directories are verified against every required catalog artifact.
 2. A cached download under `STT_TEST_MODEL_DIR` (default: a temp subdirectory),
-   verified by sha256 and reused across runs.
-3. A fresh download of the smallest bundled catalog model
-   (`whisper_tiny_en_q8_0`) from the catalog's pinned URL, verified and cached.
+   SHA-verified and reused across runs.
+3. A fresh download from the bundled catalog's pinned URL, streamed to a
+   temporary file, verified, and atomically moved into the cache.
 
-Because the URL and sha256 come straight from the bundled `catalog.json`, there
-is no duplicated model metadata to drift.
+URLs, filenames, entry artifacts, and SHA-256 values all come straight from the
+bundled `catalog.json`; the harness carries no second model manifest to drift.
 
 ## Adding a fixture
 

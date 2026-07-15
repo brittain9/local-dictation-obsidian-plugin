@@ -15,7 +15,7 @@ use crate::engine::capabilities::{
     ModelFamilyCapabilities, ModelFamilyId, RequestWarning, RuntimeId,
 };
 use crate::engine::registry::{EngineRegistry, apply_capability_gates, missing_adapter_error};
-use crate::engine::traits::{LoadedModel, StreamingModel};
+use crate::engine::traits::{LoadedModel, StreamingModel, StreamingPartialCadence};
 use crate::panic_util::format_panic_message;
 use crate::protocol::{
     ContextWindow, EngineStagePayload, StageId, StageOutcome, StageStatus, TranscriptSegment,
@@ -143,7 +143,7 @@ enum SessionModel {
     Batch(Box<dyn LoadedModel>),
     Streaming {
         model: Box<dyn StreamingModel>,
-        utterance: Option<OpenStreamingUtterance>,
+        utterance: Box<Option<OpenStreamingUtterance>>,
     },
 }
 
@@ -151,9 +151,6 @@ struct LoadedSessionResources {
     family_capabilities: ModelFamilyCapabilities,
     model: SessionModel,
 }
-
-const PARTIAL_CADENCE_MS: u64 = 500;
-const PARTIAL_CADENCE_SAMPLES: usize = 8_000;
 
 struct OpenStreamingUtterance {
     cadence: PartialCadence,
@@ -164,13 +161,15 @@ struct OpenStreamingUtterance {
 }
 
 struct PartialCadence {
+    config: StreamingPartialCadence,
     last_decode_wall_ms: u64,
     samples_since_decode: usize,
 }
 
 impl PartialCadence {
-    fn new(now_ms: u64, initial_samples: usize) -> Self {
+    fn new(now_ms: u64, initial_samples: usize, config: StreamingPartialCadence) -> Self {
         Self {
+            config,
             last_decode_wall_ms: now_ms,
             samples_since_decode: initial_samples,
         }
@@ -181,8 +180,9 @@ impl PartialCadence {
     }
 
     fn take_if_due(&mut self, now_ms: u64) -> bool {
-        if self.samples_since_decode < PARTIAL_CADENCE_SAMPLES
-            || now_ms.saturating_sub(self.last_decode_wall_ms) < PARTIAL_CADENCE_MS
+        if self.samples_since_decode < self.config.min_audio_samples
+            || now_ms.saturating_sub(self.last_decode_wall_ms)
+                < self.config.min_wall_time.as_millis() as u64
         {
             return false;
         }
@@ -204,7 +204,7 @@ fn load_session_resources(
     let model = if family_capabilities.supports_streaming {
         SessionModel::Streaming {
             model: adapter.load_streaming(&metadata.model_file_path, metadata.gpu_config)?,
-            utterance: None,
+            utterance: Box::new(None),
         }
     } else {
         SessionModel::Batch(adapter.load(&metadata.model_file_path, metadata.gpu_config)?)
@@ -557,7 +557,7 @@ fn worker_main(
 /// trusting whatever the model was doing when it panicked.
 fn clear_streaming_utterance(session: &mut WorkerSession) {
     if let SessionModel::Streaming { utterance, .. } = &mut session.model {
-        *utterance = None;
+        **utterance = None;
     }
 }
 
@@ -578,10 +578,11 @@ fn begin_streaming_utterance(
     };
 
     model.reset_utterance();
+    let cadence = model.partial_cadence();
     model.accept_audio(&utterance.samples)?;
     let initial_samples = utterance.samples.len();
-    *open = Some(OpenStreamingUtterance {
-        cadence: PartialCadence::new(now_ms, initial_samples),
+    **open = Some(OpenStreamingUtterance {
+        cadence: PartialCadence::new(now_ms, initial_samples, cadence),
         last_emitted_text: String::new(),
         next_revision: 0,
         utterance,
@@ -610,6 +611,7 @@ fn stream_audio(
         ));
     };
     let Some(open) = open
+        .as_mut()
         .as_mut()
         .filter(|open| open.utterance_id == utterance_id)
     else {
@@ -1035,7 +1037,7 @@ mod tests {
             .join("tests/fixtures/audio/7021-79740-0000.wav");
         let mut reader = hound::WavReader::open(fixture).unwrap();
         let samples: Vec<i16> = reader.samples::<i16>().map(Result::unwrap).collect();
-        assert!(samples.len() > PARTIAL_CADENCE_SAMPLES * 2);
+        assert!(samples.len() > StreamingPartialCadence::default().min_audio_samples * 2);
         let frames: Vec<Vec<i16>> = samples
             .chunks(320)
             .map(|chunk| {
@@ -1065,7 +1067,7 @@ mod tests {
             family_capabilities: streaming_caps(),
             model: SessionModel::Streaming {
                 model: Box::new(FixtureStreamingModel::default()),
-                utterance: None,
+                utterance: Box::new(None),
             },
             processors: post_engine_processors(),
             diarizer: None,
@@ -1193,6 +1195,24 @@ mod tests {
         assert!(final_transcript.is_final());
         assert!(final_transcript.stage_history.len() > 1);
         assert_eq!(final_transcript.joined_text(), expected_final);
+    }
+
+    #[test]
+    fn partial_cadence_honors_model_specific_audio_and_wall_thresholds() {
+        let config = StreamingPartialCadence {
+            min_audio_samples: 1_600,
+            min_wall_time: Duration::from_millis(100),
+        };
+        let mut cadence = PartialCadence::new(1_000, 0, config);
+
+        cadence.observe(1_600);
+        assert!(!cadence.take_if_due(1_099));
+        assert!(cadence.take_if_due(1_100));
+
+        cadence.observe(1_599);
+        assert!(!cadence.take_if_due(1_300));
+        cadence.observe(1);
+        assert!(cadence.take_if_due(1_300));
     }
 
     #[test]
@@ -1709,7 +1729,7 @@ mod tests {
                 model: Box::new(CountingStreamingModel {
                     counts: Arc::clone(&counts),
                 }),
-                utterance: None,
+                utterance: Box::new(None),
             },
             processors: Vec::new(),
             diarizer: None,
@@ -1825,7 +1845,7 @@ mod tests {
         fn partial(&mut self) -> Result<EngineTranscriptOutput, TranscriptionError> {
             Ok(fixture_output(format!(
                 "fixture partial {}",
-                self.samples.len() / PARTIAL_CADENCE_SAMPLES
+                self.samples.len() / StreamingPartialCadence::default().min_audio_samples
             )))
         }
 

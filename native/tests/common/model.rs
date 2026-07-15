@@ -5,33 +5,19 @@
 //! a download straight from the **bundled catalog** — so the test fetches the
 //! exact pinned URL + sha256 the shipping app uses, with no duplicated metadata.
 
+use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
+use std::sync::OnceLock;
 use std::time::Duration;
 
-use local_dictation_sidecar::catalog::ModelCatalog;
+use local_dictation_sidecar::catalog::{CatalogModel, ModelCatalog};
 use local_dictation_sidecar::engine::{ModelFamilyId, RuntimeId};
 use sha2::{Digest, Sha256};
-
-const MOONSHINE_SIBLINGS: &[&str] = &[
-    "frontend.ort",
-    "encoder.ort",
-    "adapter.ort",
-    "cross_kv.ort",
-    "decoder_kv.ort",
-    "streaming_config.json",
-    "tokenizer.bin",
-];
-
-const NEMOTRON_SIBLINGS: &[&str] = &[
-    "encoder.int8.onnx",
-    "decoder.int8.onnx",
-    "joiner.int8.onnx",
-    "tokens.txt",
-];
 
 /// Smallest bundled whisper model — fast to download and load on CPU, which
 /// keeps the suite cheap while still exercising the real inference path.
 pub const TEST_MODEL_ID: &str = "whisper_tiny_en_q8_0";
+pub const NEMOTRON_MODEL_ID: &str = "nemotron_asr_0_6b_int8_streaming_560ms";
 
 /// Resolve a whisper model file for the suite. In priority order:
 /// 1. `STT_TEST_WHISPER_MODEL` — explicit path to an existing model.
@@ -104,36 +90,12 @@ impl MoonshineTier {
 /// An explicit `STT_TEST_MOONSHINE_DIR` takes priority. Otherwise all catalog
 /// artifacts are sha-verified and cached in a per-tier directory.
 pub fn resolve_moonshine_model(tier: MoonshineTier) -> Result<PathBuf, String> {
-    if let Some(dir) = std::env::var_os("STT_TEST_MOONSHINE_DIR") {
-        let dir = PathBuf::from(dir);
-        verify_moonshine_siblings(&dir)?;
-        return Ok(dir.join("frontend.ort"));
-    }
-
-    let catalog =
-        ModelCatalog::load_bundled().map_err(|error| format!("load catalog: {error:#}"))?;
-    let model = catalog
-        .find_model(
-            RuntimeId::OnnxRuntime,
-            ModelFamilyId::Moonshine,
-            tier.model_id(),
-        )
-        .ok_or_else(|| format!("bundled catalog has no model {}", tier.model_id()))?;
-
-    let dir = cache_dir().join(tier.model_id());
-    std::fs::create_dir_all(&dir).map_err(|error| format!("create {}: {error}", dir.display()))?;
-
-    for artifact in &model.artifacts {
-        let dest = dir.join(&artifact.filename);
-        let verified = dest.is_file()
-            && file_sha256(&dest).is_ok_and(|digest| digest.eq_ignore_ascii_case(&artifact.sha256));
-        if !verified {
-            download_verified(&artifact.download_url, &artifact.sha256, &dest)?;
-        }
-    }
-
-    verify_moonshine_siblings(&dir)?;
-    Ok(dir.join("frontend.ort"))
+    resolve_catalog_model(
+        "STT_TEST_MOONSHINE_DIR",
+        RuntimeId::OnnxRuntime,
+        ModelFamilyId::Moonshine,
+        tier.model_id(),
+    )
 }
 
 pub fn require_moonshine_model(tier: MoonshineTier) -> PathBuf {
@@ -146,46 +108,91 @@ pub fn require_moonshine_model(tier: MoonshineTier) -> PathBuf {
     })
 }
 
-/// Resolve the pinned Nemotron 3.5 ASR 560 ms export without implicitly
-/// downloading roughly 651 MiB during an ignored test run.
-pub fn require_nemotron_model() -> PathBuf {
-    let dir = std::env::var_os("STT_TEST_NEMOTRON_DIR")
-        .map(PathBuf::from)
-        .unwrap_or_else(|| {
-            panic!(
-                "STT_TEST_NEMOTRON_DIR must point at a directory containing {}",
-                NEMOTRON_SIBLINGS.join(", ")
+/// Resolve the exact Nemotron export from the shipping catalog. An explicit
+/// directory and downloaded cache are both verified against every required
+/// artifact hash before the model is used.
+pub fn resolve_nemotron_model() -> Result<PathBuf, String> {
+    static RESOLVED: OnceLock<Result<PathBuf, String>> = OnceLock::new();
+    RESOLVED
+        .get_or_init(|| {
+            resolve_catalog_model(
+                "STT_TEST_NEMOTRON_DIR",
+                RuntimeId::OnnxRuntime,
+                ModelFamilyId::NemotronAsr,
+                NEMOTRON_MODEL_ID,
             )
-        });
-    let missing: Vec<&str> = NEMOTRON_SIBLINGS
-        .iter()
-        .copied()
-        .filter(|filename| !dir.join(filename).is_file())
-        .collect();
-    assert!(
-        missing.is_empty(),
-        "Nemotron model directory {} is missing: {}",
-        dir.display(),
-        missing.join(", ")
-    );
-    dir.join("encoder.int8.onnx")
+        })
+        .clone()
 }
 
-fn verify_moonshine_siblings(dir: &Path) -> Result<(), String> {
-    let missing: Vec<&str> = MOONSHINE_SIBLINGS
-        .iter()
-        .copied()
-        .filter(|filename| !dir.join(filename).is_file())
-        .collect();
-    if missing.is_empty() {
-        Ok(())
+pub fn require_nemotron_model() -> PathBuf {
+    resolve_nemotron_model().unwrap_or_else(|error| {
+        panic!(
+            "could not obtain the pinned Nemotron assets: {error}\n  \
+             Set STT_TEST_NEMOTRON_DIR=/path/to/model to reuse verified local assets, or \
+             ensure network access for the catalog download."
+        )
+    })
+}
+
+fn resolve_catalog_model(
+    directory_env: &str,
+    runtime_id: RuntimeId,
+    family_id: ModelFamilyId,
+    model_id: &str,
+) -> Result<PathBuf, String> {
+    let catalog =
+        ModelCatalog::load_bundled().map_err(|error| format!("load catalog: {error:#}"))?;
+    let model = catalog
+        .find_model(runtime_id, family_id, model_id)
+        .ok_or_else(|| format!("bundled catalog has no model {model_id}"))?;
+    let explicit_dir = std::env::var_os(directory_env).map(PathBuf::from);
+    let dir = explicit_dir
+        .clone()
+        .unwrap_or_else(|| cache_dir().join(model_id));
+
+    if explicit_dir.is_some() {
+        verify_catalog_artifacts(model, &dir)?;
     } else {
-        Err(format!(
-            "Moonshine model directory {} is missing: {}",
-            dir.display(),
-            missing.join(", ")
-        ))
+        std::fs::create_dir_all(&dir)
+            .map_err(|error| format!("create {}: {error}", dir.display()))?;
+        for artifact in model.artifacts.iter().filter(|artifact| artifact.required) {
+            let destination = dir.join(&artifact.filename);
+            let verified = destination.is_file()
+                && file_sha256(&destination)
+                    .is_ok_and(|digest| digest.eq_ignore_ascii_case(&artifact.sha256));
+            if !verified {
+                download_verified(&artifact.download_url, &artifact.sha256, &destination)?;
+            }
+        }
+        verify_catalog_artifacts(model, &dir)?;
     }
+
+    let primary = model
+        .primary_artifact()
+        .ok_or_else(|| format!("{model_id} declares no transcription artifact"))?;
+    Ok(dir.join(&primary.filename))
+}
+
+fn verify_catalog_artifacts(model: &CatalogModel, dir: &Path) -> Result<(), String> {
+    for artifact in model.artifacts.iter().filter(|artifact| artifact.required) {
+        let path = dir.join(&artifact.filename);
+        if !path.is_file() {
+            return Err(format!(
+                "required model artifact is missing: {}",
+                path.display()
+            ));
+        }
+        let actual = file_sha256(&path)?;
+        if !actual.eq_ignore_ascii_case(&artifact.sha256) {
+            return Err(format!(
+                "sha256 mismatch for {}: expected {}, got {actual}",
+                path.display(),
+                artifact.sha256
+            ));
+        }
+    }
+    Ok(())
 }
 
 fn cache_dir() -> PathBuf {
@@ -199,7 +206,7 @@ fn download_verified(url: &str, expected_sha256: &str, dest: &Path) -> Result<()
         std::fs::create_dir_all(parent).map_err(|error| format!("create cache dir: {error}"))?;
     }
 
-    let response = reqwest::blocking::Client::builder()
+    let mut response = reqwest::blocking::Client::builder()
         .timeout(Duration::from_secs(600))
         .build()
         .map_err(|error| format!("build http client: {error}"))?
@@ -208,21 +215,37 @@ fn download_verified(url: &str, expected_sha256: &str, dest: &Path) -> Result<()
         .and_then(reqwest::blocking::Response::error_for_status)
         .map_err(|error| format!("GET {url}: {error}"))?;
 
-    let bytes = response
-        .bytes()
-        .map_err(|error| format!("read body from {url}: {error}"))?;
+    let tmp = dest.with_extension("part");
+    let mut file = std::fs::File::create(&tmp)
+        .map_err(|error| format!("create {}: {error}", tmp.display()))?;
+    let mut hasher = Sha256::new();
+    let mut buffer = [0_u8; 1024 * 1024];
+    loop {
+        let read = response
+            .read(&mut buffer)
+            .map_err(|error| format!("read body from {url}: {error}"))?;
+        if read == 0 {
+            break;
+        }
+        hasher.update(&buffer[..read]);
+        file.write_all(&buffer[..read])
+            .map_err(|error| format!("write {}: {error}", tmp.display()))?;
+    }
+    file.sync_all()
+        .map_err(|error| format!("flush {}: {error}", tmp.display()))?;
 
-    let actual = sha256_hex(&bytes);
+    let actual = hex(&hasher.finalize());
     if !actual.eq_ignore_ascii_case(expected_sha256) {
+        let _ = std::fs::remove_file(&tmp);
         return Err(format!(
             "sha256 mismatch for {url}: expected {expected_sha256}, got {actual}"
         ));
     }
 
-    // Write to a temp sibling then rename, so an aborted run never leaves a
-    // half-written file that a later run's existence check would trust.
-    let tmp = dest.with_extension("part");
-    std::fs::write(&tmp, &bytes).map_err(|error| format!("write {}: {error}", tmp.display()))?;
+    if dest.exists() {
+        std::fs::remove_file(dest)
+            .map_err(|error| format!("remove invalid {}: {error}", dest.display()))?;
+    }
     std::fs::rename(&tmp, dest)
         .map_err(|error| format!("rename into {}: {error}", dest.display()))?;
     Ok(())
@@ -232,8 +255,6 @@ fn download_verified(url: &str, expected_sha256: &str, dest: &Path) -> Result<()
 /// fully into memory. Used to verify fixture integrity against the manifest, and
 /// a cached model against the catalog.
 pub fn file_sha256(path: &Path) -> Result<String, String> {
-    use std::io::Read;
-
     let mut file =
         std::fs::File::open(path).map_err(|error| format!("open {}: {error}", path.display()))?;
     let mut hasher = Sha256::new();
@@ -248,10 +269,6 @@ pub fn file_sha256(path: &Path) -> Result<String, String> {
         hasher.update(&buffer[..read]);
     }
     Ok(hex(&hasher.finalize()))
-}
-
-fn sha256_hex(bytes: &[u8]) -> String {
-    hex(&Sha256::digest(bytes))
 }
 
 fn hex(bytes: &[u8]) -> String {

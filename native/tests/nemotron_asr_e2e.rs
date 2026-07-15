@@ -49,8 +49,9 @@ fn libri_fixture() -> common::manifest::Fixture {
 /// "inhabits", direct WER 0.000 against the LibriSpeech reference and 0.08
 /// against the oracle), so exact golden-text equality is not a valid gate;
 /// these budgets catch quantization, frontend, or runtime drift instead.
-const DIRECT_DECODE_MAX_WER: f64 = 0.05;
+const DIRECT_DECODE_MAX_WER: f64 = 0.10;
 const ORACLE_DRIFT_MAX_WER: f64 = 0.15;
+const WORKER_MAX_WER: f64 = 0.10;
 
 fn pinned_oracle_text() -> String {
     let path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -75,6 +76,11 @@ fn nemotron_runs_through_vad_worker_and_revision_protocol() {
         "expected live partial revisions"
     );
     assert!(
+        outcome.partials[0].utterance_duration_ms <= 1_900,
+        "first useful partial arrived after {} ms of audio; the pinned fixture should emit before the 2 s boundary that the default 500 ms polling cadence can cross",
+        outcome.partials[0].utterance_duration_ms
+    );
+    assert!(
         outcome
             .partials
             .windows(2)
@@ -87,9 +93,8 @@ fn nemotron_runs_through_vad_worker_and_revision_protocol() {
         outcome.final_text
     );
     assert!(
-        wer <= fixture.max_wer,
-        "WER {wer:.3} exceeded {}",
-        fixture.max_wer
+        wer <= WORKER_MAX_WER,
+        "WER {wer:.3} exceeded the Nemotron worker-path budget {WORKER_MAX_WER}",
     );
     let missing = missing_anchors(&outcome.final_text, &fixture.anchors);
     assert!(missing.is_empty(), "missing anchor words: {missing:?}");

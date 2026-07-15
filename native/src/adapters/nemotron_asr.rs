@@ -9,18 +9,20 @@ use std::collections::HashMap;
 use std::ffi::OsStr;
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
+use std::time::Duration;
 
-use ndarray::{Array1, Array2, Array3, Array4};
 use ort::session::Session;
-use ort::value::{
-    DynValue, PrimitiveTensorElementType, Tensor, TensorElementType, Value, ValueType,
-};
-use realfft::RealFftPlanner;
+use ort::value::{DynValue, PrimitiveTensorElementType, TensorElementType, TensorRef, ValueType};
+use realfft::num_complex::Complex;
+use realfft::{RealFftPlanner, RealToComplex};
 
 use crate::engine::capabilities::{
     LanguageSupport, ModelFamilyCapabilities, ModelFamilyId, RuntimeId,
 };
-use crate::engine::traits::{LoadedModel, ModelFamilyAdapter, StreamingModel};
+use crate::engine::traits::{
+    LoadedModel, ModelFamilyAdapter, StreamingModel, StreamingPartialCadence,
+};
 use crate::protocol::{TimestampGranularity, TimestampSource, TranscriptSegment};
 use crate::runtimes::onnx::build_session;
 use crate::transcription::{
@@ -85,17 +87,7 @@ impl ModelFamilyAdapter for NemotronAsrAdapter {
     }
 
     fn probe_model(&self, path: &Path) -> Result<(), TranscriptionError> {
-        let paths = resolve_model_paths(path)?;
-        let encoder = build_session(&paths.encoder, GpuConfig { use_gpu: false })
-            .map_err(invalid_session("encoder"))?;
-        let config = NemotronConfig::from_encoder(&encoder)?;
-        let decoder = build_session(&paths.decoder, GpuConfig { use_gpu: false })
-            .map_err(invalid_session("decoder"))?;
-        let joiner = build_session(&paths.joiner, GpuConfig { use_gpu: false })
-            .map_err(invalid_session("joiner"))?;
-        verify_graph_topology(&encoder, &decoder, &joiner, &config)?;
-        let tokenizer = NemotronTokenizer::load(&paths.tokens)?;
-        tokenizer.validate(config.vocab_size)?;
+        ValidatedNemotronGraphs::load(path, GpuConfig { use_gpu: false })?;
         Ok(())
     }
 
@@ -115,6 +107,37 @@ impl ModelFamilyAdapter for NemotronAsrAdapter {
         gpu: GpuConfig,
     ) -> Result<Box<dyn StreamingModel>, TranscriptionError> {
         Ok(Box::new(LoadedNemotronModel::load(path, gpu)?))
+    }
+}
+
+struct ValidatedNemotronGraphs {
+    config: NemotronConfig,
+    decoder: Session,
+    encoder: Session,
+    joiner: Session,
+    tokenizer: NemotronTokenizer,
+}
+
+impl ValidatedNemotronGraphs {
+    fn load(path: &Path, encoder_gpu: GpuConfig) -> Result<Self, TranscriptionError> {
+        let paths = resolve_model_paths(path)?;
+        let encoder =
+            build_session(&paths.encoder, encoder_gpu).map_err(invalid_session("encoder"))?;
+        let config = NemotronConfig::from_encoder(&encoder)?;
+        let decoder = build_session(&paths.decoder, GpuConfig { use_gpu: false })
+            .map_err(invalid_session("decoder"))?;
+        let joiner = build_session(&paths.joiner, GpuConfig { use_gpu: false })
+            .map_err(invalid_session("joiner"))?;
+        verify_graph_topology(&encoder, &decoder, &joiner, &config)?;
+        let tokenizer = NemotronTokenizer::load(&paths.tokens)?;
+        tokenizer.validate(config.vocab_size)?;
+        Ok(Self {
+            config,
+            decoder,
+            encoder,
+            joiner,
+            tokenizer,
+        })
     }
 }
 
@@ -346,10 +369,6 @@ fn verify_graph_topology(
         &["outputs"],
     )?;
 
-    verify_io_count(encoder, "encoder", 6, 5)?;
-    verify_io_count(decoder, "decoder", 4, 4)?;
-    verify_io_count(joiner, "joiner", 2, 1)?;
-
     verify_tensor(
         encoder.inputs()[0].dtype(),
         "encoder input 0",
@@ -574,22 +593,6 @@ fn verify_session_io(
     Ok(())
 }
 
-fn verify_io_count(
-    session: &Session,
-    graph: &str,
-    input_count: usize,
-    output_count: usize,
-) -> Result<(), TranscriptionError> {
-    if session.inputs().len() != input_count || session.outputs().len() != output_count {
-        return Err(TranscriptionError::invalid_model_with_details(format!(
-            "{graph} graph topology mismatch: expected {input_count} inputs/{output_count} outputs, found {}/{}",
-            session.inputs().len(),
-            session.outputs().len()
-        )));
-    }
-    Ok(())
-}
-
 fn verify_tensor(
     value_type: &ValueType,
     name: &str,
@@ -760,6 +763,7 @@ struct LoadedNemotronModel {
     config: NemotronConfig,
     decoder: Session,
     encoder: Session,
+    encoder_input: Vec<f32>,
     encoder_state: EncoderState,
     features: OnlineNemotronFeatures,
     joiner: Session,
@@ -773,20 +777,21 @@ struct LoadedNemotronModel {
 
 impl LoadedNemotronModel {
     fn load(path: &Path, gpu: GpuConfig) -> Result<Self, TranscriptionError> {
-        let paths = resolve_model_paths(path)?;
-        let encoder = build_session(&paths.encoder, gpu)?;
-        let config = NemotronConfig::from_encoder(&encoder)?;
-        let decoder = build_session(&paths.decoder, GpuConfig { use_gpu: false })?;
-        let joiner = build_session(&paths.joiner, GpuConfig { use_gpu: false })?;
-        verify_graph_topology(&encoder, &decoder, &joiner, &config)?;
-        let tokenizer = NemotronTokenizer::load(&paths.tokens)?;
-        tokenizer.validate(config.vocab_size)?;
+        let ValidatedNemotronGraphs {
+            config,
+            decoder,
+            encoder,
+            joiner,
+            tokenizer,
+        } = ValidatedNemotronGraphs::load(path, gpu)?;
         let predictor_state_before_last = PredictorState::zeros(&config);
         let encoder_state = EncoderState::zeros(&config);
+        let encoder_input = vec![0.0; config.feature_dim * config.window_size];
         Ok(Self {
             config,
             decoder,
             encoder,
+            encoder_input,
             encoder_state,
             features: OnlineNemotronFeatures::new(),
             joiner,
@@ -840,53 +845,48 @@ impl LoadedNemotronModel {
         valid_frames: usize,
     ) -> Result<Vec<Vec<f32>>, TranscriptionError> {
         let time = self.config.window_size;
-        let mut transposed = vec![0.0_f32; self.config.feature_dim * time];
+        self.encoder_input.fill(0.0);
         for frame in 0..time {
             for feature in 0..self.config.feature_dim {
-                transposed[feature * time + frame] =
+                self.encoder_input[feature * time + frame] =
                     window[frame * self.config.feature_dim + feature];
             }
         }
-        let features = value(
-            Array3::from_shape_vec((1, self.config.feature_dim, time), transposed),
+        let features = tensor_ref(
+            [1, self.config.feature_dim, time],
+            &self.encoder_input,
             "Nemotron encoder features",
         )?;
-        let length = value(
-            Ok(Array1::from_vec(vec![valid_frames as i64])),
-            "Nemotron encoder length",
-        )?;
-        let channel_cache = value(
-            Array4::from_shape_vec(
-                (
-                    1,
-                    self.config.cache_channel_layers,
-                    self.config.cache_channel_time,
-                    self.config.encoder_dim,
-                ),
-                self.encoder_state.channel.clone(),
-            ),
+        let length_data = [valid_frames as i64];
+        let length = tensor_ref([1], &length_data, "Nemotron encoder length")?;
+        let channel_cache = tensor_ref(
+            [
+                1,
+                self.config.cache_channel_layers,
+                self.config.cache_channel_time,
+                self.config.encoder_dim,
+            ],
+            &self.encoder_state.channel,
             "Nemotron encoder channel cache",
         )?;
-        let time_cache = value(
-            Array4::from_shape_vec(
-                (
-                    1,
-                    self.config.cache_channel_layers,
-                    self.config.encoder_dim,
-                    self.config.cache_time_width,
-                ),
-                self.encoder_state.time.clone(),
-            ),
+        let time_cache = tensor_ref(
+            [
+                1,
+                self.config.cache_channel_layers,
+                self.config.encoder_dim,
+                self.config.cache_time_width,
+            ],
+            &self.encoder_state.time,
             "Nemotron encoder time cache",
         )?;
-        let channel_cache_len = value(
-            Ok(Array1::from_vec(vec![self.encoder_state.channel_len])),
+        let channel_cache_len_data = [self.encoder_state.channel_len];
+        let channel_cache_len = tensor_ref(
+            [1],
+            &channel_cache_len_data,
             "Nemotron encoder channel cache length",
         )?;
-        let prompt_index = value(
-            Ok(Array1::from_vec(vec![EN_US_PROMPT_INDEX])),
-            "Nemotron encoder prompt index",
-        )?;
+        let prompt_index_data = [EN_US_PROMPT_INDEX];
+        let prompt_index = tensor_ref([1], &prompt_index_data, "Nemotron encoder prompt index")?;
         let outputs = self
             .encoder
             .run(ort::inputs![
@@ -906,9 +906,9 @@ impl LoadedNemotronModel {
             || shape[1] != self.config.encoder_dim as i64
             || shape[2] <= 0
         {
-            return Err(graph_shape_error("encoder output", &shape));
+            return Err(graph_shape_error("encoder output", shape));
         }
-        let encoder_time = dimension(&shape, 2, "encoder output")?;
+        let encoder_time = dimension(shape, 2, "encoder output")?;
         let encoded_lengths = tensor_i64_exact(
             output_at(&outputs, 1, "encoder encoded lengths")?,
             &[1],
@@ -970,8 +970,8 @@ impl LoadedNemotronModel {
             frames.push(frame);
         }
         self.encoder_state = EncoderState {
-            channel: next_channel,
-            time: next_time,
+            channel: next_channel.to_vec(),
+            time: next_time.to_vec(),
             channel_len: next_channel_len,
         };
         Ok(frames)
@@ -982,13 +982,23 @@ impl LoadedNemotronModel {
         encoder_frames: &[Vec<f32>],
     ) -> Result<(), TranscriptionError> {
         let decoder_input = self.last_token.unwrap_or_else(|| self.blank_id());
-        let mut decoder_step =
-            self.run_decoder(decoder_input, &self.predictor_state_before_last.clone())?;
+        let mut decoder_step = run_decoder(
+            &mut self.decoder,
+            &self.config,
+            decoder_input,
+            &self.predictor_state_before_last,
+        )?;
+        let blank_id = self.blank_id();
 
         for encoder_frame in encoder_frames {
             for _ in 0..MAX_SYMBOLS_PER_FRAME {
-                let next_token = self.run_joiner(encoder_frame, &decoder_step)?;
-                if next_token == self.blank_id() {
+                let next_token = run_joiner(
+                    &mut self.joiner,
+                    self.config.vocab_size,
+                    encoder_frame,
+                    &decoder_step.output,
+                )?;
+                if next_token == blank_id {
                     break;
                 }
                 if next_token < 0 || next_token as usize >= self.config.vocab_size - 1 {
@@ -1000,110 +1010,16 @@ impl LoadedNemotronModel {
 
                 self.tokens.push(next_token);
                 self.last_token = Some(next_token);
-                self.predictor_state_before_last = decoder_step.next_state.clone();
-                decoder_step =
-                    self.run_decoder(next_token, &self.predictor_state_before_last.clone())?;
+                self.predictor_state_before_last = decoder_step.next_state;
+                decoder_step = run_decoder(
+                    &mut self.decoder,
+                    &self.config,
+                    next_token,
+                    &self.predictor_state_before_last,
+                )?;
             }
         }
         Ok(())
-    }
-
-    fn run_decoder(
-        &mut self,
-        token: i32,
-        state: &PredictorState,
-    ) -> Result<DecoderStep, TranscriptionError> {
-        let targets = value(
-            Array2::from_shape_vec((1, 1), vec![token]),
-            "Nemotron decoder target",
-        )?;
-        let target_length = value(
-            Ok(Array1::from_vec(vec![1_i32])),
-            "Nemotron decoder target length",
-        )?;
-        let state_shape = (
-            self.config.predictor_layers,
-            1,
-            self.config.predictor_hidden,
-        );
-        let hidden = value(
-            Array3::from_shape_vec(state_shape, state.hidden.clone()),
-            "Nemotron decoder hidden state",
-        )?;
-        let cell = value(
-            Array3::from_shape_vec(state_shape, state.cell.clone()),
-            "Nemotron decoder cell state",
-        )?;
-        let outputs = self
-            .decoder
-            .run(ort::inputs![targets, target_length, hidden, cell])
-            .map_err(|error| {
-                TranscriptionError::transcription_failure("Nemotron decoder", &error)
-            })?;
-        let output = tensor_f32_exact(
-            output_at(&outputs, 0, "decoder output")?,
-            &[1, self.config.predictor_hidden, 1],
-            "decoder output",
-        )?;
-        let hidden = tensor_f32_exact(
-            output_at(&outputs, 2, "decoder hidden state")?,
-            &[
-                self.config.predictor_layers,
-                1,
-                self.config.predictor_hidden,
-            ],
-            "decoder hidden state",
-        )?;
-        let cell = tensor_f32_exact(
-            output_at(&outputs, 3, "decoder cell state")?,
-            &[
-                self.config.predictor_layers,
-                1,
-                self.config.predictor_hidden,
-            ],
-            "decoder cell state",
-        )?;
-        Ok(DecoderStep {
-            output,
-            next_state: PredictorState { hidden, cell },
-        })
-    }
-
-    fn run_joiner(
-        &mut self,
-        encoder_frame: &[f32],
-        decoder_step: &DecoderStep,
-    ) -> Result<i32, TranscriptionError> {
-        let encoder = value(
-            Array3::from_shape_vec((1, encoder_frame.len(), 1), encoder_frame.to_vec()),
-            "Nemotron joiner encoder input",
-        )?;
-        let decoder = value(
-            Array3::from_shape_vec(
-                (1, self.config.predictor_hidden, 1),
-                decoder_step.output.clone(),
-            ),
-            "Nemotron joiner decoder input",
-        )?;
-        let outputs = self
-            .joiner
-            .run(ort::inputs![encoder, decoder])
-            .map_err(|error| {
-                TranscriptionError::transcription_failure("Nemotron joiner", &error)
-            })?;
-        let logits = tensor_f32_exact(
-            output_at(&outputs, 0, "joiner output")?,
-            &[1, 1, 1, self.config.vocab_size],
-            "joiner output",
-        )?;
-        logits
-            .iter()
-            .enumerate()
-            .max_by(|(_, left), (_, right)| left.total_cmp(right))
-            .map(|(index, _)| index as i32)
-            .ok_or_else(|| {
-                TranscriptionError::transcription_failure("Nemotron joiner", "logits were empty")
-            })
     }
 
     fn output(&self) -> Result<EngineTranscriptOutput, TranscriptionError> {
@@ -1128,7 +1044,88 @@ impl LoadedNemotronModel {
     }
 }
 
+fn run_decoder(
+    decoder: &mut Session,
+    config: &NemotronConfig,
+    token: i32,
+    state: &PredictorState,
+) -> Result<DecoderStep, TranscriptionError> {
+    let targets_data = [token];
+    let targets = tensor_ref([1, 1], &targets_data, "Nemotron decoder target")?;
+    let target_length_data = [1_i32];
+    let target_length = tensor_ref([1], &target_length_data, "Nemotron decoder target length")?;
+    let state_shape = [config.predictor_layers, 1, config.predictor_hidden];
+    let hidden = tensor_ref(state_shape, &state.hidden, "Nemotron decoder hidden state")?;
+    let cell = tensor_ref(state_shape, &state.cell, "Nemotron decoder cell state")?;
+    let outputs = decoder
+        .run(ort::inputs![targets, target_length, hidden, cell])
+        .map_err(|error| TranscriptionError::transcription_failure("Nemotron decoder", &error))?;
+    let output = tensor_f32_exact(
+        output_at(&outputs, 0, "decoder output")?,
+        &[1, config.predictor_hidden, 1],
+        "decoder output",
+    )?
+    .to_vec();
+    let hidden = tensor_f32_exact(
+        output_at(&outputs, 2, "decoder hidden state")?,
+        &[config.predictor_layers, 1, config.predictor_hidden],
+        "decoder hidden state",
+    )?
+    .to_vec();
+    let cell = tensor_f32_exact(
+        output_at(&outputs, 3, "decoder cell state")?,
+        &[config.predictor_layers, 1, config.predictor_hidden],
+        "decoder cell state",
+    )?
+    .to_vec();
+    Ok(DecoderStep {
+        output,
+        next_state: PredictorState { hidden, cell },
+    })
+}
+
+fn run_joiner(
+    joiner: &mut Session,
+    vocab_size: usize,
+    encoder_frame: &[f32],
+    decoder_output: &[f32],
+) -> Result<i32, TranscriptionError> {
+    let encoder = tensor_ref(
+        [1, encoder_frame.len(), 1],
+        encoder_frame,
+        "Nemotron joiner encoder input",
+    )?;
+    let decoder = tensor_ref(
+        [1, decoder_output.len(), 1],
+        decoder_output,
+        "Nemotron joiner decoder input",
+    )?;
+    let outputs = joiner
+        .run(ort::inputs![encoder, decoder])
+        .map_err(|error| TranscriptionError::transcription_failure("Nemotron joiner", &error))?;
+    let logits = tensor_f32_exact(
+        output_at(&outputs, 0, "joiner output")?,
+        &[1, 1, 1, vocab_size],
+        "joiner output",
+    )?;
+    logits
+        .iter()
+        .enumerate()
+        .max_by(|(_, left), (_, right)| left.total_cmp(right))
+        .map(|(index, _)| index as i32)
+        .ok_or_else(|| {
+            TranscriptionError::transcription_failure("Nemotron joiner", "logits were empty")
+        })
+}
+
 impl StreamingModel for LoadedNemotronModel {
+    fn partial_cadence(&self) -> StreamingPartialCadence {
+        StreamingPartialCadence {
+            min_audio_samples: 1_600,
+            min_wall_time: Duration::from_millis(100),
+        }
+    }
+
     fn accept_audio(&mut self, samples: &[i16]) -> Result<(), TranscriptionError> {
         self.sample_count = self.sample_count.saturating_add(samples.len());
         self.features.accept(samples);
@@ -1166,18 +1163,28 @@ struct OnlineNemotronFeatures {
     audio: Vec<f32>,
     features: Vec<[f32; FEATURE_DIM]>,
     filterbank: Vec<[f32; FFT_BINS]>,
-    fft_planner: RealFftPlanner<f32>,
+    fft: Arc<dyn RealToComplex<f32>>,
+    fft_input: Vec<f32>,
+    fft_output: Vec<Complex<f32>>,
+    fft_scratch: Vec<Complex<f32>>,
     finished: bool,
     window: [f32; FRAME_LENGTH_SAMPLES],
 }
 
 impl OnlineNemotronFeatures {
     fn new() -> Self {
+        let fft = RealFftPlanner::<f32>::new().plan_fft_forward(FFT_SIZE);
+        let fft_input = fft.make_input_vec();
+        let fft_output = fft.make_output_vec();
+        let fft_scratch = fft.make_scratch_vec();
         Self {
             audio: Vec::new(),
             features: Vec::new(),
             filterbank: build_librosa_filterbank(),
-            fft_planner: RealFftPlanner::new(),
+            fft,
+            fft_input,
+            fft_output,
+            fft_scratch,
             finished: false,
             window: build_symmetric_hann_window(),
         }
@@ -1221,8 +1228,8 @@ impl OnlineNemotronFeatures {
     fn compute_frame(&mut self, frame_index: usize) -> [f32; FEATURE_DIM] {
         let start = frame_index as isize * FRAME_SHIFT_SAMPLES as isize
             - (FRAME_LENGTH_SAMPLES / 2) as isize;
-        let mut fft_input = vec![0.0_f32; FFT_SIZE];
-        for (offset, sample) in fft_input
+        self.fft_input.fill(0.0);
+        for (offset, sample) in self.fft_input
             [STFT_WINDOW_OFFSET..STFT_WINDOW_OFFSET + FRAME_LENGTH_SAMPLES]
             .iter_mut()
             .enumerate()
@@ -1231,12 +1238,15 @@ impl OnlineNemotronFeatures {
                 preemphasized_sample(&self.audio, start + offset as isize) * self.window[offset];
         }
 
-        let fft = self.fft_planner.plan_fft_forward(FFT_SIZE);
-        let mut fft_output = fft.make_output_vec();
-        fft.process(&mut fft_input, &mut fft_output)
+        self.fft
+            .process_with_scratch(
+                &mut self.fft_input,
+                &mut self.fft_output,
+                &mut self.fft_scratch,
+            )
             .expect("Nemotron FFT buffers match the planned size");
         let mut power = [0.0_f32; FFT_BINS];
-        for (index, value) in fft_output.iter().enumerate() {
+        for (index, value) in self.fft_output.iter().enumerate() {
             power[index] = value.re * value.re + value.im * value.im;
         }
 
@@ -1334,17 +1344,15 @@ fn slaney_mel_to_hz(mel: f32) -> f32 {
     }
 }
 
-fn value<T, D>(
-    result: Result<ndarray::Array<T, D>, ndarray::ShapeError>,
+fn tensor_ref<'a, T, const RANK: usize>(
+    shape: [usize; RANK],
+    data: &'a [T],
     context: &str,
-) -> Result<Tensor<T>, TranscriptionError>
+) -> Result<TensorRef<'a, T>, TranscriptionError>
 where
     T: PrimitiveTensorElementType + Clone + std::fmt::Debug + 'static,
-    D: ndarray::Dimension + 'static,
 {
-    let array =
-        result.map_err(|error| TranscriptionError::transcription_failure(context, &error))?;
-    Value::from_array(array)
+    TensorRef::from_array_view((shape, data))
         .map_err(|error| TranscriptionError::transcription_failure(context, &error))
 }
 
@@ -1362,37 +1370,40 @@ fn output_at<'a>(
     Ok(&outputs[index])
 }
 
-fn tensor_f32(value: &DynValue, name: &str) -> Result<(Vec<i64>, Vec<f32>), TranscriptionError> {
+fn tensor_f32<'a>(
+    value: &'a DynValue,
+    name: &str,
+) -> Result<(&'a [i64], &'a [f32]), TranscriptionError> {
     let (shape, data) = value
         .try_extract_tensor::<f32>()
         .map_err(|error| TranscriptionError::transcription_failure(name, &error))?;
-    Ok((shape.to_vec(), data.to_vec()))
+    Ok((shape, data))
 }
 
-fn tensor_f32_exact(
-    value: &DynValue,
+fn tensor_f32_exact<'a>(
+    value: &'a DynValue,
     expected_shape: &[usize],
     name: &str,
-) -> Result<Vec<f32>, TranscriptionError> {
+) -> Result<&'a [f32], TranscriptionError> {
     let (shape, data) = tensor_f32(value, name)?;
-    if !shape_matches(&shape, expected_shape) {
-        return Err(graph_shape_error(name, &shape));
+    if !shape_matches(shape, expected_shape) {
+        return Err(graph_shape_error(name, shape));
     }
     Ok(data)
 }
 
-fn tensor_i64_exact(
-    value: &DynValue,
+fn tensor_i64_exact<'a>(
+    value: &'a DynValue,
     expected_shape: &[usize],
     name: &str,
-) -> Result<Vec<i64>, TranscriptionError> {
+) -> Result<&'a [i64], TranscriptionError> {
     let (shape, data) = value
         .try_extract_tensor::<i64>()
         .map_err(|error| TranscriptionError::transcription_failure(name, &error))?;
     if !shape_matches(shape, expected_shape) {
         return Err(graph_shape_error(name, shape));
     }
-    Ok(data.to_vec())
+    Ok(data)
 }
 
 fn shape_matches(actual: &[i64], expected: &[usize]) -> bool {
@@ -1420,6 +1431,8 @@ fn graph_shape_error(name: &str, shape: &[i64]) -> TranscriptionError {
 #[cfg(test)]
 mod tests {
     use std::path::PathBuf;
+
+    use sha2::{Digest, Sha256};
 
     use super::*;
 
@@ -1492,23 +1505,112 @@ mod tests {
             extractor.len(),
             frontend["shape"][1].as_u64().unwrap() as usize
         );
-        let bins: Vec<usize> = frontend["featureBins"]
+        assert_eq!(frontend["shape"][0].as_u64().unwrap() as usize, FEATURE_DIM);
+        assert_eq!(
+            frontend["oraclePath"].as_str().unwrap(),
+            "frontend-560ms.f32le"
+        );
+        let oracle = include_bytes!("../../tests/fixtures/nemotron/frontend-560ms.f32le");
+        assert_eq!(
+            oracle.len(),
+            FEATURE_DIM * extractor.len() * std::mem::size_of::<f32>()
+        );
+        let oracle_sha256 = Sha256::digest(oracle)
+            .iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect::<String>();
+        assert_eq!(
+            oracle_sha256,
+            frontend["oracleSha256"].as_str().unwrap(),
+            "the committed NeMo frontend oracle bytes changed"
+        );
+
+        let tolerance = frontend["maxAbsError"].as_f64().unwrap() as f32;
+        let mut worst = (0.0_f32, 0_usize, 0_usize, 0.0_f32, 0.0_f32);
+        for feature in 0..FEATURE_DIM {
+            for frame in 0..extractor.len() {
+                let offset = (feature * extractor.len() + frame) * std::mem::size_of::<f32>();
+                let expected = f32::from_le_bytes(oracle[offset..offset + 4].try_into().unwrap());
+                let actual = extractor.features[frame][feature];
+                let error = (actual - expected).abs();
+                if error > worst.0 {
+                    worst = (error, frame, feature, expected, actual);
+                }
+            }
+        }
+        assert!(
+            worst.0 <= tolerance,
+            "full NeMo frontend parity failed at frame {}, bin {}: expected {}, found {}, absolute error {} exceeds {}",
+            worst.1,
+            worst.2,
+            worst.3,
+            worst.4,
+            worst.0,
+            tolerance
+        );
+    }
+
+    #[test]
+    #[ignore = "needs the 651 MiB pinned Nemotron 3.5 ASR export"]
+    fn runtime_token_sequence_stays_close_to_pinned_nemo_oracle() {
+        let fixtures = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures");
+        let golden: serde_json::Value =
+            serde_json::from_slice(&fs::read(fixtures.join("nemotron/golden-560ms.json")).unwrap())
+                .unwrap();
+        let expected: Vec<i32> = golden["streaming"]["tokenIds"]
             .as_array()
             .unwrap()
             .iter()
-            .map(|value| value.as_u64().unwrap() as usize)
+            .map(|value| value.as_i64().unwrap() as i32)
             .collect();
-        let tolerance = frontend["maxAbsError"].as_f64().unwrap() as f32;
-        for (frame, expected) in frontend["selectedFrames"].as_object().unwrap() {
-            let frame = frame.parse::<usize>().unwrap();
-            for (&bin, expected) in bins.iter().zip(expected.as_array().unwrap()) {
-                let actual = extractor.features[frame][bin];
-                let expected = expected.as_f64().unwrap() as f32;
-                assert!(
-                    (actual - expected).abs() <= tolerance,
-                    "frame {frame}, bin {bin}: expected {expected}, found {actual}"
-                );
-            }
+        let model_path = test_nemotron_model_path();
+        let mut reader =
+            hound::WavReader::open(fixtures.join("audio/7021-79740-0000.wav")).unwrap();
+        let samples: Vec<i16> = reader.samples::<i16>().map(Result::unwrap).collect();
+        let mut model = LoadedNemotronModel::load(&model_path, GpuConfig { use_gpu: false })
+            .expect("load pinned Nemotron model");
+        model.accept_audio(&samples).unwrap();
+        model.process_ready_chunks(true).unwrap();
+
+        let edits = token_edit_distance(&expected, &model.tokens);
+        assert!(
+            edits <= 4,
+            "runtime token sequence drifted {edits} edits from the pinned NeMo oracle (expected {} tokens, found {})",
+            expected.len(),
+            model.tokens.len()
+        );
+    }
+
+    fn test_nemotron_model_path() -> PathBuf {
+        if let Some(directory) = std::env::var_os("STT_TEST_NEMOTRON_DIR") {
+            return PathBuf::from(directory).join(ENCODER_FILENAME);
         }
+        let cache = std::env::var_os("STT_TEST_MODEL_DIR")
+            .map(PathBuf::from)
+            .unwrap_or_else(|| std::env::temp_dir().join("local-dictation-sidecar-test-models"));
+        let catalog = crate::catalog::ModelCatalog::load_bundled().unwrap();
+        let model = catalog
+            .models
+            .iter()
+            .find(|model| model.family_id == ModelFamilyId::NemotronAsr)
+            .expect("bundled catalog must contain Nemotron");
+        let primary = model.primary_artifact().unwrap();
+        cache.join(&model.model_id).join(&primary.filename)
+    }
+
+    fn token_edit_distance(left: &[i32], right: &[i32]) -> usize {
+        let mut previous: Vec<usize> = (0..=right.len()).collect();
+        let mut current = vec![0; right.len() + 1];
+        for (left_index, left_token) in left.iter().enumerate() {
+            current[0] = left_index + 1;
+            for (right_index, right_token) in right.iter().enumerate() {
+                current[right_index + 1] = (previous[right_index]
+                    + usize::from(left_token != right_token))
+                .min(previous[right_index + 1] + 1)
+                .min(current[right_index] + 1);
+            }
+            std::mem::swap(&mut previous, &mut current);
+        }
+        previous[right.len()]
     }
 }
