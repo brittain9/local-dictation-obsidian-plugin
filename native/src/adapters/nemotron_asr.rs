@@ -916,12 +916,13 @@ impl LoadedNemotronModel {
         )?;
         let valid_encoder_frames = usize::try_from(encoded_lengths[0])
             .map_err(|_| graph_shape_error("encoder encoded lengths", &[encoded_lengths[0]]))?;
+        // The graph is the authority on how many output frames a chunk yields:
+        // finalize tails inside the encoder lookahead (8-9 feature frames)
+        // legitimately encode to zero frames. Only an impossible overrun is a
+        // graph-contract violation.
         let max_encoder_frames =
             encoder_time.min(valid_frames.div_ceil(self.config.subsampling_factor));
-        // A finalize tail shorter than one subsampled step may legitimately
-        // encode to zero frames; anything else must produce at least one.
-        let min_encoder_frames = usize::from(valid_frames >= self.config.subsampling_factor);
-        if valid_encoder_frames < min_encoder_frames || valid_encoder_frames > max_encoder_frames {
+        if valid_encoder_frames > max_encoder_frames {
             return Err(graph_shape_error(
                 "encoder encoded lengths",
                 &[encoded_lengths[0]],
