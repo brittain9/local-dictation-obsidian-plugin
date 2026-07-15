@@ -84,6 +84,8 @@ pub struct StreamingRevision {
 pub struct StreamingOutcome {
     pub partials: Vec<StreamingRevision>,
     pub final_text: String,
+    pub final_revision: Option<u32>,
+    pub processing_ms: u64,
     pub errors: Vec<String>,
     pub stopped: bool,
 }
@@ -269,7 +271,9 @@ fn apply_streaming_events(app: &mut AppState, events: Vec<Event>, outcome: &mut 
                 ..
             } => {
                 let text = text.trim().to_string();
+                outcome.processing_ms += processing_duration_ms;
                 if is_final {
+                    outcome.final_revision = Some(revision);
                     if !text.is_empty() {
                         outcome.final_text = text;
                     }

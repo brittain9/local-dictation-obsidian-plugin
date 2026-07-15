@@ -2,11 +2,18 @@ name: sidecar-e2e
 
 # Heavy, model-backed quality suite for the Rust sidecar: runs known audio
 # fixtures through the full pipeline and asserts the transcript (accuracy +
-# wire-protocol). Kept out of the per-PR `ci` workflow because it downloads
-# large model artifacts and runs real inference. Triggered manually, plus a
-# weekly run to catch backend/platform drift.
+# wire-protocol). Kept out of the general `ci` workflow because it downloads
+# large model artifacts and runs real inference. It runs on relevant PR paths,
+# manually, and weekly to catch backend/platform drift.
 
 on:
+  pull_request:
+    paths:
+      - '.github/workflows/sidecar-e2e.yml'
+      - 'native/catalog.json'
+      - 'native/src/**'
+      - 'native/tests/**'
+      - 'package.json'
   workflow_dispatch:
   schedule:
     - cron: '0 6 * * 1' # Mondays 06:00 UTC

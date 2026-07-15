@@ -618,10 +618,12 @@ fn validate_static_dimension(
     expected: usize,
     name: &str,
 ) -> Result<(), TranscriptionError> {
-    if let Some(&actual) = shape.get(index)
-        && actual > 0
-        && actual != expected as i64
-    {
+    let actual = shape.get(index).copied().ok_or_else(|| {
+        TranscriptionError::invalid_model_with_details(format!(
+            "{name} mismatch: expected dimension {index} to be {expected}, found shape {shape:?}"
+        ))
+    })?;
+    if actual != expected as i64 {
         return Err(TranscriptionError::invalid_model_with_details(format!(
             "{name} mismatch: expected {expected}, found {actual}"
         )));
