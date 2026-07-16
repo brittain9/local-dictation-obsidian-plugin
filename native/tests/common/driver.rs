@@ -364,7 +364,7 @@ fn run_via_process(
     let mut child = ProcessCommand::new(bin)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
-        .stderr(Stdio::null())
+        .stderr(Stdio::inherit())
         .spawn()
         .unwrap_or_else(|error| panic!("failed to spawn sidecar {bin}: {error}"));
 
