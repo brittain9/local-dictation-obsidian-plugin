@@ -4,7 +4,12 @@ export const RUNTIME_IDS = ['onnx_runtime', 'whisper_cpp'] as const;
 
 export type RuntimeId = (typeof RUNTIME_IDS)[number];
 
-export const MODEL_FAMILY_IDS = ['cohere_transcribe', 'moonshine', 'whisper'] as const;
+export const MODEL_FAMILY_IDS = [
+  'cohere_transcribe',
+  'moonshine',
+  'nemotron_asr',
+  'whisper',
+] as const;
 
 export type ModelFamilyId = (typeof MODEL_FAMILY_IDS)[number];
 

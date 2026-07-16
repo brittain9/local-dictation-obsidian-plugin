@@ -28,19 +28,19 @@ _The first-run wizard installs the native engine and helps you choose between li
 
 | Workflow | What happens | Model fit |
 | --- | --- | --- |
-| **Live dictation** | Provisional words appear and revise in place while you speak. | Moonshine streaming models |
+| **Live dictation** | Provisional words appear and revise in place while you speak. | Moonshine streaming models; experimental Nemotron 3.5 ASR |
 | **Notes and drafts** | Final text lands at your cursor after each pause. | Whisper or Cohere Transcribe batch models |
 | **Meetings and calls** | Add computer audio to microphone capture, then optionally label speakers and add timestamps. | Whisper or Cohere Transcribe batch models |
 
-Local Dictation currently transcribes English only. All catalog models run locally. Moonshine is optimized for live dictation; speaker labels currently require a batch model.
+Local Dictation currently transcribes English only. All catalog models run locally. Moonshine remains the recommended live-dictation default; Nemotron 3.5 ASR is an experimental, higher-resource streaming option. Speaker labels currently require a batch model.
 
 ## Features
 
-- **Live text.** Moonshine streaming models show provisional words and revise them in place until each utterance finalizes.
+- **Live text.** Moonshine and experimental Nemotron streaming models show provisional words and revise them in place until each utterance finalizes.
 - **Meeting capture.** Include system audio from meetings, calls, or videos alongside your microphone on Windows, Linux, and macOS 14.2 or later.
 - **Speaker labels.** Optional on-device diarization assigns session-stable speaker labels. Set an expected maximum when automatic detection creates extra labels. Speaker embeddings stay in memory and are discarded after the session.
 - **Timestamps.** Add elapsed or wall-clock landmarks at intervals, at every phrase, or at Smart paragraph breaks — with sentence-level phrase timing when the model provides it.
-- **Local model choices.** Choose Whisper, Cohere Transcribe, or Moonshine models and download them from Settings.
+- **Local model choices.** Choose Whisper, Cohere Transcribe, Moonshine, or experimental NVIDIA Nemotron 3.5 ASR models and download them from Settings.
 - **Optional text transformation.** Clean up, summarize, extract action items, or apply a custom prompt through local Ollama or remote OpenRouter models.
 - **Short-lived recovery.** Reinsert the latest finalized utterance, or copy and safely restore the raw text from the most recent replace-style batch cleanup.
 - **Explicit remote controls.** Keep transformations local, allow OpenRouter only for oversized transcripts, or disable remote and LLM features entirely.

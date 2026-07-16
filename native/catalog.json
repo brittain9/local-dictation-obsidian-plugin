@@ -1,5 +1,5 @@
 {
-  "catalogVersion": 2,
+  "catalogVersion": 3,
   "runtimes": [
     {
       "runtimeId": "whisper_cpp",
@@ -30,6 +30,12 @@
       "runtimeId": "onnx_runtime",
       "displayName": "Moonshine",
       "summary": "Shows words while you speak. Tiny favors lower resource use, Small balances speed and quality, and Medium favors quality."
+    },
+    {
+      "familyId": "nemotron_asr",
+      "runtimeId": "onnx_runtime",
+      "displayName": "NVIDIA Nemotron 3.5 ASR",
+      "summary": "Experimental high-accuracy English streaming with a larger download and higher resource use. Moonshine Small remains the recommended live-dictation default."
     }
   ],
   "collections": [
@@ -47,6 +53,11 @@
       "collectionId": "moonshine_streaming",
       "displayName": "Moonshine Streaming",
       "summary": "English live-dictation models in three quality tiers."
+    },
+    {
+      "collectionId": "nemotron_asr_streaming",
+      "displayName": "NVIDIA Nemotron 3.5 ASR",
+      "summary": "Experimental English streaming transcription using the pinned 560 ms int8 export."
     }
   ],
   "models": [
@@ -651,6 +662,63 @@
           "downloadUrl": "https://download.moonshine.ai/model/medium-streaming-en/quantized/tokenizer.bin",
           "sha256": "6884b35fd6377d4c4d32336a0bc152f36b64d1e45b6503683cdc238250a8472d",
           "sizeBytes": 249974
+        }
+      ]
+    },
+    {
+      "runtimeId": "onnx_runtime",
+      "familyId": "nemotron_asr",
+      "modelId": "nemotron_asr_0_6b_int8_streaming_560ms",
+      "collectionId": "nemotron_asr_streaming",
+      "displayName": "Nemotron 3.5 ASR 560 ms",
+      "summary": "NVIDIA's 0.6B multilingual RNNT forced to English (US), exported to int8 ONNX for cache-aware live transcription.",
+      "languageTags": ["en"],
+      "uxTags": ["streaming", "accuracy", "cpu", "experimental"],
+      "licenseLabel": "OpenMDW-1.1",
+      "licenseUrl": "https://openmdw.ai/license/1-1/",
+      "sourceUrl": "https://huggingface.co/csukuangfj2/sherpa-onnx-nemotron-3.5-asr-streaming-0.6b-560ms-int8-2026-06-11/tree/ab43d895f5985b1bbab8b6eac8607fcdc05343f3",
+      "modelCardUrl": "https://huggingface.co/nvidia/nemotron-3.5-asr-streaming-0.6b/tree/f3d333391852ba876df169dcc9ba902d25b6ab0b",
+      "notes": [
+        "Stage A is English-only and always sends the pinned graph's en-US prompt index; language selection and auto-detection are not exposed.",
+        "The four required artifacts total about 651 MiB and use the cache-aware 560 ms encoder contract.",
+        "The derived model weights are licensed under OpenMDW-1.1, not this project's MIT license. Installing or using the model accepts those terms."
+      ],
+      "artifacts": [
+        {
+          "artifactId": "encoder",
+          "role": "transcription_model",
+          "required": true,
+          "filename": "encoder.int8.onnx",
+          "downloadUrl": "https://huggingface.co/csukuangfj2/sherpa-onnx-nemotron-3.5-asr-streaming-0.6b-560ms-int8-2026-06-11/resolve/ab43d895f5985b1bbab8b6eac8607fcdc05343f3/encoder.int8.onnx",
+          "sha256": "012e9321373af99021415e0b0eb3ec827b4be3153be6f30d9b448fe65e896e68",
+          "sizeBytes": 657601403
+        },
+        {
+          "artifactId": "decoder",
+          "role": "supporting_file",
+          "required": true,
+          "filename": "decoder.int8.onnx",
+          "downloadUrl": "https://huggingface.co/csukuangfj2/sherpa-onnx-nemotron-3.5-asr-streaming-0.6b-560ms-int8-2026-06-11/resolve/ab43d895f5985b1bbab8b6eac8607fcdc05343f3/decoder.int8.onnx",
+          "sha256": "19f9c98fc6d0a2c33a65a43b36fdb2e914c26c0aa9764be3aebc502a1e982fb0",
+          "sizeBytes": 14978075
+        },
+        {
+          "artifactId": "joiner",
+          "role": "supporting_file",
+          "required": true,
+          "filename": "joiner.int8.onnx",
+          "downloadUrl": "https://huggingface.co/csukuangfj2/sherpa-onnx-nemotron-3.5-asr-streaming-0.6b-560ms-int8-2026-06-11/resolve/ab43d895f5985b1bbab8b6eac8607fcdc05343f3/joiner.int8.onnx",
+          "sha256": "4101c7c679a0bc30483794b27a059e34e79232aa2068d78d51231a22c8b0d7ce",
+          "sizeBytes": 9504438
+        },
+        {
+          "artifactId": "tokens",
+          "role": "supporting_file",
+          "required": true,
+          "filename": "tokens.txt",
+          "downloadUrl": "https://huggingface.co/csukuangfj2/sherpa-onnx-nemotron-3.5-asr-streaming-0.6b-560ms-int8-2026-06-11/resolve/ab43d895f5985b1bbab8b6eac8607fcdc05343f3/tokens.txt",
+          "sha256": "729cc103155bafa785f9cd45746cd41cabe97eab7182fc04d594129587958f8a",
+          "sizeBytes": 131440
         }
       ]
     }

@@ -301,6 +301,34 @@ mod tests {
     }
 
     #[test]
+    fn bundled_nemotron_model_is_pinned_and_within_footprint_gate() {
+        let catalog = ModelCatalog::load_bundled().expect("bundled catalog should load");
+        let model = catalog
+            .find_model(
+                RuntimeId::OnnxRuntime,
+                ModelFamilyId::NemotronAsr,
+                "nemotron_asr_0_6b_int8_streaming_560ms",
+            )
+            .expect("Nemotron 3.5 ASR 560 ms model should be cataloged");
+
+        assert_eq!(model.license_label, "OpenMDW-1.1");
+        assert_eq!(model.artifacts.len(), 4);
+        assert!(model.artifacts.iter().all(|artifact| {
+            artifact
+                .download_url
+                .contains("ab43d895f5985b1bbab8b6eac8607fcdc05343f3")
+        }));
+        assert_eq!(model.required_download_bytes(), 682_215_356);
+        assert!(model.required_download_bytes() <= 700 * 1024 * 1024);
+        assert_eq!(
+            model
+                .primary_artifact()
+                .map(|artifact| artifact.filename.as_str()),
+            Some("encoder.int8.onnx")
+        );
+    }
+
+    #[test]
     fn validate_rejects_duplicate_runtime_ids() {
         let error = ModelCatalog {
             catalog_version: 2,

@@ -217,7 +217,7 @@ export class SetupWizardModal extends Modal {
         text: 'Install a transcription model to enable dictation. You can install more later — smaller models are faster, larger models are more accurate.',
       });
       body.createEl('p', {
-        text: 'Two kinds are available: streaming models (Moonshine) show words live as you speak; standard models (Whisper) transcribe after each pause. For hands-free dictation, start with a streaming model.',
+        text: 'Two kinds are available: streaming models show words live as you speak; standard models transcribe after each pause. For hands-free dictation, start with the recommended Moonshine Small model. Nemotron 3.5 ASR is an experimental, higher-resource streaming option.',
       });
       if (!Platform.isMacOS) {
         body.createEl('p', {

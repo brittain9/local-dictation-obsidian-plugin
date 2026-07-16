@@ -4,14 +4,37 @@ import { assertAbsoluteExistingFilePath } from '../filesystem/path-validation';
 import type { ExternalFileModelSelection } from './model-management-types';
 
 export interface ExternalFileEngineOption {
+  entryFilename?: string;
+  entryFilenameError?: string;
   label: string;
   placeholder: string;
   requirements: string[];
   selection: Pick<ExternalFileModelSelection, 'familyId' | 'runtimeId'>;
 }
 
+export const DEFAULT_EXTERNAL_FILE_ENGINE_SELECTION = {
+  familyId: 'whisper',
+  runtimeId: 'whisper_cpp',
+} as const satisfies Pick<ExternalFileModelSelection, 'familyId' | 'runtimeId'>;
+
 export const EXTERNAL_FILE_ENGINES: readonly ExternalFileEngineOption[] = [
   {
+    entryFilename: 'encoder.int8.onnx',
+    entryFilenameError:
+      'Nemotron 3.5 ASR requires its encoder.int8.onnx artifact. Select encoder.int8.onnx from the pinned 560 ms model directory.',
+    label: 'NVIDIA Nemotron 3.5 ASR (ONNX Runtime)',
+    placeholder: '/absolute/path/to/nemotron/encoder.int8.onnx',
+    requirements: [
+      'Select encoder.int8.onnx from the pinned Nemotron 3.5 ASR 560 ms int8 export.',
+      'The same directory must contain decoder.int8.onnx, joiner.int8.onnx, and tokens.txt.',
+      'Other chunk sizes, ORT GenAI exports, and automatic language detection are not compatible with Stage A.',
+    ],
+    selection: { familyId: 'nemotron_asr', runtimeId: 'onnx_runtime' },
+  },
+  {
+    entryFilename: 'frontend.ort',
+    entryFilenameError:
+      'Moonshine requires its primary frontend.ort artifact. Select frontend.ort from the streaming model directory.',
     label: 'Moonshine (ONNX Runtime)',
     placeholder: '/absolute/path/to/moonshine/frontend.ort',
     requirements: [
@@ -29,7 +52,7 @@ export const EXTERNAL_FILE_ENGINES: readonly ExternalFileEngineOption[] = [
       'The loader validates the file contents; a filename extension alone does not establish compatibility.',
       'Local Dictation currently runs Whisper models in English.',
     ],
-    selection: { familyId: 'whisper', runtimeId: 'whisper_cpp' },
+    selection: DEFAULT_EXTERNAL_FILE_ENGINE_SELECTION,
   },
 ];
 
@@ -51,10 +74,9 @@ export async function validateExternalModelFilePath(
 ): Promise<string> {
   const normalizedPath = await assertAbsoluteExistingFilePath(filePath, 'Model file path');
 
-  if (engine.familyId === 'moonshine' && basename(normalizedPath) !== 'frontend.ort') {
-    throw new Error(
-      'Moonshine requires its primary frontend.ort artifact. Select frontend.ort from the streaming model directory.',
-    );
+  const option = getExternalFileEngineOption(engine);
+  if (option?.entryFilename && basename(normalizedPath) !== option.entryFilename) {
+    throw new Error(option.entryFilenameError ?? `Select ${option.entryFilename}.`);
   }
 
   return normalizedPath;

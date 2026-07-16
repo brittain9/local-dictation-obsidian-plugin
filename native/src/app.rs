@@ -1915,6 +1915,10 @@ mod tests {
             RuntimeId::OnnxRuntime,
             ModelFamilyId::CohereTranscribe,
         )));
+        registry.register_adapter(Box::new(FakeAdapter::for_family(
+            RuntimeId::OnnxRuntime,
+            ModelFamilyId::NemotronAsr,
+        )));
         Arc::new(registry)
     }
 
@@ -2075,6 +2079,7 @@ mod tests {
                     vec![
                         (RuntimeId::OnnxRuntime, ModelFamilyId::CohereTranscribe),
                         (RuntimeId::OnnxRuntime, ModelFamilyId::Moonshine),
+                        (RuntimeId::OnnxRuntime, ModelFamilyId::NemotronAsr),
                         (RuntimeId::WhisperCpp, ModelFamilyId::Whisper),
                     ]
                 );

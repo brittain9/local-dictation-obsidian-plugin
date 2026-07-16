@@ -5,6 +5,7 @@ import { formatBytes } from '../shared/format-utils';
 import type { UserFeedback } from '../shared/user-feedback';
 import { buildCapabilityLabels } from './capability-view';
 import {
+  DEFAULT_EXTERNAL_FILE_ENGINE_SELECTION,
   EXTERNAL_FILE_ENGINES,
   formatExternalModelValidationError,
   getExternalFileEngineOption,
@@ -167,12 +168,7 @@ export class ExternalModelFileModal extends Modal {
         return option.selection;
       }
     }
-    return (
-      EXTERNAL_FILE_ENGINES[1]?.selection ?? {
-        familyId: 'whisper',
-        runtimeId: 'whisper_cpp',
-      }
-    );
+    return DEFAULT_EXTERNAL_FILE_ENGINE_SELECTION;
   }
 }
 

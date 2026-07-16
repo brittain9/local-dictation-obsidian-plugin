@@ -77,12 +77,15 @@ pub struct StreamingRevision {
     pub revision: u32,
     pub text: String,
     pub processing_ms: u64,
+    pub utterance_duration_ms: u64,
 }
 
 #[derive(Debug, Default, Clone)]
 pub struct StreamingOutcome {
     pub partials: Vec<StreamingRevision>,
     pub final_text: String,
+    pub final_revision: Option<u32>,
+    pub processing_ms: u64,
     pub errors: Vec<String>,
     pub stopped: bool,
 }
@@ -264,10 +267,13 @@ fn apply_streaming_events(app: &mut AppState, events: Vec<Event>, outcome: &mut 
                 processing_duration_ms,
                 revision,
                 text,
+                utterance_duration_ms,
                 ..
             } => {
                 let text = text.trim().to_string();
+                outcome.processing_ms += processing_duration_ms;
                 if is_final {
+                    outcome.final_revision = Some(revision);
                     if !text.is_empty() {
                         outcome.final_text = text;
                     }
@@ -276,6 +282,7 @@ fn apply_streaming_events(app: &mut AppState, events: Vec<Event>, outcome: &mut 
                         revision,
                         text,
                         processing_ms: processing_duration_ms,
+                        utterance_duration_ms,
                     });
                 }
             }
@@ -357,7 +364,7 @@ fn run_via_process(
     let mut child = ProcessCommand::new(bin)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
-        .stderr(Stdio::null())
+        .stderr(Stdio::inherit())
         .spawn()
         .unwrap_or_else(|error| panic!("failed to spawn sidecar {bin}: {error}"));
 
