@@ -451,8 +451,8 @@ fn verify_graph_topology(
             3,
         )?;
         if let ValueType::Tensor { shape, .. } = input.dtype() {
-            validate_static_dimension(shape, 0, config.predictor_layers, "decoder state layers")?;
-            validate_static_dimension(shape, 2, config.predictor_hidden, "decoder state hidden")?;
+            validate_model_dimension(shape, 0, config.predictor_layers, "decoder state layers")?;
+            validate_model_dimension(shape, 2, config.predictor_hidden, "decoder state hidden")?;
         }
     }
     verify_tensor(
@@ -475,8 +475,8 @@ fn verify_graph_topology(
             3,
         )?;
         if let ValueType::Tensor { shape, .. } = output.dtype() {
-            validate_static_dimension(shape, 0, config.predictor_layers, "decoder state layers")?;
-            validate_static_dimension(shape, 2, config.predictor_hidden, "decoder state hidden")?;
+            validate_model_dimension(shape, 0, config.predictor_layers, "decoder state layers")?;
+            validate_model_dimension(shape, 2, config.predictor_hidden, "decoder state hidden")?;
         }
     }
     verify_tensor(
@@ -499,10 +499,10 @@ fn verify_graph_topology(
     )?;
 
     if let ValueType::Tensor { shape, .. } = encoder.inputs()[0].dtype() {
-        validate_static_dimension(shape, 1, config.feature_dim, "encoder feature dimension")?;
+        validate_model_dimension(shape, 1, config.feature_dim, "encoder feature dimension")?;
     }
     if let ValueType::Tensor { shape, .. } = encoder.outputs()[0].dtype() {
-        validate_static_dimension(shape, 1, config.encoder_dim, "encoder output dimension")?;
+        validate_model_dimension(shape, 1, config.encoder_dim, "encoder output dimension")?;
     }
     for (value_type, dimensions, label) in [
         (
@@ -544,15 +544,15 @@ fn verify_graph_topology(
     ] {
         if let ValueType::Tensor { shape, .. } = value_type {
             for (offset, expected) in dimensions.into_iter().enumerate() {
-                validate_static_dimension(shape, offset + 1, expected, label)?;
+                validate_model_dimension(shape, offset + 1, expected, label)?;
             }
         }
     }
     if let ValueType::Tensor { shape, .. } = joiner.inputs()[0].dtype() {
-        validate_static_dimension(shape, 1, config.encoder_dim, "joiner encoder dimension")?;
+        validate_model_dimension(shape, 1, config.encoder_dim, "joiner encoder dimension")?;
     }
     if let ValueType::Tensor { shape, .. } = joiner.inputs()[1].dtype() {
-        validate_static_dimension(
+        validate_model_dimension(
             shape,
             1,
             config.predictor_hidden,
@@ -560,7 +560,7 @@ fn verify_graph_topology(
         )?;
     }
     if let ValueType::Tensor { shape, .. } = decoder.outputs()[0].dtype() {
-        validate_static_dimension(
+        validate_model_dimension(
             shape,
             1,
             config.predictor_hidden,
@@ -568,7 +568,7 @@ fn verify_graph_topology(
         )?;
     }
     if let ValueType::Tensor { shape, .. } = joiner.outputs()[0].dtype() {
-        validate_static_dimension(shape, 3, config.vocab_size, "joiner vocabulary dimension")?;
+        validate_model_dimension(shape, 3, config.vocab_size, "joiner vocabulary dimension")?;
     }
     Ok(())
 }
@@ -612,7 +612,13 @@ fn verify_tensor(
     Ok(())
 }
 
-fn validate_static_dimension(
+/// Validate a model-declared tensor dimension without rejecting symbolic axes.
+///
+/// ONNX Runtime exposes symbolic dimensions as negative values. The concrete
+/// dimensions are still enforced on every tensor we create and every graph
+/// output we consume; metadata validation can only reject a conflicting
+/// positive declaration.
+fn validate_model_dimension(
     shape: &[i64],
     index: usize,
     expected: usize,
@@ -623,7 +629,7 @@ fn validate_static_dimension(
             "{name} mismatch: expected dimension {index} to be {expected}, found shape {shape:?}"
         ))
     })?;
-    if actual != expected as i64 {
+    if actual >= 0 && actual != expected as i64 {
         return Err(TranscriptionError::invalid_model_with_details(format!(
             "{name} mismatch: expected {expected}, found {actual}"
         )));
@@ -1477,6 +1483,24 @@ mod tests {
         tokenizer.validate(4).unwrap();
         assert_eq!(tokenizer.decode(&[0, 1, 2]).unwrap(), "hello world");
         assert!(tokenizer.validate(3).is_err());
+    }
+
+    #[test]
+    fn model_dimensions_accept_symbolic_axes_but_reject_static_mismatches() {
+        validate_model_dimension(&[1, -1, 1024], 1, 56, "encoder channel cache").unwrap();
+        validate_model_dimension(&[1, 56, 1024], 1, 56, "encoder channel cache").unwrap();
+
+        let error =
+            validate_model_dimension(&[1, 55, 1024], 1, 56, "encoder channel cache").unwrap_err();
+        assert_eq!(error.code, "invalid_model_file");
+        assert!(
+            error
+                .details
+                .as_deref()
+                .is_some_and(|details| details.contains("expected 56, found 55")),
+            "unexpected error details: {:?}",
+            error.details
+        );
     }
 
     #[test]
