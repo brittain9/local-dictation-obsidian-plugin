@@ -3,8 +3,9 @@ name: sidecar-e2e
 # Heavy, model-backed quality suite for the Rust sidecar: runs known audio
 # fixtures through the full pipeline and asserts the transcript (accuracy +
 # wire-protocol). Kept out of the general `ci` workflow because it downloads
-# large model artifacts and runs real inference. It runs on relevant PR paths,
-# manually, and weekly to catch backend/platform drift.
+# large model artifacts and runs real inference. English smoke coverage runs on
+# relevant PR paths; the exhaustive multilingual matrix runs manually, weekly,
+# and as a blocking release gate in release.yml.
 
 on:
   pull_request:
@@ -124,6 +125,10 @@ jobs:
           if-no-files-found: error
 
   multilingual-e2e:
+    # The exhaustive matrix is a release/weekly certification gate. Keep it
+    # manually dispatchable for high-risk ASR changes without adding ~18
+    # minutes to every native-code PR update.
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
 
     steps:
