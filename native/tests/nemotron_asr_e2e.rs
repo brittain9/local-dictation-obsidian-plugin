@@ -119,6 +119,7 @@ fn nemotron_runs_through_vad_worker_and_revision_protocol() {
     );
     let missing = missing_anchors(&outcome.final_text, &fixture.anchors);
     assert!(missing.is_empty(), "missing anchor words: {missing:?}");
+
     let audio_duration_ms = (samples.len() as u64 * 1_000) / 16_000;
     let real_time_factor = outcome.processing_ms as f64 / audio_duration_ms.max(1) as f64;
     assert!(

@@ -1,6 +1,6 @@
 //! Real-model multilingual product-path quality and performance gates. The
-//! committed speech is deterministic synthetic audio, so it is a reproducible
-//! regression floor rather than a substitute for native-speaker evaluation.
+//! committed speech is pinned human read speech, so it is a reproducible
+//! regression floor rather than a substitute for broader native-speaker evaluation.
 
 mod common;
 
@@ -14,7 +14,7 @@ use common::quality_report::{self, QualityMeasurement};
 use common::text::{character_error_rate, word_error_rate};
 use common::{audio, driver};
 use local_dictation_sidecar::engine::{ModelFamilyId, RuntimeId};
-use local_dictation_sidecar::protocol::{ContextWindow, ContextWindowSource, SelectedModel};
+use local_dictation_sidecar::protocol::SelectedModel;
 use local_dictation_sidecar::session::SpeakingStyle;
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
@@ -26,7 +26,11 @@ const NEMOTRON_MAX_REALTIME_FACTOR: f64 = 1.0;
 /// hosted CPU runner is deliberately retained as a portable correctness path,
 /// with a fixed wall-time ceiling that catches regressions without pretending
 /// its CPU RTF is representative of accelerated desktop inference.
-const WHISPER_MAX_PROCESSING_MS: u64 = 45_000;
+const WHISPER_MANUAL_MAX_PROCESSING_MS: u64 = 45_000;
+/// Automatic detection performs a language-identification pass before
+/// transcription. Keep that additional work explicit instead of applying the
+/// manual-selection ceiling to two inference passes.
+const WHISPER_AUTO_MAX_PROCESSING_MS: u64 = 75_000;
 
 struct Fixture {
     id: String,
@@ -128,7 +132,7 @@ fn quality_assessment_accumulates_session_and_performance_failures() {
     };
     let result = TranscriptionRun {
         text: "local speech".to_string(),
-        processing_ms: WHISPER_MAX_PROCESSING_MS + 1,
+        processing_ms: WHISPER_MANUAL_MAX_PROCESSING_MS + 1,
         first_partial_audio_ms: None,
         utterance_count: Some(1),
         partial_count: None,
@@ -142,7 +146,9 @@ fn quality_assessment_accumulates_session_and_performance_failures() {
             model_name: "Whisper Large V3 Turbo Q8",
             selection: "manual",
             result: &result,
-            performance_budget: PerformanceBudget::ProcessingDurationMs(WHISPER_MAX_PROCESSING_MS),
+            performance_budget: PerformanceBudget::ProcessingDurationMs(
+                WHISPER_MANUAL_MAX_PROCESSING_MS,
+            ),
         },
         &fixture,
         10 * 16_000,
@@ -322,31 +328,12 @@ fn assess_quality(run: ModelRun<'_>, fixture: &Fixture, samples: usize) -> Vec<S
 
 fn whisper_transcribe(model_path: &Path, language: &str, samples: &[i16]) -> TranscriptionRun {
     let frames = audio::fixture_frames_with_trailing_silence(samples);
-    let outcome = if language == "ja" {
-        let text = "ローカル 音声認識 プライバシー".to_string();
-        driver::transcribe_in_process_language_with_context(
-            model_path,
-            &frames,
-            SpeakingStyle::Balanced,
-            language,
-            ContextWindow {
-                budget_chars: text.chars().count() as u32,
-                sources: vec![ContextWindowSource::NoteGlossary {
-                    text: text.clone(),
-                    truncated: false,
-                }],
-                text,
-                truncated: false,
-            },
-        )
-    } else {
-        driver::transcribe_in_process_language(
-            model_path,
-            &frames,
-            SpeakingStyle::Balanced,
-            language,
-        )
-    };
+    let outcome = driver::transcribe_in_process_language(
+        model_path,
+        &frames,
+        SpeakingStyle::Balanced,
+        language,
+    );
     TranscriptionRun {
         text: outcome.text,
         processing_ms: outcome.processing_ms,
@@ -414,7 +401,7 @@ fn nemotron_and_whisper_transcribe_every_enabled_language_without_translation() 
                 selection: "manual",
                 result: &result,
                 performance_budget: PerformanceBudget::ProcessingDurationMs(
-                    WHISPER_MAX_PROCESSING_MS,
+                    WHISPER_MANUAL_MAX_PROCESSING_MS,
                 ),
             },
             &fixture,
@@ -445,7 +432,7 @@ fn nemotron_and_whisper_transcribe_every_enabled_language_without_translation() 
                 selection: "auto",
                 result: &result,
                 performance_budget: PerformanceBudget::ProcessingDurationMs(
-                    WHISPER_MAX_PROCESSING_MS,
+                    WHISPER_AUTO_MAX_PROCESSING_MS,
                 ),
             },
             &fixture,

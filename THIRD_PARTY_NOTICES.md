@@ -123,6 +123,26 @@ The Nemotron adapter's native Rust graph orchestration and feature frontend
 follow these reference implementations' published behavior. No NeMo,
 sherpa-onnx, or kaldi-native-fbank binary is linked or bundled.
 
+## FLEURS multilingual speech fixtures
+
+- Work: FLEURS: Few-shot Learning Evaluation of Universal Representations of
+  Speech
+- Authors: Alexis Conneau, Min Ma, Simran Khanuja, Yu Zhang, Vera Axelrod,
+  Siddharth Dalmia, Jason Riesa, Clara Rivera, and Ankur Bapna
+- Source: https://huggingface.co/datasets/google/fleurs
+- Paper: https://arxiv.org/abs/2205.12446
+- License: Creative Commons Attribution 4.0 International (CC BY 4.0)
+  https://creativecommons.org/licenses/by/4.0/
+
+This project redistributes seven FLEURS validation recordings for multilingual
+ASR integration testing. The selected clips are parallel readings of FLEURS
+sentence 1577 in Spanish, German, French, Portuguese, Italian, Dutch, and
+Japanese. They were converted from 16 kHz mono floating-point WAV to 16 kHz mono
+signed 16-bit PCM WAV; speech content was not intentionally modified. Exact
+dataset configuration, row, recording ID, and derived-file SHA-256 are recorded
+in `native/tests/fixtures/multilingual.json`. No endorsement by Google, the
+FLEURS authors, or dataset contributors is implied.
+
 ## WeSpeaker speaker-embedding model
 
 - Work: `wespeaker_en_voxceleb_resnet34_LM`

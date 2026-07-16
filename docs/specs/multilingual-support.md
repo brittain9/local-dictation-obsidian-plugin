@@ -22,9 +22,10 @@ Plugin UI localization remains out of scope.
   post-processing pipeline, so only language-neutral hallucination rules run.
   This prevents English cleanup rules from damaging non-English text at the
   cost of less aggressive cleanup for automatically detected English.
-- The committed synthetic corpus covers every enabled base language as a
-  deterministic regression floor. Release validation still includes human
-  review with native-speaker recordings before broadening the matrix.
+- The committed human-speech corpus covers every enabled base language with a
+  pinned Google FLEURS validation recording. It is a deterministic read-speech
+  regression floor; release validation still includes broader native-speaker
+  review before broadening the matrix.
 
 The former English-only constraint existed at every layer. This migration
 replaced the following behaviors:

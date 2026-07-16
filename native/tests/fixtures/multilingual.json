@@ -1,72 +1,84 @@
 {
   "schemaVersion": 1,
-  "generator": {
-    "engine": "eSpeak NG 1.52.0",
-    "resampler": "FFmpeg PCM s16le, 16 kHz mono",
-    "purpose": "Deterministic multilingual integration regression floor; not a native-speaker quality corpus"
+  "source": {
+    "dataset": "Google FLEURS",
+    "repository": "google/fleurs",
+    "revision": "70bb2e8",
+    "split": "validation",
+    "sentenceId": 1577,
+    "license": "CC BY 4.0",
+    "conversion": "FFmpeg PCM s16le, 16 kHz mono",
+    "purpose": "Pinned human-speech multilingual ASR quality corpus"
   },
   "fixtures": [
     {
       "language": "es",
-      "voice": "es",
-      "speed": 145,
-      "audioPath": "audio/es-espeak-local-privacy.wav",
-      "sha256": "67c9702c53f8f198139c328c789a4c6d8baded439e8ca8bd7e8aa44bbb7bdf33",
-      "reference": "La tecnología local protege la privacidad y convierte la voz en texto sin enviar datos a internet.",
-      "anchors": ["privacidad", "voz", "texto"]
+      "config": "es_419",
+      "row": 379,
+      "recordingId": "9112831776083636504",
+      "audioPath": "audio/es-fleurs-1577.wav",
+      "sha256": "617ba9c8060ffcfb71b90ddd966b63eef185a1bb921ade88d30d86ee079897eb",
+      "reference": "a mí me pareció que eso no tenía sentido definitivamente no fue justo",
+      "anchors": []
     },
     {
       "language": "de",
-      "voice": "de",
-      "speed": 145,
-      "audioPath": "audio/de-espeak-local-privacy.wav",
-      "sha256": "760ce3f26bc51007c70212a4cb5c74c2ce01e19a8a921dd7d2a7642af7ba3670",
-      "reference": "Lokale Spracherkennung schützt die Privatsphäre und wandelt Sprache in Text um, ohne Daten an das Internet zu senden.",
-      "anchors": ["Privatsphäre", "Sprache", "Text"]
+      "config": "de_de",
+      "row": 6,
+      "recordingId": "10391130436992033127",
+      "audioPath": "audio/de-fleurs-1577.wav",
+      "sha256": "5cc126e8ece51d0b58549a4b00f0e52b1c45f79759bc79741dd3293395377c13",
+      "reference": "das erschien mir nicht sinnvoll es war ganz gewiss nicht fair",
+      "anchors": []
     },
     {
       "language": "fr",
-      "voice": "fr",
-      "speed": 145,
-      "audioPath": "audio/fr-espeak-local-privacy.wav",
-      "sha256": "089d17b4ae3a14d4240c2745680e30d36d25f3cfebc1f096ff569c47bf079b87",
-      "reference": "La reconnaissance vocale locale protège la vie privée et convertit la voix en texte sans envoyer de données sur Internet.",
-      "anchors": ["privée", "voix", "texte"]
+      "config": "fr_fr",
+      "row": 183,
+      "recordingId": "3920926992201662587",
+      "audioPath": "audio/fr-fleurs-1577.wav",
+      "sha256": "7d33feaef7fea341c882f3174cbf728c3f25889a771f533b106b942d5ea2bcec",
+      "reference": "cela ne me semblait pas logique ce n'était certainement pas juste",
+      "anchors": []
     },
     {
       "language": "pt",
-      "voice": "pt",
-      "speed": 145,
-      "audioPath": "audio/pt-espeak-local-privacy.wav",
-      "sha256": "0c0ae4480d6dd77cd8469b668c7dc2e97a2995e917257fa93749bcf52c1d2f7f",
-      "reference": "O reconhecimento de voz local protege a privacidade e converte a fala em texto sem enviar dados para a internet.",
-      "anchors": ["privacidade", "fala", "texto"]
+      "config": "pt_br",
+      "row": 377,
+      "recordingId": "9776935321561977831",
+      "audioPath": "audio/pt-fleurs-1577.wav",
+      "sha256": "e2aa4cf1196b624e5fd2913254cedd5efb0f503ce9023fee21b988be06988580",
+      "reference": "aquilo não pareceu fazer sentido para mim certamente não foi justo",
+      "anchors": []
     },
     {
       "language": "it",
-      "voice": "it",
-      "speed": 145,
-      "audioPath": "audio/it-espeak-local-privacy.wav",
-      "sha256": "7e582400151754f30947ee09c0b079262b92bd5e264e140e589cf4fa1340957d",
-      "reference": "Il riconoscimento vocale locale protegge la privacy e converte la voce in testo senza inviare dati a internet.",
-      "anchors": ["privacy", "voce", "testo"]
+      "config": "it_it",
+      "row": 25,
+      "recordingId": "10752136277852077918",
+      "audioPath": "audio/it-fleurs-1577.wav",
+      "sha256": "48ce6903bfaee74e340a4afe8a53464e65e78e7eae93199b5ce346e0abe4e8c7",
+      "reference": "tutto ciò non mi sembrava avesse senso sicuramente non era giusto",
+      "anchors": []
     },
     {
       "language": "nl",
-      "voice": "nl",
-      "speed": 145,
-      "audioPath": "audio/nl-espeak-local-privacy.wav",
-      "sha256": "980007c7e5435ee97fe02bbcb328ce2b8caa4f18c42e00ec35f3a4446b58ce77",
-      "reference": "Lokale spraakherkenning beschermt de privacy en zet spraak om in tekst zonder gegevens naar internet te sturen.",
-      "anchors": ["privacy", "spraak", "tekst"]
+      "config": "nl_nl",
+      "row": 50,
+      "recordingId": "14672582239113223174",
+      "audioPath": "audio/nl-fleurs-1577.wav",
+      "sha256": "b5eab128231c1ce3727149a332d7dbada0d255ba2c7201d5072b71a0aeaee88b",
+      "reference": "dat vond ik erg raar het was ongetwijfeld oneerlijk",
+      "anchors": []
     },
     {
       "language": "ja",
-      "voice": "ja",
-      "speed": 135,
-      "audioPath": "audio/ja-espeak-local-privacy.wav",
-      "sha256": "9580ae210692a9c24d6bf18418f4b41c382c38873296b7fbe8baf60851c41b87",
-      "reference": "ローカル音声認識はプライバシーを守り、音声をインターネットに送信せずにテキストへ変換します。",
+      "config": "ja_jp",
+      "row": 152,
+      "recordingId": "3426488501371889532",
+      "audioPath": "audio/ja-fleurs-1577.wav",
+      "sha256": "c70eb0626213760ef684f869bd8020b59d82353da8a0709d3be9f72ed4ab338b",
+      "reference": "意味があるように思えませんでしたし 確かに不公平でした",
       "anchors": []
     }
   ],

@@ -50,7 +50,8 @@ describe('transcription quality report', () => {
     expect(markdown).toContain('15.0% / 20.0% WER');
     expect(markdown).toContain('0.33× / ≤ 1.00×');
     expect(markdown).toContain('RTF is model processing time divided by fixture audio duration');
-    expect(markdown).toContain('not a substitute for native-speaker release review');
+    expect(markdown).toContain('pinned Google FLEURS validation recordings');
+    expect(markdown).toContain('not a substitute for broader native-speaker review');
     expect(markdown).toContain('hosted-CPU timing budget is a portable regression ceiling');
   });
 
