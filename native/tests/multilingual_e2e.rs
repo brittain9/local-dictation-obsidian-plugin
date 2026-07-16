@@ -244,12 +244,12 @@ fn whisper_transcribe(model_path: &Path, language: &str, samples: &[i16]) -> (St
             language,
         )
     };
-    assert!(outcome.stopped, "Whisper session did not stop");
     assert!(
         outcome.errors.is_empty(),
         "Whisper errors: {:?}",
         outcome.errors
     );
+    assert!(outcome.stopped, "Whisper session did not stop");
     (outcome.text, outcome.processing_ms, outcome.utterance_count)
 }
 
@@ -268,12 +268,12 @@ fn nemotron_transcribe(
         &frames,
         language,
     );
-    assert!(outcome.stopped, "Nemotron session did not stop");
     assert!(
         outcome.errors.is_empty(),
         "Nemotron errors: {:?}",
         outcome.errors
     );
+    assert!(outcome.stopped, "Nemotron session did not stop");
     (
         outcome.final_text,
         outcome.processing_ms,
