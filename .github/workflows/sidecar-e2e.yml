@@ -74,10 +74,12 @@ jobs:
         run: npm run test:sidecar:e2e
 
       - name: Upload quality measurements
+        if: always()
         uses: actions/upload-artifact@v7
         with:
           name: quality-measurements-whisper-english
           path: ${{ runner.temp }}/quality/whisper-english.jsonl
+          if-no-files-found: error
 
   nemotron-e2e:
     runs-on: ubuntu-latest
@@ -114,10 +116,12 @@ jobs:
         run: npm run test:sidecar:nemotron:e2e
 
       - name: Upload quality measurements
+        if: always()
         uses: actions/upload-artifact@v7
         with:
           name: quality-measurements-nemotron-english
           path: ${{ runner.temp }}/quality/nemotron-english.jsonl
+          if-no-files-found: error
 
   multilingual-e2e:
     runs-on: ubuntu-latest
@@ -157,13 +161,16 @@ jobs:
         run: npm run test:sidecar:multilingual:e2e
 
       - name: Upload quality measurements
+        if: always()
         uses: actions/upload-artifact@v7
         with:
           name: quality-measurements-multilingual
           path: ${{ runner.temp }}/quality/multilingual.jsonl
+          if-no-files-found: error
 
   quality-report:
     needs: [transcription-e2e, nemotron-e2e, multilingual-e2e]
+    if: ${{ !cancelled() }}
     runs-on: ubuntu-latest
 
     steps:

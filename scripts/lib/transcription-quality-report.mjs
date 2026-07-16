@@ -302,6 +302,7 @@ export function renderQualityReportMarkdown(report) {
     '',
     '- English uses public human-speech fixtures. The seven non-English fixtures use pinned eSpeak NG audio as a deterministic product-path regression floor; they are not a substitute for native-speaker release review.',
     '- Measurements are CPU-only and include the app state, VAD, worker, adapter, and transcript event path. Hardware changes affect absolute timing.',
+    '- Whisper Large V3 Turbo is a GPU-oriented catalog model. Its hosted-CPU timing budget is a portable regression ceiling, not a claim about accelerated desktop latency.',
     '- Model downloads and one-time installation are excluded. Full per-fixture measurements are retained in the adjacent JSON artifact.',
     '',
   );
