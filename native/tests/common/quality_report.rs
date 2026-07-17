@@ -14,7 +14,6 @@ pub const REPORT_PATH_ENV: &str = "STT_QUALITY_REPORT_PATH";
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct QualityMeasurement<'a> {
-    pub schema_version: u8,
     pub suite: &'a str,
     pub model_id: &'a str,
     pub model_name: &'a str,
@@ -39,44 +38,14 @@ pub struct QualityMeasurement<'a> {
     pub passed: bool,
 }
 
-impl<'a> QualityMeasurement<'a> {
-    #[allow(clippy::too_many_arguments)]
-    pub fn new(
-        suite: &'a str,
-        model_id: &'a str,
-        model_name: &'a str,
-        language: &'a str,
-        selection: &'a str,
-        fixture_id: &'a str,
-        quality_metric: &'a str,
-        quality_error_rate: f64,
-        quality_budget: f64,
-        audio_duration_ms: u64,
-        processing_duration_ms: u64,
-        real_time_factor_budget: f64,
-    ) -> Self {
-        Self {
-            schema_version: 1,
-            suite,
-            model_id,
-            model_name,
-            language,
-            selection,
-            fixture_id,
-            quality_metric,
-            quality_error_rate,
-            quality_budget,
-            audio_duration_ms,
-            processing_duration_ms,
-            real_time_factor: processing_duration_ms as f64 / audio_duration_ms.max(1) as f64,
-            real_time_factor_budget,
-            first_partial_audio_ms: None,
-            first_partial_audio_budget_ms: None,
-            utterance_count: None,
-            partial_count: None,
-            passed: true,
-        }
-    }
+/// The on-disk line format: the schema version is `record`'s concern, not a
+/// field every suite restates.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct VersionedMeasurement<'a> {
+    schema_version: u8,
+    #[serde(flatten)]
+    measurement: &'a QualityMeasurement<'a>,
 }
 
 pub fn record(measurement: &QualityMeasurement<'_>) {
@@ -96,9 +65,54 @@ pub fn record(measurement: &QualityMeasurement<'_>) {
         .append(true)
         .open(&path)
         .unwrap_or_else(|error| panic!("open quality report {}: {error}", path.display()));
-    serde_json::to_writer(&mut output, measurement)
-        .unwrap_or_else(|error| panic!("serialize quality measurement: {error}"));
+    serde_json::to_writer(
+        &mut output,
+        &VersionedMeasurement {
+            schema_version: 1,
+            measurement,
+        },
+    )
+    .unwrap_or_else(|error| panic!("serialize quality measurement: {error}"));
     output
         .write_all(b"\n")
         .unwrap_or_else(|error| panic!("write quality report {}: {error}", path.display()));
+}
+
+/// Locks the JSONL line shape consumed by
+/// `scripts/lib/transcription-quality-report.mjs`: camelCase keys, a top-level
+/// `schemaVersion`, and omitted (not null) optional fields.
+#[test]
+fn versioned_measurement_serializes_the_parser_contract() {
+    let line = serde_json::to_value(VersionedMeasurement {
+        schema_version: 1,
+        measurement: &QualityMeasurement {
+            suite: "suite",
+            model_id: "model",
+            model_name: "Model",
+            language: "en",
+            selection: "manual",
+            fixture_id: "fixture",
+            quality_metric: "wer",
+            quality_error_rate: 0.1,
+            quality_budget: 0.2,
+            audio_duration_ms: 1_000,
+            processing_duration_ms: 500,
+            real_time_factor: 0.5,
+            real_time_factor_budget: 1.0,
+            first_partial_audio_ms: None,
+            first_partial_audio_budget_ms: None,
+            utterance_count: Some(1),
+            partial_count: None,
+            passed: true,
+        },
+    })
+    .expect("measurement must serialize");
+
+    assert_eq!(line["schemaVersion"], 1);
+    assert_eq!(line["modelId"], "model");
+    assert_eq!(line["realTimeFactorBudget"], 1.0);
+    assert_eq!(line["utteranceCount"], 1);
+    let object = line.as_object().expect("line must be a JSON object");
+    assert!(!object.contains_key("firstPartialAudioMs"));
+    assert!(!object.contains_key("partialCount"));
 }

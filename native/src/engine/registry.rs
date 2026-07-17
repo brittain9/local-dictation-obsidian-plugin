@@ -120,17 +120,6 @@ impl EngineRegistry {
         }
     }
 
-    pub fn model_language_support(
-        &self,
-        runtime_id: RuntimeId,
-        family_id: ModelFamilyId,
-        path: &Path,
-    ) -> Result<LanguageSupport, TranscriptionError> {
-        self.adapter(runtime_id, family_id)
-            .ok_or_else(|| missing_adapter_error(runtime_id, family_id))?
-            .model_language_support(path)
-    }
-
     pub fn probe_model_and_language_support(
         &self,
         runtime_id: RuntimeId,

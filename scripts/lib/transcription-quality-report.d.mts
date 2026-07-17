@@ -15,30 +15,55 @@ export interface QualityMeasurement {
   realTimeFactorBudget: number;
   firstPartialAudioMs?: number;
   firstPartialAudioBudgetMs?: number;
+  utteranceCount?: number;
+  partialCount?: number;
   passed: boolean;
 }
 
 export interface QualityReportRow {
+  audioDurationMs: number;
+  firstPartialAudioMs: number | null;
+  firstPartialAudioBudgetMs: number | null;
   fixtureCount: number;
+  language: string;
   maxErrorRate: number;
-  meanErrorRate: number;
-  realTimeFactor: number;
+  maxQualityBudget: number;
   maxRealTimeFactorBudget: number;
+  meanErrorRate: number;
+  modelId: string;
+  modelName: string;
+  passed: boolean;
+  processingDurationMs: number;
+  qualityMetric: string;
+  realTimeFactor: number;
+  selection: string;
+  suite: string;
 }
 
 export interface QualityReport {
-  rows: QualityReportRow[];
+  schemaVersion: number;
+  generatedAt: string | null;
+  commitSha: string | null;
+  runner: string | null;
   summary: {
+    audioDurationMs: number;
     failedMeasurements: number;
     languages: string[];
     measurementCount: number;
     models: string[];
+    passedMeasurements: number;
   };
+  rows: QualityReportRow[];
+  measurements: QualityMeasurement[];
 }
 
 export function parseQualityMeasurements(text: string, source?: string): QualityMeasurement[];
 export function buildQualityReport(
   measurements: QualityMeasurement[],
-  metadata?: { commitSha?: string; generatedAt?: string; runner?: string },
+  metadata?: {
+    commitSha?: string | null;
+    generatedAt?: string | null;
+    runner?: string | null;
+  },
 ): QualityReport;
 export function renderQualityReportMarkdown(report: QualityReport): string;

@@ -143,7 +143,7 @@ enum SessionModel {
     Batch(Box<dyn LoadedModel>),
     Streaming {
         model: Box<dyn StreamingModel>,
-        utterance: Box<Option<OpenStreamingUtterance>>,
+        utterance: Option<Box<OpenStreamingUtterance>>,
     },
 }
 
@@ -206,7 +206,7 @@ fn load_session_resources(
         model.set_language(&metadata.language)?;
         SessionModel::Streaming {
             model,
-            utterance: Box::new(None),
+            utterance: None,
         }
     } else {
         SessionModel::Batch(adapter.load(&metadata.model_file_path, metadata.gpu_config)?)
@@ -560,7 +560,7 @@ fn worker_main(
 /// trusting whatever the model was doing when it panicked.
 fn clear_streaming_utterance(session: &mut WorkerSession) {
     if let SessionModel::Streaming { utterance, .. } = &mut session.model {
-        **utterance = None;
+        *utterance = None;
     }
 }
 
@@ -584,13 +584,13 @@ fn begin_streaming_utterance(
     let cadence = model.partial_cadence();
     model.accept_audio(&utterance.samples)?;
     let initial_samples = utterance.samples.len();
-    **open = Some(OpenStreamingUtterance {
+    *open = Some(Box::new(OpenStreamingUtterance {
         cadence: PartialCadence::new(now_ms, initial_samples, cadence),
         last_emitted_text: String::new(),
         next_revision: 0,
         utterance,
         utterance_id,
-    });
+    }));
     Ok(())
 }
 
@@ -614,8 +614,7 @@ fn stream_audio(
         ));
     };
     let Some(open) = open
-        .as_mut()
-        .as_mut()
+        .as_deref_mut()
         .filter(|open| open.utterance_id == utterance_id)
     else {
         return Ok(());
@@ -1074,7 +1073,7 @@ mod tests {
             family_capabilities: streaming_caps(),
             model: SessionModel::Streaming {
                 model: Box::new(FixtureStreamingModel::default()),
-                utterance: Box::new(None),
+                utterance: None,
             },
             processors: post_engine_processors(),
             diarizer: None,
@@ -1736,7 +1735,7 @@ mod tests {
                 model: Box::new(CountingStreamingModel {
                     counts: Arc::clone(&counts),
                 }),
-                utterance: Box::new(None),
+                utterance: None,
             },
             processors: Vec::new(),
             diarizer: None,

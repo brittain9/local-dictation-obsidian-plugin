@@ -3,7 +3,7 @@ import { Platform, PluginSettingTab, Setting } from 'obsidian';
 
 import { formatSystemAudioProbeResultMessage } from '../audio/system-audio-permission-message';
 import {
-  DICTATION_LANGUAGE_OPTIONS,
+  dictationLanguageLabel,
   isDictationLanguage,
   supportedDictationLanguageOptions,
 } from '../language/dictation-language';
@@ -193,10 +193,10 @@ export class LocalSttSettingTab extends PluginSettingTab {
         dropdown.addOption(option.value, option.label);
       }
       if (!languageOptions.some((option) => option.value === selectedLanguage)) {
-        const label =
-          DICTATION_LANGUAGE_OPTIONS.find((option) => option.value === selectedLanguage)?.label ??
-          selectedLanguage;
-        dropdown.addOption(selectedLanguage, `${label} (unsupported)`);
+        dropdown.addOption(
+          selectedLanguage,
+          `${dictationLanguageLabel(selectedLanguage)} (unsupported)`,
+        );
       }
       dropdown.setValue(selectedLanguage);
       dropdown.setDisabled(

@@ -64,23 +64,26 @@ fn every_fixture_transcribes_within_quality_budget() {
                 fixture.id
             ));
         }
-        let mut measurement = QualityMeasurement::new(
-            "english-product-path",
-            model::TEST_MODEL_ID,
-            "Whisper Tiny English Q8",
-            "en",
-            "manual",
-            &fixture.id,
-            "wer",
-            wer,
-            fixture.max_wer,
-            audio_ms as u64,
-            outcome.processing_ms,
-            MAX_REAL_TIME_FACTOR,
-        );
-        measurement.utterance_count = Some(outcome.utterance_count);
-        measurement.passed = fixture_failures.is_empty();
-        quality_report::record(&measurement);
+        quality_report::record(&QualityMeasurement {
+            suite: "english-product-path",
+            model_id: model::TEST_MODEL_ID,
+            model_name: "Whisper Tiny English Q8",
+            language: "en",
+            selection: "manual",
+            fixture_id: &fixture.id,
+            quality_metric: "wer",
+            quality_error_rate: wer,
+            quality_budget: fixture.max_wer,
+            audio_duration_ms: audio_ms as u64,
+            processing_duration_ms: outcome.processing_ms,
+            real_time_factor,
+            real_time_factor_budget: MAX_REAL_TIME_FACTOR,
+            first_partial_audio_ms: None,
+            first_partial_audio_budget_ms: None,
+            utterance_count: Some(outcome.utterance_count),
+            partial_count: None,
+            passed: fixture_failures.is_empty(),
+        });
         failures.extend(fixture_failures);
     }
 

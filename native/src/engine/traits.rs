@@ -23,15 +23,12 @@ pub trait ModelFamilyAdapter: Send + Sync {
     fn capabilities(&self) -> &ModelFamilyCapabilities;
 
     fn probe_model(&self, path: &Path) -> Result<(), TranscriptionError>;
-    fn model_language_support(&self, _path: &Path) -> Result<LanguageSupport, TranscriptionError> {
-        Ok(self.capabilities().supported_languages.clone())
-    }
     fn probe_model_and_language_support(
         &self,
         path: &Path,
     ) -> Result<LanguageSupport, TranscriptionError> {
         self.probe_model(path)?;
-        self.model_language_support(path)
+        Ok(self.capabilities().supported_languages.clone())
     }
     fn load(&self, path: &Path, gpu: GpuConfig)
     -> Result<Box<dyn LoadedModel>, TranscriptionError>;

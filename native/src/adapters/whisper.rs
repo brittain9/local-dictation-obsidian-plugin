@@ -58,12 +58,6 @@ impl ModelFamilyAdapter for WhisperAdapter {
         Ok(())
     }
 
-    fn model_language_support(&self, path: &Path) -> Result<LanguageSupport, TranscriptionError> {
-        validate_model_path(path)?;
-        let context = load_whisper_context(path, &GpuConfig { use_gpu: false })?;
-        Ok(language_support_for_context(&context))
-    }
-
     fn probe_model_and_language_support(
         &self,
         path: &Path,
@@ -80,11 +74,7 @@ impl ModelFamilyAdapter for WhisperAdapter {
     ) -> Result<Box<dyn LoadedModel>, TranscriptionError> {
         validate_model_path(path)?;
         let context = load_whisper_context(path, &gpu)?;
-        let is_multilingual = context.is_multilingual();
-        Ok(Box::new(LoadedWhisperModel {
-            context,
-            is_multilingual,
-        }))
+        Ok(Box::new(LoadedWhisperModel { context }))
     }
 }
 
@@ -98,7 +88,6 @@ fn language_support_for_context(context: &WhisperContext) -> LanguageSupport {
 
 pub struct LoadedWhisperModel {
     context: WhisperContext,
-    is_multilingual: bool,
 }
 
 impl LoadedModel for LoadedWhisperModel {
@@ -114,7 +103,7 @@ impl LoadedModel for LoadedWhisperModel {
                 "This release has not verified that language with Whisper.",
             ));
         }
-        if request.language != "en" && !self.is_multilingual {
+        if request.language != "en" && !self.context.is_multilingual() {
             return Err(TranscriptionError::unsupported_language(
                 &request.language,
                 "The selected Whisper model contains English-only weights.",
@@ -131,7 +120,9 @@ impl LoadedModel for LoadedWhisperModel {
         let mut params = FullParams::new(SamplingStrategy::Greedy { best_of: 5 });
 
         params.set_n_threads(recommended_thread_count(request.gpu_config.use_gpu));
-        params.set_language((request.language != "auto").then_some(request.language.as_str()));
+        params.set_language(
+            (request.language != AUTOMATIC_LANGUAGE_TAG).then_some(request.language.as_str()),
+        );
         params.set_translate(false);
         params.set_print_special(false);
         params.set_print_progress(false);

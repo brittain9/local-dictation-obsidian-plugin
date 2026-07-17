@@ -20,6 +20,9 @@ use serde::Deserialize;
 use sha2::{Digest, Sha256};
 
 const MAX_WORD_ERROR_RATE: f64 = 0.45;
+/// English rides the long-standing regression corpus, so it gets a stricter
+/// budget than the newly verified languages.
+const MAX_ENGLISH_WORD_ERROR_RATE: f64 = 0.20;
 const MAX_JAPANESE_CER: f64 = 0.45;
 const NEMOTRON_MAX_REALTIME_FACTOR: f64 = 1.0;
 /// Whisper Large V3 Turbo is catalogued as a GPU-oriented accuracy model. The
@@ -237,7 +240,7 @@ fn assess_quality(run: ModelRun<'_>, fixture: &Fixture, samples: usize) -> Vec<S
         } else {
             let wer = word_error_rate(&fixture.reference, &run.result.text);
             let max_wer = if fixture.language == "en" {
-                0.20
+                MAX_ENGLISH_WORD_ERROR_RATE
             } else {
                 MAX_WORD_ERROR_RATE
             };
@@ -303,25 +306,26 @@ fn assess_quality(run: ModelRun<'_>, fixture: &Fixture, samples: usize) -> Vec<S
         ));
     }
 
-    let mut measurement = QualityMeasurement::new(
-        "multilingual-product-path",
-        run.model_id,
-        run.model_name,
-        &fixture.language,
-        run.selection,
-        &fixture.id,
+    quality_report::record(&QualityMeasurement {
+        suite: "multilingual-product-path",
+        model_id: run.model_id,
+        model_name: run.model_name,
+        language: &fixture.language,
+        selection: run.selection,
+        fixture_id: &fixture.id,
         quality_metric,
         quality_error_rate,
         quality_budget,
-        audio_ms,
-        run.result.processing_ms,
-        rtf_budget,
-    );
-    measurement.first_partial_audio_ms = run.result.first_partial_audio_ms;
-    measurement.utterance_count = run.result.utterance_count;
-    measurement.partial_count = run.result.partial_count;
-    measurement.passed = failures.is_empty();
-    quality_report::record(&measurement);
+        audio_duration_ms: audio_ms,
+        processing_duration_ms: run.result.processing_ms,
+        real_time_factor: rtf,
+        real_time_factor_budget: rtf_budget,
+        first_partial_audio_ms: run.result.first_partial_audio_ms,
+        first_partial_audio_budget_ms: None,
+        utterance_count: run.result.utterance_count,
+        partial_count: run.result.partial_count,
+        passed: failures.is_empty(),
+    });
 
     failures
 }

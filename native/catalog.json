@@ -35,7 +35,7 @@
       "familyId": "nemotron_asr",
       "runtimeId": "onnx_runtime",
       "displayName": "NVIDIA Nemotron 3.5 ASR",
-      "summary": "Experimental high-accuracy English streaming with a larger download and higher resource use. Moonshine Small remains the recommended live-dictation default."
+      "summary": "Experimental high-accuracy multilingual streaming with a larger download and higher resource use. Moonshine Small remains the recommended English live-dictation default."
     }
   ],
   "collections": [
@@ -57,7 +57,7 @@
     {
       "collectionId": "nemotron_asr_streaming",
       "displayName": "NVIDIA Nemotron 3.5 ASR",
-      "summary": "Experimental English streaming transcription using the pinned 560 ms int8 export."
+      "summary": "Experimental multilingual streaming transcription using the pinned 560 ms int8 export."
     }
   ],
   "models": [

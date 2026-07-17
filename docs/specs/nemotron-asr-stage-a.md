@@ -2,10 +2,12 @@
 
 This document records gate A0 for the Stage A implementation defined by
 [PR #273](https://github.com/brittain9/local-dictation-obsidian-plugin/pull/273).
-Stage A keeps the product English-only, fixes the encoder prompt to `en-US`,
-and leaves Moonshine as the recommended live-dictation default. The installed
-application runs the selected export through its existing native ONNX Runtime;
-it does not install or invoke Python, PyTorch, NeMo, or sherpa-onnx.
+Stage A shipped English-only, fixed the encoder prompt to `en-US`, and left
+Moonshine as the recommended live-dictation default; the multilingual work in
+[docs/specs/multilingual-support.md](multilingual-support.md) later enabled the
+verified language prompts and automatic detection. The installed application
+runs the selected export through its existing native ONNX Runtime; it does not
+install or invoke Python, PyTorch, NeMo, or sherpa-onnx.
 
 ## Pinned model lineage
 
@@ -89,8 +91,9 @@ The pinned encoder declares these ordered inputs:
 
 It returns `outputs`, `encoded_lengths`, `cache_last_channel_next`,
 `cache_last_time_next`, and `cache_last_channel_next_len` in that order. Stage A
-always sends prompt index `0`, which the graph's pinned `prompt_dictionary`
-maps to `en-US`; auto-detect index `101` is intentionally unused.
+always sent prompt index `0`, which the graph's pinned `prompt_dictionary`
+maps to `en-US`; the multilingual stage now selects the validated prompt index
+for the session language, with `101` driving automatic detection.
 
 Required encoder metadata includes `chunk_size_ms=560`, `window_size=65`,
 `chunk_shift=56`, `subsampling_factor=8`, `feat_dim=128`,
