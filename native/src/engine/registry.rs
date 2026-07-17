@@ -2,10 +2,11 @@ use std::collections::HashMap;
 use std::path::Path;
 
 use crate::engine::capabilities::{
-    EngineCapabilities, ModelFamilyCapabilities, ModelFamilyId, RequestWarning, RuntimeId,
+    EngineCapabilities, LanguageSupport, ModelFamilyCapabilities, ModelFamilyId, RequestWarning,
+    RuntimeId,
 };
 use crate::engine::traits::{ModelFamilyAdapter, Runtime};
-use crate::transcription::TranscriptionRequest;
+use crate::transcription::{TranscriptionError, TranscriptionRequest};
 
 /// Registered runtimes and family adapters. Entries missing from this map are
 /// feature-gated off at compile time; callers surface "unsupported_engine" so
@@ -117,6 +118,17 @@ impl EngineRegistry {
             Some(adapter) => adapter.probe_model(path),
             None => Err(missing_adapter_error(runtime_id, family_id)),
         }
+    }
+
+    pub fn probe_model_and_language_support(
+        &self,
+        runtime_id: RuntimeId,
+        family_id: ModelFamilyId,
+        path: &Path,
+    ) -> Result<LanguageSupport, TranscriptionError> {
+        self.adapter(runtime_id, family_id)
+            .ok_or_else(|| missing_adapter_error(runtime_id, family_id))?
+            .probe_model_and_language_support(path)
     }
 }
 
@@ -246,6 +258,7 @@ mod tests {
             supports_initial_prompt: true,
             supports_streaming: false,
             supports_language_selection: false,
+            supports_automatic_language_detection: false,
             supported_languages: LanguageSupport::EnglishOnly,
             max_audio_duration_secs: None,
             produces_punctuation: true,
@@ -373,6 +386,7 @@ mod tests {
             supports_initial_prompt,
             supports_streaming: false,
             supports_language_selection: true,
+            supports_automatic_language_detection: false,
             supported_languages: LanguageSupport::All,
             max_audio_duration_secs: None,
             produces_punctuation: true,

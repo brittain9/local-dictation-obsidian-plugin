@@ -143,7 +143,7 @@ enum SessionModel {
     Batch(Box<dyn LoadedModel>),
     Streaming {
         model: Box<dyn StreamingModel>,
-        utterance: Box<Option<OpenStreamingUtterance>>,
+        utterance: Option<Box<OpenStreamingUtterance>>,
     },
 }
 
@@ -202,9 +202,11 @@ fn load_session_resources(
         .ok_or_else(|| missing_adapter_error(metadata.runtime_id, metadata.family_id))?;
     let family_capabilities = adapter.capabilities().clone();
     let model = if family_capabilities.supports_streaming {
+        let mut model = adapter.load_streaming(&metadata.model_file_path, metadata.gpu_config)?;
+        model.set_language(&metadata.language)?;
         SessionModel::Streaming {
-            model: adapter.load_streaming(&metadata.model_file_path, metadata.gpu_config)?,
-            utterance: Box::new(None),
+            model,
+            utterance: None,
         }
     } else {
         SessionModel::Batch(adapter.load(&metadata.model_file_path, metadata.gpu_config)?)
@@ -489,6 +491,7 @@ fn worker_main(
                             engine_output,
                             engine_duration_ms,
                             is_final: true,
+                            language: &session.metadata.language,
                             pause_ms_before_utterance,
                             vad_probabilities: &vad_probabilities,
                             voice_activity,
@@ -557,7 +560,7 @@ fn worker_main(
 /// trusting whatever the model was doing when it panicked.
 fn clear_streaming_utterance(session: &mut WorkerSession) {
     if let SessionModel::Streaming { utterance, .. } = &mut session.model {
-        **utterance = None;
+        *utterance = None;
     }
 }
 
@@ -581,13 +584,13 @@ fn begin_streaming_utterance(
     let cadence = model.partial_cadence();
     model.accept_audio(&utterance.samples)?;
     let initial_samples = utterance.samples.len();
-    **open = Some(OpenStreamingUtterance {
+    *open = Some(Box::new(OpenStreamingUtterance {
         cadence: PartialCadence::new(now_ms, initial_samples, cadence),
         last_emitted_text: String::new(),
         next_revision: 0,
         utterance,
         utterance_id,
-    });
+    }));
     Ok(())
 }
 
@@ -611,8 +614,7 @@ fn stream_audio(
         ));
     };
     let Some(open) = open
-        .as_mut()
-        .as_mut()
+        .as_deref_mut()
         .filter(|open| open.utterance_id == utterance_id)
     else {
         return Ok(());
@@ -649,6 +651,7 @@ fn stream_audio(
             engine_output,
             engine_duration_ms,
             is_final: false,
+            language: &session.metadata.language,
             pause_ms_before_utterance: open.utterance.pause_ms_before_utterance,
             vad_probabilities: &open.utterance.vad_probabilities,
             voice_activity,
@@ -742,6 +745,7 @@ fn finalize_streaming_utterance(
             engine_output,
             engine_duration_ms,
             is_final: true,
+            language: &session.metadata.language,
             pause_ms_before_utterance,
             vad_probabilities: &vad_probabilities,
             voice_activity,
@@ -845,6 +849,7 @@ struct TranscriptAssembly<'a> {
     engine_output: EngineTranscriptOutput,
     engine_duration_ms: u64,
     is_final: bool,
+    language: &'a str,
     pause_ms_before_utterance: Option<u64>,
     vad_probabilities: &'a [f32],
     voice_activity: crate::audio_metadata::VoiceActivityEvidence,
@@ -1000,6 +1005,7 @@ fn assemble_transcript(input: TranscriptAssembly<'_>) -> Transcript {
         family_capabilities: input.family_capabilities,
         stage_enabled: input.stage_enablement,
         is_final: input.is_final,
+        language: input.language,
         tokio_runtime: input.tokio_runtime,
         cancel_rx: input.cancel_rx,
         pause_ms_before_utterance: input.pause_ms_before_utterance,
@@ -1067,7 +1073,7 @@ mod tests {
             family_capabilities: streaming_caps(),
             model: SessionModel::Streaming {
                 model: Box::new(FixtureStreamingModel::default()),
-                utterance: Box::new(None),
+                utterance: None,
             },
             processors: post_engine_processors(),
             diarizer: None,
@@ -1729,7 +1735,7 @@ mod tests {
                 model: Box::new(CountingStreamingModel {
                     counts: Arc::clone(&counts),
                 }),
-                utterance: Box::new(None),
+                utterance: None,
             },
             processors: Vec::new(),
             diarizer: None,
@@ -1882,6 +1888,7 @@ mod tests {
             supports_initial_prompt: false,
             supports_streaming: true,
             supports_language_selection: false,
+            supports_automatic_language_detection: false,
             supported_languages: LanguageSupport::EnglishOnly,
             max_audio_duration_secs: None,
             produces_punctuation: true,
@@ -1993,6 +2000,7 @@ mod tests {
             engine_output: engine_output(),
             family_capabilities: &whisper_caps(),
             is_final: true,
+            language: "en",
             pause_ms_before_utterance: None,
             processors: &[],
             stage_enablement: &StageEnablement::default(),
@@ -2031,6 +2039,7 @@ mod tests {
             engine_output: engine_output(),
             family_capabilities: &whisper_caps(),
             is_final: true,
+            language: "en",
             pause_ms_before_utterance: None,
             processors: &processors,
             stage_enablement: &StageEnablement::default(),
@@ -2061,6 +2070,7 @@ mod tests {
             engine_output: engine_output(),
             family_capabilities: &whisper_caps(),
             is_final: true,
+            language: "en",
             pause_ms_before_utterance: Some(420),
             processors: &[],
             stage_enablement: &StageEnablement::default(),
@@ -2096,6 +2106,7 @@ mod tests {
             engine_output: engine_output(),
             family_capabilities: &whisper_caps(),
             is_final: true,
+            language: "en",
             pause_ms_before_utterance: Some(150),
             processors: &processors,
             stage_enablement: &StageEnablement::default(),
@@ -2129,6 +2140,7 @@ mod tests {
             engine_output: engine_output(),
             family_capabilities: &whisper_caps(),
             is_final: true,
+            language: "en",
             pause_ms_before_utterance: None,
             processors: &processors,
             stage_enablement: &StageEnablement::default(),
@@ -2157,6 +2169,7 @@ mod tests {
             engine_output: engine_output(),
             family_capabilities: &whisper_caps(),
             is_final: true,
+            language: "en",
             pause_ms_before_utterance: None,
             processors: &processors,
             stage_enablement: &StageEnablement::default(),
@@ -2214,6 +2227,7 @@ mod tests {
             supports_initial_prompt: true,
             supports_streaming: false,
             supports_language_selection: false,
+            supports_automatic_language_detection: false,
             supported_languages: LanguageSupport::EnglishOnly,
             max_audio_duration_secs: None,
             produces_punctuation: true,

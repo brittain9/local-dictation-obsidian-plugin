@@ -75,6 +75,7 @@ function compiledAdapter(
       supportedLanguages: { kind: 'english_only' },
       supportsInitialPrompt: false,
       supportsLanguageSelection: false,
+      supportsAutomaticLanguageDetection: false,
       supportsSegmentTimestamps: false,
       supportsStreaming: familyId === 'moonshine',
       supportsWordTimestamps: false,

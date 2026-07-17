@@ -3,8 +3,9 @@ name: sidecar-e2e
 # Heavy, model-backed quality suite for the Rust sidecar: runs known audio
 # fixtures through the full pipeline and asserts the transcript (accuracy +
 # wire-protocol). Kept out of the general `ci` workflow because it downloads
-# large model artifacts and runs real inference. It runs on relevant PR paths,
-# manually, and weekly to catch backend/platform drift.
+# large model artifacts and runs real inference. English smoke coverage runs on
+# relevant PR paths; the exhaustive multilingual matrix runs manually, weekly,
+# and as a blocking release gate in release.yml.
 
 on:
   pull_request:
@@ -13,6 +14,9 @@ on:
       - 'native/catalog.json'
       - 'native/src/**'
       - 'native/tests/**'
+      - 'scripts/lib/transcription-quality-report.mjs'
+      - 'scripts/transcription-quality-report.mjs'
+      - 'test/transcription-quality-report.test.ts'
       - 'package.json'
   workflow_dispatch:
   schedule:
@@ -66,8 +70,17 @@ jobs:
 
       - name: Run sidecar e2e quality suite
         env:
+          STT_QUALITY_REPORT_PATH: ${{ runner.temp }}/quality/whisper-english.jsonl
           STT_TEST_MODEL_DIR: ${{ env.MODEL_CACHE_DIR }}
         run: npm run test:sidecar:e2e
+
+      - name: Upload quality measurements
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: quality-measurements-whisper-english
+          path: ${{ runner.temp }}/quality/whisper-english.jsonl
+          if-no-files-found: error
 
   nemotron-e2e:
     runs-on: ubuntu-latest
@@ -99,5 +112,102 @@ jobs:
 
       - name: Run Nemotron real-model quality suite
         env:
+          STT_QUALITY_REPORT_PATH: ${{ runner.temp }}/quality/nemotron-english.jsonl
           STT_TEST_MODEL_DIR: ${{ env.MODEL_CACHE_DIR }}
         run: npm run test:sidecar:nemotron:e2e
+
+      - name: Upload quality measurements
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: quality-measurements-nemotron-english
+          path: ${{ runner.temp }}/quality/nemotron-english.jsonl
+          if-no-files-found: error
+
+  multilingual-e2e:
+    # The exhaustive matrix is a release/weekly certification gate. Keep it
+    # manually dispatchable for high-risk ASR changes without adding ~18
+    # minutes to every native-code PR update.
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup Node.js + npm
+        uses: ./.github/actions/setup-node-npm
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'true'
+          upgrade-npm: 'true'
+
+      - name: Setup Rust
+        uses: ./.github/actions/setup-sidecar-rust
+        with:
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
+          components: rustfmt, clippy
+          cache-workspaces: native -> target
+          cache-shared-key: multilingual-e2e
+
+      - name: Cache pinned multilingual models
+        uses: actions/cache@v6
+        with:
+          path: ${{ env.MODEL_CACHE_DIR }}
+          key: multilingual-asr-${{ hashFiles('native/catalog.json') }}
+
+      - name: Install JavaScript dependencies
+        run: npm ci
+
+      - name: Run multilingual product-path quality suite
+        env:
+          STT_QUALITY_REPORT_PATH: ${{ runner.temp }}/quality/multilingual.jsonl
+          STT_TEST_MODEL_DIR: ${{ env.MODEL_CACHE_DIR }}
+        run: npm run test:sidecar:multilingual:e2e
+
+      - name: Upload quality measurements
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: quality-measurements-multilingual
+          path: ${{ runner.temp }}/quality/multilingual.jsonl
+          if-no-files-found: error
+
+  quality-report:
+    needs: [transcription-e2e, nemotron-e2e, multilingual-e2e]
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Download quality measurements
+        uses: actions/download-artifact@v8
+        with:
+          pattern: quality-measurements-*
+          path: artifacts/quality-measurements
+          merge-multiple: true
+
+      - name: Render quality report
+        env:
+          GITHUB_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          RUNNER_DESCRIPTION: GitHub Actions Ubuntu 24.04 x86_64 CPU
+        run: >-
+          node scripts/transcription-quality-report.mjs
+          --render-only artifacts/quality-measurements
+          --output-dir artifacts/transcription-quality
+
+      - name: Publish report in the workflow summary
+        run: cat artifacts/transcription-quality/transcription-quality.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload transcription quality report
+        uses: actions/upload-artifact@v7
+        with:
+          name: transcription-quality-report
+          path: artifacts/transcription-quality

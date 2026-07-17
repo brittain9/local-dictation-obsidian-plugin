@@ -40,6 +40,7 @@ export interface ModelFamilyCapabilitiesRecord {
   supportsInitialPrompt: boolean;
   supportsStreaming: boolean;
   supportsLanguageSelection: boolean;
+  supportsAutomaticLanguageDetection: boolean;
   supportedLanguages: LanguageSupport;
   maxAudioDurationSecs: number | null;
   producesPunctuation: boolean;
@@ -104,6 +105,7 @@ export interface CatalogModelRecord {
   displayName: string;
   familyId: ModelFamilyId;
   languageTags: string[];
+  supportsAutomaticLanguageDetection: boolean;
   licenseLabel: string;
   licenseUrl: string;
   modelCardUrl: string | null;
@@ -261,6 +263,7 @@ function isModelFamilyCapabilitiesRecord(value: unknown): value is ModelFamilyCa
     typeof value.supportsInitialPrompt === 'boolean' &&
     typeof value.supportsStreaming === 'boolean' &&
     typeof value.supportsLanguageSelection === 'boolean' &&
+    typeof value.supportsAutomaticLanguageDetection === 'boolean' &&
     isLanguageSupport(value.supportedLanguages) &&
     (value.maxAudioDurationSecs === null || typeof value.maxAudioDurationSecs === 'number') &&
     typeof value.producesPunctuation === 'boolean'

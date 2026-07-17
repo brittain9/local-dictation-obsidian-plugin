@@ -223,6 +223,24 @@ describe('DictationSessionController', () => {
     );
   });
 
+  it('passes the configured dictation language to the sidecar session', async () => {
+    const sidecarConnection = new FakeSidecarConnection();
+    const controller = createController({
+      sidecarConnection,
+      getSettings: () =>
+        createSettings({
+          dictationLanguage: 'ja',
+          selectedModel: createExternalModelSelection(),
+        }),
+    });
+
+    await controller.startDictation();
+
+    expect(sidecarConnection.startSession).toHaveBeenCalledWith(
+      expect.objectContaining({ language: 'ja' }),
+    );
+  });
+
   it.each([
     [false, 'every_utterance', true],
     [false, 'every_utterance', false],

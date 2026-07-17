@@ -281,15 +281,16 @@ than a silent failure.
 **Worker behavior:**
 - A dedicated thread holding `Arc<EngineRegistry>`, communicating over `mpsc`
   channels; all inference is synchronous and blocking on that thread.
-- Whisper runs greedy decoding, English-only, with `use_gpu`/`flash_attn` from
-  the acceleration config. The model context persists across utterances and
+- Whisper runs greedy decoding in the exact model's selected language, with
+  translation disabled and `use_gpu`/`flash_attn` from the acceleration config. The model context persists across utterances and
   reloads only on a path or GPU-config change.
 - Moonshine keeps frontend, encoder, adapter, cross-attention, and decoder KV
   state for the open utterance. It attempts a changed-text partial every 500 ms;
   the single worker thread guarantees one decode in flight, and the wall-time
   gate drops catch-up partials while preserving all PCM for the next decode.
 - Nemotron keeps the pinned encoder's channel/time caches and RNNT predictor
-  states across 560 ms chunks. Stage A forces the `en-US` prompt and resets all
+  states across 560 ms chunks. The session language selects the pinned graph's
+  verified prompt index, and the adapter resets all
   graph state on finalization or inference failure.
 - Partials carry only the engine stage outcome. Finals run the normal post-engine
   chain and receive a revision greater than every emitted partial.
@@ -314,7 +315,7 @@ than a silent failure.
 | Moonshine Tiny | `onnx_runtime` · `moonshine` | Quantized | 49 MB | Streaming (live), 34M params |
 | Moonshine Small | `onnx_runtime` · `moonshine` | Quantized | 157 MB | Streaming (live), balanced, 123M params |
 | Moonshine Medium | `onnx_runtime` · `moonshine` | Quantized | 289 MB | Streaming (live), 245M params |
-| Nemotron 3.5 ASR 560 ms | `onnx_runtime` · `nemotron_asr` | INT8 | 651 MB | Experimental streaming, English-only Stage A |
+| Nemotron 3.5 ASR 560 ms | `onnx_runtime` · `nemotron_asr` | INT8 | 651 MB | Experimental multilingual streaming |
 
 Moonshine models are streaming (live-dictation) entries in the managed catalog,
 installed through Manage Models like any other model. Each is a multi-file ORT
@@ -326,8 +327,8 @@ install and manual acceptance testing.
 
 Nemotron 3.5 ASR is a separate experimental managed entry; Moonshine Small
 remains the recommended live-dictation default. Its encoder, decoder, joiner,
-and tokenizer are pinned by revision, size, and SHA-256. Stage A supports only
-the 560 ms int8 export and fixed English-US prompt. See
+and tokenizer are pinned by revision, size, and SHA-256. The adapter supports
+the 560 ms int8 export with verified manual and automatic language prompts. See
 [`docs/specs/nemotron-asr-stage-a.md`](specs/nemotron-asr-stage-a.md) for the
 artifact, graph-contract, golden-oracle, and license record.
 

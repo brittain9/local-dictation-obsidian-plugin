@@ -101,7 +101,22 @@ pub fn transcribe_in_process(
     frames: &[Vec<u8>],
     style: SpeakingStyle,
 ) -> TranscriptionOutcome {
-    run_in_process(whisper_selection(model_path), frames, style, false)
+    transcribe_in_process_language(model_path, frames, style, "en")
+}
+
+pub fn transcribe_in_process_language(
+    model_path: &Path,
+    frames: &[Vec<u8>],
+    style: SpeakingStyle,
+    language: &str,
+) -> TranscriptionOutcome {
+    run_in_process(
+        whisper_selection(model_path),
+        frames,
+        style,
+        false,
+        language,
+    )
 }
 
 /// Like [`transcribe_in_process`] but with diarization on, so each utterance in
@@ -111,7 +126,7 @@ pub fn diarize_in_process(
     frames: &[Vec<u8>],
     style: SpeakingStyle,
 ) -> TranscriptionOutcome {
-    run_in_process(whisper_selection(model_path), frames, style, true)
+    run_in_process(whisper_selection(model_path), frames, style, true, "en")
 }
 
 fn run_in_process(
@@ -119,6 +134,7 @@ fn run_in_process(
     frames: &[Vec<u8>],
     style: SpeakingStyle,
     diarization_enabled: bool,
+    language: &str,
 ) -> TranscriptionOutcome {
     let catalog = ModelCatalog::load_bundled().expect("bundled catalog should load");
     let mut app = AppState::new("e2e-test", catalog);
@@ -130,8 +146,12 @@ fn run_in_process(
         model_selection,
         style,
         diarization_enabled,
+        language,
     ));
     apply_events(&mut app, events, &mut outcome);
+    if !outcome.errors.is_empty() {
+        return outcome;
+    }
 
     for frame in frames {
         let events = app.handle_audio_frame(AudioFrame {
@@ -143,6 +163,9 @@ fn run_in_process(
         // request is answered promptly and the worker queue never wedges.
         let drained = app.drain_pending_outputs();
         apply_events(&mut app, drained, &mut outcome);
+        if !outcome.errors.is_empty() {
+            return outcome;
+        }
     }
 
     let (_flow, events) = app.handle_command(Command::StopSession {
@@ -164,6 +187,14 @@ fn run_in_process(
 }
 
 pub fn stream_in_process(model: SelectedModel, frames: &[Vec<u8>]) -> StreamingOutcome {
+    stream_in_process_language(model, frames, "en")
+}
+
+pub fn stream_in_process_language(
+    model: SelectedModel,
+    frames: &[Vec<u8>],
+    language: &str,
+) -> StreamingOutcome {
     let catalog = ModelCatalog::load_bundled().expect("bundled catalog should load");
     let mut app = AppState::new("streaming-e2e", catalog);
     let session_id = Uuid::new_v4().to_string();
@@ -174,8 +205,12 @@ pub fn stream_in_process(model: SelectedModel, frames: &[Vec<u8>]) -> StreamingO
         model,
         SpeakingStyle::Patient,
         false,
+        language,
     ));
     apply_streaming_events(&mut app, events, &mut outcome);
+    if !outcome.errors.is_empty() {
+        return outcome;
+    }
 
     let mut cadence_has_audio = false;
     for (index, frame) in frames.iter().enumerate() {
@@ -186,6 +221,9 @@ pub fn stream_in_process(model: SelectedModel, frames: &[Vec<u8>]) -> StreamingO
         apply_streaming_events(&mut app, events, &mut outcome);
         let drained = app.drain_pending_outputs();
         apply_streaming_events(&mut app, drained, &mut outcome);
+        if !outcome.errors.is_empty() {
+            return outcome;
+        }
 
         cadence_has_audio |= frame.iter().any(|byte| *byte != 0);
         if (index + 1) % STREAMING_CADENCE_FRAMES == 0 {
@@ -300,6 +338,7 @@ fn start_session_command(
     model_selection: SelectedModel,
     style: SpeakingStyle,
     diarization_enabled: bool,
+    language: &str,
 ) -> Command {
     Command::StartSession {
         acceleration_preference: AccelerationPreference::CpuOnly,
@@ -307,7 +346,7 @@ fn start_session_command(
         diarization_enabled,
         diarization_max_speakers: None,
         include_system_audio: false,
-        language: "en".to_string(),
+        language: language.to_string(),
         mode: ListeningMode::AlwaysOn,
         model_selection,
         model_store_path_override: None,

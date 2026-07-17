@@ -1,3 +1,4 @@
+import type { DictationLanguage } from '../language/dictation-language';
 import type {
   InstalledModelRecord,
   ModelCatalogRecord,
@@ -125,7 +126,7 @@ export interface StartSessionCommand extends EnvelopeBase<'start_session'> {
   diarizationEnabled: boolean;
   diarizationMaxSpeakers: number | null;
   includeSystemAudio: boolean;
-  language: 'en';
+  language: DictationLanguage;
   mode: ListeningMode;
   modelSelection: SelectedModel;
   modelStorePathOverride?: string;

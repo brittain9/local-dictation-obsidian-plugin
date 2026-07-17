@@ -117,9 +117,11 @@ describe('external model guidance', () => {
 
     expect(guidance).toContain('GGML');
     expect(guidance).toContain('GGUF');
+    expect(guidance).toContain('.en weights are English-only');
+    expect(guidance).toContain('automatic detection');
   });
 
-  it('documents the pinned Nemotron graph set and Stage A exclusions', () => {
+  it('documents the pinned Nemotron graph set and incompatible exports', () => {
     const option = getExternalFileEngineOption({
       familyId: 'nemotron_asr',
       runtimeId: 'onnx_runtime',
@@ -131,7 +133,7 @@ describe('external model guidance', () => {
     expect(guidance).toContain('joiner.int8.onnx');
     expect(guidance).toContain('tokens.txt');
     expect(guidance).toContain('Other chunk sizes');
-    expect(guidance).toContain('automatic language detection');
+    expect(guidance).toContain('ORT GenAI');
   });
 
   it('preserves an actionable probe error for display', () => {

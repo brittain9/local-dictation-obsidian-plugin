@@ -14,11 +14,13 @@
 
 mod common;
 
+use common::quality_report::{self, QualityMeasurement};
 use common::{audio, driver, manifest::Corpus, model, score, text};
 use local_dictation_sidecar::session::SpeakingStyle;
 
 /// Samples per millisecond at the sidecar's 16 kHz rate (16000 / 1000).
 const SAMPLES_PER_MS: usize = 16;
+const MAX_REAL_TIME_FACTOR: f64 = 1.0;
 
 #[test]
 #[ignore = "needs a whisper model + real inference; run with --ignored"]
@@ -55,7 +57,34 @@ fn every_fixture_transcribes_within_quality_budget() {
             outcome.text,
         );
 
-        failures.extend(score::budget_failures(fixture, &outcome));
+        let mut fixture_failures = score::budget_failures(fixture, &outcome);
+        if real_time_factor > MAX_REAL_TIME_FACTOR {
+            fixture_failures.push(format!(
+                "{}: RTF {real_time_factor:.3} exceeded budget {MAX_REAL_TIME_FACTOR:.3}",
+                fixture.id
+            ));
+        }
+        quality_report::record(&QualityMeasurement {
+            suite: "english-product-path",
+            model_id: model::TEST_MODEL_ID,
+            model_name: "Whisper Tiny English Q8",
+            language: "en",
+            selection: "manual",
+            fixture_id: &fixture.id,
+            quality_metric: "wer",
+            quality_error_rate: wer,
+            quality_budget: fixture.max_wer,
+            audio_duration_ms: audio_ms as u64,
+            processing_duration_ms: outcome.processing_ms,
+            real_time_factor,
+            real_time_factor_budget: MAX_REAL_TIME_FACTOR,
+            first_partial_audio_ms: None,
+            first_partial_audio_budget_ms: None,
+            utterance_count: Some(outcome.utterance_count),
+            partial_count: None,
+            passed: fixture_failures.is_empty(),
+        });
+        failures.extend(fixture_failures);
     }
 
     assert!(

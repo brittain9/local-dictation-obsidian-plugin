@@ -159,6 +159,8 @@ pub struct ModelFamilyCapabilities {
     pub supports_streaming: bool,
     #[serde(rename = "supportsLanguageSelection")]
     pub supports_language_selection: bool,
+    #[serde(rename = "supportsAutomaticLanguageDetection")]
+    pub supports_automatic_language_detection: bool,
     #[serde(rename = "supportedLanguages")]
     pub supported_languages: LanguageSupport,
     #[serde(rename = "maxAudioDurationSecs")]
@@ -178,6 +180,7 @@ impl ModelFamilyCapabilities {
             supports_initial_prompt: false,
             supports_streaming: false,
             supports_language_selection: false,
+            supports_automatic_language_detection: false,
             supported_languages: LanguageSupport::Unknown,
             max_audio_duration_secs: None,
             produces_punctuation: false,
@@ -198,6 +201,7 @@ mod tests {
         assert!(!unknown.supports_initial_prompt);
         assert!(!unknown.supports_streaming);
         assert!(!unknown.supports_language_selection);
+        assert!(!unknown.supports_automatic_language_detection);
         assert!(!unknown.produces_punctuation);
         assert!(unknown.max_audio_duration_secs.is_none());
         assert_eq!(unknown.supported_languages, LanguageSupport::Unknown);

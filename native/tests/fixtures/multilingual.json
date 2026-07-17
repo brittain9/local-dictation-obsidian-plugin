@@ -1,0 +1,90 @@
+{
+  "schemaVersion": 1,
+  "source": {
+    "dataset": "Google FLEURS",
+    "repository": "google/fleurs",
+    "revision": "70bb2e8",
+    "split": "validation",
+    "sentenceId": 1577,
+    "license": "CC BY 4.0",
+    "conversion": "FFmpeg PCM s16le, 16 kHz mono",
+    "purpose": "Pinned human-speech multilingual ASR quality corpus"
+  },
+  "fixtures": [
+    {
+      "language": "es",
+      "config": "es_419",
+      "row": 379,
+      "recordingId": "9112831776083636504",
+      "audioPath": "audio/es-fleurs-1577.wav",
+      "sha256": "617ba9c8060ffcfb71b90ddd966b63eef185a1bb921ade88d30d86ee079897eb",
+      "reference": "a mí me pareció que eso no tenía sentido definitivamente no fue justo",
+      "anchors": []
+    },
+    {
+      "language": "de",
+      "config": "de_de",
+      "row": 6,
+      "recordingId": "10391130436992033127",
+      "audioPath": "audio/de-fleurs-1577.wav",
+      "sha256": "5cc126e8ece51d0b58549a4b00f0e52b1c45f79759bc79741dd3293395377c13",
+      "reference": "das erschien mir nicht sinnvoll es war ganz gewiss nicht fair",
+      "anchors": []
+    },
+    {
+      "language": "fr",
+      "config": "fr_fr",
+      "row": 183,
+      "recordingId": "3920926992201662587",
+      "audioPath": "audio/fr-fleurs-1577.wav",
+      "sha256": "7d33feaef7fea341c882f3174cbf728c3f25889a771f533b106b942d5ea2bcec",
+      "reference": "cela ne me semblait pas logique ce n'était certainement pas juste",
+      "anchors": []
+    },
+    {
+      "language": "pt",
+      "config": "pt_br",
+      "row": 377,
+      "recordingId": "9776935321561977831",
+      "audioPath": "audio/pt-fleurs-1577.wav",
+      "sha256": "e2aa4cf1196b624e5fd2913254cedd5efb0f503ce9023fee21b988be06988580",
+      "reference": "aquilo não pareceu fazer sentido para mim certamente não foi justo",
+      "anchors": []
+    },
+    {
+      "language": "it",
+      "config": "it_it",
+      "row": 25,
+      "recordingId": "10752136277852077918",
+      "audioPath": "audio/it-fleurs-1577.wav",
+      "sha256": "48ce6903bfaee74e340a4afe8a53464e65e78e7eae93199b5ce346e0abe4e8c7",
+      "reference": "tutto ciò non mi sembrava avesse senso sicuramente non era giusto",
+      "anchors": []
+    },
+    {
+      "language": "nl",
+      "config": "nl_nl",
+      "row": 50,
+      "recordingId": "14672582239113223174",
+      "audioPath": "audio/nl-fleurs-1577.wav",
+      "sha256": "b5eab128231c1ce3727149a332d7dbada0d255ba2c7201d5072b71a0aeaee88b",
+      "reference": "dat vond ik erg raar het was ongetwijfeld oneerlijk",
+      "anchors": []
+    },
+    {
+      "language": "ja",
+      "config": "ja_jp",
+      "row": 152,
+      "recordingId": "3426488501371889532",
+      "audioPath": "audio/ja-fleurs-1577.wav",
+      "sha256": "c70eb0626213760ef684f869bd8020b59d82353da8a0709d3be9f72ed4ab338b",
+      "reference": "意味があるように思えませんでしたし 確かに不公平でした",
+      "anchors": []
+    }
+  ],
+  "englishRegression": {
+    "audioPath": "audio/7021-79740-0000.wav",
+    "manifest": "audio/manifest.json",
+    "fixtureId": "7021-79740-0000"
+  }
+}

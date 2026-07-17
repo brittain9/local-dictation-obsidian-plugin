@@ -17,6 +17,7 @@ use sha2::{Digest, Sha256};
 /// Smallest bundled whisper model — fast to download and load on CPU, which
 /// keeps the suite cheap while still exercising the real inference path.
 pub const TEST_MODEL_ID: &str = "whisper_tiny_en_q8_0";
+pub const MULTILINGUAL_WHISPER_MODEL_ID: &str = "whisper_large_v3_turbo_q8_0";
 pub const NEMOTRON_MODEL_ID: &str = "nemotron_asr_0_6b_int8_streaming_560ms";
 
 /// Resolve a whisper model file for the suite. In priority order:
@@ -66,6 +67,22 @@ pub fn require_whisper_model() -> PathBuf {
             "could not obtain a whisper model for the e2e suite: {error}\n  \
              Set STT_TEST_WHISPER_MODEL=/path/to/ggml-model.bin to reuse a local model, or \
              ensure network access so the bundled catalog model can be downloaded."
+        )
+    })
+}
+
+pub fn require_multilingual_whisper_model() -> PathBuf {
+    resolve_catalog_model(
+        "STT_TEST_MULTILINGUAL_WHISPER_DIR",
+        RuntimeId::WhisperCpp,
+        ModelFamilyId::Whisper,
+        MULTILINGUAL_WHISPER_MODEL_ID,
+    )
+    .unwrap_or_else(|error| {
+        panic!(
+            "could not obtain the multilingual Whisper model: {error}\n  Set \
+             STT_TEST_MULTILINGUAL_WHISPER_DIR=/path/to/catalog/model/directory, or ensure \
+             network access for the pinned catalog download."
         )
     })
 }

@@ -71,6 +71,7 @@ interface ActiveSessionSnapshot {
   accelerationPreference: PluginSettings['accelerationPreference'];
   diarizationEnabled: PluginSettings['diarizationEnabled'];
   diarizationMaxSpeakers: PluginSettings['diarizationMaxSpeakers'];
+  dictationLanguage: PluginSettings['dictationLanguage'];
   includeSystemAudio: PluginSettings['includeSystemAudio'];
   dictationAnchor: PluginSettings['dictationAnchor'];
   listeningMode: PluginSettings['listeningMode'];
@@ -381,7 +382,7 @@ export class DictationSessionController {
         diarizationEnabled: snapshot.diarizationEnabled,
         diarizationMaxSpeakers: snapshot.diarizationMaxSpeakers,
         includeSystemAudio: snapshot.includeSystemAudio,
-        language: 'en',
+        language: snapshot.dictationLanguage,
         mode: snapshot.listeningMode,
         modelSelection: snapshot.modelSelection,
         sessionStartUnixMs: snapshot.sessionStartUnixMs,
@@ -1561,6 +1562,7 @@ function createSessionSnapshot(
     accelerationPreference: settings.accelerationPreference,
     diarizationEnabled: settings.diarizationEnabled,
     diarizationMaxSpeakers: settings.diarizationMaxSpeakers,
+    dictationLanguage: settings.dictationLanguage,
     includeSystemAudio: settings.includeSystemAudio,
     dictationAnchor: settings.dictationAnchor,
     listeningMode: settings.listeningMode,

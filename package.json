@@ -29,6 +29,7 @@
     "install:dev:cuda": "node scripts/install-dev-cuda.mjs",
     "release:prepare": "node scripts/prepare-release.mjs",
     "stats:downloads": "node scripts/download-stats.mjs",
+    "report:transcription-quality": "node scripts/transcription-quality-report.mjs",
     "verify:build-output": "node scripts/verify-build-output.mjs",
     "verify:build-output:release": "node scripts/verify-build-output.mjs --release",
     "check:frontend": "npm run typecheck && npm run lint && npm run lint:obsidian && npm run test && npm run build:frontend",
@@ -36,7 +37,8 @@
     "check:js": "npm run check:release && npm run check:frontend && npm run build:sidecar && npm run verify:build-output",
     "check:rust": "node scripts/check-rust.mjs",
     "test:sidecar:e2e": "cargo test --manifest-path native/Cargo.toml --release --test transcription_e2e --test sidecar_protocol_e2e -- --ignored --nocapture",
-    "test:sidecar:nemotron:e2e": "cargo test --manifest-path native/Cargo.toml --release --no-default-features --features engine-nemotron-asr --test nemotron_asr_e2e --test nemotron_asr_tails -- --ignored --nocapture --test-threads=1 && cargo test --manifest-path native/Cargo.toml --release --no-default-features --features engine-nemotron-asr --lib runtime_token_sequence_stays_close_to_pinned_nemo_oracle -- --ignored --nocapture",
+    "test:sidecar:nemotron:e2e": "cargo test --manifest-path native/Cargo.toml --release --no-default-features --features engine-nemotron-asr --test nemotron_asr_e2e --test nemotron_asr_tails -- --ignored --nocapture --test-threads=1",
+    "test:sidecar:multilingual:e2e": "cargo test --manifest-path native/Cargo.toml --release --no-default-features --features engine-nemotron-asr,engine-whisper --test multilingual_e2e -- --ignored --nocapture --test-threads=1",
     "check": "npm run check:js && npm run check:rust"
   },
   "devDependencies": {

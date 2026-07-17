@@ -173,6 +173,21 @@ export class ButtonComponent {
   }
 }
 
+export class ExtraButtonComponent extends ButtonComponent {
+  icon = '';
+  tooltip = '';
+
+  setIcon(icon: string): this {
+    this.icon = icon;
+    return this;
+  }
+
+  setTooltip(tooltip: string): this {
+    this.tooltip = tooltip;
+    return this;
+  }
+}
+
 interface TestSelectOption {
   disabled: boolean;
   label: string;
@@ -247,6 +262,7 @@ export class Setting {
   readonly controlEl = new TestElement();
   readonly descEl = new TestElement();
   readonly dropdownComponents: DropdownComponent[] = [];
+  readonly extraButtonComponents: ExtraButtonComponent[] = [];
   readonly nameEl = new TestElement();
   readonly settingEl = new TestElement();
   readonly textComponents: TextComponent[] = [];
@@ -287,6 +303,13 @@ export class Setting {
     const dropdown = new DropdownComponent();
     this.dropdownComponents.push(dropdown);
     callback(dropdown);
+    return this;
+  }
+
+  addExtraButton(callback: (button: ExtraButtonComponent) => void): this {
+    const button = new ExtraButtonComponent();
+    this.extraButtonComponents.push(button);
+    callback(button);
     return this;
   }
 

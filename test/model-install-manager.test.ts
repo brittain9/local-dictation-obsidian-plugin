@@ -14,7 +14,7 @@ import type {
   ModelInstallUpdateRecord,
 } from '../src/models/model-management-types';
 import { DEFAULT_PLUGIN_SETTINGS, type PluginSettings } from '../src/settings/plugin-settings';
-import type { SidecarEvent } from '../src/sidecar/protocol';
+import type { SidecarEvent, SystemInfoEvent } from '../src/sidecar/protocol';
 import { sampleCatalog } from './fixtures/catalog';
 import {
   sampleInstalledModel,
@@ -146,6 +146,17 @@ describe('ModelInstallManager', () => {
           runtimeId: 'whisper_cpp',
         }),
       );
+    });
+
+    it('blocks downloading a model that cannot serve the selected language', async () => {
+      harness = createManagerHarness({ dictationLanguage: 'ja' });
+      configureSidecarForInit(harness.sidecarConnection);
+      await harness.manager.init();
+
+      await expect(harness.manager.install(sampleMoonshineSelection())).rejects.toThrow(
+        'does not support Japanese',
+      );
+      expect(harness.sidecarConnection.installModel).not.toHaveBeenCalled();
     });
 
     it('supports the managed install, select, and remove lifecycle for Moonshine', async () => {
@@ -440,6 +451,41 @@ describe('ModelInstallManager', () => {
       await harness.manager.select(sampleSelection());
 
       expect(harness.getSettings().selectedModel).toEqual(sampleSelection());
+    });
+
+    it('rejects an incompatible model without changing the selected language', async () => {
+      harness = createManagerHarness({ dictationLanguage: 'ja' });
+      configureSidecarForInit(harness.sidecarConnection);
+      await harness.manager.init();
+      harness.sidecarConnection.probeModelSelection.mockResolvedValueOnce(sampleReadyProbeResult());
+
+      await expect(harness.manager.select(sampleSelection())).rejects.toThrow(
+        'does not support Japanese',
+      );
+
+      expect(harness.getSettings().dictationLanguage).toBe('ja');
+      expect(harness.getSettings().selectedModel).toBeNull();
+    });
+
+    it('preserves the language when the exact model advertises it', async () => {
+      harness = createManagerHarness({ dictationLanguage: 'ja' });
+      configureSidecarForInit(harness.sidecarConnection);
+      await harness.manager.init();
+      harness.sidecarConnection.probeModelSelection.mockResolvedValueOnce({
+        ...sampleReadyProbeResult(),
+        mergedCapabilities: {
+          ...sampleMergedCapabilities(),
+          family: {
+            ...sampleMergedCapabilities().family,
+            supportedLanguages: { kind: 'list', tags: ['en', 'ja'] },
+            supportsLanguageSelection: true,
+          },
+        },
+      });
+
+      await harness.manager.select(sampleSelection());
+
+      expect(harness.getSettings().dictationLanguage).toBe('ja');
     });
 
     it('validates and selects Moonshine through the external-file path', async () => {
@@ -759,6 +805,8 @@ describe('ModelInstallManager', () => {
       const whisper = systemInfo.compiledAdapters.find((adapter) => adapter.familyId === 'whisper');
       if (whisper === undefined) throw new Error('Whisper fixture missing');
       whisper.familyCapabilities.supportsWordTimestamps = true;
+      whisper.familyCapabilities.supportedLanguages = { kind: 'list', tags: ['en', 'ja'] };
+      whisper.familyCapabilities.supportsLanguageSelection = true;
       harness.sidecarConnection.getSystemInfo.mockResolvedValue(systemInfo);
 
       await harness.manager.init();
@@ -768,6 +816,11 @@ describe('ModelInstallManager', () => {
       expect(capabilityState.status).toBe('ready');
       if (capabilityState.status !== 'ready') throw new Error('Expected ready capabilities');
       expect(capabilityState.capabilities.family.supportsWordTimestamps).toBe(true);
+      expect(capabilityState.capabilities.family.supportedLanguages).toEqual({
+        kind: 'english_only',
+      });
+      expect(capabilityState.capabilities.family.supportsLanguageSelection).toBe(false);
+      expect(capabilityState.capabilities.family.supportsAutomaticLanguageDetection).toBe(false);
     });
 
     it('falls back to probing when the persisted snapshot belongs to a different selection', async () => {
@@ -940,7 +993,7 @@ function emitInstallUpdate(harness: ManagerHarness, overrides?: Partial<ModelIns
 // Fixtures (test-local; shared model/install fixtures live in fixtures/models.ts)
 // ---------------------------------------------------------------------------
 
-function sampleSystemInfo() {
+function sampleSystemInfo(): SystemInfoEvent {
   return {
     compiledAdapters: [
       {
@@ -952,6 +1005,7 @@ function sampleSystemInfo() {
           supportsInitialPrompt: false,
           supportsStreaming: false,
           supportsLanguageSelection: true,
+          supportsAutomaticLanguageDetection: false,
           supportsSegmentTimestamps: true,
           supportsWordTimestamps: false,
         },
@@ -967,6 +1021,7 @@ function sampleSystemInfo() {
           supportsInitialPrompt: false,
           supportsStreaming: true,
           supportsLanguageSelection: false,
+          supportsAutomaticLanguageDetection: false,
           supportsSegmentTimestamps: false,
           supportsWordTimestamps: false,
         },
@@ -982,6 +1037,7 @@ function sampleSystemInfo() {
           supportsInitialPrompt: true,
           supportsStreaming: false,
           supportsLanguageSelection: true,
+          supportsAutomaticLanguageDetection: true,
           supportsSegmentTimestamps: true,
           supportsWordTimestamps: false,
         },
@@ -1028,6 +1084,7 @@ function sampleMergedCapabilities(): EngineCapabilitiesRecord {
       supportsInitialPrompt: true,
       supportsStreaming: false,
       supportsLanguageSelection: false,
+      supportsAutomaticLanguageDetection: false,
       supportsSegmentTimestamps: true,
       supportsWordTimestamps: false,
     },

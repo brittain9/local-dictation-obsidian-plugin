@@ -9,7 +9,7 @@ use std::collections::HashMap;
 use std::ffi::OsStr;
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
+use std::sync::{Arc, LazyLock};
 use std::time::Duration;
 
 use ort::session::Session;
@@ -26,7 +26,8 @@ use crate::engine::traits::{
 use crate::protocol::{TimestampGranularity, TimestampSource, TranscriptSegment};
 use crate::runtimes::onnx::build_session;
 use crate::transcription::{
-    EngineTranscriptOutput, GpuConfig, TranscriptionError, validate_model_path,
+    EngineTranscriptOutput, GpuConfig, TranscriptionError, VERIFIED_MULTILINGUAL_LANGUAGE_TAGS,
+    validate_model_path,
 };
 
 const SAMPLE_RATE: usize = 16_000;
@@ -59,16 +60,105 @@ const JOINER_FILENAME: &str = "joiner.int8.onnx";
 const TOKENS_FILENAME: &str = "tokens.txt";
 const MODEL_TYPE: &str = "EncDecRNNTBPEModelWithPrompt";
 
-const CAPABILITIES: ModelFamilyCapabilities = ModelFamilyCapabilities {
-    supports_segment_timestamps: false,
-    supports_word_timestamps: false,
-    supports_initial_prompt: false,
-    supports_streaming: true,
-    supports_language_selection: false,
-    supported_languages: LanguageSupport::EnglishOnly,
-    max_audio_duration_secs: None,
-    produces_punctuation: true,
-};
+#[derive(Clone, Copy)]
+struct LanguagePrompt {
+    product_tag: &'static str,
+    metadata_key: &'static str,
+    index: i64,
+}
+
+const SUPPORTED_LANGUAGE_PROMPTS: &[LanguagePrompt] = &[
+    LanguagePrompt {
+        product_tag: "auto",
+        metadata_key: "auto",
+        index: 101,
+    },
+    LanguagePrompt {
+        product_tag: "en",
+        metadata_key: "en-US",
+        index: 0,
+    },
+    LanguagePrompt {
+        product_tag: "es",
+        metadata_key: "es-US",
+        index: 3,
+    },
+    LanguagePrompt {
+        product_tag: "de",
+        metadata_key: "de-DE",
+        index: 9,
+    },
+    LanguagePrompt {
+        product_tag: "fr",
+        metadata_key: "fr-FR",
+        index: 8,
+    },
+    LanguagePrompt {
+        product_tag: "pt",
+        metadata_key: "pt-PT",
+        index: 13,
+    },
+    LanguagePrompt {
+        product_tag: "it",
+        metadata_key: "it-IT",
+        index: 15,
+    },
+    LanguagePrompt {
+        product_tag: "nl",
+        metadata_key: "nl-NL",
+        index: 16,
+    },
+    LanguagePrompt {
+        product_tag: "ja",
+        metadata_key: "ja-JP",
+        index: 10,
+    },
+];
+
+static CAPABILITIES: LazyLock<ModelFamilyCapabilities> =
+    LazyLock::new(|| ModelFamilyCapabilities {
+        supports_segment_timestamps: false,
+        supports_word_timestamps: false,
+        supports_initial_prompt: false,
+        supports_streaming: true,
+        supports_language_selection: true,
+        supports_automatic_language_detection: true,
+        supported_languages: LanguageSupport::List {
+            tags: VERIFIED_MULTILINGUAL_LANGUAGE_TAGS
+                .iter()
+                .map(|tag| (*tag).to_string())
+                .collect(),
+        },
+        max_audio_duration_secs: None,
+        produces_punctuation: true,
+    });
+
+fn prompt_index_for_language(language: &str) -> Option<i64> {
+    SUPPORTED_LANGUAGE_PROMPTS
+        .iter()
+        .find_map(|prompt| (prompt.product_tag == language).then_some(prompt.index))
+}
+
+fn validate_language_prompts(
+    prompt_dictionary: &HashMap<String, usize>,
+) -> Result<(), TranscriptionError> {
+    for prompt in SUPPORTED_LANGUAGE_PROMPTS {
+        let expected = usize::try_from(prompt.index).map_err(|_| {
+            TranscriptionError::invalid_model_with_details(format!(
+                "invalid negative prompt index {} for {}",
+                prompt.index, prompt.product_tag
+            ))
+        })?;
+        let actual = prompt_dictionary.get(prompt.metadata_key).copied();
+        if actual != Some(expected) {
+            return Err(TranscriptionError::invalid_model_with_details(format!(
+                "encoder prompt metadata for {} must define {}={expected}, found {actual:?}",
+                prompt.product_tag, prompt.metadata_key
+            )));
+        }
+    }
+    Ok(())
+}
 
 #[derive(Default)]
 pub struct NemotronAsrAdapter;
@@ -239,12 +329,10 @@ impl NemotronConfig {
                     "invalid encoder prompt_dictionary: {error}"
                 ))
             })?;
-        if prompt_dictionary.get("en-US") != Some(&(EN_US_PROMPT_INDEX as usize))
-            || prompt_dictionary.get("auto") != Some(&AUTO_PROMPT_INDEX)
-            || metadata_usize(&metadata, "auto_prompt_id")? != AUTO_PROMPT_INDEX
-        {
+        validate_language_prompts(&prompt_dictionary)?;
+        if metadata_usize(&metadata, "auto_prompt_id")? != AUTO_PROMPT_INDEX {
             return Err(TranscriptionError::invalid_model_with_details(
-                "encoder prompt metadata does not define en-US=0 and auto=101".to_string(),
+                "encoder auto_prompt_id must be 101".to_string(),
             ));
         }
 
@@ -777,6 +865,7 @@ struct LoadedNemotronModel {
     joiner: Session,
     last_token: Option<i32>,
     predictor_state_before_last: PredictorState,
+    prompt_index: i64,
     processed_feature_frames: usize,
     sample_count: usize,
     tokenizer: NemotronTokenizer,
@@ -805,6 +894,7 @@ impl LoadedNemotronModel {
             joiner,
             last_token: None,
             predictor_state_before_last,
+            prompt_index: EN_US_PROMPT_INDEX,
             processed_feature_frames: 0,
             sample_count: 0,
             tokenizer,
@@ -893,7 +983,7 @@ impl LoadedNemotronModel {
             &channel_cache_len_data,
             "Nemotron encoder channel cache length",
         )?;
-        let prompt_index_data = [EN_US_PROMPT_INDEX];
+        let prompt_index_data = [self.prompt_index];
         let prompt_index = tensor_ref([1], &prompt_index_data, "Nemotron encoder prompt index")?;
         let outputs = self
             .encoder
@@ -1137,6 +1227,22 @@ impl StreamingModel for LoadedNemotronModel {
     fn accept_audio(&mut self, samples: &[i16]) -> Result<(), TranscriptionError> {
         self.sample_count = self.sample_count.saturating_add(samples.len());
         self.features.accept(samples);
+        Ok(())
+    }
+
+    fn set_language(&mut self, language: &str) -> Result<(), TranscriptionError> {
+        if self.sample_count != 0 || !self.tokens.is_empty() {
+            return Err(TranscriptionError::transcription_failure(
+                "Nemotron language selection",
+                "cannot change language during an open utterance",
+            ));
+        }
+        self.prompt_index = prompt_index_for_language(language).ok_or_else(|| {
+            TranscriptionError::unsupported_language(
+                language,
+                "Nemotron supports only the languages advertised by this build.",
+            )
+        })?;
         Ok(())
     }
 
@@ -1575,68 +1681,48 @@ mod tests {
             tolerance
         );
     }
-
-    #[test]
-    #[ignore = "needs the 651 MiB pinned Nemotron 3.5 ASR export"]
-    fn runtime_token_sequence_stays_close_to_pinned_nemo_oracle() {
-        let fixtures = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures");
-        let golden: serde_json::Value =
-            serde_json::from_slice(&fs::read(fixtures.join("nemotron/golden-560ms.json")).unwrap())
-                .unwrap();
-        let expected: Vec<i32> = golden["streaming"]["tokenIds"]
-            .as_array()
-            .unwrap()
+}
+#[test]
+fn supported_languages_map_to_the_pinned_prompt_indices() {
+    assert_eq!(
+        SUPPORTED_LANGUAGE_PROMPTS
             .iter()
-            .map(|value| value.as_i64().unwrap() as i32)
-            .collect();
-        let model_path = test_nemotron_model_path();
-        let mut reader =
-            hound::WavReader::open(fixtures.join("audio/7021-79740-0000.wav")).unwrap();
-        let samples: Vec<i16> = reader.samples::<i16>().map(Result::unwrap).collect();
-        let mut model = LoadedNemotronModel::load(&model_path, GpuConfig { use_gpu: false })
-            .expect("load pinned Nemotron model");
-        model.accept_audio(&samples).unwrap();
-        model.process_ready_chunks(true).unwrap();
+            .filter(|prompt| prompt.product_tag != "auto")
+            .map(|prompt| prompt.product_tag)
+            .collect::<Vec<_>>(),
+        VERIFIED_MULTILINGUAL_LANGUAGE_TAGS
+    );
+    assert_eq!(prompt_index_for_language("en"), Some(0));
+    assert_eq!(prompt_index_for_language("es"), Some(3));
+    assert_eq!(prompt_index_for_language("de"), Some(9));
+    assert_eq!(prompt_index_for_language("fr"), Some(8));
+    assert_eq!(prompt_index_for_language("pt"), Some(13));
+    assert_eq!(prompt_index_for_language("it"), Some(15));
+    assert_eq!(prompt_index_for_language("nl"), Some(16));
+    assert_eq!(prompt_index_for_language("ja"), Some(10));
+    assert_eq!(prompt_index_for_language("auto"), Some(101));
+    assert_eq!(prompt_index_for_language("xx"), None);
+}
 
-        let edits = token_edit_distance(&expected, &model.tokens);
-        assert!(
-            edits <= 4,
-            "runtime token sequence drifted {edits} edits from the pinned NeMo oracle (expected {} tokens, found {})",
-            expected.len(),
-            model.tokens.len()
-        );
-    }
+#[test]
+fn supported_prompt_metadata_uses_pinned_locale_aliases() {
+    let dictionary = SUPPORTED_LANGUAGE_PROMPTS
+        .iter()
+        .map(|prompt| (prompt.metadata_key.to_string(), prompt.index as usize))
+        .collect();
+    validate_language_prompts(&dictionary).unwrap();
 
-    fn test_nemotron_model_path() -> PathBuf {
-        if let Some(directory) = std::env::var_os("STT_TEST_NEMOTRON_DIR") {
-            return PathBuf::from(directory).join(ENCODER_FILENAME);
-        }
-        let cache = std::env::var_os("STT_TEST_MODEL_DIR")
-            .map(PathBuf::from)
-            .unwrap_or_else(|| std::env::temp_dir().join("local-dictation-sidecar-test-models"));
-        let catalog = crate::catalog::ModelCatalog::load_bundled().unwrap();
-        let model = catalog
-            .models
-            .iter()
-            .find(|model| model.family_id == ModelFamilyId::NemotronAsr)
-            .expect("bundled catalog must contain Nemotron");
-        let primary = model.primary_artifact().unwrap();
-        cache.join(&model.model_id).join(&primary.filename)
-    }
-
-    fn token_edit_distance(left: &[i32], right: &[i32]) -> usize {
-        let mut previous: Vec<usize> = (0..=right.len()).collect();
-        let mut current = vec![0; right.len() + 1];
-        for (left_index, left_token) in left.iter().enumerate() {
-            current[0] = left_index + 1;
-            for (right_index, right_token) in right.iter().enumerate() {
-                current[right_index + 1] = (previous[right_index]
-                    + usize::from(left_token != right_token))
-                .min(previous[right_index + 1] + 1)
-                .min(current[right_index] + 1);
-            }
-            std::mem::swap(&mut previous, &mut current);
-        }
-        previous[right.len()]
-    }
+    let mut wrong_japanese_alias = dictionary;
+    wrong_japanese_alias.remove("ja-JP");
+    wrong_japanese_alias.insert("ja".to_string(), 10);
+    let error = validate_language_prompts(&wrong_japanese_alias).unwrap_err();
+    assert_eq!(error.code, "invalid_model_file");
+    assert!(
+        error
+            .details
+            .as_deref()
+            .is_some_and(|details| details.contains("ja-JP=10")),
+        "unexpected error details: {:?}",
+        error.details
+    );
 }

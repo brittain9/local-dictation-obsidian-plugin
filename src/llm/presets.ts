@@ -50,20 +50,18 @@ export interface LlmPresetEntry {
   ref: string;
 }
 
-const CLEAN_UP_PROMPT =
-  "Clean dictated speech-to-text. Fix filler, false starts, repetitions, punctuation, capitalization, and obvious recognition errors. Preserve the speaker's voice and meaning. Use the reference context only for spelling. Return only the cleaned text — no preamble, no commentary.";
+const PRESERVE_TRANSCRIPT_LANGUAGE =
+  'Write in the transcript’s original language. Never translate unless the user explicitly asks for translation.';
 
-const PROFESSIONAL_WRITING_PROMPT =
-  'Rewrite dictated speech as concise professional prose. Active voice, no filler or hedging. Preserve every fact, name, and term. Use the reference context for spelling. Return only the rewritten text — no preamble, no commentary.';
+const CLEAN_UP_PROMPT = `Clean dictated speech-to-text. Fix filler, false starts, repetitions, punctuation, capitalization, and obvious recognition errors. Preserve the speaker's voice and meaning. Use the reference context only for spelling. ${PRESERVE_TRANSCRIPT_LANGUAGE} Return only the cleaned text — no preamble, no commentary.`;
 
-const TLDR_PROMPT =
-  "Write a TLDR summary of the dictated transcript: a 'TLDR' heading followed by 1-3 short bullets covering the key points. Return only the heading and bullets — do not repeat the transcript, no preamble, no commentary.";
+const PROFESSIONAL_WRITING_PROMPT = `Rewrite dictated speech as concise professional prose. Active voice, no filler or hedging. Preserve every fact, name, and term. Use the reference context for spelling. ${PRESERVE_TRANSCRIPT_LANGUAGE} Return only the rewritten text — no preamble, no commentary.`;
 
-const MARKDOWN_FORMATTING_PROMPT =
-  "Reformat dictated speech as well-structured Markdown. Add headings, bullet or numbered lists, bold, emphasis, and fenced code blocks where the content calls for it. Lightly clean filler, false starts, punctuation, and capitalization; preserve the speaker's wording, every fact, name, and term. Return only the Markdown — no preamble, no commentary.";
+const TLDR_PROMPT = `Write a TLDR summary of the dictated transcript: a 'TLDR' heading followed by 1-3 short bullets covering the key points. ${PRESERVE_TRANSCRIPT_LANGUAGE} Return only the heading and bullets — do not repeat the transcript, no preamble, no commentary.`;
 
-const ACTION_ITEMS_PROMPT =
-  "Extract action items from the dictated transcript. Output an 'Action items' heading followed by a Markdown checklist of concrete tasks, naming an owner when the speaker mentions one. If the transcript contains no action items, return nothing. Return only the heading and checklist — do not repeat the transcript, no preamble, no commentary.";
+const MARKDOWN_FORMATTING_PROMPT = `Reformat dictated speech as well-structured Markdown. Add headings, bullet or numbered lists, bold, emphasis, and fenced code blocks where the content calls for it. Lightly clean filler, false starts, punctuation, and capitalization; preserve the speaker's wording, every fact, name, and term. ${PRESERVE_TRANSCRIPT_LANGUAGE} Return only the Markdown — no preamble, no commentary.`;
+
+const ACTION_ITEMS_PROMPT = `Extract action items from the dictated transcript. Output an 'Action items' heading followed by a Markdown checklist of concrete tasks, naming an owner when the speaker mentions one. If the transcript contains no action items, return nothing. ${PRESERVE_TRANSCRIPT_LANGUAGE} Return only the heading and checklist — do not repeat the transcript, no preamble, no commentary.`;
 
 export const LLM_BUILTIN_PRESETS = [
   {

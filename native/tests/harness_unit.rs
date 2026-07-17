@@ -18,6 +18,16 @@ fn normalize_lowercases_and_strips_punctuation() {
 }
 
 #[test]
+fn scoring_preserves_unicode_and_supports_unspaced_scripts() {
+    assert_eq!(
+        text::normalize("Tecnología y privacidad."),
+        vec!["tecnología", "y", "privacidad"]
+    );
+    assert_eq!(text::character_error_rate("音声認識。", "音声認識"), 0.0);
+    assert!((text::character_error_rate("音声認識", "音声翻訳") - 0.5).abs() < 1e-9);
+}
+
+#[test]
 fn word_error_rate_scores_edits_against_reference_length() {
     assert_eq!(text::word_error_rate("a b c", "a b c"), 0.0);
     // One substitution out of three reference words.

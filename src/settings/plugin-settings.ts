@@ -1,5 +1,9 @@
 import { randomUUID } from 'node:crypto';
-
+import {
+  DEFAULT_DICTATION_LANGUAGE,
+  type DictationLanguage,
+  isDictationLanguage,
+} from '../language/dictation-language';
 import {
   DEFAULT_LLM_BUILTIN_PRESET_ID,
   formatStyleRef,
@@ -141,6 +145,7 @@ export interface PluginSettings {
   diarizationEnabled: boolean;
   diarizationMaxSpeakers: number | null;
   dictationAnchor: DictationAnchor;
+  dictationLanguage: DictationLanguage;
   listeningMode: ListeningMode;
   llmFeaturesEnabled: boolean;
   llmOpenRouterSecretId: string;
@@ -164,7 +169,7 @@ export interface PluginSettings {
   localTranscriptSidebarBootstrapped: boolean;
   modelStorePathOverride: string;
   retainLastUtterance: boolean;
-  schemaVersion: 2;
+  schemaVersion: 4;
   selectedModel: SelectedModel | null;
   // Last-known-good capabilities for `selectedModel`, captured on a successful
   // probe. Lets startup skip re-probing the sidecar (which forces a full
@@ -196,6 +201,7 @@ export const DEFAULT_PLUGIN_SETTINGS: PluginSettings = {
   diarizationEnabled: false,
   diarizationMaxSpeakers: null,
   dictationAnchor: 'at_cursor',
+  dictationLanguage: DEFAULT_DICTATION_LANGUAGE,
   listeningMode: 'always_on',
   llmFeaturesEnabled: true,
   llmOpenRouterSecretId: '',
@@ -220,7 +226,7 @@ export const DEFAULT_PLUGIN_SETTINGS: PluginSettings = {
   localTranscriptSidebarBootstrapped: false,
   modelStorePathOverride: '',
   retainLastUtterance: true,
-  schemaVersion: 2,
+  schemaVersion: 4,
   selectedModel: null,
   selectedModelCapabilitiesSnapshot: null,
   setupCompletedAt: null,
@@ -266,6 +272,9 @@ export function resolvePluginSettings(data: unknown): PluginSettings {
     dictationAnchor: isDictationAnchor(raw.dictationAnchor)
       ? raw.dictationAnchor
       : DEFAULT_PLUGIN_SETTINGS.dictationAnchor,
+    dictationLanguage: isDictationLanguage(raw.dictationLanguage)
+      ? raw.dictationLanguage
+      : DEFAULT_PLUGIN_SETTINGS.dictationLanguage,
     listeningMode: readListeningMode(raw.listeningMode),
     llmFeaturesEnabled: readBoolean(
       raw.llmFeaturesEnabled,
@@ -347,11 +356,15 @@ export function resolvePluginSettings(data: unknown): PluginSettings {
       DEFAULT_PLUGIN_SETTINGS.retainLastUtterance,
     ),
     // Bump `schemaVersion` and add a migration step when renaming a key or changing default semantics.
-    schemaVersion: 2,
+    schemaVersion: 4,
     selectedModel: readSelectedModel(raw.selectedModel),
-    selectedModelCapabilitiesSnapshot: readSelectedModelCapabilitiesSnapshot(
-      raw.selectedModelCapabilitiesSnapshot,
-    ),
+    // Automatic detection became a capability separate from language tags in
+    // schema 4. Older snapshots cannot prove that exact-model behavior, so
+    // force one fresh probe during migration.
+    selectedModelCapabilitiesSnapshot:
+      raw.schemaVersion === 4
+        ? readSelectedModelCapabilitiesSnapshot(raw.selectedModelCapabilitiesSnapshot)
+        : null,
     setupCompletedAt: readSetupCompletedAt(raw.setupCompletedAt),
     sidecarPathOverride: readString(
       raw.sidecarPathOverride,

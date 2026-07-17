@@ -5,6 +5,7 @@ use anyhow::{Context, Result, ensure};
 use serde::{Deserialize, Serialize};
 
 use crate::engine::capabilities::{ModelFamilyId, RuntimeId};
+use crate::transcription::VERIFIED_MULTILINGUAL_LANGUAGE_TAGS;
 
 const BUNDLED_CATALOG_JSON: &str =
     include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/catalog.json"));
@@ -61,6 +62,8 @@ pub struct CatalogModel {
     pub family_id: ModelFamilyId,
     #[serde(rename = "languageTags")]
     pub language_tags: Vec<String>,
+    #[serde(default, rename = "supportsAutomaticLanguageDetection")]
+    pub supports_automatic_language_detection: bool,
     #[serde(rename = "licenseLabel")]
     pub license_label: String,
     #[serde(rename = "licenseUrl")]
@@ -188,6 +191,26 @@ impl ModelCatalog {
                 model.model_id,
                 model.collection_id
             );
+            ensure!(
+                !model.language_tags.is_empty(),
+                "model {} must declare at least one languageTag",
+                model.model_id
+            );
+            let mut language_tags = HashSet::new();
+            for tag in &model.language_tags {
+                ensure!(
+                    VERIFIED_MULTILINGUAL_LANGUAGE_TAGS.contains(&tag.as_str()),
+                    "model {} declares unsupported languageTag {}",
+                    model.model_id,
+                    tag
+                );
+                ensure!(
+                    language_tags.insert(tag),
+                    "model {} declares duplicate languageTag {}",
+                    model.model_id,
+                    tag
+                );
+            }
             ensure!(
                 model_keys.insert((model.runtime_id, model.family_id, model.model_id.clone())),
                 "duplicate modelId {} for ({}, {})",
@@ -365,6 +388,28 @@ mod tests {
         );
     }
 
+    #[test]
+    fn validate_rejects_unknown_or_duplicate_language_tags() {
+        for tags in [
+            vec!["xx".to_string()],
+            vec!["en".to_string(), "en".to_string()],
+        ] {
+            let mut model = sample_model();
+            model.language_tags = tags;
+            let error = ModelCatalog {
+                catalog_version: 2,
+                collections: vec![sample_collection()],
+                runtimes: vec![sample_runtime()],
+                families: vec![sample_family()],
+                models: vec![model],
+            }
+            .validate()
+            .expect_err("catalog should reject invalid language tags");
+
+            assert!(error.to_string().contains("languageTag"));
+        }
+    }
+
     fn sample_runtime() -> ModelRuntimeDescriptor {
         ModelRuntimeDescriptor {
             runtime_id: RuntimeId::WhisperCpp,
@@ -407,6 +452,7 @@ mod tests {
             runtime_id: RuntimeId::WhisperCpp,
             family_id: ModelFamilyId::Whisper,
             language_tags: vec!["en".to_string()],
+            supports_automatic_language_detection: false,
             license_label: "MIT".to_string(),
             license_url: "https://example.com/license".to_string(),
             model_card_url: None,

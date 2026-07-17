@@ -9,23 +9,14 @@ mod common;
 
 use common::manifest::Corpus;
 use common::model::require_nemotron_model;
-use common::text::{missing_anchors, word_error_rate};
+use common::quality_report::{self, QualityMeasurement};
+use common::text::{joined_text, missing_anchors, word_error_rate};
 use common::{audio, driver};
 use local_dictation_sidecar::adapters::nemotron_asr::NemotronAsrAdapter;
 use local_dictation_sidecar::engine::traits::ModelFamilyAdapter;
 use local_dictation_sidecar::engine::{ModelFamilyId, RuntimeId};
 use local_dictation_sidecar::protocol::SelectedModel;
-use local_dictation_sidecar::transcription::{EngineTranscriptOutput, GpuConfig};
-
-fn joined_text(output: &EngineTranscriptOutput) -> String {
-    output
-        .segments
-        .iter()
-        .map(|segment| segment.text.trim())
-        .filter(|text| !text.is_empty())
-        .collect::<Vec<_>>()
-        .join(" ")
-}
+use local_dictation_sidecar::transcription::GpuConfig;
 
 fn selection(encoder: &std::path::Path) -> SelectedModel {
     SelectedModel::ExternalFile {
@@ -128,12 +119,36 @@ fn nemotron_runs_through_vad_worker_and_revision_protocol() {
     );
     let missing = missing_anchors(&outcome.final_text, &fixture.anchors);
     assert!(missing.is_empty(), "missing anchor words: {missing:?}");
+
     let audio_duration_ms = (samples.len() as u64 * 1_000) / 16_000;
     let real_time_factor = outcome.processing_ms as f64 / audio_duration_ms.max(1) as f64;
     assert!(
         real_time_factor <= WORKER_MAX_REAL_TIME_FACTOR,
         "worker RTF {real_time_factor:.3} exceeded {WORKER_MAX_REAL_TIME_FACTOR:.3}",
     );
+    quality_report::record(&QualityMeasurement {
+        suite: "nemotron-streaming-product-path",
+        model_id: common::model::NEMOTRON_MODEL_ID,
+        model_name: "NVIDIA Nemotron 3.5 ASR Streaming 0.6B Int8",
+        language: "en",
+        selection: "manual",
+        fixture_id: &fixture.id,
+        quality_metric: "wer",
+        quality_error_rate: wer,
+        quality_budget: WORKER_MAX_WER,
+        audio_duration_ms,
+        processing_duration_ms: outcome.processing_ms,
+        real_time_factor,
+        real_time_factor_budget: WORKER_MAX_REAL_TIME_FACTOR,
+        first_partial_audio_ms: outcome
+            .partials
+            .first()
+            .map(|partial| partial.utterance_duration_ms),
+        first_partial_audio_budget_ms: Some(WORKER_MAX_FIRST_PARTIAL_AUDIO_MS),
+        utterance_count: None,
+        partial_count: Some(outcome.partials.len()),
+        passed: true,
+    });
 }
 
 #[test]

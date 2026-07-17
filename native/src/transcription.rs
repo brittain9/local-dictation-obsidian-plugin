@@ -6,6 +6,9 @@ use uuid::Uuid;
 use crate::protocol::{ContextWindow, StageId, StageOutcome, TranscriptSegment};
 
 pub(crate) const SUPPORTED_LANGUAGE: &str = "en";
+pub(crate) const VERIFIED_MULTILINGUAL_LANGUAGE_TAGS: &[&str] =
+    &["en", "es", "de", "fr", "pt", "it", "nl", "ja"];
+pub(crate) const AUTOMATIC_LANGUAGE_TAG: &str = "auto";
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct GpuConfig {
@@ -152,6 +155,14 @@ pub fn validate_language(language: &str) -> Result<(), TranscriptionError> {
 }
 
 impl TranscriptionError {
+    pub(crate) fn unsupported_language(language: &str, details: &str) -> Self {
+        Self {
+            code: "unsupported_language",
+            message: "The selected model does not support this dictation language.",
+            details: Some(format!("{language}: {details}")),
+        }
+    }
+
     pub(crate) fn invalid_model(details: &'static str) -> Self {
         Self {
             code: "invalid_model_file",

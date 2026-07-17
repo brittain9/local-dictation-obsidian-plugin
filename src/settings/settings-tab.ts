@@ -2,6 +2,11 @@ import type { App, Plugin } from 'obsidian';
 import { Platform, PluginSettingTab, Setting } from 'obsidian';
 
 import { formatSystemAudioProbeResultMessage } from '../audio/system-audio-permission-message';
+import {
+  dictationLanguageLabel,
+  isDictationLanguage,
+  supportedDictationLanguageOptions,
+} from '../language/dictation-language';
 import { resolveEngineCapabilities } from '../models/capability-view';
 import type { ModelInstallManager } from '../models/model-install-manager';
 import { updateInstallProgressElement } from '../models/model-install-progress';
@@ -136,8 +141,9 @@ export class LocalSttSettingTab extends PluginSettingTab {
 
     // --- Model ---
     const modelSection = createSettingGroup(containerEl, 'Model');
+    const modelSummary = modelSection.createDiv();
     const manager = this.dependencies.modelInstallManager;
-    this.disposeModelSection = renderModelSection(modelSection, manager, {
+    this.disposeModelSection = renderModelSection(modelSummary, manager, {
       onManageModels: () => {
         void this.dependencies.openModelPicker({
           onChanged: () => {
@@ -160,6 +166,47 @@ export class LocalSttSettingTab extends PluginSettingTab {
         ).open();
       },
       onModelInfo: this.buildModelInfoCallback(manager, settings),
+    });
+
+    const selectedCapabilities = manager.getState().selectedModelCapabilities;
+    const languageSupport =
+      selectedCapabilities.status === 'ready'
+        ? selectedCapabilities.capabilities.family.supportedLanguages
+        : ({ kind: 'english_only' } as const);
+    const supportsAutomaticLanguageDetection =
+      selectedCapabilities.status === 'ready' &&
+      selectedCapabilities.capabilities.family.supportsAutomaticLanguageDetection;
+    const languageOptions = supportedDictationLanguageOptions(
+      languageSupport,
+      supportsAutomaticLanguageDetection,
+    );
+    const selectedLanguage = settings.dictationLanguage;
+    const languageSetting = new Setting(modelSection)
+      .setName('Dictation language')
+      .setDesc(
+        languageOptions.length === 1
+          ? 'The selected model supports English only.'
+          : 'Choose the language you will speak. Manual selection gives the most predictable cleanup. Auto detect may start more slowly and chooses one language per utterance.',
+      );
+    languageSetting.addDropdown((dropdown) => {
+      for (const option of languageOptions) {
+        dropdown.addOption(option.value, option.label);
+      }
+      if (!languageOptions.some((option) => option.value === selectedLanguage)) {
+        dropdown.addOption(
+          selectedLanguage,
+          `${dictationLanguageLabel(selectedLanguage)} (unsupported)`,
+        );
+      }
+      dropdown.setValue(selectedLanguage);
+      dropdown.setDisabled(
+        languageOptions.length === 1 &&
+          languageOptions.some((option) => option.value === selectedLanguage),
+      );
+      dropdown.onChange(async (value) => {
+        if (!isDictationLanguage(value)) return;
+        await this.access.persistOne('dictationLanguage', value);
+      });
     });
 
     // --- Capture ---
