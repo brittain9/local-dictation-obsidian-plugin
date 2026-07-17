@@ -1,6 +1,6 @@
 {
   "name": "local-dictation",
-  "version": "2026.7.6",
+  "version": "2026.7.7",
   "description": "Private, offline speech-to-text and meeting transcription. Dictate voice notes live or transcribe meetings and system audio with local Whisper, speaker labels, timestamps, and optional AI cleanup.",
   "private": true,
   "license": "MIT",

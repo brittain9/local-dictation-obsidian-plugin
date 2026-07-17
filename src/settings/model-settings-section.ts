@@ -156,6 +156,11 @@ export function renderModelSection(
       });
       installProgressEl = progressEl;
     }
+
+    // This row lives in a private wrapper so manager updates cannot erase the
+    // sibling language control. Keep Obsidian's `.setting-item:last-child`
+    // rule from stripping its bottom padding and pulling the divider upward.
+    container.createSpan({ attr: { 'aria-hidden': 'true', style: 'display: none;' } });
   }
 
   function handleStateChange(): void {
