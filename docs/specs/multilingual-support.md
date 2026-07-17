@@ -124,7 +124,7 @@ Multilingual support is first-class only when all of these are true:
 - Confirm punctuation, capitalization, speaker labels, timestamps, and smart
   paragraphs remain structurally correct for the supported scripts.
 
-### 5. Verification and release gate
+### 5. Verification
 
 - Unit-test tag normalization, model eligibility, persisted-settings migration,
   protocol round trips, and adapter rejection paths.
@@ -135,6 +135,10 @@ Multilingual support is first-class only when all of these are true:
   rejection, context prompting, LLM cleanup, and English regression.
 - Document code-switching policy explicitly; do not imply it from monolingual
   fixtures.
+
+The exhaustive real-model matrix runs in the manually dispatchable, weekly
+`multilingual-quality` workflow. It is certification evidence, not a release
+publication gate.
 
 The first multilingual release should enable a small, verified language/model
 matrix. Breadth follows evidence; it is not a prerequisite for a sound model-level
