@@ -1430,11 +1430,11 @@ impl AppState {
                     ));
                 }
                 let adapter_supports_automatic_language_detection = self
-                    .registry
-                    .merged_capabilities(runtime_id, family_id)
-                    .is_some_and(|capabilities| {
-                        capabilities.family.supports_automatic_language_detection
-                    });
+                    .adapter_supports_automatic_language_detection(
+                        runtime_id,
+                        family_id,
+                        &adapter_language_support,
+                    );
                 if model.supports_automatic_language_detection
                     && !adapter_supports_automatic_language_detection
                 {
@@ -1517,15 +1517,11 @@ impl AppState {
                     })?;
                 let size_bytes = file_size(model_path);
                 let supports_automatic_language_detection = self
-                    .registry
-                    .merged_capabilities(runtime_id, family_id)
-                    .is_some_and(|capabilities| {
-                        capabilities.family.supports_automatic_language_detection
-                            && !matches!(
-                                &language_support,
-                                LanguageSupport::EnglishOnly | LanguageSupport::Unknown
-                            )
-                    });
+                    .adapter_supports_automatic_language_detection(
+                        runtime_id,
+                        family_id,
+                        &language_support,
+                    );
 
                 Ok(ResolvedModelSelection {
                     display_name: file_name_or_path(model_path),
@@ -1541,6 +1537,26 @@ impl AppState {
                 })
             }
         }
+    }
+
+    // Automatic detection is only trustworthy per exact model: the family may
+    // advertise it while the installed weights are English-only (e.g. `.en`
+    // Whisper variants).
+    fn adapter_supports_automatic_language_detection(
+        &self,
+        runtime_id: RuntimeId,
+        family_id: ModelFamilyId,
+        language_support: &LanguageSupport,
+    ) -> bool {
+        self.registry
+            .merged_capabilities(runtime_id, family_id)
+            .is_some_and(|capabilities| {
+                capabilities.family.supports_automatic_language_detection
+                    && !matches!(
+                        language_support,
+                        LanguageSupport::EnglishOnly | LanguageSupport::Unknown
+                    )
+            })
     }
 }
 
@@ -1872,6 +1888,7 @@ mod tests {
         runtime_id: RuntimeId,
         capabilities: ModelFamilyCapabilities,
         load_behavior: FakeLoadBehavior,
+        probed_language_support: Option<LanguageSupport>,
     }
 
     impl FakeAdapter {
@@ -1895,7 +1912,22 @@ mod tests {
                     produces_punctuation: true,
                 },
                 load_behavior: FakeLoadBehavior::Succeed,
+                probed_language_support: None,
             }
+        }
+
+        /// A family that advertises multilingual + automatic detection while
+        /// the probed model file contains English-only weights — the `.en`
+        /// Whisper variant shape.
+        fn multilingual_family_with_english_only_model() -> Self {
+            let mut adapter = Self::new();
+            adapter.capabilities.supports_language_selection = true;
+            adapter.capabilities.supports_automatic_language_detection = true;
+            adapter.capabilities.supported_languages = LanguageSupport::List {
+                tags: vec!["en".to_string(), "es".to_string()],
+            };
+            adapter.probed_language_support = Some(LanguageSupport::EnglishOnly);
+            adapter
         }
 
         fn for_family(runtime_id: RuntimeId, family_id: ModelFamilyId) -> Self {
@@ -1954,6 +1986,17 @@ mod tests {
 
         fn probe_model(&self, path: &std::path::Path) -> Result<(), TranscriptionError> {
             validate_model_path(path)
+        }
+
+        fn probe_model_and_language_support(
+            &self,
+            path: &std::path::Path,
+        ) -> Result<LanguageSupport, TranscriptionError> {
+            self.probe_model(path)?;
+            Ok(self
+                .probed_language_support
+                .clone()
+                .unwrap_or_else(|| self.capabilities.supported_languages.clone()))
         }
 
         fn load(
@@ -2477,6 +2520,49 @@ mod tests {
                     caps.runtime
                         .available_accelerators
                         .contains(&AcceleratorId::Cpu)
+                );
+            }
+            other => panic!("expected ready ModelProbeResult, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn probe_downgrades_language_capabilities_to_the_exact_model() {
+        let mut registry = EngineRegistry::default();
+        registry.register_runtime(Box::new(FakeRuntime::cpu_only()));
+        registry.register_adapter(Box::new(
+            FakeAdapter::multilingual_family_with_english_only_model(),
+        ));
+        let model_file_path = create_model_file();
+        let (_, events) = test_app_with_registry(Arc::new(registry)).handle_command(
+            Command::ProbeModelSelection {
+                model_selection: SelectedModel::ExternalFile {
+                    runtime_id: RuntimeId::WhisperCpp,
+                    family_id: ModelFamilyId::Whisper,
+                    file_path: model_file_path.display().to_string(),
+                },
+                model_store_path_override: None,
+            },
+        );
+
+        match events.first() {
+            Some(Event::ModelProbeResult {
+                status,
+                merged_capabilities,
+                ..
+            }) => {
+                assert_eq!(*status, ModelProbeStatus::Ready);
+                let caps = merged_capabilities
+                    .as_ref()
+                    .expect("ready probes must carry merged capabilities");
+                assert_eq!(
+                    caps.family.supported_languages,
+                    LanguageSupport::EnglishOnly
+                );
+                assert!(!caps.family.supports_language_selection);
+                assert!(
+                    !caps.family.supports_automatic_language_detection,
+                    "English-only weights must not advertise the family's automatic detection"
                 );
             }
             other => panic!("expected ready ModelProbeResult, got {other:?}"),
