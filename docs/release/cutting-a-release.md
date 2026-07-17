@@ -141,10 +141,13 @@ git tag <version> origin/main
 git push origin <version>                               # fires .github/workflows/release.yml
 ```
 
-The workflow runs: `metadata` gate → `plugin-bundle` (`check:frontend`) + native
-sidecar builds (macOS arm64, Linux x86_64 cpu+cuda, Windows cpu+cuda) →
-`native-quality` → `publish` (creates a **draft** release with the notes file as
-the body, then un-drafts it) → `release-report` (timing summary).
+The workflow runs: `metadata` validation → production plugin + native sidecar
+builds (macOS arm64, Linux x86_64 cpu+cuda, Windows cpu+cuda) → package and
+attest the final assets → `publish` (creates a **draft** release with the notes
+file as the body, then un-drafts it) → `release-report` (timing summary).
+Unit, lint, and static-analysis gates run on pull requests and `main` in
+`ci.yml`; real-model certification runs in the scheduled or manually
+dispatchable E2E workflows and does not delay publication.
 
 ## Watch and verify
 
