@@ -72,6 +72,7 @@ The whole feature ships in this PR. Stages are ordered checkpoints — each land
 ## Verification
 
 - `npm run check` green at every stage; parity test active from Stage 0.
+- Tests stay English: the central `test/__mocks__/obsidian.ts` mock stubs `getLanguage()` to `'en'`, so `t()` resolves to the verbatim-migrated English literals and existing string assertions pass unchanged. Tests never assert on keys or non-English catalogs.
 - Manual pass at Stage 4 in `es` and `ja` (Latin + CJK): setup wizard end-to-end, settings tab, a dictation session, model install, and an error path (kill the sidecar; the notice must be localized).
 - Overflow spot-check in `de` (longest strings) across settings and modals.
 - Fallback check: Obsidian set to an out-of-set locale (e.g. `ru`) renders a fully English UI with no key names visible.
