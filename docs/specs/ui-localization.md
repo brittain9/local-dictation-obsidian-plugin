@@ -17,7 +17,8 @@ When Obsidian's UI language is one of the languages this plugin can transcribe, 
 
 ## Locale policy
 
-- Target locales are exactly the verified dictation languages: `en`, `es`, `de`, `fr`, `pt`, `it`, `nl`, `ja` — mirroring `VERIFIED_MULTILINGUAL_LANGUAGE_TAGS` in `native/src/transcription.rs`. All eight are also Obsidian UI languages, so users in the target audience really do run Obsidian in these locales.
+- Shipped locales are exactly the verified dictation languages: `en`, `es`, `de`, `fr`, `pt`, `it`, `nl`, `ja` — mirroring `VERIFIED_MULTILINGUAL_LANGUAGE_TAGS` in `native/src/transcription.rs`. All eight are also Obsidian UI languages, so users in the target audience really do run Obsidian in these locales.
+- The coupling is policy, not code: locale resolution supports whatever catalogs exist under `src/locales/`, with no reference to the dictation-language constant. A community-contributed catalog for any other Obsidian locale (e.g. `zh`) can be accepted as a one-file PR without touching dictation — matching how Obsidian itself takes community translations.
 - Locale is resolved once at plugin load via `getLanguage()` from `'obsidian'` (API ≥ 1.8.7; our `minAppVersion` is 1.11.5). Obsidian relaunches when the user changes language, so no live re-render path is needed.
 - Regional tags match on the base subtag: `pt-BR` → `pt`, `de-AT` → `de`. Anything else (`ru`, `zh`, …) → `en`.
 
@@ -45,7 +46,7 @@ Today the plugin renders sidecar `ErrorEvent`/`WarningEvent.message` strings ver
 
 ### D5 — Model catalog strings
 
-`displayName` values ("Whisper Large V3 Turbo", "whisper.cpp") are product names and are never translated. Catalog `summary` texts are long, English-only, and delivered over the wire from `native/catalog.json`; localizing them means a plugin-side `catalog.<modelId>.summary` lookup with wire fallback. Deferred out of the initial rollout — English fallback is acceptable there and summaries churn with catalog updates. Revisit after Stage 4 ships (open question 1).
+`displayName` values ("Whisper Large V3 Turbo", "whisper.cpp") are product names and are never translated. Catalog `summary` texts are long, English-only, and delivered over the wire from `native/catalog.json`; localizing them means a plugin-side `catalog.<modelId>.summary` lookup with wire fallback. Deferred out of this PR — English fallback is acceptable meanwhile. Planned follow-up after Stage 4 ships: add the `catalog.<modelId>.summary` keys with wire fallback.
 
 ### D6 — Dictation-language dropdown shows endonyms
 
@@ -80,10 +81,8 @@ The whole feature ships in this PR. Stages are ordered checkpoints — each land
 ## Risks and open questions
 
 - Machine-drafted translations will contain awkward phrasing until community review lands. Mitigation: beta-translation framing in release notes, per-key English fallback, cheap correction PRs.
-- Copy churn on evolving surfaces (wizard, settings) produces temporarily mixed-language UI in non-English locales. Accepted trade-off of the soft-fallback policy (open question 2 if this should harden into a release gate).
+- Copy churn on evolving surfaces (wizard, settings) produces temporarily mixed-language UI in non-English locales. Accepted trade-off of the soft-fallback policy.
+- Machine-drafted `ja` is the catalog most likely to read awkwardly; accepted — it gets fixed when a user reports it.
 - Bundle growth: eight inline catalogs, estimated low tens of KB in `main.js` — negligible.
 
-1. Localize model catalog summaries (D5) after Stage 4, or leave them English indefinitely?
-2. Should translation coverage ever gate a release (hard CI failure), or stay fallback + report?
-3. Do UI locales stay coupled to verified dictation languages, or can they diverge on demand (e.g. a `zh` UI request from a user who dictates in English)? Recommendation: keep coupled until real demand appears.
-4. Dropdown labels: endonym only (`Español`) or endonym + localized name (`Español (Spanish)`)? Recommendation: endonym only, matching Obsidian's picker.
+Resolved decisions (2026-07-18): catalog summaries get localized as a follow-up after Stage 4 (D5); translation coverage never hard-fails CI — fallback + coverage report is permanent (D8); shipped locales stay the eight dictation languages but the code accepts any contributed catalog (Locale policy); dropdown labels are endonym-only (D6).
