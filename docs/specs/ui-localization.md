@@ -46,7 +46,7 @@ Today the plugin renders sidecar `ErrorEvent`/`WarningEvent.message` strings ver
 
 ### D5 — Model catalog strings
 
-`displayName` values ("Whisper Large V3 Turbo", "whisper.cpp") are product names and are never translated. Catalog `summary` texts are long, English-only, and delivered over the wire from `native/catalog.json`; localizing them means a plugin-side `catalog.<modelId>.summary` lookup with wire fallback. Deferred out of this PR — English fallback is acceptable meanwhile. Planned follow-up after Stage 4 ships: add the `catalog.<modelId>.summary` keys with wire fallback.
+`displayName` values ("Whisper Large V3 Turbo", "whisper.cpp") are product names and are never translated. Catalog `summary` texts are delivered over the wire from `native/catalog.json`; they localize in this PR via a plugin-side `catalog.<modelId>.summary` lookup keyed by model ID. The wire `summary` remains the fallback for model IDs the shipped catalogs don't know (models added server-side after release show English until the next plugin update).
 
 ### D6 — Dictation-language dropdown shows endonyms
 
@@ -54,7 +54,7 @@ Today the plugin renders sidecar `ErrorEvent`/`WarningEvent.message` strings ver
 
 ### D7 — Translation sourcing
 
-`en` is the only hand-authored catalog. The seven other catalogs are machine-drafted in one pass, shipped as reviewable beta translations, and corrected via normal PRs (contribution workflow documented in `CONTRIBUTING.md`). A missing key is legal and falls back to English, so adding an English string never blocks on seven translations; coverage is visible via the parity test's report.
+`en` is the only hand-authored catalog. The seven other catalogs are LLM-drafted in one pass and shipped as-is; imperfect phrasing is accepted, and corrections land via issues and normal PRs (contribution workflow documented in `CONTRIBUTING.md`). A missing key is legal and falls back to English, so adding an English string never blocks on seven translations; coverage is visible via the parity test's report.
 
 ### D8 — Enforcement
 
@@ -68,7 +68,7 @@ The whole feature ships in this PR. Stages are ordered checkpoints — each land
 1. High-traffic surfaces: commands, ribbon, settings tab + sections/modals, all `feedback.show` messages.
 2. Setup wizard, sidecar install modals, model management and progress labels.
 3. Sidecar `code` → key mapping (D4), including the code inventory and its parity test.
-4. Ship the seven non-English catalogs, endonym dropdown (D6), translation contribution docs, release-notes entry.
+4. Ship the seven non-English catalogs including catalog summaries (D5), endonym dropdown (D6), translation contribution docs, release-notes entry.
 
 ## Verification
 
@@ -80,9 +80,8 @@ The whole feature ships in this PR. Stages are ordered checkpoints — each land
 
 ## Risks
 
-- Machine-drafted translations will contain awkward phrasing until community review lands. Mitigation: beta-translation framing in release notes, per-key English fallback, cheap correction PRs.
+- LLM-drafted translations will contain awkward phrasing (`ja` most likely). Accepted: ship as-is, fix when users report it. Per-key English fallback and cheap correction PRs keep fixes low-cost.
 - Copy churn on evolving surfaces (wizard, settings) produces temporarily mixed-language UI in non-English locales. Accepted trade-off of the soft-fallback policy.
-- Machine-drafted `ja` is the catalog most likely to read awkwardly; accepted — it gets fixed when a user reports it.
-- Bundle growth: eight inline catalogs, estimated low tens of KB in `main.js` — negligible.
+- Bundle growth: eight inline catalogs including catalog summaries, estimated low tens of KB in `main.js` — negligible.
 
-Resolved decisions (2026-07-18): catalog summaries get localized as a follow-up after Stage 4 (D5); translation coverage never hard-fails CI — fallback + coverage report is permanent (D8); shipped locales stay the eight dictation languages but the code accepts any contributed catalog (Locale policy); dropdown labels are endonym-only (D6).
+Resolved decisions (2026-07-18): all text ships fully localized in this PR, including catalog summaries (D5) — nothing deferred; translations are LLM-drafted and shipped without a beta framing (D7); translation coverage never hard-fails CI — fallback + coverage report is permanent (D8); shipped locales stay the eight dictation languages but the code accepts any contributed catalog (Locale policy); dropdown labels are endonym-only (D6).
