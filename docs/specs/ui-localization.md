@@ -78,7 +78,7 @@ The whole feature ships in this PR. Stages are ordered checkpoints — each land
 - Overflow spot-check in `de` (longest strings) across settings and modals.
 - Fallback check: Obsidian set to an out-of-set locale (e.g. `ru`) renders a fully English UI with no key names visible.
 
-## Risks and open questions
+## Risks
 
 - Machine-drafted translations will contain awkward phrasing until community review lands. Mitigation: beta-translation framing in release notes, per-key English fallback, cheap correction PRs.
 - Copy churn on evolving surfaces (wizard, settings) produces temporarily mixed-language UI in non-English locales. Accepted trade-off of the soft-fallback policy.
