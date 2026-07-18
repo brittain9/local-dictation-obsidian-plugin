@@ -35,7 +35,7 @@ Flat dot-namespaced keys grouped by surface: `commands.toggleDictation`, `settin
 
 ### D3 — Every user-visible string goes through `t()`
 
-In scope: the 11 command names in `src/commands/register-commands.ts`, ribbon tooltips, the settings tab and all settings sections/modals, the sidebar view, preset manager, setup wizard, sidecar install copy, model management and install-progress labels, every `feedback.show({ message })` call site (~44 messages funneled through `obsidian-feedback-presenter.ts`), validation and confirm-modal text.
+In scope: the 11 command names in `src/commands/register-commands.ts`, ribbon tooltips, the settings tab and all settings sections/modals, the sidebar view, preset manager, setup wizard, sidecar install copy, model management and install-progress labels, every `feedback.show({ message })` call site (~58 messages funneled through `obsidian-feedback-presenter.ts`), validation and confirm-modal text.
 
 Excluded: developer-mode diagnostics. Its audience is developers and the copy churns; it stays English.
 
@@ -61,7 +61,7 @@ A vitest parity test (runs in `npm run check` from Stage 0) fails on orphan keys
 
 ## Staged delivery
 
-Each stage is one PR (per CONTRIBUTING: one concern per PR). Stages 0–3 are English-only refactors with no visible behavior change.
+The whole feature ships in this PR. Stages are ordered checkpoints — each lands as one or more commits with `npm run check` green, so the branch is reviewable stage by stage and bisectable. Stages 0–3 are English-only refactors with no visible behavior change.
 
 0. Infrastructure: `i18n.ts`, `en` catalog seeded from `FEEDBACK_FAILURES` + `sidecar-install-copy.ts`, locale resolution via `getLanguage()`, parity test.
 1. High-traffic surfaces: commands, ribbon, settings tab + sections/modals, all `feedback.show` messages.
