@@ -573,8 +573,14 @@ export class ModelInstallManager {
         },
       });
     } else if (probeResult.status === 'missing' || probeResult.status === 'invalid') {
+      const details = createProbeFailureMessage(probeResult);
+      this.deps.logger?.warn(
+        'model',
+        `selected model probe reported ${probeResult.status}`,
+        details,
+      );
       this.selectedModelCapabilities = {
-        details: createProbeFailureMessage(probeResult),
+        details,
         reason: probeResult.status,
         selection,
         status: 'unavailable',

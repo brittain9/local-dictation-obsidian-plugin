@@ -1,6 +1,9 @@
-import { basename, isAbsolute } from 'node:path';
+import { basename } from 'node:path';
 
-import { getExistingPathKind } from '../filesystem/path-validation';
+import {
+  checkAbsoluteExistingFilePath,
+  type ExistingFilePathValidationCode,
+} from '../filesystem/path-validation';
 import { t } from '../shared/i18n';
 import type { ExternalFileModelSelection } from './model-management-types';
 
@@ -73,21 +76,11 @@ export async function validateExternalModelFilePath(
   filePath: string,
   engine: Pick<ExternalFileModelSelection, 'familyId' | 'runtimeId'>,
 ): Promise<string> {
-  const normalizedPath = filePath.trim();
-  if (normalizedPath.length === 0) {
-    throw new ExternalModelFileValidationError('not_configured');
+  const pathResult = await checkAbsoluteExistingFilePath(filePath);
+  if (!pathResult.valid) {
+    throw new ExternalModelFileValidationError(pathResult.code, pathResult.path);
   }
-  if (!isAbsolute(normalizedPath)) {
-    throw new ExternalModelFileValidationError('not_absolute');
-  }
-
-  const pathKind = await getExistingPathKind(normalizedPath);
-  if (pathKind === 'missing') {
-    throw new ExternalModelFileValidationError('missing', normalizedPath);
-  }
-  if (pathKind !== 'file') {
-    throw new ExternalModelFileValidationError('not_file', normalizedPath);
-  }
+  const normalizedPath = pathResult.path;
 
   const option = getExternalFileEngineOption(engine);
   if (option?.entryFilename && basename(normalizedPath) !== option.entryFilename) {
@@ -103,31 +96,13 @@ export async function validateExternalModelFilePath(
 
 export function formatExternalModelValidationError(error: unknown): string {
   if (error instanceof ExternalModelFileValidationError) {
-    switch (error.code) {
-      case 'not_configured':
-        return t('models.external.validation.notConfigured');
-      case 'not_absolute':
-        return t('models.external.validation.notAbsolute');
-      case 'missing':
-        return t('models.external.validation.missing', { path: error.detail ?? '' });
-      case 'not_file':
-        return t('models.external.validation.notFile', { path: error.detail ?? '' });
-      case 'wrong_entry_file':
-        return error.messageKey !== undefined
-          ? t(error.messageKey)
-          : t('models.external.validation.selectEntryFile', { filename: error.detail ?? '' });
-    }
+    return error.message;
   }
 
   return t('models.external.validation.generic');
 }
 
-type ExternalModelFileValidationCode =
-  | 'missing'
-  | 'not_absolute'
-  | 'not_configured'
-  | 'not_file'
-  | 'wrong_entry_file';
+type ExternalModelFileValidationCode = ExistingFilePathValidationCode | 'wrong_entry_file';
 
 class ExternalModelFileValidationError extends Error {
   constructor(

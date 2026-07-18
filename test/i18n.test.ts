@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { resolveLocale, t } from '../src/shared/i18n';
+import { resolveLocale, t, tPlural } from '../src/shared/i18n';
 
 describe('i18n', () => {
   it('returns the verbatim English source string', () => {
@@ -20,6 +20,16 @@ describe('i18n', () => {
   it('leaves a placeholder intact when its parameter is missing', () => {
     expect(t('setup.sidecar.update.body')).toContain('{engineLabel}');
     expect(t('setup.sidecar.update.body', {})).toContain('{engineLabel}');
+  });
+
+  it('selects explicit plural variants with the active locale rules', () => {
+    const keys = {
+      one: 'setup.sidecar.update.title_one',
+      other: 'setup.sidecar.update.title_other',
+    } as const;
+
+    expect(tPlural(1, keys)).toBe('Update speech engine');
+    expect(tPlural(2, keys)).toBe('Update speech engines');
   });
 
   it('matches supported regional tags on the base subtag', () => {

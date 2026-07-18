@@ -1,3 +1,5 @@
+import { t } from '../shared/i18n';
+
 export const LLM_POSTPROCESS_MODES = ['off', 'per_utterance', 'batch'] as const;
 
 export type LlmPostprocessMode = (typeof LLM_POSTPROCESS_MODES)[number];
@@ -253,5 +255,3 @@ export function describePresetBehavior(preset: LlmPreset): string {
   }
   return parts.join(' · ');
 }
-
-import { t } from '../shared/i18n';

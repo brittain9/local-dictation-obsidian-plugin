@@ -423,7 +423,7 @@ describe('deriveCurrentModelDisplay', () => {
     });
   });
 
-  it('surfaces the external probe failure details in the current-model status', () => {
+  it('keeps external probe diagnostics out of the current-model status', () => {
     const selection = {
       familyId: 'moonshine' as const,
       filePath: '/models/moonshine/frontend.ort',
@@ -441,7 +441,7 @@ describe('deriveCurrentModelDisplay', () => {
     });
 
     expect(deriveCurrentModelDisplay(state)).toMatchObject({
-      detail: 'required Moonshine asset missing: encoder.ort',
+      detail: 'The external model is unavailable. Validate the file again to see details.',
       status: 'unavailable',
     });
   });

@@ -1,5 +1,6 @@
 import { t } from '../shared/i18n';
 import type { SystemAudioProbeResultEvent } from '../sidecar/protocol';
+import { localizeKnownSidecarEventCode } from '../sidecar/sidecar-event-localization';
 import { compareVersions } from '../version';
 
 const SYSTEM_AUDIO_PERMISSION_DENIED_CODE = 'system_audio_permission_denied';
@@ -10,21 +11,8 @@ export function formatSystemAudioProbeResultMessage(
   electronVersion = readElectronVersion(),
 ): string {
   const message =
-    localizeSystemAudioProbeCode(result.code) ?? result.message ?? t('audio.systemAudio.notReady');
+    localizeKnownSidecarEventCode(result.code) ?? result.message ?? t('audio.systemAudio.notReady');
   return formatSystemAudioErrorMessage(message, result.code, electronVersion);
-}
-
-function localizeSystemAudioProbeCode(code: string | undefined): string | null {
-  switch (code) {
-    case 'system_audio_capture_failed':
-      return t('sidecarError.system_audio_capture_failed');
-    case SYSTEM_AUDIO_PERMISSION_DENIED_CODE:
-      return t('sidecarError.system_audio_permission_denied');
-    case 'system_audio_unsupported':
-      return t('sidecarError.system_audio_unsupported');
-    default:
-      return null;
-  }
 }
 
 export function formatSystemAudioErrorMessage(

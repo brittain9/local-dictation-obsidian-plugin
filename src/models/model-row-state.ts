@@ -263,7 +263,7 @@ function deriveExternalModelStatus(
       };
     case 'unavailable':
       return {
-        detail: capabilities.details ?? t('models.current.externalUnavailableDesc'),
+        detail: t('models.current.externalUnavailableDesc'),
         status: 'unavailable',
       };
     case 'none':

@@ -22,6 +22,15 @@ export function t(key: TranslationKey, params?: TranslationParams): string {
   });
 }
 
+export function tPlural(
+  count: number,
+  keys: Readonly<{ one: TranslationKey; other: TranslationKey }>,
+  params?: TranslationParams,
+): string {
+  const category = new Intl.PluralRules(locale).select(count);
+  return t(category === 'one' ? keys.one : keys.other, params);
+}
+
 export function resolveLocale(language: string): string {
   const baseLanguage = language.trim().toLowerCase().split(/[-_]/u, 1)[0];
   return baseLanguage !== undefined && catalogs[baseLanguage] !== undefined ? baseLanguage : 'en';

@@ -1,36 +1,6 @@
 import { type TranslationKey, t } from '../shared/i18n';
 import type { ErrorEvent, WarningEvent } from './protocol';
 
-export const KNOWN_NATIVE_EVENT_CODES = [
-  'audio_too_long',
-  'engine_inference_failed',
-  'internal_error',
-  'invalid_audio_buffer',
-  'invalid_audio_frame',
-  'invalid_diarization_speaker_limit',
-  'invalid_frame',
-  'invalid_model_file',
-  'invalid_model_store',
-  'missing_model_file',
-  'no_active_install',
-  'no_active_session',
-  'session_already_exists',
-  'session_capacity_exceeded',
-  'system_audio_capture_failed',
-  'system_audio_permission_denied',
-  'system_audio_unsupported',
-  'transcription_failure',
-  'unsupported_engine',
-  'unsupported_language',
-  'utterance_dropped_during_overload_drain',
-  'utterance_queue_overload',
-  'vad_error',
-  'vad_init_failed',
-  'worker_panic',
-] as const;
-
-export type NativeEventCode = (typeof KNOWN_NATIVE_EVENT_CODES)[number];
-
 export const SIDECAR_EVENT_TRANSLATION_KEYS = {
   audio_too_long: 'sidecarError.audio_too_long',
   engine_inference_failed: 'sidecarError.engine_inference_failed',
@@ -57,11 +27,21 @@ export const SIDECAR_EVENT_TRANSLATION_KEYS = {
   vad_error: 'sidecarError.vad_error',
   vad_init_failed: 'sidecarError.vad_init_failed',
   worker_panic: 'sidecarError.worker_panic',
-} as const satisfies Record<NativeEventCode, TranslationKey>;
+} as const satisfies Record<string, TranslationKey>;
+
+export type NativeEventCode = keyof typeof SIDECAR_EVENT_TRANSLATION_KEYS;
+
+export const KNOWN_NATIVE_EVENT_CODES = Object.keys(
+  SIDECAR_EVENT_TRANSLATION_KEYS,
+) as NativeEventCode[];
+
+export function localizeKnownSidecarEventCode(code: string | undefined): string | null {
+  const key = SIDECAR_EVENT_TRANSLATION_KEYS[code as NativeEventCode];
+  return key === undefined ? null : t(key);
+}
 
 export function localizeSidecarEvent(event: ErrorEvent | WarningEvent): string {
-  const key = SIDECAR_EVENT_TRANSLATION_KEYS[event.code as NativeEventCode];
-  return key === undefined ? rawSidecarEventDetail(event) : t(key);
+  return localizeKnownSidecarEventCode(event.code) ?? rawSidecarEventDetail(event);
 }
 
 export function rawSidecarEventDetail(event: ErrorEvent | WarningEvent): string {

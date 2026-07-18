@@ -1,6 +1,6 @@
 import { Platform } from 'obsidian';
 
-import { t } from '../shared/i18n';
+import { t, tPlural } from '../shared/i18n';
 import type { SidecarInstallVariant } from '../sidecar/sidecar-installer';
 
 export type InstallIntent = 'first-run' | 'install' | 'reinstall';
@@ -93,18 +93,21 @@ export function getSidecarUpdateCopy(variants: readonly SidecarInstallVariant[])
       : hasCuda
         ? t('setup.sidecar.update.engine.cuda')
         : t('setup.sidecar.update.engine.default');
-  const plural = hasCpu && hasCuda;
+  const engineCount = Number(hasCpu) + Number(hasCuda);
 
   return {
     bodyText: t('setup.sidecar.update.body', { engineLabel }),
-    primaryButtonText: t(
-      plural
-        ? 'setup.sidecar.update.primaryButton_other'
-        : 'setup.sidecar.update.primaryButton_one',
-    ),
-    successNotice: t(
-      plural ? 'setup.sidecar.update.success_other' : 'setup.sidecar.update.success_one',
-    ),
-    title: t(plural ? 'setup.sidecar.update.title_other' : 'setup.sidecar.update.title_one'),
+    primaryButtonText: tPlural(engineCount, {
+      one: 'setup.sidecar.update.primaryButton_one',
+      other: 'setup.sidecar.update.primaryButton_other',
+    }),
+    successNotice: tPlural(engineCount, {
+      one: 'setup.sidecar.update.success_one',
+      other: 'setup.sidecar.update.success_other',
+    }),
+    title: tPlural(engineCount, {
+      one: 'setup.sidecar.update.title_one',
+      other: 'setup.sidecar.update.title_other',
+    }),
   };
 }

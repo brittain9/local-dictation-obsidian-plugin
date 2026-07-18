@@ -62,7 +62,7 @@ A vitest parity test (runs in `npm run check` from Stage 0) fails on orphan keys
 
 ## Staged delivery
 
-The whole feature ships in this PR. Stages are ordered checkpoints — each lands as one or more commits with `npm run check` green, so the branch is reviewable stage by stage and bisectable. Stages 0–3 are English-only refactors with no visible behavior change.
+The whole feature ships in this PR. The stages below describe implementation and review checkpoints; the final implementation is integrated as one cohesive commit after the specification commits. Stages 0–3 are English-only refactors with no intended visible behavior change.
 
 0. Infrastructure: `i18n.ts`, `en` catalog seeded from `FEEDBACK_FAILURES` + `sidecar-install-copy.ts`, locale resolution via `getLanguage()`, parity test.
 1. High-traffic surfaces: commands, ribbon, settings tab + sections/modals, all `feedback.show` messages.
@@ -73,7 +73,7 @@ The whole feature ships in this PR. Stages are ordered checkpoints — each land
 ## Verification
 
 - `npm run check` green at every stage; parity test active from Stage 0.
-- Tests stay English: the central `test/__mocks__/obsidian.ts` mock stubs `getLanguage()` to `'en'`, so `t()` resolves to the verbatim-migrated English literals and existing string assertions pass unchanged. Tests never assert on keys or non-English catalogs.
+- Existing feature tests stay English: the central `test/__mocks__/obsidian.ts` mock stubs `getLanguage()` to `'en'`, so `t()` resolves to the verbatim-migrated English literals. Focused i18n boundary tests additionally verify a supported regional locale and unsupported-locale fallback at module load.
 - Manual pass at Stage 4 in `es` and `ja` (Latin + CJK): setup wizard end-to-end, settings tab, a dictation session, model install, and an error path (kill the sidecar; the notice must be localized).
 - Overflow spot-check in `de` (longest strings) across settings and modals.
 - Fallback check: Obsidian set to an out-of-set locale (e.g. `ru`) renders a fully English UI with no key names visible.
