@@ -1,5 +1,7 @@
 import { vi } from 'vitest';
 
+export const getLanguage = vi.fn(() => 'en');
+
 export abstract class AbstractInputSuggest<T> {
   abstract getSuggestions(query: string): T[] | Promise<T[]>;
   abstract renderSuggestion(value: T, el: HTMLElement): void;

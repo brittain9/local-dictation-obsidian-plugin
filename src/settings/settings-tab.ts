@@ -12,6 +12,7 @@ import type { ModelInstallManager } from '../models/model-install-manager';
 import { updateInstallProgressElement } from '../models/model-install-progress';
 import { ExternalModelFileModal, ModelDetailsModal } from '../models/model-management-modals';
 import { matchesModelTriple } from '../models/model-management-types';
+import { t } from '../shared/i18n';
 import type { PluginLogger } from '../shared/plugin-logger';
 import type { UserFeedback } from '../shared/user-feedback';
 import type { SpeakingStyle } from '../sidecar/protocol';
@@ -77,26 +78,26 @@ interface SettingsTabDependencies {
 }
 
 const LISTENING_MODE_OPTIONS: ReadonlyArray<DropdownOption<'always_on' | 'one_sentence'>> = [
-  { label: 'Always on', value: 'always_on' },
-  { label: 'One sentence', value: 'one_sentence' },
+  { label: t('settings.listeningMode.alwaysOn'), value: 'always_on' },
+  { label: t('settings.listeningMode.oneSentence'), value: 'one_sentence' },
 ];
 
 const DICTATION_ANCHOR_OPTIONS: ReadonlyArray<DropdownOption<DictationAnchor>> = [
-  { label: 'At cursor', value: 'at_cursor' },
-  { label: 'End of note', value: 'end_of_note' },
+  { label: t('settings.insertText.atCursor'), value: 'at_cursor' },
+  { label: t('settings.insertText.endOfNote'), value: 'end_of_note' },
 ];
 
 const TRANSCRIPT_FORMATTING_OPTIONS: ReadonlyArray<DropdownOption<TranscriptFormattingMode>> = [
-  { label: 'Smart paragraphs', value: 'smart' },
-  { label: 'Space', value: 'space' },
-  { label: 'New line', value: 'new_line' },
-  { label: 'New paragraph', value: 'new_paragraph' },
+  { label: t('settings.transcriptFormatting.smartParagraphs'), value: 'smart' },
+  { label: t('settings.transcriptFormatting.space'), value: 'space' },
+  { label: t('settings.transcriptFormatting.newLine'), value: 'new_line' },
+  { label: t('settings.transcriptFormatting.newParagraph'), value: 'new_paragraph' },
 ];
 
 const SPEAKING_STYLE_OPTIONS: ReadonlyArray<DropdownOption<SpeakingStyle>> = [
-  { label: 'Responsive — short pauses', value: 'responsive' },
-  { label: 'Balanced — standard', value: 'balanced' },
-  { label: 'Patient — long pauses', value: 'patient' },
+  { label: t('settings.phraseFinalization.responsiveOption'), value: 'responsive' },
+  { label: t('settings.phraseFinalization.balancedOption'), value: 'balanced' },
+  { label: t('settings.phraseFinalization.patientOption'), value: 'patient' },
 ];
 
 export class LocalSttSettingTab extends PluginSettingTab {
@@ -140,7 +141,7 @@ export class LocalSttSettingTab extends PluginSettingTab {
     this.disposeMissingSidecarBanner = this.renderMissingSidecarBanner(missingSidecarGroup);
 
     // --- Model ---
-    const modelSection = createSettingGroup(containerEl, 'Model');
+    const modelSection = createSettingGroup(containerEl, t('settings.groups.model'));
     const modelSummary = modelSection.createDiv();
     const manager = this.dependencies.modelInstallManager;
     this.disposeModelSection = renderModelSection(modelSummary, manager, {
@@ -182,11 +183,11 @@ export class LocalSttSettingTab extends PluginSettingTab {
     );
     const selectedLanguage = settings.dictationLanguage;
     const languageSetting = new Setting(modelSection)
-      .setName('Dictation language')
+      .setName(t('settings.dictationLanguage.name'))
       .setDesc(
         languageOptions.length === 1
-          ? 'The selected model supports English only.'
-          : 'Choose the language you will speak. Manual selection gives the most predictable cleanup. Auto detect may start more slowly and chooses one language per utterance.',
+          ? t('settings.dictationLanguage.englishOnlyDesc')
+          : t('settings.dictationLanguage.desc'),
       );
     languageSetting.addDropdown((dropdown) => {
       for (const option of languageOptions) {
@@ -195,7 +196,9 @@ export class LocalSttSettingTab extends PluginSettingTab {
       if (!languageOptions.some((option) => option.value === selectedLanguage)) {
         dropdown.addOption(
           selectedLanguage,
-          `${dictationLanguageLabel(selectedLanguage)} (unsupported)`,
+          t('settings.dictationLanguage.unsupported', {
+            language: dictationLanguageLabel(selectedLanguage),
+          }),
         );
       }
       dropdown.setValue(selectedLanguage);
@@ -210,7 +213,7 @@ export class LocalSttSettingTab extends PluginSettingTab {
     });
 
     // --- Capture ---
-    const captureCard = createSettingGroup(containerEl, 'Capture');
+    const captureCard = createSettingGroup(containerEl, t('settings.groups.capture'));
 
     const systemAudioSupported = isSystemAudioSupportedOnCurrentPlatform();
 
@@ -223,8 +226,8 @@ export class LocalSttSettingTab extends PluginSettingTab {
 
     if (systemAudioSupported) {
       addToggleSetting(captureCard, this.access, {
-        name: 'Include system audio',
-        desc: "Also capture this computer's default audio output for meetings, calls, and videos.",
+        name: t('settings.systemAudio.name'),
+        desc: t('settings.systemAudio.desc'),
         key: 'includeSystemAudio',
         onChange: async (value) => {
           // First-ever probe is the designed moment for the macOS TCC prompt.
@@ -239,15 +242,15 @@ export class LocalSttSettingTab extends PluginSettingTab {
     }
 
     addEnumSetting(captureCard, this.access, {
-      name: 'Listening mode',
-      desc: 'Continuous, or stop after one sentence.',
+      name: t('settings.listeningMode.name'),
+      desc: t('settings.listeningMode.desc'),
       key: 'listeningMode',
       options: LISTENING_MODE_OPTIONS,
       isValid: isListeningMode,
     });
 
     const phraseFinalizationSetting = new Setting(captureCard)
-      .setName('Phrase finalization')
+      .setName(t('settings.phraseFinalization.name'))
       .setDesc(phraseFinalizationDescription(settings.speakingStyle));
     phraseFinalizationSetting.addDropdown((dropdown) => {
       for (const option of SPEAKING_STYLE_OPTIONS) {
@@ -262,11 +265,11 @@ export class LocalSttSettingTab extends PluginSettingTab {
     });
     appendInfoTooltip(phraseFinalizationSetting, PHRASE_FINALIZATION_TOOLTIP);
 
-    const outputCard = createSettingGroup(containerEl, 'Transcript output');
+    const outputCard = createSettingGroup(containerEl, t('settings.groups.transcriptOutput'));
 
     addEnumSetting(outputCard, this.access, {
-      name: 'Insert text',
-      desc: 'Where dictated text appears.',
+      name: t('settings.insertText.name'),
+      desc: t('settings.insertText.desc'),
       key: 'dictationAnchor',
       options: DICTATION_ANCHOR_OPTIONS,
       isValid: isDictationAnchor,
@@ -275,7 +278,7 @@ export class LocalSttSettingTab extends PluginSettingTab {
     this.renderTranscriptFormattingSetting(outputCard);
 
     const diarizationSetting = addToggleSetting(outputCard, this.access, {
-      name: 'Speaker labels',
+      name: t('settings.speakerLabels.name'),
       desc: '',
       key: 'diarizationEnabled',
     });
@@ -292,7 +295,7 @@ export class LocalSttSettingTab extends PluginSettingTab {
     diarizationSetting.addExtraButton((button) => {
       button
         .setIcon('sliders-horizontal')
-        .setTooltip('Speaker label settings')
+        .setTooltip(t('settings.speakerLabels.modal.title'))
         .onClick(() => {
           new DiarizationSettingsModal(this.app, {
             getSettings: () => this.dependencies.getSettings(),
@@ -304,16 +307,16 @@ export class LocalSttSettingTab extends PluginSettingTab {
             },
           }).open();
         });
-      button.extraSettingsEl.setAttribute('aria-label', 'Speaker label settings');
+      button.extraSettingsEl.setAttribute('aria-label', t('settings.speakerLabels.modal.title'));
     });
 
-    const timestampsCard = createSettingGroup(containerEl, 'Timestamps');
+    const timestampsCard = createSettingGroup(containerEl, t('settings.groups.timestamps'));
     this.renderTimestampSettings(timestampsCard, settings);
 
-    const llmCard = createSettingGroup(containerEl, 'LLM transformation');
+    const llmCard = createSettingGroup(containerEl, t('settings.groups.llmTransformation'));
     const enableLlmSetting = new Setting(llmCard)
-      .setName('Enable LLM features')
-      .setDesc('Make LLM transformations available. Turn transformation on or off in the sidebar.');
+      .setName(t('settings.llm.enableFeatures.name'))
+      .setDesc(t('settings.llm.enableFeatures.desc'));
     enableLlmSetting.addToggle((toggle) => {
       toggle.setValue(settings.llmFeaturesEnabled);
       toggle.onChange(async (value) => {
@@ -323,10 +326,8 @@ export class LocalSttSettingTab extends PluginSettingTab {
     });
 
     const remoteLlmSetting = new Setting(llmCard)
-      .setName('Enable remote LLM')
-      .setDesc(
-        'Allow transcript text and included note context to be sent to OpenRouter. Audio is never sent.',
-      );
+      .setName(t('settings.llm.enableRemote.name'))
+      .setDesc(t('settings.llm.enableRemote.desc'));
     remoteLlmSetting.addToggle((toggle) => {
       toggle.setValue(isRemoteLlmEffectivelyEnabled(settings));
       toggle.setDisabled(!settings.llmFeaturesEnabled);
@@ -337,25 +338,22 @@ export class LocalSttSettingTab extends PluginSettingTab {
     });
 
     new Setting(llmCard)
-      .setName('Restore transform defaults')
-      .setDesc(
-        'Reset preset, timing, context, minimum words, and temperature. Saved presets and models are kept.',
-      )
+      .setName(t('settings.llm.restoreDefaults.name'))
+      .setDesc(t('settings.llm.restoreDefaults.desc'))
       .addButton((button) => {
         button
-          .setButtonText('Restore')
+          .setButtonText(t('settings.llm.restoreDefaults.button'))
           .setWarning()
           .onClick(() => {
             new ConfirmModal(this.app, {
-              confirmLabel: 'Restore',
+              confirmLabel: t('settings.llm.restoreDefaults.button'),
               destructive: true,
-              message:
-                'Restore the default preset, timing, context, minimum words, and temperature? Saved presets and models are kept.',
+              message: t('settings.llm.restoreDefaults.confirmMessage'),
               onConfirm: async () => {
                 await this.dependencies.resetLlmTransformation();
                 this.display();
               },
-              title: 'Restore transform defaults',
+              title: t('settings.llm.restoreDefaults.name'),
             }).open();
           });
       });
@@ -365,7 +363,9 @@ export class LocalSttSettingTab extends PluginSettingTab {
     // can hide the whole card when no rows apply (e.g. macOS + a model with
     // no initial-prompt support).
     const engineGroup = containerEl.createDiv({ cls: 'setting-group' });
-    const engineHeading = new Setting(engineGroup).setName('Engine').setHeading();
+    const engineHeading = new Setting(engineGroup)
+      .setName(t('settings.groups.engine'))
+      .setHeading();
     const engineSection = engineGroup.createDiv({ cls: 'setting-items' });
     const renderEngine = (): void => {
       this.renderEngineOptions(engineGroup, engineHeading, engineSection);
@@ -374,7 +374,7 @@ export class LocalSttSettingTab extends PluginSettingTab {
     this.disposeEngineSection = manager.subscribe(renderEngine);
 
     // --- Advanced (includes sidecar install/uninstall) ---
-    const advancedSection = createSettingGroup(containerEl, 'Advanced');
+    const advancedSection = createSettingGroup(containerEl, t('settings.groups.advanced'));
 
     // Sidecar rows live in their own owned container so re-renders can simply
     // empty + rebuild without disturbing the rest of the Advanced section.
@@ -387,23 +387,23 @@ export class LocalSttSettingTab extends PluginSettingTab {
     this.disposeSidecarSection = sidecarSection.init();
 
     addToggleSetting(advancedSection, this.access, {
-      name: 'Keep recovery text in memory',
-      desc: 'Keep the latest recoverable text and note snapshot in memory. Nothing is written to disk.',
+      name: t('settings.recoveryMemory.name'),
+      desc: t('settings.recoveryMemory.desc'),
       key: 'retainLastUtterance',
     });
 
     addTextSetting(advancedSection, this.access, {
-      name: 'Model store folder override',
-      desc: 'Custom folder for managed model downloads.',
+      name: t('settings.modelStoreOverride.name'),
+      desc: t('settings.modelStoreOverride.desc'),
       key: 'modelStorePathOverride',
-      placeholder: 'Use the shared default model store',
+      placeholder: t('settings.modelStoreOverride.placeholder'),
     });
 
     new Setting(advancedSection)
-      .setName('Run setup')
-      .setDesc('Re-run the first-time setup wizard.')
+      .setName(t('settings.runSetup.name'))
+      .setDesc(t('settings.runSetup.desc'))
       .addButton((button) => {
-        button.setButtonText('Run setup').onClick(() => {
+        button.setButtonText(t('settings.runSetup.name')).onClick(() => {
           void this.dependencies.openSetupWizard();
         });
       });
@@ -445,7 +445,10 @@ export class LocalSttSettingTab extends PluginSettingTab {
     try {
       const result = await this.dependencies.sidecarConnection.probeSystemAudio();
       if (result.ok) {
-        this.dependencies.feedback.show({ intent: 'success', message: 'System audio is ready.' });
+        this.dependencies.feedback.show({
+          intent: 'success',
+          message: t('settings.systemAudio.ready'),
+        });
         return true;
       }
 
@@ -458,8 +461,7 @@ export class LocalSttSettingTab extends PluginSettingTab {
       this.dependencies.feedback.show({
         cause: error,
         intent: 'error',
-        message:
-          'Could not test system audio. Check that the speech engine is installed and try again.',
+        message: t('settings.systemAudio.testFailed'),
       });
     }
     return false;
@@ -467,8 +469,8 @@ export class LocalSttSettingTab extends PluginSettingTab {
 
   private renderTranscriptFormattingSetting(parent: HTMLElement): void {
     const setting = addEnumSetting(parent, this.access, {
-      name: 'Transcript formatting',
-      desc: 'How phrases are joined together.',
+      name: t('settings.transcriptFormatting.name'),
+      desc: t('settings.transcriptFormatting.desc'),
       key: 'transcriptFormatting',
       options: TRANSCRIPT_FORMATTING_OPTIONS,
       isValid: isTranscriptFormattingMode,
@@ -477,7 +479,7 @@ export class LocalSttSettingTab extends PluginSettingTab {
     setting.addExtraButton((button) => {
       button
         .setIcon('sliders-horizontal')
-        .setTooltip('Smart paragraph settings')
+        .setTooltip(t('settings.smartParagraph.modal.title'))
         .onClick(() => {
           new SmartParagraphSettingsModal(this.app, {
             getSettings: () => this.dependencies.getSettings(),
@@ -489,14 +491,14 @@ export class LocalSttSettingTab extends PluginSettingTab {
             },
           }).open();
         });
-      button.extraSettingsEl.setAttribute('aria-label', 'Smart paragraph settings');
+      button.extraSettingsEl.setAttribute('aria-label', t('settings.smartParagraph.modal.title'));
     });
   }
 
   private renderTimestampSettings(parent: HTMLElement, settings: PluginSettings): void {
     const setting = new Setting(parent)
-      .setName('Use timestamps')
-      .setDesc('Add timestamp landmarks to dictated transcripts.')
+      .setName(t('settings.timestamps.enable.name'))
+      .setDesc(t('settings.timestamps.enable.desc'))
       .addToggle((toggle) => {
         toggle.setValue(settings.timestampsEnabled);
         toggle.onChange(async (value) => {
@@ -507,7 +509,7 @@ export class LocalSttSettingTab extends PluginSettingTab {
     setting.addExtraButton((button) => {
       button
         .setIcon('sliders-horizontal')
-        .setTooltip('Timestamp settings')
+        .setTooltip(t('settings.timestamps.modal.title'))
         .onClick(() => {
           new TimestampSettingsModal(this.app, {
             getSettings: () => this.dependencies.getSettings(),
@@ -519,7 +521,7 @@ export class LocalSttSettingTab extends PluginSettingTab {
             },
           }).open();
         });
-      button.extraSettingsEl.setAttribute('aria-label', 'Timestamp settings');
+      button.extraSettingsEl.setAttribute('aria-label', t('settings.timestamps.modal.title'));
     });
   }
 
@@ -579,7 +581,11 @@ export class LocalSttSettingTab extends PluginSettingTab {
         : (state.compiledRuntimes.find((r) => r.runtimeId === sel.runtimeId) ?? null);
 
     containerEl.empty();
-    heading.setName(selectedAdapter === null ? 'Engine' : `${selectedAdapter.displayName} engine`);
+    heading.setName(
+      selectedAdapter === null
+        ? t('settings.groups.engine')
+        : t('settings.engine.named', { engine: selectedAdapter.displayName }),
+    );
 
     let rendered = 0;
 
@@ -591,15 +597,15 @@ export class LocalSttSettingTab extends PluginSettingTab {
       // accelerationPreference is a string enum mapped onto a boolean toggle, so
       // the addEnumSetting / addToggleSetting helpers don't fit.
       new Setting(containerEl)
-        .setName('Hardware acceleration')
-        .setDesc('Run inference on the GPU when available.')
+        .setName(t('settings.hardwareAcceleration.name'))
+        .setDesc(t('settings.hardwareAcceleration.desc'))
         .addToggle((toggle) => {
           toggle.setValue(settings.accelerationPreference === 'auto');
           toggle.onChange(async (value) => {
             if (this.dependencies.isDictationBusy()) {
               this.dependencies.feedback.show({
                 intent: 'warning',
-                message: 'Cannot change hardware acceleration while dictating.',
+                message: t('settings.hardwareAcceleration.busy'),
               });
               toggle.setValue(!value);
               return;
@@ -609,14 +615,15 @@ export class LocalSttSettingTab extends PluginSettingTab {
               await this.dependencies.restartSidecar();
               this.dependencies.feedback.show({
                 intent: 'success',
-                message: value ? 'Hardware acceleration on.' : 'Hardware acceleration off.',
+                message: value
+                  ? t('settings.hardwareAcceleration.on')
+                  : t('settings.hardwareAcceleration.off'),
               });
             } catch (error) {
               this.dependencies.feedback.show({
                 cause: error,
                 intent: 'error',
-                message:
-                  'Hardware acceleration was saved, but the speech engine could not restart. Restart Obsidian to apply it.',
+                message: t('settings.hardwareAcceleration.restartFailed'),
               });
             }
           });
@@ -627,10 +634,9 @@ export class LocalSttSettingTab extends PluginSettingTab {
     const caps = state.selectedModelCapabilities;
     if (caps.status === 'ready' && caps.capabilities.family.supportsInitialPrompt) {
       addToggleSetting(containerEl, this.access, {
-        name: 'Use note as context',
-        desc: 'Send distinctive terms from the open note to help spelling.',
-        tooltip:
-          'Sends a glossary of proper nouns and technical terms as the engine’s initial prompt. Only used by engines that support initial prompts.',
+        name: t('settings.noteContext.name'),
+        desc: t('settings.noteContext.desc'),
+        tooltip: t('settings.noteContext.tooltip'),
         key: 'useNoteAsContext',
       });
       rendered += 1;
@@ -667,7 +673,9 @@ export class LocalSttSettingTab extends PluginSettingTab {
       if (activeInstall !== null) {
         const { progressEl } = renderActiveInstallCard(items, {
           isCancelling: activeInstall.phase === 'canceling',
-          name: `Installing: ${activeInstall.variant.toUpperCase()} sidecar`,
+          name: t('settings.install.installingSidecar', {
+            variant: activeInstall.variant.toUpperCase(),
+          }),
           onCancel: () => {
             this.dependencies.sidecarInstallManager.cancel();
           },
@@ -678,14 +686,12 @@ export class LocalSttSettingTab extends PluginSettingTab {
       }
 
       const setting = new Setting(items)
-        .setName('Set up Local Dictation')
-        .setDesc(
-          "Local Dictation isn't ready yet. Run the setup wizard to install the speech engine and a model.",
-        );
+        .setName(t('settings.missingSidecar.name'))
+        .setDesc(t('settings.missingSidecar.desc'));
       setting.addButton((button) => {
         button
           .setCta()
-          .setButtonText('Run setup')
+          .setButtonText(t('settings.runSetup.name'))
           .onClick(() => {
             void this.dependencies.openSetupWizard();
           });

@@ -1,4 +1,5 @@
 import type { AcceleratorId } from '../models/model-management-types';
+import { t } from '../shared/i18n';
 import type { PluginLogger } from '../shared/plugin-logger';
 import type {
   AccelerationPreference,
@@ -42,7 +43,7 @@ export function describeAcceleration(
   accelerationPreference: AccelerationPreference,
 ): AccelerationDescription {
   if (systemInfo === null) {
-    return { label: 'pending (sidecar not ready)', fallbacks: [] };
+    return { label: t('settings.acceleration.pending'), fallbacks: [] };
   }
 
   if (accelerationPreference === 'cpu_only') {
@@ -78,7 +79,9 @@ function buildLabel(backends: EngineBackend[]): string {
   if (firstNonCpu === undefined) {
     const withMissing = backends.find((b) => b.missingGpu !== null);
     if (withMissing !== undefined && withMissing.missingGpu !== null) {
-      return `CPU (${formatAcceleratorLabel(withMissing.missingGpu.accelerator)} unavailable)`;
+      return t('settings.acceleration.unavailable', {
+        accelerator: formatAcceleratorLabel(withMissing.missingGpu.accelerator),
+      });
     }
     return 'CPU';
   }
@@ -127,10 +130,10 @@ function resolveEngineBackend(
 
 function formatReason(reason: string | null): string {
   if (reason === null) {
-    return 'unknown reason';
+    return t('settings.acceleration.unknownReason');
   }
   const trimmed = reason.trim();
-  return trimmed.length > 0 ? trimmed : 'unknown reason';
+  return trimmed.length > 0 ? trimmed : t('settings.acceleration.unknownReason');
 }
 
 export function logAccelerationFallbacks(

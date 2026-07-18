@@ -84,6 +84,34 @@ describe('preset draft validation', () => {
     expect(duplicateLabel('Mine (copy 2)', ['Mine (copy)', 'Mine (copy 2)'])).toBe('Mine (copy 3)');
   });
 
+  it('duplicateLabel numbers localized copies without stacking suffixes', () => {
+    const germanCopy = {
+      copy: ' (Kopie)',
+      numberedCopy: (number: number) => ` (Kopie ${number})`,
+    };
+
+    expect(duplicateLabel('Meine (Kopie)', ['Meine', 'Meine (Kopie)'], germanCopy)).toBe(
+      'Meine (Kopie 2)',
+    );
+    expect(
+      duplicateLabel('Meine (Kopie 2)', ['Meine (Kopie)', 'Meine (Kopie 2)'], germanCopy),
+    ).toBe('Meine (Kopie 3)');
+  });
+
+  it('duplicateLabel recognizes an English suffix after the UI locale changes', () => {
+    const germanCopy = {
+      copy: ' (Kopie)',
+      numberedCopy: (number: number) => ` (Kopie ${number})`,
+    };
+
+    expect(duplicateLabel('Meine (copy)', ['Meine (copy)', 'Meine (Kopie)'], germanCopy)).toBe(
+      'Meine (Kopie 2)',
+    );
+    expect(duplicateLabel('Meine (copy 2)', ['Meine (Kopie)', 'Meine (Kopie 2)'], germanCopy)).toBe(
+      'Meine (Kopie 3)',
+    );
+  });
+
   it('duplicateLabel keeps the (copy) suffix within the label limit', () => {
     const atLimit = duplicateLabel('L'.repeat(LLM_USER_PRESET_MAX_LABEL_CHARS), []);
     expect(atLimit.endsWith(' (copy)')).toBe(true);

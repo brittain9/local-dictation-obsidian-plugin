@@ -1,5 +1,6 @@
 import { basename } from 'node:path';
 
+import { t } from '../shared/i18n';
 import type { ActiveInstallInfo, ModelManagerState } from './model-install-manager';
 import {
   type CatalogModelRecord,
@@ -37,12 +38,21 @@ export interface CurrentModelDisplay {
   displayName: string;
   engineLabel: string;
   detail: string;
-  installedLabel: string;
+  status: CurrentModelStatus;
   sourceLabel: string;
   sizeBytes: number | null;
   installLocation: string | null;
   resolvedPath: string | null;
 }
+
+export type CurrentModelStatus =
+  | 'checking'
+  | 'external_file'
+  | 'external_validated'
+  | 'installed'
+  | 'not_installed'
+  | 'not_selected'
+  | 'unavailable';
 
 export function deriveModelFamilyTabs(
   state: Pick<ModelManagerState, 'catalog' | 'compiledAdapters'>,
@@ -164,22 +174,24 @@ function deriveAllowedActions(flags: {
 // deriveCurrentModelDisplay
 // ---------------------------------------------------------------------------
 
-const EMPTY_CURRENT_MODEL_DISPLAY: CurrentModelDisplay = {
-  displayName: 'No model selected',
-  engineLabel: '',
-  detail: 'Choose an installed model or validate an external file.',
-  installedLabel: 'Not selected',
-  sourceLabel: '',
-  sizeBytes: null,
-  installLocation: null,
-  resolvedPath: null,
-};
+function emptyCurrentModelDisplay(): CurrentModelDisplay {
+  return {
+    displayName: t('models.current.noneSelected'),
+    engineLabel: '',
+    detail: t('models.current.noneSelectedDesc'),
+    status: 'not_selected',
+    sourceLabel: '',
+    sizeBytes: null,
+    installLocation: null,
+    resolvedPath: null,
+  };
+}
 
 export function deriveCurrentModelDisplay(state: ModelManagerState): CurrentModelDisplay {
   const { selectedModel, catalog, installedModels } = state;
 
   if (selectedModel === null) {
-    return EMPTY_CURRENT_MODEL_DISPLAY;
+    return emptyCurrentModelDisplay();
   }
 
   if (selectedModel.kind === 'external_file') {
@@ -193,8 +205,8 @@ export function deriveCurrentModelDisplay(state: ModelManagerState): CurrentMode
         selectedModel.familyId,
       ),
       detail: status.detail,
-      installedLabel: status.installedLabel,
-      sourceLabel: 'External file',
+      status: status.status,
+      sourceLabel: t('models.current.externalFile'),
       sizeBytes: null,
       installLocation: null,
       resolvedPath: selectedModel.filePath,
@@ -226,9 +238,9 @@ export function deriveCurrentModelDisplay(state: ModelManagerState): CurrentMode
   return {
     displayName,
     engineLabel,
-    detail: installedModel !== null ? '' : 'The selected managed model is not installed.',
-    installedLabel: installedModel !== null ? 'Installed' : 'Not installed',
-    sourceLabel: 'Managed download',
+    detail: installedModel !== null ? '' : t('models.current.managedNotInstalled'),
+    status: installedModel !== null ? 'installed' : 'not_installed',
+    sourceLabel: t('models.current.managedDownload'),
     sizeBytes,
     installLocation: installedModel?.installPath ?? null,
     resolvedPath: installedModel?.runtimePath ?? null,
@@ -237,29 +249,27 @@ export function deriveCurrentModelDisplay(state: ModelManagerState): CurrentMode
 
 function deriveExternalModelStatus(
   capabilities: ModelManagerState['selectedModelCapabilities'],
-): Pick<CurrentModelDisplay, 'detail' | 'installedLabel'> {
+): Pick<CurrentModelDisplay, 'detail' | 'status'> {
   switch (capabilities.status) {
     case 'ready':
       return {
         detail: '',
-        installedLabel: 'External validated',
+        status: 'external_validated',
       };
     case 'pending':
       return {
         detail: '',
-        installedLabel: 'Checking',
+        status: 'checking',
       };
     case 'unavailable':
       return {
-        detail:
-          capabilities.details ??
-          'The external model is unavailable. Validate the file again to see details.',
-        installedLabel: 'Unavailable',
+        detail: capabilities.details ?? t('models.current.externalUnavailableDesc'),
+        status: 'unavailable',
       };
     case 'none':
       return {
-        detail: 'Validate the external model file before dictating.',
-        installedLabel: 'External file',
+        detail: t('models.current.validateBeforeDictating'),
+        status: 'external_file',
       };
   }
 }

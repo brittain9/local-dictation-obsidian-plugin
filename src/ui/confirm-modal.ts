@@ -1,6 +1,8 @@
 import type { App } from 'obsidian';
 import { Modal, Setting } from 'obsidian';
 
+import { t } from '../shared/i18n';
+
 export interface ConfirmModalOptions {
   cancelLabel?: string;
   confirmLabel: string;
@@ -25,7 +27,7 @@ export class ConfirmModal extends Modal {
 
     new Setting(this.contentEl)
       .addButton((button) => {
-        button.setButtonText(this.options.cancelLabel ?? 'Cancel').onClick(() => {
+        button.setButtonText(this.options.cancelLabel ?? t('common.cancel')).onClick(() => {
           this.close();
         });
       })

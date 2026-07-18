@@ -93,6 +93,23 @@ npm run format           # auto-format with Biome
 
 Do not merge with failing CI.
 
+## Translating the plugin
+
+English is the source of truth for user-visible plugin copy. Translation catalogs live in
+`src/locales/`, with one TypeScript module per Obsidian locale code. To add a language, copy an
+existing non-English catalog, translate its values, and register it in `src/locales/index.ts`.
+The locale does not need to be one of Local Dictation's supported dictation languages.
+
+Keep catalog keys identical to `src/locales/en.ts`, preserve placeholders such as `{provider}`
+and `{max}` exactly, and leave product names such as Local Dictation, Obsidian, Ollama,
+OpenRouter, CUDA, and model names untranslated. Use the language's natural punctuation and UI
+wording rather than translating English syntax literally. If an English key has not been
+translated yet, omit it: the UI falls back to English for that key.
+
+Run `npm run test -- test/locales-parity.test.ts` before opening a translation PR. The parity
+test rejects unknown keys and changed placeholders, and reports catalog coverage. Also run
+`npm run typecheck` to verify that the catalog is registered correctly.
+
 ## Workflow
 
 Trunk-based development. `main` stays releasable at all times.

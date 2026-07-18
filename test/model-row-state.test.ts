@@ -279,7 +279,7 @@ describe('deriveCurrentModelDisplay', () => {
       displayName: 'No model selected',
       engineLabel: '',
       installLocation: null,
-      installedLabel: 'Not selected',
+      status: 'not_selected',
       resolvedPath: null,
       sizeBytes: null,
       sourceLabel: '',
@@ -300,7 +300,7 @@ describe('deriveCurrentModelDisplay', () => {
       displayName: 'Whisper Large V3 Turbo',
       engineLabel: 'Whisper',
       installLocation: '/models/whisper_cpp/whisper_large_v3_turbo_q8_0',
-      installedLabel: 'Installed',
+      status: 'installed',
       resolvedPath: '/models/whisper_cpp/whisper_large_v3_turbo_q8_0/model.bin',
       sizeBytes: 900,
       sourceLabel: 'Managed download',
@@ -317,7 +317,7 @@ describe('deriveCurrentModelDisplay', () => {
     expect(display).toMatchObject({
       displayName: 'Whisper Small',
       installLocation: null,
-      installedLabel: 'Not installed',
+      status: 'not_installed',
       resolvedPath: null,
       sizeBytes: 100,
     });
@@ -334,7 +334,7 @@ describe('deriveCurrentModelDisplay', () => {
     expect(display).toMatchObject({
       displayName: 'Moonshine Small',
       engineLabel: 'Moonshine',
-      installedLabel: 'Installed',
+      status: 'installed',
       resolvedPath: `/models/onnx_runtime/${MOONSHINE_MODEL_ID}/frontend.ort`,
       sizeBytes: 700,
       sourceLabel: 'Managed download',
@@ -368,7 +368,7 @@ describe('deriveCurrentModelDisplay', () => {
       displayName: 'custom-model.bin',
       engineLabel: 'Whisper',
       installLocation: null,
-      installedLabel: 'External file',
+      status: 'external_file',
       resolvedPath: '/tmp/models/custom-model.bin',
       sizeBytes: null,
       sourceLabel: 'External file',
@@ -419,7 +419,7 @@ describe('deriveCurrentModelDisplay', () => {
 
     expect(deriveCurrentModelDisplay(state)).toMatchObject({
       detail: '',
-      installedLabel: 'External validated',
+      status: 'external_validated',
     });
   });
 
@@ -442,7 +442,7 @@ describe('deriveCurrentModelDisplay', () => {
 
     expect(deriveCurrentModelDisplay(state)).toMatchObject({
       detail: 'required Moonshine asset missing: encoder.ort',
-      installedLabel: 'Unavailable',
+      status: 'unavailable',
     });
   });
 });

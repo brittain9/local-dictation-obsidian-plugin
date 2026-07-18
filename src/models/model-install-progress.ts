@@ -1,4 +1,5 @@
 import { formatBytes } from '../shared/format-utils';
+import { t } from '../shared/i18n';
 import type { ModelInstallState, ModelInstallUpdateRecord } from './model-management-types';
 
 export interface InstallProgressState
@@ -42,7 +43,10 @@ export function buildInstallProgressViewModel(
     isCancelling: state.isCancelling,
     primaryLine: resolvePrimaryLine(state.message, state.state),
     progressPercent,
-    secondaryLine: normalizeOptionalLine(state.details),
+    secondaryLine:
+      state.state === 'downloading' || state.state === 'verifying'
+        ? localizeDetails(state.details)
+        : null,
   };
 }
 
@@ -136,29 +140,45 @@ function cleanMessageLine(line: string): string {
   const verb = match[1] as string;
   const filename = match[2] as string;
   const lastSlash = filename.lastIndexOf('/');
-  return lastSlash === -1 ? line : `${verb} ${filename.slice(lastSlash + 1)}`;
+  const basename = lastSlash === -1 ? filename : filename.slice(lastSlash + 1);
+  return verb === 'Downloading'
+    ? t('models.progress.downloadingFile', { filename: basename })
+    : t('models.progress.verifyingFile', { filename: basename });
 }
 
 function resolvePrimaryLine(message: string | null, state: ModelInstallState): string {
   const normalizedMessage = normalizeOptionalLine(message);
-  if (normalizedMessage !== null) {
+  if (normalizedMessage !== null && (state === 'downloading' || state === 'verifying')) {
     return cleanMessageLine(normalizedMessage);
   }
 
   switch (state) {
     case 'queued':
-      return 'Preparing install';
+      return t('models.progress.preparing');
     case 'downloading':
-      return 'Downloading';
+      return t('models.progress.downloading');
     case 'verifying':
-      return 'Verifying download';
+      return t('models.progress.verifying');
     case 'probing':
-      return 'Validating model';
+      return t('models.progress.validating');
     case 'completed':
-      return 'Model installed';
+      return t('models.progress.installed');
     case 'cancelled':
-      return 'Model install cancelled';
+      return t('models.progress.cancelled');
     case 'failed':
-      return 'Model install failed';
+      return t('models.progress.failed');
   }
+}
+
+function localizeDetails(details: string | null): string | null {
+  const normalized = normalizeOptionalLine(details);
+  if (normalized === null) return null;
+
+  const fileCount = normalized.match(/^File (\d+) of (\d+)$/u);
+  if (fileCount === null) return normalized;
+
+  return t('models.progress.fileCount', {
+    current: fileCount[1] ?? '',
+    total: fileCount[2] ?? '',
+  });
 }

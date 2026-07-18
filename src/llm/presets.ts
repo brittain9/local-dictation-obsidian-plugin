@@ -50,57 +50,51 @@ export interface LlmPresetEntry {
   ref: string;
 }
 
-const PRESERVE_TRANSCRIPT_LANGUAGE =
-  'Write in the transcript’s original language. Never translate unless the user explicitly asks for translation.';
+const CLEAN_UP_PROMPT = t('llm.preset.builtin.cleanUp.prompt');
 
-const CLEAN_UP_PROMPT = `Clean dictated speech-to-text. Fix filler, false starts, repetitions, punctuation, capitalization, and obvious recognition errors. Preserve the speaker's voice and meaning. Use the reference context only for spelling. ${PRESERVE_TRANSCRIPT_LANGUAGE} Return only the cleaned text — no preamble, no commentary.`;
+const PROFESSIONAL_WRITING_PROMPT = t('llm.preset.builtin.professionalWriting.prompt');
 
-const PROFESSIONAL_WRITING_PROMPT = `Rewrite dictated speech as concise professional prose. Active voice, no filler or hedging. Preserve every fact, name, and term. Use the reference context for spelling. ${PRESERVE_TRANSCRIPT_LANGUAGE} Return only the rewritten text — no preamble, no commentary.`;
+const TLDR_PROMPT = t('llm.preset.builtin.tldr.prompt');
 
-const TLDR_PROMPT = `Write a TLDR summary of the dictated transcript: a 'TLDR' heading followed by 1-3 short bullets covering the key points. ${PRESERVE_TRANSCRIPT_LANGUAGE} Return only the heading and bullets — do not repeat the transcript, no preamble, no commentary.`;
+const MARKDOWN_FORMATTING_PROMPT = t('llm.preset.builtin.markdownFormatting.prompt');
 
-const MARKDOWN_FORMATTING_PROMPT = `Reformat dictated speech as well-structured Markdown. Add headings, bullet or numbered lists, bold, emphasis, and fenced code blocks where the content calls for it. Lightly clean filler, false starts, punctuation, and capitalization; preserve the speaker's wording, every fact, name, and term. ${PRESERVE_TRANSCRIPT_LANGUAGE} Return only the Markdown — no preamble, no commentary.`;
-
-const ACTION_ITEMS_PROMPT = `Extract action items from the dictated transcript. Output an 'Action items' heading followed by a Markdown checklist of concrete tasks, naming an owner when the speaker mentions one. If the transcript contains no action items, return nothing. ${PRESERVE_TRANSCRIPT_LANGUAGE} Return only the heading and checklist — do not repeat the transcript, no preamble, no commentary.`;
+const ACTION_ITEMS_PROMPT = t('llm.preset.builtin.actionItems.prompt');
 
 export const LLM_BUILTIN_PRESETS = [
   {
     id: 'clean-up',
-    label: 'Clean up',
-    description:
-      'Fix transcription artifacts, filler, punctuation, and capitalization while preserving voice and meaning.',
+    label: t('llm.preset.builtin.cleanUp.label'),
+    description: t('llm.preset.builtin.cleanUp.description'),
     output: 'replace',
     prompt: CLEAN_UP_PROMPT,
   },
   {
     id: 'professional-writing',
-    label: 'Professional writing',
-    description:
-      'Rewrite into concise, polished professional prose while preserving facts, names, decisions, and technical terms.',
+    label: t('llm.preset.builtin.professionalWriting.label'),
+    description: t('llm.preset.builtin.professionalWriting.description'),
     output: 'replace',
     prompt: PROFESSIONAL_WRITING_PROMPT,
   },
   {
     id: 'tldr',
-    label: 'TLDR',
-    description: 'Add a short TLDR summary above your untouched transcript.',
+    label: t('llm.preset.builtin.tldr.label'),
+    description: t('llm.preset.builtin.tldr.description'),
     output: 'add_above',
     prompt: TLDR_PROMPT,
     timing: 'batch',
   },
   {
     id: 'markdown-formatting',
-    label: 'Markdown formatting',
-    description:
-      'Reformat the session transcript as structured Markdown with headings, lists, and emphasis.',
+    label: t('llm.preset.builtin.markdownFormatting.label'),
+    description: t('llm.preset.builtin.markdownFormatting.description'),
     output: 'replace',
     prompt: MARKDOWN_FORMATTING_PROMPT,
     timing: 'batch',
   },
   {
     id: 'action-items',
-    label: 'Action items',
-    description: 'Add an action-item checklist below your untouched transcript.',
+    label: t('llm.preset.builtin.actionItems.label'),
+    description: t('llm.preset.builtin.actionItems.description'),
     output: 'add_below',
     prompt: ACTION_ITEMS_PROMPT,
     timing: 'batch',
@@ -228,34 +222,36 @@ export function resolveEffectiveLlmGlobals(
 
 export function describePresetTiming(timing: LlmPresetTiming | undefined): string {
   if (timing === 'per_utterance') {
-    return 'Runs after each phrase';
+    return t('llm.preset.timing.perUtterance');
   }
   if (timing === 'batch') {
-    return 'Runs once on stop';
+    return t('llm.preset.timing.batch');
   }
-  return 'Runs in either mode';
+  return t('llm.preset.timing.either');
 }
 
 export function describePresetBehavior(preset: LlmPreset): string {
   const output =
     preset.output === 'add_above'
-      ? 'adds new content above the transcript'
+      ? t('llm.preset.behavior.addAbove')
       : preset.output === 'add_below'
-        ? 'adds new content below the transcript'
-        : 'rewrites the dictated text';
+        ? t('llm.preset.behavior.addBelow')
+        : t('llm.preset.behavior.replace');
   const overridden: string[] = [];
   if (preset.overrides?.minWords !== undefined) {
-    overridden.push('min words');
+    overridden.push(t('llm.preset.override.minimumWords'));
   }
   if (preset.overrides?.temperature !== undefined) {
-    overridden.push('temperature');
+    overridden.push(t('llm.preset.override.temperature'));
   }
   if (preset.overrides?.useNoteContext !== undefined) {
-    overridden.push('note context');
+    overridden.push(t('llm.preset.override.noteContext'));
   }
   const parts = [describePresetTiming(preset.timing), output];
   if (overridden.length > 0) {
-    parts.push(`overrides ${overridden.join(', ')}`);
+    parts.push(t('llm.preset.behavior.overrides', { fields: overridden.join(', ') }));
   }
   return parts.join(' · ');
 }
+
+import { t } from '../shared/i18n';

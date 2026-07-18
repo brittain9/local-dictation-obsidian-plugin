@@ -2342,7 +2342,9 @@ describe('DictationSessionController', () => {
     expect(sidecarConnection.cancelSession).not.toHaveBeenCalled();
     expect(session.dispose).not.toHaveBeenCalled();
     expect(show).toHaveBeenCalledWith(
-      expect.objectContaining({ message: expect.stringContaining('backlog reached capacity') }),
+      expect.objectContaining({
+        message: expect.stringContaining('transcription queue is overloaded'),
+      }),
     );
     expect(controller.getState()).toBe('idle');
 

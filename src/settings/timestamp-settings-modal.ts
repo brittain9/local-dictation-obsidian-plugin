@@ -1,5 +1,6 @@
 import type { App, TextComponent } from 'obsidian';
 import { Modal, Setting } from 'obsidian';
+import { t } from '../shared/i18n';
 import { ModalSettingsAutoSaver, type ModalSettingsPersistence } from './modal-settings-auto-saver';
 import {
   DEFAULT_PLUGIN_SETTINGS,
@@ -24,19 +25,22 @@ interface TimestampSettingsDraft {
 }
 
 const TIMESTAMP_CLOCK_OPTIONS: ReadonlyArray<DropdownOption<TimestampClock>> = [
-  { label: 'Elapsed', value: 'elapsed' },
-  { label: 'Wall clock', value: 'wallclock' },
+  { label: t('settings.timestamps.clock.elapsed'), value: 'elapsed' },
+  { label: t('settings.timestamps.clock.wallClock'), value: 'wallclock' },
 ];
 
 const TIMESTAMP_DENSITY_OPTIONS: ReadonlyArray<DropdownOption<TimestampDensity>> = [
-  { label: 'At intervals', value: 'sparse' },
-  { label: 'Every phrase', value: 'every_utterance' },
-  { label: 'At paragraph breaks', value: 'paragraph' },
+  { label: t('settings.timestamps.frequency.atIntervals'), value: 'sparse' },
+  { label: t('settings.timestamps.frequency.everyPhrase'), value: 'every_utterance' },
+  { label: t('settings.timestamps.frequency.atParagraphBreaks'), value: 'paragraph' },
 ];
 
 const MIN_INTERVAL_SECONDS = MIN_TIMESTAMP_SPARSE_INTERVAL_MS / 1000;
 const MAX_INTERVAL_SECONDS = MAX_TIMESTAMP_SPARSE_INTERVAL_MS / 1000;
-const INTERVAL_DESCRIPTION = `Seconds between timestamp landmarks (${MIN_INTERVAL_SECONDS}-${MAX_INTERVAL_SECONDS}).`;
+const INTERVAL_DESCRIPTION = t('settings.timestamps.interval.desc', {
+  max: MAX_INTERVAL_SECONDS,
+  min: MIN_INTERVAL_SECONDS,
+});
 let nextIntervalDescriptionId = 0;
 
 export class TimestampSettingsModal extends Modal {
@@ -58,7 +62,7 @@ export class TimestampSettingsModal extends Modal {
   }
 
   override onOpen(): void {
-    this.titleEl.setText('Timestamp settings');
+    this.titleEl.setText(t('settings.timestamps.modal.title'));
     this.render();
   }
 
@@ -77,12 +81,12 @@ export class TimestampSettingsModal extends Modal {
 
     this.contentEl.createEl('p', {
       cls: 'setting-item-description',
-      text: 'Choose landmarks at intervals, phrase boundaries, or Smart paragraph breaks.',
+      text: t('settings.timestamps.modal.intro'),
     });
 
     new Setting(this.contentEl)
-      .setName('Session header')
-      .setDesc('Start each timestamped session with [YYYY-MM-DD HH:MM].')
+      .setName(t('settings.timestamps.sessionHeader.name'))
+      .setDesc(t('settings.timestamps.sessionHeader.desc'))
       .addToggle((toggle) => {
         toggle.setValue(this.draft.sessionHeader);
         toggle.onChange((value) => {
@@ -92,8 +96,8 @@ export class TimestampSettingsModal extends Modal {
       });
 
     new Setting(this.contentEl)
-      .setName('Reference clock')
-      .setDesc('Elapsed time since dictation started, or local wall-clock time.')
+      .setName(t('settings.timestamps.referenceClock.name'))
+      .setDesc(t('settings.timestamps.referenceClock.desc'))
       .addDropdown((dropdown) => {
         for (const option of TIMESTAMP_CLOCK_OPTIONS) {
           dropdown.addOption(option.value, option.label);
@@ -107,8 +111,8 @@ export class TimestampSettingsModal extends Modal {
       });
 
     this.frequencySetting = new Setting(this.contentEl)
-      .setName('Frequency')
-      .setDesc('Choose how often timestamps appear.')
+      .setName(t('settings.timestamps.frequency.name'))
+      .setDesc(t('settings.timestamps.frequency.desc'))
       .addDropdown((dropdown) => {
         for (const option of TIMESTAMP_DENSITY_OPTIONS) {
           dropdown.addOption(option.value, option.label);
@@ -123,7 +127,7 @@ export class TimestampSettingsModal extends Modal {
       });
 
     this.intervalSetting = new Setting(this.contentEl)
-      .setName('Interval')
+      .setName(t('settings.timestamps.interval.name'))
       .setDesc(INTERVAL_DESCRIPTION)
       .addText((text) => {
         this.intervalInput = text;
@@ -131,7 +135,7 @@ export class TimestampSettingsModal extends Modal {
         text.inputEl.min = String(MIN_INTERVAL_SECONDS);
         text.inputEl.max = String(MAX_INTERVAL_SECONDS);
         text.inputEl.step = '1';
-        text.inputEl.setAttribute('aria-label', 'Interval');
+        text.inputEl.setAttribute('aria-label', t('settings.timestamps.interval.name'));
         text.inputEl.setAttribute('aria-describedby', this.intervalDescriptionId);
         text.setValue(this.draft.sparseIntervalSeconds);
         text.onChange((value) => {
@@ -147,7 +151,7 @@ export class TimestampSettingsModal extends Modal {
     this.intervalSetting.descEl.setAttribute('aria-live', 'polite');
 
     new Setting(this.contentEl).addButton((button) => {
-      button.setButtonText('Reset').onClick(async () => {
+      button.setButtonText(t('common.reset')).onClick(async () => {
         this.draft = draftFromSettings(DEFAULT_PLUGIN_SETTINGS);
         this.render();
         await this.autoSaver.persist({
@@ -171,12 +175,12 @@ export class TimestampSettingsModal extends Modal {
 
     this.frequencySetting?.setDesc(
       this.draft.density === 'sparse'
-        ? 'Add readable landmarks at the configured interval.'
+        ? t('settings.timestamps.frequency.sparseDesc')
         : this.draft.density === 'every_utterance'
-          ? 'Add a timestamp before each model-timed segment when available, otherwise at each voice-detected phrase.'
+          ? t('settings.timestamps.frequency.everyPhraseDesc')
           : paragraphFormattingUnavailable
-            ? 'Set Transcript formatting to Smart paragraphs to get paragraph breaks.'
-            : 'Add a timestamp at the start of the session and at each Smart paragraph break.',
+            ? t('settings.timestamps.frequency.paragraphUnavailableDesc')
+            : t('settings.timestamps.frequency.paragraphDesc'),
     );
     this.frequencySetting?.descEl.toggleClass(
       'local-dictation-status--warning',
@@ -196,7 +200,7 @@ export class TimestampSettingsModal extends Modal {
         ? validation.message
         : intervalIsActive
           ? INTERVAL_DESCRIPTION
-          : 'Used only when frequency is set to At intervals.',
+          : t('settings.timestamps.interval.inactiveDesc'),
     );
   }
 }

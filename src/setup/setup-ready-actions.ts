@@ -1,3 +1,4 @@
+import { t } from '../shared/i18n';
 import type { UserFeedback } from '../shared/user-feedback';
 
 interface SetupReadyActionDependencies {
@@ -27,7 +28,7 @@ export class SetupReadyActions {
       this.dependencies.feedback.show({
         intent: 'warning',
         key: 'setup-wizard-prerequisite',
-        message: 'Wait for the current dictation to finish, then try again.',
+        message: t('setup.ready.waitForDictation'),
       });
       return;
     }
@@ -36,7 +37,7 @@ export class SetupReadyActions {
       this.dependencies.feedback.show({
         intent: 'warning',
         key: 'setup-wizard-prerequisite',
-        message: 'Open a Markdown note in editing mode, then try dictation again.',
+        message: t('setup.ready.openMarkdownNote'),
       });
       return;
     }
@@ -58,7 +59,7 @@ export class SetupReadyActions {
           cause,
           intent: 'error',
           key: 'setup-wizard-completion',
-          message: "Couldn't finish setup. Try again.",
+          message: t('setup.ready.completionFailed'),
         });
         return;
       }

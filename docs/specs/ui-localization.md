@@ -1,6 +1,6 @@
 # Spec: UI localization
 
-Status: draft. Follow-up to [multilingual-support.md](multilingual-support.md), which delivered multilingual dictation (Whisper Large V3 Turbo, Nemotron 3.5 ASR) and explicitly left plugin UI localization out of scope.
+Status: implemented. Follow-up to [multilingual-support.md](multilingual-support.md), which delivered multilingual dictation (Whisper Large V3 Turbo, Nemotron 3.5 ASR) and explicitly left plugin UI localization out of scope.
 
 ## Product goal
 
@@ -18,7 +18,7 @@ When Obsidian's UI language is one of the languages this plugin can transcribe, 
 ## Locale policy
 
 - Shipped locales are exactly the verified dictation languages: `en`, `es`, `de`, `fr`, `pt`, `it`, `nl`, `ja` — mirroring `VERIFIED_MULTILINGUAL_LANGUAGE_TAGS` in `native/src/transcription.rs`. All eight are also Obsidian UI languages, so users in the target audience really do run Obsidian in these locales.
-- The coupling is policy, not code: locale resolution supports whatever catalogs exist under `src/locales/`, with no reference to the dictation-language constant. A community-contributed catalog for any other Obsidian locale (e.g. `zh`) can be accepted as a one-file PR without touching dictation — matching how Obsidian itself takes community translations.
+- The coupling is policy, not code: locale resolution supports whatever catalogs are registered under `src/locales/`, with no reference to the dictation-language constant. A community-contributed catalog for any other Obsidian locale (e.g. `zh`) only needs its catalog module and an entry in `src/locales/index.ts`; dictation code remains untouched.
 - Locale is resolved once at plugin load via `getLanguage()` from `'obsidian'` (API ≥ 1.8.7; our `minAppVersion` is 1.11.5). Obsidian relaunches when the user changes language, so no live re-render path is needed.
 - Regional tags match on the base subtag: `pt-BR` → `pt`, `de-AT` → `de`. Anything else (`ru`, `zh`, …) → `en`.
 
@@ -54,7 +54,7 @@ Today the plugin renders sidecar `ErrorEvent`/`WarningEvent.message` strings ver
 
 ### D7 — Translation sourcing
 
-`en` is the only hand-authored catalog. The seven other catalogs are LLM-drafted in one pass and shipped as-is; imperfect phrasing is accepted, and corrections land via issues and normal PRs (contribution workflow documented in `CONTRIBUTING.md`). A missing key is legal and falls back to English, so adding an English string never blocks on seven translations; coverage is visible via the parity test's report.
+`en` is the source catalog. The seven other catalogs are LLM-drafted, then independently reviewed against English for semantic accuracy, natural UI language, technical terminology, and behavior-preserving prompt instructions. Corrections continue through normal PRs using the workflow in `CONTRIBUTING.md`. A missing key is legal and falls back to English, so adding an English string never blocks on seven translations; coverage is visible via the parity test's report.
 
 ### D8 — Enforcement
 
@@ -80,8 +80,8 @@ The whole feature ships in this PR. Stages are ordered checkpoints — each land
 
 ## Risks
 
-- LLM-drafted translations will contain awkward phrasing (`ja` most likely). Accepted: ship as-is, fix when users report it. Per-key English fallback and cheap correction PRs keep fixes low-cost.
+- Translations can still contain locale-specific phrasing defects despite independent review. Per-key English fallback and small correction PRs keep fixes low-cost.
 - Copy churn on evolving surfaces (wizard, settings) produces temporarily mixed-language UI in non-English locales. Accepted trade-off of the soft-fallback policy.
 - Bundle growth: eight inline catalogs including catalog summaries, estimated low tens of KB in `main.js` — negligible.
 
-Resolved decisions (2026-07-18): all text ships fully localized in this PR, including catalog summaries (D5) — nothing deferred; translations are LLM-drafted and shipped without a beta framing (D7); translation coverage never hard-fails CI — fallback + coverage report is permanent (D8); shipped locales stay the eight dictation languages but the code accepts any contributed catalog (Locale policy); dropdown labels are endonym-only (D6).
+Resolved decisions (2026-07-18): all text ships fully localized in this PR, including catalog summaries (D5) — nothing deferred; translations are LLM-drafted, independently reviewed, and shipped without a beta framing (D7); translation coverage never hard-fails CI — fallback + coverage report is permanent (D8); shipped locales stay the eight dictation languages but the code accepts any registered contributed catalog (Locale policy); dropdown labels are endonym-only (D6).

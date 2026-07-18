@@ -1,3 +1,4 @@
+import { t } from '../shared/i18n';
 import type { UserFeedback } from '../shared/user-feedback';
 
 interface MicrophoneFallbackDependencies {
@@ -18,8 +19,7 @@ export async function handleMicrophoneDeviceFallback(
       cause: error,
       intent: 'warning',
       key: 'microphone-device-fallback',
-      message:
-        'Saved microphone unavailable. Using the default microphone, but this change could not be saved. Select an available microphone in Settings before restarting Obsidian.',
+      message: t('settings.microphone.fallbackSaveFailed'),
     });
     return;
   }
@@ -28,8 +28,7 @@ export async function handleMicrophoneDeviceFallback(
     dependencies.feedback.show({
       intent: 'warning',
       key: 'microphone-device-fallback',
-      message:
-        'Saved microphone unavailable. Using the default microphone for this session; the current microphone setting was left unchanged.',
+      message: t('settings.microphone.fallbackUnchanged'),
     });
     return;
   }
@@ -37,7 +36,6 @@ export async function handleMicrophoneDeviceFallback(
   dependencies.feedback.show({
     intent: 'warning',
     key: 'microphone-device-fallback',
-    message:
-      'Saved microphone unavailable. Using the default microphone; the saved selection was cleared for future sessions.',
+    message: t('settings.microphone.fallbackCleared'),
   });
 }

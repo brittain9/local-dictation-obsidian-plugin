@@ -27,6 +27,7 @@ import {
   type SelectedModel,
   type SelectedModelCapabilitiesSnapshot,
 } from '../models/model-management-types';
+import { t } from '../shared/i18n';
 import { isRecord } from '../shared/type-guards';
 import {
   type AccelerationPreference,
@@ -72,7 +73,10 @@ export function validateTimestampIntervalSeconds(value: string): TimestampInterv
     seconds > maxSeconds
   ) {
     return {
-      message: `Enter a whole number from ${minSeconds} to ${maxSeconds} seconds.`,
+      message: t('settings.timestamps.interval.validation', {
+        max: maxSeconds,
+        min: minSeconds,
+      }),
       valid: false,
     };
   }
@@ -620,9 +624,9 @@ function migrateLlmPresetState(args: {
   const labels = new Set(
     [...LLM_BUILTIN_PRESETS, ...args.userPresets].map((preset) => preset.label.toLowerCase()),
   );
-  let label = 'My preset';
+  let label = t('settings.llm.migratedPreset');
   for (let n = 2; labels.has(label.toLowerCase()); n += 1) {
-    label = `My preset ${n}`;
+    label = t('settings.llm.migratedPresetNumbered', { number: n });
   }
   const migrated: LlmPreset = { id: randomUUID(), label, output: 'replace', prompt };
   return {

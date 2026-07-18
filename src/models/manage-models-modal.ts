@@ -6,8 +6,10 @@ import {
   dictationLanguageLabel,
 } from '../language/dictation-language';
 import { formatBytes } from '../shared/format-utils';
+import { t } from '../shared/i18n';
 import type { UserFeedback } from '../shared/user-feedback';
 import { resolveEngineCapabilities } from './capability-view';
+import { localizeFamilySummary } from './catalog-localization';
 import { formatModelTagLabel } from './model-guidance';
 import { isCancellingPhase, type ModelInstallManager } from './model-install-manager';
 import {
@@ -67,7 +69,7 @@ export class ManageModelsModal extends Modal {
 
   override onOpen(): void {
     this.modalEl.addClass('local-stt-manage-models');
-    this.titleEl.setText('Manage models');
+    this.titleEl.setText(t('models.manage.title'));
     this.renderContent();
 
     this.releaseSubscription = this.deps.manager.subscribe(() => {
@@ -84,7 +86,7 @@ export class ManageModelsModal extends Modal {
 
     const state = this.deps.manager.getState();
     if (state.loadStatus === 'error' && this.deps.onRunSetup !== undefined) {
-      this.renderLoadErrorPanel(state.loadError);
+      this.renderLoadErrorPanel();
       return;
     }
 
@@ -95,25 +97,22 @@ export class ManageModelsModal extends Modal {
     this.renderModelList();
   }
 
-  private renderLoadErrorPanel(loadError: string | null): void {
+  private renderLoadErrorPanel(): void {
     const panel = this.contentEl.createDiv({ cls: 'local-stt-empty-panel' });
     const iconWrap = panel.createDiv({ cls: 'local-stt-empty-panel__icon' });
     setIcon(iconWrap, 'download-cloud');
-    panel.createEl('h3', { text: "Couldn't load models" });
+    panel.createEl('h3', { text: t('models.manage.loadFailedTitle') });
     panel.createEl('p', {
-      text: 'The speech engine may not be installed or may not be responding. Re-run setup to reinstall it, or try again.',
+      text: t('models.manage.loadFailedDesc'),
     });
-    if (loadError !== null && loadError.length > 0) {
-      panel.createEl('p', { cls: 'local-stt-empty-panel__detail', text: loadError });
-    }
     const actions = panel.createDiv({ cls: 'local-stt-empty-panel__actions' });
     actions
-      .createEl('button', { cls: 'mod-cta', text: 'Run setup' })
+      .createEl('button', { cls: 'mod-cta', text: t('models.manage.runSetup') })
       .addEventListener('click', () => {
         this.close();
         this.deps.onRunSetup?.();
       });
-    actions.createEl('button', { text: 'Try again' }).addEventListener('click', () => {
+    actions.createEl('button', { text: t('common.tryAgain') }).addEventListener('click', () => {
       void this.deps.manager.init();
     });
   }
@@ -210,13 +209,13 @@ export class ManageModelsModal extends Modal {
     const state = this.deps.manager.getState();
 
     if (state.loadStatus === 'loading') {
-      this.listContainer.createEl('p', { text: 'Loading model catalog\u2026' });
+      this.listContainer.createEl('p', { text: t('models.manage.loadingCatalog') });
       return;
     }
 
     if (state.loadStatus === 'error') {
       this.listContainer.createEl('p', {
-        text: state.loadError ?? 'Failed to load the model catalog.',
+        text: t('models.manage.loadCatalogFailed'),
       });
       return;
     }
@@ -227,7 +226,7 @@ export class ManageModelsModal extends Modal {
     if (activeFamily !== undefined && activeFamily.summary.length > 0) {
       this.listContainer.createEl('p', {
         cls: 'local-stt-family-summary',
-        text: activeFamily.summary,
+        text: localizeFamilySummary(activeFamily.familyId, activeFamily.summary),
       });
     }
 
@@ -241,7 +240,7 @@ export class ManageModelsModal extends Modal {
     if (tabRows.length === 0) {
       this.listContainer.createEl('p', {
         cls: 'local-stt-empty-state',
-        text: 'No models available for this engine.',
+        text: t('models.manage.noneAvailable'),
       });
       return;
     }
@@ -275,7 +274,9 @@ export class ManageModelsModal extends Modal {
       if (!supportsSelectedLanguage) {
         tags.append(
           document.createTextNode(
-            ` · Does not support ${dictationLanguageLabel(selectedLanguage)}. Change Dictation language to install or use this model.`,
+            t('models.manage.unsupportedLanguage', {
+              language: dictationLanguageLabel(selectedLanguage),
+            }),
           ),
         );
       }
@@ -289,7 +290,7 @@ export class ManageModelsModal extends Modal {
           setting.addButton((button) => {
             button
               .setCta()
-              .setButtonText('Install')
+              .setButtonText(t('common.install'))
               .setDisabled(this.actionInProgress || !supportsSelectedLanguage)
               .onClick(() => {
                 void this.runAction(
@@ -301,7 +302,7 @@ export class ManageModelsModal extends Modal {
                       runtimeId: row.model.runtimeId,
                     });
                   },
-                  { failureMessage: 'Could not start the model install. Try again.' },
+                  { failureMessage: t('models.manage.installStartFailed') },
                 );
               });
           });
@@ -311,7 +312,7 @@ export class ManageModelsModal extends Modal {
           setting.addButton((button) => {
             button
               .setCta()
-              .setButtonText('Use')
+              .setButtonText(t('models.manage.use'))
               .setDisabled(this.actionInProgress || !supportsSelectedLanguage)
               .onClick(() => {
                 void this.runAction(
@@ -325,9 +326,8 @@ export class ManageModelsModal extends Modal {
                     this.close();
                   },
                   {
-                    failureMessage:
-                      'Could not select the model. Check that its files are available.',
-                    successMessage: 'Model selected.',
+                    failureMessage: t('models.manage.selectFailed'),
+                    successMessage: t('models.manage.selectedNotice'),
                   },
                 );
               });
@@ -336,18 +336,18 @@ export class ManageModelsModal extends Modal {
 
         case 'selected':
           setting.addButton((button) => {
-            button.setButtonText('Selected').setDisabled(true);
+            button.setButtonText(t('models.manage.selected')).setDisabled(true);
           });
           break;
 
         case 'cancel':
           setting.addButton((button) => {
             if (row.isCanceling) {
-              button.setButtonText('Cancelling\u2026').setDisabled(true);
+              button.setButtonText(t('models.manage.cancelling')).setDisabled(true);
             } else {
               button
                 .setCta()
-                .setButtonText('Cancel')
+                .setButtonText(t('common.cancel'))
                 .setDisabled(this.actionInProgress)
                 .onClick(() => {
                   void this.runAction(async () => {
@@ -362,7 +362,7 @@ export class ManageModelsModal extends Modal {
           setting.addButton((button) => {
             button
               .setWarning()
-              .setButtonText('Remove')
+              .setButtonText(t('common.remove'))
               .setDisabled(this.actionInProgress)
               .onClick(() => {
                 void this.runAction(
@@ -375,9 +375,8 @@ export class ManageModelsModal extends Modal {
                     });
                   },
                   {
-                    failureMessage:
-                      'Could not remove the model. Close any process using its files.',
-                    successMessage: 'Model removed.',
+                    failureMessage: t('models.manage.removeFailed'),
+                    successMessage: t('models.manage.removedNotice'),
                   },
                 );
               });
@@ -388,7 +387,7 @@ export class ManageModelsModal extends Modal {
           setting.addExtraButton((button) => {
             button
               .setIcon('info')
-              .setTooltip('Details')
+              .setTooltip(t('models.manage.details'))
               .onClick(() => {
                 const state = this.deps.manager.getState();
                 const installedModel = state.installedModels.find((m) =>

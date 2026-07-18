@@ -2,6 +2,7 @@ import { setIcon } from 'obsidian';
 
 import { type AudioBandReader, BAND_COUNT } from '../audio/audio-bands';
 import type { DictationControllerState } from '../dictation/dictation-session-controller';
+import { t } from '../shared/i18n';
 import type { QueueBackpressureTier } from '../sidecar/protocol';
 
 type RibbonIcon = 'audio-lines' | 'mic' | 'loader' | 'mic-off';
@@ -242,15 +243,15 @@ function iconForState(state: DictationControllerState): RibbonIcon {
 function buildRibbonLabel(state: DictationControllerState): string {
   switch (state) {
     case 'idle':
-      return 'Local Dictation — start dictation';
+      return t('ribbon.idle');
     case 'starting':
-      return 'Local Dictation — starting…';
+      return t('ribbon.starting');
     case 'listening':
-      return 'Local Dictation — listening';
+      return t('ribbon.listening');
     case 'speech_detected':
-      return 'Local Dictation — hearing speech';
+      return t('ribbon.speechDetected');
     case 'error':
-      return 'Local Dictation — error';
+      return t('ribbon.error');
     default:
       return assertNever(state);
   }

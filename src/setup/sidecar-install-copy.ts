@@ -1,5 +1,6 @@
 import { Platform } from 'obsidian';
 
+import { t } from '../shared/i18n';
 import type { SidecarInstallVariant } from '../sidecar/sidecar-installer';
 
 export type InstallIntent = 'first-run' | 'install' | 'reinstall';
@@ -11,76 +12,76 @@ export interface InstallCopy {
   title: string;
 }
 
-const MAC_FIRST_RUN: InstallCopy = {
-  bodyText:
-    'Local Dictation needs a one-time download of its speech-to-text engine from GitHub releases. Once installed, transcription runs entirely on your Mac — audio never leaves your machine.',
-  primaryButtonText: 'Download sidecar',
-  successNotice: 'Local Dictation sidecar installed and started.',
-  title: 'Finish setting up Local Dictation',
-};
+const INSTALL_COPY_KEYS = {
+  cpuFirstRun: {
+    body: 'setup.sidecar.cpu.firstRun.body',
+    primaryButton: 'setup.sidecar.cpu.firstRun.primaryButton',
+    success: 'setup.sidecar.cpu.firstRun.success',
+    title: 'setup.sidecar.cpu.firstRun.title',
+  },
+  cpuInstall: {
+    body: 'setup.sidecar.cpu.install.body',
+    primaryButton: 'setup.sidecar.cpu.install.primaryButton',
+    success: 'setup.sidecar.cpu.install.success',
+    title: 'setup.sidecar.cpu.install.title',
+  },
+  cpuReinstall: {
+    body: 'setup.sidecar.cpu.reinstall.body',
+    primaryButton: 'setup.sidecar.cpu.reinstall.primaryButton',
+    success: 'setup.sidecar.cpu.reinstall.success',
+    title: 'setup.sidecar.cpu.reinstall.title',
+  },
+  cudaInstall: {
+    body: 'setup.sidecar.cuda.install.body',
+    primaryButton: 'setup.sidecar.cuda.install.primaryButton',
+    success: 'setup.sidecar.cuda.install.success',
+    title: 'setup.sidecar.cuda.install.title',
+  },
+  macFirstRun: {
+    body: 'setup.sidecar.mac.firstRun.body',
+    primaryButton: 'setup.sidecar.mac.firstRun.primaryButton',
+    success: 'setup.sidecar.mac.firstRun.success',
+    title: 'setup.sidecar.mac.firstRun.title',
+  },
+  macInstall: {
+    body: 'setup.sidecar.mac.install.body',
+    primaryButton: 'setup.sidecar.mac.install.primaryButton',
+    success: 'setup.sidecar.mac.install.success',
+    title: 'setup.sidecar.mac.install.title',
+  },
+  macReinstall: {
+    body: 'setup.sidecar.mac.reinstall.body',
+    primaryButton: 'setup.sidecar.mac.reinstall.primaryButton',
+    success: 'setup.sidecar.mac.reinstall.success',
+    title: 'setup.sidecar.mac.reinstall.title',
+  },
+} as const;
 
-const MAC_INSTALL: InstallCopy = {
-  bodyText:
-    'Download the speech-to-text engine from GitHub releases. Transcription runs locally on your Mac after this completes.',
-  primaryButtonText: 'Download sidecar',
-  successNotice: 'Sidecar installed and started.',
-  title: 'Install sidecar',
-};
-
-const MAC_REINSTALL: InstallCopy = {
-  bodyText:
-    'Re-download the speech-to-text engine from GitHub releases. This replaces the current install.',
-  primaryButtonText: 'Redownload sidecar',
-  successNotice: 'Sidecar reinstalled and restarted.',
-  title: 'Reinstall sidecar',
-};
-
-const CPU_FIRST_RUN: InstallCopy = {
-  bodyText:
-    'Local Dictation needs a one-time download of the CPU speech-to-text engine from GitHub releases. Transcription runs locally on your machine after this completes. You can install CUDA acceleration later from settings.',
-  primaryButtonText: 'Download CPU sidecar',
-  successNotice: 'Local Dictation sidecar installed and started.',
-  title: 'Finish setting up Local Dictation',
-};
-
-const CPU_INSTALL: InstallCopy = {
-  bodyText:
-    'Download the CPU speech-to-text engine from GitHub releases. Transcription runs locally on your machine after this completes.',
-  primaryButtonText: 'Download CPU sidecar',
-  successNotice: 'CPU sidecar installed and started.',
-  title: 'Install CPU sidecar',
-};
-
-const CPU_REINSTALL: InstallCopy = {
-  bodyText:
-    'Re-download the CPU speech-to-text engine from GitHub releases. This replaces the current CPU install.',
-  primaryButtonText: 'Redownload CPU sidecar',
-  successNotice: 'CPU sidecar reinstalled and restarted.',
-  title: 'Reinstall CPU sidecar',
-};
-
-const CUDA_INSTALL: InstallCopy = {
-  bodyText:
-    'Download the CUDA-accelerated sidecar for NVIDIA GPUs. This replaces the CPU sidecar while active. The CPU sidecar remains installed as a fallback.',
-  primaryButtonText: 'Download CUDA sidecar',
-  successNotice: 'CUDA sidecar installed and started.',
-  title: 'Install CUDA acceleration',
-};
+function installCopy(
+  keys: (typeof INSTALL_COPY_KEYS)[keyof typeof INSTALL_COPY_KEYS],
+): InstallCopy {
+  return {
+    bodyText: t(keys.body),
+    primaryButtonText: t(keys.primaryButton),
+    successNotice: t(keys.success),
+    title: t(keys.title),
+  };
+}
 
 export function getInstallCopy(variant: SidecarInstallVariant, intent: InstallIntent): InstallCopy {
   if (variant === 'cuda') {
-    return CUDA_INSTALL;
+    return installCopy(INSTALL_COPY_KEYS.cudaInstall);
   }
 
   if (Platform.isMacOS) {
-    if (intent === 'first-run') return MAC_FIRST_RUN;
-    if (intent === 'reinstall') return MAC_REINSTALL;
-    return MAC_INSTALL;
+    if (intent === 'first-run') return installCopy(INSTALL_COPY_KEYS.macFirstRun);
+    if (intent === 'reinstall') return installCopy(INSTALL_COPY_KEYS.macReinstall);
+    return installCopy(INSTALL_COPY_KEYS.macInstall);
   }
 
-  if (intent === 'first-run') return CPU_FIRST_RUN;
-  if (intent === 'reinstall') return CPU_REINSTALL;
-  return CPU_INSTALL;
+  if (intent === 'first-run') return installCopy(INSTALL_COPY_KEYS.cpuFirstRun);
+  if (intent === 'reinstall') return installCopy(INSTALL_COPY_KEYS.cpuReinstall);
+  return installCopy(INSTALL_COPY_KEYS.cpuInstall);
 }
 
 export function getSidecarUpdateCopy(variants: readonly SidecarInstallVariant[]): InstallCopy {
@@ -88,18 +89,22 @@ export function getSidecarUpdateCopy(variants: readonly SidecarInstallVariant[])
   const hasCuda = variants.includes('cuda');
   const engineLabel =
     hasCpu && hasCuda
-      ? 'CPU and CUDA speech engines'
+      ? t('setup.sidecar.update.engine.cpuAndCuda')
       : hasCuda
-        ? 'CUDA speech engine'
-        : 'speech engine';
+        ? t('setup.sidecar.update.engine.cuda')
+        : t('setup.sidecar.update.engine.default');
   const plural = hasCpu && hasCuda;
 
   return {
-    bodyText: `Download the current ${engineLabel} to match this version of Local Dictation. Existing installs are replaced in place.`,
-    primaryButtonText: plural ? 'Update speech engines' : 'Update speech engine',
-    successNotice: plural
-      ? 'Local Dictation speech engines updated and restarted.'
-      : 'Local Dictation speech engine updated and restarted.',
-    title: plural ? 'Update speech engines' : 'Update speech engine',
+    bodyText: t('setup.sidecar.update.body', { engineLabel }),
+    primaryButtonText: t(
+      plural
+        ? 'setup.sidecar.update.primaryButton_other'
+        : 'setup.sidecar.update.primaryButton_one',
+    ),
+    successNotice: t(
+      plural ? 'setup.sidecar.update.success_other' : 'setup.sidecar.update.success_one',
+    ),
+    title: t(plural ? 'setup.sidecar.update.title_other' : 'setup.sidecar.update.title_one'),
   };
 }

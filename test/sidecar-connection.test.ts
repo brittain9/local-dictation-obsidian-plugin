@@ -278,8 +278,9 @@ describe('SidecarConnection', () => {
     await expect(resultPromise).rejects.toMatchObject({
       code: 'invalid_frame',
       details: 'bad length',
-      message: 'Invalid frame (bad length)',
+      message: 'The speech engine received an invalid protocol frame.',
       name: 'SidecarError',
+      rawDetail: 'Invalid frame (bad length)',
     } satisfies Partial<SidecarError>);
   });
 

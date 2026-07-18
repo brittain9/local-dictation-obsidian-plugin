@@ -55,4 +55,18 @@ describe('buildInstallProgressViewModel', () => {
     expect(vm.progressPercent).toBe(100);
     expect(vm.isCancelling).toBe(true);
   });
+
+  it('does not render raw native diagnostics for a failed install', () => {
+    const vm = buildInstallProgressViewModel({
+      details: 'permission denied at /private/model/path',
+      downloadedBytes: null,
+      isCancelling: false,
+      message: 'The model store path is invalid.',
+      state: 'failed',
+      totalBytes: null,
+    });
+
+    expect(vm.primaryLine).toBe('Model install failed');
+    expect(vm.secondaryLine).toBeNull();
+  });
 });
