@@ -2,6 +2,7 @@ import type { App } from 'obsidian';
 import { Modal, Platform, setIcon } from 'obsidian';
 import { ManageModelsModal } from '../models/manage-models-modal';
 import type { ModelInstallManager } from '../models/model-install-manager';
+import { t } from '../shared/i18n';
 import type { PluginLogger } from '../shared/plugin-logger';
 import type { UserFeedback } from '../shared/user-feedback';
 import type { SidecarConnection } from '../sidecar/sidecar-connection';
@@ -91,7 +92,7 @@ export class SetupWizardModal extends Modal {
   private render(): void {
     this.contentEl.empty();
     const isWelcome = this.currentStep === 'sidecar' && !this.sidecarReady;
-    this.titleEl.setText(isWelcome ? 'Welcome to Local Dictation' : 'Set up Local Dictation');
+    this.titleEl.setText(isWelcome ? t('setup.wizard.welcomeTitle') : t('setup.wizard.title'));
 
     this.renderProgress();
 
@@ -137,48 +138,48 @@ export class SetupWizardModal extends Modal {
     if (this.sidecarReady) {
       body.createEl('h2', {
         cls: 'local-stt-wizard-step__title',
-        text: 'Speech engine ready',
+        text: t('setup.wizard.engineReadyTitle'),
       });
       body.createEl('p', {
-        text: 'The local speech-to-text engine is installed and ready.',
+        text: t('setup.wizard.engineReadyDesc'),
       });
     } else {
       body.createEl('p', {
-        text: 'Dictate notes hands-free, right inside Obsidian — fully on your machine. No account, no cloud, no telemetry.',
+        text: t('setup.wizard.intro'),
       });
 
-      body.createEl('p', { text: 'A quick 2-minute setup:' });
+      body.createEl('p', { text: t('setup.wizard.quickSetup') });
       const steps = body.createEl('ol');
-      steps.createEl('li', { text: 'Download the speech engine' });
-      steps.createEl('li', { text: 'Pick a transcription model' });
+      steps.createEl('li', { text: t('setup.wizard.downloadEngineStep') });
+      steps.createEl('li', { text: t('setup.wizard.pickModelStep') });
 
       body.createEl('p', {
-        text: 'Then hit the mic in the ribbon (or your own hotkey) and start talking.',
+        text: t('setup.wizard.startTalking'),
       });
 
       if (!Platform.isMacOS) {
         body.createEl('p', {
           cls: 'local-stt-wizard-step__muted',
-          text: 'Starts with the CPU build. NVIDIA GPU? You can install the CUDA-accelerated build later from Settings.',
+          text: t('setup.wizard.cpuBuildNote'),
         });
       }
     }
 
     const actions = this.contentEl.createDiv({ cls: 'local-stt-wizard-actions' });
-    actions.createEl('button', { text: 'Cancel' }).addEventListener('click', () => {
+    actions.createEl('button', { text: t('common.cancel') }).addEventListener('click', () => {
       this.close();
     });
 
     if (this.sidecarReady) {
       const next = actions.createEl('button', {
         cls: 'mod-cta',
-        text: 'Next',
+        text: t('common.next'),
       });
       next.addEventListener('click', () => this.goNext());
     } else {
       const installBtn = actions.createEl('button', {
         cls: 'mod-cta',
-        text: 'Download engine',
+        text: t('setup.wizard.downloadEngine'),
       });
       installBtn.addEventListener('click', () => this.openSidecarInstall());
     }
@@ -206,37 +207,41 @@ export class SetupWizardModal extends Modal {
     const body = this.contentEl.createDiv({ cls: 'local-stt-wizard-step' });
     body.createEl('h2', {
       cls: 'local-stt-wizard-step__title',
-      text: this.modelReady ? 'Model selected' : 'Pick a transcription model',
+      text: this.modelReady
+        ? t('setup.wizard.modelSelectedTitle')
+        : t('setup.wizard.pickModelTitle'),
     });
     if (this.modelReady) {
       body.createEl('p', {
-        text: 'A transcription model is installed and selected. You can install more or switch later from Settings.',
+        text: t('setup.wizard.modelSelectedDesc'),
       });
     } else {
       body.createEl('p', {
-        text: 'Install a transcription model to enable dictation. You can install more later — smaller models are faster, larger models are more accurate.',
+        text: t('setup.wizard.modelIntro'),
       });
       body.createEl('p', {
-        text: 'Two kinds are available: streaming models show words live as you speak; standard models transcribe after each pause. For hands-free dictation, start with the recommended Moonshine Small model. Nemotron 3.5 ASR is an experimental, higher-resource streaming option.',
+        text: t('setup.wizard.modelKinds'),
       });
       if (!Platform.isMacOS) {
         body.createEl('p', {
           cls: 'local-stt-wizard-step__muted',
-          text: 'Larger models run much faster with GPU acceleration. If you have an NVIDIA GPU, you can install the CUDA-accelerated build later from Settings.',
+          text: t('setup.wizard.gpuNote'),
         });
       }
     }
 
     const actions = this.contentEl.createDiv({ cls: 'local-stt-wizard-actions' });
-    actions.createEl('button', { text: 'Back' }).addEventListener('click', () => this.goBack());
+    actions
+      .createEl('button', { text: t('common.back') })
+      .addEventListener('click', () => this.goBack());
 
     if (this.modelReady) {
-      const next = actions.createEl('button', { cls: 'mod-cta', text: 'Next' });
+      const next = actions.createEl('button', { cls: 'mod-cta', text: t('common.next') });
       next.addEventListener('click', () => this.goNext());
     } else {
       const openPicker = actions.createEl('button', {
         cls: 'mod-cta',
-        text: 'Open model picker',
+        text: t('setup.wizard.openModelPicker'),
       });
       openPicker.addEventListener('click', () => this.openModelPicker());
     }
@@ -262,42 +267,46 @@ export class SetupWizardModal extends Modal {
     const body = this.contentEl.createDiv({ cls: 'local-stt-wizard-step' });
     body.createEl('h2', {
       cls: 'local-stt-wizard-step__title',
-      text: "You're ready to dictate",
+      text: t('setup.wizard.readyTitle'),
     });
     body.createEl('p', {
-      text: "Try it in the Markdown note that's open now. Speak a few words, then use the ribbon mic or your hotkey to stop.",
+      text: t('setup.wizard.readyDesc'),
     });
 
     const cardRibbon = body.createDiv({ cls: 'local-stt-wizard-card' });
     const ribbonIcon = cardRibbon.createSpan({ cls: 'local-stt-wizard-card__icon' });
     setIcon(ribbonIcon, 'mic');
     const ribbonText = cardRibbon.createDiv({ cls: 'local-stt-wizard-card__text' });
-    ribbonText.createEl('strong', { text: 'Use the ribbon mic' });
+    ribbonText.createEl('strong', { text: t('setup.wizard.ribbonTitle') });
     ribbonText.createEl('p', {
-      text: 'Look for this icon in the Obsidian ribbon. Click it to start dictating; click again to stop.',
+      text: t('setup.wizard.ribbonDesc'),
     });
 
     const cardHotkey = body.createDiv({ cls: 'local-stt-wizard-card' });
     const hotkeyIcon = cardHotkey.createSpan({ cls: 'local-stt-wizard-card__icon' });
     setIcon(hotkeyIcon, 'keyboard');
     const hotkeyText = cardHotkey.createDiv({ cls: 'local-stt-wizard-card__text' });
-    hotkeyText.createEl('strong', { text: 'Or bind a hotkey' });
+    hotkeyText.createEl('strong', { text: t('setup.wizard.hotkeyTitle') });
     const hotkeyDesc = hotkeyText.createEl('p');
-    hotkeyDesc.appendText('Bind a shortcut to the ');
-    hotkeyDesc.createEl('strong', { text: 'Local Dictation: Toggle dictation' });
-    hotkeyDesc.appendText(' command to start and stop from anywhere in Obsidian.');
-    const hotkeyBtn = cardHotkey.createEl('button', { text: 'Open hotkey settings' });
+    hotkeyDesc.appendText(t('setup.wizard.hotkeyDescBefore'));
+    hotkeyDesc.createEl('strong', { text: t('setup.wizard.toggleCommandName') });
+    hotkeyDesc.appendText(t('setup.wizard.hotkeyDescAfter'));
+    const hotkeyBtn = cardHotkey.createEl('button', {
+      text: t('setup.wizard.openHotkeySettings'),
+    });
     hotkeyBtn.addEventListener('click', () => this.openHotkeySettings());
 
     const actions = this.contentEl.createDiv({ cls: 'local-stt-wizard-actions' });
-    actions.createEl('button', { text: 'Back' }).addEventListener('click', () => this.goBack());
-    const done = actions.createEl('button', { text: 'Done' });
+    actions
+      .createEl('button', { text: t('common.back') })
+      .addEventListener('click', () => this.goBack());
+    const done = actions.createEl('button', { text: t('common.done') });
     done.addEventListener('click', () => {
       void this.readyActions.done();
     });
     const tryDictation = actions.createEl('button', {
       cls: 'mod-cta',
-      text: 'Try dictation now',
+      text: t('setup.wizard.tryDictationNow'),
     });
     tryDictation.addEventListener('click', () => {
       void this.readyActions.tryDictationNow();
@@ -322,7 +331,7 @@ export class SetupWizardModal extends Modal {
       this.deps.feedback.show({
         cause: error,
         intent: 'warning',
-        message: 'Open Settings → Hotkeys and search for "Local Dictation".',
+        message: t('setup.wizard.openHotkeySettingsFallback'),
       });
     }
   }

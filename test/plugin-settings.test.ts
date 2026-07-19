@@ -36,13 +36,21 @@ describe('resolvePluginSettings', () => {
   });
 
   it('defaults missing schemaVersion to the current settings schema', () => {
-    expect(resolvePluginSettings({}).schemaVersion).toBe(4);
+    expect(resolvePluginSettings({}).schemaVersion).toBe(5);
   });
 
   it('migrates missing or invalid dictation language to English', () => {
     expect(resolvePluginSettings({}).dictationLanguage).toBe('en');
     expect(resolvePluginSettings({ dictationLanguage: 'ja' }).dictationLanguage).toBe('ja');
     expect(resolvePluginSettings({ dictationLanguage: 'xx' }).dictationLanguage).toBe('en');
+  });
+
+  it('normalizes a remembered Obsidian language to its base tag', () => {
+    expect(resolvePluginSettings({ lastObsidianLanguage: ' PT_br ' }).lastObsidianLanguage).toBe(
+      'pt',
+    );
+    expect(resolvePluginSettings({ lastObsidianLanguage: '' }).lastObsidianLanguage).toBeNull();
+    expect(resolvePluginSettings({ lastObsidianLanguage: 42 }).lastObsidianLanguage).toBeNull();
   });
 
   it('enables LLM capabilities but keeps transformation off by default', () => {
@@ -258,12 +266,14 @@ describe('resolvePluginSettings', () => {
       runtimeId: 'whisper_cpp' as const,
     };
 
-    expect(
-      resolvePluginSettings({
-        schemaVersion: 4,
-        selectedModelCapabilitiesSnapshot: { capabilities, selection },
-      }).selectedModelCapabilitiesSnapshot,
-    ).toEqual({ capabilities, selection });
+    for (const schemaVersion of [4, 5]) {
+      expect(
+        resolvePluginSettings({
+          schemaVersion,
+          selectedModelCapabilitiesSnapshot: { capabilities, selection },
+        }).selectedModelCapabilitiesSnapshot,
+      ).toEqual({ capabilities, selection });
+    }
 
     expect(
       resolvePluginSettings({

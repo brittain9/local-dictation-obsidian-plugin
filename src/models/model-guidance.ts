@@ -1,8 +1,10 @@
+import { t } from '../shared/i18n';
+
 const MODEL_TAG_LABELS: Readonly<Record<string, string>> = {
   cpu: 'CPU',
-  'full-precision': 'Full precision',
+  'full-precision': t('models.tag.fullPrecision'),
   gpu: 'GPU',
-  'reduced-size': 'Reduced size',
+  'reduced-size': t('models.tag.reducedSize'),
 };
 
 export function formatModelTagLabel(tag: string): string {

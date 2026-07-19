@@ -1,13 +1,14 @@
 import { Platform } from 'obsidian';
+import { t } from '../shared/i18n';
 
 // macOS TCC grants apply to Obsidian as the host process and don't take effect
 // until Obsidian restarts, so the macOS copy has to call that out — otherwise
 // users enable Microphone access and then keep seeing the same denial.
 export function formatMicrophonePermissionDeniedMessage(): string {
   if (Platform.isMacOS) {
-    return 'Microphone permission denied. Open System Settings → Privacy & Security → Microphone, enable Obsidian, then restart Obsidian and try again.';
+    return t('audio.microphone.permissionDeniedMac');
   }
-  return 'Microphone permission denied. Grant access in your OS settings and try again.';
+  return t('audio.microphone.permissionDenied');
 }
 
 // Translates a getUserMedia DOMException into actionable copy. Returns null when
@@ -23,11 +24,11 @@ export function formatMicrophoneCaptureErrorMessage(error: unknown): string | nu
       // getUserMedia found zero input devices, distinct from permission denial.
       // On Linux this is usually no mic connected/enabled, or the audio service
       // not seeing PipeWire/PulseAudio inputs.
-      return 'No microphone detected. Plug in a microphone or USB headset, or enable an input device in your OS sound settings, then try again.';
+      return t('audio.microphone.notFound');
     case 'NotReadableError':
       // The device exists but the OS refused to open it (hardware error or held
       // exclusively by another process).
-      return 'Microphone could not be opened. Another app may be using it, or the audio device errored. Close other apps using the mic and try again.';
+      return t('audio.microphone.notReadable');
     default:
       return null;
   }

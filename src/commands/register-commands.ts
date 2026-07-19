@@ -1,4 +1,5 @@
 import type { Editor, Plugin } from 'obsidian';
+import { t } from '../shared/i18n';
 
 const START_DICTATION_COMMAND_ID = 'start-dictation-session';
 const STOP_DICTATION_COMMAND_ID = 'stop-dictation-session';
@@ -30,7 +31,7 @@ interface CommandDependencies {
 export function registerCommands(dependencies: CommandDependencies): void {
   dependencies.plugin.addCommand({
     id: TOGGLE_DICTATION_COMMAND_ID,
-    name: 'Toggle dictation',
+    name: t('commands.toggleDictation'),
     callback: async () => {
       await dependencies.toggleDictation();
     },
@@ -38,7 +39,7 @@ export function registerCommands(dependencies: CommandDependencies): void {
 
   dependencies.plugin.addCommand({
     id: START_DICTATION_COMMAND_ID,
-    name: 'Start dictation',
+    name: t('commands.startDictation'),
     callback: async () => {
       await dependencies.startDictation();
     },
@@ -46,7 +47,7 @@ export function registerCommands(dependencies: CommandDependencies): void {
 
   dependencies.plugin.addCommand({
     id: STOP_DICTATION_COMMAND_ID,
-    name: 'Stop dictation',
+    name: t('commands.stopDictation'),
     callback: async () => {
       await dependencies.stopDictation();
     },
@@ -54,7 +55,7 @@ export function registerCommands(dependencies: CommandDependencies): void {
 
   dependencies.plugin.addCommand({
     id: CANCEL_DICTATION_COMMAND_ID,
-    name: 'Cancel dictation',
+    name: t('commands.cancelDictation'),
     callback: async () => {
       await dependencies.cancelDictation();
     },
@@ -62,7 +63,7 @@ export function registerCommands(dependencies: CommandDependencies): void {
 
   dependencies.plugin.addCommand({
     id: REINSERT_LAST_UTTERANCE_COMMAND_ID,
-    name: 'Reinsert last utterance',
+    name: t('commands.reinsertLastUtterance'),
     editorCheckCallback: (checking, editor) => {
       if (!dependencies.hasLastUtterance()) {
         return false;
@@ -76,7 +77,7 @@ export function registerCommands(dependencies: CommandDependencies): void {
 
   dependencies.plugin.addCommand({
     id: CLEAR_LAST_UTTERANCE_COMMAND_ID,
-    name: 'Clear last utterance',
+    name: t('commands.clearLastUtterance'),
     checkCallback: (checking) => {
       if (!dependencies.hasLastUtterance()) {
         return false;
@@ -90,7 +91,7 @@ export function registerCommands(dependencies: CommandDependencies): void {
 
   dependencies.plugin.addCommand({
     id: RESTORE_RAW_TRANSCRIPT_COMMAND_ID,
-    name: 'Restore raw transcript',
+    name: t('commands.restoreRawTranscript'),
     checkCallback: (checking) =>
       runAvailableCommand(
         checking,
@@ -101,7 +102,7 @@ export function registerCommands(dependencies: CommandDependencies): void {
 
   dependencies.plugin.addCommand({
     id: COPY_RAW_TRANSCRIPT_COMMAND_ID,
-    name: 'Copy raw transcript',
+    name: t('commands.copyRawTranscript'),
     checkCallback: (checking) =>
       runAvailableCommand(
         checking,
@@ -112,7 +113,7 @@ export function registerCommands(dependencies: CommandDependencies): void {
 
   dependencies.plugin.addCommand({
     id: CLEAR_RAW_RECOVERY_COMMAND_ID,
-    name: 'Clear raw recovery',
+    name: t('commands.clearRawRecovery'),
     checkCallback: (checking) =>
       runAvailableCommand(
         checking,
@@ -123,7 +124,7 @@ export function registerCommands(dependencies: CommandDependencies): void {
 
   dependencies.plugin.addCommand({
     id: 'check-sidecar-health',
-    name: 'Check sidecar health',
+    name: t('commands.checkSidecarHealth'),
     callback: async () => {
       await dependencies.checkSidecarHealth();
     },
@@ -131,7 +132,7 @@ export function registerCommands(dependencies: CommandDependencies): void {
 
   dependencies.plugin.addCommand({
     id: 'restart-sidecar',
-    name: 'Restart sidecar',
+    name: t('commands.restartSidecar'),
     callback: async () => {
       await dependencies.restartSidecar();
     },

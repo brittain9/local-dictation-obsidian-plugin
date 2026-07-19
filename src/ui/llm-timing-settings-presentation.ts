@@ -1,4 +1,5 @@
 import type { PluginSettings } from '../settings/plugin-settings';
+import { t } from '../shared/i18n';
 import { resolveEffectiveTransformTiming } from './llm-preset-overrides';
 
 export function describeTimestampTransformInteraction(settings: PluginSettings): string | null {
@@ -6,6 +7,6 @@ export function describeTimestampTransformInteraction(settings: PluginSettings):
     return null;
   }
   return resolveEffectiveTransformTiming(settings) === 'per_utterance'
-    ? 'After each phrase preserves timestamp boundaries.'
-    : 'All at once may rewrite or remove timestamps, depending on the preset.';
+    ? t('llm.timing.timestamps.perUtterance')
+    : t('llm.timing.timestamps.batch');
 }

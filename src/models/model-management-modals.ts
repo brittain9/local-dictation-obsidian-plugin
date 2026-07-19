@@ -2,8 +2,10 @@ import type { App } from 'obsidian';
 import { Modal, Setting } from 'obsidian';
 
 import { formatBytes } from '../shared/format-utils';
+import { t } from '../shared/i18n';
 import type { UserFeedback } from '../shared/user-feedback';
 import { buildCapabilityLabels } from './capability-view';
+import { localizeModelSummary } from './catalog-localization';
 import {
   DEFAULT_EXTERNAL_FILE_ENGINE_SELECTION,
   EXTERNAL_FILE_ENGINES,
@@ -40,17 +42,15 @@ export class ExternalModelFileModal extends Modal {
   }
 
   override onOpen(): void {
-    this.titleEl.setText('Use external file');
+    this.titleEl.setText(t('models.external.title'));
     this.contentEl.empty();
     this.contentEl.createEl('p', {
-      text: 'External models are for advanced use. Local Dictation does not download, update, or checksum-verify these files.',
+      text: t('models.external.intro'),
     });
 
     new Setting(this.contentEl)
-      .setName('Model family')
-      .setDesc(
-        'Choose the loader that matches the model. The family is not inferred from its filename.',
-      )
+      .setName(t('models.external.family.name'))
+      .setDesc(t('models.external.family.desc'))
       .addDropdown((dropdown) => {
         for (const option of EXTERNAL_FILE_ENGINES) {
           dropdown.addOption(engineKey(option.selection), option.label);
@@ -73,10 +73,8 @@ export class ExternalModelFileModal extends Modal {
     this.renderGuidance();
 
     new Setting(this.contentEl)
-      .setName('Model file path')
-      .setDesc(
-        'Enter the absolute path to the primary model artifact. It is validated before this selection is saved.',
-      )
+      .setName(t('models.external.path.name'))
+      .setDesc(t('models.external.path.desc'))
       .addText((text) => {
         const option = getExternalFileEngineOption(this.engine);
         text.setPlaceholder(option?.placeholder ?? '/absolute/path/to/model');
@@ -98,14 +96,14 @@ export class ExternalModelFileModal extends Modal {
     new Setting(this.contentEl).addButton((button) => {
       button
         .setCta()
-        .setButtonText('Validate and use')
+        .setButtonText(t('models.external.validateAndUse'))
         .onClick(async () => {
           if (validating) {
             return;
           }
 
           validating = true;
-          button.setDisabled(true).setButtonText('Validating…');
+          button.setDisabled(true).setButtonText(t('models.external.validating'));
           this.setValidationError(null);
           const nextPath = this.inputEl?.value.trim() ?? '';
 
@@ -114,7 +112,7 @@ export class ExternalModelFileModal extends Modal {
             await this.dependencies.onChanged();
             this.dependencies.feedback.show({
               intent: 'success',
-              message: 'External model file validated and selected.',
+              message: t('models.external.selectedNotice'),
             });
             this.close();
           } catch (error) {
@@ -127,7 +125,7 @@ export class ExternalModelFileModal extends Modal {
             });
           } finally {
             validating = false;
-            button.setDisabled(false).setButtonText('Validate and use');
+            button.setDisabled(false).setButtonText(t('models.external.validateAndUse'));
           }
         });
     });
@@ -144,7 +142,7 @@ export class ExternalModelFileModal extends Modal {
       return;
     }
 
-    this.guidanceEl.createEl('strong', { text: 'File requirements' });
+    this.guidanceEl.createEl('strong', { text: t('models.external.requirementsTitle') });
     const requirements = this.guidanceEl.createEl('ul');
     for (const requirement of option.requirements) {
       requirements.createEl('li', { text: requirement });
@@ -189,29 +187,31 @@ export class ModelDetailsModal extends Modal {
   override onOpen(): void {
     this.titleEl.setText(this.model.displayName);
     this.contentEl.empty();
-    this.contentEl.createEl('p', { text: this.model.summary });
+    this.contentEl.createEl('p', {
+      text: localizeModelSummary(this.model.modelId, this.model.summary),
+    });
 
     const dl = this.contentEl.createEl('dl', { cls: 'local-stt-details-grid' });
 
     const totalSize = getTotalModelSize(this.model);
     if (totalSize > 0) {
-      dl.createEl('dt', { text: 'Total size' });
+      dl.createEl('dt', { text: t('models.details.totalSize') });
       dl.createEl('dd', { text: formatBytes(totalSize) });
     }
 
-    dl.createEl('dt', { text: 'Source' });
+    dl.createEl('dt', { text: t('models.details.source') });
     appendDetailsLink(dl.createEl('dd'), this.model.sourceUrl, this.model.sourceUrl, true);
 
-    dl.createEl('dt', { text: 'License' });
+    dl.createEl('dt', { text: t('models.details.license') });
     appendDetailsLink(dl.createEl('dd'), this.model.licenseLabel, this.model.licenseUrl);
 
     if (this.capabilities !== null) {
-      dl.createEl('dt', { text: 'Capabilities' });
+      dl.createEl('dt', { text: t('models.details.capabilities') });
       dl.createEl('dd', { text: buildCapabilityLabels(this.capabilities).join(', ') });
     }
 
     if (this.installPath !== null) {
-      dl.createEl('dt', { text: 'Install path' });
+      dl.createEl('dt', { text: t('models.details.installPath') });
       dl.createEl('dd', { text: this.installPath, cls: 'local-stt-mono' });
     }
 
@@ -219,8 +219,10 @@ export class ModelDetailsModal extends Modal {
       const table = this.contentEl.createEl('table', { cls: 'local-stt-artifact-table' });
       const thead = table.createEl('thead');
       const headerRow = thead.createEl('tr');
-      headerRow.createEl('th', { text: `Files (${this.model.artifacts.length})` });
-      headerRow.createEl('th', { text: 'Size' });
+      headerRow.createEl('th', {
+        text: t('models.details.files', { count: this.model.artifacts.length }),
+      });
+      headerRow.createEl('th', { text: t('models.details.size') });
 
       const tbody = table.createEl('tbody');
       for (const artifact of this.model.artifacts) {

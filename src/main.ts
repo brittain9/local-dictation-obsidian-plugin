@@ -1,6 +1,6 @@
 import { dirname, join } from 'node:path';
 import { IS_PRODUCTION_BUILD } from 'virtual:build-mode';
-import { FileSystemAdapter, Platform, Plugin } from 'obsidian';
+import { FileSystemAdapter, getLanguage, Platform, Plugin } from 'obsidian';
 
 import { AudioCaptureStream } from './audio/audio-capture-stream';
 import { SidecarAudioLevelMeter } from './audio/sidecar-audio-level-meter';
@@ -13,6 +13,7 @@ import { provisionalTranscriptExtension } from './editor/provisional-transcript-
 import { RawTranscriptRecovery } from './editor/raw-transcript-recovery';
 import { sessionProcessingExtension } from './editor/session-processing-extension';
 import { TemporaryLeafPinLeaseManager } from './editor/temporary-leaf-pin';
+import { syncDictationLanguageWithObsidian } from './language/dictation-language-sync';
 import type { LlmCleanupFailure } from './llm/provider';
 import { createLlmRouter } from './llm/router';
 import { ManageModelsModal } from './models/manage-models-modal';
@@ -35,6 +36,7 @@ import {
   type SidecarInstallActionDeps,
 } from './settings/sidecar-settings-section';
 import { SetupWizardModal } from './setup/setup-wizard-modal';
+import { t } from './shared/i18n';
 import { createObsidianFeedbackPresenter } from './shared/obsidian-feedback-presenter';
 import { createPluginLogger, type PluginLogger } from './shared/plugin-logger';
 import { createUserFeedback, type UserFeedback } from './shared/user-feedback';
@@ -81,11 +83,17 @@ export default class LocalSttPlugin extends Plugin {
   private readonly temporaryLeafPinLeaseManager = new TemporaryLeafPinLeaseManager();
 
   override async onload(): Promise<void> {
-    const loadedSettings = loadPluginSettings(await this.loadData(), this.app.secretStorage);
-    this.settings = loadedSettings.settings;
+    const persistedData: unknown = await this.loadData();
+    const loadedSettings = loadPluginSettings(persistedData, this.app.secretStorage);
+    const languageSync = syncDictationLanguageWithObsidian(
+      loadedSettings.settings,
+      persistedData,
+      getLanguage(),
+    );
+    this.settings = languageSync.settings;
     this.lastUtteranceRecovery.setEnabled(this.settings.retainLastUtterance);
     this.rawTranscriptRecovery.setEnabled(this.settings.retainLastUtterance);
-    if (loadedSettings.shouldPersist) {
+    if (loadedSettings.shouldPersist || languageSync.shouldPersist) {
       await this.saveData(this.settings);
     }
     this.presetStateStore = new LlmPresetStateStore({
@@ -170,7 +178,7 @@ export default class LocalSttPlugin extends Plugin {
         }),
     );
 
-    const ribbonElement = this.addRibbonIcon('mic', 'Local Dictation — start dictation', () => {
+    const ribbonElement = this.addRibbonIcon('mic', t('ribbon.idle'), () => {
       void this.requireDictationController().toggleDictation();
     });
     this.ribbonController = new DictationRibbonController(ribbonElement);
@@ -263,7 +271,7 @@ export default class LocalSttPlugin extends Plugin {
         this.feedback.show({
           intent: 'success',
           key: 'last-utterance-cleared',
-          message: 'Cleared the last retained utterance.',
+          message: t('notice.lastUtteranceCleared'),
         });
       },
       clearRawTranscriptRecovery: () => {
@@ -480,11 +488,11 @@ export default class LocalSttPlugin extends Plugin {
       if (options.showNotice ?? true) {
         this.feedback.show({
           intent: 'success',
-          message: `Sidecar is ready (${health.sidecarVersion}).`,
+          message: t('notice.sidecarReady', { version: health.sidecarVersion }),
         });
       }
     } catch (error) {
-      this.handleError('Sidecar health check failed', error, options.showNotice ?? true);
+      this.handleError(t('notice.sidecarHealthCheckFailed'), error, options.showNotice ?? true);
       throw error;
     }
   }
@@ -504,7 +512,7 @@ export default class LocalSttPlugin extends Plugin {
     if (this.requireDictationController().isBusy()) {
       this.feedback.show({
         intent: 'warning',
-        message: 'Restart the sidecar only when dictation is idle.',
+        message: t('notice.sidecarRestartRequiresIdle'),
       });
       return;
     }
@@ -518,10 +526,10 @@ export default class LocalSttPlugin extends Plugin {
 
       this.feedback.show({
         intent: 'success',
-        message: `Restarted sidecar (${health.sidecarVersion}).`,
+        message: t('notice.sidecarRestarted', { version: health.sidecarVersion }),
       });
     } catch (error) {
-      this.handleError('Sidecar restart failed', error, true);
+      this.handleError(t('notice.sidecarRestartFailed'), error, true);
     }
   }
 
@@ -713,15 +721,12 @@ export default class LocalSttPlugin extends Plugin {
     pluginDirectory: string,
   ): void {
     const variants = drift.map((entry) => entry.variant);
-    const engineLabel =
-      variants.length === 2
-        ? 'CPU and CUDA speech engines are'
-        : variants[0] === 'cuda'
-          ? 'CUDA speech engine is'
-          : 'speech engine is';
     this.feedback.show({
       action: {
-        label: variants.length === 2 ? 'Update speech engines' : 'Update speech engine',
+        label:
+          variants.length === 2
+            ? t('notice.sidecarVersionDrift.actionMultiple')
+            : t('notice.sidecarVersionDrift.actionOne'),
         run: () => {
           openSidecarUpdateModal(this.buildSidecarInstallActionDeps(), {
             pluginDirectory,
@@ -731,7 +736,12 @@ export default class LocalSttPlugin extends Plugin {
       },
       intent: 'action-required',
       key: 'sidecar-version-drift',
-      message: `Updated to ${this.manifest.version}, but the installed ${engineLabel} out of date. Update now to keep them in sync.`,
+      message:
+        variants.length === 2
+          ? t('notice.sidecarVersionDrift.cpuAndCuda', { version: this.manifest.version })
+          : variants[0] === 'cuda'
+            ? t('notice.sidecarVersionDrift.cuda', { version: this.manifest.version })
+            : t('notice.sidecarVersionDrift.cpu', { version: this.manifest.version }),
     });
   }
 

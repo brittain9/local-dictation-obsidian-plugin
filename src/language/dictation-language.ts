@@ -1,15 +1,16 @@
 import type { CatalogModelRecord, LanguageSupport } from '../models/model-management-types';
+import { t } from '../shared/i18n';
 
 export const DICTATION_LANGUAGE_OPTIONS = [
-  { label: 'Auto detect', value: 'auto' },
+  { label: t('settings.dictationLanguage.autoDetect'), value: 'auto' },
   { label: 'English', value: 'en' },
-  { label: 'Spanish', value: 'es' },
-  { label: 'German', value: 'de' },
-  { label: 'French', value: 'fr' },
-  { label: 'Portuguese', value: 'pt' },
-  { label: 'Italian', value: 'it' },
-  { label: 'Dutch', value: 'nl' },
-  { label: 'Japanese', value: 'ja' },
+  { label: 'Español', value: 'es' },
+  { label: 'Deutsch', value: 'de' },
+  { label: 'Français', value: 'fr' },
+  { label: 'Português', value: 'pt' },
+  { label: 'Italiano', value: 'it' },
+  { label: 'Nederlands', value: 'nl' },
+  { label: '日本語', value: 'ja' },
 ] as const;
 
 export type DictationLanguage = (typeof DICTATION_LANGUAGE_OPTIONS)[number]['value'];

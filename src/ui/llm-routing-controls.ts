@@ -20,6 +20,7 @@ import {
   withProviderModel,
 } from '../llm/provider';
 import { isLlmRouting, type PluginSettings } from '../settings/plugin-settings';
+import { t } from '../shared/i18n';
 import type { PluginLogger } from '../shared/plugin-logger';
 import type { UserFeedback } from '../shared/user-feedback';
 import { describeModelBehavior } from './llm-model-settings-presentation';
@@ -38,9 +39,9 @@ export interface LlmRoutingControlsDependencies {
 }
 
 const ROUTING_SEGMENTS: ReadonlyArray<{ label: string; value: LlmRouting }> = [
-  { label: 'Local', value: 'local' },
-  { label: 'Remote', value: 'remote' },
-  { label: 'Auto', value: 'auto' },
+  { label: t('llm.routing.local'), value: 'local' },
+  { label: t('llm.routing.remote'), value: 'remote' },
+  { label: t('llm.routing.auto'), value: 'auto' },
 ];
 
 const API_KEY_REFRESH_DEBOUNCE_MS = 500;
@@ -89,9 +90,9 @@ class OpenRouterModelSuggest extends AbstractInputSuggest<ModelOption> {
     if (tier !== null) {
       const pill = top.createSpan({
         cls: 'local-dictation-price',
-        text: tier === 'free' ? 'Free' : tier,
+        text: tier === 'free' ? t('common.free') : tier,
       });
-      pill.setAttribute('title', 'Approximate price tier');
+      pill.setAttribute('title', t('llm.routing.priceTierTooltip'));
       if (tier === 'free') {
         pill.addClass('local-dictation-price--free');
       } else if (tier === '$$$' || tier === '$$$$') {
@@ -211,7 +212,7 @@ export class LlmRoutingControls {
     const field = parent.createDiv({ cls: 'local-dictation-route-field' });
     const segmented = field.createDiv({ cls: 'local-dictation-segmented' });
     segmented.setAttribute('role', 'group');
-    segmented.setAttribute('aria-label', 'Run transforms with');
+    segmented.setAttribute('aria-label', t('llm.routing.ariaLabel'));
     for (const segment of ROUTING_SEGMENTS) {
       const isActive = settings.llmRouting === segment.value;
       const button = segmented.createEl('button', {
@@ -244,26 +245,26 @@ export class LlmRoutingControls {
   }
 
   private renderAutoControls(parent: HTMLElement, settings: PluginSettings): void {
-    this.renderLeg(parent, 'Local · Ollama');
+    this.renderLeg(parent, t('llm.routing.localLeg'));
     this.renderModelDropdown(parent, settings, 'ollama');
 
-    this.renderLeg(parent, 'Remote · OpenRouter');
+    this.renderLeg(parent, t('llm.routing.remoteLeg'));
     this.renderApiKey(parent, settings);
     this.renderOpenRouterModel(parent, settings);
   }
 
   private renderModelBehavior(parent: HTMLElement, settings: PluginSettings): void {
     new Setting(parent)
-      .setName('Model behavior')
+      .setName(t('llm.model.behavior.name'))
       .setDesc(describeModelBehavior(settings))
       .addExtraButton((button) => {
         button
           .setIcon('sliders-horizontal')
-          .setTooltip('Model settings')
+          .setTooltip(t('llm.model.settingsTooltip'))
           .onClick(() => {
             this.dependencies.openModelSettings();
           });
-        button.extraSettingsEl.setAttribute('aria-label', 'Model settings');
+        button.extraSettingsEl.setAttribute('aria-label', t('llm.model.settingsTooltip'));
       });
   }
 
@@ -283,10 +284,10 @@ export class LlmRoutingControls {
       selectedModel.length > 0 && state.models.some((model) => model.id === selectedModel);
 
     new Setting(parent)
-      .setName(`${providerName} model`)
-      .setDesc('Pick a local Ollama chat model.')
+      .setName(t('llm.routing.providerModel', { provider: providerName }))
+      .setDesc(t('llm.routing.ollamaModelDescription'))
       .addDropdown((dropdown) => {
-        dropdown.addOption('', 'Select a model');
+        dropdown.addOption('', t('llm.routing.selectModel'));
         if (selectedModel.length > 0 && !hasSelectedModel) {
           dropdown.addOption(selectedModel, selectedModel);
         }
@@ -305,11 +306,14 @@ export class LlmRoutingControls {
       .addExtraButton((button) => {
         button
           .setIcon('refresh-cw')
-          .setTooltip(`Refresh ${providerName} models`)
+          .setTooltip(t('llm.routing.refreshModels', { provider: providerName }))
           .onClick(() => {
             void this.refreshModels(providerId);
           });
-        button.extraSettingsEl.setAttribute('aria-label', `Refresh ${providerName} models`);
+        button.extraSettingsEl.setAttribute(
+          'aria-label',
+          t('llm.routing.refreshModels', { provider: providerName }),
+        );
       });
 
     this.renderStatusRow(parent, providerId);
@@ -319,8 +323,8 @@ export class LlmRoutingControls {
 
   private renderApiKey(parent: HTMLElement, settings: PluginSettings): void {
     new Setting(parent)
-      .setName('OpenRouter API key')
-      .setDesc('Stored securely by Obsidian.')
+      .setName(t('llm.routing.apiKey.name'))
+      .setDesc(t('llm.routing.apiKey.description'))
       .addComponent((containerEl) => {
         return new SecretComponent(this.dependencies.app, containerEl)
           .setValue(settings.llmOpenRouterSecretId)
@@ -341,8 +345,8 @@ export class LlmRoutingControls {
     // each edit so the status tracks the model without a focus-stealing re-render.
     let refreshStatus: () => void = () => {};
     new Setting(parent)
-      .setName('OpenRouter model')
-      .setDesc('Type to search OpenRouter models.')
+      .setName(t('llm.routing.openRouterModel.name'))
+      .setDesc(t('llm.routing.openRouterModel.description'))
       .addText((text) => {
         text.setPlaceholder('anthropic/claude-sonnet-4.5');
         text.setValue(selectedModel);
@@ -372,8 +376,8 @@ export class LlmRoutingControls {
         });
       })
       .addExtraButton((button) => {
-        button.setIcon('plug-zap').setTooltip('Test API key and model');
-        button.extraSettingsEl.setAttribute('aria-label', 'Test OpenRouter API key and model');
+        button.setIcon('plug-zap').setTooltip(t('llm.routing.testConnection'));
+        button.extraSettingsEl.setAttribute('aria-label', t('llm.routing.testConnection'));
         button.onClick(() => {
           void this.runOpenRouterTest(button);
         });
@@ -552,10 +556,10 @@ export class LlmRoutingControls {
 function routingHint(routing: LlmRouting): string {
   switch (routing) {
     case 'local':
-      return 'Runs entirely on your device with Ollama.';
+      return t('llm.routing.localHint');
     case 'remote':
-      return 'Sends each transcript to OpenRouter for transformation.';
+      return t('llm.routing.remoteHint');
     case 'auto':
-      return 'Stays on-device, and hands large transcripts to OpenRouter.';
+      return t('llm.routing.autoHint');
   }
 }

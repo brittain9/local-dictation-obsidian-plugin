@@ -1,4 +1,5 @@
 import { formatAcceleratorLabel } from '../settings/acceleration-info';
+import { t } from '../shared/i18n';
 import type { CompiledAdapterInfo, CompiledRuntimeInfo } from '../sidecar/protocol';
 import type {
   EngineCapabilitiesRecord,
@@ -48,18 +49,24 @@ export function buildCapabilityLabels(caps: EngineCapabilitiesRecord): string[] 
     labels.push(MODEL_FORMAT_LABELS[format]);
   }
 
-  if (caps.family.supportsSegmentTimestamps) labels.push('Segment timestamps');
-  if (caps.family.supportsWordTimestamps) labels.push('Word timestamps');
-  if (caps.family.supportsInitialPrompt) labels.push('Initial prompt');
-  if (caps.family.supportsStreaming) labels.push('Streaming');
-  if (caps.family.supportsAutomaticLanguageDetection) labels.push('Auto language detection');
-  if (caps.family.producesPunctuation) labels.push('Punctuation');
+  if (caps.family.supportsSegmentTimestamps) labels.push(t('models.capability.segmentTimestamps'));
+  if (caps.family.supportsWordTimestamps) labels.push(t('models.capability.wordTimestamps'));
+  if (caps.family.supportsInitialPrompt) labels.push(t('models.capability.initialPrompt'));
+  if (caps.family.supportsStreaming) labels.push(t('models.capability.streaming'));
+  if (caps.family.supportsAutomaticLanguageDetection) {
+    labels.push(t('models.capability.autoLanguageDetection'));
+  }
+  if (caps.family.producesPunctuation) labels.push(t('models.capability.punctuation'));
 
   const languageLabel = describeLanguageSupport(caps.family);
   if (languageLabel !== null) labels.push(languageLabel);
 
   if (caps.family.maxAudioDurationSecs !== null) {
-    labels.push(`Max audio: ${Math.round(caps.family.maxAudioDurationSecs)}s`);
+    labels.push(
+      t('models.capability.maxAudio', {
+        seconds: Math.round(caps.family.maxAudioDurationSecs),
+      }),
+    );
   }
 
   return labels;
@@ -68,12 +75,14 @@ export function buildCapabilityLabels(caps: EngineCapabilitiesRecord): string[] 
 function describeLanguageSupport(family: ModelFamilyCapabilitiesRecord): string | null {
   switch (family.supportedLanguages.kind) {
     case 'all':
-      return 'Any language';
+      return t('models.capability.anyLanguage');
     case 'english_only':
-      return 'English only';
+      return t('models.capability.englishOnly');
     case 'list':
-      return `${family.supportedLanguages.tags.length} languages`;
+      return t('models.capability.languageCount', {
+        count: family.supportedLanguages.tags.length,
+      });
     case 'unknown':
-      return family.supportsLanguageSelection ? 'Language selection' : null;
+      return family.supportsLanguageSelection ? t('models.capability.languageSelection') : null;
   }
 }

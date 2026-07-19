@@ -1,4 +1,5 @@
 import type { PluginSettings } from '../settings/plugin-settings';
+import { t } from '../shared/i18n';
 import { activePresetOverride } from './llm-preset-overrides';
 
 export interface ModelSettingsPresentation {
@@ -33,12 +34,16 @@ export function resolveModelSettingsPresentation(
 
 export function describeModelBehavior(settings: PluginSettings): string {
   const presentation = resolveModelSettingsPresentation(settings);
-  const parts = [`Temperature ${presentation.temperature.value}`];
+  const parts = [t('llm.model.summary.temperature', { value: presentation.temperature.value })];
   if (presentation.remoteThresholdChars !== null) {
-    parts.push(`Remote at ${presentation.remoteThresholdChars.toLocaleString()}+ chars`);
+    parts.push(
+      t('llm.model.summary.remoteThreshold', {
+        value: presentation.remoteThresholdChars.toLocaleString(),
+      }),
+    );
   }
   if (presentation.remoteTimeoutSec !== null) {
-    parts.push(`${presentation.remoteTimeoutSec}s timeout`);
+    parts.push(t('llm.model.summary.timeout', { value: presentation.remoteTimeoutSec }));
   }
   return parts.join(' · ');
 }

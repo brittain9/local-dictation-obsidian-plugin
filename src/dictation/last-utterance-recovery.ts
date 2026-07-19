@@ -1,9 +1,9 @@
 import type { Editor, EditorPosition } from 'obsidian';
-
+import { t } from '../shared/i18n';
 import type { UserFeedback } from '../shared/user-feedback';
 
-const UNICODE_WORD_AT_START = /^[\p{L}\p{M}\p{N}\p{Pc}]/u;
-const UNICODE_WORD_AT_END = /[\p{L}\p{M}\p{N}\p{Pc}]$/u;
+const UNICODE_WORD_AT_START = /^(?:\p{L}|\p{M}|\p{N}|\p{Pc})/u;
+const UNICODE_WORD_AT_END = /(?:\p{L}|\p{M}|\p{N}|\p{Pc})$/u;
 
 export type UtteranceRecoveryEditor = Pick<
   Editor,
@@ -46,7 +46,7 @@ export class LastUtteranceRecovery {
       this.feedback.show({
         intent: 'information',
         key: 'last-utterance-unavailable',
-        message: 'No finalized utterance is available to reinsert.',
+        message: t('notice.lastUtteranceUnavailable'),
       });
       return false;
     }
@@ -60,7 +60,7 @@ export class LastUtteranceRecovery {
       this.feedback.show({
         intent: 'success',
         key: 'last-utterance-reinserted',
-        message: 'Reinserted the last finalized utterance.',
+        message: t('notice.lastUtteranceReinserted'),
       });
       return true;
     } catch (error) {
@@ -68,7 +68,7 @@ export class LastUtteranceRecovery {
         cause: error,
         intent: 'error',
         key: 'last-utterance-reinsert-failed',
-        message: 'Could not reinsert the last finalized utterance.',
+        message: t('notice.lastUtteranceReinsertFailed'),
       });
       return false;
     }

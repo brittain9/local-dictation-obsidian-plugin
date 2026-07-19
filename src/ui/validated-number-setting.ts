@@ -1,5 +1,7 @@
 import { Setting } from 'obsidian';
 
+import { t } from '../shared/i18n';
+
 export interface BoundedNumberOptions {
   integer?: boolean;
   max: number;
@@ -44,8 +46,8 @@ export function validateBoundedNumber(
   return {
     message:
       options.integer === true
-        ? `Enter a whole number from ${options.min} to ${options.max}.`
-        : `Enter a number from ${options.min} to ${options.max}.`,
+        ? t('validation.wholeNumberRange', { max: options.max, min: options.min })
+        : t('validation.numberRange', { max: options.max, min: options.min }),
     valid: false,
   };
 }

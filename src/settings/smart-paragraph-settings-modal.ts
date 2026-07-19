@@ -1,5 +1,6 @@
 import type { App } from 'obsidian';
 import { Modal, Setting } from 'obsidian';
+import { t } from '../shared/i18n';
 import { addValidatedNumberSetting } from '../ui/validated-number-setting';
 import { ModalSettingsAutoSaver, type ModalSettingsPersistence } from './modal-settings-auto-saver';
 import {
@@ -27,7 +28,7 @@ export class SmartParagraphSettingsModal extends Modal {
   }
 
   override onOpen(): void {
-    this.titleEl.setText('Smart paragraph settings');
+    this.titleEl.setText(t('settings.smartParagraph.modal.title'));
     this.render();
   }
 
@@ -40,12 +41,15 @@ export class SmartParagraphSettingsModal extends Modal {
 
     this.contentEl.createEl('p', {
       cls: 'setting-item-description',
-      text: 'Smart paragraphs turn longer pauses into line or paragraph breaks. These values apply only when transcript formatting is set to Smart paragraphs.',
+      text: t('settings.smartParagraph.modal.intro'),
     });
 
     this.addSecondsSetting({
-      desc: `Seconds before a single line break (${MIN_PAUSE_SECONDS}-${MAX_PAUSE_SECONDS}).`,
-      name: 'Line break pause',
+      desc: t('settings.smartParagraph.lineBreakPause.desc', {
+        max: MAX_PAUSE_SECONDS,
+        min: MIN_PAUSE_SECONDS,
+      }),
+      name: t('settings.smartParagraph.lineBreakPause.name'),
       onChange: (value) => {
         this.draft = { ...this.draft, lineBreakPauseMs: value };
         void this.persistDraft();
@@ -54,8 +58,11 @@ export class SmartParagraphSettingsModal extends Modal {
     });
 
     this.addSecondsSetting({
-      desc: `Seconds before a paragraph break (${MIN_PAUSE_SECONDS}-${MAX_PAUSE_SECONDS}).`,
-      name: 'Paragraph pause',
+      desc: t('settings.smartParagraph.paragraphPause.desc', {
+        max: MAX_PAUSE_SECONDS,
+        min: MIN_PAUSE_SECONDS,
+      }),
+      name: t('settings.smartParagraph.paragraphPause.name'),
       onChange: (value) => {
         this.draft = { ...this.draft, paragraphPauseMs: value };
         void this.persistDraft();
@@ -64,7 +71,7 @@ export class SmartParagraphSettingsModal extends Modal {
     });
 
     new Setting(this.contentEl).addButton((button) => {
-      button.setButtonText('Reset').onClick(async () => {
+      button.setButtonText(t('common.reset')).onClick(async () => {
         this.draft = {
           lineBreakPauseMs: DEFAULT_PLUGIN_SETTINGS.smartParagraphLineBreakPauseMs,
           paragraphPauseMs: DEFAULT_PLUGIN_SETTINGS.smartParagraphParagraphPauseMs,

@@ -154,7 +154,7 @@ describe('ModelInstallManager', () => {
       await harness.manager.init();
 
       await expect(harness.manager.install(sampleMoonshineSelection())).rejects.toThrow(
-        'does not support Japanese',
+        'does not support 日本語',
       );
       expect(harness.sidecarConnection.installModel).not.toHaveBeenCalled();
     });
@@ -460,7 +460,7 @@ describe('ModelInstallManager', () => {
       harness.sidecarConnection.probeModelSelection.mockResolvedValueOnce(sampleReadyProbeResult());
 
       await expect(harness.manager.select(sampleSelection())).rejects.toThrow(
-        'does not support Japanese',
+        'does not support 日本語',
       );
 
       expect(harness.getSettings().dictationLanguage).toBe('ja');
