@@ -17,9 +17,11 @@ use crate::session::SpeakingStyle;
 
 const JSON_FRAME_KIND: u8 = 0x01;
 const AUDIO_FRAME_KIND: u8 = 0x02;
+const SYNTHESIS_AUDIO_FRAME_KIND: u8 = 0x03;
 const FRAME_HEADER_LENGTH: usize = 5;
 const MAX_FRAME_PAYLOAD: usize = 16 * 1024 * 1024;
 const SESSION_ID_BYTES: usize = 16;
+const SYNTHESIS_AUDIO_HEADER_BYTES: usize = 8;
 
 pub const PCM_SAMPLE_RATE_HZ: usize = 16_000;
 pub const PCM_CHANNEL_COUNT: usize = 1;
@@ -331,10 +333,28 @@ pub enum Command {
         install_id: String,
         model_id: String,
         #[serde(default)]
+        artifact_ids: Vec<String>,
+        #[serde(default)]
         model_store_path_override: Option<String>,
     },
     CancelModelInstall {
         install_id: String,
+    },
+    StartSynthesis {
+        synthesis_id: u32,
+        model_selection: SelectedModel,
+        voice_id: String,
+        speed: f32,
+        chunks: Vec<SynthesisTextChunk>,
+        #[serde(default)]
+        model_store_path_override: Option<String>,
+    },
+    CancelSynthesis {
+        synthesis_id: u32,
+    },
+    SynthesisPlaybackPosition {
+        synthesis_id: u32,
+        played_through_seq: u32,
     },
     StopSession {
         session_id: String,
@@ -408,6 +428,32 @@ pub enum Event {
         model_id: String,
         state: ModelInstallState,
         total_bytes: Option<u64>,
+    },
+    SynthesisStarted {
+        synthesis_id: u32,
+        sample_rate: u32,
+    },
+    SynthesisChunkMeta {
+        synthesis_id: u32,
+        seq: u32,
+        source_range: SourceRange,
+        duration_ms: u64,
+    },
+    SynthesisComplete {
+        synthesis_id: u32,
+    },
+    SynthesisError {
+        synthesis_id: u32,
+        code: String,
+        message: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        details: Option<String>,
+    },
+    #[serde(skip)]
+    SynthesisAudio {
+        synthesis_id: u32,
+        seq: u32,
+        pcm16le: Vec<u8>,
     },
     SystemInfo {
         sidecar_version: String,
@@ -483,6 +529,20 @@ pub enum Event {
         #[serde(skip_serializing_if = "Option::is_none")]
         session_id: Option<String>,
     },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SourceRange {
+    pub from: u32,
+    pub to: u32,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SynthesisTextChunk {
+    pub text: String,
+    pub source_range: SourceRange,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -582,9 +642,30 @@ pub fn decode_audio_frame_envelope(payload: &[u8]) -> Result<AudioFrame> {
 }
 
 pub fn write_event_frame<W: Write>(writer: &mut W, event: &Event) -> Result<()> {
+    ensure!(
+        !matches!(event, Event::SynthesisAudio { .. }),
+        "binary synthesis audio must use write_synthesis_audio_frame"
+    );
     let payload = serde_json::to_vec(&EventEnvelope::new(event.clone()))
         .context("failed to serialize event envelope")?;
     write_frame(writer, JSON_FRAME_KIND, &payload)
+}
+
+pub fn write_synthesis_audio_frame<W: Write>(
+    writer: &mut W,
+    synthesis_id: u32,
+    seq: u32,
+    pcm16le: &[u8],
+) -> Result<()> {
+    ensure!(
+        pcm16le.len().is_multiple_of(2),
+        "PCM16LE payload length must be even"
+    );
+    let mut payload = Vec::with_capacity(SYNTHESIS_AUDIO_HEADER_BYTES + pcm16le.len());
+    payload.extend_from_slice(&synthesis_id.to_le_bytes());
+    payload.extend_from_slice(&seq.to_le_bytes());
+    payload.extend_from_slice(pcm16le);
+    write_frame(writer, SYNTHESIS_AUDIO_FRAME_KIND, &payload)
 }
 
 fn write_frame<W: Write>(writer: &mut W, frame_kind: u8, payload: &[u8]) -> Result<()> {
@@ -648,9 +729,10 @@ mod tests {
         AUDIO_FRAME_KIND, AccelerationPreference, AudioFrame, Command, Event, EventEnvelope,
         FRAME_HEADER_LENGTH, IncomingFrame, JSON_FRAME_KIND, ListeningMode, MAX_FRAME_PAYLOAD,
         ModelInstallState, ModelProbeStatus, PCM_BYTES_PER_FRAME, QueueBackpressureTier,
-        SelectedModel, SessionStopReason, SpeakingStyle, TimestampGranularity, TimestampSource,
-        TranscriptSegment, TranscriptWord, encode_audio_frame_envelope, read_frame,
-        write_event_frame, write_frame,
+        SYNTHESIS_AUDIO_FRAME_KIND, SelectedModel, SessionStopReason, SourceRange, SpeakingStyle,
+        TimestampGranularity, TimestampSource, TranscriptSegment, TranscriptWord,
+        encode_audio_frame_envelope, read_frame, write_event_frame, write_frame,
+        write_synthesis_audio_frame,
     };
     use crate::engine::capabilities::{ModelFamilyId, RuntimeId};
     use uuid::Uuid;
@@ -786,6 +868,47 @@ mod tests {
             .expect("frame should exist");
 
         assert_eq!(parsed, IncomingFrame::Command(Command::ProbeSystemAudio));
+    }
+
+    #[test]
+    fn start_synthesis_command_round_trips_source_ranges() {
+        let payload = serde_json::to_vec(&serde_json::json!({
+            "type": "start_synthesis",
+            "synthesisId": 7,
+            "modelSelection": {
+                "kind": "catalog_model",
+                "runtimeId": "onnx_runtime",
+                "familyId": "pocket_tts",
+                "modelId": "pocket_tts_english_2026_04_int8"
+            },
+            "voiceId": "alba",
+            "speed": 1.25,
+            "chunks": [{
+                "text": "Read this sentence.",
+                "sourceRange": { "from": 10, "to": 29 }
+            }]
+        }))
+        .unwrap();
+        let mut framed = Vec::new();
+        write_frame(&mut framed, JSON_FRAME_KIND, &payload).unwrap();
+        let IncomingFrame::Command(Command::StartSynthesis { chunks, speed, .. }) =
+            read_frame(&mut framed.as_slice()).unwrap().unwrap()
+        else {
+            panic!("expected start_synthesis");
+        };
+        assert_eq!(speed, 1.25);
+        assert_eq!(chunks[0].source_range, SourceRange { from: 10, to: 29 });
+    }
+
+    #[test]
+    fn synthesis_audio_frame_uses_binary_kind_and_little_endian_header() {
+        let mut framed = Vec::new();
+        write_synthesis_audio_frame(&mut framed, 0x0102_0304, 9, &[0x01, 0x80]).unwrap();
+        assert_eq!(framed[0], SYNTHESIS_AUDIO_FRAME_KIND);
+        assert_eq!(u32::from_le_bytes(framed[1..5].try_into().unwrap()), 10);
+        assert_eq!(&framed[5..9], &0x0102_0304_u32.to_le_bytes());
+        assert_eq!(&framed[9..13], &9_u32.to_le_bytes());
+        assert_eq!(&framed[13..], &[0x01, 0x80]);
     }
 
     #[test]

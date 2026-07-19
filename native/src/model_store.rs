@@ -5,7 +5,7 @@ use anyhow::{Context, Result, anyhow, ensure};
 use directories::ProjectDirs;
 use serde::{Deserialize, Serialize};
 
-use crate::catalog::ModelCatalog;
+use crate::catalog::{ModelArtifact, ModelCatalog};
 use crate::engine::capabilities::{ModelFamilyId, RuntimeId};
 
 const INSTALL_METADATA_FILENAME: &str = "install.json";
@@ -34,10 +34,14 @@ pub struct InstallMetadata {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct InstalledArtifact {
+    #[serde(default, rename = "artifactId")]
+    pub artifact_id: String,
     pub filename: String,
     pub sha256: String,
     #[serde(rename = "sizeBytes")]
     pub size_bytes: u64,
+    #[serde(default, rename = "voiceId", skip_serializing_if = "Option::is_none")]
+    pub voice_id: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -58,6 +62,8 @@ pub struct InstalledModelRecord {
     pub runtime_path: Option<String>,
     #[serde(rename = "totalSizeBytes")]
     pub total_size_bytes: u64,
+    #[serde(rename = "installedVoiceIds")]
+    pub installed_voice_ids: Vec<String>,
 }
 
 pub fn create_install_metadata(
@@ -76,15 +82,40 @@ pub fn create_install_metadata(
             )
         })?;
 
+    let artifacts = model
+        .artifacts
+        .iter()
+        .filter(|artifact| artifact.required)
+        .cloned()
+        .collect::<Vec<_>>();
+    create_install_metadata_for_artifacts(catalog, runtime_id, family_id, model_id, &artifacts)
+}
+
+pub fn create_install_metadata_for_artifacts(
+    catalog: &ModelCatalog,
+    runtime_id: RuntimeId,
+    family_id: ModelFamilyId,
+    model_id: &str,
+    artifacts: &[ModelArtifact],
+) -> Result<InstallMetadata> {
+    ensure!(
+        catalog
+            .find_model(runtime_id, family_id, model_id)
+            .is_some(),
+        "unknown model {}:{}:{model_id}",
+        runtime_id.as_str(),
+        family_id.as_str()
+    );
+
     Ok(InstallMetadata {
-        artifacts: model
-            .artifacts
+        artifacts: artifacts
             .iter()
-            .filter(|artifact| artifact.required)
             .map(|artifact| InstalledArtifact {
+                artifact_id: artifact.artifact_id.clone(),
                 filename: artifact.filename.clone(),
                 sha256: artifact.sha256.clone(),
                 size_bytes: artifact.size_bytes,
+                voice_id: artifact.voice_id.clone(),
             })
             .collect(),
         catalog_version: catalog.catalog_version,
@@ -310,6 +341,11 @@ pub fn scan_installed_models(
                         .iter()
                         .map(|artifact| artifact.size_bytes)
                         .sum(),
+                    installed_voice_ids: metadata
+                        .artifacts
+                        .iter()
+                        .filter_map(|artifact| artifact.voice_id.clone())
+                        .collect(),
                 });
             }
         }
@@ -368,9 +404,11 @@ mod tests {
         let temp_dir = tempfile_dir("metadata");
         let metadata = InstallMetadata {
             artifacts: vec![InstalledArtifact {
+                artifact_id: "model".to_string(),
                 filename: "model.bin".to_string(),
                 sha256: "abc".to_string(),
                 size_bytes: 42,
+                voice_id: None,
             }],
             catalog_version: 2,
             runtime_id: RuntimeId::WhisperCpp,
@@ -394,9 +432,11 @@ mod tests {
             &install_dir,
             &InstallMetadata {
                 artifacts: vec![InstalledArtifact {
+                    artifact_id: "model".to_string(),
                     filename: "missing.bin".to_string(),
                     sha256: "abc".to_string(),
                     size_bytes: 10,
+                    voice_id: None,
                 }],
                 catalog_version: 2,
                 runtime_id: RuntimeId::WhisperCpp,

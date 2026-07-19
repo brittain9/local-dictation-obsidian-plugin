@@ -42,7 +42,7 @@ const TOKENIZER_FILENAME: &str = "tokenizer.json";
 #[derive(Default)]
 pub struct CohereTranscribeAdapter;
 
-const CAPABILITIES: ModelFamilyCapabilities = ModelFamilyCapabilities {
+static CAPABILITIES: ModelFamilyCapabilities = ModelFamilyCapabilities {
     task: ModelTask::Stt,
     available_voices: Vec::new(),
     supports_speed_control: false,

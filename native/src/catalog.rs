@@ -450,7 +450,7 @@ mod tests {
 
         assert_eq!(model.task, ModelTask::Tts);
         assert_eq!(model.default_voice.as_deref(), Some("alba"));
-        assert_eq!(model.required_download_bytes(), 131_658_398);
+        assert_eq!(model.required_download_bytes(), 131_654_174);
 
         let voices = model
             .artifacts

@@ -20,7 +20,7 @@ use tokio::sync::Notify;
 use crate::catalog::{CatalogModel, ModelArtifact, ModelCatalog};
 use crate::engine::capabilities::{ModelFamilyId, RuntimeId};
 use crate::model_store::{
-    create_install_metadata, resolve_model_install_dir, write_install_metadata,
+    create_install_metadata_for_artifacts, resolve_model_install_dir, write_install_metadata,
 };
 use crate::panic_util::format_panic_message;
 use crate::protocol::{Event, ModelInstallState};
@@ -31,12 +31,14 @@ pub type ModelProbe =
 
 #[derive(Clone)]
 pub struct InstallRequest {
+    pub artifacts: Vec<ModelArtifact>,
     pub runtime_id: RuntimeId,
     pub family_id: ModelFamilyId,
     pub install_id: String,
     pub model: CatalogModel,
     pub model_id: String,
     pub store_root: PathBuf,
+    pub incremental: bool,
     pub catalog: Arc<ModelCatalog>,
 }
 
@@ -151,7 +153,11 @@ impl ModelInstallManager {
         let family_id = request.family_id;
         let active_install_id = request.install_id.clone();
         let active_model_id = request.model_id.clone();
-        let total_bytes = request.model.required_download_bytes();
+        let total_bytes = request
+            .artifacts
+            .iter()
+            .map(|artifact| artifact.size_bytes)
+            .sum();
         let thread_event_tx = self.event_tx.clone();
         let thread_model_probe = Arc::clone(&self.model_probe);
         let join_handle = thread::spawn(move || {
@@ -257,7 +263,11 @@ fn run_install(
         family_id: request.family_id,
         install_id: request.install_id.clone(),
         model_id: request.model_id.clone(),
-        total_bytes: request.model.required_download_bytes(),
+        total_bytes: request
+            .artifacts
+            .iter()
+            .map(|artifact| artifact.size_bytes)
+            .sum(),
         tx: event_tx,
     };
 
@@ -457,16 +467,28 @@ async fn install_model_with_downloader(
     fs::create_dir_all(&stage_dir)
         .map_err(|error| fail_install(0, format!("Failed to create staging directory: {error}")))?;
 
-    let required_artifacts: Vec<&ModelArtifact> = request
-        .model
-        .artifacts
-        .iter()
-        .filter(|artifact| artifact.required)
-        .collect();
-    let artifact_count = required_artifacts.len();
+    if request.incremental {
+        if !target_dir.is_dir() {
+            cleanup_stage_dir(&stage_dir);
+            return Err(fail_install(
+                0,
+                "Install the read-aloud model before adding an optional voice.".to_string(),
+            ));
+        }
+        clone_install_tree(&target_dir, &stage_dir).map_err(|error| {
+            cleanup_stage_dir(&stage_dir);
+            fail_install(
+                0,
+                format!("Failed to stage the existing model install: {error:#}"),
+            )
+        })?;
+    }
+
+    let artifacts = request.artifacts.iter().collect::<Vec<_>>();
+    let artifact_count = artifacts.len();
     let mut downloaded_total = 0_u64;
 
-    for (artifact_index, artifact) in required_artifacts.iter().enumerate() {
+    for (artifact_index, artifact) in artifacts.iter().enumerate() {
         check_for_cancel(
             cancel_handle.as_ref(),
             reporter,
@@ -620,7 +642,7 @@ async fn install_model_with_downloader(
     let runtime_artifact = request.model.primary_artifact().ok_or_else(|| {
         fail_install(
             downloaded_total,
-            "Model is missing a transcription artifact.".to_string(),
+            "Model is missing its required runtime artifact.".to_string(),
         )
     })?;
     let runtime_path = stage_dir.join(&runtime_artifact.filename);
@@ -653,11 +675,19 @@ async fn install_model_with_downloader(
         downloaded_total,
     )?;
 
-    let metadata = create_install_metadata(
+    let installed_artifacts = request
+        .model
+        .artifacts
+        .iter()
+        .filter(|artifact| stage_dir.join(&artifact.filename).is_file())
+        .cloned()
+        .collect::<Vec<_>>();
+    let metadata = create_install_metadata_for_artifacts(
         &request.catalog,
         request.runtime_id,
         request.family_id,
         &request.model_id,
+        &installed_artifacts,
     )
     .map_err(|error| {
         cleanup_stage_dir(&stage_dir);
@@ -675,21 +705,6 @@ async fn install_model_with_downloader(
         downloaded_total,
     )?;
 
-    match fs::remove_dir_all(&target_dir) {
-        Ok(()) => {}
-        Err(error) if error.kind() == io::ErrorKind::NotFound => {}
-        Err(error) => {
-            cleanup_stage_dir(&stage_dir);
-            return Err(fail_install(
-                downloaded_total,
-                format!(
-                    "Failed to replace existing install {}: {error}",
-                    target_dir.display()
-                ),
-            ));
-        }
-    }
-
     fs::create_dir_all(&family_root).map_err(|error| {
         cleanup_stage_dir(&stage_dir);
         fail_install(
@@ -700,14 +715,11 @@ async fn install_model_with_downloader(
             ),
         )
     })?;
-    fs::rename(&stage_dir, &target_dir).map_err(|error| {
+    replace_install_dir(&stage_dir, &target_dir, &request.install_id).map_err(|error| {
         cleanup_stage_dir(&stage_dir);
         fail_install(
             downloaded_total,
-            format!(
-                "Failed to move staged install into place {}: {error}",
-                target_dir.display()
-            ),
+            format!("Failed to activate staged install: {error:#}"),
         )
     })?;
 
@@ -720,6 +732,57 @@ async fn install_model_with_downloader(
             Some(reporter.total_bytes),
         )
         .map_err(|error| fail_install(downloaded_total, error.to_string()))?;
+    Ok(())
+}
+
+fn clone_install_tree(source: &Path, target: &Path) -> Result<()> {
+    for entry in
+        fs::read_dir(source).with_context(|| format!("failed to read {}", source.display()))?
+    {
+        let entry = entry?;
+        let file_type = entry.file_type()?;
+        let destination = target.join(entry.file_name());
+        if file_type.is_dir() {
+            fs::create_dir_all(&destination)?;
+            clone_install_tree(&entry.path(), &destination)?;
+        } else if file_type.is_file() {
+            // The staged metadata is rewritten before promotion. Copy it so a
+            // hard link cannot mutate the live install's sidecar in place.
+            if entry.file_name() == "install.json" {
+                fs::copy(entry.path(), &destination)?;
+            } else {
+                fs::hard_link(entry.path(), &destination)
+                    .or_else(|_| fs::copy(entry.path(), &destination).map(|_| ()))?;
+            }
+        } else {
+            anyhow::bail!(
+                "unsupported entry in model install: {}",
+                entry.path().display()
+            );
+        }
+    }
+    Ok(())
+}
+
+fn replace_install_dir(stage_dir: &Path, target_dir: &Path, install_id: &str) -> Result<()> {
+    let backup_dir = target_dir.with_extension(format!("backup-{install_id}"));
+    cleanup_stage_dir(&backup_dir);
+    let had_existing = match fs::rename(target_dir, &backup_dir) {
+        Ok(()) => true,
+        Err(error) if error.kind() == io::ErrorKind::NotFound => false,
+        Err(error) => return Err(error.into()),
+    };
+
+    if let Err(error) = fs::rename(stage_dir, target_dir) {
+        if had_existing {
+            let _ = fs::rename(&backup_dir, target_dir);
+        }
+        return Err(error.into());
+    }
+    if had_existing {
+        fs::remove_dir_all(&backup_dir)
+            .with_context(|| format!("failed to remove {}", backup_dir.display()))?;
+    }
     Ok(())
 }
 
@@ -828,6 +891,7 @@ mod tests {
         ModelFamilyDescriptor, ModelRuntimeDescriptor,
     };
     use crate::engine::capabilities::{ModelFamilyId, ModelTask, RuntimeId};
+    use crate::model_store::read_install_metadata;
     use crate::protocol::{Event, ModelInstallState};
     use crate::transcription::TranscriptionError;
     use sha2::{Digest, Sha256};
@@ -1056,6 +1120,75 @@ mod tests {
             )),
             "completed event should report aggregate totals"
         );
+    }
+
+    #[test]
+    fn incremental_voice_install_preserves_runtime_and_merges_metadata() {
+        let model_bytes = b"runtime".to_vec();
+        let voice_bytes = b"voice".to_vec();
+        let mut runtime = build_artifact(
+            "model.bin",
+            "https://example.com/model.bin",
+            &model_bytes,
+            ArtifactRole::TranscriptionModel,
+        );
+        runtime.artifact_id = "runtime".to_string();
+        let mut voice = build_artifact(
+            "embeddings/cosette.safetensors",
+            "https://example.com/cosette.safetensors",
+            &voice_bytes,
+            ArtifactRole::Voice,
+        );
+        voice.artifact_id = "voice_cosette".to_string();
+        voice.required = false;
+        voice.voice_id = Some("cosette".to_string());
+        let mut request =
+            sample_request_with_artifacts("voice-model", vec![runtime.clone(), voice.clone()]);
+        request.artifacts = vec![runtime];
+        let (tx, _rx) = mpsc::channel();
+        let reporter = sample_reporter(&request, tx);
+        run_install_test(
+            &request,
+            Arc::new(InstallCancellation::new()),
+            &reporter,
+            &MemoryDownloadSource::new([(
+                "https://example.com/model.bin".to_string(),
+                model_bytes.clone(),
+            )]),
+            &test_probe,
+        )
+        .expect("base model should install");
+
+        request.install_id = "install-voice".to_string();
+        request.incremental = true;
+        request.artifacts = vec![voice];
+        let (tx, _rx) = mpsc::channel();
+        let reporter = sample_reporter(&request, tx);
+        run_install_test(
+            &request,
+            Arc::new(InstallCancellation::new()),
+            &reporter,
+            &MemoryDownloadSource::new([(
+                "https://example.com/cosette.safetensors".to_string(),
+                voice_bytes,
+            )]),
+            &test_probe,
+        )
+        .expect("voice should install incrementally");
+
+        let target = request
+            .store_root
+            .join("whisper_cpp")
+            .join("whisper")
+            .join("voice-model");
+        assert_eq!(fs::read(target.join("model.bin")).unwrap(), model_bytes);
+        assert!(target.join("embeddings/cosette.safetensors").is_file());
+        let metadata = read_install_metadata(&target).expect("metadata should load");
+        assert_eq!(metadata.artifacts.len(), 2);
+        assert!(metadata.artifacts.iter().any(|artifact| {
+            artifact.artifact_id == "voice_cosette"
+                && artifact.voice_id.as_deref() == Some("cosette")
+        }));
     }
 
     #[test]
@@ -1376,7 +1509,11 @@ mod tests {
             family_id: request.family_id,
             install_id: request.install_id.clone(),
             model_id: request.model_id.clone(),
-            total_bytes: request.model.required_download_bytes(),
+            total_bytes: request
+                .artifacts
+                .iter()
+                .map(|artifact| artifact.size_bytes)
+                .sum(),
             tx,
         }
     }
@@ -1448,10 +1585,12 @@ mod tests {
         };
 
         InstallRequest {
+            artifacts: model.artifacts.clone(),
             catalog: Arc::new(catalog),
             runtime_id: RuntimeId::WhisperCpp,
             family_id: ModelFamilyId::Whisper,
             install_id: "install-1".to_string(),
+            incremental: false,
             model,
             model_id: model_id.to_string(),
             store_root,

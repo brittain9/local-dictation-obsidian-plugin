@@ -784,15 +784,6 @@
           "sizeBytes": 24381
         },
         {
-          "artifactId": "bos_before_voice",
-          "role": "supporting_file",
-          "required": true,
-          "filename": "bos_before_voice.npy",
-          "downloadUrl": "https://huggingface.co/KevinAHM/pocket-tts-onnx/resolve/58a6d00cf13d239b6748cb0769f35c580a8f606c/onnx/english_2026-04/bos_before_voice.npy",
-          "sha256": "f46edf4f7007b7ba4ea58831f49d003e59e167b4641c44bb3addfe9231a780b1",
-          "sizeBytes": 4224
-        },
-        {
           "artifactId": "tokenizer",
           "role": "supporting_file",
           "required": true,

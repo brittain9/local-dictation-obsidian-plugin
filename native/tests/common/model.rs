@@ -19,6 +19,7 @@ use sha2::{Digest, Sha256};
 pub const TEST_MODEL_ID: &str = "whisper_tiny_en_q8_0";
 pub const MULTILINGUAL_WHISPER_MODEL_ID: &str = "whisper_large_v3_turbo_q8_0";
 pub const NEMOTRON_MODEL_ID: &str = "nemotron_asr_0_6b_int8_streaming_560ms";
+pub const POCKET_TTS_MODEL_ID: &str = "pocket_tts_english_2026_04_int8";
 
 /// Resolve a whisper model file for the suite. In priority order:
 /// 1. `STT_TEST_WHISPER_MODEL` — explicit path to an existing model.
@@ -148,6 +149,22 @@ pub fn require_nemotron_model() -> PathBuf {
             "could not obtain the pinned Nemotron assets: {error}\n  \
              Set STT_TEST_NEMOTRON_DIR=/path/to/model to reuse verified local assets, or \
              ensure network access for the catalog download."
+        )
+    })
+}
+
+pub fn require_pocket_tts_model() -> PathBuf {
+    resolve_catalog_model(
+        "POCKET_TTS_MODEL_DIR",
+        RuntimeId::OnnxRuntime,
+        ModelFamilyId::PocketTts,
+        POCKET_TTS_MODEL_ID,
+    )
+    .unwrap_or_else(|error| {
+        panic!(
+            "could not obtain the pinned Pocket TTS assets: {error}\n  Set \
+             POCKET_TTS_MODEL_DIR=/path/to/model to reuse verified local assets, or ensure \
+             network access for the pinned catalog download."
         )
     })
 }

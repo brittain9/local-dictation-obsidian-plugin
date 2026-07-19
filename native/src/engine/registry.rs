@@ -51,6 +51,9 @@ impl EngineRegistry {
         #[cfg(feature = "engine-nemotron-asr")]
         registry.register_adapter(Box::new(crate::adapters::nemotron_asr::NemotronAsrAdapter));
 
+        #[cfg(feature = "engine-pocket-tts")]
+        registry.register_adapter(Box::new(crate::adapters::pocket_tts::PocketTtsAdapter));
+
         registry
     }
 

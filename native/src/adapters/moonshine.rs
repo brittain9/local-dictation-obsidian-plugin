@@ -45,7 +45,7 @@ const REQUIRED_SIBLINGS: &[&str] = &[
     TOKENIZER_FILENAME,
 ];
 
-const CAPABILITIES: ModelFamilyCapabilities = ModelFamilyCapabilities {
+static CAPABILITIES: ModelFamilyCapabilities = ModelFamilyCapabilities {
     task: ModelTask::Stt,
     available_voices: Vec::new(),
     supports_speed_control: false,
