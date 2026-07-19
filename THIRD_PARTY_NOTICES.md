@@ -123,24 +123,6 @@ The Nemotron adapter's native Rust graph orchestration and feature frontend
 follow these reference implementations' published behavior. No NeMo,
 sherpa-onnx, or kaldi-native-fbank binary is linked or bundled.
 
-## Kyutai Pocket TTS English model
-
-- Work: Pocket TTS `english_2026-04`
-- Creator: Kyutai
-- Voice-state source revision:
-  `kyutai/pocket-tts-without-voice-cloning@e041936c75475d350b405bc870bcf7c22da4e9e6`
-- INT8 ONNX export revision:
-  `KevinAHM/pocket-tts-onnx@58a6d00cf13d239b6748cb0769f35c580a8f606c`
-- License: Creative Commons Attribution 4.0 International (CC BY 4.0)
-  https://creativecommons.org/licenses/by/4.0/
-
-The model catalog downloads the pinned English inference graphs, tokenizer,
-and selected Kyutai voice states on demand. These learned model materials are
-not MIT-licensed and are not embedded in the plugin or sidecar distribution.
-The ONNX export and int8 quantization change the upstream model's packaging and
-numerical representation. No endorsement by Kyutai or the export maintainer is
-implied.
-
 ## FLEURS multilingual speech fixtures
 
 - Work: FLEURS: Few-shot Learning Evaluation of Universal Representations of
