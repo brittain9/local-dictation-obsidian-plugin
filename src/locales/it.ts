@@ -746,6 +746,8 @@ export const it = {
     'Il motore di riconoscimento vocale ha ricevuto un frame di protocollo non valido.',
   'sidecarError.invalid_model_file':
     'Il file del modello è mancante, illeggibile o non supportato.',
+  'sidecarError.invalid_model_task':
+    'Il modello selezionato non può essere usato per la dettatura.',
   'sidecarError.invalid_model_store':
     'La cartella di archiviazione dei modelli non è disponibile o non è valida.',
   'sidecarError.missing_model_file': 'Il file del modello non esiste o non è un file regolare.',

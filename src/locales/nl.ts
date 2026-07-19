@@ -738,6 +738,8 @@ export const nl = {
   'sidecarError.invalid_frame': 'De spraakengine heeft een ongeldig protocolframe ontvangen.',
   'sidecarError.invalid_model_file':
     'Modelbestand ontbreekt, is onleesbaar of wordt niet ondersteund.',
+  'sidecarError.invalid_model_task':
+    'Het geselecteerde model kan niet voor dicteren worden gebruikt.',
   'sidecarError.invalid_model_store': 'De modelopslagmap is niet beschikbaar of ongeldig.',
   'sidecarError.missing_model_file': 'Modelbestand bestaat niet of is geen regulier bestand.',
   'sidecarError.no_active_install':

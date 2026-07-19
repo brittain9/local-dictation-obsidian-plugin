@@ -113,12 +113,18 @@ Verification at this boundary:
 
 - 269 Pocket-only native unit tests passed.
 - The pinned English model synthesized non-silent 24-kHz audio through the
-  production Rust adapter.
+  production worker. Its first audio frame arrived in 0.540 seconds on the
+  local Apple Silicon acceptance host.
+- The real-model worker test covers two ordered source ranges and verifies
+  monotonic metadata/audio sequence numbers.
 - The pinned sentence round-tripped through the repository's Whisper Tiny
   product adapter at 0.000 WER.
+- Behavioral worker tests verify the 30-second audio-ahead boundary, correlated
+  playback resume, stale acknowledgement rejection, and cancellation recovery.
 - TypeScript type checking and the focused extraction, playback, controller,
   connection, protocol, command, settings, and model-manager tests passed.
 
-Remaining release work is the full repository quality suite, the required
-Standards and Spec review with all findings resolved, PR publication, and
-green hosted checks.
+The required Standards and Spec reviews completed, and their lifecycle,
+installer rollback, task-axis, extraction, localization, voice-selection, and
+behavioral-test findings were resolved. Remaining release work is the final
+full repository quality suite, PR publication, and green hosted checks.

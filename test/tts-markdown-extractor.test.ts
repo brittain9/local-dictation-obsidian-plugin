@@ -46,6 +46,14 @@ describe('extractSpeakableMarkdown', () => {
         .join(''),
     ).toBe('world');
   });
+
+  it('drops same-line and multiline display math without dropping surrounding prose', () => {
+    const source = ['Before $$E = mc^2$$ after.', '$$', 'hidden + formula', '$$', 'Finish.'].join(
+      '\n',
+    );
+
+    expect(extractSpeakableMarkdown(source).text).toBe('Before after. Finish.');
+  });
 });
 
 describe('segmentSpeakableText', () => {

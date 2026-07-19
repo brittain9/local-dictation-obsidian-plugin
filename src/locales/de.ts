@@ -750,6 +750,8 @@ export const de = {
   'sidecarError.invalid_frame': 'Die Sprach-Engine hat einen ungültigen Protokollrahmen empfangen.',
   'sidecarError.invalid_model_file':
     'Die Modelldatei fehlt, ist nicht lesbar oder wird nicht unterstützt.',
+  'sidecarError.invalid_model_task':
+    'Das ausgewählte Modell kann nicht zum Diktieren verwendet werden.',
   'sidecarError.invalid_model_store': 'Der Modellspeicherordner ist nicht verfügbar oder ungültig.',
   'sidecarError.missing_model_file': 'Modelldatei existiert nicht oder ist keine normale Datei.',
   'sidecarError.no_active_install': 'Es gibt keine aktive Modellinstallation zum Abbrechen.',

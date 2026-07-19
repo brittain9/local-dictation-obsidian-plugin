@@ -5,7 +5,7 @@ import {
   catalogModelSupportsLanguage,
   dictationLanguageLabel,
 } from '../language/dictation-language';
-import { formatBytes } from '../shared/format-utils';
+import { formatBytes, formatVoiceLabel } from '../shared/format-utils';
 import { t } from '../shared/i18n';
 import type { UserFeedback } from '../shared/user-feedback';
 import { resolveEngineCapabilities } from './capability-view';
@@ -441,7 +441,7 @@ export class ManageModelsModal extends Modal {
       const voiceId = artifact.voiceId;
       if (voiceId === undefined) continue;
       const voiceSetting = new Setting(container)
-        .setName(voiceLabel(voiceId))
+        .setName(formatVoiceLabel(voiceId))
         .setDesc(t('models.manage.optionalVoice'));
       voiceSetting.settingEl.addClass('local-stt-voice-row');
       if (installed?.installedVoiceIds.includes(voiceId) ?? false) {
@@ -605,10 +605,6 @@ export class ManageModelsModal extends Modal {
 
     return frag;
   }
-}
-
-function voiceLabel(voiceId: string): string {
-  return `${voiceId.charAt(0).toUpperCase()}${voiceId.slice(1)}`;
 }
 
 function getRowKey(row: ModelRowState): string {

@@ -1,16 +1,27 @@
 import type { Editor } from 'obsidian';
 
 import { PcmPlaybackQueue } from '../audio/pcm-playback-queue';
-import type { ModelCatalogRecord } from '../models/model-management-types';
+import {
+  type CatalogModelSelection,
+  type ModelCatalogRecord,
+  matchesModelTriple,
+} from '../models/model-management-types';
 import type { PluginSettings } from '../settings/plugin-settings';
 import { t } from '../shared/i18n';
 import type { PluginLogger } from '../shared/plugin-logger';
 import type { UserFeedback } from '../shared/user-feedback';
 import type { SidecarEvent, SynthesisAudioFrame, SynthesisTextChunk } from '../sidecar/protocol';
 import type { SidecarConnection } from '../sidecar/sidecar-connection';
+import { localizeKnownSidecarEventCode } from '../sidecar/sidecar-event-localization';
 import { extractAndSegmentMarkdown } from './markdown-extractor';
 
 export type ReadAloudState = 'idle' | 'paused' | 'reading';
+
+interface SynthesisConfiguration {
+  modelSelection: CatalogModelSelection;
+  modelStorePathOverride?: string;
+  voiceId: string;
+}
 
 interface ReadAloudControllerDependencies {
   feedback: Pick<UserFeedback, 'show'>;
@@ -78,13 +89,17 @@ export class ReadAloudController {
       this.deps.feedback.show({ intent: 'warning', message: t('tts.notice.noText') });
       return;
     }
+    const configuration = this.resolveSynthesisConfiguration();
+    if (configuration === null) return;
     if (this.deps.isDictationBusy()) await this.deps.stopDictation();
-    await this.startChunks(chunks, this.deps.getSettings().ttsSpeed);
+    await this.startChunks(chunks, this.deps.getSettings().ttsSpeed, configuration);
   }
 
   async togglePaused(): Promise<void> {
-    if (!this.isActive()) return;
+    const synthesisId = this.activeSynthesisId;
+    if (synthesisId === null) return;
     const paused = await this.playback.togglePaused();
+    if (this.activeSynthesisId !== synthesisId) return;
     this.setState(paused ? 'paused' : 'reading');
   }
 
@@ -101,7 +116,9 @@ export class ReadAloudController {
       this.stop();
       return;
     }
-    await this.startChunks(remaining, speed);
+    const configuration = this.resolveSynthesisConfiguration();
+    if (configuration === null) return;
+    await this.startChunks(remaining, speed, configuration);
   }
 
   dispose(): void {
@@ -112,35 +129,15 @@ export class ReadAloudController {
     this.releaseEvents = null;
   }
 
-  private async startChunks(chunks: SynthesisTextChunk[], speed: number): Promise<void> {
-    if (this.activeSynthesisId !== null) {
-      this.deps.sidecarConnection.cancelSynthesis(this.activeSynthesisId);
+  private async startChunks(
+    chunks: SynthesisTextChunk[],
+    speed: number,
+    configuration: SynthesisConfiguration,
+  ): Promise<void> {
+    const previousSynthesisId = this.activeSynthesisId;
+    if (previousSynthesisId !== null) {
+      this.deps.sidecarConnection.cancelSynthesis(previousSynthesisId);
     }
-    const settings = this.deps.getSettings();
-    const selection = settings.selectedTtsModel;
-    if (selection === null || selection.kind !== 'catalog_model') {
-      this.deps.feedback.show({
-        intent: 'warning',
-        message: t('tts.notice.modelRequired'),
-      });
-      this.clearActive();
-      return;
-    }
-    const catalogModel = this.deps
-      .getCatalog()
-      .models.find(
-        (model) =>
-          model.runtimeId === selection.runtimeId &&
-          model.familyId === selection.familyId &&
-          model.modelId === selection.modelId,
-      );
-    const voiceId = settings.selectedTtsVoice ?? catalogModel?.defaultVoice ?? null;
-    if (voiceId === null) {
-      this.deps.feedback.show({ intent: 'warning', message: t('tts.notice.voiceRequired') });
-      this.clearActive();
-      return;
-    }
-
     const synthesisId = this.allocateSynthesisId();
     this.activeChunks = chunks;
     this.activeSynthesisId = synthesisId;
@@ -151,15 +148,12 @@ export class ReadAloudController {
     try {
       await this.deps.sidecarConnection.startSynthesis({
         chunks,
-        modelSelection: selection,
-        ...(settings.modelStorePathOverride.length > 0
-          ? { modelStorePathOverride: settings.modelStorePathOverride }
-          : {}),
+        ...configuration,
         speed,
         synthesisId,
-        voiceId,
       });
     } catch (error) {
+      if (this.activeSynthesisId !== synthesisId) return;
       this.deps.logger?.error('tts', 'failed to start read aloud', error);
       this.deps.feedback.show({
         cause: error,
@@ -168,6 +162,45 @@ export class ReadAloudController {
       });
       this.clearActive();
     }
+  }
+
+  private resolveSynthesisConfiguration(): SynthesisConfiguration | null {
+    const settings = this.deps.getSettings();
+    const selection = settings.selectedTtsModel;
+    if (selection === null || selection.kind !== 'catalog_model') {
+      this.deps.feedback.show({
+        intent: 'warning',
+        message: t('tts.notice.modelRequired'),
+      });
+      this.clearActive();
+      return null;
+    }
+    const catalogModel = this.deps
+      .getCatalog()
+      .models.find((model) =>
+        matchesModelTriple(model, selection.runtimeId, selection.familyId, selection.modelId),
+      );
+    if (catalogModel === undefined) {
+      this.deps.feedback.show({
+        intent: 'warning',
+        message: t('tts.notice.modelRequired'),
+      });
+      this.clearActive();
+      return null;
+    }
+    const voiceId = settings.selectedTtsVoice ?? catalogModel.defaultVoice ?? null;
+    if (voiceId === null) {
+      this.deps.feedback.show({ intent: 'warning', message: t('tts.notice.voiceRequired') });
+      this.clearActive();
+      return null;
+    }
+    return {
+      modelSelection: selection,
+      ...(settings.modelStorePathOverride.length > 0
+        ? { modelStorePathOverride: settings.modelStorePathOverride }
+        : {}),
+      voiceId,
+    };
   }
 
   private handleEvent(event: SidecarEvent): void {
@@ -184,13 +217,15 @@ export class ReadAloudController {
       case 'synthesis_complete':
         this.playback.markGenerationComplete();
         break;
-      case 'synthesis_error':
+      case 'synthesis_error': {
+        const message = localizeKnownSidecarEventCode(event.code) ?? event.message;
         this.deps.feedback.show({
           intent: 'error',
-          message: `${event.message}${event.details === undefined ? '' : ` (${event.details})`}`,
+          message: `${message}${event.details === undefined ? '' : ` (${event.details})`}`,
         });
         this.clearActive();
         break;
+      }
       case 'synthesis_chunk_meta':
         break;
     }

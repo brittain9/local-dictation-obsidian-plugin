@@ -741,6 +741,8 @@ export const fr = {
   'sidecarError.invalid_frame': 'Le moteur vocal a reçu une trame de protocole non valide.',
   'sidecarError.invalid_model_file':
     'Le fichier modèle est manquant, illisible ou non pris en charge.',
+  'sidecarError.invalid_model_task':
+    'Le modèle sélectionné ne peut pas être utilisé pour la dictée.',
   'sidecarError.invalid_model_store':
     'Le dossier de stockage des modèles est indisponible ou non valide.',
   'sidecarError.missing_model_file':

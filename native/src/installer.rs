@@ -274,13 +274,7 @@ fn run_install(
     let downloader = match HttpDownloadSource::new() {
         Ok(source) => source,
         Err(message) => {
-            let _ = reporter.send(
-                ModelInstallState::Failed,
-                Some(message),
-                None,
-                0,
-                Some(reporter.total_bytes),
-            );
+            let _ = reporter.send(ModelInstallState::Failed, Some(message), None, 0);
             return;
         }
     };
@@ -293,7 +287,6 @@ fn run_install(
                 Some(format!("Failed to create installer runtime: {error}")),
                 None,
                 0,
-                Some(reporter.total_bytes),
             );
             return;
         }
@@ -319,7 +312,6 @@ fn run_install(
                     Some(message),
                     None,
                     downloaded_bytes,
-                    Some(reporter.total_bytes),
                 );
             }
         }
@@ -422,7 +414,6 @@ impl InstallReporter {
         message: Option<String>,
         details: Option<String>,
         downloaded_bytes: u64,
-        total_bytes: Option<u64>,
     ) -> Result<()> {
         self.tx
             .send(Event::ModelInstallUpdate {
@@ -434,7 +425,7 @@ impl InstallReporter {
                 message,
                 model_id: self.model_id.clone(),
                 state,
-                total_bytes,
+                total_bytes: Some(self.total_bytes),
             })
             .context("failed to emit install progress event")
     }
@@ -484,11 +475,10 @@ async fn install_model_with_downloader(
         })?;
     }
 
-    let artifacts = request.artifacts.iter().collect::<Vec<_>>();
-    let artifact_count = artifacts.len();
+    let artifact_count = request.artifacts.len();
     let mut downloaded_total = 0_u64;
 
-    for (artifact_index, artifact) in artifacts.iter().enumerate() {
+    for (artifact_index, artifact) in request.artifacts.iter().enumerate() {
         check_for_cancel(
             cancel_handle.as_ref(),
             reporter,
@@ -518,7 +508,6 @@ async fn install_model_with_downloader(
                 Some(format!("Downloading {}", artifact.filename)),
                 artifact_details.clone(),
                 downloaded_total,
-                Some(reporter.total_bytes),
             )
             .map_err(|error| fail_install(downloaded_total, error.to_string()))?;
 
@@ -579,7 +568,6 @@ async fn install_model_with_downloader(
                     Some(format!("Downloading {}", artifact.filename)),
                     artifact_details.clone(),
                     downloaded_total + artifact_downloaded,
-                    Some(reporter.total_bytes),
                 )
                 .map_err(|error| {
                     fail_install(downloaded_total + artifact_downloaded, error.to_string())
@@ -592,7 +580,6 @@ async fn install_model_with_downloader(
                 Some(format!("Verifying {}", artifact.filename)),
                 artifact_details,
                 downloaded_total + artifact_downloaded,
-                Some(reporter.total_bytes),
             )
             .map_err(|error| {
                 fail_install(downloaded_total + artifact_downloaded, error.to_string())
@@ -653,7 +640,6 @@ async fn install_model_with_downloader(
             Some("Probing the installed model.".to_string()),
             None,
             downloaded_total,
-            Some(reporter.total_bytes),
         )
         .map_err(|error| fail_install(downloaded_total, error.to_string()))?;
 
@@ -729,7 +715,6 @@ async fn install_model_with_downloader(
             Some("Model install completed.".to_string()),
             None,
             downloaded_total,
-            Some(reporter.total_bytes),
         )
         .map_err(|error| fail_install(downloaded_total, error.to_string()))?;
     Ok(())
@@ -775,13 +760,26 @@ fn replace_install_dir(stage_dir: &Path, target_dir: &Path, install_id: &str) ->
 
     if let Err(error) = fs::rename(stage_dir, target_dir) {
         if had_existing {
-            let _ = fs::rename(&backup_dir, target_dir);
+            fs::rename(&backup_dir, target_dir).with_context(|| {
+                format!(
+                    "failed to activate {} ({error}) and failed to restore backup {}",
+                    target_dir.display(),
+                    backup_dir.display()
+                )
+            })?;
         }
         return Err(error.into());
     }
     if had_existing {
-        fs::remove_dir_all(&backup_dir)
-            .with_context(|| format!("failed to remove {}", backup_dir.display()))?;
+        // Activation is already committed. A stale backup is harmless and is
+        // removed at the start of the next promotion; cleanup failure must not
+        // report a successfully activated install as failed.
+        if let Err(error) = fs::remove_dir_all(&backup_dir) {
+            eprintln!(
+                "model install: failed to remove stale backup {}: {error}",
+                backup_dir.display()
+            );
+        }
     }
     Ok(())
 }
@@ -805,7 +803,6 @@ fn cancel_install(
         Some("Model install cancelled.".to_string()),
         None,
         downloaded_total,
-        Some(reporter.total_bytes),
     );
     InstallError::Cancelled
 }
@@ -884,7 +881,7 @@ mod tests {
     use super::{
         DownloadChunk, DownloadFuture, DownloadSource, DownloadStream, InstallCancellation,
         InstallError, InstallReporter, InstallRequest, ModelInstallManager, ModelProbe,
-        install_model_with_downloader,
+        install_model_with_downloader, replace_install_dir,
     };
     use crate::catalog::{
         ArtifactRole, CatalogModel, ModelArtifact, ModelCatalog, ModelCollection,
@@ -990,6 +987,24 @@ mod tests {
             }
             InstallError::Cancelled => panic!("install should not cancel"),
         }
+    }
+
+    #[test]
+    fn failed_activation_restores_the_previous_install() {
+        let request = sample_request();
+        let target = request.store_root.join("active-model");
+        fs::create_dir_all(&target).expect("target should create");
+        fs::write(target.join("model.bin"), b"working").expect("model should write");
+        let missing_stage = request.store_root.join("missing-stage");
+
+        replace_install_dir(&missing_stage, &target, "rollback")
+            .expect_err("missing stage should fail activation");
+
+        assert_eq!(
+            fs::read(target.join("model.bin")).expect("previous install should be restored"),
+            b"working"
+        );
+        assert!(!target.with_extension("backup-rollback").exists());
     }
 
     #[test]

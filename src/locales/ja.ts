@@ -736,6 +736,7 @@ export const ja = {
   'sidecarError.invalid_frame': '音声エンジンが無効なプロトコル フレームを受信しました。',
   'sidecarError.invalid_model_file':
     'モデル ファイルが見つからないか、読み取れない、またはサポートされていません。',
+  'sidecarError.invalid_model_task': '選択したモデルは音声入力には使用できません。',
   'sidecarError.invalid_model_store': 'モデルの保存フォルダーが利用できないか、無効です。',
   'sidecarError.missing_model_file':
     'モデル ファイルが存在しないか、通常のファイルではありません。',

@@ -6,7 +6,6 @@ export interface PcmPlaybackQueueCallbacks {
 type AudioContextFactory = () => AudioContext;
 
 interface ScheduledSource {
-  sequence: number;
   source: AudioBufferSourceNode;
 }
 
@@ -49,7 +48,7 @@ export class PcmPlaybackQueue {
     source.connect(context.destination);
     const startTime = Math.max(context.currentTime, this.nextStartTime);
     this.nextStartTime = startTime + buffer.duration;
-    this.scheduled.set(sequence, { sequence, source });
+    this.scheduled.set(sequence, { source });
     source.onended = () => {
       if (!this.scheduled.delete(sequence)) return;
       this.callbacks.onPlayedThrough(sequence);
@@ -68,9 +67,11 @@ export class PcmPlaybackQueue {
     if (context === null) return false;
     if (this.paused) {
       await context.resume();
+      if (this.context !== context) return false;
       this.paused = false;
     } else {
       await context.suspend();
+      if (this.context !== context) return false;
       this.paused = true;
     }
     return this.paused;

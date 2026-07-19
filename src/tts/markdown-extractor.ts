@@ -46,12 +46,7 @@ export function extractSpeakableMarkdown(source: string): MappedText {
       continue;
     }
 
-    if (/^\s*\$\$\s*$/u.test(line)) {
-      inMathBlock = !inMathBlock;
-      offset += lineWithEnding.length;
-      continue;
-    }
-    if (inMathBlock || TABLE_DIVIDER_PATTERN.test(line)) {
+    if (TABLE_DIVIDER_PATTERN.test(line)) {
       offset += lineWithEnding.length;
       continue;
     }
@@ -61,7 +56,13 @@ export function extractSpeakableMarkdown(source: string): MappedText {
       line.match(LIST_MARKER_PATTERN)?.[0].length ?? 0,
       line.match(BLOCKQUOTE_PATTERN)?.[0].length ?? 0,
     );
-    appendInline(line.slice(prefixLength), offset + prefixLength, output, sourceOffsets);
+    inMathBlock = appendWithoutDisplayMath(
+      line.slice(prefixLength),
+      offset + prefixLength,
+      inMathBlock,
+      output,
+      sourceOffsets,
+    );
 
     if (newlineLength > 0 && output.length > 0 && output.at(-1) !== ' ') {
       output.push(' ');
@@ -71,6 +72,35 @@ export function extractSpeakableMarkdown(source: string): MappedText {
   }
 
   return normalizeMappedText(output, sourceOffsets);
+}
+
+function appendWithoutDisplayMath(
+  line: string,
+  baseOffset: number,
+  startsInsideMath: boolean,
+  output: string[],
+  sourceOffsets: number[],
+): boolean {
+  let inMath = startsInsideMath;
+  let cursor = 0;
+  while (cursor < line.length) {
+    if (inMath) {
+      const close = line.indexOf('$$', cursor);
+      if (close < 0) return true;
+      inMath = false;
+      cursor = close + 2;
+      continue;
+    }
+    const open = line.indexOf('$$', cursor);
+    if (open < 0) {
+      appendInline(line.slice(cursor), baseOffset + cursor, output, sourceOffsets);
+      return false;
+    }
+    appendInline(line.slice(cursor, open), baseOffset + cursor, output, sourceOffsets);
+    inMath = true;
+    cursor = open + 2;
+  }
+  return inMath;
 }
 
 function appendInline(

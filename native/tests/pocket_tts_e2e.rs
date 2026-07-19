@@ -2,9 +2,15 @@
 
 mod common;
 
+use std::sync::Arc;
+use std::time::{Duration, Instant};
+
 use local_dictation_sidecar::adapters::pocket_tts::PocketTtsAdapter;
 use local_dictation_sidecar::engine::traits::ModelFamilyAdapter;
+use local_dictation_sidecar::engine::{EngineRegistry, ModelFamilyId, RuntimeId};
+use local_dictation_sidecar::protocol::{Event, SourceRange, SynthesisTextChunk};
 use local_dictation_sidecar::synthesis::SynthesisCancellation;
+use local_dictation_sidecar::synthesis_worker::{StartSynthesis, SynthesisWorker};
 
 #[test]
 #[ignore = "downloads the pinned Pocket TTS model"]
@@ -12,22 +18,106 @@ fn pinned_english_model_synthesizes_non_silent_pcm() {
     let model_path = common::model::require_pocket_tts_model();
     let model_dir = model_path
         .parent()
-        .expect("model path should have a parent");
-    let mut model = PocketTtsAdapter
-        .load_synthesis(&model_path)
-        .expect("Pocket TTS should load");
-    let output = model
-        .synthesize(
-            "Local speech keeps every word on this computer.",
-            &model_dir.join("embeddings/alba.safetensors"),
-            &SynthesisCancellation::new(),
-        )
-        .expect("Pocket TTS should synthesize");
+        .expect("model path should have a parent")
+        .to_path_buf();
+    let first = "Local speech keeps every word.";
+    let second = "On this computer.";
+    let source = format!("{first} {second}");
+    let first_end = u32::try_from(first.len()).expect("fixture length should fit u32");
+    let source_end = u32::try_from(source.len()).expect("fixture length should fit u32");
+    let expected_ranges = [
+        SourceRange {
+            from: 0,
+            to: first_end,
+        },
+        SourceRange {
+            from: first_end + 1,
+            to: source_end,
+        },
+    ];
+    let mut worker = SynthesisWorker::spawn(Arc::new(EngineRegistry::build()));
+    let started_at = Instant::now();
+    worker
+        .start(StartSynthesis {
+            synthesis_id: 1,
+            runtime_id: RuntimeId::OnnxRuntime,
+            family_id: ModelFamilyId::PocketTts,
+            model_path,
+            voice_path: model_dir.join("embeddings/alba.safetensors"),
+            speed: 1.0,
+            chunks: vec![
+                SynthesisTextChunk {
+                    text: first.to_string(),
+                    source_range: expected_ranges[0],
+                },
+                SynthesisTextChunk {
+                    text: second.to_string(),
+                    source_range: expected_ranges[1],
+                },
+            ],
+            cancellation: SynthesisCancellation::new(),
+        })
+        .expect("Pocket TTS worker should start");
 
-    assert_eq!(output.sample_rate, 24_000);
-    assert!(output.samples.len() > output.sample_rate as usize / 2);
-    assert!(output.samples.iter().any(|sample| sample.abs() > 0.001));
-    assert!(output.samples.iter().all(|sample| sample.is_finite()));
+    let deadline = Instant::now() + Duration::from_secs(30);
+    let mut sample_rate = None;
+    let mut metadata = Vec::new();
+    let mut audio_sequences = Vec::new();
+    let mut first_audio_latency = None;
+    let mut non_silent = false;
+    loop {
+        assert!(Instant::now() < deadline, "Pocket TTS worker timed out");
+        let Some(event) = worker.poll_event() else {
+            std::thread::sleep(Duration::from_millis(1));
+            continue;
+        };
+        match event {
+            Event::SynthesisStarted {
+                synthesis_id: 1,
+                sample_rate: rate,
+            } => sample_rate = Some(rate),
+            Event::SynthesisChunkMeta {
+                synthesis_id: 1,
+                seq,
+                source_range,
+                ..
+            } => metadata.push((seq, source_range)),
+            Event::SynthesisAudio {
+                synthesis_id: 1,
+                seq,
+                pcm16le,
+            } => {
+                first_audio_latency.get_or_insert_with(|| started_at.elapsed());
+                audio_sequences.push(seq);
+                non_silent |= pcm16le
+                    .chunks_exact(2)
+                    .any(|bytes| i16::from_le_bytes([bytes[0], bytes[1]]).unsigned_abs() > 32);
+            }
+            Event::SynthesisComplete { synthesis_id: 1 } => break,
+            Event::SynthesisError { code, message, .. } => {
+                panic!("Pocket TTS synthesis failed ({code}): {message}")
+            }
+            _ => {}
+        }
+    }
+
+    let first_audio_latency = first_audio_latency.expect("worker should emit audio");
+    eprintln!(
+        "Pocket TTS first audio: {:.3}s",
+        first_audio_latency.as_secs_f64()
+    );
+    assert_eq!(sample_rate, Some(24_000));
+    assert_eq!(audio_sequences, vec![0, 1]);
+    assert_eq!(
+        metadata,
+        vec![(0, expected_ranges[0]), (1, expected_ranges[1])]
+    );
+    assert!(non_silent);
+    assert!(
+        first_audio_latency <= Duration::from_secs(3),
+        "first audio took {:.3}s",
+        first_audio_latency.as_secs_f64()
+    );
 }
 
 #[cfg(feature = "engine-whisper")]

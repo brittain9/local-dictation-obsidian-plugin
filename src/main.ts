@@ -1,6 +1,6 @@
 import { dirname, join } from 'node:path';
 import { IS_PRODUCTION_BUILD } from 'virtual:build-mode';
-import { FileSystemAdapter, getLanguage, Platform, Plugin, setIcon } from 'obsidian';
+import { FileSystemAdapter, getLanguage, Menu, Platform, Plugin, setIcon } from 'obsidian';
 
 import { AudioCaptureStream } from './audio/audio-capture-stream';
 import { SidecarAudioLevelMeter } from './audio/sidecar-audio-level-meter';
@@ -18,6 +18,7 @@ import type { LlmCleanupFailure } from './llm/provider';
 import { createLlmRouter } from './llm/router';
 import { ManageModelsModal } from './models/manage-models-modal';
 import { ModelInstallManager } from './models/model-install-manager';
+import { matchesModelTriple } from './models/model-management-types';
 import { Session } from './session/session';
 import { logAccelerationFallbacks } from './settings/acceleration-info';
 import { LlmPresetStateStore } from './settings/llm-preset-state';
@@ -36,6 +37,7 @@ import {
   type SidecarInstallActionDeps,
 } from './settings/sidecar-settings-section';
 import { SetupWizardModal } from './setup/setup-wizard-modal';
+import { formatVoiceLabel } from './shared/format-utils';
 import { t } from './shared/i18n';
 import { createObsidianFeedbackPresenter } from './shared/obsidian-feedback-presenter';
 import { createPluginLogger, type PluginLogger } from './shared/plugin-logger';
@@ -596,7 +598,10 @@ export default class LocalSttPlugin extends Plugin {
     if (options.persist) {
       await this.saveData(this.settings);
     }
-    if (previousSettings.ttsSpeed !== this.settings.ttsSpeed) {
+    if (
+      previousSettings.ttsSpeed !== this.settings.ttsSpeed ||
+      previousSettings.selectedTtsVoice !== this.settings.selectedTtsVoice
+    ) {
       await this.readAloudController?.applySpeed(this.settings.ttsSpeed);
     }
     if (previousSettings.llmFeaturesEnabled !== this.settings.llmFeaturesEnabled) {
@@ -660,6 +665,29 @@ export default class LocalSttPlugin extends Plugin {
     status.createSpan({
       text: state === 'paused' ? t('tts.status.paused') : t('tts.status.reading'),
     });
+    const installedVoices = this.installedReadAloudVoices();
+    if (installedVoices.length > 0) {
+      const selectedVoice = this.settings.selectedTtsVoice ?? installedVoices[0];
+      const voice = status.createEl('button', {
+        attr: { 'aria-label': t('settings.readAloud.voice') },
+        cls: 'clickable-icon',
+      });
+      setIcon(voice, 'audio-waveform');
+      voice.addEventListener('click', (event) => {
+        const menu = new Menu();
+        for (const voiceId of installedVoices) {
+          menu.addItem((item) => {
+            item
+              .setTitle(formatVoiceLabel(voiceId))
+              .setChecked(voiceId === selectedVoice)
+              .onClick(() => {
+                void this.updateSettings({ ...this.settings, selectedTtsVoice: voiceId });
+              });
+          });
+        }
+        menu.showAtMouseEvent(event);
+      });
+    }
     const pause = status.createEl('button', {
       attr: { 'aria-label': t('commands.pauseResumeReadAloud') },
       cls: 'clickable-icon',
@@ -674,6 +702,17 @@ export default class LocalSttPlugin extends Plugin {
     });
     setIcon(stop, 'square');
     stop.addEventListener('click', () => this.requireReadAloudController().stop());
+  }
+
+  private installedReadAloudVoices(): string[] {
+    const selection = this.settings.selectedTtsModel;
+    if (selection === null || selection.kind !== 'catalog_model') return [];
+    const installed = this.modelInstallManager
+      ?.getState()
+      .installedModels.find((model) =>
+        matchesModelTriple(model, selection.runtimeId, selection.familyId, selection.modelId),
+      );
+    return installed?.installedVoiceIds ?? [];
   }
 
   private requirePresetStateStore(): LlmPresetStateStore {

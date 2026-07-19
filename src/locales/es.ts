@@ -743,6 +743,7 @@ export const es = {
     'El número máximo de hablantes debe ser al menos 1 o estar configurado en Automático.',
   'sidecarError.invalid_frame': 'El motor de voz recibió una trama de protocolo no válida.',
   'sidecarError.invalid_model_file': 'Falta el archivo del modelo, es ilegible o no es compatible.',
+  'sidecarError.invalid_model_task': 'El modelo seleccionado no se puede usar para dictar.',
   'sidecarError.invalid_model_store':
     'La carpeta de almacenamiento de modelos no está disponible o no es válida.',
   'sidecarError.missing_model_file': 'El archivo de modelo no existe o no es un archivo normal.',

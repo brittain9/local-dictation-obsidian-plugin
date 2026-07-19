@@ -742,6 +742,7 @@ export const pt = {
   'sidecarError.invalid_frame': 'O motor de voz recebeu uma trama de protocolo inválida.',
   'sidecarError.invalid_model_file':
     'O ficheiro do modelo está em falta, não pode ser lido ou não é suportado.',
+  'sidecarError.invalid_model_task': 'O modelo selecionado não pode ser usado para ditado.',
   'sidecarError.invalid_model_store':
     'A pasta de armazenamento dos modelos não está disponível ou não é válida.',
   'sidecarError.missing_model_file': 'O ficheiro do modelo não existe ou não é um ficheiro normal.',

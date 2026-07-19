@@ -730,6 +730,7 @@ export const en = {
     'Maximum speakers must be at least 1 or set to Automatic.',
   'sidecarError.invalid_frame': 'The speech engine received an invalid protocol frame.',
   'sidecarError.invalid_model_file': 'Model file is missing, unreadable, or unsupported.',
+  'sidecarError.invalid_model_task': 'The selected model cannot be used for dictation.',
   'sidecarError.invalid_model_store': 'The model storage folder is unavailable or invalid.',
   'sidecarError.invalid_synthesis_request': 'The read-aloud request is invalid.',
   'sidecarError.missing_model_file': 'Model file does not exist or is not a regular file.',

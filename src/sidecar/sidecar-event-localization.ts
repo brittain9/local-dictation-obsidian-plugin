@@ -10,6 +10,7 @@ export const SIDECAR_EVENT_TRANSLATION_KEYS = {
   invalid_diarization_speaker_limit: 'sidecarError.invalid_diarization_speaker_limit',
   invalid_frame: 'sidecarError.invalid_frame',
   invalid_model_file: 'sidecarError.invalid_model_file',
+  invalid_model_task: 'sidecarError.invalid_model_task',
   invalid_model_store: 'sidecarError.invalid_model_store',
   invalid_synthesis_request: 'sidecarError.invalid_synthesis_request',
   missing_model_file: 'sidecarError.missing_model_file',

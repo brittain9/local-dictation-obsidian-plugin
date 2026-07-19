@@ -62,4 +62,22 @@ describe('PcmPlaybackQueue', () => {
     expect(harness.context.suspend).toHaveBeenCalledOnce();
     expect(harness.context.resume).toHaveBeenCalledOnce();
   });
+
+  it('does not resurrect paused state when playback stops during suspend', async () => {
+    const harness = createHarness();
+    const suspend: { complete?: () => void } = {};
+    const suspended = new Promise<undefined>((resolve) => {
+      suspend.complete = () => resolve(undefined);
+    });
+    harness.context.suspend.mockReturnValue(suspended);
+    harness.queue.start();
+
+    const pausing = harness.queue.togglePaused();
+    harness.queue.stop();
+    if (suspend.complete === undefined) throw new Error('suspend did not start');
+    suspend.complete();
+
+    await expect(pausing).resolves.toBe(false);
+    expect(harness.queue.isPaused()).toBe(false);
+  });
 });

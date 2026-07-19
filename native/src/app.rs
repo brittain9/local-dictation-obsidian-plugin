@@ -692,6 +692,22 @@ impl AppState {
                     model_store_path_override.as_deref(),
                 ) {
                     Ok(resolved_model) => {
+                        if self
+                            .registry
+                            .adapter(resolved_model.runtime_id, resolved_model.family_id)
+                            .is_some_and(|adapter| adapter.capabilities().task != ModelTask::Stt)
+                        {
+                            events.push(Event::Error {
+                                code: "invalid_model_task".to_string(),
+                                details: Some(format!(
+                                    "family={} task=tts",
+                                    resolved_model.family_id.as_str()
+                                )),
+                                message: "The selected model is not a dictation model.".to_string(),
+                                session_id: Some(session_id),
+                            });
+                            return (ControlFlow::Continue, events);
+                        }
                         let use_gpu = resolve_use_gpu(
                             resolved_model.runtime_id,
                             acceleration_preference,
@@ -2143,6 +2159,13 @@ mod tests {
             adapter
         }
 
+        fn tts() -> Self {
+            let mut adapter = Self::for_family(RuntimeId::OnnxRuntime, ModelFamilyId::PocketTts);
+            adapter.capabilities.task = ModelTask::Tts;
+            adapter.capabilities.supports_streaming = true;
+            adapter
+        }
+
         /// Probe succeeds (so `StartSession` proceeds past model resolution),
         /// but the worker's async `load()` returns an error — simulating a
         /// corrupt or incompatible model file discovered only once the
@@ -2649,6 +2672,33 @@ mod tests {
         assert!(
             matches!(events.first(), Some(Event::Error { code, .. }) if code == "missing_model_file")
         );
+    }
+
+    #[test]
+    fn start_session_rejects_a_tts_model_before_starting_a_worker_session() {
+        let model_file_path = create_model_file();
+        let mut registry = EngineRegistry::default();
+        registry.register_runtime(Box::new(FakeRuntime::onnx()));
+        registry.register_adapter(Box::new(FakeAdapter::tts()));
+        let mut command = start_session_command("session-1", &model_file_path);
+        let Command::StartSession {
+            model_selection, ..
+        } = &mut command
+        else {
+            panic!("expected start session command");
+        };
+        *model_selection = SelectedModel::ExternalFile {
+            runtime_id: RuntimeId::OnnxRuntime,
+            family_id: ModelFamilyId::PocketTts,
+            file_path: model_file_path.display().to_string(),
+        };
+
+        let (_, events) = test_app_with_registry(Arc::new(registry)).handle_command(command);
+
+        assert!(matches!(
+            events.as_slice(),
+            [Event::Error { code, .. }] if code == "invalid_model_task"
+        ));
     }
 
     #[test]

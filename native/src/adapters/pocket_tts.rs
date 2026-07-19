@@ -253,9 +253,10 @@ impl PocketTtsModel {
                 "Synthesis text produced no tokens.",
             ));
         }
+        let token_count = token_ids.len();
         let voice_state = load_voice_state(voice_path, &self.config.flow_lm_state_manifest)?;
         let mut flow_state = state_values(&voice_state)?;
-        let token_value = dyn_value_i64(&[1, token_ids.len()], token_ids.clone())?;
+        let token_value = dyn_value_i64(&[1, token_count], token_ids)?;
         let text_outputs = run_named(
             &mut self.text_conditioner,
             vec![("token_ids".to_string(), token_value)],
@@ -275,9 +276,7 @@ impl PocketTtsModel {
         flow_state = output_state(outputs, 2, self.config.flow_lm_state_manifest.len())?;
 
         let mut current = vec![f32::NAN; self.config.latent_dim];
-        let empty_text = vec![];
-        let max_frames = (((token_ids.len() as f32 / TOKENS_PER_SECOND)
-            + GENERATION_PADDING_SECONDS)
+        let max_frames = (((token_count as f32 / TOKENS_PER_SECOND) + GENERATION_PADDING_SECONDS)
             * self.config.frame_rate)
             .ceil() as usize;
         let mut eos_step = None;
@@ -295,7 +294,7 @@ impl PocketTtsModel {
                     ),
                     (
                         "text_embeddings".to_string(),
-                        dyn_value_f32(&[1, 0, self.config.conditioning_dim], empty_text.clone())?,
+                        dyn_value_f32(&[1, 0, self.config.conditioning_dim], Vec::new())?,
                     ),
                 ],
                 flow_state,

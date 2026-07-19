@@ -13,6 +13,7 @@ import { updateInstallProgressElement } from '../models/model-install-progress';
 import { ExternalModelFileModal, ModelDetailsModal } from '../models/model-management-modals';
 import { matchesModelTriple } from '../models/model-management-types';
 import { deriveCurrentModelDisplay } from '../models/model-row-state';
+import { formatVoiceLabel } from '../shared/format-utils';
 import { t } from '../shared/i18n';
 import type { PluginLogger } from '../shared/plugin-logger';
 import type { UserFeedback } from '../shared/user-feedback';
@@ -266,7 +267,7 @@ export class LocalSttSettingTab extends PluginSettingTab {
         dropdown.addOption('', t('settings.readAloud.noVoices'));
       }
       for (const voice of installedVoices) {
-        dropdown.addOption(voice, `${voice.charAt(0).toUpperCase()}${voice.slice(1)}`);
+        dropdown.addOption(voice, formatVoiceLabel(voice));
       }
       dropdown.setValue(settings.selectedTtsVoice ?? installedVoices[0] ?? '');
       dropdown.setDisabled(installedVoices.length === 0);
