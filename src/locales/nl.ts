@@ -251,9 +251,9 @@ export const nl = {
     'Hardwareversnelling werd opgeslagen, maar de spraakengine kon niet opnieuw opstarten. Start Obsidian opnieuw om het toe te passen.',
   'settings.noteContext.name': 'Gebruik notitie als context',
   'settings.noteContext.desc':
-    'Stuur onderscheidende termen uit de geopende notitie om de spelling te helpen.',
+    'Stuur bij handmatig geselecteerd Engels onderscheidende termen uit de geopende notitie om de spelling te verbeteren.',
   'settings.noteContext.tooltip':
-    'Stuurt een woordenlijst met eigennamen en technische termen als eerste prompt van de engine. Alleen gebruikt door engines die initiële prompts ondersteunen.',
+    'Stuurt een woordenlijst met eigennamen en technische termen als initiële prompt van de engine. Alleen gebruikt bij handmatig geselecteerd Engels met engines die initiële prompts ondersteunen.',
   'settings.microphone.name': 'Microfoon',
   'settings.microphone.desc':
     'Welke microfoon u moet gebruiken voor dicteren. Wijzigingen zijn van toepassing op de volgende dicteersessie.',

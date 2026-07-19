@@ -240,9 +240,10 @@ export const en = {
   'settings.hardwareAcceleration.restartFailed':
     'Hardware acceleration was saved, but the speech engine could not restart. Restart Obsidian to apply it.',
   'settings.noteContext.name': 'Use note as context',
-  'settings.noteContext.desc': 'Send distinctive terms from the open note to help spelling.',
+  'settings.noteContext.desc':
+    'For manually selected English, send distinctive terms from the open note to help spelling.',
   'settings.noteContext.tooltip':
-    'Sends a glossary of proper nouns and technical terms as the engine’s initial prompt. Only used by engines that support initial prompts.',
+    'Sends a glossary of proper nouns and technical terms as the engine’s initial prompt. Only used for manually selected English with engines that support initial prompts.',
   'settings.microphone.name': 'Microphone',
   'settings.microphone.desc':
     'Which microphone to use for dictation. Changes apply on the next dictation session.',

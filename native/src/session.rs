@@ -14,6 +14,10 @@ const MAX_UTTERANCE_FRAMES: usize = 1_500;
 const NEGATIVE_THRESHOLD_DELTA: f32 = 0.15;
 const NEGATIVE_THRESHOLD_FLOOR: f32 = 0.05;
 const ONE_SENTENCE_TIMEOUT_FRAMES: usize = 500;
+/// Retain enough audio before VAD confirmation for streaming models to decode
+/// quiet initial phonemes. This affects only the audio replayed after speech is
+/// detected; it does not delay the detection decision.
+const SPEECH_ONSET_PREROLL_FRAMES: usize = 15;
 
 const fn derive_negative_threshold(speech_threshold: f32) -> f32 {
     let candidate = speech_threshold - NEGATIVE_THRESHOLD_DELTA;
@@ -75,9 +79,9 @@ impl VadTuning {
 impl SpeakingStyle {
     fn tuning(self) -> VadTuning {
         match self {
-            Self::Responsive => VadTuning::new(0.40, 20, 3, 2, 2, 6),
-            Self::Balanced => VadTuning::new(0.50, 50, 5, 2, 2, 16),
-            Self::Patient => VadTuning::new(0.55, 100, 6, 2, 2, 33),
+            Self::Responsive => VadTuning::new(0.40, 20, 3, SPEECH_ONSET_PREROLL_FRAMES, 2, 6),
+            Self::Balanced => VadTuning::new(0.50, 50, 5, SPEECH_ONSET_PREROLL_FRAMES, 2, 16),
+            Self::Patient => VadTuning::new(0.55, 100, 6, SPEECH_ONSET_PREROLL_FRAMES, 2, 33),
         }
     }
 }
@@ -728,7 +732,7 @@ mod tests {
 
     #[test]
     fn speech_onset_keeps_bounded_preroll_and_every_confirmation_frame() {
-        const LEAD_IN_FRAMES: usize = 10;
+        const LEAD_IN_FRAMES: usize = 30;
 
         for style in [
             SpeakingStyle::Responsive,
