@@ -12,6 +12,7 @@ import type { ModelInstallManager } from '../models/model-install-manager';
 import { updateInstallProgressElement } from '../models/model-install-progress';
 import { ExternalModelFileModal, ModelDetailsModal } from '../models/model-management-modals';
 import { matchesModelTriple } from '../models/model-management-types';
+import { deriveCurrentModelDisplay } from '../models/model-row-state';
 import { t } from '../shared/i18n';
 import type { PluginLogger } from '../shared/plugin-logger';
 import type { UserFeedback } from '../shared/user-feedback';
@@ -169,11 +170,14 @@ export class LocalSttSettingTab extends PluginSettingTab {
       onModelInfo: this.buildModelInfoCallback(manager, settings),
     });
 
-    const selectedCapabilities = manager.getState().selectedModelCapabilities;
+    const modelState = manager.getState();
+    const selectedCapabilities = modelState.selectedModelCapabilities;
     const languageSupport =
       selectedCapabilities.status === 'ready'
         ? selectedCapabilities.capabilities.family.supportedLanguages
         : ({ kind: 'english_only' } as const);
+    const isSelectedModelEnglishOnly =
+      selectedCapabilities.status === 'ready' && languageSupport.kind === 'english_only';
     const supportsAutomaticLanguageDetection =
       selectedCapabilities.status === 'ready' &&
       selectedCapabilities.capabilities.family.supportsAutomaticLanguageDetection;
@@ -185,8 +189,10 @@ export class LocalSttSettingTab extends PluginSettingTab {
     const languageSetting = new Setting(modelSection)
       .setName(t('settings.dictationLanguage.name'))
       .setDesc(
-        languageOptions.length === 1
-          ? t('settings.dictationLanguage.englishOnlyDesc')
+        isSelectedModelEnglishOnly
+          ? t('settings.dictationLanguage.englishOnlyDesc', {
+              model: deriveCurrentModelDisplay(modelState).displayName,
+            })
           : t('settings.dictationLanguage.desc'),
       );
     languageSetting.addDropdown((dropdown) => {

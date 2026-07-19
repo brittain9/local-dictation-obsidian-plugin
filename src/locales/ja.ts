@@ -120,7 +120,8 @@ export const ja = {
   'settings.acceleration.unknownReason': '不明な理由',
   'settings.dictationLanguage.autoDetect': '自動検出',
   'settings.dictationLanguage.name': 'ディクテーション言語',
-  'settings.dictationLanguage.englishOnlyDesc': '選択したモデルは英語のみをサポートします。',
+  'settings.dictationLanguage.englishOnlyDesc':
+    '選択したモデル「{model}」は英語のみをサポートします。',
   'settings.dictationLanguage.desc':
     '話す言語を選択してください。手動で選択すると、最も予測可能なクリーンアップが得られます。自動検出は開始が遅くなる場合があり、発話ごとに 1 つの言語を選択します。',
   'settings.dictationLanguage.unsupported': '{language}（サポート対象外）',

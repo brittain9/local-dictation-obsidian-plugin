@@ -27,7 +27,7 @@ import {
   type SelectedModel,
   type SelectedModelCapabilitiesSnapshot,
 } from '../models/model-management-types';
-import { t } from '../shared/i18n';
+import { resolveBaseLanguageTag, t } from '../shared/i18n';
 import { isRecord } from '../shared/type-guards';
 import {
   type AccelerationPreference,
@@ -170,10 +170,11 @@ export interface PluginSettings {
   llmRemoteThresholdChars: number;
   llmRemoteTimeoutSec: number;
   llmRouting: LlmRouting;
+  lastObsidianLanguage: string | null;
   localTranscriptSidebarBootstrapped: boolean;
   modelStorePathOverride: string;
   retainLastUtterance: boolean;
-  schemaVersion: 4;
+  schemaVersion: 5;
   selectedModel: SelectedModel | null;
   // Last-known-good capabilities for `selectedModel`, captured on a successful
   // probe. Lets startup skip re-probing the sidecar (which forces a full
@@ -227,10 +228,11 @@ export const DEFAULT_PLUGIN_SETTINGS: PluginSettings = {
   llmRemoteThresholdChars: DEFAULT_LLM_REMOTE_THRESHOLD_CHARS,
   llmRemoteTimeoutSec: 60,
   llmRouting: 'local',
+  lastObsidianLanguage: null,
   localTranscriptSidebarBootstrapped: false,
   modelStorePathOverride: '',
   retainLastUtterance: true,
-  schemaVersion: 4,
+  schemaVersion: 5,
   selectedModel: null,
   selectedModelCapabilitiesSnapshot: null,
   setupCompletedAt: null,
@@ -347,6 +349,7 @@ export function resolvePluginSettings(data: unknown): PluginSettings {
       MAX_LLM_REMOTE_TIMEOUT_SEC,
     ),
     llmRouting: resolveLlmRouting(raw),
+    lastObsidianLanguage: readLastObsidianLanguage(raw.lastObsidianLanguage),
     localTranscriptSidebarBootstrapped: readBoolean(
       raw.localTranscriptSidebarBootstrapped,
       DEFAULT_PLUGIN_SETTINGS.localTranscriptSidebarBootstrapped,
@@ -360,13 +363,13 @@ export function resolvePluginSettings(data: unknown): PluginSettings {
       DEFAULT_PLUGIN_SETTINGS.retainLastUtterance,
     ),
     // Bump `schemaVersion` and add a migration step when renaming a key or changing default semantics.
-    schemaVersion: 4,
+    schemaVersion: 5,
     selectedModel: readSelectedModel(raw.selectedModel),
     // Automatic detection became a capability separate from language tags in
     // schema 4. Older snapshots cannot prove that exact-model behavior, so
     // force one fresh probe during migration.
     selectedModelCapabilitiesSnapshot:
-      raw.schemaVersion === 4
+      raw.schemaVersion === 4 || raw.schemaVersion === 5
         ? readSelectedModelCapabilitiesSnapshot(raw.selectedModelCapabilitiesSnapshot)
         : null,
     setupCompletedAt: readSetupCompletedAt(raw.setupCompletedAt),
@@ -818,4 +821,10 @@ function readSelectedModelCapabilitiesSnapshot(
 
 function readListeningMode(value: unknown): ListeningMode {
   return isListeningMode(value) ? value : DEFAULT_PLUGIN_SETTINGS.listeningMode;
+}
+
+function readLastObsidianLanguage(value: unknown): string | null {
+  if (typeof value !== 'string') return null;
+  const language = resolveBaseLanguageTag(value);
+  return language.length > 0 ? language : null;
 }

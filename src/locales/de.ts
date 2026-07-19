@@ -123,7 +123,8 @@ export const de = {
   'settings.acceleration.unknownReason': 'unbekannter Grund',
   'settings.dictationLanguage.autoDetect': 'Automatische Erkennung',
   'settings.dictationLanguage.name': 'Diktatsprache',
-  'settings.dictationLanguage.englishOnlyDesc': 'Das ausgewählte Modell unterstützt nur Englisch.',
+  'settings.dictationLanguage.englishOnlyDesc':
+    'Das ausgewählte Modell {model} unterstützt nur Englisch.',
   'settings.dictationLanguage.desc':
     'Wählen Sie die Sprache, die Sie sprechen möchten. Die manuelle Auswahl ermöglicht die vorhersehbarste Bereinigung. Die automatische Erkennung startet möglicherweise langsamer und wählt eine Sprache pro Äußerung aus.',
   'settings.dictationLanguage.unsupported': '{language} (nicht unterstützt)',

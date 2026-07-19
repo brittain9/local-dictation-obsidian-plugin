@@ -32,6 +32,10 @@ export function tPlural(
 }
 
 export function resolveLocale(language: string): string {
-  const baseLanguage = language.trim().toLowerCase().split(/[-_]/u, 1)[0];
-  return baseLanguage !== undefined && catalogs[baseLanguage] !== undefined ? baseLanguage : 'en';
+  const baseLanguage = resolveBaseLanguageTag(language);
+  return catalogs[baseLanguage] !== undefined ? baseLanguage : 'en';
+}
+
+export function resolveBaseLanguageTag(language: string): string {
+  return language.trim().toLowerCase().split(/[-_]/u, 1)[0] ?? '';
 }

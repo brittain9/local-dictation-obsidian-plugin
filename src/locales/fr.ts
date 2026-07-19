@@ -120,7 +120,7 @@ export const fr = {
   'settings.dictationLanguage.autoDetect': 'Détection automatique',
   'settings.dictationLanguage.name': 'Langue de dictée',
   'settings.dictationLanguage.englishOnlyDesc':
-    "Le modèle sélectionné prend en charge uniquement l'anglais.",
+    "Le modèle sélectionné, {model}, prend en charge uniquement l'anglais.",
   'settings.dictationLanguage.desc':
     'Choisissez la langue que vous parlerez. La sélection manuelle donne le nettoyage le plus prévisible. La détection automatique peut démarrer plus lentement et choisit une langue par énoncé.',
   'settings.dictationLanguage.unsupported': '{language} (non pris en charge)',

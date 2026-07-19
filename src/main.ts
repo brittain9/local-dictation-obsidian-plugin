@@ -1,6 +1,6 @@
 import { dirname, join } from 'node:path';
 import { IS_PRODUCTION_BUILD } from 'virtual:build-mode';
-import { FileSystemAdapter, Platform, Plugin } from 'obsidian';
+import { FileSystemAdapter, getLanguage, Platform, Plugin } from 'obsidian';
 
 import { AudioCaptureStream } from './audio/audio-capture-stream';
 import { SidecarAudioLevelMeter } from './audio/sidecar-audio-level-meter';
@@ -13,6 +13,7 @@ import { provisionalTranscriptExtension } from './editor/provisional-transcript-
 import { RawTranscriptRecovery } from './editor/raw-transcript-recovery';
 import { sessionProcessingExtension } from './editor/session-processing-extension';
 import { TemporaryLeafPinLeaseManager } from './editor/temporary-leaf-pin';
+import { syncDictationLanguageWithObsidian } from './language/dictation-language-sync';
 import type { LlmCleanupFailure } from './llm/provider';
 import { createLlmRouter } from './llm/router';
 import { ManageModelsModal } from './models/manage-models-modal';
@@ -82,11 +83,17 @@ export default class LocalSttPlugin extends Plugin {
   private readonly temporaryLeafPinLeaseManager = new TemporaryLeafPinLeaseManager();
 
   override async onload(): Promise<void> {
-    const loadedSettings = loadPluginSettings(await this.loadData(), this.app.secretStorage);
-    this.settings = loadedSettings.settings;
+    const persistedData: unknown = await this.loadData();
+    const loadedSettings = loadPluginSettings(persistedData, this.app.secretStorage);
+    const languageSync = syncDictationLanguageWithObsidian(
+      loadedSettings.settings,
+      persistedData,
+      getLanguage(),
+    );
+    this.settings = languageSync.settings;
     this.lastUtteranceRecovery.setEnabled(this.settings.retainLastUtterance);
     this.rawTranscriptRecovery.setEnabled(this.settings.retainLastUtterance);
-    if (loadedSettings.shouldPersist) {
+    if (loadedSettings.shouldPersist || languageSync.shouldPersist) {
       await this.saveData(this.settings);
     }
     this.presetStateStore = new LlmPresetStateStore({

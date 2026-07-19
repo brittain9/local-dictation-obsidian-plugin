@@ -122,7 +122,7 @@ export const nl = {
   'settings.dictationLanguage.autoDetect': 'Automatische detectie',
   'settings.dictationLanguage.name': 'Dicteertaal',
   'settings.dictationLanguage.englishOnlyDesc':
-    'Het geselecteerde model ondersteunt alleen Engels.',
+    'Het geselecteerde model, {model}, ondersteunt alleen Engels.',
   'settings.dictationLanguage.desc':
     'Kies de taal die u gaat spreken. Handmatige selectie geeft de meest voorspelbare opruiming. Automatische detectie start mogelijk langzamer en kiest één taal per uiting.',
   'settings.dictationLanguage.unsupported': '{language} (niet ondersteund)',

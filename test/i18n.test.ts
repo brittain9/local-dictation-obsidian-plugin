@@ -17,6 +17,12 @@ describe('i18n', () => {
     );
   });
 
+  it('names the selected English-only model in dictation language guidance', () => {
+    expect(t('settings.dictationLanguage.englishOnlyDesc', { model: 'Moonshine Medium' })).toBe(
+      'The selected model, Moonshine Medium, supports English only.',
+    );
+  });
+
   it('leaves a placeholder intact when its parameter is missing', () => {
     expect(t('setup.sidecar.update.body')).toContain('{engineLabel}');
     expect(t('setup.sidecar.update.body', {})).toContain('{engineLabel}');
