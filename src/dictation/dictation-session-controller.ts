@@ -776,7 +776,7 @@ export class DictationSessionController {
       return null;
     }
 
-    const glossary = entry.session.readNoteGlossary(Math.min(384, budgetChars));
+    const glossary = entry.session.readNoteGlossary(budgetChars);
     if (glossary === null) {
       return null;
     }

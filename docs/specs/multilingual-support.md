@@ -6,7 +6,8 @@ Implementation status: the first verified matrix is implemented for English,
 Spanish, German, French, Portuguese, Italian, Dutch, and Japanese on Nemotron
 3.5 ASR and Whisper Large V3 Turbo, including explicit automatic detection.
 Cohere Transcribe, Moonshine, and `.en` Whisper artifacts remain English-only.
-Plugin UI localization remains out of scope.
+The plugin UI and built-in transform labels are localized independently of the
+dictation language.
 
 ## Language policy
 
@@ -17,11 +18,11 @@ Plugin UI localization remains out of scope.
 - Automatic detection chooses one language for each utterance. Continuous
   code-switching within an utterance is not a supported quality guarantee;
   start a new utterance or select the dominant language for predictable output.
-- Manual selection is recommended when the language is known. In `auto` mode
-  the engines do not currently return a normalized detected-language tag to the
-  post-processing pipeline, so only language-neutral hallucination rules run.
-  This prevents English cleanup rules from damaging non-English text at the
-  cost of less aggressive cleanup for automatically detected English.
+- Manual selection is recommended when the language is known. Whisper returns
+  its detected language to the post-processing pipeline in `auto` mode, so
+  automatically detected English gets the English hallucination rules while
+  other languages do not. Engines that cannot report a detected language use
+  only language-neutral rules.
 - The committed human-speech corpus covers every enabled base language with a
   pinned Google FLEURS validation recording. It is a deterministic read-speech
   regression floor; release validation still includes broader native-speaker
@@ -113,11 +114,21 @@ Multilingual support is first-class only when all of these are true:
 
 ### 4. Context and cleanup semantics
 
-- Audit initial prompts and note context with non-Latin text and mixed scripts.
-  Byte/character budgets and token estimates must not assume English density.
-- Make every built-in LLM transform explicitly preserve the transcript language
-  and forbid implicit translation. Verify local and remote providers with the
-  same contract.
+- The note glossary is an English spelling aid, not a general transcript context
+  channel. Request it only for manually selected English on engines that support
+  an initial prompt. Automatic and non-English sessions receive no glossary, so
+  English extraction assumptions cannot bias language detection or multilingual
+  transcription.
+- Keep the glossary within a 224-character boundary. The current extractor emits
+  ASCII names and identifiers; do not add non-Latin or mixed-script extraction
+  without evidence that it improves recognition for the affected model.
+- Every built-in LLM transform explicitly preserves the transcript language and
+  forbids implicit translation. A single shared built-in catalog is localized
+  by UI locale; it is not duplicated per dictation language.
+- Prompt composition and built-in prompt string tests define the provider
+  contract. Live OpenRouter or Ollama calls are not CI gates because credentials,
+  selected models, and provider behavior are external and nondeterministic;
+  provider adherence remains best-effort.
 - Review English phrase lists and ASCII-oriented heuristics in the hallucination
   filter before enabling each language. Language-specific rules should be gated,
   not applied globally.

@@ -26,19 +26,17 @@ use crate::session::{
 };
 use crate::stages::StageEnablement;
 use crate::system_audio::{AudioFrameSink, SystemAudioCapture, SystemAudioController};
-use crate::transcription::GpuConfig;
+use crate::transcription::{ENGLISH_LANGUAGE_TAG, GpuConfig};
 use crate::worker::{SessionMetadata, TranscriptionWorker, WorkerCommand, WorkerEvent};
 
 /// Queue depth that marks a session as `saturated` and triggers an overload
 /// drain (capture stops; queued work finishes; session ends with
 /// `SessionStopReason::QueueOverload`).
 const QUEUE_OVERLOAD_DEPTH: usize = 30;
-// Whisper's `initial_prompt` is hard-capped at 224 tokens (silently truncated
-// to the final 224 — see OpenAI's Whisper Prompting Guide). 384 chars of
-// sentence-cased spelling-hint prose (mostly short identifiers) lands
-// comfortably under that cap with headroom for tokenizer variance, while
-// still fitting roughly 30-60 distinct terms.
-const CONTEXT_BUDGET_CHARS: u32 = 384;
+// Note-glossary extraction emits ASCII terms only. Keeping the entire prompt
+// at or below Whisper's 224-token ceiling prevents silent tokenizer truncation.
+// Non-English and automatic sessions do not request glossary context.
+const CONTEXT_BUDGET_CHARS: u32 = 224;
 const CONTEXT_REQUEST_TIMEOUT: Duration = Duration::from_secs(2);
 const AUDIO_LEVEL_EVENT_INTERVAL: Duration = Duration::from_millis(50);
 const MAX_ACTIVE_SESSIONS: usize = 5;
@@ -537,12 +535,13 @@ impl AppState {
                             resolved_model.runtime_id,
                             resolved_model.family_id,
                         );
-                        let context_budget_chars = if engine_context_supported {
+                        let context_required =
+                            should_request_initial_prompt(engine_context_supported, &language);
+                        let context_budget_chars = if context_required {
                             CONTEXT_BUDGET_CHARS
                         } else {
                             0
                         };
-                        let context_required = engine_context_supported;
                         let streaming = self
                             .registry
                             .adapter(resolved_model.runtime_id, resolved_model.family_id)
@@ -1683,6 +1682,10 @@ fn resolved_model_supports_initial_prompt(
         .is_some_and(|adapter| adapter.capabilities().supports_initial_prompt)
 }
 
+fn should_request_initial_prompt(engine_supports_initial_prompt: bool, language: &str) -> bool {
+    engine_supports_initial_prompt && language == ENGLISH_LANGUAGE_TAG
+}
+
 fn context_source_chars(window: &ContextWindow) -> usize {
     window
         .sources
@@ -1783,7 +1786,7 @@ mod tests {
 
     use uuid::Uuid;
 
-    use super::{AppState, ControlFlow};
+    use super::{AppState, ControlFlow, should_request_initial_prompt};
     use crate::catalog::{
         ArtifactRole, CatalogModel, ModelArtifact, ModelCatalog, ModelCollection,
         ModelFamilyDescriptor, ModelRuntimeDescriptor,
@@ -1965,6 +1968,7 @@ mod tests {
             _request: &TranscriptionRequest,
         ) -> Result<EngineTranscriptOutput, TranscriptionError> {
             Ok(EngineTranscriptOutput {
+                detected_language: None,
                 diagnostics: Vec::new(),
                 segments: Vec::new(),
             })
@@ -2723,7 +2727,7 @@ mod tests {
                 session_id,
                 utterance_id,
             } => {
-                assert_eq!(*budget_chars, 384);
+                assert_eq!(*budget_chars, 224);
                 assert_eq!(session_id, "session-1");
                 (*correlation_id, *utterance_id)
             }
@@ -2780,12 +2784,12 @@ mod tests {
         };
 
         let context_window = ContextWindow {
-            budget_chars: 384,
+            budget_chars: 224,
             sources: vec![ContextWindowSource::NoteGlossary {
-                text: "x".repeat(385),
+                text: "x".repeat(225),
                 truncated: true,
             }],
-            text: "x".repeat(385),
+            text: "x".repeat(225),
             truncated: true,
         };
         let (_control_flow, response_events) = app.handle_command(Command::ContextResponse {
@@ -2802,6 +2806,14 @@ mod tests {
     }
 
     #[test]
+    fn initial_prompt_context_is_limited_to_manually_selected_english() {
+        assert!(should_request_initial_prompt(true, "en"));
+        assert!(!should_request_initial_prompt(false, "en"));
+        assert!(!should_request_initial_prompt(true, "auto"));
+        assert!(!should_request_initial_prompt(true, "ja"));
+    }
+
+    #[test]
     fn context_response_with_window_clears_pending_request() {
         let model_file_path = create_model_file();
         let mut app = test_app();
@@ -2815,7 +2827,7 @@ mod tests {
         };
 
         let context_window = ContextWindow {
-            budget_chars: 384,
+            budget_chars: 224,
             sources: vec![ContextWindowSource::NoteGlossary {
                 text: "previous note text".to_string(),
                 truncated: false,

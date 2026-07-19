@@ -5,7 +5,7 @@ use uuid::Uuid;
 
 use crate::protocol::{ContextWindow, StageId, StageOutcome, TranscriptSegment};
 
-pub(crate) const SUPPORTED_LANGUAGE: &str = "en";
+pub(crate) const ENGLISH_LANGUAGE_TAG: &str = "en";
 pub(crate) const VERIFIED_MULTILINGUAL_LANGUAGE_TAGS: &[&str] =
     &["en", "es", "de", "fr", "pt", "it", "nl", "ja"];
 pub(crate) const AUTOMATIC_LANGUAGE_TAG: &str = "auto";
@@ -40,6 +40,10 @@ pub struct TranscriptionRequest {
 pub struct EngineTranscriptOutput {
     pub segments: Vec<TranscriptSegment>,
     pub diagnostics: Vec<SegmentDiagnostics>,
+    /// Language identified by the engine during automatic detection. Adapters
+    /// leave this unset when the language was selected explicitly or the
+    /// engine does not expose a detected tag.
+    pub detected_language: Option<String>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq)]
@@ -143,7 +147,7 @@ pub fn validate_model_path(model_file_path: &Path) -> Result<(), TranscriptionEr
 }
 
 pub fn validate_language(language: &str) -> Result<(), TranscriptionError> {
-    if language == SUPPORTED_LANGUAGE {
+    if language == ENGLISH_LANGUAGE_TAG {
         return Ok(());
     }
 

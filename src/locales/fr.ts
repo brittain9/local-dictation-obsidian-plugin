@@ -252,9 +252,9 @@ export const fr = {
     "L'accélération matérielle a été enregistrée, mais le moteur vocal n'a pas pu redémarrer. Redémarrez Obsidian pour l'appliquer.",
   'settings.noteContext.name': 'Utiliser la note comme contexte',
   'settings.noteContext.desc':
-    'Envoyez des termes distinctifs de la note ouverte pour faciliter l’orthographe.',
+    'Pour l’anglais sélectionné manuellement, envoyez les termes distinctifs de la note ouverte afin d’améliorer l’orthographe.',
   'settings.noteContext.tooltip':
-    'Envoie un glossaire de noms propres et de termes techniques comme invite initiale du moteur. Utilisé uniquement par les moteurs prenant en charge les invites initiales.',
+    'Envoie un glossaire de noms propres et de termes techniques comme invite initiale du moteur. Utilisé uniquement pour l’anglais sélectionné manuellement avec les moteurs prenant en charge les invites initiales.',
   'settings.microphone.name': 'Microphone',
   'settings.microphone.desc':
     "Quel microphone utiliser pour la dictée. Les modifications s'appliqueront lors de la prochaine session de dictée.",
