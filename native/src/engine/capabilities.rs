@@ -33,6 +33,7 @@ pub enum ModelFamilyId {
     CohereTranscribe,
     Moonshine,
     NemotronAsr,
+    PocketTts,
     Whisper,
 }
 
@@ -42,6 +43,7 @@ impl ModelFamilyId {
             Self::CohereTranscribe => "cohere_transcribe",
             Self::Moonshine => "moonshine",
             Self::NemotronAsr => "nemotron_asr",
+            Self::PocketTts => "pocket_tts",
             Self::Whisper => "whisper",
         }
     }
@@ -51,6 +53,7 @@ impl ModelFamilyId {
             Self::CohereTranscribe => "Cohere Transcribe",
             Self::Moonshine => "Moonshine",
             Self::NemotronAsr => "NVIDIA Nemotron 3.5 ASR",
+            Self::PocketTts => "Pocket TTS",
             Self::Whisper => "Whisper",
         }
     }
@@ -82,6 +85,25 @@ pub enum ModelFormat {
     Ggml,
     Gguf,
     Onnx,
+}
+
+/// Product task performed by a model family. This is part of both the catalog
+/// and capability wire contracts; keeping it explicit prevents an STT model
+/// from being routed into synthesis (or the inverse).
+#[derive(Debug, Clone, Copy, Hash, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ModelTask {
+    Stt,
+    Tts,
+}
+
+impl ModelTask {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Stt => "stt",
+            Self::Tts => "tts",
+        }
+    }
 }
 
 /// Language support for a model family adapter.
@@ -149,6 +171,13 @@ impl RuntimeCapabilities {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ModelFamilyCapabilities {
+    pub task: ModelTask,
+    #[serde(rename = "availableVoices")]
+    pub available_voices: Vec<String>,
+    #[serde(rename = "supportsSpeedControl")]
+    pub supports_speed_control: bool,
+    #[serde(rename = "outputSampleRate")]
+    pub output_sample_rate: Option<u32>,
     #[serde(rename = "supportsSegmentTimestamps")]
     pub supports_segment_timestamps: bool,
     #[serde(rename = "supportsWordTimestamps")]
@@ -175,6 +204,10 @@ impl ModelFamilyCapabilities {
     /// declared by any registered adapter).
     pub const fn unknown() -> Self {
         Self {
+            task: ModelTask::Stt,
+            available_voices: Vec::new(),
+            supports_speed_control: false,
+            output_sample_rate: None,
             supports_segment_timestamps: false,
             supports_word_timestamps: false,
             supports_initial_prompt: false,
@@ -196,6 +229,10 @@ mod tests {
     fn unknown_family_capabilities_are_conservative() {
         let unknown = ModelFamilyCapabilities::unknown();
 
+        assert_eq!(unknown.task, ModelTask::Stt);
+        assert!(unknown.available_voices.is_empty());
+        assert!(!unknown.supports_speed_control);
+        assert!(unknown.output_sample_rate.is_none());
         assert!(!unknown.supports_segment_timestamps);
         assert!(!unknown.supports_word_timestamps);
         assert!(!unknown.supports_initial_prompt);
@@ -229,6 +266,35 @@ mod tests {
 
         assert_eq!(json["supportsStreaming"], false);
         assert!(json.get("supports_streaming").is_none());
+    }
+
+    #[test]
+    fn tts_family_capabilities_serialize_the_synthesis_contract() {
+        let capabilities = ModelFamilyCapabilities {
+            task: ModelTask::Tts,
+            available_voices: vec!["alba".to_string(), "marius".to_string()],
+            supports_speed_control: true,
+            output_sample_rate: Some(24_000),
+            supports_segment_timestamps: false,
+            supports_word_timestamps: false,
+            supports_initial_prompt: false,
+            supports_streaming: true,
+            supports_language_selection: false,
+            supports_automatic_language_detection: false,
+            supported_languages: LanguageSupport::EnglishOnly,
+            max_audio_duration_secs: None,
+            produces_punctuation: false,
+        };
+
+        let json = serde_json::to_value(capabilities).expect("capabilities should serialize");
+
+        assert_eq!(json["task"], "tts");
+        assert_eq!(
+            json["availableVoices"],
+            serde_json::json!(["alba", "marius"])
+        );
+        assert_eq!(json["supportsSpeedControl"], true);
+        assert_eq!(json["outputSampleRate"], 24_000);
     }
 
     #[test]

@@ -350,7 +350,7 @@ mod tests {
         ArtifactRole, CatalogModel, ModelArtifact, ModelCatalog, ModelCollection,
         ModelFamilyDescriptor, ModelRuntimeDescriptor,
     };
-    use crate::engine::capabilities::{ModelFamilyId, RuntimeId};
+    use crate::engine::capabilities::{ModelFamilyId, ModelTask, RuntimeId};
 
     #[test]
     fn resolve_model_store_info_uses_absolute_override() {
@@ -497,6 +497,7 @@ mod tests {
             families: vec![ModelFamilyDescriptor {
                 family_id: ModelFamilyId::Whisper,
                 runtime_id: RuntimeId::WhisperCpp,
+                task: ModelTask::Stt,
                 display_name: "Whisper".to_string(),
                 summary: "summary".to_string(),
             }],
@@ -507,6 +508,7 @@ mod tests {
                     filename: "model.bin".to_string(),
                     required: true,
                     role: ArtifactRole::TranscriptionModel,
+                    voice_id: None,
                     sha256: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
                         .to_string(),
                     size_bytes: 10,
@@ -515,8 +517,10 @@ mod tests {
                 display_name: "Model".to_string(),
                 runtime_id: RuntimeId::WhisperCpp,
                 family_id: ModelFamilyId::Whisper,
+                task: ModelTask::Stt,
                 language_tags: vec!["en".to_string()],
                 supports_automatic_language_detection: false,
+                default_voice: None,
                 license_label: "MIT".to_string(),
                 license_url: "https://example.com/license".to_string(),
                 model_card_url: None,

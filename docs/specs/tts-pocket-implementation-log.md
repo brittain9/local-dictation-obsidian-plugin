@@ -59,13 +59,55 @@ Contradictions corrected in the spec amendment:
 - The pinned ONNX revision already contains all six requested variants.
 - The open-items section's 25 MiB value disagreed with D1's 20 MiB gate.
 
+## 2026-07-19 — Stage A1 catalog and build contract
+
+Status: complete at the current commit boundary.
+
+Implemented:
+
+- Added the explicit `stt`/`tts` task axis to family capabilities, family
+  descriptors, and catalog models. Existing adapters report STT; validation
+  rejects family/model task mismatches.
+- Added task-relevant capability fields for available voices, speed control,
+  and output sample rate, including wire-format regression coverage.
+- Added synthesis and voice artifact roles. Voice artifacts carry an explicit
+  `voiceId`; catalog validation rejects implicit filename/ID conventions and
+  requires a TTS model's default voice to reference a declared voice artifact.
+- Added `ModelFamilyId::PocketTts` and the `engine-pocket-tts` production build
+  feature. The release and Rust-check scripts now compile it with the other
+  engines, and ONNX Runtime is enabled when Pocket TTS is the only ONNX engine.
+- Added the pinned English INT8 catalog model. Required install content is the
+  runtime plus Alba (131,658,398 bytes); Cosette, Fantine, Javert, Jean, and
+  Marius are explicit optional voice artifacts.
+- Made `whisper-rs` genuinely optional. Previously, a no-default-features build
+  still compiled Whisper, which violated the existing per-engine feature
+  boundary and prevented an isolated Pocket TTS build.
+
+Verification at this boundary:
+
+- Catalog tests: 8 passed, including bundled Pocket TTS pins/default voice and
+  task/voice validation.
+- Capability tests: 5 passed with no default engine features.
+- `git diff --check`: clean.
+
+Resume point:
+
+- Implement an incremental verified artifact install. Installing one optional
+  voice must download only that voice, preserve the existing runtime, merge
+  install metadata, and expose installed voice IDs to the plugin. The intended
+  regression test was explored but deliberately not committed in a red state.
+- Confirm whether `bos_before_voice.npy` is needed by the native precomputed
+  voice-state path. The pinned Python runner bypasses it; if the Rust port does
+  too, remove it from the Stage A runtime contract and amend the recorded total
+  instead of shipping an unused artifact.
+
 ## Remaining production work
 
 - Implement the Rust synthesis adapter and autoregressive loop behind
   `engine-pocket-tts`, including cancellation, bounded audio-ahead flow
   control, PCM framing, and pitch-preserving speed processing.
-- Add the task axis, English catalog artifacts/voices, installer subsets,
-  protocol types, and task-aware capability probes.
+- Add installer subsets, synthesis protocol types, and task-aware synthesis
+  probes.
 - Add plugin extraction/segmentation, Web Audio playback, settings/model UI,
   commands/status UI, and dictation interlock.
 - Add the English Whisper round-trip gate, manual acceptance guide, license

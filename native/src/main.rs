@@ -10,6 +10,7 @@ use local_dictation_sidecar::catalog::ModelCatalog;
 use local_dictation_sidecar::protocol::{
     AudioFrame, Command, Event, IncomingFrame, read_frame, write_event_frame,
 };
+#[cfg(feature = "engine-whisper")]
 use whisper_rs::install_logging_hooks;
 
 enum InputMessage {
@@ -21,6 +22,7 @@ enum InputMessage {
 }
 
 fn main() -> Result<()> {
+    #[cfg(feature = "engine-whisper")]
     install_logging_hooks();
 
     let catalog = ModelCatalog::load_bundled()?;

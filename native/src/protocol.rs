@@ -608,7 +608,8 @@ fn write_frame<W: Write>(writer: &mut W, frame_kind: u8, payload: &[u8]) -> Resu
 
 /// Collect system info from all compiled engines into a single string.
 pub fn system_info_string() -> String {
-    let mut parts = Vec::new();
+    #[allow(unused_mut)]
+    let mut parts: Vec<String> = Vec::new();
 
     #[cfg(feature = "engine-whisper")]
     parts.push(format!("whisper.cpp: {}", whisper_rs::print_system_info()));

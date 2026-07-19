@@ -1,5 +1,5 @@
 {
-  "catalogVersion": 3,
+  "catalogVersion": 4,
   "runtimes": [
     {
       "runtimeId": "whisper_cpp",
@@ -15,27 +15,38 @@
   "families": [
     {
       "familyId": "whisper",
+      "task": "stt",
       "runtimeId": "whisper_cpp",
       "displayName": "Whisper",
       "summary": "Transcribes after each pause. Whisper provides more accurate timestamps than other model families, including optional word-level timing. Tiny and Base favor speed, Small balances speed and quality, and Medium and Large favor quality."
     },
     {
       "familyId": "cohere_transcribe",
+      "task": "stt",
       "runtimeId": "onnx_runtime",
       "displayName": "Cohere Transcribe",
       "summary": "High-quality batch transcription with multi-gigabyte download and memory requirements."
     },
     {
       "familyId": "moonshine",
+      "task": "stt",
       "runtimeId": "onnx_runtime",
       "displayName": "Moonshine",
       "summary": "Shows words while you speak. Tiny favors lower resource use, Small balances speed and quality, and Medium favors quality."
     },
     {
       "familyId": "nemotron_asr",
+      "task": "stt",
       "runtimeId": "onnx_runtime",
       "displayName": "NVIDIA Nemotron 3.5 ASR",
       "summary": "Experimental high-accuracy multilingual streaming with a larger download and higher resource use. Moonshine Small remains the recommended English live-dictation default."
+    },
+    {
+      "familyId": "pocket_tts",
+      "task": "tts",
+      "runtimeId": "onnx_runtime",
+      "displayName": "Pocket TTS",
+      "summary": "Local English read-aloud synthesis with selectable curated voices and pitch-preserving speed control."
     }
   ],
   "collections": [
@@ -58,12 +69,18 @@
       "collectionId": "nemotron_asr_streaming",
       "displayName": "NVIDIA Nemotron 3.5 ASR",
       "summary": "Experimental multilingual streaming transcription using the pinned 560 ms int8 export."
+    },
+    {
+      "collectionId": "pocket_tts_read_aloud",
+      "displayName": "Pocket TTS Read Aloud",
+      "summary": "Local English read-aloud models and curated voice embeddings."
     }
   ],
   "models": [
     {
       "runtimeId": "whisper_cpp",
       "familyId": "whisper",
+      "task": "stt",
       "modelId": "whisper_tiny_en_q8_0",
       "collectionId": "english_cpu_first",
       "displayName": "Whisper Tiny",
@@ -93,6 +110,7 @@
     {
       "runtimeId": "whisper_cpp",
       "familyId": "whisper",
+      "task": "stt",
       "modelId": "whisper_base_en_q8_0",
       "collectionId": "english_cpu_first",
       "displayName": "Whisper Base",
@@ -122,6 +140,7 @@
     {
       "runtimeId": "whisper_cpp",
       "familyId": "whisper",
+      "task": "stt",
       "modelId": "whisper_small_en_q5_1",
       "collectionId": "english_cpu_first",
       "displayName": "Whisper Small",
@@ -151,6 +170,7 @@
     {
       "runtimeId": "whisper_cpp",
       "familyId": "whisper",
+      "task": "stt",
       "modelId": "whisper_medium_en_q5_0",
       "collectionId": "english_cpu_first",
       "displayName": "Whisper Medium",
@@ -180,6 +200,7 @@
     {
       "runtimeId": "whisper_cpp",
       "familyId": "whisper",
+      "task": "stt",
       "modelId": "whisper_large_v3_turbo_q8_0",
       "collectionId": "english_cpu_first",
       "displayName": "Whisper Large V3 Turbo",
@@ -211,6 +232,7 @@
     {
       "runtimeId": "onnx_runtime",
       "familyId": "cohere_transcribe",
+      "task": "stt",
       "modelId": "cohere_transcribe_fp16",
       "collectionId": "cohere_transcribe",
       "displayName": "Cohere Transcribe FP16",
@@ -282,6 +304,7 @@
     {
       "runtimeId": "onnx_runtime",
       "familyId": "cohere_transcribe",
+      "task": "stt",
       "modelId": "cohere_transcribe_int8",
       "collectionId": "cohere_transcribe",
       "displayName": "Cohere Transcribe INT8",
@@ -356,6 +379,7 @@
     {
       "runtimeId": "onnx_runtime",
       "familyId": "cohere_transcribe",
+      "task": "stt",
       "modelId": "cohere_transcribe_q4",
       "collectionId": "cohere_transcribe",
       "displayName": "Cohere Transcribe Q4",
@@ -421,6 +445,7 @@
     {
       "runtimeId": "onnx_runtime",
       "familyId": "moonshine",
+      "task": "stt",
       "modelId": "moonshine_tiny_streaming_en",
       "collectionId": "moonshine_streaming",
       "displayName": "Moonshine Tiny",
@@ -504,6 +529,7 @@
     {
       "runtimeId": "onnx_runtime",
       "familyId": "moonshine",
+      "task": "stt",
       "modelId": "moonshine_small_streaming_en",
       "collectionId": "moonshine_streaming",
       "displayName": "Moonshine Small",
@@ -587,6 +613,7 @@
     {
       "runtimeId": "onnx_runtime",
       "familyId": "moonshine",
+      "task": "stt",
       "modelId": "moonshine_medium_streaming_en",
       "collectionId": "moonshine_streaming",
       "displayName": "Moonshine Medium",
@@ -670,6 +697,7 @@
     {
       "runtimeId": "onnx_runtime",
       "familyId": "nemotron_asr",
+      "task": "stt",
       "modelId": "nemotron_asr_0_6b_int8_streaming_560ms",
       "collectionId": "nemotron_asr_streaming",
       "displayName": "Nemotron 3.5 ASR 560 ms",
@@ -722,6 +750,152 @@
           "downloadUrl": "https://huggingface.co/csukuangfj2/sherpa-onnx-nemotron-3.5-asr-streaming-0.6b-560ms-int8-2026-06-11/resolve/ab43d895f5985b1bbab8b6eac8607fcdc05343f3/tokens.txt",
           "sha256": "729cc103155bafa785f9cd45746cd41cabe97eab7182fc04d594129587958f8a",
           "sizeBytes": 131440
+        }
+      ]
+    },
+    {
+      "runtimeId": "onnx_runtime",
+      "familyId": "pocket_tts",
+      "task": "tts",
+      "modelId": "pocket_tts_english_2026_04_int8",
+      "collectionId": "pocket_tts_read_aloud",
+      "displayName": "Pocket TTS English",
+      "summary": "Fast local English read-aloud synthesis using the pinned int8 ONNX export.",
+      "languageTags": ["en"],
+      "defaultVoice": "alba",
+      "uxTags": ["read-aloud", "cpu", "streaming"],
+      "licenseLabel": "CC-BY-4.0",
+      "licenseUrl": "https://creativecommons.org/licenses/by/4.0/",
+      "sourceUrl": "https://huggingface.co/KevinAHM/pocket-tts-onnx/tree/58a6d00cf13d239b6748cb0769f35c580a8f606c/onnx/english_2026-04",
+      "modelCardUrl": "https://huggingface.co/kyutai/pocket-tts-without-voice-cloning/tree/e041936c75475d350b405bc870bcf7c22da4e9e6/languages/english_2026-04",
+      "notes": [
+        "The initial install includes the runtime and Alba voice; Cosette, Fantine, Javert, Jean, and Marius are optional downloads.",
+        "Synthesis produces 24 kHz mono audio. Playback speed is adjusted locally with pitch-preserving time stretch.",
+        "The model graphs and voice embeddings are licensed under CC-BY-4.0, not this project's MIT license."
+      ],
+      "artifacts": [
+        {
+          "artifactId": "bundle",
+          "role": "supporting_file",
+          "required": true,
+          "filename": "bundle.json",
+          "downloadUrl": "https://huggingface.co/KevinAHM/pocket-tts-onnx/resolve/58a6d00cf13d239b6748cb0769f35c580a8f606c/onnx/english_2026-04/bundle.json",
+          "sha256": "bab643150f437f37df080a710520ff39ed9ebd9a339f8ebdc739f7eddfc28b3f",
+          "sizeBytes": 24381
+        },
+        {
+          "artifactId": "bos_before_voice",
+          "role": "supporting_file",
+          "required": true,
+          "filename": "bos_before_voice.npy",
+          "downloadUrl": "https://huggingface.co/KevinAHM/pocket-tts-onnx/resolve/58a6d00cf13d239b6748cb0769f35c580a8f606c/onnx/english_2026-04/bos_before_voice.npy",
+          "sha256": "f46edf4f7007b7ba4ea58831f49d003e59e167b4641c44bb3addfe9231a780b1",
+          "sizeBytes": 4224
+        },
+        {
+          "artifactId": "tokenizer",
+          "role": "supporting_file",
+          "required": true,
+          "filename": "tokenizer.model",
+          "downloadUrl": "https://huggingface.co/KevinAHM/pocket-tts-onnx/resolve/58a6d00cf13d239b6748cb0769f35c580a8f606c/onnx/english_2026-04/tokenizer.model",
+          "sha256": "d461765ae179566678c93091c5fa6f2984c31bbe990bf1aa62d92c64d91bc3f6",
+          "sizeBytes": 59339
+        },
+        {
+          "artifactId": "text_conditioner",
+          "role": "supporting_file",
+          "required": true,
+          "filename": "text_conditioner.onnx",
+          "downloadUrl": "https://huggingface.co/KevinAHM/pocket-tts-onnx/resolve/58a6d00cf13d239b6748cb0769f35c580a8f606c/onnx/english_2026-04/text_conditioner.onnx",
+          "sha256": "4ecee995fb69f85c7a7493d11f7b5ee15d9950facc7ab3f5c9c49ef1e03847bb",
+          "sizeBytes": 16388344
+        },
+        {
+          "artifactId": "flow_lm_main",
+          "role": "synthesis_model",
+          "required": true,
+          "filename": "flow_lm_main_int8.onnx",
+          "downloadUrl": "https://huggingface.co/KevinAHM/pocket-tts-onnx/resolve/58a6d00cf13d239b6748cb0769f35c580a8f606c/onnx/english_2026-04/flow_lm_main_int8.onnx",
+          "sha256": "f9bd8106b79a0192c1c43399ab938fb24900a95c1c599870d75a884e99000116",
+          "sizeBytes": 76341079
+        },
+        {
+          "artifactId": "flow_lm_flow",
+          "role": "supporting_file",
+          "required": true,
+          "filename": "flow_lm_flow_int8.onnx",
+          "downloadUrl": "https://huggingface.co/KevinAHM/pocket-tts-onnx/resolve/58a6d00cf13d239b6748cb0769f35c580a8f606c/onnx/english_2026-04/flow_lm_flow_int8.onnx",
+          "sha256": "3dd781ee5abee9e195320bf0106bebd6372a852b3b36352524ee78b40554635d",
+          "sizeBytes": 9962530
+        },
+        {
+          "artifactId": "mimi_decoder",
+          "role": "supporting_file",
+          "required": true,
+          "filename": "mimi_decoder_int8.onnx",
+          "downloadUrl": "https://huggingface.co/KevinAHM/pocket-tts-onnx/resolve/58a6d00cf13d239b6748cb0769f35c580a8f606c/onnx/english_2026-04/mimi_decoder_int8.onnx",
+          "sha256": "3630450a3297a101792a6ac66619ebc70ab916b265e6220c2afaef8b1673f925",
+          "sizeBytes": 22684077
+        },
+        {
+          "artifactId": "voice_alba",
+          "role": "voice",
+          "voiceId": "alba",
+          "required": true,
+          "filename": "embeddings/alba.safetensors",
+          "downloadUrl": "https://huggingface.co/kyutai/pocket-tts-without-voice-cloning/resolve/e041936c75475d350b405bc870bcf7c22da4e9e6/languages/english_2026-04/embeddings/alba.safetensors",
+          "sha256": "69c32db63ca56843d994f81f343f62e0bf2d73f7e4c9bc73e44bb1110b1d8845",
+          "sizeBytes": 6194424
+        },
+        {
+          "artifactId": "voice_cosette",
+          "role": "voice",
+          "voiceId": "cosette",
+          "required": false,
+          "filename": "embeddings/cosette.safetensors",
+          "downloadUrl": "https://huggingface.co/kyutai/pocket-tts-without-voice-cloning/resolve/e041936c75475d350b405bc870bcf7c22da4e9e6/languages/english_2026-04/embeddings/cosette.safetensors",
+          "sha256": "c4fdc15f5a3a20c44dd0064a37e87d15d25562936e8dbad7e07b9832015a545d",
+          "sizeBytes": 6194424
+        },
+        {
+          "artifactId": "voice_fantine",
+          "role": "voice",
+          "voiceId": "fantine",
+          "required": false,
+          "filename": "embeddings/fantine.safetensors",
+          "downloadUrl": "https://huggingface.co/kyutai/pocket-tts-without-voice-cloning/resolve/e041936c75475d350b405bc870bcf7c22da4e9e6/languages/english_2026-04/embeddings/fantine.safetensors",
+          "sha256": "51a8a4355d7f912d4959e4b1918314fda85ad47eba0a33a1d78a4a505d3465f5",
+          "sizeBytes": 6538488
+        },
+        {
+          "artifactId": "voice_javert",
+          "role": "voice",
+          "voiceId": "javert",
+          "required": false,
+          "filename": "embeddings/javert.safetensors",
+          "downloadUrl": "https://huggingface.co/kyutai/pocket-tts-without-voice-cloning/resolve/e041936c75475d350b405bc870bcf7c22da4e9e6/languages/english_2026-04/embeddings/javert.safetensors",
+          "sha256": "0ae88e03ca4e76a0e16cbf321a807428febda9d9e9bc0358c02e7f9c9e2c263b",
+          "sizeBytes": 6194424
+        },
+        {
+          "artifactId": "voice_jean",
+          "role": "voice",
+          "voiceId": "jean",
+          "required": false,
+          "filename": "embeddings/jean.safetensors",
+          "downloadUrl": "https://huggingface.co/kyutai/pocket-tts-without-voice-cloning/resolve/e041936c75475d350b405bc870bcf7c22da4e9e6/languages/english_2026-04/embeddings/jean.safetensors",
+          "sha256": "90be4b8f50bb4d2dbe27e3fb4e31417cf6a57928931f0a60426a1748821a3d12",
+          "sizeBytes": 6194424
+        },
+        {
+          "artifactId": "voice_marius",
+          "role": "voice",
+          "voiceId": "marius",
+          "required": false,
+          "filename": "embeddings/marius.safetensors",
+          "downloadUrl": "https://huggingface.co/kyutai/pocket-tts-without-voice-cloning/resolve/e041936c75475d350b405bc870bcf7c22da4e9e6/languages/english_2026-04/embeddings/marius.safetensors",
+          "sha256": "04f84efcb77a0547ba582c058db496f7ff4920891d49d37b9950d128422582a8",
+          "sizeBytes": 6194424
         }
       ]
     }

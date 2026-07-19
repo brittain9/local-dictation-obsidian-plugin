@@ -1026,7 +1026,7 @@ mod tests {
 
     use super::*;
     use crate::audio_metadata::voiced_fraction;
-    use crate::engine::capabilities::LanguageSupport;
+    use crate::engine::capabilities::{LanguageSupport, ModelTask};
     use crate::engine::traits::ModelFamilyAdapter;
     use crate::protocol::{
         ListeningMode, TimestampGranularity, TimestampSource, TranscriptSegment,
@@ -1883,6 +1883,10 @@ mod tests {
 
     fn streaming_caps() -> ModelFamilyCapabilities {
         ModelFamilyCapabilities {
+            task: ModelTask::Stt,
+            available_voices: Vec::new(),
+            supports_speed_control: false,
+            output_sample_rate: None,
             supports_segment_timestamps: false,
             supports_word_timestamps: false,
             supports_initial_prompt: false,
@@ -2222,6 +2226,10 @@ mod tests {
 
     fn whisper_caps() -> ModelFamilyCapabilities {
         ModelFamilyCapabilities {
+            task: ModelTask::Stt,
+            available_voices: Vec::new(),
+            supports_speed_control: false,
+            output_sample_rate: None,
             supports_segment_timestamps: true,
             supports_word_timestamps: false,
             supports_initial_prompt: true,

@@ -827,7 +827,7 @@ mod tests {
         ArtifactRole, CatalogModel, ModelArtifact, ModelCatalog, ModelCollection,
         ModelFamilyDescriptor, ModelRuntimeDescriptor,
     };
-    use crate::engine::capabilities::{ModelFamilyId, RuntimeId};
+    use crate::engine::capabilities::{ModelFamilyId, ModelTask, RuntimeId};
     use crate::protocol::{Event, ModelInstallState};
     use crate::transcription::TranscriptionError;
     use sha2::{Digest, Sha256};
@@ -1412,8 +1412,10 @@ mod tests {
             display_name: "Model".to_string(),
             runtime_id: RuntimeId::WhisperCpp,
             family_id: ModelFamilyId::Whisper,
+            task: ModelTask::Stt,
             language_tags: vec!["en".to_string()],
             supports_automatic_language_detection: false,
+            default_voice: None,
             license_label: "MIT".to_string(),
             license_url: "https://example.com/license".to_string(),
             model_card_url: None,
@@ -1438,6 +1440,7 @@ mod tests {
             families: vec![ModelFamilyDescriptor {
                 family_id: ModelFamilyId::Whisper,
                 runtime_id: RuntimeId::WhisperCpp,
+                task: ModelTask::Stt,
                 display_name: "Whisper".to_string(),
                 summary: "summary".to_string(),
             }],
@@ -1467,6 +1470,7 @@ mod tests {
             filename: filename.to_string(),
             required: true,
             role,
+            voice_id: None,
             sha256: sha256_hex(bytes),
             size_bytes: bytes.len() as u64,
         }

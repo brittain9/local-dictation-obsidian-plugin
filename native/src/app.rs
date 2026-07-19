@@ -1790,7 +1790,7 @@ mod tests {
     };
     use crate::engine::capabilities::{
         AcceleratorAvailability, AcceleratorId, LanguageSupport, ModelFamilyCapabilities,
-        ModelFamilyId, ModelFormat, RuntimeCapabilities, RuntimeId,
+        ModelFamilyId, ModelFormat, ModelTask, RuntimeCapabilities, RuntimeId,
     };
     use crate::engine::registry::EngineRegistry;
     use crate::engine::traits::{LoadedModel, ModelFamilyAdapter, Runtime};
@@ -1901,6 +1901,10 @@ mod tests {
                 family_id: ModelFamilyId::Whisper,
                 runtime_id: RuntimeId::WhisperCpp,
                 capabilities: ModelFamilyCapabilities {
+                    task: ModelTask::Stt,
+                    available_voices: Vec::new(),
+                    supports_speed_control: false,
+                    output_sample_rate: None,
                     supports_segment_timestamps: true,
                     supports_word_timestamps: false,
                     supports_initial_prompt,
@@ -3750,6 +3754,7 @@ mod tests {
             families: vec![ModelFamilyDescriptor {
                 family_id: ModelFamilyId::Whisper,
                 runtime_id: RuntimeId::WhisperCpp,
+                task: ModelTask::Stt,
                 display_name: "Whisper".to_string(),
                 summary: "summary".to_string(),
             }],
@@ -3760,6 +3765,7 @@ mod tests {
                     filename: "model.bin".to_string(),
                     required: true,
                     role: ArtifactRole::TranscriptionModel,
+                    voice_id: None,
                     sha256: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
                         .to_string(),
                     size_bytes: 10,
@@ -3768,8 +3774,10 @@ mod tests {
                 display_name: "Model".to_string(),
                 runtime_id: RuntimeId::WhisperCpp,
                 family_id: ModelFamilyId::Whisper,
+                task: ModelTask::Stt,
                 language_tags: vec!["en".to_string()],
                 supports_automatic_language_detection: false,
+                default_voice: None,
                 license_label: "MIT".to_string(),
                 license_url: "https://example.com/license".to_string(),
                 model_card_url: None,

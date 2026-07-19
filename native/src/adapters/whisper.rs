@@ -4,7 +4,7 @@ use std::sync::LazyLock;
 use whisper_rs::{FullParams, SamplingStrategy, WhisperContext, WhisperContextParameters};
 
 use crate::engine::capabilities::{
-    LanguageSupport, ModelFamilyCapabilities, ModelFamilyId, RuntimeId,
+    LanguageSupport, ModelFamilyCapabilities, ModelFamilyId, ModelTask, RuntimeId,
 };
 use crate::engine::traits::{LoadedModel, ModelFamilyAdapter};
 use crate::protocol::{TimestampGranularity, TimestampSource, TranscriptSegment, TranscriptWord};
@@ -19,6 +19,10 @@ pub struct WhisperAdapter;
 
 static CAPABILITIES: LazyLock<ModelFamilyCapabilities> =
     LazyLock::new(|| ModelFamilyCapabilities {
+        task: ModelTask::Stt,
+        available_voices: Vec::new(),
+        supports_speed_control: false,
+        output_sample_rate: None,
         supports_segment_timestamps: true,
         supports_word_timestamps: true,
         supports_initial_prompt: true,

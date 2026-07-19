@@ -6,7 +6,7 @@ use ort::session::{Session, SessionInputValue};
 use ort::value::{DynValue, TensorElementType, Value, ValueType};
 
 use crate::engine::capabilities::{
-    LanguageSupport, ModelFamilyCapabilities, ModelFamilyId, RuntimeId,
+    LanguageSupport, ModelFamilyCapabilities, ModelFamilyId, ModelTask, RuntimeId,
 };
 use crate::engine::traits::{LoadedModel, ModelFamilyAdapter};
 use crate::protocol::{TimestampGranularity, TimestampSource, TranscriptSegment};
@@ -43,6 +43,10 @@ const TOKENIZER_FILENAME: &str = "tokenizer.json";
 pub struct CohereTranscribeAdapter;
 
 const CAPABILITIES: ModelFamilyCapabilities = ModelFamilyCapabilities {
+    task: ModelTask::Stt,
+    available_voices: Vec::new(),
+    supports_speed_control: false,
+    output_sample_rate: None,
     supports_segment_timestamps: false,
     supports_word_timestamps: false,
     supports_initial_prompt: false,
