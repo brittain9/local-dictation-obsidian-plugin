@@ -24,13 +24,18 @@ describe('registerCommands', () => {
       copyRawTranscript: vi.fn(),
       hasLastUtterance: () => available,
       hasRawTranscriptRecovery: () => false,
+      isReadAloudActive: () => false,
       plugin,
+      readAloud: vi.fn(async () => {}),
+      readEntireNote: vi.fn(async () => {}),
       reinsertLastUtterance,
       restoreRawTranscript: vi.fn(),
       restartSidecar: vi.fn(async () => {}),
       startDictation: vi.fn(async () => {}),
+      stopReadAloud: vi.fn(),
       stopDictation: vi.fn(async () => {}),
       toggleDictation: vi.fn(async () => {}),
+      toggleReadAloudPaused: vi.fn(async () => {}),
     });
     const reinsertCommand = commands.find(({ id }) => id === 'reinsert-last-utterance');
     const clearCommand = commands.find(({ id }) => id === 'clear-last-utterance');
@@ -80,13 +85,18 @@ describe('registerCommands', () => {
       copyRawTranscript,
       hasLastUtterance: () => false,
       hasRawTranscriptRecovery: () => available,
+      isReadAloudActive: () => false,
       plugin,
+      readAloud: vi.fn(async () => {}),
+      readEntireNote: vi.fn(async () => {}),
       reinsertLastUtterance: vi.fn(),
       restoreRawTranscript,
       restartSidecar: vi.fn(async () => {}),
       startDictation: vi.fn(async () => {}),
+      stopReadAloud: vi.fn(),
       stopDictation: vi.fn(async () => {}),
       toggleDictation: vi.fn(async () => {}),
+      toggleReadAloudPaused: vi.fn(async () => {}),
     });
     const restoreCommand = commands.find(({ id }) => id === 'restore-raw-transcript');
     const copyCommand = commands.find(({ id }) => id === 'copy-raw-transcript');

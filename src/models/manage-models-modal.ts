@@ -160,6 +160,18 @@ export class ManageModelsModal extends Modal {
     }
 
     for (const adapter of adapters) {
+      if (
+        adapters.findIndex((candidate) => candidate.task === adapter.task) ===
+        adapters.indexOf(adapter)
+      ) {
+        this.tabBarEl.createSpan({
+          cls: 'local-stt-task-label',
+          text:
+            adapter.task === 'tts'
+              ? t('models.manage.readAloudModels')
+              : t('models.manage.dictationModels'),
+        });
+      }
       const tabKey: AdapterTabKey = {
         runtimeId: adapter.runtimeId,
         familyId: adapter.familyId,
@@ -257,7 +269,8 @@ export class ManageModelsModal extends Modal {
     setting.settingEl.addClass('local-stt-model-row');
     setting.setName(row.model.displayName);
     const selectedLanguage = this.deps.manager.getDictationLanguage();
-    const supportsSelectedLanguage = catalogModelSupportsLanguage(row.model, selectedLanguage);
+    const supportsSelectedLanguage =
+      row.model.task === 'tts' || catalogModelSupportsLanguage(row.model, selectedLanguage);
 
     // Description: install progress when installing/canceling, tags + size otherwise.
     if (row.isInstalling || row.isCanceling) {
@@ -410,6 +423,55 @@ export class ManageModelsModal extends Modal {
           break;
       }
     }
+
+    if (row.installed && row.model.task === 'tts') {
+      this.renderVoiceRows(row, container);
+    }
+  }
+
+  private renderVoiceRows(row: ModelRowState, container: HTMLDivElement): void {
+    const installed = this.deps.manager
+      .getState()
+      .installedModels.find((model) =>
+        matchesModelTriple(model, row.model.runtimeId, row.model.familyId, row.model.modelId),
+      );
+    for (const artifact of row.model.artifacts.filter(
+      (candidate) => candidate.role === 'voice' && !candidate.required,
+    )) {
+      const voiceId = artifact.voiceId;
+      if (voiceId === undefined) continue;
+      const voiceSetting = new Setting(container)
+        .setName(voiceLabel(voiceId))
+        .setDesc(t('models.manage.optionalVoice'));
+      voiceSetting.settingEl.addClass('local-stt-voice-row');
+      if (installed?.installedVoiceIds.includes(voiceId) ?? false) {
+        voiceSetting.addButton((button) => {
+          button.setButtonText(t('models.manage.voiceInstalled')).setDisabled(true);
+        });
+      } else {
+        voiceSetting.addButton((button) => {
+          button
+            .setButtonText(t('common.install'))
+            .setDisabled(this.actionInProgress)
+            .onClick(() => {
+              void this.runAction(
+                async () => {
+                  await this.deps.manager.install(
+                    {
+                      familyId: row.model.familyId,
+                      kind: 'catalog_model',
+                      modelId: row.model.modelId,
+                      runtimeId: row.model.runtimeId,
+                    },
+                    [artifact.artifactId],
+                  );
+                },
+                { failureMessage: t('models.manage.installStartFailed') },
+              );
+            });
+        });
+      }
+    }
   }
 
   // -------------------------------------------------------------------------
@@ -543,6 +605,10 @@ export class ManageModelsModal extends Modal {
 
     return frag;
   }
+}
+
+function voiceLabel(voiceId: string): string {
+  return `${voiceId.charAt(0).toUpperCase()}${voiceId.slice(1)}`;
 }
 
 function getRowKey(row: ModelRowState): string {

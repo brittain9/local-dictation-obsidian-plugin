@@ -40,6 +40,8 @@ function buildState(overrides?: Partial<ModelManagerState>): ModelManagerState {
     modelStore: { overridePath: null, path: '/models', usingDefaultPath: true },
     selectedModel: null,
     selectedModelCapabilities: { status: 'none' },
+    selectedTtsModel: null,
+    selectedTtsModelCapabilities: { status: 'none' },
     ...overrides,
   };
 }
@@ -70,15 +72,19 @@ function compiledAdapter(
   return {
     displayName: familyId,
     familyCapabilities: {
+      availableVoices: [],
       maxAudioDurationSecs: null,
+      outputSampleRate: null,
       producesPunctuation: true,
       supportedLanguages: { kind: 'english_only' },
       supportsInitialPrompt: false,
+      supportsSpeedControl: false,
       supportsLanguageSelection: false,
       supportsAutomaticLanguageDetection: false,
       supportsSegmentTimestamps: false,
       supportsStreaming: familyId === 'moonshine',
       supportsWordTimestamps: false,
+      task: 'stt',
     },
     familyId,
     runtimeId,

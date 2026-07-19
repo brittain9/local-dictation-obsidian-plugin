@@ -1,6 +1,6 @@
 import { dirname, join } from 'node:path';
 import { IS_PRODUCTION_BUILD } from 'virtual:build-mode';
-import { FileSystemAdapter, getLanguage, Platform, Plugin } from 'obsidian';
+import { FileSystemAdapter, getLanguage, Platform, Plugin, setIcon } from 'obsidian';
 
 import { AudioCaptureStream } from './audio/audio-capture-stream';
 import { SidecarAudioLevelMeter } from './audio/sidecar-audio-level-meter';
@@ -54,6 +54,7 @@ import {
   detectSidecarVersionDrift,
   type SidecarVersionDrift,
 } from './sidecar/sidecar-version-drift';
+import { ReadAloudController, type ReadAloudState } from './tts/read-aloud-controller';
 import { DictationRibbonController } from './ui/dictation-ribbon';
 import { LOCAL_DICTATION_VIEW_TYPE, LocalDictationView } from './ui/local-dictation-view';
 
@@ -77,6 +78,8 @@ export default class LocalSttPlugin extends Plugin {
     workspace: this.app.workspace,
   });
   private ribbonController: DictationRibbonController | null = null;
+  private readAloudController: ReadAloudController | null = null;
+  private readAloudStatus: HTMLElement | null = null;
   private settings: PluginSettings = DEFAULT_PLUGIN_SETTINGS;
   private sidecarConnection: SidecarConnection | null = null;
   private sidecarInstallManager: SidecarInstallManager | null = null;
@@ -179,7 +182,7 @@ export default class LocalSttPlugin extends Plugin {
     );
 
     const ribbonElement = this.addRibbonIcon('mic', t('ribbon.idle'), () => {
-      void this.requireDictationController().toggleDictation();
+      void this.toggleDictationWithInterlock();
     });
     this.ribbonController = new DictationRibbonController(ribbonElement);
     this.ribbonController.setVisualizer(this.audioLevelMeter);
@@ -235,6 +238,19 @@ export default class LocalSttPlugin extends Plugin {
       },
       sidecarConnection: this.sidecarConnection,
     });
+    this.readAloudStatus = this.addStatusBarItem();
+    this.readAloudStatus.addClass('local-stt-read-aloud-status');
+    this.readAloudController = new ReadAloudController({
+      feedback: this.feedback,
+      getCatalog: () => this.requireModelInstallManager().getState().catalog,
+      getSettings: () => this.settings,
+      isDictationBusy: () => this.requireDictationController().isBusy(),
+      logger: this.logger,
+      onStateChange: (state) => this.renderReadAloudStatus(state),
+      sidecarConnection: this.sidecarConnection,
+      stopDictation: () => this.requireDictationController().stopDictation(),
+    });
+    this.renderReadAloudStatus('idle');
 
     this.addSettingTab(
       new LocalSttSettingTab(this.app, this, {
@@ -283,7 +299,10 @@ export default class LocalSttPlugin extends Plugin {
       },
       hasLastUtterance: () => this.lastUtteranceRecovery.hasUtterance(),
       hasRawTranscriptRecovery: () => this.rawTranscriptRecovery.hasRecovery(),
+      isReadAloudActive: () => this.requireReadAloudController().isActive(),
       plugin: this,
+      readAloud: (editor) => this.requireReadAloudController().read(editor),
+      readEntireNote: (editor) => this.requireReadAloudController().read(editor, true),
       reinsertLastUtterance: (editor) => {
         this.lastUtteranceRecovery.reinsert(editor);
       },
@@ -291,10 +310,26 @@ export default class LocalSttPlugin extends Plugin {
         this.rawTranscriptRecovery.restoreRawTranscript();
       },
       restartSidecar: async () => this.restartSidecar(),
-      startDictation: async () => this.requireDictationController().startDictation(),
+      startDictation: async () => this.startDictationWithInterlock(),
+      stopReadAloud: () => this.requireReadAloudController().stop(),
       stopDictation: async () => this.requireDictationController().stopDictation(),
-      toggleDictation: async () => this.requireDictationController().toggleDictation(),
+      toggleDictation: async () => this.toggleDictationWithInterlock(),
+      toggleReadAloudPaused: () => this.requireReadAloudController().togglePaused(),
     });
+
+    this.registerEvent(
+      this.app.workspace.on('editor-menu', (menu, editor) => {
+        if (!editor.somethingSelected()) return;
+        menu.addItem((item) => {
+          item
+            .setTitle(t('commands.readAloud'))
+            .setIcon('audio-lines')
+            .onClick(() => {
+              void this.requireReadAloudController().read(editor);
+            });
+        });
+      }),
+    );
 
     this.app.workspace.onLayoutReady(() => {
       void this.runPostLayoutStartup();
@@ -407,7 +442,7 @@ export default class LocalSttPlugin extends Plugin {
       sidecarConnection: this.requireSidecarConnection(),
       sidecarInstallManager: this.requireSidecarInstallManager(),
       sidecarStartupTimeoutMs: this.settings.sidecarStartupTimeoutSeconds * 1000,
-      startDictation: () => this.requireDictationController().startDictation(),
+      startDictation: () => this.startDictationWithInterlock(),
     });
     modal.open();
   }
@@ -460,6 +495,12 @@ export default class LocalSttPlugin extends Plugin {
     }
 
     try {
+      this.readAloudController?.dispose();
+    } catch (error) {
+      this.logger.error('tts', 'failed to dispose read-aloud controller cleanly', error);
+    }
+
+    try {
       await this.dictationController?.dispose();
     } catch (error) {
       this.logger.error('session', 'failed to dispose dictation controller cleanly', error);
@@ -509,7 +550,10 @@ export default class LocalSttPlugin extends Plugin {
   }
 
   private async restartSidecar(): Promise<void> {
-    if (this.requireDictationController().isBusy()) {
+    if (
+      this.requireDictationController().isBusy() ||
+      (this.readAloudController?.isActive() ?? false)
+    ) {
       this.feedback.show({
         intent: 'warning',
         message: t('notice.sidecarRestartRequiresIdle'),
@@ -552,6 +596,9 @@ export default class LocalSttPlugin extends Plugin {
     if (options.persist) {
       await this.saveData(this.settings);
     }
+    if (previousSettings.ttsSpeed !== this.settings.ttsSpeed) {
+      await this.readAloudController?.applySpeed(this.settings.ttsSpeed);
+    }
     if (previousSettings.llmFeaturesEnabled !== this.settings.llmFeaturesEnabled) {
       await this.syncLocalDictationSidebar();
       return;
@@ -585,6 +632,48 @@ export default class LocalSttPlugin extends Plugin {
     }
 
     return this.dictationController;
+  }
+
+  private requireReadAloudController(): ReadAloudController {
+    if (this.readAloudController === null) {
+      throw new Error('Read-aloud controller has not been initialized.');
+    }
+    return this.readAloudController;
+  }
+
+  private async startDictationWithInterlock(): Promise<void> {
+    this.readAloudController?.stop();
+    await this.requireDictationController().startDictation();
+  }
+
+  private async toggleDictationWithInterlock(): Promise<void> {
+    if (!this.requireDictationController().isBusy()) this.readAloudController?.stop();
+    await this.requireDictationController().toggleDictation();
+  }
+
+  private renderReadAloudStatus(state: ReadAloudState): void {
+    const status = this.readAloudStatus;
+    if (status === null) return;
+    status.empty();
+    status.toggleClass('is-hidden', state === 'idle');
+    if (state === 'idle') return;
+    status.createSpan({
+      text: state === 'paused' ? t('tts.status.paused') : t('tts.status.reading'),
+    });
+    const pause = status.createEl('button', {
+      attr: { 'aria-label': t('commands.pauseResumeReadAloud') },
+      cls: 'clickable-icon',
+    });
+    setIcon(pause, state === 'paused' ? 'play' : 'pause');
+    pause.addEventListener('click', () => {
+      void this.requireReadAloudController().togglePaused();
+    });
+    const stop = status.createEl('button', {
+      attr: { 'aria-label': t('commands.stopReadAloud') },
+      cls: 'clickable-icon',
+    });
+    setIcon(stop, 'square');
+    stop.addEventListener('click', () => this.requireReadAloudController().stop());
   }
 
   private requirePresetStateStore(): LlmPresetStateStore {

@@ -79,6 +79,38 @@
   border-bottom: 1px solid var(--background-modifier-border, rgba(128, 128, 128, 0.2));
 }
 
+.local-stt-task-label {
+  align-self: center;
+  margin: 0 6px 0 12px;
+  color: var(--text-muted);
+  font-size: var(--font-smallest);
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+.local-stt-task-label:first-child {
+  margin-left: 0;
+}
+
+.local-stt-voice-row {
+  margin-left: 24px;
+}
+
+.local-stt-read-aloud-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.local-stt-read-aloud-status.is-hidden {
+  display: none;
+}
+
+.local-stt-read-aloud-status button {
+  border: 0;
+  background: transparent;
+}
+
 .local-stt-tab-bar {
   display: flex;
   gap: 0;

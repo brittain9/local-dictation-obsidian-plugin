@@ -31,6 +31,8 @@ describe('model settings section ownership', () => {
       modelStore: { overridePath: null, path: '/models', usingDefaultPath: true },
       selectedModel: null,
       selectedModelCapabilities: { status: 'none' },
+      selectedTtsModel: null,
+      selectedTtsModelCapabilities: { status: 'none' },
     };
     const manager = {
       getState: () => state,

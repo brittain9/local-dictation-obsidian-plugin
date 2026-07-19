@@ -28,7 +28,7 @@ export const de = {
   'notice.sidecarRestarted': 'sidecar ({version}) neu gestartet.',
   'notice.sidecarRestartFailed': 'Sidecar-Neustart fehlgeschlagen',
   'notice.sidecarRestartRequiresIdle':
-    'Starten Sie den sidecar nur dann neu, wenn das Diktieren im Leerlauf ist.',
+    'Starten Sie den sidecar nur neu, wenn Diktat und Vorlesen inaktiv sind.',
   'notice.transcriptRecordFailed': 'Das Transkript konnte nicht aufgezeichnet werden.',
   'notice.sidecarSessionError': 'Die Sprach-Engine hat einen Fehler gemeldet.',
   'notice.sidecarVersionDrift.actionMultiple': 'Sprach-Engines aktualisieren',
@@ -811,4 +811,41 @@ export const de = {
     'Dieser Sprach-Engine-Build ist für Ihre Plattform oder Architektur nicht verfügbar.',
   'setup.sidecar.modal.genericInstallError':
     'Die Sprach-Engine konnte nicht installiert werden. Überprüfen Sie die Plugin-Protokolle auf Details und versuchen Sie es dann erneut.',
+  'commands.readAloud': 'Vorlesen',
+  'commands.readEntireNote': 'Ganze Notiz vorlesen',
+  'commands.pauseResumeReadAloud': 'Vorlesen pausieren oder fortsetzen',
+  'commands.stopReadAloud': 'Vorlesen beenden',
+  'settings.groups.readAloud': 'Vorlesen',
+  'settings.readAloud.noModel': 'Kein Vorlesemodell ausgewählt',
+  'settings.readAloud.modelDesc': 'Das lokale Modell zum Vorlesen von Notiztext.',
+  'settings.readAloud.voice': 'Stimme',
+  'settings.readAloud.voiceDesc': 'Wähle eine für das ausgewählte Modell installierte Stimme.',
+  'settings.readAloud.noVoices': 'Keine installierten Stimmen',
+  'settings.readAloud.speed': 'Lesegeschwindigkeit',
+  'settings.readAloud.speedDesc':
+    'Eine Änderung während des Vorlesens startet am aktuellen Satz neu.',
+  'models.manage.dictationModels': 'Diktiermodelle',
+  'models.manage.readAloudModels': 'Vorlesemodelle',
+  'models.manage.optionalVoice': 'Optionale lokale Stimme',
+  'models.manage.voiceInstalled': 'Installiert',
+  'tts.status.reading': 'Wird vorgelesen…',
+  'tts.status.paused': 'Vorlesen pausiert',
+  'tts.notice.noText': 'Hier gibt es keinen vorlesbaren Text.',
+  'tts.notice.modelRequired': 'Installiere und wähle zuerst ein Vorlesemodell.',
+  'tts.notice.voiceRequired': 'Wähle zuerst eine installierte Stimme.',
+  'tts.notice.startFailed': 'Vorlesen konnte nicht gestartet werden.',
+  'tts.notice.playbackFailed': 'Audiowiedergabe fehlgeschlagen.',
+  'tts.notice.sidecarExited':
+    'Das Vorlesen wurde beendet, weil der Sidecar unerwartet beendet wurde.',
+  'sidecarError.invalid_synthesis_request': 'Die Vorleseanfrage ist ungültig.',
+  'sidecarError.missing_voice_file': 'Die ausgewählte Vorlesestimme ist nicht installiert.',
+  'sidecarError.sidecar_exited': 'Der Sidecar-Prozess wurde unerwartet beendet.',
+  'sidecarError.synthesis_cancelled': 'Das Vorlesen wurde abgebrochen.',
+  'sidecarError.synthesis_failed': 'Die lokale Sprachsynthese ist fehlgeschlagen.',
+  'sidecarError.synthesis_worker_unavailable':
+    'Der lokale Sprachsynthese-Worker ist nicht verfügbar.',
+  'catalog.pocket_tts_english_2026_04_int8.summary':
+    'Natürliches lokales Vorlesen auf Englisch mit auswählbaren Stimmen.',
+  'catalog.family.pocket_tts.summary':
+    'Liest englischen Notiztext lokal mit natürlicher Prosodie, auswählbaren Stimmen und tonhöhentreuer Geschwindigkeitssteuerung vor.',
 } as const satisfies TranslationCatalog;

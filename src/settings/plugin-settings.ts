@@ -91,6 +91,8 @@ export const MAX_SMART_PARAGRAPH_PAUSE_MS = 30_000;
 
 export const MIN_DIARIZATION_MAX_SPEAKERS = 1;
 export const MAX_DIARIZATION_MAX_SPEAKERS = 8;
+export const MIN_TTS_SPEED = 0.75;
+export const MAX_TTS_SPEED = 2;
 
 export const SPEAKING_STYLES = [
   'responsive',
@@ -174,12 +176,15 @@ export interface PluginSettings {
   localTranscriptSidebarBootstrapped: boolean;
   modelStorePathOverride: string;
   retainLastUtterance: boolean;
-  schemaVersion: 5;
+  schemaVersion: 6;
   selectedModel: SelectedModel | null;
   // Last-known-good capabilities for `selectedModel`, captured on a successful
   // probe. Lets startup skip re-probing the sidecar (which forces a full
   // model load) when the cached selection still matches.
   selectedModelCapabilitiesSnapshot: SelectedModelCapabilitiesSnapshot | null;
+  selectedTtsModel: SelectedModel | null;
+  selectedTtsModelCapabilitiesSnapshot: SelectedModelCapabilitiesSnapshot | null;
+  selectedTtsVoice: string | null;
   setupCompletedAt: string | null;
   sidecarPathOverride: string;
   sidecarRequestTimeoutSeconds: number;
@@ -193,6 +198,7 @@ export interface PluginSettings {
   timestampSessionHeader: boolean;
   timestampSparseIntervalMs: number;
   transcriptFormatting: TranscriptFormattingMode;
+  ttsSpeed: number;
   useLlmNoteContext: boolean;
   useNoteAsContext: boolean;
 }
@@ -232,9 +238,12 @@ export const DEFAULT_PLUGIN_SETTINGS: PluginSettings = {
   localTranscriptSidebarBootstrapped: false,
   modelStorePathOverride: '',
   retainLastUtterance: true,
-  schemaVersion: 5,
+  schemaVersion: 6,
   selectedModel: null,
   selectedModelCapabilitiesSnapshot: null,
+  selectedTtsModel: null,
+  selectedTtsModelCapabilitiesSnapshot: null,
+  selectedTtsVoice: null,
   setupCompletedAt: null,
   sidecarPathOverride: '',
   sidecarRequestTimeoutSeconds: 300,
@@ -248,6 +257,7 @@ export const DEFAULT_PLUGIN_SETTINGS: PluginSettings = {
   timestampSessionHeader: true,
   timestampSparseIntervalMs: DEFAULT_TIMESTAMP_SPARSE_INTERVAL_MS,
   transcriptFormatting: 'smart',
+  ttsSpeed: 1,
   useLlmNoteContext: false,
   useNoteAsContext: true,
 };
@@ -363,14 +373,23 @@ export function resolvePluginSettings(data: unknown): PluginSettings {
       DEFAULT_PLUGIN_SETTINGS.retainLastUtterance,
     ),
     // Bump `schemaVersion` and add a migration step when renaming a key or changing default semantics.
-    schemaVersion: 5,
+    schemaVersion: 6,
     selectedModel: readSelectedModel(raw.selectedModel),
     // Automatic detection became a capability separate from language tags in
     // schema 4. Older snapshots cannot prove that exact-model behavior, so
     // force one fresh probe during migration.
     selectedModelCapabilitiesSnapshot:
-      raw.schemaVersion === 4 || raw.schemaVersion === 5
+      raw.schemaVersion === 4 || raw.schemaVersion === 5 || raw.schemaVersion === 6
         ? readSelectedModelCapabilitiesSnapshot(raw.selectedModelCapabilitiesSnapshot)
+        : null,
+    selectedTtsModel: readSelectedModel(raw.selectedTtsModel),
+    selectedTtsModelCapabilitiesSnapshot:
+      raw.schemaVersion === 6
+        ? readSelectedModelCapabilitiesSnapshot(raw.selectedTtsModelCapabilitiesSnapshot)
+        : null,
+    selectedTtsVoice:
+      typeof raw.selectedTtsVoice === 'string' && raw.selectedTtsVoice.trim().length > 0
+        ? raw.selectedTtsVoice.trim()
         : null,
     setupCompletedAt: readSetupCompletedAt(raw.setupCompletedAt),
     sidecarPathOverride: readString(
@@ -416,6 +435,12 @@ export function resolvePluginSettings(data: unknown): PluginSettings {
     transcriptFormatting: isTranscriptFormattingMode(raw.transcriptFormatting)
       ? raw.transcriptFormatting
       : DEFAULT_PLUGIN_SETTINGS.transcriptFormatting,
+    ttsSpeed: readClampedNumber(
+      raw.ttsSpeed,
+      DEFAULT_PLUGIN_SETTINGS.ttsSpeed,
+      MIN_TTS_SPEED,
+      MAX_TTS_SPEED,
+    ),
     useLlmNoteContext: readBoolean(
       raw.useLlmNoteContext,
       DEFAULT_PLUGIN_SETTINGS.useLlmNoteContext,
@@ -809,13 +834,33 @@ function readSelectedModel(selectedModel: unknown): SelectedModel | null {
 function readSelectedModelCapabilitiesSnapshot(
   value: unknown,
 ): SelectedModelCapabilitiesSnapshot | null {
-  if (!isSelectedModelCapabilitiesSnapshot(value)) {
+  const normalized = normalizeLegacyCapabilitiesSnapshot(value);
+  if (!isSelectedModelCapabilitiesSnapshot(normalized)) {
     return DEFAULT_PLUGIN_SETTINGS.selectedModelCapabilitiesSnapshot;
   }
 
   return {
-    capabilities: value.capabilities,
-    selection: normalizeSelectedModel(value.selection),
+    capabilities: normalized.capabilities,
+    selection: normalizeSelectedModel(normalized.selection),
+  };
+}
+
+function normalizeLegacyCapabilitiesSnapshot(value: unknown): unknown {
+  if (!isRecord(value) || !isRecord(value.capabilities) || !isRecord(value.capabilities.family)) {
+    return value;
+  }
+  return {
+    ...value,
+    capabilities: {
+      ...value.capabilities,
+      family: {
+        availableVoices: [],
+        outputSampleRate: null,
+        supportsSpeedControl: false,
+        task: 'stt',
+        ...value.capabilities.family,
+      },
+    },
   };
 }
 

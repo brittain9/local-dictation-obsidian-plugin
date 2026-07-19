@@ -8,6 +8,7 @@ import {
   type InstalledModelRecord,
   type ModelCatalogRecord,
   type ModelFamilyId,
+  type ModelTask,
   matchesModelTriple,
   type RuntimeId,
   type SelectedModel,
@@ -32,6 +33,7 @@ export interface ModelFamilyTab {
   displayName: string;
   familyId: ModelFamilyId;
   runtimeId: RuntimeId;
+  task: ModelTask;
 }
 
 export interface CurrentModelDisplay {
@@ -70,6 +72,7 @@ export function deriveModelFamilyTabs(
             displayName: adapter.displayName,
             familyId: adapter.familyId,
             runtimeId: adapter.runtimeId,
+            task: family.task,
           },
         ];
   });
@@ -83,7 +86,12 @@ export function deriveModelRowStates(state: ModelManagerState): ModelRowState[] 
   const { catalog, installedModels, selectedModel, activeInstall } = state;
 
   return [...catalog.models].sort(compareCatalogModels).map((model) => {
-    return deriveRowState(model, installedModels, selectedModel, activeInstall);
+    return deriveRowState(
+      model,
+      installedModels,
+      model.task === 'tts' ? state.selectedTtsModel : selectedModel,
+      activeInstall,
+    );
   });
 }
 
@@ -294,6 +302,8 @@ function resolveFamilyDisplayName(
       return 'Moonshine';
     case 'nemotron_asr':
       return 'NVIDIA Nemotron 3.5 ASR';
+    case 'pocket_tts':
+      return 'Pocket TTS';
     case 'whisper':
       return 'Whisper';
   }

@@ -23,7 +23,8 @@ export const en = {
   'notice.sidecarReady': 'Sidecar is ready ({version}).',
   'notice.sidecarRestarted': 'Restarted sidecar ({version}).',
   'notice.sidecarRestartFailed': 'Sidecar restart failed',
-  'notice.sidecarRestartRequiresIdle': 'Restart the sidecar only when dictation is idle.',
+  'notice.sidecarRestartRequiresIdle':
+    'Restart the sidecar only when dictation and reading are idle.',
   'notice.transcriptRecordFailed': 'Could not record the transcript.',
   'notice.sidecarSessionError': 'The speech engine reported an error.',
   'notice.sidecarVersionDrift.actionMultiple': 'Update speech engines',
@@ -110,6 +111,10 @@ export const en = {
   'commands.clearRawRecovery': 'Clear raw recovery',
   'commands.checkSidecarHealth': 'Check sidecar health',
   'commands.restartSidecar': 'Restart sidecar',
+  'commands.readAloud': 'Read aloud',
+  'commands.readEntireNote': 'Read entire note',
+  'commands.pauseResumeReadAloud': 'Pause or resume reading',
+  'commands.stopReadAloud': 'Stop reading',
   'common.reset': 'Reset',
   'settings.acceleration.pending': 'pending (sidecar not ready)',
   'settings.acceleration.unavailable': 'CPU ({accelerator} unavailable)',
@@ -123,12 +128,33 @@ export const en = {
   'settings.dictationLanguage.unsupported': '{language} (unsupported)',
   'settings.engine.named': '{engine} engine',
   'settings.groups.model': 'Model',
+  'settings.groups.readAloud': 'Read aloud',
   'settings.groups.capture': 'Capture',
   'settings.groups.transcriptOutput': 'Transcript output',
   'settings.groups.timestamps': 'Timestamps',
   'settings.groups.llmTransformation': 'LLM transformation',
   'settings.groups.engine': 'Engine',
   'settings.groups.advanced': 'Advanced',
+  'settings.readAloud.noModel': 'No read-aloud model selected',
+  'settings.readAloud.modelDesc': 'The local model used to read note text aloud.',
+  'settings.readAloud.voice': 'Voice',
+  'settings.readAloud.voiceDesc': 'Choose from voices installed for the selected model.',
+  'settings.readAloud.noVoices': 'No installed voices',
+  'settings.readAloud.speed': 'Reading speed',
+  'settings.readAloud.speedDesc':
+    'Changing speed while reading restarts from the current sentence.',
+  'models.manage.dictationModels': 'Dictation models',
+  'models.manage.readAloudModels': 'Read-aloud models',
+  'models.manage.optionalVoice': 'Optional local voice',
+  'models.manage.voiceInstalled': 'Installed',
+  'tts.status.reading': 'Reading…',
+  'tts.status.paused': 'Reading paused',
+  'tts.notice.noText': 'There is no speakable text here.',
+  'tts.notice.modelRequired': 'Install and select a read-aloud model first.',
+  'tts.notice.voiceRequired': 'Select an installed voice first.',
+  'tts.notice.startFailed': 'Could not start reading.',
+  'tts.notice.playbackFailed': 'Audio playback failed.',
+  'tts.notice.sidecarExited': 'Reading stopped because the sidecar exited unexpectedly.',
   'settings.listeningMode.alwaysOn': 'Always on',
   'settings.listeningMode.oneSentence': 'One sentence',
   'settings.listeningMode.name': 'Listening mode',
@@ -705,17 +731,23 @@ export const en = {
   'sidecarError.invalid_frame': 'The speech engine received an invalid protocol frame.',
   'sidecarError.invalid_model_file': 'Model file is missing, unreadable, or unsupported.',
   'sidecarError.invalid_model_store': 'The model storage folder is unavailable or invalid.',
+  'sidecarError.invalid_synthesis_request': 'The read-aloud request is invalid.',
   'sidecarError.missing_model_file': 'Model file does not exist or is not a regular file.',
+  'sidecarError.missing_voice_file': 'The selected read-aloud voice is not installed.',
   'sidecarError.no_active_install': 'There is no active model install to cancel.',
   'sidecarError.no_active_session': 'There is no active dictation session.',
   'sidecarError.session_already_exists': 'A dictation session with this id already exists.',
   'sidecarError.session_capacity_exceeded':
     'Local Dictation already has the maximum number of active sessions.',
+  'sidecarError.sidecar_exited': 'The sidecar process exited unexpectedly.',
   'sidecarError.system_audio_capture_failed': 'Could not start system-audio capture.',
   'sidecarError.system_audio_permission_denied':
     'System-audio recording permission is off for Obsidian. Open System Settings → Privacy & Security → Screen & System Audio Recording, enable Obsidian, and try again.',
   'sidecarError.system_audio_unsupported':
     "System-audio capture isn't available on this platform yet. Route this computer's output through a virtual audio device and pick it as your microphone — see the System audio guide.",
+  'sidecarError.synthesis_cancelled': 'Reading was cancelled.',
+  'sidecarError.synthesis_failed': 'Local speech synthesis failed.',
+  'sidecarError.synthesis_worker_unavailable': 'The local speech synthesis worker is unavailable.',
   'sidecarError.transcription_failure': 'Local transcription failed.',
   'sidecarError.unsupported_engine': 'The requested engine is not available in this build.',
   'sidecarError.unsupported_language':
@@ -751,6 +783,8 @@ export const en = {
     'Most accurate Moonshine streaming model at 245M parameters.',
   'catalog.nemotron_asr_0_6b_int8_streaming_560ms.summary':
     "NVIDIA's 0.6B multilingual RNNT, exported to int8 ONNX for cache-aware live transcription in eight verified languages.",
+  'catalog.pocket_tts_english_2026_04_int8.summary':
+    'Natural local English read-aloud synthesis with selectable curated voices.',
   'catalog.family.whisper.summary':
     'Transcribes after each pause. Whisper provides more accurate timestamps than other model families, including optional word-level timing. Tiny and Base favor speed, Small balances speed and quality, and Medium and Large favor quality.',
   'catalog.family.cohere_transcribe.summary':
@@ -759,6 +793,8 @@ export const en = {
     'Shows words while you speak. Tiny favors lower resource use, Small balances speed and quality, and Medium favors quality.',
   'catalog.family.nemotron_asr.summary':
     'Experimental high-accuracy multilingual streaming with a larger download and higher resource use. Moonshine Small remains the recommended English live-dictation default.',
+  'catalog.family.pocket_tts.summary':
+    'Reads English note text aloud locally with natural prosody, selectable voices, and pitch-preserving speed control.',
   'setup.sidecar.modal.unsupportedPlatform':
     'This speech engine build is not available for your platform or architecture.',
   'setup.sidecar.modal.genericInstallError':

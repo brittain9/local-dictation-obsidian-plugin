@@ -55,6 +55,8 @@ export interface ModelManagerState {
   modelStore: ModelStoreRecord;
   selectedModel: SelectedModel | null;
   selectedModelCapabilities: SelectedModelCapabilities;
+  selectedTtsModel: SelectedModel | null;
+  selectedTtsModelCapabilities: SelectedModelCapabilities;
 }
 
 interface ModelInstallManagerDependencies {
@@ -162,6 +164,7 @@ export class ModelInstallManager {
   private modelStore: ModelStoreRecord = EMPTY_MODEL_STORE;
   private releaseSidecarSubscription: (() => void) | null = null;
   private selectedModelCapabilities: SelectedModelCapabilities = { status: 'none' };
+  private selectedTtsModelCapabilities: SelectedModelCapabilities = { status: 'none' };
 
   constructor(private readonly deps: ModelInstallManagerDependencies) {}
 
@@ -242,6 +245,24 @@ export class ModelInstallManager {
       }
     }
 
+    const persistedTtsSelection = this.deps.getSettings().selectedTtsModel;
+    if (persistedTtsSelection !== null) {
+      const snapshot = this.deps.getSettings().selectedTtsModelCapabilitiesSnapshot;
+      if (snapshot !== null && selectedModelEquals(snapshot.selection, persistedTtsSelection)) {
+        this.selectedTtsModelCapabilities = {
+          capabilities: snapshot.capabilities,
+          selection: persistedTtsSelection,
+          status: 'ready',
+        };
+      } else {
+        this.selectedTtsModelCapabilities = {
+          selection: persistedTtsSelection,
+          status: 'pending',
+        };
+        void this.refreshSelectedCapabilities(persistedTtsSelection, 'tts');
+      }
+    }
+
     this.notify();
   }
 
@@ -286,6 +307,8 @@ export class ModelInstallManager {
       modelStore: this.modelStore,
       selectedModel: this.deps.getSettings().selectedModel,
       selectedModelCapabilities: this.selectedModelCapabilities,
+      selectedTtsModel: this.deps.getSettings().selectedTtsModel,
+      selectedTtsModelCapabilities: this.selectedTtsModelCapabilities,
     };
   }
 
@@ -297,7 +320,10 @@ export class ModelInstallManager {
   // Install operations
   // -----------------------------------------------------------------------
 
-  async install(selection: CatalogModelSelection): Promise<ModelInstallUpdateEvent> {
+  async install(
+    selection: CatalogModelSelection,
+    artifactIds?: string[],
+  ): Promise<ModelInstallUpdateEvent> {
     if (this.activeInstall !== null) {
       throw new Error('Another model is already being installed.');
     }
@@ -305,7 +331,7 @@ export class ModelInstallManager {
       matchesModelTriple(candidate, selection.runtimeId, selection.familyId, selection.modelId),
     );
     const language = this.getDictationLanguage();
-    if (model !== undefined && !catalogModelSupportsLanguage(model, language)) {
+    if (model?.task === 'stt' && !catalogModelSupportsLanguage(model, language)) {
       throw incompatibleLanguageError(model.displayName, language);
     }
 
@@ -316,6 +342,7 @@ export class ModelInstallManager {
     return this.deps.sidecarConnection.installModel({
       familyId: selection.familyId,
       installId: createInstallId(),
+      ...(artifactIds === undefined ? {} : { artifactIds }),
       modelId: selection.modelId,
       runtimeId: selection.runtimeId,
       ...createModelStoreOverridePayload(this.deps.getSettings().modelStorePathOverride),
@@ -406,6 +433,7 @@ export class ModelInstallManager {
   // -----------------------------------------------------------------------
 
   async select(selection: SelectedModel): Promise<ModelProbeResultEvent> {
+    const task = this.selectionTask(selection);
     const probeResult = await this.deps.sidecarConnection.probeModelSelection({
       modelSelection: selection,
       ...createModelStoreOverridePayload(this.deps.getSettings().modelStorePathOverride),
@@ -415,8 +443,8 @@ export class ModelInstallManager {
       // The user explicitly (re-)probed this exact selection and it's
       // confirmed broken now — drop any cached "ready" snapshot for it so a
       // future startup doesn't trust stale, now-incorrect capabilities.
-      await this.applyProbeResultToCapabilities(selection, probeResult);
-      await this.invalidateCapabilitiesSnapshot(selection);
+      await this.applyProbeResultToCapabilities(selection, probeResult, task);
+      await this.invalidateCapabilitiesSnapshot(selection, task);
       throw new Error(createProbeFailureMessage(probeResult));
     }
 
@@ -433,6 +461,7 @@ export class ModelInstallManager {
       kind: 'unknown' as const,
     };
     if (
+      task === 'stt' &&
       !languageSupportIncludes(
         languageSupport,
         currentLanguage,
@@ -444,22 +473,42 @@ export class ModelInstallManager {
         (selection.kind === 'catalog_model' ? selection.modelId : selection.filePath);
       throw incompatibleLanguageError(displayName, currentLanguage);
     }
-    await this.updateSettings({ selectedModel: selection });
-    await this.applyProbeResultToCapabilities(selection, probeResult);
+    await this.updateSettings(
+      task === 'tts'
+        ? {
+            selectedTtsModel: selection,
+            selectedTtsVoice:
+              selection.kind === 'catalog_model'
+                ? (this.catalog.models.find((model) =>
+                    matchesModelTriple(
+                      model,
+                      selection.runtimeId,
+                      selection.familyId,
+                      selection.modelId,
+                    ),
+                  )?.defaultVoice ?? null)
+                : null,
+          }
+        : { selectedModel: selection },
+    );
+    await this.applyProbeResultToCapabilities(selection, probeResult, task);
     return probeResult;
   }
 
   async remove(selection: CatalogModelSelection): Promise<void> {
-    const currentSelection = this.deps.getSettings().selectedModel;
+    const settings = this.deps.getSettings();
+    const currentSelections = [settings.selectedModel, settings.selectedTtsModel];
 
     if (
-      currentSelection !== null &&
-      currentSelection.kind === 'catalog_model' &&
-      matchesModelTriple(
-        currentSelection,
-        selection.runtimeId,
-        selection.familyId,
-        selection.modelId,
+      currentSelections.some(
+        (currentSelection) =>
+          currentSelection?.kind === 'catalog_model' &&
+          matchesModelTriple(
+            currentSelection,
+            selection.runtimeId,
+            selection.familyId,
+            selection.modelId,
+          ),
       )
     ) {
       throw new Error('Cannot remove the currently selected model. Clear the selection first.');
@@ -503,6 +552,17 @@ export class ModelInstallManager {
     this.notify();
   }
 
+  async clearTtsSelection(): Promise<void> {
+    this.deps.logger?.debug('model', 'cleared selected read-aloud model');
+    await this.updateSettings({
+      selectedTtsModel: null,
+      selectedTtsModelCapabilitiesSnapshot: null,
+      selectedTtsVoice: null,
+    });
+    this.selectedTtsModelCapabilities = { status: 'none' };
+    this.notify();
+  }
+
   async validateAndSelectExternalFile(
     filePath: string,
     engine: Pick<ExternalFileModelSelection, 'familyId' | 'runtimeId'> = {
@@ -524,25 +584,31 @@ export class ModelInstallManager {
   // Private
   // -----------------------------------------------------------------------
 
-  private async refreshSelectedCapabilities(selection: SelectedModel): Promise<void> {
+  private async refreshSelectedCapabilities(
+    selection: SelectedModel,
+    task: 'stt' | 'tts' = 'stt',
+  ): Promise<void> {
     try {
       const probeResult = await this.deps.sidecarConnection.probeModelSelection({
         modelSelection: selection,
         ...createModelStoreOverridePayload(this.deps.getSettings().modelStorePathOverride),
       });
-      await this.applyProbeResultToCapabilities(selection, probeResult);
+      await this.applyProbeResultToCapabilities(selection, probeResult, task);
     } catch (error) {
       this.deps.logger?.warn(
         'model',
         `failed to probe selected model capabilities: ${error instanceof Error ? error.message : String(error)}`,
       );
-      const current = this.deps.getSettings().selectedModel;
+      const current =
+        task === 'tts'
+          ? this.deps.getSettings().selectedTtsModel
+          : this.deps.getSettings().selectedModel;
       if (current !== null && selectedModelEquals(current, selection)) {
-        this.selectedModelCapabilities = {
+        this.setCapabilities(task, {
           reason: 'probe_failed',
           selection,
           status: 'unavailable',
-        };
+        });
         this.notify();
       }
     }
@@ -551,26 +617,39 @@ export class ModelInstallManager {
   private async applyProbeResultToCapabilities(
     selection: SelectedModel,
     probeResult: ModelProbeResultEvent,
+    task: 'stt' | 'tts' = 'stt',
   ): Promise<void> {
-    const current = this.deps.getSettings().selectedModel;
+    const current =
+      task === 'tts'
+        ? this.deps.getSettings().selectedTtsModel
+        : this.deps.getSettings().selectedModel;
     if (current === null || !selectedModelEquals(current, selection)) {
       return;
     }
 
     if (probeResult.status === 'ready' && probeResult.mergedCapabilities !== null) {
-      this.selectedModelCapabilities = {
+      this.setCapabilities(task, {
         capabilities: probeResult.mergedCapabilities,
         selection,
         status: 'ready',
-      };
+      });
       // Cache the result so a future plugin startup can trust it instead of
       // re-probing the sidecar, which would force a full model load just to
       // populate UI badges (issue #195).
       await this.updateSettings({
-        selectedModelCapabilitiesSnapshot: {
-          capabilities: probeResult.mergedCapabilities,
-          selection,
-        },
+        ...(task === 'tts'
+          ? {
+              selectedTtsModelCapabilitiesSnapshot: {
+                capabilities: probeResult.mergedCapabilities,
+                selection,
+              },
+            }
+          : {
+              selectedModelCapabilitiesSnapshot: {
+                capabilities: probeResult.mergedCapabilities,
+                selection,
+              },
+            }),
       });
     } else if (probeResult.status === 'missing' || probeResult.status === 'invalid') {
       const details = createProbeFailureMessage(probeResult);
@@ -579,27 +658,37 @@ export class ModelInstallManager {
         `selected model probe reported ${probeResult.status}`,
         details,
       );
-      this.selectedModelCapabilities = {
+      this.setCapabilities(task, {
         details,
         reason: probeResult.status,
         selection,
         status: 'unavailable',
-      };
+      });
     } else {
-      this.selectedModelCapabilities = {
+      this.setCapabilities(task, {
         reason: 'probe_failed',
         selection,
         status: 'unavailable',
-      };
+      });
     }
 
     this.notify();
   }
 
-  private async invalidateCapabilitiesSnapshot(selection: SelectedModel): Promise<void> {
-    const snapshot = this.deps.getSettings().selectedModelCapabilitiesSnapshot;
+  private async invalidateCapabilitiesSnapshot(
+    selection: SelectedModel,
+    task: 'stt' | 'tts' = 'stt',
+  ): Promise<void> {
+    const snapshot =
+      task === 'tts'
+        ? this.deps.getSettings().selectedTtsModelCapabilitiesSnapshot
+        : this.deps.getSettings().selectedModelCapabilitiesSnapshot;
     if (snapshot !== null && selectedModelEquals(snapshot.selection, selection)) {
-      await this.updateSettings({ selectedModelCapabilitiesSnapshot: null });
+      await this.updateSettings(
+        task === 'tts'
+          ? { selectedTtsModelCapabilitiesSnapshot: null }
+          : { selectedModelCapabilitiesSnapshot: null },
+      );
     }
   }
 
@@ -660,7 +749,12 @@ export class ModelInstallManager {
 
     // Auto-select on install when nothing is currently selected — new users
     // shouldn't have to figure out a second "Use" click after installing.
-    if (completed !== undefined && this.deps.getSettings().selectedModel === null) {
+    const completedTask = completed === undefined ? null : this.selectionTask(completed);
+    const selectedForTask =
+      completedTask === 'tts'
+        ? this.deps.getSettings().selectedTtsModel
+        : this.deps.getSettings().selectedModel;
+    if (completed !== undefined && selectedForTask === null) {
       try {
         await this.select(completed);
       } catch (error) {
@@ -694,6 +788,23 @@ export class ModelInstallManager {
       lastError: null,
       phase: preservedPhase,
     };
+  }
+
+  private selectionTask(selection: SelectedModel): 'stt' | 'tts' {
+    if (selection.kind === 'external_file') return 'stt';
+    return (
+      this.catalog.models.find((model) =>
+        matchesModelTriple(model, selection.runtimeId, selection.familyId, selection.modelId),
+      )?.task ?? 'stt'
+    );
+  }
+
+  private setCapabilities(task: 'stt' | 'tts', capabilities: SelectedModelCapabilities): void {
+    if (task === 'tts') {
+      this.selectedTtsModelCapabilities = capabilities;
+    } else {
+      this.selectedModelCapabilities = capabilities;
+    }
   }
 
   private async fetchSystemInfo(): Promise<SystemInfoEvent | null> {

@@ -20,6 +20,7 @@ import {
   MAX_FRAME_PAYLOAD_BYTES,
   parseEventFrame,
   SESSION_ID_BYTES,
+  SYNTHESIS_AUDIO_FRAME_KIND,
   sessionIdToBytes,
   type TranscriptReadyEvent,
 } from '../src/sidecar/protocol';
@@ -128,6 +129,29 @@ describe('framing', () => {
       kind: AUDIO_FRAME_KIND,
       sessionId: SESSION_ID,
     });
+  });
+
+  it('parses synthesis PCM frames with little-endian session and sequence headers', () => {
+    const payload = new Uint8Array(12);
+    const payloadView = new DataView(payload.buffer);
+    payloadView.setUint32(0, 0x1020_3040, true);
+    payloadView.setUint32(4, 7, true);
+    payload.set([0x34, 0x12, 0xcc, 0xff], 8);
+    const frame = new Uint8Array(FRAME_HEADER_LENGTH + payload.byteLength);
+    frame[0] = SYNTHESIS_AUDIO_FRAME_KIND;
+    new DataView(frame.buffer).setUint32(1, payload.byteLength, true);
+    frame.set(payload, FRAME_HEADER_LENGTH);
+
+    const parsed = new FramedMessageParser(parseEventFrame).pushChunk(frame);
+    expect(parsed.fatal).toBeUndefined();
+    expect(parsed.frames).toEqual([
+      {
+        kind: SYNTHESIS_AUDIO_FRAME_KIND,
+        pcm16le: new Uint8Array([0x34, 0x12, 0xcc, 0xff]),
+        seq: 7,
+        synthesisId: 0x1020_3040,
+      },
+    ]);
   });
 });
 

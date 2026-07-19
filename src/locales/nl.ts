@@ -27,7 +27,7 @@ export const nl = {
   'notice.sidecarRestarted': 'sidecar opnieuw gestart ({version}).',
   'notice.sidecarRestartFailed': 'Opnieuw opstarten van Sidecar mislukt',
   'notice.sidecarRestartRequiresIdle':
-    'Start de sidecar alleen opnieuw op als het dictaat niet actief is.',
+    'Start de sidecar alleen opnieuw als dicteren en voorlezen niet actief zijn.',
   'notice.transcriptRecordFailed': 'Kan het transcript niet opnemen.',
   'notice.sidecarSessionError': 'De spraakengine heeft een fout gerapporteerd.',
   'notice.sidecarVersionDrift.actionMultiple': 'Spraakengines bijwerken',
@@ -797,4 +797,41 @@ export const nl = {
     'Deze spraakengine-build is niet beschikbaar voor uw platform of architectuur.',
   'setup.sidecar.modal.genericInstallError':
     'De spraakengine kan niet worden geïnstalleerd. Controleer de plug-inlogboeken voor meer informatie en probeer het vervolgens opnieuw.',
+  'commands.readAloud': 'Voorlezen',
+  'commands.readEntireNote': 'Hele notitie voorlezen',
+  'commands.pauseResumeReadAloud': 'Voorlezen pauzeren of hervatten',
+  'commands.stopReadAloud': 'Voorlezen stoppen',
+  'settings.groups.readAloud': 'Voorlezen',
+  'settings.readAloud.noModel': 'Geen voorleesmodel geselecteerd',
+  'settings.readAloud.modelDesc': 'Het lokale model waarmee tekst uit notities wordt voorgelezen.',
+  'settings.readAloud.voice': 'Stem',
+  'settings.readAloud.voiceDesc':
+    'Kies uit stemmen die voor het geselecteerde model zijn geïnstalleerd.',
+  'settings.readAloud.noVoices': 'Geen geïnstalleerde stemmen',
+  'settings.readAloud.speed': 'Voorleessnelheid',
+  'settings.readAloud.speedDesc':
+    'Als u de snelheid tijdens het voorlezen wijzigt, wordt de huidige zin opnieuw gestart.',
+  'models.manage.dictationModels': 'Dicteermodellen',
+  'models.manage.readAloudModels': 'Voorleesmodellen',
+  'models.manage.optionalVoice': 'Optionele lokale stem',
+  'models.manage.voiceInstalled': 'Geïnstalleerd',
+  'tts.status.reading': 'Bezig met voorlezen…',
+  'tts.status.paused': 'Voorlezen gepauzeerd',
+  'tts.notice.noText': 'Hier staat geen tekst die kan worden voorgelezen.',
+  'tts.notice.modelRequired': 'Installeer en selecteer eerst een voorleesmodel.',
+  'tts.notice.voiceRequired': 'Selecteer eerst een geïnstalleerde stem.',
+  'tts.notice.startFailed': 'Voorlezen kon niet worden gestart.',
+  'tts.notice.playbackFailed': 'Afspelen van audio is mislukt.',
+  'tts.notice.sidecarExited': 'Voorlezen is gestopt omdat de sidecar onverwacht is afgesloten.',
+  'sidecarError.invalid_synthesis_request': 'Het voorleesverzoek is ongeldig.',
+  'sidecarError.missing_voice_file': 'De geselecteerde voorleesstem is niet geïnstalleerd.',
+  'sidecarError.sidecar_exited': 'Het sidecar-proces is onverwacht afgesloten.',
+  'sidecarError.synthesis_cancelled': 'Voorlezen is geannuleerd.',
+  'sidecarError.synthesis_failed': 'Lokale spraaksynthese is mislukt.',
+  'sidecarError.synthesis_worker_unavailable':
+    'De lokale spraaksyntheseworker is niet beschikbaar.',
+  'catalog.pocket_tts_english_2026_04_int8.summary':
+    'Natuurlijk lokaal Engels voorlezen met een keuze uit samengestelde stemmen.',
+  'catalog.family.pocket_tts.summary':
+    'Leest Engelse notitietekst lokaal voor met natuurlijke prosodie, selecteerbare stemmen en toonhoogtebehoudende snelheidsregeling.',
 } as const satisfies TranslationCatalog;

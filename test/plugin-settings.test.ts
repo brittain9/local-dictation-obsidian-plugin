@@ -36,7 +36,7 @@ describe('resolvePluginSettings', () => {
   });
 
   it('defaults missing schemaVersion to the current settings schema', () => {
-    expect(resolvePluginSettings({}).schemaVersion).toBe(5);
+    expect(resolvePluginSettings({}).schemaVersion).toBe(6);
   });
 
   it('migrates missing or invalid dictation language to English', () => {
@@ -247,15 +247,19 @@ describe('resolvePluginSettings', () => {
     };
     const capabilities = {
       family: {
+        availableVoices: [],
         maxAudioDurationSecs: null,
+        outputSampleRate: null,
         producesPunctuation: true,
         supportedLanguages: { kind: 'all' as const },
         supportsInitialPrompt: true,
+        supportsSpeedControl: false,
         supportsLanguageSelection: true,
         supportsAutomaticLanguageDetection: true,
         supportsSegmentTimestamps: true,
         supportsStreaming: false,
         supportsWordTimestamps: false,
+        task: 'stt' as const,
       },
       familyId: 'whisper' as const,
       runtime: {

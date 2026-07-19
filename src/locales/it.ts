@@ -26,7 +26,8 @@ export const it = {
   'notice.sidecarReady': 'Il sidecar è pronto ({version}).',
   'notice.sidecarRestarted': 'Sidecar riavviato ({version}).',
   'notice.sidecarRestartFailed': 'Riavvio del sidecar non riuscito',
-  'notice.sidecarRestartRequiresIdle': 'Riavvia il sidecar solo quando la dettatura non è attiva.',
+  'notice.sidecarRestartRequiresIdle':
+    'Riavvia il sidecar solo quando dettatura e lettura non sono attive.',
   'notice.transcriptRecordFailed': 'Impossibile registrare la trascrizione.',
   'notice.sidecarSessionError': 'Il motore di riconoscimento vocale ha segnalato un errore.',
   'notice.sidecarVersionDrift.actionMultiple': 'Aggiorna i motori di riconoscimento vocale',
@@ -808,4 +809,41 @@ export const it = {
     'Questa versione del motore di riconoscimento vocale non è disponibile per la tua piattaforma o architettura.',
   'setup.sidecar.modal.genericInstallError':
     'Impossibile installare il motore di riconoscimento vocale. Controlla i log del plugin per i dettagli, quindi riprova.',
+  'commands.readAloud': 'Leggi ad alta voce',
+  'commands.readEntireNote': "Leggi l'intera nota",
+  'commands.pauseResumeReadAloud': 'Metti in pausa o riprendi la lettura',
+  'commands.stopReadAloud': 'Interrompi la lettura',
+  'settings.groups.readAloud': 'Lettura ad alta voce',
+  'settings.readAloud.noModel': 'Nessun modello di lettura selezionato',
+  'settings.readAloud.modelDesc': 'Il modello locale usato per leggere il testo delle note.',
+  'settings.readAloud.voice': 'Voce',
+  'settings.readAloud.voiceDesc': 'Scegli tra le voci installate per il modello selezionato.',
+  'settings.readAloud.noVoices': 'Nessuna voce installata',
+  'settings.readAloud.speed': 'Velocità di lettura',
+  'settings.readAloud.speedDesc':
+    'Cambiare velocità durante la lettura riparte dalla frase corrente.',
+  'models.manage.dictationModels': 'Modelli di dettatura',
+  'models.manage.readAloudModels': 'Modelli di lettura',
+  'models.manage.optionalVoice': 'Voce locale facoltativa',
+  'models.manage.voiceInstalled': 'Installata',
+  'tts.status.reading': 'Lettura…',
+  'tts.status.paused': 'Lettura in pausa',
+  'tts.notice.noText': 'Qui non è presente testo leggibile.',
+  'tts.notice.modelRequired': 'Installa e seleziona prima un modello di lettura.',
+  'tts.notice.voiceRequired': 'Seleziona prima una voce installata.',
+  'tts.notice.startFailed': 'Impossibile avviare la lettura.',
+  'tts.notice.playbackFailed': 'Riproduzione audio non riuscita.',
+  'tts.notice.sidecarExited':
+    'La lettura si è interrotta perché il sidecar è terminato inaspettatamente.',
+  'sidecarError.invalid_synthesis_request': 'La richiesta di lettura non è valida.',
+  'sidecarError.missing_voice_file': 'La voce di lettura selezionata non è installata.',
+  'sidecarError.sidecar_exited': 'Il processo sidecar è terminato inaspettatamente.',
+  'sidecarError.synthesis_cancelled': 'La lettura è stata annullata.',
+  'sidecarError.synthesis_failed': 'La sintesi vocale locale non è riuscita.',
+  'sidecarError.synthesis_worker_unavailable':
+    'Il processo di sintesi vocale locale non è disponibile.',
+  'catalog.pocket_tts_english_2026_04_int8.summary':
+    'Lettura naturale locale in inglese con una selezione di voci curate.',
+  'catalog.family.pocket_tts.summary':
+    'Legge localmente il testo inglese delle note con prosodia naturale, voci selezionabili e controllo della velocità che preserva il tono.',
 } satisfies TranslationCatalog;

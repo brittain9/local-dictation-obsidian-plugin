@@ -40,6 +40,8 @@ import {
   isRemoteLlmEffectivelyEnabled,
   isSpeakingStyle,
   isTranscriptFormattingMode,
+  MAX_TTS_SPEED,
+  MIN_TTS_SPEED,
   type PluginSettings,
   type TranscriptFormattingMode,
 } from './plugin-settings';
@@ -217,6 +219,74 @@ export class LocalSttSettingTab extends PluginSettingTab {
         await this.access.persistOne('dictationLanguage', value);
       });
     });
+
+    // --- Read aloud ---
+    const readAloudSection = createSettingGroup(containerEl, t('settings.groups.readAloud'));
+    const ttsSelection = settings.selectedTtsModel;
+    const ttsCatalogModel =
+      ttsSelection?.kind === 'catalog_model'
+        ? (modelState.catalog.models.find((model) =>
+            matchesModelTriple(
+              model,
+              ttsSelection.runtimeId,
+              ttsSelection.familyId,
+              ttsSelection.modelId,
+            ),
+          ) ?? null)
+        : null;
+    new Setting(readAloudSection)
+      .setName(ttsCatalogModel?.displayName ?? t('settings.readAloud.noModel'))
+      .setDesc(t('settings.readAloud.modelDesc'))
+      .addButton((button) => {
+        button
+          .setCta()
+          .setButtonText(t('settings.model.manageModels'))
+          .onClick(() => {
+            void this.dependencies.openModelPicker({ onChanged: () => this.display() });
+          });
+      });
+
+    const installedTtsModel =
+      ttsCatalogModel === null
+        ? null
+        : (modelState.installedModels.find((model) =>
+            matchesModelTriple(
+              model,
+              ttsCatalogModel.runtimeId,
+              ttsCatalogModel.familyId,
+              ttsCatalogModel.modelId,
+            ),
+          ) ?? null);
+    const installedVoices = installedTtsModel?.installedVoiceIds ?? [];
+    const voiceSetting = new Setting(readAloudSection)
+      .setName(t('settings.readAloud.voice'))
+      .setDesc(t('settings.readAloud.voiceDesc'));
+    voiceSetting.addDropdown((dropdown) => {
+      if (installedVoices.length === 0) {
+        dropdown.addOption('', t('settings.readAloud.noVoices'));
+      }
+      for (const voice of installedVoices) {
+        dropdown.addOption(voice, `${voice.charAt(0).toUpperCase()}${voice.slice(1)}`);
+      }
+      dropdown.setValue(settings.selectedTtsVoice ?? installedVoices[0] ?? '');
+      dropdown.setDisabled(installedVoices.length === 0);
+      dropdown.onChange(async (voice) => {
+        await this.access.persistOne('selectedTtsVoice', voice.length === 0 ? null : voice);
+      });
+    });
+
+    new Setting(readAloudSection)
+      .setName(t('settings.readAloud.speed'))
+      .setDesc(t('settings.readAloud.speedDesc'))
+      .addSlider((slider) => {
+        slider
+          .setLimits(MIN_TTS_SPEED, MAX_TTS_SPEED, 0.05)
+          .setValue(settings.ttsSpeed)
+          .setDynamicTooltip()
+          .onChange(async (speed) => {
+            await this.access.persistOne('ttsSpeed', speed);
+          });
+      });
 
     // --- Capture ---
     const captureCard = createSettingGroup(containerEl, t('settings.groups.capture'));
