@@ -226,12 +226,14 @@ variants Kyutai recommends for non-English):
 | Pocket TTS Italian | `italian_24l` |
 
 Each model entry's required artifact set is `bundle.json` +
-`bos_before_voice.npy` + `tokenizer.model` + `text_conditioner.onnx` +
+`tokenizer.model` + `text_conditioner.onnx` +
 `flow_lm_main_int8.onnx` + `flow_lm_flow_int8.onnx` +
 `mimi_decoder_int8.onnx`. `mimi_encoder.onnx` is not installed. The curated
 voice set is Alba (default), Cosette, Fantine, Javert, Jean, and Marius. The
-initial English install includes the runtime and Alba (131,658,398 bytes,
-125.56 MiB). Manage Models offers the other five as individually installable
+initial English install includes the runtime and Alba (131,654,174 bytes,
+125.56 MiB). `bos_before_voice.npy` is intentionally excluded: the native path
+restores precomputed flow state directly and never conditions raw voice
+embeddings. Manage Models offers the other five as individually installable
 voice artifacts, and the voice picker lists installed voices. Voice states use
 `ArtifactRole::Voice`; remaining voices outside this curated set are follow-up
 artifacts (D4). Every artifact is pinned by size + SHA-256 and downloaded

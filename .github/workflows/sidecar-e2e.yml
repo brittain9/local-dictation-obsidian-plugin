@@ -124,6 +124,42 @@ jobs:
           path: ${{ runner.temp }}/quality/nemotron-english.jsonl
           if-no-files-found: error
 
+  pocket-tts-e2e:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup Node.js + npm
+        uses: ./.github/actions/setup-node-npm
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'true'
+          upgrade-npm: 'true'
+
+      - name: Setup Rust
+        uses: ./.github/actions/setup-sidecar-rust
+        with:
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
+          components: rustfmt, clippy
+          cache-workspaces: native -> target
+          cache-shared-key: pocket-tts-e2e
+
+      - name: Cache pinned Pocket TTS and Whisper models
+        uses: actions/cache@v6
+        with:
+          path: ${{ env.MODEL_CACHE_DIR }}
+          key: pocket-tts-roundtrip-${{ hashFiles('native/catalog.json') }}
+
+      - name: Install JavaScript dependencies
+        run: npm ci
+
+      - name: Run Pocket TTS synthesis and Whisper round-trip gates
+        env:
+          STT_TEST_MODEL_DIR: ${{ env.MODEL_CACHE_DIR }}
+        run: npm run test:sidecar:pocket-tts:e2e
+
   quality-report:
     needs: [transcription-e2e, nemotron-e2e]
     if: ${{ !cancelled() }}

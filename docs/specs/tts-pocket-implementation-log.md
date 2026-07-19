@@ -77,7 +77,7 @@ Implemented:
   feature. The release and Rust-check scripts now compile it with the other
   engines, and ONNX Runtime is enabled when Pocket TTS is the only ONNX engine.
 - Added the pinned English INT8 catalog model. Required install content is the
-  runtime plus Alba (131,658,398 bytes); Cosette, Fantine, Javert, Jean, and
+  runtime plus Alba (131,654,174 bytes); Cosette, Fantine, Javert, Jean, and
   Marius are explicit optional voice artifacts.
 - Made `whisper-rs` genuinely optional. Previously, a no-default-features build
   still compiled Whisper, which violated the existing per-engine feature
@@ -96,21 +96,29 @@ Resume point:
   voice must download only that voice, preserve the existing runtime, merge
   install metadata, and expose installed voice IDs to the plugin. The intended
   regression test was explored but deliberately not committed in a red state.
-- Confirm whether `bos_before_voice.npy` is needed by the native precomputed
-  voice-state path. The pinned Python runner bypasses it; if the Rust port does
-  too, remove it from the Stage A runtime contract and amend the recorded total
-  instead of shipping an unused artifact.
+- Confirmed `bos_before_voice.npy` is not needed by the native precomputed
+  voice-state path. It is used only when conditioning raw voice embeddings;
+  Stage A restores the safetensor flow state directly. The production catalog
+  excludes it and the required-download total was reduced by 4,224 bytes.
 
-## Remaining production work
+## 2026-07-19 — Stage A implementation
 
-- Implement the Rust synthesis adapter and autoregressive loop behind
-  `engine-pocket-tts`, including cancellation, bounded audio-ahead flow
-  control, PCM framing, and pitch-preserving speed processing.
-- Add installer subsets, synthesis protocol types, and task-aware synthesis
-  probes.
-- Add plugin extraction/segmentation, Web Audio playback, settings/model UI,
-  commands/status UI, and dictation interlock.
-- Add the English Whisper round-trip gate, manual acceptance guide, license
-  attribution, and release note.
-- Run the full Rust/TypeScript/release checks, perform the required Standards
-  and Spec review, resolve findings, push, and open the PR.
+Implemented the verified incremental voice installer, native autoregressive
+INT8 adapter, cancellation and bounded flow control, PCM framing,
+pitch-preserving speed processing, Markdown extraction and range mapping,
+Web Audio playback, task-aware model settings, installed-voice selection,
+commands, status controls, and dictation interlock.
+
+Verification at this boundary:
+
+- 269 Pocket-only native unit tests passed.
+- The pinned English model synthesized non-silent 24-kHz audio through the
+  production Rust adapter.
+- The pinned sentence round-tripped through the repository's Whisper Tiny
+  product adapter at 0.000 WER.
+- TypeScript type checking and the focused extraction, playback, controller,
+  connection, protocol, command, settings, and model-manager tests passed.
+
+Remaining release work is the full repository quality suite, the required
+Standards and Spec review with all findings resolved, PR publication, and
+green hosted checks.

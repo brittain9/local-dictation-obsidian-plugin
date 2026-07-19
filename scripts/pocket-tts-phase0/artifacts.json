@@ -595,12 +595,5 @@
       "total_size": 504329252
     }
   },
-  "voices": [
-    "alba",
-    "cosette",
-    "fantine",
-    "javert",
-    "jean",
-    "marius"
-  ]
+  "voices": ["alba", "cosette", "fantine", "javert", "jean", "marius"]
 }
