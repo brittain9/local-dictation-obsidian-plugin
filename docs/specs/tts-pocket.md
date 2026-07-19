@@ -1,6 +1,6 @@
 # Spec: Read Aloud with Pocket TTS
 
-Status: draft for maintainer review (then handoff to Codex)
+Status: approved; Phase 0 complete, Stage A implementation in progress
 Issue: [#288](https://github.com/brittain9/local-dictation-obsidian-plugin/issues/288)
 Research: [`local-tts-landscape-2026.md`](local-tts-landscape-2026.md)
 
@@ -60,16 +60,15 @@ playback path. Dictation behavior is untouched.
 ### D1 — Phase 0 (pinning, timeboxed): runtime route and artifact contract
 
 Two viable inference routes exist; the decision is made by measurement, not
-preference, exactly like the Moonshine spec's Phase 0. **Order of
-evaluation (maintainer decision 2026-07-18): measure the candle route's
-binary cost first; it wins if it fits the size budget**, because it is the
-lowest-correctness-risk path (first-party Kyutai code, no third-party graph
-contract, no hand-rolled autoregressive loop). The ONNX route is the
-fallback if candle exceeds the budget.
+preference, exactly like the Moonshine spec's Phase 0. **Order of evaluation
+(maintainer decision 2026-07-18): measure the candle route's binary cost first;
+if it fits the budget it advances to functional validation.** It is selected
+only if it also loads and synthesizes with the pinned D2 artifacts. The ONNX
+route is the fallback if either gate fails.
 
-1. **candle route (evaluate first; wins if within budget).** The
+1. **candle route (evaluate first).** The
    `pocket-tts` crate (v0.6.x, [babybirdprd/pocket-tts](https://github.com/babybirdprd/pocket-tts),
-   MIT, pure-Rust candle port with int8 support and full-pipeline
+   MIT, third-party pure-Rust candle port advertising int8 support and full-pipeline
    streaming). Verified API (2026-07-18):
    `TTSModel::load_from_bytes(config, weights, tokenizer)`,
    `model.get_voice_state_from_prompt_file(path)` (loads the D2 safetensors
@@ -94,10 +93,10 @@ fallback if candle exceeds the budget.
    - `KevinAHM/pocket-tts-onnx`: covers `english_2026-04` (the exact revision
      pinned in D2) with fp32 **and int8** variants of
      `text_conditioner` / `flow_lm_main` / `flow_lm_flow` /
-     `mimi_encoder` / `mimi_decoder`, plus `tokenizer.model` and — decisive
-     for maintenance — `generate.py`, the conversion script. We can re-run
-     conversion ourselves for new Kyutai revisions and the non-English
-     models rather than depending on a third party staying current.
+     `mimi_encoder` / `mimi_decoder`, plus `tokenizer.model` and
+     `generate.py`, a generation CLI around the exported graphs. The
+     repository does **not** publish a conversion script, so reproducibility
+     of future exports remains a Stage B maintenance risk.
 
    Five graphs with threaded autoregressive state is the same integration
    shape as the Moonshine adapter (five ORT graphs, persistent KV), so the
@@ -129,17 +128,90 @@ Whichever route wins, Phase 0 must also:
 - Pin exact artifact sizes + SHA-256 for every file in D2 via the HF
   `paths-info` API, recorded in the catalog entries.
 
+#### Phase 0 result — 2026-07-19
+
+**Decision: use the pinned INT8 ONNX export on the sidecar's existing ORT
+runtime.** The Candle port passed the size gate but failed functional
+compatibility, so size alone did not decide the route.
+
+Environment: Fedora Linux, Intel Core i5-12600K (10 cores / 16 logical CPUs),
+Rust 1.94.1. The reproducible commands and complete measurements are in
+[`scripts/pocket-tts-phase0/README.md`](../../scripts/pocket-tts-phase0/README.md).
+
+| Candle size probe | stripped bytes | gzip -9 bytes |
+|---|---:|---:|
+| Baseline | 355,672 | 172,670 |
+| With `pocket-tts` 0.6.2 | 7,144,720 | 2,568,140 |
+| Delta | 6,789,048 | 2,395,470 (2.28 MiB) |
+
+The compressed delta is 17.71 MiB below the 20 MiB gate. Functional loading
+then failed against the pinned `english_2026-04` weights with a shape mismatch
+at `mimi.downsample.conv.conv.weight` (crate expected `[512, 512, 32]`; artifact
+contains `[32, 512, 32]`). The port hard-codes the older `b6369a24` shape, and
+its `load_quantized*` functions load the ordinary model and return
+`is_quantized() == false`. This makes the Candle route unusable for D2 despite
+its excellent binary cost.
+
+The repository's exact `ort = 2.0.0-rc.12` binding (resolving ORT 1.24.2)
+loaded all five exported graph families at ONNX revision
+`58a6d00cf13d239b6748cb0769f35c580a8f606c`. The pinned Python runner at that
+revision supplied the full autoregressive correctness oracle; Python is not a
+production dependency. Stage A loads only the four inference graphs needed by
+precomputed voice states. `mimi_encoder.onnx` is excluded from runtime downloads
+because it exists solely for out-of-scope voice cloning.
+
+| Route / variant | CPU threads | audio | generation | RTF | real-time multiple |
+|---|---:|---:|---:|---:|---:|
+| ONNX INT8 English | 2 | 10.08 s | 3.260 s | 0.323 | 3.09x |
+| ONNX INT8 English | ORT default | 10.08 s | 4.555 s | 0.452 | 2.21x |
+| ONNX FP32 English | 2 | 10.32 s | 3.902 s | 0.378 | 2.65x |
+| ONNX FP32 English | ORT default | 10.32 s | 8.043 s | 0.779 | 1.28x |
+| ONNX INT8 French 24-layer | 2 | 9.60 s | 10.251 s | 1.068 | 0.94x |
+| ONNX INT8 French 24-layer | ORT default | 9.60 s | 14.381 s | 1.498 | 0.67x |
+
+The output contract is confirmed as **24-kHz mono float32** from the Mimi
+decoder; protocol/WAV conversion is PCM16LE. The model exposes temperature,
+flow-step, and EOS controls but **no speaking-rate control**. D7 therefore uses
+sidecar-side pitch-preserving time stretch.
+
+At temperature zero, ONNX fp32 matched Kyutai's Python waveform at correlation
+0.999979, 43.84 dB SNR, and 0.000496 RMSE. The maintainer found no material
+audible fp32-to-INT8 regression in the labeled comparison, so INT8 is selected;
+the shipping Whisper round-trip test is the ongoing regression gate.
+
+Artifact pins for all six D2 variants are generated in
+[`scripts/pocket-tts-phase0/artifacts.json`](../../scripts/pocket-tts-phase0/artifacts.json):
+
+| Variant | Runtime + all six curated voices |
+|---|---:|
+| `english_2026-04` | 162,974,582 bytes (155.42 MiB) |
+| `french_24l` | 504,328,524 bytes (480.97 MiB) |
+| `german_24l` | 504,328,191 bytes (480.96 MiB) |
+| `spanish_24l` | 504,329,252 bytes (480.97 MiB) |
+| `portuguese_24l` | 504,329,358 bytes (480.97 MiB) |
+| `italian_24l` | 504,328,435 bytes (480.97 MiB) |
+
+**Contradictions discovered:** `babybirdprd/pocket-tts` is a community port,
+not first-party Kyutai code; `KevinAHM/pocket-tts-onnx/generate.py` does not
+convert models; and the French 24-layer model is slower than real time at two
+threads on this host. The five 24-layer catalog entries remain Stage B and must
+not ship without smaller-variant benchmarking or an explicit hardware floor.
+
 ### D2 — Pinned model artifacts (ungated, CC-BY-4.0)
 
-Source repo: [`kyutai/pocket-tts-without-voice-cloning`](https://huggingface.co/kyutai/pocket-tts-without-voice-cloning)
+Voice-state source repo:
+[`kyutai/pocket-tts-without-voice-cloning`](https://huggingface.co/kyutai/pocket-tts-without-voice-cloning)
 — verified ungated on 2026-07-18 (the main `kyutai/pocket-tts` repo is
-auto-gated and is NOT used). License CC-BY-4.0: attribution goes in
-`THIRD_PARTY_NOTICES.md` and the catalog entry's license field.
+auto-gated and is NOT used). Model graph source repo:
+[`KevinAHM/pocket-tts-onnx`](https://huggingface.co/KevinAHM/pocket-tts-onnx),
+using the immutable Phase 0 revision above. Kyutai weights are CC-BY-4.0:
+attribution goes in `THIRD_PARTY_NOTICES.md` and the catalog entry's license
+field.
 
-Per-language directory layout (verified):
-`languages/<variant>/model.safetensors`, `languages/<variant>/tokenizer.model`,
+Per-language voice-state layout (verified):
 `languages/<variant>/embeddings/<voice>.safetensors` (~26 named voices per
-language).
+language). ONNX bundle layout is `onnx/<variant>/`; exact files are generated in
+the Phase 0 artifact manifest.
 
 Catalog models (one per language; `_24l` = the higher-quality 24-layer
 variants Kyutai recommends for non-English):
@@ -153,11 +225,17 @@ variants Kyutai recommends for non-English):
 | Pocket TTS Portuguese | `portuguese_24l` |
 | Pocket TTS Italian | `italian_24l` |
 
-Each model entry's artifact set: `model.safetensors` + `tokenizer.model` +
-a **curated default set of 6 voice embeddings** (3 F / 3 M, chosen by ear in
-Phase 0). Remaining voices are additive artifacts installable individually
-(D4). Every artifact pinned by size + SHA-256, downloaded and verified through
-the existing installer (`native/src/installer.rs`) unchanged.
+Each model entry's required artifact set is `bundle.json` +
+`bos_before_voice.npy` + `tokenizer.model` + `text_conditioner.onnx` +
+`flow_lm_main_int8.onnx` + `flow_lm_flow_int8.onnx` +
+`mimi_decoder_int8.onnx`. `mimi_encoder.onnx` is not installed. The curated
+voice set is Alba (default), Cosette, Fantine, Javert, Jean, and Marius. The
+initial English install includes the runtime and Alba (131,658,398 bytes,
+125.56 MiB). Manage Models offers the other five as individually installable
+voice artifacts, and the voice picker lists installed voices. Voice states use
+`ArtifactRole::Voice`; remaining voices outside this curated set are follow-up
+artifacts (D4). Every artifact is pinned by size + SHA-256 and downloaded
+through the existing verified installer.
 
 Only "Pocket TTS English" ships in Stage A; the five other entries land in
 Stage B once the round-trip CI (D10) covers them.
@@ -252,16 +330,11 @@ framing tests extend. One synthesis session at a time (a second
 
 ### D7 — Speed control mechanism (finalized by Phase 0)
 
-Preference order:
-
-1. Model-side speed control, if Phase 0 finds Pocket exposes one.
-2. Synthesis-side time-stretch in the sidecar (e.g. a WSOLA/`soundtouch`-style
-   pass on the PCM before framing) — pitch-preserving, engine-agnostic.
-3. Plugin-side `playbackRate` **only if** pitch-preserving playback is
-   achievable in Electron for our streaming path; naive `playbackRate` on
-   Web Audio shifts pitch and is not acceptable beyond ±10%.
-
-Whichever lands, the setting is `ttsSpeed` (0.75–2.0, default 1.0).
+Pocket TTS has no model-side speaking-rate control. Stage A applies
+pitch-preserving time stretch to decoded PCM in the sidecar before PCM16LE
+framing. The implementation is engine-agnostic and streaming-safe. Naive Web
+Audio `playbackRate` is prohibited because it shifts pitch. The setting is
+`ttsSpeed` (0.75–2.0, default 1.0).
 
 ### D8 — Read scopes, commands, and dictation interlock
 
@@ -332,12 +405,16 @@ without review (diff any test Codex modifies against main first).
   voices, then the deferred ladder from #288 (highlighting, cloning, export,
   Supertonic breadth adapter).
 
-## Open items pinned to Phase 0
+## Phase 0 closures and Stage B follow-up
 
-- candle vs ONNX route (25 MB budget gate) — D1.
-- Output sample rate/format confirmation — D1.
-- Model-side speed control existence — D7.
-- Curated 6-voice default set + per-language default voice — D2/D9.
-- Whether the `_24l` variants meet real-time on baseline x86 — D1 (if not,
-  the non-`_24l` variants exist for de/es/pt/it and become the fallback
-  catalog choice, quality permitting).
+- Route: ONNX INT8; Candle is functionally incompatible (D1).
+- Output: 24-kHz mono float32 decoder output, PCM16LE wire format (D1).
+- Speed: no model-side control; sidecar pitch-preserving time stretch (D7).
+- English voices: Alba (default), Cosette, Fantine, Javert, Jean, Marius
+  (D2/D9).
+- French `_24l` misses real time at two threads. Stage B must benchmark the
+  smaller non-24-layer variants for all five deferred languages before adding
+  catalog entries (D1/D2).
+- Export maintainability: no conversion script is published with the pinned
+  ONNX repository. Stage B must establish a reproducible exporter before
+  updating Kyutai revisions.
