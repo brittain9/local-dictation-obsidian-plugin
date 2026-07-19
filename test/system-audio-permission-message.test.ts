@@ -36,10 +36,45 @@ describe('formatSystemAudioErrorMessage', () => {
 });
 
 describe('formatSystemAudioProbeResultMessage', () => {
-  it('uses a fallback message when the sidecar returns a failed probe without copy', () => {
+  it('translates known sidecar codes instead of rendering their raw messages', () => {
     expect(
-      formatSystemAudioProbeResultMessage({ code: 'system_audio_capture_failed' }, '39.6.0'),
+      formatSystemAudioProbeResultMessage(
+        { code: 'system_audio_capture_failed', message: 'raw Rust capture failure' },
+        '39.6.0',
+      ),
+    ).toBe('Could not start system-audio capture.');
+    expect(
+      formatSystemAudioProbeResultMessage(
+        { code: 'system_audio_unsupported', message: 'raw Rust unsupported message' },
+        '39.6.0',
+      ),
+    ).toContain("System-audio capture isn't available on this platform yet.");
+  });
+
+  it('uses raw sidecar copy only for unknown codes', () => {
+    expect(
+      formatSystemAudioProbeResultMessage(
+        { code: 'future_system_audio_error', message: 'Future sidecar detail' },
+        '39.6.0',
+      ),
+    ).toBe('Future sidecar detail');
+  });
+
+  it('uses generic fallback copy when an unknown failed probe has no message', () => {
+    expect(
+      formatSystemAudioProbeResultMessage({ code: 'future_system_audio_error' }, '39.6.0'),
     ).toBe('System audio is not ready.');
+  });
+
+  it('uses translated permission copy before adding the outdated-installer caveat', () => {
+    const message = formatSystemAudioProbeResultMessage(
+      { code: 'system_audio_permission_denied', message: 'raw Rust permission message' },
+      '39.5.9',
+    );
+
+    expect(message).toContain(PERMISSION_MESSAGE);
+    expect(message).not.toContain('raw Rust permission message');
+    expect(message).toContain('Download a fresh installer from obsidian.md');
   });
 });
 

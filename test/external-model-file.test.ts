@@ -136,9 +136,9 @@ describe('external model guidance', () => {
     expect(guidance).toContain('ORT GenAI');
   });
 
-  it('preserves an actionable probe error for display', () => {
+  it('does not leak an unexpected native probe error into localized UI', () => {
     expect(formatExternalModelValidationError(new Error('required asset missing'))).toBe(
-      'required asset missing',
+      'The speech engine could not validate this model.',
     );
     expect(formatExternalModelValidationError('not an Error')).toBe(
       'The speech engine could not validate this model.',

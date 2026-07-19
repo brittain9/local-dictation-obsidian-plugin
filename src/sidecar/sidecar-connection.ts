@@ -38,6 +38,7 @@ import {
   type SystemAudioProbeResultEvent,
   type SystemInfoEvent,
 } from './protocol';
+import { localizeSidecarEvent, rawSidecarEventDetail } from './sidecar-event-localization';
 import { createSidecarStderrLogEntry } from './sidecar-logging';
 import { type ResolveSidecarLaunchSpec, SidecarProcess } from './sidecar-process';
 
@@ -47,12 +48,14 @@ export class SidecarError extends Error {
   readonly code: string;
   readonly details: string | undefined;
   readonly sessionId: string | undefined;
+  readonly rawDetail: string;
 
   constructor(event: ErrorEvent) {
-    super(event.details ? `${event.message} (${event.details})` : event.message);
+    super(localizeSidecarEvent(event));
     this.name = 'SidecarError';
     this.code = event.code;
     this.details = event.details;
+    this.rawDetail = rawSidecarEventDetail(event);
     this.sessionId = event.sessionId;
   }
 }

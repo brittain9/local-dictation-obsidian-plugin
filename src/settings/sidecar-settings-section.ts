@@ -9,6 +9,7 @@ import {
   type InstallIntent,
 } from '../setup/sidecar-install-copy';
 import { SidecarInstallModal } from '../setup/sidecar-install-modal';
+import { t } from '../shared/i18n';
 import type { PluginLogger } from '../shared/plugin-logger';
 import type { UserFeedback } from '../shared/user-feedback';
 import { detectNvidiaDriver, type NvidiaDriverStatus } from '../sidecar/gpu-precheck';
@@ -100,8 +101,10 @@ export class SidecarSettingsSection {
       const { progressEl } = renderActiveInstallCard(this.container, {
         isCancelling: active.phase === 'canceling',
         name: Platform.isMacOS
-          ? 'Installing sidecar'
-          : `Installing: ${active.variant.toUpperCase()} sidecar`,
+          ? t('settings.install.installingSidecarMac')
+          : t('settings.install.installingSidecar', {
+              variant: active.variant.toUpperCase(),
+            }),
         onCancel: () => {
           this.deps.sidecarInstallManager.cancel();
         },
@@ -112,18 +115,18 @@ export class SidecarSettingsSection {
 
     if (Platform.isMacOS) {
       this.renderInstallRow({
-        desc: 'Speech-to-text engine.',
+        desc: t('settings.sidecar.desc'),
         manifest: cpuManifest,
-        name: 'Sidecar',
+        name: t('settings.sidecar.name'),
         pluginDirectory,
         variant: 'cpu',
       });
       if (activeInstall !== null) renderActiveCard(activeInstall);
     } else {
       this.renderInstallRow({
-        desc: 'Speech-to-text engine. Required.',
+        desc: t('settings.sidecar.cpuDesc'),
         manifest: cpuManifest,
-        name: 'CPU sidecar',
+        name: t('settings.sidecar.cpuName'),
         pluginDirectory,
         variant: 'cpu',
       });
@@ -139,8 +142,8 @@ export class SidecarSettingsSection {
 
     if (Platform.isLinux) {
       addTextSetting(this.container, this.deps.access, {
-        name: 'CUDA library path',
-        desc: 'Optional library search path for the sidecar (Flatpak, custom CUDA installs).',
+        name: t('settings.sidecar.cudaLibraryPath.name'),
+        desc: t('settings.sidecar.cudaLibraryPath.desc'),
         key: 'cudaLibraryPath',
         placeholder: '/run/host/usr/local/cuda-13.2/targets/x86_64-linux/lib:/run/host/usr/lib64',
       });
@@ -223,8 +226,8 @@ export class SidecarSettingsSection {
     const isInstalled = manifest !== null;
 
     const setting = new Setting(this.container)
-      .setName('GPU sidecar')
-      .setDesc(isInstalled ? 'CUDA acceleration active.' : driverReason.label);
+      .setName(t('settings.sidecar.gpuName'))
+      .setDesc(isInstalled ? t('settings.sidecar.cudaActive') : driverReason.label);
     appendVersionChip(setting, manifest);
 
     addInstallButtons(setting, isInstalled, {
@@ -247,8 +250,8 @@ export class SidecarSettingsSection {
 
     if (!isInstalled && driverStatus === 'absent') {
       setting.addButton((button) => {
-        button.setButtonText('Install anyway');
-        button.setTooltip('Proceed with CUDA install even though no NVIDIA driver was detected.');
+        button.setButtonText(t('settings.sidecar.installAnyway'));
+        button.setTooltip(t('settings.sidecar.installAnywayTooltip'));
         button.onClick(() => {
           this.openCudaInstallModal(pluginDirectory);
         });
@@ -296,8 +299,7 @@ export function openSidecarInstallModal(
   if (deps.isDictationBusy()) {
     deps.feedback.show({
       intent: 'warning',
-      message:
-        'Stop dictation before installing a sidecar — the install restarts the engine. If a transcript is still processing, run "Cancel dictation" to stop it now.',
+      message: t('settings.sidecar.stopBeforeInstall'),
     });
     return;
   }
@@ -331,8 +333,7 @@ export function openSidecarUpdateModal(
   if (deps.isDictationBusy()) {
     deps.feedback.show({
       intent: 'warning',
-      message:
-        'Stop dictation before updating sidecars — the update restarts the engine. If a transcript is still processing, run "Cancel dictation" to stop it now.',
+      message: t('settings.sidecar.stopBeforeUpdate'),
     });
     return;
   }
@@ -364,12 +365,14 @@ async function uninstallSidecarVariantWithUx(
   variant: SidecarInstallVariant,
 ): Promise<void> {
   const variantLabel = variant === 'cuda' ? 'CUDA' : 'CPU';
-  const userFacingName = Platform.isMacOS ? 'sidecar' : `${variantLabel} sidecar`;
+  const userFacingName = Platform.isMacOS
+    ? t('settings.sidecar.genericName')
+    : t('settings.sidecar.variantName', { variant: variantLabel });
 
   if (deps.isDictationBusy()) {
     deps.feedback.show({
       intent: 'warning',
-      message: `Stop dictation before uninstalling the ${userFacingName}. If a transcript is still processing, run "Cancel dictation" to stop it now.`,
+      message: t('settings.sidecar.stopBeforeUninstall', { sidecar: userFacingName }),
     });
     return;
   }
@@ -381,7 +384,7 @@ async function uninstallSidecarVariantWithUx(
     deps.feedback.show({
       cause: error,
       intent: 'error',
-      message: `Could not uninstall the ${userFacingName}. Close other setup windows and try again.`,
+      message: t('settings.sidecar.uninstallFailed', { sidecar: userFacingName }),
     });
     return;
   }
@@ -389,10 +392,10 @@ async function uninstallSidecarVariantWithUx(
   deps.feedback.show({
     intent: 'success',
     message: Platform.isMacOS
-      ? 'Sidecar uninstalled.'
+      ? t('settings.sidecar.uninstalled')
       : variant === 'cuda'
-        ? 'CUDA sidecar uninstalled. Running on CPU.'
-        : 'CPU sidecar uninstalled.',
+        ? t('settings.sidecar.cudaUninstalled')
+        : t('settings.sidecar.cpuUninstalled'),
   });
   deps.refreshSettingsTab();
 
@@ -403,7 +406,7 @@ async function uninstallSidecarVariantWithUx(
     deps.feedback.show({
       cause: error,
       intent: 'warning',
-      message: 'The speech engine could not restart. Restart Obsidian before dictating.',
+      message: t('settings.sidecar.restartFailed'),
     });
   }
 }
@@ -413,9 +416,7 @@ async function shutdownSidecarBeforeFileMutation(
   reason: string,
 ): Promise<void> {
   if (deps.isDictationBusy()) {
-    throw new Error(
-      'Dictation became active before the sidecar files could be changed. Stop or cancel dictation, then retry.',
-    );
+    throw new Error(t('settings.sidecar.becameActive'));
   }
 
   // Windows holds DLL handles on the live sidecar process, so install and
@@ -440,16 +441,16 @@ function addInstallButtons(
 ): void {
   if (isInstalled) {
     setting.addButton((button) => {
-      button.setButtonText('Reinstall').onClick(opts.onReinstall);
+      button.setButtonText(t('settings.sidecar.reinstall')).onClick(opts.onReinstall);
     });
     setting.addButton((button) => {
-      button.setButtonText('Uninstall').setWarning().onClick(opts.onUninstall);
+      button.setButtonText(t('settings.sidecar.uninstall')).setWarning().onClick(opts.onUninstall);
     });
     return;
   }
 
   setting.addButton((button) => {
-    button.setButtonText('Install').onClick(opts.onInstall);
+    button.setButtonText(t('settings.sidecar.install')).onClick(opts.onInstall);
     if (opts.installCta ?? true) button.setCta();
     if (opts.installDisabled === true) button.setDisabled(true);
   });
@@ -467,20 +468,18 @@ function describeDriverStatus(status: NvidiaDriverStatus): { label: string; tool
   switch (status) {
     case 'present':
       return {
-        label: 'NVIDIA GPU detected — faster transcription.',
-        tooltip: 'Downloads the CUDA sidecar archive from GitHub releases.',
+        label: t('settings.sidecar.driver.present'),
+        tooltip: t('settings.sidecar.driver.presentTooltip'),
       };
     case 'absent':
       return {
-        label: 'Requires an NVIDIA GPU. Install anyway if you know yours is supported.',
-        tooltip:
-          'nvidia-smi was not found on PATH. Use "Install anyway" if you are certain your system supports CUDA.',
+        label: t('settings.sidecar.driver.absent'),
+        tooltip: t('settings.sidecar.driver.absentTooltip'),
       };
     case 'unknown':
       return {
-        label: "Couldn't probe for NVIDIA — install only if you're sure.",
-        tooltip:
-          'Unable to probe for an NVIDIA driver. Proceed only if you know your GPU supports CUDA.',
+        label: t('settings.sidecar.driver.unknown'),
+        tooltip: t('settings.sidecar.driver.unknownTooltip'),
       };
   }
 }

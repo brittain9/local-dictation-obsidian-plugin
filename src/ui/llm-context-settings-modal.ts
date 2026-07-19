@@ -12,6 +12,7 @@ import {
   LLM_TOTAL_CONTEXT_CAP_MAX,
   type PluginSettings,
 } from '../settings/plugin-settings';
+import { t } from '../shared/i18n';
 import { resolveEffectiveTransformTiming } from './llm-preset-overrides';
 import { addValidatedNumberSetting } from './validated-number-setting';
 
@@ -40,7 +41,7 @@ export class LlmContextSettingsModal extends Modal {
   }
 
   override onOpen(): void {
-    this.titleEl.setText('Context settings');
+    this.titleEl.setText(t('llm.context.title'));
     this.render();
   }
 
@@ -55,39 +56,39 @@ export class LlmContextSettingsModal extends Modal {
       resolveEffectiveTransformTiming(this.dependencies.getSettings()) === 'per_utterance';
     this.contentEl.createEl('p', {
       cls: 'setting-item-description',
-      text: 'More context can improve terminology, but may increase local latency or OpenRouter cost.',
+      text: t('llm.context.intro'),
     });
 
     this.addNumberField('llmPostprocessNoteContextChars', {
-      desc: 'Maximum characters taken from the current note above the cursor.',
+      desc: t('llm.context.noteLength.description'),
       integer: true,
       max: LLM_NOTE_CONTEXT_CHARS_MAX,
       min: 0,
-      name: 'Note context length',
+      name: t('llm.context.noteLength.name'),
     });
     this.addNumberField('llmPostprocessPriorUtterancesN', {
       desc: afterEachPhrase
-        ? 'Recent dictated phrases included as conversation history.'
-        : 'Used only when Run transform is set to After each phrase.',
+        ? t('llm.context.previousPhrases.description')
+        : t('llm.context.afterEachPhraseOnly'),
       disabled: !afterEachPhrase,
       integer: true,
       max: LLM_PRIOR_UTTERANCES_MAX,
       min: 0,
-      name: 'Previous phrases',
+      name: t('llm.context.previousPhrases.name'),
     });
     this.addNumberField('llmPostprocessTotalContextCap', {
       desc: afterEachPhrase
-        ? 'Maximum combined characters from note context and previous phrases.'
-        : 'Used only when Run transform is set to After each phrase.',
+        ? t('llm.context.limit.description')
+        : t('llm.context.afterEachPhraseOnly'),
       disabled: !afterEachPhrase,
       integer: true,
       max: LLM_TOTAL_CONTEXT_CAP_MAX,
       min: 0,
-      name: 'Context limit',
+      name: t('llm.context.limit.name'),
     });
 
     new Setting(this.contentEl).addButton((button) => {
-      button.setButtonText('Reset').onClick(async () => {
+      button.setButtonText(t('common.reset')).onClick(async () => {
         this.draft = draftFromSettings(DEFAULT_PLUGIN_SETTINGS);
         this.render();
         await this.autoSaver.persist(this.draft);

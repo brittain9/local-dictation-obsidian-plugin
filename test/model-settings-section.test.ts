@@ -1,8 +1,18 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import type { ModelInstallManager, ModelManagerState } from '../src/models/model-install-manager';
-import { renderModelSection } from '../src/settings/model-settings-section';
+import { getModelStatusBadge, renderModelSection } from '../src/settings/model-settings-section';
 import { Setting, TestElement } from './__mocks__/obsidian';
+
+vi.mock('../src/shared/i18n', () => ({
+  t: (key: string) =>
+    ({
+      'models.current.externalFile': '外部ファイル',
+      'models.current.unavailable': '利用不可能',
+      'settings.model.noModel': 'モデルなし',
+      'settings.model.unavailable': '利用不可能',
+    })[key] ?? key,
+}));
 
 describe('model settings section ownership', () => {
   it('does not erase sibling language controls when manager state changes', () => {
@@ -45,5 +55,16 @@ describe('model settings section ownership', () => {
     } finally {
       globalThis.createFragment = originalCreateFragment;
     }
+  });
+
+  it('selects the badge by stable status when translations are not English', () => {
+    expect(getModelStatusBadge('unavailable')).toEqual({
+      modifier: 'missing',
+      text: '利用不可能',
+    });
+    expect(getModelStatusBadge('not_selected')).toEqual({
+      modifier: 'none',
+      text: 'モデルなし',
+    });
   });
 });

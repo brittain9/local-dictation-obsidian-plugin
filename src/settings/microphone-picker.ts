@@ -1,6 +1,7 @@
 import { Setting } from 'obsidian';
 
 import { formatMicrophoneCaptureErrorMessage } from '../audio/microphone-permission-message';
+import { t } from '../shared/i18n';
 import type { PluginLogger } from '../shared/plugin-logger';
 import type { UserFeedback } from '../shared/user-feedback';
 import type { AudioInputDevice } from './plugin-settings';
@@ -8,7 +9,6 @@ import type { SettingAccess } from './setting-helpers';
 
 const DEFAULT_OPTION_VALUE = '__default__';
 const MISSING_OPTION_VALUE = '__missing__';
-const UNLABELED_OPTION_TEXT = 'Microphone (label unavailable)';
 // Chromium on Windows suffixes USB device labels with a `(VID:PID)` tuple
 // (e.g. " (03f0:098d)"). It's stable but noise in a settings UI — strip it
 // for display and persistence so the dropdown matches what the user sees in
@@ -35,8 +35,8 @@ export function renderMicrophonePicker(
   deps: MicrophonePickerDependencies,
 ): () => void {
   const setting = new Setting(parent)
-    .setName('Microphone')
-    .setDesc('Which microphone to use for dictation. Changes apply on the next dictation session.');
+    .setName(t('settings.microphone.name'))
+    .setDesc(t('settings.microphone.desc'));
 
   let devices: MediaDeviceInfo[] = [];
   let selectEl: HTMLSelectElement | null = null;
@@ -60,7 +60,7 @@ export function renderMicrophonePicker(
     const saved = getSaved();
     selectEl.empty();
 
-    appendOption(selectEl, DEFAULT_OPTION_VALUE, 'Default microphone');
+    appendOption(selectEl, DEFAULT_OPTION_VALUE, t('settings.microphone.default'));
 
     let savedIsPresent = false;
     for (const device of devices) {
@@ -77,12 +77,16 @@ export function renderMicrophonePicker(
           ? enumeratedLabel
           : isSaved
             ? saved.label
-            : UNLABELED_OPTION_TEXT;
+            : t('settings.microphone.labelUnavailable');
       appendOption(selectEl, device.deviceId, display);
     }
 
     if (saved !== null && !savedIsPresent) {
-      appendOption(selectEl, MISSING_OPTION_VALUE, `${saved.label} (not connected)`);
+      appendOption(
+        selectEl,
+        MISSING_OPTION_VALUE,
+        t('settings.microphone.notConnected', { microphone: saved.label }),
+      );
       selectEl.value = MISSING_OPTION_VALUE;
     } else if (saved !== null) {
       selectEl.value = saved.deviceId;
@@ -148,7 +152,7 @@ export function renderMicrophonePicker(
   setting.addExtraButton((button) => {
     button
       .setIcon('refresh-cw')
-      .setTooltip('Detect microphones (asks for permission)')
+      .setTooltip(t('settings.microphone.detectTooltip'))
       .onClick(() => {
         void primePermission();
       });
@@ -184,7 +188,7 @@ export function renderMicrophonePicker(
       deps.feedback.show({
         intent: 'action-required',
         key: 'microphone-permission',
-        message: 'Allow microphone access first to save this device.',
+        message: t('settings.microphone.allowAccessFirst'),
       });
       const saved = getSaved();
       if (selectEl !== null) {
@@ -199,7 +203,10 @@ export function renderMicrophonePicker(
 
   async function primePermission(): Promise<void> {
     if (deps.isDictationBusy()) {
-      deps.feedback.show({ intent: 'warning', message: 'Stop dictation to detect microphones.' });
+      deps.feedback.show({
+        intent: 'warning',
+        message: t('settings.microphone.stopDictationToDetect'),
+      });
       return;
     }
 
@@ -207,7 +214,7 @@ export function renderMicrophonePicker(
     if (mediaDevices?.getUserMedia === undefined) {
       deps.feedback.show({
         intent: 'error',
-        message: 'Microphone access is not available in this runtime.',
+        message: t('settings.microphone.unavailableRuntime'),
       });
       return;
     }
@@ -224,8 +231,7 @@ export function renderMicrophonePicker(
         intent: 'action-required',
         key: 'microphone-permission',
         message:
-          formatMicrophoneCaptureErrorMessage(error) ??
-          'Could not detect microphones. Check your system audio settings.',
+          formatMicrophoneCaptureErrorMessage(error) ?? t('settings.microphone.detectFailed'),
       });
     }
   }

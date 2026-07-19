@@ -4,6 +4,7 @@ import {
   type ModelOption,
   type ProviderHealth,
 } from '../llm/provider';
+import { t } from '../shared/i18n';
 
 export type InlineStatusVariant = 'warning' | 'info';
 
@@ -31,40 +32,42 @@ export function deriveInlineStatus(args: {
   switch (args.health.kind) {
     case 'unknown':
       if (args.selectedModel === '') {
-        return { text: `Select ${providerArticle(providerName)} model below.`, variant: 'info' };
+        return { text: selectModelMessage(args.providerId), variant: 'info' };
       }
       return null;
     case 'unreachable':
       return {
         text:
           args.providerId === 'ollama'
-            ? 'Ollama is not running.'
-            : `${providerName} is unreachable.`,
+            ? t('llm.status.ollamaNotRunning')
+            : t('llm.status.unreachable', { provider: providerName }),
         variant: 'warning',
       };
     case 'auth_invalid':
-      return { text: `${providerName} API key rejected.`, variant: 'warning' };
+      return { text: t('llm.status.authInvalid', { provider: providerName }), variant: 'warning' };
     case 'rate_limited':
-      return { text: `${providerName} rate limit hit.`, variant: 'warning' };
+      return { text: t('llm.status.rateLimited', { provider: providerName }), variant: 'warning' };
     case 'no_models':
       return {
         text:
           args.providerId === 'ollama'
-            ? 'No chat models installed in Ollama.'
-            : `No usable ${providerName} models found.`,
+            ? t('llm.status.noOllamaModels')
+            : t('llm.status.noModels', { provider: providerName }),
         variant: 'warning',
       };
     case 'ready':
       if (args.selectedModel === '') {
-        return { text: `Select ${providerArticle(providerName)} model below.`, variant: 'info' };
+        return { text: selectModelMessage(args.providerId), variant: 'info' };
       }
       if (args.models.length > 0 && !args.models.some((model) => model.id === args.selectedModel)) {
-        return { text: 'Selected model is unavailable.', variant: 'warning' };
+        return { text: t('llm.status.selectedUnavailable'), variant: 'warning' };
       }
       return null;
   }
 }
 
-function providerArticle(providerName: string): string {
-  return /^[AEIOU]/u.test(providerName) ? `an ${providerName}` : `a ${providerName}`;
+function selectModelMessage(providerId: LlmProviderId): string {
+  return providerId === 'ollama'
+    ? t('llm.status.selectOllamaModel')
+    : t('llm.status.selectOpenRouterModel');
 }

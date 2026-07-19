@@ -1,9 +1,9 @@
 import { Setting } from 'obsidian';
-
 import {
   createInstallProgressElement,
   type InstallProgressState,
 } from '../models/model-install-progress';
+import { t } from '../shared/i18n';
 
 export interface ActiveInstallCardOptions {
   isCancelling: boolean;
@@ -23,7 +23,9 @@ export function renderActiveInstallCard(
   const setting = new Setting(container).setName(opts.name).setDesc(fragment);
   setting.addButton((button) => {
     button
-      .setButtonText(opts.isCancelling ? 'Cancelling...' : 'Cancel')
+      .setButtonText(
+        opts.isCancelling ? t('settings.install.cancelling') : t('settings.install.cancel'),
+      )
       .setDisabled(opts.isCancelling)
       .onClick(opts.onCancel);
   });

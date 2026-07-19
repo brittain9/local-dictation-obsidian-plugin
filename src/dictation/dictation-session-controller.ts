@@ -23,6 +23,7 @@ import type { Session, SessionAcceptResult } from '../session/session';
 import type { StageId, StageOutcome, TranscriptRevision } from '../session/session-journal';
 import type { PluginSettings, SmartParagraphPauseSettings } from '../settings/plugin-settings';
 import { formatErrorMessage } from '../shared/format-utils';
+import { t } from '../shared/i18n';
 import type { PluginLogger } from '../shared/plugin-logger';
 import { truncateLeadingText } from '../shared/text-truncation';
 import type { FeedbackRequest, UserFeedback } from '../shared/user-feedback';
@@ -36,6 +37,7 @@ import type {
   TranscriptReadyEvent,
 } from '../sidecar/protocol';
 import { type SidecarConnection, SidecarError } from '../sidecar/sidecar-connection';
+import { localizeSidecarEvent, rawSidecarEventDetail } from '../sidecar/sidecar-event-localization';
 import { SidecarNotInstalledError } from '../sidecar/sidecar-paths';
 import { buildTranscriptSpans, type TranscriptRenderOptions } from '../transcript/renderer';
 
@@ -168,44 +170,39 @@ interface FeedbackFailure {
 const FEEDBACK_FAILURES = {
   recordTranscript: {
     key: 'transcript-record-failed',
-    message: 'Could not record the transcript.',
+    message: t('notice.transcriptRecordFailed'),
   },
   microphoneDisconnected: {
     key: 'microphone-capture-ended',
-    message:
-      'Microphone disconnected. Dictation stopped and will finish processing audio already captured. Reconnect the microphone, then start dictation again.',
+    message: t('notice.microphoneDisconnected'),
   },
   sidecar: {
     key: 'sidecar-session-error',
-    message: 'The speech engine reported an error.',
+    message: t('notice.sidecarSessionError'),
   },
   surfaceDesynchronized: {
     key: 'dictation-surface-desynchronized',
-    message:
-      'Dictation stopped because the note changed in a way Local Dictation could not safely track. Start dictation again to continue.',
+    message: t('notice.surfaceDesynchronized'),
   },
   startDictation: {
     key: 'dictation-start-failed',
-    message: 'Could not start dictation.',
+    message: t('notice.dictationStartFailed'),
   },
   stopDictation: {
     key: 'dictation-stop-failed',
-    message: 'Could not stop dictation.',
+    message: t('notice.dictationStopFailed'),
   },
   targetNoteClosed: {
     key: 'dictation-target-closed',
-    message:
-      'Dictation stopped because its target note was closed or replaced. Start dictation again to continue.',
+    message: t('notice.targetNoteClosed'),
   },
   targetNoteDeleted: {
     key: 'dictation-target-deleted',
-    message:
-      'Dictation stopped because its target note was deleted. Restore or recreate the note, then start dictation again.',
+    message: t('notice.targetNoteDeleted'),
   },
   transcriptWrite: {
     key: 'transcript-write-failed',
-    message:
-      'Dictation stopped because Local Dictation could not safely write to the note. Start dictation again to continue.',
+    message: t('notice.transcriptWriteFailed'),
   },
 } as const satisfies Record<string, FeedbackFailure>;
 
@@ -238,7 +235,7 @@ export class DictationSessionController {
       this.dependencies.feedback.show({
         intent: 'information',
         key: 'dictation-not-active',
-        message: 'Dictation is not currently active.',
+        message: t('notice.dictationNotActive'),
       });
       return;
     }
@@ -444,7 +441,7 @@ export class DictationSessionController {
       this.dependencies.feedback.show({
         intent: 'information',
         key: 'dictation-not-active',
-        message: 'Dictation is not currently active.',
+        message: t('notice.dictationNotActive'),
       });
       return;
     }
@@ -1255,7 +1252,7 @@ export class DictationSessionController {
       // like success.
       this.dependencies.feedback.show({
         intent: 'information',
-        message: 'LLM transform returned nothing to add.',
+        message: t('notice.llmTransformEmpty'),
       });
       return;
     }
@@ -1304,8 +1301,9 @@ export class DictationSessionController {
       return;
     }
 
-    const rawDetail = event.details ? `${event.message} (${event.details})` : event.message;
-    const detail = formatSystemAudioErrorMessage(rawDetail, event.code);
+    const rawDetail = rawSidecarEventDetail(event);
+    const detail = formatSystemAudioErrorMessage(localizeSidecarEvent(event), event.code);
+    this.dependencies.logger?.warn('sidecar', rawDetail, event.code);
 
     if (event.sessionId === undefined) {
       this.handleError(FEEDBACK_FAILURES.sidecar, detail);
@@ -1328,7 +1326,7 @@ export class DictationSessionController {
         this.applyUiState('error');
       }
     } else {
-      this.dependencies.logger?.warn('session', detail);
+      this.dependencies.logger?.warn('session', rawDetail);
     }
 
     await this.cancelSession(event.sessionId);
@@ -1356,7 +1354,9 @@ export class DictationSessionController {
       return;
     }
 
-    const detail = event.details ? `${event.message} (${event.details})` : event.message;
+    const rawDetail = rawSidecarEventDetail(event);
+    const detail = localizeSidecarEvent(event);
+    this.dependencies.logger?.warn('sidecar', rawDetail, event.code);
     if (sessionId === this.activeSessionId) {
       // Queue overload is a graceful stop, not a cancellation cause. Keep its
       // warning outside terminal arbitration so a later target loss can explain
@@ -1368,7 +1368,7 @@ export class DictationSessionController {
         message: detail,
       });
     } else {
-      this.dependencies.logger?.warn('session', detail);
+      this.dependencies.logger?.warn('session', rawDetail);
     }
 
     entry.phase = 'stopping';

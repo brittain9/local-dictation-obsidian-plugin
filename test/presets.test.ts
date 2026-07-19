@@ -24,6 +24,16 @@ describe('LLM presets', () => {
     ]);
   });
 
+  it('preserves the approved English prompt bodies', () => {
+    expect(LLM_BUILTIN_PRESETS.map((preset) => preset.prompt)).toEqual([
+      "Clean dictated speech-to-text. Fix filler, false starts, repetitions, punctuation, capitalization, and obvious recognition errors. Preserve the speaker's voice and meaning. Use the reference context only for spelling. Write in the transcript’s original language. Never translate unless the user explicitly asks for translation. Return only the cleaned text — no preamble, no commentary.",
+      'Rewrite dictated speech as concise professional prose. Active voice, no filler or hedging. Preserve every fact, name, and term. Use the reference context for spelling. Write in the transcript’s original language. Never translate unless the user explicitly asks for translation. Return only the rewritten text — no preamble, no commentary.',
+      "Write a TLDR summary of the dictated transcript: a 'TLDR' heading followed by 1-3 short bullets covering the key points. Write in the transcript’s original language. Never translate unless the user explicitly asks for translation. Return only the heading and bullets — do not repeat the transcript, no preamble, no commentary.",
+      "Reformat dictated speech as well-structured Markdown. Add headings, bullet or numbered lists, bold, emphasis, and fenced code blocks where the content calls for it. Lightly clean filler, false starts, punctuation, and capitalization; preserve the speaker's wording, every fact, name, and term. Write in the transcript’s original language. Never translate unless the user explicitly asks for translation. Return only the Markdown — no preamble, no commentary.",
+      "Extract action items from the dictated transcript. Output an 'Action items' heading followed by a Markdown checklist of concrete tasks, naming an owner when the speaker mentions one. If the transcript contains no action items, return nothing. Write in the transcript’s original language. Never translate unless the user explicitly asks for translation. Return only the heading and checklist — do not repeat the transcript, no preamble, no commentary.",
+    ]);
+  });
+
   it('forbids implicit translation in every built-in transform', () => {
     for (const preset of LLM_BUILTIN_PRESETS) {
       expect(preset.prompt).toContain('original language');

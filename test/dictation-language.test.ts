@@ -21,7 +21,7 @@ describe('dictation language eligibility', () => {
     ).toEqual([
       { label: 'Auto detect', value: 'auto' },
       { label: 'English', value: 'en' },
-      { label: 'Japanese', value: 'ja' },
+      { label: '日本語', value: 'ja' },
     ]);
   });
 
