@@ -1206,6 +1206,51 @@ describe('DictationSessionController', () => {
     expect(show).toHaveBeenCalledWith(expect.objectContaining({ key: 'dictation-target-closed' }));
   });
 
+  it('adds fresh-installer recovery to system-audio permission errors on older Electron', async () => {
+    const electronVersionDescriptor = Object.getOwnPropertyDescriptor(process.versions, 'electron');
+    Object.defineProperty(process.versions, 'electron', {
+      configurable: true,
+      value: '39.5.9',
+    });
+
+    try {
+      const show = vi.fn();
+      const sidecarConnection = new FakeSidecarConnection();
+      const controller = createController({ feedback: { show }, sidecarConnection });
+
+      await controller.startDictation();
+      const sessionId = sidecarConnection.startSession.mock.calls[0]?.[0].sessionId ?? '';
+      sidecarConnection.emit({
+        code: 'system_audio_permission_denied',
+        message: 'raw sidecar permission message',
+        sessionId,
+        type: 'error',
+      });
+
+      await vi.waitFor(() => {
+        expect(show).toHaveBeenCalledWith(
+          expect.objectContaining({
+            key: 'sidecar-session-error',
+            message: expect.stringContaining('Download a fresh installer from obsidian.md'),
+          }),
+        );
+      });
+      expect(show).toHaveBeenCalledWith(
+        expect.objectContaining({
+          message: expect.stringContaining(
+            'System-audio recording permission is off for Obsidian.',
+          ),
+        }),
+      );
+    } finally {
+      if (electronVersionDescriptor === undefined) {
+        delete process.versions.electron;
+      } else {
+        Object.defineProperty(process.versions, 'electron', electronVersionDescriptor);
+      }
+    }
+  });
+
   it.each([
     {
       error: (sessionId: string): SidecarEvent => ({

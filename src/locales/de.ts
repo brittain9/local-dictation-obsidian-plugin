@@ -395,7 +395,7 @@ export const de = {
   'llm.failure.rateLimited': '{provider} Ratenlimit erreicht. Zurückgreifen auf Rohtext.',
   'llm.failure.network': 'Netzwerkfehler beim Erreichen von {provider}.',
   'llm.failure.modelNotConfigured':
-    'Das Modell {provider} ist nicht konfiguriert. Wählen Sie unter Modell eine Antwort aus.',
+    'Das {provider}-Modell ist nicht konfiguriert. Wählen Sie unter „Modell“ ein Modell aus.',
   'llm.failure.unknownModel':
     '{provider}-Modell nicht gefunden. Wählen Sie unter Modell ein anderes aus.',
   'llm.failure.unknown': 'LLM-Transformation fehlgeschlagen. Siehe Konsole.',

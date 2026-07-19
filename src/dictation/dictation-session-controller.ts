@@ -5,7 +5,10 @@ import { Platform } from 'obsidian';
 import type { AudioCaptureStream } from '../audio/audio-capture-stream';
 import { formatMicrophoneCaptureErrorMessage } from '../audio/microphone-permission-message';
 import type { SidecarAudioLevelMeter } from '../audio/sidecar-audio-level-meter';
-import { formatSystemAudioSidecarErrorMessage } from '../audio/system-audio-permission-message';
+import {
+  formatSystemAudioErrorMessage,
+  formatSystemAudioSidecarErrorMessage,
+} from '../audio/system-audio-permission-message';
 import type { NotePlacementOptions, SurfaceDesynchronization } from '../editor/note-surface';
 import type { RawTranscriptRecoveryReceipt } from '../editor/raw-transcript-recovery';
 import {
@@ -1299,7 +1302,7 @@ export class DictationSessionController {
     }
 
     const rawDetail = rawSidecarEventDetail(event);
-    const detail = localizeSidecarEvent(event);
+    const detail = formatSystemAudioErrorMessage(localizeSidecarEvent(event), event.code);
     this.dependencies.logger?.warn('sidecar', rawDetail, event.code);
 
     if (event.sessionId === undefined) {

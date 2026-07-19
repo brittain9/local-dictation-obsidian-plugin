@@ -600,7 +600,7 @@ export const fr = {
     'Recherchez cette icône dans le ruban Obsidian. Cliquez dessus pour commencer à dicter ; cliquez à nouveau pour arrêter.',
   'setup.wizard.hotkeyTitle': 'Ou lier un raccourci-clavier',
   'setup.wizard.hotkeyDescBefore': 'Lier un raccourci vers le',
-  'setup.wizard.toggleCommandName': 'Local Dictation : basculer entre la dictée',
+  'setup.wizard.toggleCommandName': 'Local Dictation : activer/désactiver la dictée',
   'setup.wizard.hotkeyDescAfter':
     'commande pour démarrer et arrêter de n’importe où dans Obsidian.',
   'setup.wizard.openHotkeySettings': 'Ouvrir les paramètres des raccourcis clavier',
