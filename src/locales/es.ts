@@ -256,9 +256,9 @@ export const es = {
     'Se guardó la aceleración del hardware, pero el motor de voz no pudo reiniciarse. Reinicie Obsidian para aplicarlo.',
   'settings.noteContext.name': 'Usar nota como contexto',
   'settings.noteContext.desc':
-    'Envíe términos distintivos de la nota abierta para ayudar con la ortografía.',
+    'Para inglés seleccionado manualmente, envía términos distintivos de la nota abierta para mejorar la ortografía.',
   'settings.noteContext.tooltip':
-    'Envía un glosario de nombres propios y términos técnicos como indicación inicial del motor. Solo lo utilizan motores que admiten mensajes iniciales.',
+    'Envía un glosario de nombres propios y términos técnicos como indicación inicial del motor. Solo se usa para inglés seleccionado manualmente con motores que admiten indicaciones iniciales.',
   'settings.microphone.name': 'Micrófono',
   'settings.microphone.desc':
     'Qué micrófono usar para dictar. Los cambios se aplican en la próxima sesión de dictado.',

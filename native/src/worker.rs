@@ -25,7 +25,8 @@ use crate::stages::{
     StageContext, StageEnablement, StageProcessor, post_engine_processors, run_post_engine,
 };
 use crate::transcription::{
-    EngineTranscriptOutput, GpuConfig, Transcript, TranscriptionError, TranscriptionRequest,
+    AUTOMATIC_LANGUAGE_TAG, EngineTranscriptOutput, GpuConfig, Transcript, TranscriptionError,
+    TranscriptionRequest,
 };
 
 #[derive(Debug, Clone)]
@@ -973,6 +974,7 @@ fn assemble_transcript(input: TranscriptAssembly<'_>) -> Transcript {
     let revision: u32 = 0;
     let mut stage_history: Vec<StageOutcome> = Vec::with_capacity(1 + input.processors.len());
     let EngineTranscriptOutput {
+        detected_language,
         segments,
         diagnostics,
     } = input.engine_output;
@@ -1000,12 +1002,17 @@ fn assemble_transcript(input: TranscriptAssembly<'_>) -> Transcript {
         stage_history,
     };
 
+    let stage_language = if input.language == AUTOMATIC_LANGUAGE_TAG {
+        detected_language.as_deref().unwrap_or(input.language)
+    } else {
+        input.language
+    };
     let ctx = StageContext {
         context: input.context,
         family_capabilities: input.family_capabilities,
         stage_enabled: input.stage_enablement,
         is_final: input.is_final,
-        language: input.language,
+        language: stage_language,
         tokio_runtime: input.tokio_runtime,
         cancel_rx: input.cancel_rx,
         pause_ms_before_utterance: input.pause_ms_before_utterance,
@@ -1868,6 +1875,7 @@ mod tests {
 
     fn fixture_output(text: String) -> EngineTranscriptOutput {
         EngineTranscriptOutput {
+            detected_language: None,
             diagnostics: Vec::new(),
             segments: vec![TranscriptSegment {
                 start_ms: 0,
@@ -2193,18 +2201,65 @@ mod tests {
     }
 
     fn engine_output() -> EngineTranscriptOutput {
+        engine_output_for("hello", None)
+    }
+
+    fn engine_output_for(text: &str, detected_language: Option<&str>) -> EngineTranscriptOutput {
         EngineTranscriptOutput {
+            detected_language: detected_language.map(str::to_string),
             diagnostics: Vec::new(),
             segments: vec![TranscriptSegment {
                 start_ms: 0,
                 end_ms: 1_000,
                 speaker: None,
-                text: "hello".to_string(),
+                text: text.to_string(),
                 timestamp_granularity: TimestampGranularity::Segment,
                 timestamp_source: TimestampSource::Engine,
                 words: Vec::new(),
             }],
         }
+    }
+
+    #[test]
+    fn automatic_language_uses_engine_detection_for_language_specific_stages() {
+        let assemble = |detected_language| {
+            let processors = post_engine_processors();
+            let runtime = test_runtime();
+            let (_cancel_tx, cancel_rx) = watch::channel(false);
+            let mut engine_output = engine_output_for("Thank you.", Some(detected_language));
+            engine_output.diagnostics = vec![crate::transcription::SegmentDiagnostics {
+                avg_logprob: Some(-1.2),
+                decode_reached_eos: None,
+                no_speech_prob: Some(0.72),
+                token_count: Some(2),
+            }];
+            assemble_transcript(TranscriptAssembly {
+                cancel_rx: &cancel_rx,
+                context: None,
+                engine_duration_ms: 7,
+                engine_output,
+                family_capabilities: &whisper_caps(),
+                is_final: true,
+                language: "auto",
+                pause_ms_before_utterance: None,
+                processors: &processors,
+                stage_enablement: &StageEnablement::default(),
+                tokio_runtime: &runtime,
+                utterance_id: Uuid::nil(),
+                vad_probabilities: &[],
+                voice_activity: voice_activity(),
+            })
+        };
+
+        assert!(
+            assemble("en").joined_text().is_empty(),
+            "automatically detected English must use the English hallucination blocklist",
+        );
+        assert_eq!(
+            assemble("ja").joined_text(),
+            "Thank you.",
+            "automatically detected Japanese must bypass English-specific rules",
+        );
     }
 
     fn voice_activity() -> crate::audio_metadata::VoiceActivityEvidence {

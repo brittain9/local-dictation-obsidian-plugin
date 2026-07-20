@@ -1140,6 +1140,7 @@ impl LoadedNemotronModel {
             }]
         };
         Ok(EngineTranscriptOutput {
+            detected_language: None,
             segments,
             diagnostics: Vec::new(),
         })

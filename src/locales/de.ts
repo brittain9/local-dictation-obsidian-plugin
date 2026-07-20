@@ -254,9 +254,9 @@ export const de = {
     'Die Hardwarebeschleunigung wurde gespeichert, aber die Sprach-Engine konnte nicht neu gestartet werden. Starten Sie Obsidian neu, um es anzuwenden.',
   'settings.noteContext.name': 'Verwenden Sie die Notiz als Kontext',
   'settings.noteContext.desc':
-    'Senden Sie markante Begriffe aus der offenen Notiz, um die Rechtschreibung zu erleichtern.',
+    'Sendet bei manuell ausgewähltem Englisch markante Begriffe aus der offenen Notiz, um die Rechtschreibung zu verbessern.',
   'settings.noteContext.tooltip':
-    'Sendet ein Glossar mit Eigennamen und technischen Begriffen als erste Aufforderung des Motors. Wird nur von Engines verwendet, die anfängliche Eingabeaufforderungen unterstützen.',
+    'Sendet ein Glossar mit Eigennamen und Fachbegriffen als initialen Prompt der Engine. Wird nur bei manuell ausgewähltem Englisch mit Engines verwendet, die initiale Prompts unterstützen.',
   'settings.microphone.name': 'Mikrofon',
   'settings.microphone.desc':
     'Welches Mikrofon zum Diktieren verwendet werden soll. Änderungen gelten ab der nächsten Diktatsitzung.',

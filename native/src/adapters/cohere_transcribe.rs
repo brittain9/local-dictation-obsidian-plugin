@@ -181,6 +181,7 @@ impl LoadedModel for LoadedCohereModel {
         };
 
         Ok(EngineTranscriptOutput {
+            detected_language: None,
             segments,
             diagnostics,
         })

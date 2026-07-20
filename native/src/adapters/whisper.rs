@@ -1,7 +1,9 @@
 use std::path::Path;
 use std::sync::LazyLock;
 
-use whisper_rs::{FullParams, SamplingStrategy, WhisperContext, WhisperContextParameters};
+use whisper_rs::{
+    FullParams, SamplingStrategy, WhisperContext, WhisperContextParameters, get_lang_str,
+};
 
 use crate::engine::capabilities::{
     LanguageSupport, ModelFamilyCapabilities, ModelFamilyId, ModelTask, RuntimeId,
@@ -144,6 +146,12 @@ impl LoadedModel for LoadedWhisperModel {
                 TranscriptionError::transcription_failure("failed to run whisper model", error)
             })?;
 
+        let detected_language = if request.language == AUTOMATIC_LANGUAGE_TAG {
+            get_lang_str(state.full_lang_id_from_state()).map(str::to_string)
+        } else {
+            None
+        };
+
         let mut segments = Vec::new();
         let mut diagnostics = Vec::new();
 
@@ -168,6 +176,7 @@ impl LoadedModel for LoadedWhisperModel {
         }
 
         Ok(EngineTranscriptOutput {
+            detected_language,
             segments,
             diagnostics,
         })

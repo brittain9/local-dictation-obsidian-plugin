@@ -254,9 +254,9 @@ export const it = {
     'L’impostazione dell’accelerazione hardware è stata salvata, ma non è stato possibile riavviare il motore di riconoscimento vocale. Riavvia Obsidian per applicarla.',
   'settings.noteContext.name': 'Usa la nota come contesto',
   'settings.noteContext.desc':
-    'Invia i termini distintivi della nota aperta per migliorare l’ortografia.',
+    'Per l’inglese selezionato manualmente, invia i termini distintivi della nota aperta per migliorare l’ortografia.',
   'settings.noteContext.tooltip':
-    'Invia un glossario di nomi propri e termini tecnici come prompt iniziale del motore. Viene usato solo dai motori che supportano i prompt iniziali.',
+    'Invia un glossario di nomi propri e termini tecnici come prompt iniziale del motore. Viene usato solo per l’inglese selezionato manualmente con motori che supportano i prompt iniziali.',
   'settings.microphone.name': 'Microfono',
   'settings.microphone.desc':
     'Microfono da usare per la dettatura. Le modifiche verranno applicate nella sessione di dettatura successiva.',

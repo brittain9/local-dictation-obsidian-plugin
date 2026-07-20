@@ -426,6 +426,7 @@ fn engine_output(decoded: DecodedTranscript, sample_count: usize) -> EngineTrans
     let text = decoded.text.trim();
     if text.is_empty() {
         return EngineTranscriptOutput {
+            detected_language: None,
             segments: Vec::new(),
             diagnostics: Vec::new(),
         };
@@ -448,6 +449,7 @@ fn engine_output(decoded: DecodedTranscript, sample_count: usize) -> EngineTrans
     };
 
     EngineTranscriptOutput {
+        detected_language: None,
         segments: vec![segment],
         diagnostics: vec![diagnostics],
     }
