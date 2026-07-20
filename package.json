@@ -1,7 +1,7 @@
 {
   "name": "local-dictation",
-  "version": "2026.7.8",
-  "description": "Private, offline speech-to-text and meeting transcription. Dictate voice notes live or transcribe meetings and system audio with local Whisper, speaker labels, timestamps, and optional AI cleanup.",
+  "version": "2026.7.9",
+  "description": "Cross-platform, multilingual local-by-default dictation for Obsidian with local speech models, meeting capture, timestamps, speaker labels, and optional text cleanup.",
   "private": true,
   "license": "MIT",
   "main": "main.js",
