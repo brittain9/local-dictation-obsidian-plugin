@@ -183,35 +183,41 @@ fn pinned_multilingual_models_meet_quality_and_throughput_gates() {
     const MAX_WORD_ERROR_RATE: f64 = 0.35;
     const MAX_FIRST_AUDIO_SECONDS: f64 = 3.0;
     const MIN_COMPACT_REAL_TIME_FACTOR: f64 = 2.2;
-    const FIXTURES: [(&str, &str, &str); 6] = [
+    const FIXTURES: [(&str, &str, &str, &str); 6] = [
         (
             "pocket_tts_english_2026_04_int8",
             "en",
+            "Read aloud is ready.",
             "Local speech keeps every word on this computer.",
         ),
         (
             "pocket_tts_french_24l_int8",
             "fr",
+            "La lecture est prête.",
             "La parole locale garde chaque mot sur cet ordinateur.",
         ),
         (
             "pocket_tts_german_int8",
             "de",
+            "Vorlesen ist bereit.",
             "Lokale Sprache behält jedes Wort auf diesem Computer.",
         ),
         (
             "pocket_tts_spanish_int8",
             "es",
+            "La lectura está lista.",
             "La voz local mantiene cada palabra en este ordenador.",
         ),
         (
             "pocket_tts_portuguese_int8",
             "pt",
+            "A leitura está pronta.",
             "A voz local mantém cada palavra neste computador.",
         ),
         (
             "pocket_tts_italian_int8",
             "it",
+            "La lettura è pronta.",
             "La voce locale conserva ogni parola su questo computer.",
         ),
     ];
@@ -221,7 +227,7 @@ fn pinned_multilingual_models_meet_quality_and_throughput_gates() {
         .load(&whisper_path, GpuConfig { use_gpu: false })
         .expect("multilingual Whisper should load");
 
-    for (model_id, language, reference) in FIXTURES {
+    for (model_id, language, latency_prompt, reference) in FIXTURES {
         let model_path = common::model::require_pocket_tts_model_by_id(model_id);
         let model_dir = model_path
             .parent()
@@ -229,18 +235,29 @@ fn pinned_multilingual_models_meet_quality_and_throughput_gates() {
         let mut synthesizer = PocketTtsAdapter
             .load_synthesis(&model_path)
             .unwrap_or_else(|error| panic!("{model_id} should load: {error}"));
+        let voice_path = model_dir.join("embeddings/alba.safetensors");
+        let first_audio_started_at = Instant::now();
+        let first_audio = synthesizer
+            .synthesize(latency_prompt, &voice_path, &SynthesisCancellation::new())
+            .unwrap_or_else(|error| panic!("{model_id} latency prompt should synthesize: {error}"));
+        let first_audio_seconds = first_audio_started_at.elapsed().as_secs_f64();
+        assert_eq!(
+            first_audio.sample_rate, 24_000,
+            "{model_id} first audio rate"
+        );
+        assert!(
+            first_audio
+                .samples
+                .iter()
+                .any(|sample| sample.abs() > 0.001),
+            "{model_id} produced silent first audio"
+        );
+
         let synthesis_started_at = Instant::now();
         let synthesized = synthesizer
-            .synthesize(
-                reference,
-                &model_dir.join("embeddings/alba.safetensors"),
-                &SynthesisCancellation::new(),
-            )
+            .synthesize(reference, &voice_path, &SynthesisCancellation::new())
             .unwrap_or_else(|error| panic!("{model_id} should synthesize: {error}"));
         let synthesis_seconds = synthesis_started_at.elapsed().as_secs_f64();
-        // Certification measures request-to-audio latency after the model is ready.
-        // The English worker smoke separately gates cold model loading plus first output.
-        let first_audio_seconds = synthesis_seconds;
         let raw_output_seconds = synthesized.samples.len() as f64 / synthesized.sample_rate as f64;
         let real_time_factor = raw_output_seconds / synthesis_seconds.max(f64::EPSILON);
         let non_silent = synthesized
