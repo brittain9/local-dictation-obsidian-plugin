@@ -154,17 +154,31 @@ pub fn require_nemotron_model() -> PathBuf {
 }
 
 pub fn require_pocket_tts_model() -> PathBuf {
+    require_pocket_tts_model_by_id(POCKET_TTS_MODEL_ID)
+}
+
+pub fn require_pocket_tts_model_by_id(model_id: &str) -> PathBuf {
+    let directory_env = if model_id == POCKET_TTS_MODEL_ID {
+        "POCKET_TTS_MODEL_DIR".to_string()
+    } else {
+        format!(
+            "POCKET_TTS_{}_DIR",
+            model_id
+                .trim_start_matches("pocket_tts_")
+                .to_ascii_uppercase()
+        )
+    };
     resolve_catalog_model(
-        "POCKET_TTS_MODEL_DIR",
+        &directory_env,
         RuntimeId::OnnxRuntime,
         ModelFamilyId::PocketTts,
-        POCKET_TTS_MODEL_ID,
+        model_id,
     )
     .unwrap_or_else(|error| {
         panic!(
-            "could not obtain the pinned Pocket TTS assets: {error}\n  Set \
-             POCKET_TTS_MODEL_DIR=/path/to/model to reuse verified local assets, or ensure \
-             network access for the pinned catalog download."
+            "could not obtain the pinned Pocket TTS assets for {model_id}: {error}\n  Set \
+             {directory_env}=/path/to/model to reuse verified local assets, or ensure network \
+             access for the pinned catalog download."
         )
     })
 }

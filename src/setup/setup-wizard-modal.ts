@@ -250,6 +250,7 @@ export class SetupWizardModal extends Modal {
   private openModelPicker(): void {
     const modal = new ManageModelsModal(this.deps.app, {
       feedback: this.deps.feedback,
+      initialTask: 'stt',
       manager: this.deps.modelInstallManager,
       onChanged: () => {
         // Re-check on any change so the wizard advances as soon as a model is selected.

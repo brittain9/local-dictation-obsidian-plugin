@@ -46,7 +46,10 @@ static CAPABILITIES: LazyLock<ModelFamilyCapabilities> =
         supports_language_selection: false,
         supports_automatic_language_detection: false,
         supported_languages: LanguageSupport::List {
-            tags: vec!["en".to_string()],
+            tags: ["en", "fr", "de", "es", "pt", "it"]
+                .into_iter()
+                .map(str::to_string)
+                .collect(),
         },
         max_audio_duration_secs: None,
         produces_punctuation: false,

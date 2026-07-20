@@ -847,5 +847,5 @@ export const it = {
   'catalog.pocket_tts_english_2026_04_int8.summary':
     'Lettura naturale locale in inglese con una selezione di voci curate.',
   'catalog.family.pocket_tts.summary':
-    'Legge localmente il testo inglese delle note con prosodia naturale, voci selezionabili e controllo della velocità che preserva il tono.',
+    'Legge localmente le note in inglese, francese, tedesco, spagnolo, portoghese e italiano con voci selezionabili e controllo della velocità che preserva il tono.',
 } satisfies TranslationCatalog;

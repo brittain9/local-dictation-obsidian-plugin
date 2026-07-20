@@ -835,5 +835,5 @@ export const nl = {
   'catalog.pocket_tts_english_2026_04_int8.summary':
     'Natuurlijk lokaal Engels voorlezen met een keuze uit samengestelde stemmen.',
   'catalog.family.pocket_tts.summary':
-    'Leest Engelse notitietekst lokaal voor met natuurlijke prosodie, selecteerbare stemmen en toonhoogtebehoudende snelheidsregeling.',
+    'Leest notities lokaal voor in het Engels, Frans, Duits, Spaans, Portugees en Italiaans met selecteerbare stemmen en toonhoogtebehoudende snelheidsregeling.',
 } as const satisfies TranslationCatalog;

@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import sys
 import urllib.parse
 import urllib.request
 from dataclasses import dataclass
@@ -20,18 +21,16 @@ ONNX_REVISION = "58a6d00cf13d239b6748cb0769f35c580a8f606c"
 VOICE_REPO = "kyutai/pocket-tts-without-voice-cloning"
 VOICE_REVISION = "e041936c75475d350b405bc870bcf7c22da4e9e6"
 
-VARIANTS = (
-    "english_2026-04",
-    "french_24l",
-    "german_24l",
-    "spanish_24l",
-    "portuguese_24l",
-    "italian_24l",
-)
+CURATED_VOICES = ("alba", "cosette", "fantine", "javert", "jean", "marius")
 
-# Three feminine and three masculine predefined states from Kyutai's named
-# voice set. Alba is the default used by the Phase 0 reference fixtures.
-VOICES = ("alba", "cosette", "fantine", "javert", "jean", "marius")
+VARIANTS = {
+    "english_2026-04": CURATED_VOICES,
+    "french_24l": CURATED_VOICES,
+    "german": CURATED_VOICES,
+    "spanish": CURATED_VOICES,
+    "portuguese": CURATED_VOICES,
+    "italian": CURATED_VOICES,
+}
 
 # The reference wrapper initializes the Mimi encoder for voice cloning. Stage A
 # accepts only precomputed safetensors voice states, so the production runtime
@@ -117,19 +116,19 @@ def main() -> None:
     onnx_paths = [f"onnx/{variant}/{name}" for variant in VARIANTS for name in ONNX_FILES]
     voice_paths = [
         f"languages/{variant}/embeddings/{voice}.safetensors"
-        for variant in VARIANTS
-        for voice in VOICES
+        for variant, voices in VARIANTS.items()
+        for voice in voices
     ]
     onnx_info = paths_info(onnx_pin, onnx_paths)
     voice_info = paths_info(voice_pin, voice_paths)
 
     variants: dict[str, object] = {}
-    for variant in VARIANTS:
+    for variant, voices in VARIANTS.items():
         artifacts = []
         for name in ONNX_FILES:
             path = f"onnx/{variant}/{name}"
             artifacts.append(artifact(onnx_pin, onnx_info[path], name))
-        for voice in VOICES:
+        for voice in voices:
             path = f"languages/{variant}/embeddings/{voice}.safetensors"
             artifacts.append(
                 artifact(voice_pin, voice_info[path], f"embeddings/{voice}.safetensors")
@@ -148,9 +147,17 @@ def main() -> None:
             "voices": {"repo": VOICE_REPO, "revision": VOICE_REVISION},
         },
         "variants": variants,
-        "voices": list(VOICES),
+        "voices": sorted({voice for voices in VARIANTS.values() for voice in voices}),
     }
-    print(json.dumps(manifest, indent=2, sort_keys=True))
+    rendered = f"{json.dumps(manifest, indent=2, sort_keys=True)}\n"
+    if len(sys.argv) == 3 and sys.argv[1] == "--output":
+        from pathlib import Path
+
+        Path(sys.argv[2]).write_text(rendered, encoding="utf-8")
+    elif len(sys.argv) == 1:
+        print(rendered, end="")
+    else:
+        raise SystemExit("usage: pin_artifacts.py [--output PATH]")
 
 
 if __name__ == "__main__":

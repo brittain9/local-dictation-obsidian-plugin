@@ -147,8 +147,22 @@ export const en = {
   'models.manage.readAloudModels': 'Read-aloud models',
   'models.manage.optionalVoice': 'Optional local voice',
   'models.manage.voiceInstalled': 'Installed',
+  'models.manage.taskLabel': 'Model task',
+  'models.manage.searchPlaceholder': 'Search {task} models',
+  'models.manage.languagesLabel': 'Read-aloud languages',
+  'models.manage.manageVoices': 'Manage voices',
+  'models.manage.performanceWarning': 'Higher reading speeds may buffer on slower CPUs.',
+  'models.manage.installWarningTitle': 'Install a high-resource model?',
+  'models.manage.installWarningMessage':
+    '{model} downloads approximately {size} and uses substantially more CPU. Higher reading speeds may buffer.',
+  'models.tag.highCpu': 'High CPU',
+  'models.tag.mayBuffer': 'May buffer',
   'tts.status.reading': 'Reading…',
   'tts.status.paused': 'Reading paused',
+  'tts.control.voice': 'Voice: {voice}',
+  'tts.control.pause': 'Pause reading',
+  'tts.control.resume': 'Resume reading',
+  'tts.control.stop': 'Stop reading',
   'tts.notice.noText': 'There is no speakable text here.',
   'tts.notice.modelRequired': 'Install and select a read-aloud model first.',
   'tts.notice.voiceRequired': 'Select an installed voice first.',
@@ -787,6 +801,16 @@ export const en = {
     "NVIDIA's 0.6B multilingual RNNT, exported to int8 ONNX for cache-aware live transcription in eight verified languages.",
   'catalog.pocket_tts_english_2026_04_int8.summary':
     'Natural local English read-aloud synthesis with selectable curated voices.',
+  'catalog.pocket_tts_french_24l_int8.summary':
+    'Higher-quality local French synthesis; this 24-layer model uses more CPU and may buffer at higher reading speeds.',
+  'catalog.pocket_tts_german_int8.summary':
+    'Natural local German read-aloud synthesis with selectable curated voices.',
+  'catalog.pocket_tts_spanish_int8.summary':
+    'Natural local Spanish read-aloud synthesis with selectable curated voices.',
+  'catalog.pocket_tts_portuguese_int8.summary':
+    'Natural local Portuguese read-aloud synthesis with selectable curated voices.',
+  'catalog.pocket_tts_italian_int8.summary':
+    'Natural local Italian read-aloud synthesis with selectable curated voices.',
   'catalog.family.whisper.summary':
     'Transcribes after each pause. Whisper provides more accurate timestamps than other model families, including optional word-level timing. Tiny and Base favor speed, Small balances speed and quality, and Medium and Large favor quality.',
   'catalog.family.cohere_transcribe.summary':
@@ -796,7 +820,7 @@ export const en = {
   'catalog.family.nemotron_asr.summary':
     'Experimental high-accuracy multilingual streaming with a larger download and higher resource use. Moonshine Small remains the recommended English live-dictation default.',
   'catalog.family.pocket_tts.summary':
-    'Reads English note text aloud locally with natural prosody, selectable voices, and pitch-preserving speed control.',
+    'Reads notes aloud locally in English, French, German, Spanish, Portuguese, and Italian with selectable voices and pitch-preserving speed control.',
   'setup.sidecar.modal.unsupportedPlatform':
     'This speech engine build is not available for your platform or architecture.',
   'setup.sidecar.modal.genericInstallError':

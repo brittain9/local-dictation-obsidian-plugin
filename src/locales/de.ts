@@ -849,5 +849,5 @@ export const de = {
   'catalog.pocket_tts_english_2026_04_int8.summary':
     'Natürliches lokales Vorlesen auf Englisch mit auswählbaren Stimmen.',
   'catalog.family.pocket_tts.summary':
-    'Liest englischen Notiztext lokal mit natürlicher Prosodie, auswählbaren Stimmen und tonhöhentreuer Geschwindigkeitssteuerung vor.',
+    'Liest Notizen lokal auf Englisch, Französisch, Deutsch, Spanisch, Portugiesisch und Italienisch mit auswählbaren Stimmen und tonhöhentreuer Geschwindigkeitssteuerung vor.',
 } as const satisfies TranslationCatalog;

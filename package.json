@@ -40,6 +40,8 @@
     "test:sidecar:nemotron:e2e": "cargo test --manifest-path native/Cargo.toml --release --no-default-features --features engine-nemotron-asr --test nemotron_asr_e2e --test nemotron_asr_tails -- --ignored --nocapture --test-threads=1",
     "test:sidecar:multilingual:e2e": "cargo test --manifest-path native/Cargo.toml --release --no-default-features --features engine-nemotron-asr,engine-whisper --test multilingual_e2e -- --ignored --nocapture --test-threads=1",
     "test:sidecar:pocket-tts:e2e": "cargo test --manifest-path native/Cargo.toml --release --no-default-features --features engine-pocket-tts,engine-whisper --test pocket_tts_e2e -- --ignored --nocapture --test-threads=1",
+    "test:sidecar:pocket-tts:smoke": "cargo test --manifest-path native/Cargo.toml --release --no-default-features --features engine-pocket-tts --test pocket_tts_e2e pinned_english_model_synthesizes_non_silent_pcm -- --ignored --nocapture --test-threads=1",
+    "test:sidecar:pocket-tts:certify": "cargo test --manifest-path native/Cargo.toml --release --no-default-features --features engine-pocket-tts,engine-whisper --test pocket_tts_e2e pinned_multilingual_models_meet_quality_and_throughput_gates -- --ignored --nocapture --test-threads=1",
     "check": "npm run check:js && npm run check:rust"
   },
   "devDependencies": {

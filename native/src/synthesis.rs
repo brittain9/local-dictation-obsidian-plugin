@@ -177,20 +177,30 @@ mod tests {
     use super::{pcm_f32_to_i16le, time_stretch};
 
     #[test]
-    fn time_stretch_changes_duration_without_changing_period() {
+    fn time_stretch_preserves_pitch_and_target_duration_at_production_limits() {
         let sample_rate = 24_000_u32;
         let period = 120_usize;
         let samples = (0..sample_rate as usize)
             .map(|index| (std::f32::consts::TAU * index as f32 / period as f32).sin())
             .collect::<Vec<_>>();
-        let faster = time_stretch(&samples, 1.5, sample_rate);
-        assert!((faster.len() as f32 - samples.len() as f32 / 1.5).abs() < 1_000.0);
-        let crossings = faster
-            .windows(2)
-            .filter(|pair| pair[0] <= 0.0 && pair[1] > 0.0)
-            .count();
-        let measured_period = faster.len() as f32 / crossings as f32;
-        assert!((measured_period - period as f32).abs() < 4.0);
+        for speed in [0.75, 2.0] {
+            let stretched = time_stretch(&samples, speed, sample_rate);
+            let target_len = samples.len() as f32 / speed;
+            let duration_error = (stretched.len() as f32 - target_len).abs() / target_len;
+            assert!(
+                duration_error <= 0.05,
+                "{speed}x duration error {duration_error:.3} exceeded 5%"
+            );
+            let crossings = stretched
+                .windows(2)
+                .filter(|pair| pair[0] <= 0.0 && pair[1] > 0.0)
+                .count();
+            let measured_period = stretched.len() as f32 / crossings as f32;
+            assert!(
+                (measured_period - period as f32).abs() < 4.0,
+                "{speed}x changed the measured period to {measured_period:.2} samples"
+            );
+        }
     }
 
     #[test]

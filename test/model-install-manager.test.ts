@@ -271,6 +271,43 @@ describe('ModelInstallManager', () => {
         expect(harness.manager.getState().installedModels).toHaveLength(2);
       });
     });
+
+    it('publishes refreshed same-model voice metadata after an incremental install', async () => {
+      harness = createManagerHarness({ selectedModel: sampleSelection() });
+      configureSidecarForInit(harness.sidecarConnection);
+      await harness.manager.init();
+      const installedTts = sampleInstalledModel('pocket_tts_english_2026_04_int8', {
+        familyId: 'pocket_tts',
+        installedVoiceIds: ['alba', 'cosette'],
+        runtimeId: 'onnx_runtime',
+      });
+      harness.sidecarConnection.listInstalledModels.mockResolvedValueOnce({
+        models: [sampleInstalledModel(), installedTts],
+      });
+
+      emitInstallUpdate(harness, {
+        familyId: 'pocket_tts',
+        installId: 'voice-install',
+        modelId: installedTts.modelId,
+        runtimeId: 'onnx_runtime',
+      });
+      emitInstallUpdate(harness, {
+        familyId: 'pocket_tts',
+        installId: 'voice-install',
+        modelId: installedTts.modelId,
+        runtimeId: 'onnx_runtime',
+        state: 'completed',
+      });
+
+      await vi.waitFor(() => {
+        expect(
+          harness.manager
+            .getState()
+            .installedModels.find((model) => model.modelId === installedTts.modelId)
+            ?.installedVoiceIds,
+        ).toEqual(['alba', 'cosette']);
+      });
+    });
   });
 
   describe('cancel()', () => {

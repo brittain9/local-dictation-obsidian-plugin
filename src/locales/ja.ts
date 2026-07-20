@@ -832,5 +832,5 @@ export const ja = {
   'catalog.pocket_tts_english_2026_04_int8.summary':
     '厳選された音声を選べる、自然なローカル英語読み上げです。',
   'catalog.family.pocket_tts.summary':
-    '自然な抑揚、選択可能な音声、音程を保つ速度調整で、英語のノートをローカルで読み上げます。',
+    '英語、フランス語、ドイツ語、スペイン語、ポルトガル語、イタリア語のノートを、選択可能な音声と音程を保つ速度調整でローカルに読み上げます。',
 } as const satisfies TranslationCatalog;

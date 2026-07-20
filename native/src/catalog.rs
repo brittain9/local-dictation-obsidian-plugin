@@ -438,44 +438,52 @@ mod tests {
     }
 
     #[test]
-    fn bundled_pocket_tts_model_installs_alba_and_exposes_curated_voices() {
+    fn bundled_pocket_tts_models_cover_six_languages_and_expose_curated_voices() {
         let catalog = ModelCatalog::load_bundled().expect("bundled catalog should load");
-        let model = catalog
+        let expected = [
+            ("pocket_tts_english_2026_04_int8", "en", 131_654_174),
+            ("pocket_tts_french_24l_int8", "fr", 504_324_300),
+            ("pocket_tts_german_int8", "de", 131_654_653),
+            ("pocket_tts_spanish_int8", "es", 131_655_714),
+            ("pocket_tts_portuguese_int8", "pt", 131_655_820),
+            ("pocket_tts_italian_int8", "it", 131_654_897),
+        ];
+
+        for (model_id, language, required_bytes) in expected {
+            let model = catalog
+                .find_model(RuntimeId::OnnxRuntime, ModelFamilyId::PocketTts, model_id)
+                .unwrap_or_else(|| panic!("Pocket TTS model {model_id} should be cataloged"));
+
+            assert_eq!(model.task, ModelTask::Tts);
+            assert_eq!(model.language_tags, [language]);
+            assert_eq!(model.default_voice.as_deref(), Some("alba"));
+            assert_eq!(model.required_download_bytes(), required_bytes);
+            assert_eq!(
+                model
+                    .artifacts
+                    .iter()
+                    .filter_map(|artifact| artifact.voice_id.as_deref())
+                    .collect::<Vec<_>>(),
+                ["alba", "cosette", "fantine", "javert", "jean", "marius"]
+            );
+        }
+
+        let french = catalog
             .find_model(
                 RuntimeId::OnnxRuntime,
                 ModelFamilyId::PocketTts,
-                "pocket_tts_english_2026_04_int8",
+                "pocket_tts_french_24l_int8",
             )
-            .expect("Pocket TTS English should be cataloged");
-
-        assert_eq!(model.task, ModelTask::Tts);
-        assert_eq!(model.default_voice.as_deref(), Some("alba"));
-        assert_eq!(model.required_download_bytes(), 131_654_174);
-
-        let voices = model
-            .artifacts
-            .iter()
-            .filter_map(|artifact| artifact.voice_id.as_deref())
-            .collect::<Vec<_>>();
-        assert_eq!(
-            voices,
-            ["alba", "cosette", "fantine", "javert", "jean", "marius"]
-        );
+            .expect("Pocket TTS French should be cataloged");
         assert!(
-            model
+            french
                 .artifacts
                 .iter()
-                .find(|artifact| artifact.voice_id.as_deref() == Some("alba"))
-                .is_some_and(|artifact| artifact.required)
-        );
-        assert!(
-            model
-                .artifacts
-                .iter()
-                .filter(|artifact| artifact.voice_id.as_deref() != Some("alba"))
                 .filter(|artifact| artifact.role == ArtifactRole::Voice)
-                .all(|artifact| !artifact.required)
+                .all(|artifact| artifact.required)
         );
+        assert!(french.ux_tags.iter().any(|tag| tag == "high-cpu"));
+        assert!(french.ux_tags.iter().any(|tag| tag == "may-buffer"));
     }
 
     #[test]

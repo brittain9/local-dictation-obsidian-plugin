@@ -16,7 +16,7 @@ import { TemporaryLeafPinLeaseManager } from './editor/temporary-leaf-pin';
 import { syncDictationLanguageWithObsidian } from './language/dictation-language-sync';
 import type { LlmCleanupFailure } from './llm/provider';
 import { createLlmRouter } from './llm/router';
-import { ManageModelsModal } from './models/manage-models-modal';
+import { ManageModelsModal, type ModelPickerOptions } from './models/manage-models-modal';
 import { ModelInstallManager } from './models/model-install-manager';
 import { matchesModelTriple } from './models/model-management-types';
 import { Session } from './session/session';
@@ -56,6 +56,7 @@ import {
   detectSidecarVersionDrift,
   type SidecarVersionDrift,
 } from './sidecar/sidecar-version-drift';
+import { readAloudControlLabels } from './tts/read-aloud-control-labels';
 import { ReadAloudController, type ReadAloudState } from './tts/read-aloud-controller';
 import { DictationRibbonController } from './ui/dictation-ribbon';
 import { LOCAL_DICTATION_VIEW_TYPE, LocalDictationView } from './ui/local-dictation-view';
@@ -449,13 +450,14 @@ export default class LocalSttPlugin extends Plugin {
     modal.open();
   }
 
-  async openModelPicker(options: { onChanged?: () => void } = {}): Promise<void> {
+  async openModelPicker(options: ModelPickerOptions = {}): Promise<void> {
     if (!(await this.isSidecarInstalled())) {
       await this.openSetupWizard();
       return;
     }
     new ManageModelsModal(this.app, {
       feedback: this.feedback,
+      ...(options.initialTask === undefined ? {} : { initialTask: options.initialTask }),
       manager: this.requireModelInstallManager(),
       onChanged: options.onChanged ?? (() => {}),
       onRunSetup: () => {
@@ -661,15 +663,18 @@ export default class LocalSttPlugin extends Plugin {
     if (status === null) return;
     status.empty();
     status.toggleClass('is-hidden', state === 'idle');
+    status.setAttribute('aria-live', 'polite');
+    status.setAttribute('role', 'status');
     if (state === 'idle') return;
-    status.createSpan({
-      text: state === 'paused' ? t('tts.status.paused') : t('tts.status.reading'),
-    });
     const installedVoices = this.installedReadAloudVoices();
+    const selectedVoice = this.settings.selectedTtsVoice ?? installedVoices[0] ?? '';
+    const labels = readAloudControlLabels(state, selectedVoice);
+    status.createSpan({
+      text: labels.state,
+    });
     if (installedVoices.length > 0) {
-      const selectedVoice = this.settings.selectedTtsVoice ?? installedVoices[0];
       const voice = status.createEl('button', {
-        attr: { 'aria-label': t('settings.readAloud.voice') },
+        attr: { 'aria-label': labels.voice, title: labels.voice },
         cls: 'clickable-icon',
       });
       setIcon(voice, 'audio-waveform');
@@ -689,7 +694,7 @@ export default class LocalSttPlugin extends Plugin {
       });
     }
     const pause = status.createEl('button', {
-      attr: { 'aria-label': t('commands.pauseResumeReadAloud') },
+      attr: { 'aria-label': labels.pauseResume, title: labels.pauseResume },
       cls: 'clickable-icon',
     });
     setIcon(pause, state === 'paused' ? 'play' : 'pause');
@@ -697,7 +702,7 @@ export default class LocalSttPlugin extends Plugin {
       void this.requireReadAloudController().togglePaused();
     });
     const stop = status.createEl('button', {
-      attr: { 'aria-label': t('commands.stopReadAloud') },
+      attr: { 'aria-label': labels.stop, title: labels.stop },
       cls: 'clickable-icon',
     });
     setIcon(stop, 'square');

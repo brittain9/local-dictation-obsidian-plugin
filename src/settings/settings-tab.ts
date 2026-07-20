@@ -8,12 +8,12 @@ import {
   supportedDictationLanguageOptions,
 } from '../language/dictation-language';
 import { resolveEngineCapabilities } from '../models/capability-view';
+import type { ModelPickerOptions } from '../models/manage-models-modal';
 import type { ModelInstallManager } from '../models/model-install-manager';
 import { updateInstallProgressElement } from '../models/model-install-progress';
 import { ExternalModelFileModal, ModelDetailsModal } from '../models/model-management-modals';
 import { matchesModelTriple } from '../models/model-management-types';
 import { deriveCurrentModelDisplay } from '../models/model-row-state';
-import { formatVoiceLabel } from '../shared/format-utils';
 import { t } from '../shared/i18n';
 import type { PluginLogger } from '../shared/plugin-logger';
 import type { UserFeedback } from '../shared/user-feedback';
@@ -46,6 +46,7 @@ import {
   type PluginSettings,
   type TranscriptFormattingMode,
 } from './plugin-settings';
+import { renderReadAloudModelControls } from './read-aloud-settings-section';
 import {
   addEnumSetting,
   addTextSetting,
@@ -70,7 +71,7 @@ interface SettingsTabDependencies {
   isDictationBusy: () => boolean;
   logger?: PluginLogger | undefined;
   modelInstallManager: ModelInstallManager;
-  openModelPicker: (options?: { onChanged?: () => void }) => Promise<void>;
+  openModelPicker: (options?: ModelPickerOptions) => Promise<void>;
   openSetupWizard: () => Promise<void>;
   pluginVersion: string;
   resolvePluginDirectory: () => Promise<string>;
@@ -113,6 +114,7 @@ export class LocalSttSettingTab extends PluginSettingTab {
   private disposeMicrophoneSection: (() => void) | null = null;
   private disposeMissingSidecarBanner: (() => void) | null = null;
   private disposeModelSection: (() => void) | null = null;
+  private disposeReadAloudSection: (() => void) | null = null;
   private disposeSidecarSection: (() => void) | null = null;
   private missingSidecarProgressEl: HTMLDivElement | null = null;
 
@@ -151,6 +153,7 @@ export class LocalSttSettingTab extends PluginSettingTab {
     this.disposeModelSection = renderModelSection(modelSummary, manager, {
       onManageModels: () => {
         void this.dependencies.openModelPicker({
+          initialTask: 'stt',
           onChanged: () => {
             this.display();
           },
@@ -223,57 +226,14 @@ export class LocalSttSettingTab extends PluginSettingTab {
 
     // --- Read aloud ---
     const readAloudSection = createSettingGroup(containerEl, t('settings.groups.readAloud'));
-    const ttsSelection = settings.selectedTtsModel;
-    const ttsCatalogModel =
-      ttsSelection?.kind === 'catalog_model'
-        ? (modelState.catalog.models.find((model) =>
-            matchesModelTriple(
-              model,
-              ttsSelection.runtimeId,
-              ttsSelection.familyId,
-              ttsSelection.modelId,
-            ),
-          ) ?? null)
-        : null;
-    new Setting(readAloudSection)
-      .setName(ttsCatalogModel?.displayName ?? t('settings.readAloud.noModel'))
-      .setDesc(t('settings.readAloud.modelDesc'))
-      .addButton((button) => {
-        button
-          .setCta()
-          .setButtonText(t('settings.model.manageModels'))
-          .onClick(() => {
-            void this.dependencies.openModelPicker({ onChanged: () => this.display() });
-          });
-      });
-
-    const installedTtsModel =
-      ttsCatalogModel === null
-        ? null
-        : (modelState.installedModels.find((model) =>
-            matchesModelTriple(
-              model,
-              ttsCatalogModel.runtimeId,
-              ttsCatalogModel.familyId,
-              ttsCatalogModel.modelId,
-            ),
-          ) ?? null);
-    const installedVoices = installedTtsModel?.installedVoiceIds ?? [];
-    const voiceSetting = new Setting(readAloudSection)
-      .setName(t('settings.readAloud.voice'))
-      .setDesc(t('settings.readAloud.voiceDesc'));
-    voiceSetting.addDropdown((dropdown) => {
-      if (installedVoices.length === 0) {
-        dropdown.addOption('', t('settings.readAloud.noVoices'));
-      }
-      for (const voice of installedVoices) {
-        dropdown.addOption(voice, formatVoiceLabel(voice));
-      }
-      dropdown.setValue(settings.selectedTtsVoice ?? installedVoices[0] ?? '');
-      dropdown.setDisabled(installedVoices.length === 0);
-      dropdown.onChange(async (voice) => {
-        await this.access.persistOne('selectedTtsVoice', voice.length === 0 ? null : voice);
-      });
+    const readAloudControls = readAloudSection.createDiv({
+      cls: 'local-stt-read-aloud-settings-controls',
+    });
+    this.disposeReadAloudSection = renderReadAloudModelControls(readAloudControls, {
+      getSettings: () => this.dependencies.getSettings(),
+      manager,
+      openModelPicker: (options) => this.dependencies.openModelPicker(options),
+      persistVoice: (voice) => this.access.persistOne('selectedTtsVoice', voice),
     });
 
     new Setting(readAloudSection)
@@ -504,6 +464,8 @@ export class LocalSttSettingTab extends PluginSettingTab {
   private tearDown(): void {
     this.disposeModelSection?.();
     this.disposeModelSection = null;
+    this.disposeReadAloudSection?.();
+    this.disposeReadAloudSection = null;
     this.disposeDiarizationDesc?.();
     this.disposeDiarizationDesc = null;
     this.disposeEngineSection?.();

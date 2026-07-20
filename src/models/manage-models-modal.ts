@@ -8,6 +8,7 @@ import {
 import { formatBytes, formatVoiceLabel } from '../shared/format-utils';
 import { t } from '../shared/i18n';
 import type { UserFeedback } from '../shared/user-feedback';
+import { ConfirmModal } from '../ui/confirm-modal';
 import { resolveEngineCapabilities } from './capability-view';
 import { localizeFamilySummary } from './catalog-localization';
 import { formatModelTagLabel } from './model-guidance';
@@ -25,17 +26,99 @@ import {
   matchesModelTriple,
   type RuntimeId,
 } from './model-management-types';
+import { resolveModelPresentationPolicy } from './model-presentation-policy';
 import { deriveModelFamilyTabs, deriveModelRowStates, type ModelRowState } from './model-row-state';
 
 // ---------------------------------------------------------------------------
 // Dependencies
 // ---------------------------------------------------------------------------
 
+export type ModelPickerTask = 'stt' | 'tts';
+
+export interface ModelPickerOptions {
+  initialTask?: ModelPickerTask;
+  onChanged?: () => void;
+}
+
+export function resolveInitialModelPickerTask(options: ModelPickerOptions): ModelPickerTask {
+  return options.initialTask ?? 'stt';
+}
+
+export function searchQueryAfterTaskSwitch(
+  currentTask: ModelPickerTask,
+  nextTask: ModelPickerTask,
+  currentQuery: string,
+): string {
+  return currentTask === nextTask ? currentQuery : '';
+}
+
 interface ManageModelsModalDependencies {
   feedback: Pick<UserFeedback, 'show'>;
+  initialTask?: ModelPickerTask;
   manager: ModelInstallManager;
   onChanged: () => void;
   onRunSetup?: () => void;
+}
+
+export interface TtsLanguageOption {
+  code: 'de' | 'en' | 'es' | 'fr' | 'it' | 'pt';
+  label: string;
+}
+
+export const TTS_LANGUAGE_OPTIONS: readonly TtsLanguageOption[] = [
+  { code: 'en', label: 'English' },
+  { code: 'fr', label: 'Français' },
+  { code: 'de', label: 'Deutsch' },
+  { code: 'es', label: 'Español' },
+  { code: 'pt', label: 'Português' },
+  { code: 'it', label: 'Italiano' },
+];
+
+export function resolveInitialTtsLanguage(
+  state: Pick<ReturnType<ModelInstallManager['getState']>, 'catalog' | 'selectedTtsModel'>,
+): TtsLanguageOption['code'] {
+  const selection = state.selectedTtsModel;
+  if (selection?.kind !== 'catalog_model') return 'en';
+  const model = state.catalog.models.find((candidate) =>
+    matchesModelTriple(candidate, selection.runtimeId, selection.familyId, selection.modelId),
+  );
+  const language = model?.languageTags[0];
+  return TTS_LANGUAGE_OPTIONS.some((candidate) => candidate.code === language)
+    ? (language as TtsLanguageOption['code'])
+    : 'en';
+}
+
+export function filterModelRowsForPicker(
+  rows: readonly ModelRowState[],
+  options: {
+    activeFamily: AdapterTabKey | null;
+    language: TtsLanguageOption['code'];
+    query: string;
+    task: ModelPickerTask;
+  },
+): ModelRowState[] {
+  const query = options.query.trim().toLocaleLowerCase();
+  return rows.filter((row) => {
+    if (row.model.task !== options.task) return false;
+    if (options.task === 'stt') {
+      if (
+        options.activeFamily === null ||
+        row.model.runtimeId !== options.activeFamily.runtimeId ||
+        row.model.familyId !== options.activeFamily.familyId
+      ) {
+        return false;
+      }
+    } else if (!row.model.languageTags.includes(options.language)) {
+      return false;
+    }
+    if (query.length === 0) return true;
+    return [
+      row.model.displayName,
+      row.model.summary,
+      ...row.model.languageTags,
+      ...row.model.uxTags,
+    ].some((value) => value.toLocaleLowerCase().includes(query));
+  });
 }
 
 interface AdapterTabKey {
@@ -54,22 +137,32 @@ function adapterTabId(key: AdapterTabKey): string {
 export class ManageModelsModal extends Modal {
   private actionInProgress = false;
   private activeTab: AdapterTabKey | null = null;
+  private activeTask: ModelPickerTask;
+  private activeTtsLanguage: TtsLanguageOption['code'] = 'en';
+  private ttsLanguageManuallySelected = false;
+  private browserEl: HTMLDivElement | null = null;
+  private navigationEl: HTMLDivElement | null = null;
   private listContainer: HTMLDivElement | null = null;
   private readonly progressElements = new Map<string, HTMLDivElement>();
   private releaseSubscription: (() => void) | null = null;
   private tabButtons = new Map<string, HTMLButtonElement>();
   private tabBarEl: HTMLDivElement | null = null;
+  private searchInputEl: HTMLInputElement | null = null;
+  private searchQuery = '';
+  private taskButtons = new Map<ModelPickerTask, HTMLButtonElement>();
 
   constructor(
     app: App,
     private readonly deps: ManageModelsModalDependencies,
   ) {
     super(app);
+    this.activeTask = resolveInitialModelPickerTask(deps);
   }
 
   override onOpen(): void {
     this.modalEl.addClass('local-stt-manage-models');
     this.titleEl.setText(t('models.manage.title'));
+    this.activeTtsLanguage = resolveInitialTtsLanguage(this.deps.manager.getState());
     this.renderContent();
 
     this.releaseSubscription = this.deps.manager.subscribe(() => {
@@ -80,9 +173,13 @@ export class ManageModelsModal extends Modal {
   private renderContent(): void {
     this.contentEl.empty();
     this.progressElements.clear();
+    this.browserEl = null;
+    this.navigationEl = null;
     this.tabBarEl = null;
     this.listContainer = null;
+    this.searchInputEl = null;
     this.tabButtons.clear();
+    this.taskButtons.clear();
 
     const state = this.deps.manager.getState();
     if (state.loadStatus === 'error' && this.deps.onRunSetup !== undefined) {
@@ -91,9 +188,53 @@ export class ManageModelsModal extends Modal {
     }
 
     const toolbar = this.contentEl.createDiv({ cls: 'local-stt-toolbar' });
-    this.tabBarEl = toolbar.createDiv({ cls: 'local-stt-tab-bar' });
-    this.listContainer = this.contentEl.createDiv({ cls: 'local-stt-model-list' });
-    this.renderTabs();
+    const taskSwitcher = toolbar.createDiv({
+      attr: { 'aria-label': t('models.manage.taskLabel'), role: 'tablist' },
+      cls: 'local-stt-task-switcher',
+    });
+    for (const task of ['stt', 'tts'] as const) {
+      const button = taskSwitcher.createEl('button', {
+        attr: {
+          'aria-selected': String(task === this.activeTask),
+          role: 'tab',
+          type: 'button',
+        },
+        cls: 'local-stt-task-switcher__button',
+        text:
+          task === 'tts' ? t('models.manage.readAloudModels') : t('models.manage.dictationModels'),
+      });
+      button.toggleClass('is-active', task === this.activeTask);
+      button.addEventListener('click', () => this.switchTask(task));
+      this.taskButtons.set(task, button);
+    }
+    this.searchInputEl = toolbar.createEl('input', {
+      attr: {
+        'aria-label': t('models.manage.searchPlaceholder', {
+          task:
+            this.activeTask === 'tts'
+              ? t('models.manage.readAloudModels')
+              : t('models.manage.dictationModels'),
+        }),
+        placeholder: t('models.manage.searchPlaceholder', {
+          task:
+            this.activeTask === 'tts'
+              ? t('models.manage.readAloudModels')
+              : t('models.manage.dictationModels'),
+        }),
+        type: 'search',
+      },
+      cls: 'local-stt-model-search',
+    });
+    this.searchInputEl.value = this.searchQuery;
+    this.searchInputEl.addEventListener('input', () => {
+      this.searchQuery = this.searchInputEl?.value ?? '';
+      this.renderModelList();
+    });
+
+    this.browserEl = this.contentEl.createDiv({ cls: 'local-stt-model-browser' });
+    this.navigationEl = this.browserEl.createDiv({ cls: 'local-stt-model-browser__navigation' });
+    this.listContainer = this.browserEl.createDiv({ cls: 'local-stt-model-list' });
+    this.renderNavigation();
     this.renderModelList();
   }
 
@@ -121,16 +262,100 @@ export class ManageModelsModal extends Modal {
     this.releaseSubscription?.();
     this.releaseSubscription = null;
     this.actionInProgress = false;
+    this.browserEl = null;
+    this.navigationEl = null;
     this.listContainer = null;
     this.tabBarEl = null;
+    this.searchInputEl = null;
     this.tabButtons.clear();
+    this.taskButtons.clear();
     this.progressElements.clear();
     this.contentEl.empty();
   }
 
   // -------------------------------------------------------------------------
-  // Tab bar
+  // Task and navigation controls
   // -------------------------------------------------------------------------
+
+  private switchTask(task: ModelPickerTask): void {
+    if (task === this.activeTask) return;
+    this.searchQuery = searchQueryAfterTaskSwitch(this.activeTask, task, this.searchQuery);
+    this.activeTask = task;
+    if (this.searchInputEl !== null) {
+      this.searchInputEl.value = '';
+      const taskLabel =
+        task === 'tts' ? t('models.manage.readAloudModels') : t('models.manage.dictationModels');
+      const placeholder = t('models.manage.searchPlaceholder', { task: taskLabel });
+      this.searchInputEl.placeholder = placeholder;
+      this.searchInputEl.setAttribute('aria-label', placeholder);
+    }
+    for (const [candidate, button] of this.taskButtons) {
+      button.toggleClass('is-active', candidate === task);
+      button.setAttribute('aria-selected', String(candidate === task));
+    }
+    this.renderNavigation();
+    this.renderModelList();
+  }
+
+  private renderNavigation(): void {
+    if (this.navigationEl === null) return;
+    this.navigationEl.empty();
+    this.navigationEl.toggleClass('local-stt-language-rail', this.activeTask === 'tts');
+    if (this.activeTask === 'tts') {
+      this.renderLanguageRail();
+      return;
+    }
+    this.navigationEl.removeAttribute('role');
+    this.navigationEl.removeAttribute('aria-label');
+    this.tabBarEl = this.navigationEl.createDiv({ cls: 'local-stt-tab-bar' });
+    this.renderTabs();
+  }
+
+  private renderLanguageRail(): void {
+    if (this.navigationEl === null) return;
+    this.navigationEl.addClass('local-stt-language-rail');
+    this.navigationEl.setAttribute('role', 'tablist');
+    this.navigationEl.setAttribute('aria-label', t('models.manage.languagesLabel'));
+    for (const [index, language] of TTS_LANGUAGE_OPTIONS.entries()) {
+      const selected = language.code === this.activeTtsLanguage;
+      const button = this.navigationEl.createEl('button', {
+        attr: {
+          'aria-selected': String(selected),
+          role: 'tab',
+          tabindex: selected ? '0' : '-1',
+          type: 'button',
+        },
+        cls: 'local-stt-language-rail__button',
+      });
+      button.createSpan({ cls: 'local-stt-language-rail__name', text: language.label });
+      button.createSpan({
+        cls: 'local-stt-language-rail__code',
+        text: language.code.toUpperCase(),
+      });
+      button.toggleClass('is-active', selected);
+      button.addEventListener('click', () => this.selectTtsLanguage(language.code));
+      button.addEventListener('keydown', (event) => {
+        const nextIndex = resolveLanguageNavigationIndex(index, event.key);
+        if (nextIndex === null) return;
+        event.preventDefault();
+        const next = TTS_LANGUAGE_OPTIONS[nextIndex];
+        if (next === undefined) return;
+        this.selectTtsLanguage(next.code);
+        this.navigationEl
+          ?.querySelectorAll<HTMLButtonElement>('.local-stt-language-rail__button')
+          .item(nextIndex)
+          .focus();
+      });
+    }
+  }
+
+  private selectTtsLanguage(language: TtsLanguageOption['code']): void {
+    if (language === this.activeTtsLanguage) return;
+    this.ttsLanguageManuallySelected = true;
+    this.activeTtsLanguage = language;
+    this.renderNavigation();
+    this.renderModelList();
+  }
 
   private renderTabs(): void {
     if (this.tabBarEl === null) {
@@ -146,7 +371,7 @@ export class ManageModelsModal extends Modal {
     // compiled sidecar AND the catalog — compiled alone doesn't guarantee any
     // downloadable models, and catalog alone doesn't guarantee the sidecar can
     // run them.
-    const adapters = deriveModelFamilyTabs(state);
+    const adapters = deriveModelFamilyTabs(state).filter((adapter) => adapter.task === 'stt');
 
     if (
       this.activeTab === null ||
@@ -160,18 +385,6 @@ export class ManageModelsModal extends Modal {
     }
 
     for (const adapter of adapters) {
-      if (
-        adapters.findIndex((candidate) => candidate.task === adapter.task) ===
-        adapters.indexOf(adapter)
-      ) {
-        this.tabBarEl.createSpan({
-          cls: 'local-stt-task-label',
-          text:
-            adapter.task === 'tts'
-              ? t('models.manage.readAloudModels')
-              : t('models.manage.dictationModels'),
-        });
-      }
       const tabKey: AdapterTabKey = {
         runtimeId: adapter.runtimeId,
         familyId: adapter.familyId,
@@ -211,7 +424,7 @@ export class ManageModelsModal extends Modal {
   // -------------------------------------------------------------------------
 
   private renderModelList(): void {
-    if (this.listContainer === null || this.activeTab === null) {
+    if (this.listContainer === null || (this.activeTask === 'stt' && this.activeTab === null)) {
       return;
     }
 
@@ -232,8 +445,11 @@ export class ManageModelsModal extends Modal {
       return;
     }
 
-    const activeFamily = state.catalog.families.find(
-      (f) => f.runtimeId === this.activeTab?.runtimeId && f.familyId === this.activeTab?.familyId,
+    const activeFamily = state.catalog.families.find((family) =>
+      this.activeTask === 'tts'
+        ? family.task === 'tts'
+        : family.runtimeId === this.activeTab?.runtimeId &&
+          family.familyId === this.activeTab?.familyId,
     );
     if (activeFamily !== undefined && activeFamily.summary.length > 0) {
       this.listContainer.createEl('p', {
@@ -242,12 +458,18 @@ export class ManageModelsModal extends Modal {
       });
     }
 
-    const rows = deriveModelRowStates(state);
-    const activeTab = this.activeTab;
-    const tabRows = rows.filter(
-      (row) =>
-        row.model.runtimeId === activeTab.runtimeId && row.model.familyId === activeTab.familyId,
+    const rows = deriveModelRowStates(state).filter((row) =>
+      state.compiledAdapters.some(
+        (adapter) =>
+          adapter.runtimeId === row.model.runtimeId && adapter.familyId === row.model.familyId,
+      ),
     );
+    const tabRows = filterModelRowsForPicker(rows, {
+      activeFamily: this.activeTab,
+      language: this.activeTtsLanguage,
+      query: this.searchQuery,
+      task: this.activeTask,
+    });
 
     if (tabRows.length === 0) {
       this.listContainer.createEl('p', {
@@ -306,17 +528,7 @@ export class ManageModelsModal extends Modal {
               .setButtonText(t('common.install'))
               .setDisabled(this.actionInProgress || !supportsSelectedLanguage)
               .onClick(() => {
-                void this.runAction(
-                  async () => {
-                    await this.deps.manager.install({
-                      familyId: row.model.familyId,
-                      kind: 'catalog_model',
-                      modelId: row.model.modelId,
-                      runtimeId: row.model.runtimeId,
-                    });
-                  },
-                  { failureMessage: t('models.manage.installStartFailed') },
-                );
+                this.requestModelInstall(row.model);
               });
           });
           break;
@@ -425,22 +637,26 @@ export class ManageModelsModal extends Modal {
     }
 
     if (row.installed && row.model.task === 'tts') {
-      this.renderVoiceRows(row, container);
+      this.renderVoiceManagement(row, container);
     }
   }
 
-  private renderVoiceRows(row: ModelRowState, container: HTMLDivElement): void {
+  private renderVoiceManagement(row: ModelRowState, container: HTMLDivElement): void {
+    const optionalVoices = row.model.artifacts.filter(
+      (candidate) => candidate.role === 'voice' && !candidate.required,
+    );
+    if (optionalVoices.length === 0) return;
+    const details = container.createEl('details', { cls: 'local-stt-voice-management' });
+    details.createEl('summary', { text: t('models.manage.manageVoices') });
     const installed = this.deps.manager
       .getState()
       .installedModels.find((model) =>
         matchesModelTriple(model, row.model.runtimeId, row.model.familyId, row.model.modelId),
       );
-    for (const artifact of row.model.artifacts.filter(
-      (candidate) => candidate.role === 'voice' && !candidate.required,
-    )) {
+    for (const artifact of optionalVoices) {
       const voiceId = artifact.voiceId;
       if (voiceId === undefined) continue;
-      const voiceSetting = new Setting(container)
+      const voiceSetting = new Setting(details)
         .setName(formatVoiceLabel(voiceId))
         .setDesc(t('models.manage.optionalVoice'));
       voiceSetting.settingEl.addClass('local-stt-voice-row');
@@ -474,12 +690,42 @@ export class ManageModelsModal extends Modal {
     }
   }
 
+  private requestModelInstall(model: CatalogModelRecord): void {
+    const confirmation = resolveModelPresentationPolicy(model).installConfirmation;
+    const install = async (): Promise<void> => {
+      await this.runAction(
+        async () => {
+          await this.deps.manager.install({
+            familyId: model.familyId,
+            kind: 'catalog_model',
+            modelId: model.modelId,
+            runtimeId: model.runtimeId,
+          });
+        },
+        { failureMessage: t('models.manage.installStartFailed') },
+      );
+    };
+    if (confirmation === null) {
+      void install();
+      return;
+    }
+    new ConfirmModal(this.app, {
+      confirmLabel: t('common.install'),
+      message: confirmation.message,
+      onConfirm: install,
+      title: confirmation.title,
+    }).open();
+  }
+
   // -------------------------------------------------------------------------
   // State change handler
   // -------------------------------------------------------------------------
 
   private handleStateChange(): void {
     const state = this.deps.manager.getState();
+    if (!this.ttsLanguageManuallySelected && state.loadStatus === 'ready') {
+      this.activeTtsLanguage = resolveInitialTtsLanguage(state);
+    }
 
     // If we're currently in the sidecar-required panel (listContainer === null)
     // or the state has just transitioned into error mode, do a full re-render
@@ -508,14 +754,24 @@ export class ManageModelsModal extends Modal {
         return;
       }
 
-      // The active install belongs to a different adapter than the visible tab.
-      // Progress ticks for that install don't affect visible rows — skip the
-      // full re-render to avoid clobbering the DOM under the user's cursor.
-      if (
-        this.activeTab === null ||
-        activeInstall.installUpdate.runtimeId !== this.activeTab.runtimeId ||
-        activeInstall.installUpdate.familyId !== this.activeTab.familyId
-      ) {
+      // Progress ticks for a model outside the active task/language do not
+      // affect visible rows. Avoid rebuilding the DOM under the user's cursor.
+      const installingModel = state.catalog.models.find((model) =>
+        matchesModelTriple(
+          model,
+          activeInstall.installUpdate.runtimeId,
+          activeInstall.installUpdate.familyId,
+          activeInstall.installUpdate.modelId,
+        ),
+      );
+      const visible =
+        this.activeTask === 'tts'
+          ? installingModel?.task === 'tts' &&
+            installingModel.languageTags.includes(this.activeTtsLanguage)
+          : this.activeTab !== null &&
+            activeInstall.installUpdate.runtimeId === this.activeTab.runtimeId &&
+            activeInstall.installUpdate.familyId === this.activeTab.familyId;
+      if (!visible) {
         return;
       }
     }
@@ -587,11 +843,16 @@ export class ManageModelsModal extends Modal {
   private buildTagsFragment(model: CatalogModelRecord): DocumentFragment {
     const frag = createFragment();
     const tagsContainer = frag.createSpan({ cls: 'local-stt-tags' });
+    const policy = resolveModelPresentationPolicy(model);
 
     for (const tag of model.uxTags) {
+      const policyBadge = policy.badges.find((badge) => badge.tag === tag);
       tagsContainer.createSpan({
-        cls: 'local-stt-tag',
-        text: formatModelTagLabel(tag),
+        cls:
+          policyBadge?.tone === 'warning'
+            ? 'local-stt-tag local-stt-tag--warning'
+            : 'local-stt-tag',
+        text: policyBadge?.label ?? formatModelTagLabel(tag),
       });
     }
 
@@ -603,7 +864,29 @@ export class ManageModelsModal extends Modal {
       });
     }
 
+    if (policy.warning !== null) {
+      frag.createDiv({ cls: 'local-stt-model-warning', text: policy.warning });
+    }
+
     return frag;
+  }
+}
+
+export function resolveLanguageNavigationIndex(currentIndex: number, key: string): number | null {
+  const last = TTS_LANGUAGE_OPTIONS.length - 1;
+  switch (key) {
+    case 'ArrowDown':
+    case 'ArrowRight':
+      return currentIndex === last ? 0 : currentIndex + 1;
+    case 'ArrowUp':
+    case 'ArrowLeft':
+      return currentIndex === 0 ? last : currentIndex - 1;
+    case 'Home':
+      return 0;
+    case 'End':
+      return last;
+    default:
+      return null;
   }
 }
 
