@@ -1,7 +1,7 @@
 {
   "id": "local-dictation",
   "name": "Local Dictation",
-  "version": "2026.7.9",
+  "version": "2026.7.10",
   "minAppVersion": "1.11.5",
   "description": "Local speech-to-text and text-to-speech for notes and meetings. Dictate live, transcribe microphone and system audio with Whisper and other models, add speaker labels and timestamps, shape transcripts, and read notes aloud.",
   "author": "Alexander Brittain",
