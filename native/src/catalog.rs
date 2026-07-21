@@ -442,7 +442,7 @@ mod tests {
         let catalog = ModelCatalog::load_bundled().expect("bundled catalog should load");
         let expected = [
             ("pocket_tts_english_2026_04_int8", "en", 131_654_174),
-            ("pocket_tts_french_24l_int8", "fr", 504_324_300),
+            ("pocket_tts_french_24l_int8", "fr", 379_059_244),
             ("pocket_tts_german_int8", "de", 131_654_653),
             ("pocket_tts_spanish_int8", "es", 131_655_714),
             ("pocket_tts_portuguese_int8", "pt", 131_655_820),
@@ -475,12 +475,14 @@ mod tests {
                 "pocket_tts_french_24l_int8",
             )
             .expect("Pocket TTS French should be cataloged");
-        assert!(
+        assert_eq!(
             french
                 .artifacts
                 .iter()
-                .filter(|artifact| artifact.role == ArtifactRole::Voice)
-                .all(|artifact| artifact.required)
+                .filter(|artifact| artifact.role == ArtifactRole::Voice && artifact.required)
+                .filter_map(|artifact| artifact.voice_id.as_deref())
+                .collect::<Vec<_>>(),
+            ["alba"]
         );
         assert!(french.ux_tags.iter().any(|tag| tag == "high-cpu"));
         assert!(french.ux_tags.iter().any(|tag| tag == "may-buffer"));

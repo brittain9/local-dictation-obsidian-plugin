@@ -46,7 +46,7 @@ def artifact_id(install_path: str) -> str:
 def catalog_artifact(item: dict[str, object], variant: str) -> dict[str, object]:
     install_path = str(item["install_path"])
     voice = Path(install_path).stem if install_path.startswith("embeddings/") else None
-    required = voice is None or voice == "alba" or variant == "french_24l"
+    required = voice is None or voice == "alba"
     role = (
         "voice"
         if voice is not None
@@ -115,7 +115,7 @@ def build_model(
         ),
         "notes": [
             (
-                "The 24-layer French bundle includes all six curated voices and may buffer at higher playback speeds on slower CPUs."
+                "The 24-layer French model is certified for at least 1.0x real-time synthesis on Linux x86_64 CI, not uninterrupted 2x playback. It may buffer at 2x, and slower CPUs may buffer at any speed. The initial install includes Alba; other voices are optional."
                 if french
                 else "The initial install includes the runtime and Alba voice; Cosette, Fantine, Javert, Jean, and Marius are optional downloads."
             ),

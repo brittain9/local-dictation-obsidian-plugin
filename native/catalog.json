@@ -906,7 +906,7 @@
       "sourceUrl": "https://huggingface.co/KevinAHM/pocket-tts-onnx/tree/58a6d00cf13d239b6748cb0769f35c580a8f606c/onnx/french_24l",
       "modelCardUrl": "https://huggingface.co/kyutai/pocket-tts-without-voice-cloning/tree/e041936c75475d350b405bc870bcf7c22da4e9e6/languages/french_24l",
       "notes": [
-        "The 24-layer French bundle includes all six curated voices and may buffer at higher playback speeds on slower CPUs.",
+        "The 24-layer French model is certified for at least 1.0x real-time synthesis on Linux x86_64 CI, not uninterrupted 2x playback. It may buffer at 2x, and slower CPUs may buffer at any speed. The initial install includes Alba; other voices are optional.",
         "Synthesis produces 24 kHz mono audio. Playback speed is adjusted locally with pitch-preserving time stretch.",
         "The model graphs and voice embeddings are licensed under CC-BY-4.0, not this project's MIT license."
       ],
@@ -978,7 +978,7 @@
         {
           "artifactId": "voice_cosette",
           "role": "voice",
-          "required": true,
+          "required": false,
           "filename": "embeddings/cosette.safetensors",
           "downloadUrl": "https://huggingface.co/kyutai/pocket-tts-without-voice-cloning/resolve/e041936c75475d350b405bc870bcf7c22da4e9e6/languages/french_24l/embeddings/cosette.safetensors",
           "sha256": "657e6a403de2cf159d1decdc6183fd3f8b12885885051c326061b4ee56ff492b",
@@ -988,7 +988,7 @@
         {
           "artifactId": "voice_fantine",
           "role": "voice",
-          "required": true,
+          "required": false,
           "filename": "embeddings/fantine.safetensors",
           "downloadUrl": "https://huggingface.co/kyutai/pocket-tts-without-voice-cloning/resolve/e041936c75475d350b405bc870bcf7c22da4e9e6/languages/french_24l/embeddings/fantine.safetensors",
           "sha256": "f19a024716b9132a310f9c1e1b750e11878a5079d6abbe9a01df6a78034f3db3",
@@ -998,7 +998,7 @@
         {
           "artifactId": "voice_javert",
           "role": "voice",
-          "required": true,
+          "required": false,
           "filename": "embeddings/javert.safetensors",
           "downloadUrl": "https://huggingface.co/kyutai/pocket-tts-without-voice-cloning/resolve/e041936c75475d350b405bc870bcf7c22da4e9e6/languages/french_24l/embeddings/javert.safetensors",
           "sha256": "be49b3147a5a7a819fa190b5e44e471eef8b92cd18a6ed2594edff3996ba95bc",
@@ -1008,7 +1008,7 @@
         {
           "artifactId": "voice_jean",
           "role": "voice",
-          "required": true,
+          "required": false,
           "filename": "embeddings/jean.safetensors",
           "downloadUrl": "https://huggingface.co/kyutai/pocket-tts-without-voice-cloning/resolve/e041936c75475d350b405bc870bcf7c22da4e9e6/languages/french_24l/embeddings/jean.safetensors",
           "sha256": "13b53669e6ffed4e242044280fa8375dbd6c9002e2c6da5088d299e286bf5440",
@@ -1018,7 +1018,7 @@
         {
           "artifactId": "voice_marius",
           "role": "voice",
-          "required": true,
+          "required": false,
           "filename": "embeddings/marius.safetensors",
           "downloadUrl": "https://huggingface.co/kyutai/pocket-tts-without-voice-cloning/resolve/e041936c75475d350b405bc870bcf7c22da4e9e6/languages/french_24l/embeddings/marius.safetensors",
           "sha256": "6e2e12dc9a7650b3e3d5a28be9a2550ced91c5a11d5de9021efc6107dcc78587",

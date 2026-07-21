@@ -314,6 +314,19 @@ pub fn scan_installed_models(
                     Err(_) => continue,
                 };
 
+                let expected_install_dir = match resolve_model_install_dir(
+                    model_store_root,
+                    metadata.runtime_id,
+                    metadata.family_id,
+                    &metadata.model_id,
+                ) {
+                    Ok(path) => path,
+                    Err(_) => continue,
+                };
+                if install_dir != expected_install_dir {
+                    continue;
+                }
+
                 if metadata
                     .artifacts
                     .iter()
@@ -451,6 +464,38 @@ mod tests {
             scan_installed_models(&sample_catalog(), &temp_dir).expect("scan should succeed");
 
         assert!(installed.is_empty());
+    }
+
+    #[test]
+    fn scan_installed_models_ignores_stale_backup_directories() {
+        let temp_dir = tempfile_dir("scan-backup");
+        let install_dir = temp_dir.join("whisper_cpp").join("whisper").join("small");
+        let backup_dir = install_dir.with_extension("backup-stale");
+        let metadata = InstallMetadata {
+            artifacts: vec![InstalledArtifact {
+                artifact_id: "model".to_string(),
+                filename: "model.bin".to_string(),
+                sha256: "abc".to_string(),
+                size_bytes: 10,
+                voice_id: None,
+            }],
+            catalog_version: 2,
+            runtime_id: RuntimeId::WhisperCpp,
+            family_id: ModelFamilyId::Whisper,
+            installed_at_unix_ms: 10,
+            model_id: "small".to_string(),
+        };
+        for directory in [&install_dir, &backup_dir] {
+            create_dir_all(directory).expect("install dir should create");
+            write(directory.join("model.bin"), b"model").expect("artifact should write");
+            write_install_metadata(directory, &metadata).expect("metadata should write");
+        }
+
+        let installed =
+            scan_installed_models(&sample_catalog(), &temp_dir).expect("scan should succeed");
+
+        assert_eq!(installed.len(), 1);
+        assert_eq!(installed[0].install_path, install_dir.display().to_string());
     }
 
     #[test]
