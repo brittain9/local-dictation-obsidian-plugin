@@ -80,7 +80,8 @@ type StartSynthesisMock = ReturnType<
 
 function controllerHarness(options: { selected: boolean; startSynthesis?: StartSynthesisMock }) {
   const feedback = { show: vi.fn() };
-  const stopDictation = vi.fn(async () => undefined);
+  const stopDictation = vi.fn(async (): Promise<void> => undefined);
+  const cancelSynthesis = vi.fn();
   const startSynthesis =
     options.startSynthesis ??
     vi.fn(async (_payload: Omit<StartSynthesisCommand, 'type'>) => undefined);
@@ -95,7 +96,7 @@ function controllerHarness(options: { selected: boolean; startSynthesis?: StartS
     isDictationBusy: () => true,
     onStateChange: vi.fn(),
     sidecarConnection: {
-      cancelSynthesis: vi.fn(),
+      cancelSynthesis,
       reportSynthesisPlaybackPosition: vi.fn(),
       startSynthesis,
       subscribe: vi.fn(() => vi.fn()),
@@ -103,7 +104,7 @@ function controllerHarness(options: { selected: boolean; startSynthesis?: StartS
     },
     stopDictation,
   });
-  return { controller, feedback, startSynthesis, stopDictation };
+  return { cancelSynthesis, controller, feedback, startSynthesis, stopDictation };
 }
 
 beforeEach(() => {
@@ -170,5 +171,44 @@ describe('ReadAloudController', () => {
 
     expect(harness.controller.getState()).toBe('reading');
     expect(harness.feedback.show).not.toHaveBeenCalled();
+  });
+
+  it('does not start after Stop cancels a read waiting for dictation to drain', async () => {
+    const stop: { complete?: () => void } = {};
+    const stopDictation = new Promise<void>((resolve) => {
+      stop.complete = resolve;
+    });
+    const harness = controllerHarness({ selected: true });
+    harness.stopDictation.mockReturnValueOnce(stopDictation);
+
+    const reading = harness.controller.read(editorFor('Speak this sentence.', { ch: 0, line: 0 }));
+    await vi.waitFor(() => expect(harness.stopDictation).toHaveBeenCalledOnce());
+    harness.controller.stop();
+    if (stop.complete === undefined) throw new Error('dictation stop did not start');
+    stop.complete();
+    await reading;
+
+    expect(harness.startSynthesis).not.toHaveBeenCalled();
+    expect(harness.controller.getState()).toBe('idle');
+  });
+
+  it('cancels again when Stop races with an asynchronous sidecar start', async () => {
+    const start: { complete?: () => void } = {};
+    const startPromise = new Promise<void>((resolve) => {
+      start.complete = resolve;
+    });
+    const startSynthesis = vi.fn(() => startPromise);
+    const harness = controllerHarness({ selected: true, startSynthesis });
+
+    const reading = harness.controller.read(editorFor('Speak this sentence.', { ch: 0, line: 0 }));
+    await vi.waitFor(() => expect(startSynthesis).toHaveBeenCalledOnce());
+    harness.controller.stop();
+    if (start.complete === undefined) throw new Error('synthesis start did not begin');
+    start.complete();
+    await reading;
+
+    expect(harness.cancelSynthesis).toHaveBeenCalledTimes(2);
+    expect(harness.cancelSynthesis).toHaveBeenLastCalledWith(1);
+    expect(harness.controller.getState()).toBe('idle');
   });
 });

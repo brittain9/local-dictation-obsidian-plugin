@@ -178,6 +178,53 @@ describe('DictationSessionController', () => {
     expect(controller.getState()).toBe('listening');
   });
 
+  it('cancels a start while the sidecar is still launching', async () => {
+    const feedback = { show: vi.fn() };
+    const sidecarConnection = new FakeSidecarConnection();
+    let finishSidecarLaunch: (() => void) | undefined;
+    sidecarConnection.ensureStarted.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          finishSidecarLaunch = resolve;
+        }),
+    );
+    const controller = createController({ feedback, sidecarConnection });
+
+    const start = controller.startDictation();
+    await vi.waitFor(() => expect(sidecarConnection.ensureStarted).toHaveBeenCalledOnce());
+    expect(controller.isCaptureActive()).toBe(true);
+
+    await controller.stopDictation();
+    finishSidecarLaunch?.();
+    await start;
+
+    expect(controller.getState()).toBe('idle');
+    expect(controller.isCaptureActive()).toBe(false);
+    expect(sidecarConnection.startSession).not.toHaveBeenCalled();
+    expect(feedback.show).not.toHaveBeenCalled();
+  });
+
+  it('does not launch overlapping starts while prerequisites are pending', async () => {
+    const sidecarConnection = new FakeSidecarConnection();
+    let finishSidecarLaunch: (() => void) | undefined;
+    sidecarConnection.ensureStarted.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          finishSidecarLaunch = resolve;
+        }),
+    );
+    const controller = createController({ sidecarConnection });
+
+    const firstStart = controller.startDictation();
+    await vi.waitFor(() => expect(sidecarConnection.ensureStarted).toHaveBeenCalledOnce());
+    await controller.startDictation();
+    finishSidecarLaunch?.();
+    await firstStart;
+
+    expect(sidecarConnection.ensureStarted).toHaveBeenCalledOnce();
+    expect(sidecarConnection.startSession).toHaveBeenCalledOnce();
+  });
+
   it('passes smart paragraph thresholds to renderer options', async () => {
     let rendererOptions: TranscriptRenderOptions | null = null;
     const controller = createController({

@@ -46,6 +46,7 @@ export class ReadAloudController {
   private activeSynthesisId: number | null = null;
   private lastPlayedSequence = -1;
   private nextSynthesisId = 1;
+  private pendingStartRevision = 0;
   private releaseAudio: (() => void) | null;
   private releaseEvents: (() => void) | null;
   private sampleRate: number | null = null;
@@ -91,7 +92,9 @@ export class ReadAloudController {
     }
     const configuration = this.resolveSynthesisConfiguration();
     if (configuration === null) return;
+    const startRevision = ++this.pendingStartRevision;
     if (this.deps.isDictationBusy()) await this.deps.stopDictation();
+    if (startRevision !== this.pendingStartRevision) return;
     await this.startChunks(chunks, this.deps.getSettings().ttsSpeed, configuration);
   }
 
@@ -104,6 +107,7 @@ export class ReadAloudController {
   }
 
   stop(): void {
+    this.pendingStartRevision += 1;
     const synthesisId = this.activeSynthesisId;
     this.clearActive();
     if (synthesisId !== null) this.deps.sidecarConnection.cancelSynthesis(synthesisId);
@@ -118,6 +122,7 @@ export class ReadAloudController {
     }
     const configuration = this.resolveSynthesisConfiguration();
     if (configuration === null) return;
+    this.pendingStartRevision += 1;
     await this.startChunks(remaining, speed, configuration);
   }
 
@@ -152,6 +157,12 @@ export class ReadAloudController {
         speed,
         synthesisId,
       });
+      if (this.activeSynthesisId !== synthesisId) {
+        // `startSynthesis` may have been waiting for the sidecar process to
+        // launch when Stop was pressed. Cancel again after the command is
+        // definitely written so stale work cannot run in the background.
+        this.deps.sidecarConnection.cancelSynthesis(synthesisId);
+      }
     } catch (error) {
       if (this.activeSynthesisId !== synthesisId) return;
       this.deps.logger?.error('tts', 'failed to start read aloud', error);
@@ -172,7 +183,7 @@ export class ReadAloudController {
         intent: 'warning',
         message: t('tts.notice.modelRequired'),
       });
-      this.clearActive();
+      this.stop();
       return null;
     }
     const catalogModel = this.deps
@@ -185,13 +196,13 @@ export class ReadAloudController {
         intent: 'warning',
         message: t('tts.notice.modelRequired'),
       });
-      this.clearActive();
+      this.stop();
       return null;
     }
     const voiceId = settings.selectedTtsVoice ?? catalogModel.defaultVoice ?? null;
     if (voiceId === null) {
       this.deps.feedback.show({ intent: 'warning', message: t('tts.notice.voiceRequired') });
-      this.clearActive();
+      this.stop();
       return null;
     }
     return {

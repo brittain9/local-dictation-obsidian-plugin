@@ -18,7 +18,7 @@ import type { LlmCleanupFailure } from './llm/provider';
 import { createLlmRouter } from './llm/router';
 import { ManageModelsModal, type ModelPickerOptions } from './models/manage-models-modal';
 import { ModelInstallManager } from './models/model-install-manager';
-import { matchesModelTriple } from './models/model-management-types';
+import { matchesModelTriple, selectedModelEquals } from './models/model-management-types';
 import { Session } from './session/session';
 import { logAccelerationFallbacks } from './settings/acceleration-info';
 import { LlmPresetStateStore } from './settings/llm-preset-state';
@@ -247,7 +247,7 @@ export default class LocalSttPlugin extends Plugin {
       feedback: this.feedback,
       getCatalog: () => this.requireModelInstallManager().getState().catalog,
       getSettings: () => this.settings,
-      isDictationBusy: () => this.requireDictationController().isBusy(),
+      isDictationBusy: () => this.requireDictationController().isCaptureActive(),
       logger: this.logger,
       onStateChange: (state) => this.renderReadAloudStatus(state),
       sidecarConnection: this.sidecarConnection,
@@ -602,7 +602,11 @@ export default class LocalSttPlugin extends Plugin {
     }
     if (
       previousSettings.ttsSpeed !== this.settings.ttsSpeed ||
-      previousSettings.selectedTtsVoice !== this.settings.selectedTtsVoice
+      previousSettings.selectedTtsVoice !== this.settings.selectedTtsVoice ||
+      !nullableSelectedModelsEqual(
+        previousSettings.selectedTtsModel,
+        this.settings.selectedTtsModel,
+      )
     ) {
       await this.readAloudController?.applySpeed(this.settings.ttsSpeed);
     }
@@ -654,8 +658,9 @@ export default class LocalSttPlugin extends Plugin {
   }
 
   private async toggleDictationWithInterlock(): Promise<void> {
-    if (!this.requireDictationController().isBusy()) this.readAloudController?.stop();
-    await this.requireDictationController().toggleDictation();
+    const controller = this.requireDictationController();
+    if (!controller.isCaptureActive()) this.readAloudController?.stop();
+    await controller.toggleDictation();
   }
 
   private renderReadAloudStatus(state: ReadAloudState): void {
@@ -917,4 +922,12 @@ export default class LocalSttPlugin extends Plugin {
 
 function getSidecarExecutableName(): string {
   return formatSidecarExecutableName(Platform.isWin);
+}
+
+function nullableSelectedModelsEqual(
+  left: PluginSettings['selectedTtsModel'],
+  right: PluginSettings['selectedTtsModel'],
+): boolean {
+  if (left === null || right === null) return left === right;
+  return selectedModelEquals(left, right);
 }
