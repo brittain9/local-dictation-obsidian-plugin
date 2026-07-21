@@ -826,8 +826,11 @@ export const de = {
   'settings.readAloud.speed': 'Lesegeschwindigkeit',
   'settings.readAloud.speedDesc':
     'Eine Änderung während des Vorlesens startet am aktuellen Satz neu.',
-  'models.manage.dictationModels': 'Diktiermodelle',
-  'models.manage.readAloudModels': 'Vorlesemodelle',
+  'models.manage.dictationModels': 'Sprache zu Text',
+  'models.manage.readAloudModels': 'Text zu Sprache',
+  'models.manage.allLanguages': 'Alle Sprachen',
+  'models.manage.familiesLabel': 'Modellfamilien',
+  'models.manage.noneForLanguage': 'Für diese Aufgabe und Sprache sind keine Modelle verfügbar.',
   'models.manage.optionalVoice': 'Optionale lokale Stimme',
   'models.manage.voiceInstalled': 'Installiert',
   'tts.status.reading': 'Wird vorgelesen…',

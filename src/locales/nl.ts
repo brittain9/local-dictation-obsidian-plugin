@@ -813,8 +813,11 @@ export const nl = {
   'settings.readAloud.speed': 'Voorleessnelheid',
   'settings.readAloud.speedDesc':
     'Als u de snelheid tijdens het voorlezen wijzigt, wordt de huidige zin opnieuw gestart.',
-  'models.manage.dictationModels': 'Dicteermodellen',
-  'models.manage.readAloudModels': 'Voorleesmodellen',
+  'models.manage.dictationModels': 'Spraak naar tekst',
+  'models.manage.readAloudModels': 'Tekst naar spraak',
+  'models.manage.allLanguages': 'Alle talen',
+  'models.manage.familiesLabel': 'Modelfamilies',
+  'models.manage.noneForLanguage': 'Er zijn geen modellen voor deze taak en taal beschikbaar.',
   'models.manage.optionalVoice': 'Optionele lokale stem',
   'models.manage.voiceInstalled': 'Geïnstalleerd',
   'tts.status.reading': 'Bezig met voorlezen…',

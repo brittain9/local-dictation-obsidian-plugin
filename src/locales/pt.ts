@@ -816,8 +816,11 @@ export const pt = {
   'settings.readAloud.speed': 'Velocidade de leitura',
   'settings.readAloud.speedDesc':
     'Alterar a velocidade durante a leitura reinicia a partir da frase atual.',
-  'models.manage.dictationModels': 'Modelos de ditado',
-  'models.manage.readAloudModels': 'Modelos de leitura',
+  'models.manage.dictationModels': 'Voz para texto',
+  'models.manage.readAloudModels': 'Texto para voz',
+  'models.manage.allLanguages': 'Todos os idiomas',
+  'models.manage.familiesLabel': 'Famílias de modelos',
+  'models.manage.noneForLanguage': 'Não há modelos disponíveis para esta tarefa e idioma.',
   'models.manage.optionalVoice': 'Voz local opcional',
   'models.manage.voiceInstalled': 'Instalada',
   'tts.status.reading': 'A ler…',

@@ -128,12 +128,8 @@
   min-height: 280px;
 }
 
-.local-stt-model-browser__navigation:not(.local-stt-language-rail) {
-  grid-column: 1 / -1;
-}
-
-.local-stt-model-browser__navigation:not(.local-stt-language-rail) + .local-stt-model-list {
-  grid-column: 1 / -1;
+.local-stt-model-browser__results {
+  min-width: 0;
 }
 
 .local-stt-language-rail {
@@ -231,6 +227,8 @@
   display: flex;
   gap: 0;
   flex-shrink: 0;
+  overflow-x: auto;
+  scrollbar-width: thin;
 }
 
 .local-stt-tab {
@@ -478,6 +476,10 @@
     display: flex;
     flex-direction: column;
     gap: 10px;
+  }
+
+  .local-stt-model-browser__results {
+    width: 100%;
   }
 
   .local-stt-language-rail {
