@@ -25,7 +25,7 @@ const lines = [
       `| ${row.language} | \`${row.modelId}\` | ${row.firstAudioLatencySeconds.toFixed(2)}s | ${row.realTimeFactor.toFixed(2)}x | ${row.wer.toFixed(3)} | ${row.passed ? 'Pass' : 'Fail'} |`,
   ),
   '',
-  'The JSONL artifact also records 0.75x and 2x duration checks plus report-only 3x benchmark data.',
+  'WER measures the synthesized model output at 1x. The JSONL artifact also records 0.75x and 2x WSOLA duration checks.',
   '',
 ].join('\n');
 

@@ -183,6 +183,7 @@ fn pinned_multilingual_models_meet_quality_and_throughput_gates() {
     const MAX_WORD_ERROR_RATE: f64 = 0.35;
     const MAX_FIRST_AUDIO_SECONDS: f64 = 3.0;
     const MIN_COMPACT_REAL_TIME_FACTOR: f64 = 2.2;
+    const MIN_FRENCH_REAL_TIME_FACTOR: f64 = 1.0;
     const FIXTURES: [(&str, &str, &str, &str); 6] = [
         (
             "pocket_tts_english_2026_04_int8",
@@ -282,20 +283,19 @@ fn pinned_multilingual_models_meet_quality_and_throughput_gates() {
         let wer = common::text::word_error_rate(reference, &hypothesis);
         let quality_passed = wer <= MAX_WORD_ERROR_RATE;
         let latency_passed = first_audio_seconds <= MAX_FIRST_AUDIO_SECONDS;
-        let throughput_passed =
-            language == "fr" || real_time_factor >= MIN_COMPACT_REAL_TIME_FACTOR;
+        let minimum_real_time_factor = if language == "fr" {
+            MIN_FRENCH_REAL_TIME_FACTOR
+        } else {
+            MIN_COMPACT_REAL_TIME_FACTOR
+        };
+        let throughput_passed = real_time_factor >= minimum_real_time_factor;
 
-        for speed in [0.75_f32, 1.0, 2.0, 3.0] {
-            let report_only = speed > 2.0;
-            let output_seconds = if report_only {
-                raw_output_seconds / f64::from(speed)
-            } else {
-                time_stretch(&synthesized.samples, speed, synthesized.sample_rate).len() as f64
-                    / synthesized.sample_rate as f64
-            };
+        for speed in [0.75_f32, 1.0, 2.0] {
+            let stretched = time_stretch(&synthesized.samples, speed, synthesized.sample_rate);
+            let output_seconds = stretched.len() as f64 / synthesized.sample_rate as f64;
             let target_seconds = raw_output_seconds / f64::from(speed);
             let duration_error = (output_seconds - target_seconds).abs() / target_seconds;
-            let duration_passed = report_only || duration_error <= 0.05;
+            let duration_passed = duration_error <= 0.05;
             append_quality_report(&TtsQualityMeasurement {
                 first_audio_latency_seconds: first_audio_seconds,
                 language,
@@ -304,18 +304,15 @@ fn pinned_multilingual_models_meet_quality_and_throughput_gates() {
                 passed: quality_passed && latency_passed && throughput_passed && duration_passed,
                 platform: &format!("{}-{}", std::env::consts::OS, std::env::consts::ARCH),
                 real_time_factor,
-                report_only,
                 schema_version: 1,
                 speed,
                 synthesis_time_seconds: synthesis_seconds,
                 wer,
             });
-            if !report_only {
-                assert!(
-                    duration_passed,
-                    "{model_id} {speed}x duration error {duration_error:.3} exceeded 5%"
-                );
-            }
+            assert!(
+                duration_passed,
+                "{model_id} {speed}x duration error {duration_error:.3} exceeded 5%"
+            );
         }
 
         assert!(
@@ -328,7 +325,7 @@ fn pinned_multilingual_models_meet_quality_and_throughput_gates() {
         );
         assert!(
             throughput_passed,
-            "{model_id} synthesized at {real_time_factor:.2}x real time, below {MIN_COMPACT_REAL_TIME_FACTOR:.1}x"
+            "{model_id} synthesized at {real_time_factor:.2}x real time, below {minimum_real_time_factor:.1}x"
         );
     }
 }
@@ -347,7 +344,6 @@ struct TtsQualityMeasurement<'a> {
     output_duration_seconds: f64,
     wer: f64,
     passed: bool,
-    report_only: bool,
 }
 
 fn append_quality_report(measurement: &TtsQualityMeasurement<'_>) {
