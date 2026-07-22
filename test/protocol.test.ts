@@ -582,28 +582,26 @@ describe('event parsing', () => {
     });
   });
 
-  it.each([
-    'normal',
-    'catching_up',
-    'falling_behind',
-    'saturated',
-  ] as const)('parses transcription_queue_changed at tier %s', (tier) => {
-    const event = parseEventFrame(
-      JSON.stringify({
+  it.each(['normal', 'catching_up', 'falling_behind', 'saturated'] as const)(
+    'parses transcription_queue_changed at tier %s',
+    (tier) => {
+      const event = parseEventFrame(
+        JSON.stringify({
+          queuedUtterances: 7,
+          sessionId: 'session-1',
+          tier,
+          type: 'transcription_queue_changed',
+        }),
+      );
+
+      expect(event).toEqual({
         queuedUtterances: 7,
         sessionId: 'session-1',
         tier,
         type: 'transcription_queue_changed',
-      }),
-    );
-
-    expect(event).toEqual({
-      queuedUtterances: 7,
-      sessionId: 'session-1',
-      tier,
-      type: 'transcription_queue_changed',
-    });
-  });
+      });
+    },
+  );
 
   it('parses session_stopped with the queue_overload reason', () => {
     expect(

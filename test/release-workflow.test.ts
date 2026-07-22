@@ -156,19 +156,17 @@ describe('release workflow', () => {
     expect(result.stderr).toContain('contains no curated content');
   });
 
-  it.each([
-    '2026.7.3',
-    '2026.7.2',
-    '2026.07.4',
-    '2026.7.0',
-  ])('rejects invalid or non-monotonic target version %s', async (version) => {
-    const rootDir = await createReleaseFixture();
+  it.each(['2026.7.3', '2026.7.2', '2026.07.4', '2026.7.0'])(
+    'rejects invalid or non-monotonic target version %s',
+    async (version) => {
+      const rootDir = await createReleaseFixture();
 
-    await expect(prepareRelease({ rootDir, version })).rejects.toThrow();
+      await expect(prepareRelease({ rootDir, version })).rejects.toThrow();
 
-    const manifest = JSON.parse(await readFile(join(rootDir, 'manifest.json'), 'utf8'));
-    expect(manifest.version).toBe('2026.7.3');
-  });
+      const manifest = JSON.parse(await readFile(join(rootDir, 'manifest.json'), 'utf8'));
+      expect(manifest.version).toBe('2026.7.3');
+    },
+  );
 
   it('updates the minimum app version only when explicitly requested', async () => {
     const rootDir = await createReleaseFixture();

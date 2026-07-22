@@ -169,16 +169,18 @@ describe('deriveModelRowStates', () => {
       expect(row.allowedActions).toEqual(['cancel', 'details']);
     });
 
-    it.each([
-      'canceling',
-      'cancelStuck',
-    ] as const)('this row in phase %s → [details] only', (phase) => {
-      const rows = deriveModelRowStates(buildState({ activeInstall: sampleActiveInstall(phase) }));
-      const row = getRow(rows, 'whisper_large_v3_turbo_q8_0');
+    it.each(['canceling', 'cancelStuck'] as const)(
+      'this row in phase %s → [details] only',
+      (phase) => {
+        const rows = deriveModelRowStates(
+          buildState({ activeInstall: sampleActiveInstall(phase) }),
+        );
+        const row = getRow(rows, 'whisper_large_v3_turbo_q8_0');
 
-      expect(row).toMatchObject({ isInstalling: false, isCanceling: true });
-      expect(row.allowedActions).toEqual(['details']);
-    });
+        expect(row).toMatchObject({ isInstalling: false, isCanceling: true });
+        expect(row.allowedActions).toEqual(['details']);
+      },
+    );
 
     it('installed, not selected → [use, remove, details]', () => {
       const rows = deriveModelRowStates(buildState({ installedModels: [sampleInstalledModel()] }));
