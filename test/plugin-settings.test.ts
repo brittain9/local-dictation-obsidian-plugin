@@ -189,23 +189,21 @@ describe('resolvePluginSettings', () => {
     });
   });
 
-  it.each([
-    'at_cursor',
-    'end_of_note',
-  ] as const)('accepts the supported dictation anchor %s', (dictationAnchor) => {
-    expect(resolvePluginSettings({ dictationAnchor }).dictationAnchor).toBe(dictationAnchor);
-  });
+  it.each(['at_cursor', 'end_of_note'] as const)(
+    'accepts the supported dictation anchor %s',
+    (dictationAnchor) => {
+      expect(resolvePluginSettings({ dictationAnchor }).dictationAnchor).toBe(dictationAnchor);
+    },
+  );
 
-  it.each([
-    'smart',
-    'space',
-    'new_line',
-    'new_paragraph',
-  ] as const)('accepts the supported transcript formatting mode %s', (transcriptFormatting) => {
-    expect(resolvePluginSettings({ transcriptFormatting }).transcriptFormatting).toBe(
-      transcriptFormatting,
-    );
-  });
+  it.each(['smart', 'space', 'new_line', 'new_paragraph'] as const)(
+    'accepts the supported transcript formatting mode %s',
+    (transcriptFormatting) => {
+      expect(resolvePluginSettings({ transcriptFormatting }).transcriptFormatting).toBe(
+        transcriptFormatting,
+      );
+    },
+  );
 
   it('falls back when persisted values are invalid', () => {
     expect(
@@ -390,21 +388,15 @@ describe('resolvePluginSettings', () => {
     expect(validateTimestampIntervalSeconds(value)).toEqual({ milliseconds, valid: true });
   });
 
-  it.each([
-    '',
-    'ten',
-    'NaN',
-    '9',
-    '10.5',
-    '601',
-    '1e2',
-    '0x10',
-  ])('rejects timestamp interval %j', (value) => {
-    expect(validateTimestampIntervalSeconds(value)).toEqual({
-      message: 'Enter a whole number from 10 to 600 seconds.',
-      valid: false,
-    });
-  });
+  it.each(['', 'ten', 'NaN', '9', '10.5', '601', '1e2', '0x10'])(
+    'rejects timestamp interval %j',
+    (value) => {
+      expect(validateTimestampIntervalSeconds(value)).toEqual({
+        message: 'Enter a whole number from 10 to 600 seconds.',
+        valid: false,
+      });
+    },
+  );
 
   it('defaults smart paragraph thresholds to separate line and paragraph pauses', () => {
     expect(DEFAULT_PLUGIN_SETTINGS.smartParagraphLineBreakPauseMs).toBe(
@@ -473,14 +465,17 @@ describe('resolvePluginSettings', () => {
     ['global enabled and remote disabled', true, false, false],
     ['global disabled and remote enabled', false, true, false],
     ['both disabled', false, false, false],
-  ] as const)('resolves effective remote LLM availability when %s', (_label, llmFeaturesEnabled, llmRemoteFeaturesEnabled, expected) => {
-    expect(
-      isRemoteLlmEffectivelyEnabled({
-        llmFeaturesEnabled,
-        llmRemoteFeaturesEnabled,
-      }),
-    ).toBe(expected);
-  });
+  ] as const)(
+    'resolves effective remote LLM availability when %s',
+    (_label, llmFeaturesEnabled, llmRemoteFeaturesEnabled, expected) => {
+      expect(
+        isRemoteLlmEffectivelyEnabled({
+          llmFeaturesEnabled,
+          llmRemoteFeaturesEnabled,
+        }),
+      ).toBe(expected);
+    },
+  );
 
   it('migrates the legacy single Ollama model into per-provider model storage', () => {
     expect(

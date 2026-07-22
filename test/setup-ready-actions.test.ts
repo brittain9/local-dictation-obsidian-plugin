@@ -70,27 +70,26 @@ describe('setup ready actions', () => {
       hasDictationTarget: false,
       isDictationBusy: false,
     },
-  ])('keeps the wizard open when the dictation prerequisite is unavailable', async ({
-    expectedMessage,
-    hasDictationTarget,
-    isDictationBusy,
-  }) => {
-    const harness = createHarness({
-      hasDictationTarget: () => hasDictationTarget,
-      isDictationBusy: () => isDictationBusy,
-    });
+  ])(
+    'keeps the wizard open when the dictation prerequisite is unavailable',
+    async ({ expectedMessage, hasDictationTarget, isDictationBusy }) => {
+      const harness = createHarness({
+        hasDictationTarget: () => hasDictationTarget,
+        isDictationBusy: () => isDictationBusy,
+      });
 
-    await harness.actions.tryDictationNow();
+      await harness.actions.tryDictationNow();
 
-    expect(harness.feedback.show).toHaveBeenCalledWith({
-      intent: 'warning',
-      key: 'setup-wizard-prerequisite',
-      message: expectedMessage,
-    });
-    expect(harness.onCompleted).not.toHaveBeenCalled();
-    expect(harness.closeWizard).not.toHaveBeenCalled();
-    expect(harness.startDictation).not.toHaveBeenCalled();
-  });
+      expect(harness.feedback.show).toHaveBeenCalledWith({
+        intent: 'warning',
+        key: 'setup-wizard-prerequisite',
+        message: expectedMessage,
+      });
+      expect(harness.onCompleted).not.toHaveBeenCalled();
+      expect(harness.closeWizard).not.toHaveBeenCalled();
+      expect(harness.startDictation).not.toHaveBeenCalled();
+    },
+  );
 
   it('keeps the wizard open and does not start when setup completion fails', async () => {
     const cause = new Error('settings write failed');
