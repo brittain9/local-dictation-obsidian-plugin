@@ -8,6 +8,7 @@ import {
 import { formatBytes } from '../shared/format-utils';
 import { t } from '../shared/i18n';
 import type { UserFeedback } from '../shared/user-feedback';
+import { styleDestructiveButton } from '../ui/destructive-button';
 import { resolveEngineCapabilities } from './capability-view';
 import { localizeFamilySummary } from './catalog-localization';
 import { formatModelTagLabel } from './model-guidance';
@@ -360,8 +361,7 @@ export class ManageModelsModal extends Modal {
 
         case 'remove':
           setting.addButton((button) => {
-            button
-              .setWarning()
+            styleDestructiveButton(button)
               .setButtonText(t('common.remove'))
               .setDisabled(this.actionInProgress)
               .onClick(() => {

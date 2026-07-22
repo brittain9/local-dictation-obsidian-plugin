@@ -24,6 +24,7 @@ import {
 } from '../sidecar/sidecar-install-manager';
 import { readInstallManifest, variantDirectoryPath } from '../sidecar/sidecar-installer';
 import { ConfirmModal } from '../ui/confirm-modal';
+import { styleDestructiveButton } from '../ui/destructive-button';
 import { diarizationSettingDescription } from './diarization-setting';
 import { DiarizationSettingsModal } from './diarization-settings-modal';
 import { renderActiveInstallCard } from './install-progress-row';
@@ -446,21 +447,20 @@ export class LocalSttSettingTab extends PluginSettingTab {
       .setName(t('settings.llm.restoreDefaults.name'))
       .setDesc(t('settings.llm.restoreDefaults.desc'))
       .addButton((button) => {
-        button
-          .setButtonText(t('settings.llm.restoreDefaults.button'))
-          .setWarning()
-          .onClick(() => {
-            new ConfirmModal(this.app, {
-              confirmLabel: t('settings.llm.restoreDefaults.button'),
-              destructive: true,
-              message: t('settings.llm.restoreDefaults.confirmMessage'),
-              onConfirm: async () => {
-                await this.dependencies.resetLlmTransformation();
-                this.refreshSettingsTab();
-              },
-              title: t('settings.llm.restoreDefaults.name'),
-            }).open();
-          });
+        styleDestructiveButton(
+          button.setButtonText(t('settings.llm.restoreDefaults.button')),
+        ).onClick(() => {
+          new ConfirmModal(this.app, {
+            confirmLabel: t('settings.llm.restoreDefaults.button'),
+            destructive: true,
+            message: t('settings.llm.restoreDefaults.confirmMessage'),
+            onConfirm: async () => {
+              await this.dependencies.resetLlmTransformation();
+              this.refreshSettingsTab();
+            },
+            title: t('settings.llm.restoreDefaults.name'),
+          }).open();
+        });
       });
 
     // --- Engine options ---
