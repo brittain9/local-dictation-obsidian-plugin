@@ -385,6 +385,15 @@ export class Modal {
   }
 }
 
+export class PluginSettingTab {
+  readonly containerEl = new TestElement();
+
+  constructor(
+    readonly app: unknown,
+    readonly plugin: unknown,
+  ) {}
+}
+
 export class ItemView {
   readonly app: unknown;
   readonly contentEl = new TestElement();
