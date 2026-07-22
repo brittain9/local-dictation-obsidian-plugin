@@ -1,17 +1,16 @@
 #!/usr/bin/env node
 // Stage the release directory: copy plugin bundle files into dist/release
-// alongside the sidecar archives that were downloaded into the same
-// directory, validate the exact set of archives, and emit a deterministic
-// checksums.txt. Replaces the inline shell block in release.yml's publish job
-// so missing/extra/empty sidecar artifacts fail the release before upload
-// instead of silently shipping a partial set.
+// with an optional, exact set of sidecar archives. Plugin-only releases contain
+// only the three files Obsidian installs. Sidecar releases validate all five
+// archives and emit a deterministic checksums.txt.
 //
-// CLI: node scripts/assemble-release-files.mjs
+// CLI: node scripts/assemble-release-files.mjs [--sidecars]
 // Inputs (paths relative to cwd):
 //   dist/plugin-bundle/{main.js, manifest.json, styles.css}
-//   dist/release/<each EXPECTED_SIDECAR_ARCHIVES file>
+//   with --sidecars: dist/release/<each EXPECTED_SIDECAR_ARCHIVES file>
 // Output:
-//   dist/release/{main.js, manifest.json, styles.css, <archives>, checksums.txt}
+//   dist/release/{main.js, manifest.json, styles.css}
+//   with --sidecars: dist/release/{<archives>, checksums.txt}
 
 import { createHash } from 'node:crypto';
 import { copyFile, mkdir, readdir, readFile, stat, writeFile } from 'node:fs/promises';
@@ -131,14 +130,15 @@ async function listArchiveCandidates(releaseDir) {
 }
 
 /**
- * Assemble `<rootDir>/dist/release/` with the plugin bundle files alongside
- * the sidecar archives already downloaded into the same directory, then emit
- * a deterministic `checksums.txt`. `rootDir` defaults to the current working
- * directory; tests pass a temp directory.
+ * Assemble `<rootDir>/dist/release/` with the plugin bundle files. When
+ * `includeSidecars` is true, validate the archives already downloaded into the
+ * same directory and emit `checksums.txt`. `rootDir` defaults to the current
+ * working directory; tests pass a temp directory.
  *
  * @param {string} rootDir
+ * @param {{ includeSidecars?: boolean }} options
  */
-export async function assembleReleaseFiles(rootDir = '.') {
+export async function assembleReleaseFiles(rootDir = '.', options = {}) {
   const pluginBundleDir = join(rootDir, 'dist', 'plugin-bundle');
   const releaseDir = join(rootDir, 'dist', 'release');
 
@@ -146,6 +146,19 @@ export async function assembleReleaseFiles(rootDir = '.') {
 
   for (const file of PLUGIN_FILES) {
     await copyFile(join(pluginBundleDir, file), join(releaseDir, file));
+  }
+
+  if (!options.includeSidecars) {
+    const entries = await readdir(releaseDir);
+    const unexpected = entries.filter(
+      (name) => name.startsWith('sidecar-') || name === 'checksums.txt',
+    );
+    if (unexpected.length > 0) {
+      throw new Error(
+        `plugin-only release contains sidecar files: ${unexpected.sort().join(', ')}`,
+      );
+    }
+    return { releaseDir };
   }
 
   const candidates = await listArchiveCandidates(releaseDir);
@@ -173,14 +186,22 @@ const invokedDirectly =
   import.meta.url.endsWith(process.argv[1] ?? '');
 
 if (invokedDirectly) {
-  assembleReleaseFiles()
-    .then(({ releaseDir }) => {
-      console.log(
-        `[assemble-release-files] wrote ${PLUGIN_FILES.length} plugin files and checksums for ${EXPECTED_SIDECAR_ARCHIVES.length} sidecar archives to ${releaseDir}`,
-      );
-    })
-    .catch((error) => {
-      console.error(error);
-      process.exitCode = 1;
-    });
+  const args = process.argv.slice(2);
+  if (args.some((arg) => arg !== '--sidecars') || args.length > 1) {
+    console.error('Usage: node scripts/assemble-release-files.mjs [--sidecars]');
+    process.exitCode = 1;
+  } else {
+    const includeSidecars = args[0] === '--sidecars';
+    assembleReleaseFiles('.', { includeSidecars })
+      .then(({ releaseDir }) => {
+        const summary = includeSidecars
+          ? `${PLUGIN_FILES.length} plugin files and checksums for ${EXPECTED_SIDECAR_ARCHIVES.length} sidecar archives`
+          : `${PLUGIN_FILES.length} plugin files with no sidecar archives`;
+        console.log(`[assemble-release-files] wrote ${summary} to ${releaseDir}`);
+      })
+      .catch((error) => {
+        console.error(error);
+        process.exitCode = 1;
+      });
+  }
 }

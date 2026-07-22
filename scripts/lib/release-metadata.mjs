@@ -15,13 +15,15 @@ export async function readReleaseMetadata(root = '.') {
     manifest: join(rootDir, 'manifest.json'),
     packageJson: join(rootDir, 'package.json'),
     packageLock: join(rootDir, 'package-lock.json'),
+    sidecarVersion: join(rootDir, 'sidecar-version.json'),
     versions: join(rootDir, 'versions.json'),
   };
-  const [manifest, packageJson, packageLock, cargoManifest, cargoLock, versions] =
+  const [manifest, packageJson, packageLock, sidecarVersion, cargoManifest, cargoLock, versions] =
     await Promise.all([
       readJson(paths.manifest),
       readJson(paths.packageJson),
       readJson(paths.packageLock),
+      readJson(paths.sidecarVersion),
       readFile(paths.cargoManifest, 'utf8'),
       readFile(paths.cargoLock, 'utf8'),
       readJson(paths.versions),
@@ -34,6 +36,7 @@ export async function readReleaseMetadata(root = '.') {
     packageJson,
     packageLock,
     paths,
+    sidecarVersion,
     versions,
   };
 }
@@ -45,11 +48,27 @@ export function validateReleaseMetadata(metadata) {
     'manifest.json minAppVersion',
   );
   parseCalver(version, 'manifest.json version');
+  const sidecarVersion = requireString(
+    metadata.sidecarVersion.version,
+    'sidecar-version.json version',
+  );
+  parseCalver(sidecarVersion, 'sidecar-version.json version');
 
-  const mirrors = [
+  const pluginMirrors = [
     ['package.json', metadata.packageJson.version],
     ['package-lock.json top-level', metadata.packageLock.version],
     ['package-lock.json packages[""]', metadata.packageLock.packages?.['']?.version],
+  ];
+  const pluginMismatches = pluginMirrors.filter(([, mirrorVersion]) => mirrorVersion !== version);
+  if (pluginMismatches.length > 0) {
+    throw new Error(
+      `Plugin release versions must match manifest.json=${version}. Found mismatches: ${pluginMismatches
+        .map(([label, mirrorVersion]) => `${label}=${String(mirrorVersion)}`)
+        .join(', ')}.`,
+    );
+  }
+
+  const sidecarMirrors = [
     [
       'native/Cargo.toml',
       readUniqueVersion(
@@ -67,12 +86,25 @@ export function validateReleaseMetadata(metadata) {
       ),
     ],
   ];
-  const mismatches = mirrors.filter(([, mirrorVersion]) => mirrorVersion !== version);
-  if (mismatches.length > 0) {
+  const sidecarMismatches = sidecarMirrors.filter(
+    ([, mirrorVersion]) => mirrorVersion !== sidecarVersion,
+  );
+  if (sidecarMismatches.length > 0) {
     throw new Error(
-      `Release versions must match manifest.json=${version}. Found mismatches: ${mismatches
+      `Sidecar versions must match sidecar-version.json=${sidecarVersion}. Found mismatches: ${sidecarMismatches
         .map(([label, mirrorVersion]) => `${label}=${String(mirrorVersion)}`)
         .join(', ')}.`,
+    );
+  }
+
+  if (compareCalverVersions(sidecarVersion, version) > 0) {
+    throw new Error(
+      `sidecar-version.json version ${sidecarVersion} cannot be newer than plugin version ${version}.`,
+    );
+  }
+  if (!Object.hasOwn(metadata.versions, sidecarVersion)) {
+    throw new Error(
+      `sidecar-version.json version ${sidecarVersion} must reference a release in versions.json.`,
     );
   }
 
@@ -88,13 +120,19 @@ export function validateReleaseMetadata(metadata) {
     );
   }
 
-  return { minAppVersion, version };
+  return {
+    includesSidecar: sidecarVersion === version,
+    minAppVersion,
+    sidecarVersion,
+    version,
+  };
 }
 
 export function buildReleaseMetadataWrites(metadata, options) {
   const manifest = structuredClone(metadata.manifest);
   const packageJson = structuredClone(metadata.packageJson);
   const packageLock = structuredClone(metadata.packageLock);
+  const sidecarVersion = structuredClone(metadata.sidecarVersion);
   const versions = structuredClone(metadata.versions);
 
   if (packageLock.packages?.[''] === undefined) {
@@ -111,11 +149,17 @@ export function buildReleaseMetadataWrites(metadata, options) {
   packageLock.packages[''].version = options.version;
   versions[options.version] = options.minAppVersion;
 
-  return new Map([
+  const writes = new Map([
     [metadata.paths.manifest, formatJson(manifest)],
     [metadata.paths.packageJson, formatJson(packageJson)],
     [metadata.paths.packageLock, formatJson(packageLock)],
-    [
+    [metadata.paths.versions, formatJson(versions)],
+  ]);
+
+  if (options.includeSidecar) {
+    sidecarVersion.version = options.version;
+    writes.set(metadata.paths.sidecarVersion, formatJson(sidecarVersion));
+    writes.set(
       metadata.paths.cargoManifest,
       replaceUniqueVersion(
         metadata.cargoManifest,
@@ -123,8 +167,8 @@ export function buildReleaseMetadataWrites(metadata, options) {
         options.version,
         'native/Cargo.toml package version',
       ),
-    ],
-    [
+    );
+    writes.set(
       metadata.paths.cargoLock,
       replaceUniqueVersion(
         metadata.cargoLock,
@@ -132,9 +176,10 @@ export function buildReleaseMetadataWrites(metadata, options) {
         options.version,
         'native/Cargo.lock local-dictation-sidecar version',
       ),
-    ],
-    [metadata.paths.versions, formatJson(versions)],
-  ]);
+    );
+  }
+
+  return writes;
 }
 
 function readUniqueVersion(contents, pattern, label) {

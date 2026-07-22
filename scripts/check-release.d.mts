@@ -4,8 +4,10 @@ export interface CheckReleaseOptions {
 }
 
 export interface CheckedRelease {
+  includesSidecar: boolean;
   minAppVersion: string;
   notesPath: string;
+  sidecarVersion: string;
   version: string;
 }
 

@@ -37,6 +37,7 @@ export async function prepareRelease(options) {
   const notesPath = join(rootDir, 'docs', 'release', 'notes', `${options.version}.md`);
   await assertFileMissing(notesPath);
   const writes = buildReleaseMetadataWrites(metadata, {
+    includeSidecar: options.includeSidecar ?? false,
     minAppVersion,
     version: options.version,
   });
@@ -47,7 +48,13 @@ export async function prepareRelease(options) {
     writeFile(notesPath, NOTES_COMMENT, { flag: 'wx' }),
   ]);
 
-  return { minAppVersion, notesPath, version: options.version };
+  return {
+    includesSidecar: options.includeSidecar ?? false,
+    minAppVersion,
+    notesPath,
+    sidecarVersion: options.includeSidecar ? options.version : metadata.sidecarVersion.version,
+    version: options.version,
+  };
 }
 
 async function assertFileMissing(path) {
@@ -61,10 +68,12 @@ async function assertFileMissing(path) {
 }
 
 function parseArgs(argv) {
-  const options = { minAppVersion: undefined, version: null };
+  const options = { includeSidecar: false, minAppVersion: undefined, version: null };
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
-    if (arg === '--version' || arg === '--min-app-version') {
+    if (arg === '--sidecar') {
+      options.includeSidecar = true;
+    } else if (arg === '--version' || arg === '--min-app-version') {
       const value = argv[index + 1];
       if (value === undefined || value.startsWith('--')) {
         throw new Error(`${arg} requires a value.`);
@@ -100,6 +109,10 @@ if (isDirectInvocation) {
   const options = parseArgs(process.argv.slice(2));
   assertCleanWorktree(rootDir);
   const result = await prepareRelease({ ...options, rootDir });
-  console.log(`Prepared release ${result.version}.`);
+  console.log(
+    result.includesSidecar
+      ? `Prepared release ${result.version} with sidecar ${result.sidecarVersion}.`
+      : `Prepared plugin-only release ${result.version}; reusing sidecar ${result.sidecarVersion}.`,
+  );
   console.log(`Edit ${result.notesPath}, then run npm run check:release.`);
 }

@@ -6,13 +6,8 @@ on:
     branches:
       - main
     paths:
-      # Release metadata: a version bump should warm the exact commit that will
-      # be tagged, even when its native source is otherwise unchanged.
-      - manifest.json
-      - package.json
-      - versions.json
-      - docs/release/notes/**
       # Production sidecar inputs compiled into the Windows CUDA binary.
+      - sidecar-version.json
       - native/Cargo.lock
       - native/Cargo.toml
       - native/catalog.json

@@ -48,14 +48,14 @@ describe('detectSidecarVersionDrift', () => {
     await expect(
       detectSidecarVersionDrift({
         pluginDirectory,
-        pluginVersion: '2026.5.23',
+        requiredVersion: '2026.5.23',
         preferredVariant: 'cuda',
         supportsCuda: true,
       }),
     ).resolves.toEqual([]);
   });
 
-  it('returns an empty list when installed versions match the plugin version', async () => {
+  it('returns an empty list when installed versions match the required sidecar', async () => {
     const pluginDirectory = await createTempDirectory();
     await writeInstallManifest(pluginDirectory, 'cpu', '2026.5.23');
     await writeInstallManifest(pluginDirectory, 'cuda', '2026.5.23');
@@ -63,7 +63,7 @@ describe('detectSidecarVersionDrift', () => {
     await expect(
       detectSidecarVersionDrift({
         pluginDirectory,
-        pluginVersion: '2026.5.23',
+        requiredVersion: '2026.5.23',
         preferredVariant: 'cuda',
         supportsCuda: true,
       }),
@@ -78,19 +78,19 @@ describe('detectSidecarVersionDrift', () => {
     await expect(
       detectSidecarVersionDrift({
         pluginDirectory,
-        pluginVersion: '2026.5.23',
+        requiredVersion: '2026.5.23',
         preferredVariant: 'cuda',
         supportsCuda: true,
       }),
     ).resolves.toEqual([
       {
         installedVersion: '2026.5.19',
-        pluginVersion: '2026.5.23',
+        requiredVersion: '2026.5.23',
         variant: 'cuda',
       },
       {
         installedVersion: '2026.5.18',
-        pluginVersion: '2026.5.23',
+        requiredVersion: '2026.5.23',
         variant: 'cpu',
       },
     ]);
@@ -103,7 +103,7 @@ describe('detectSidecarVersionDrift', () => {
 
     const drift = await detectSidecarVersionDrift({
       pluginDirectory,
-      pluginVersion: '2026.5.23',
+      requiredVersion: '2026.5.23',
       preferredVariant: 'cpu',
       supportsCuda: true,
     });
@@ -119,20 +119,20 @@ describe('detectSidecarVersionDrift', () => {
     await expect(
       detectSidecarVersionDrift({
         pluginDirectory,
-        pluginVersion: '2026.5.23',
+        requiredVersion: '2026.5.23',
         preferredVariant: 'cuda',
         supportsCuda: true,
       }),
     ).resolves.toEqual([
       {
         installedVersion: '2026.5.19',
-        pluginVersion: '2026.5.23',
+        requiredVersion: '2026.5.23',
         variant: 'cuda',
       },
     ]);
   });
 
-  it('ignores dev sidecars even when their versions differ from the plugin', async () => {
+  it('ignores dev sidecars even when their versions differ from the requirement', async () => {
     const pluginDirectory = await createTempDirectory();
     await writeInstallManifest(pluginDirectory, 'cpu', 'dev-debug');
     await writeInstallManifest(pluginDirectory, 'cuda', 'dev-release');
@@ -140,7 +140,7 @@ describe('detectSidecarVersionDrift', () => {
     await expect(
       detectSidecarVersionDrift({
         pluginDirectory,
-        pluginVersion: '2026.5.23',
+        requiredVersion: '2026.5.23',
         preferredVariant: 'cuda',
         supportsCuda: true,
       }),
@@ -155,7 +155,7 @@ describe('detectSidecarVersionDrift', () => {
     await expect(
       detectSidecarVersionDrift({
         pluginDirectory,
-        pluginVersion: '2026.5.23',
+        requiredVersion: '2026.5.23',
         preferredVariant: 'cuda',
         supportsCuda: false,
       }),
