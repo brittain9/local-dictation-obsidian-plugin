@@ -3,9 +3,9 @@ import type { ModelInstallManager, ModelManagerState } from '../src/models/model
 import { DEFAULT_PLUGIN_SETTINGS } from '../src/settings/plugin-settings';
 import {
   readAloudControlsFingerprint,
-  renderReadAloudModelControls,
+  renderTextToSpeechSettings,
 } from '../src/settings/read-aloud-settings-section';
-import { TestElement } from './__mocks__/obsidian';
+import { Setting, TestElement } from './__mocks__/obsidian';
 
 function state(voices: string[], downloadedBytes: number | null = null): ModelManagerState {
   return {
@@ -66,6 +66,7 @@ describe('Read Aloud settings incremental refresh', () => {
   });
 
   it('re-renders only its controls after voice metadata refreshes', () => {
+    Setting.reset();
     let currentState = state(['alba'], 10);
     let notify = () => {};
     const manager = {
@@ -76,26 +77,39 @@ describe('Read Aloud settings incremental refresh', () => {
       },
     } as unknown as ModelInstallManager;
     const parent = new TestElement();
-    const controls = parent.createDiv();
+    const modelControls = parent.createDiv();
+    const modelBefore = modelControls.createDiv();
+    const readAloudControls = parent.createDiv();
+    const readAloudBefore = readAloudControls.createDiv();
     const focusedSibling = parent.createDiv({ attr: { 'data-focused': 'true' } });
-    const dispose = renderReadAloudModelControls(controls as unknown as HTMLDivElement, {
-      getSettings: () => ({
-        ...DEFAULT_PLUGIN_SETTINGS,
-        selectedTtsModel: currentState.selectedTtsModel,
-      }),
-      manager,
-      openModelPicker: vi.fn(async () => {}),
-      persistVoice: vi.fn(async () => {}),
-    });
-    const originalFirstControl = controls.children[0];
+    const dispose = renderTextToSpeechSettings(
+      modelControls as unknown as HTMLDivElement,
+      modelBefore as unknown as HTMLElement,
+      readAloudControls as unknown as HTMLDivElement,
+      readAloudBefore as unknown as HTMLElement,
+      {
+        getSettings: () => ({
+          ...DEFAULT_PLUGIN_SETTINGS,
+          selectedTtsModel: currentState.selectedTtsModel,
+        }),
+        manager,
+        openModelPicker: vi.fn(async () => {}),
+        persistVoice: vi.fn(async () => {}),
+      },
+    );
+    const originalFirstControl = modelControls.children[0];
+    expect(modelControls.children).toEqual([originalFirstControl, modelBefore]);
+    expect(readAloudControls.children[1]).toBe(readAloudBefore);
+    expect(Setting.named('Text-to-speech model').descEl.textContent).toBe('No model selected');
+    expect(Setting.named('Voice')).toBeDefined();
 
     currentState = state(['alba'], 90);
     notify();
-    expect(controls.children[0]).toBe(originalFirstControl);
+    expect(modelControls.children[0]).toBe(originalFirstControl);
 
     currentState = state(['alba', 'cosette']);
     notify();
-    expect(controls.children[0]).not.toBe(originalFirstControl);
+    expect(modelControls.children[0]).not.toBe(originalFirstControl);
     expect(parent.children).toContain(focusedSibling);
     dispose();
   });

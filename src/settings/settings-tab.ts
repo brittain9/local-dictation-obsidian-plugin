@@ -31,6 +31,7 @@ import { DiarizationSettingsModal } from './diarization-settings-modal';
 import { renderActiveInstallCard } from './install-progress-row';
 import { renderMicrophonePicker } from './microphone-picker';
 import { renderModelSection } from './model-settings-section';
+import { openFilteredHotkeySettings } from './open-hotkey-settings';
 import {
   PHRASE_FINALIZATION_TOOLTIP,
   phraseFinalizationDescription,
@@ -47,7 +48,7 @@ import {
   type PluginSettings,
   type TranscriptFormattingMode,
 } from './plugin-settings';
-import { renderReadAloudModelControls } from './read-aloud-settings-section';
+import { renderTextToSpeechSettings } from './read-aloud-settings-section';
 import {
   addEnumSetting,
   addTextSetting,
@@ -113,10 +114,16 @@ const SPEAKING_STYLE_OPTIONS: ReadonlyArray<DropdownOption<SpeakingStyle>> = [
 // settings search can match the single composite definition in the active locale.
 const SETTINGS_SEARCH_ALIAS_KEYS = [
   'settings.groups.model',
+  'settings.model.speechToText',
+  'settings.model.textToSpeech',
   'settings.model.manageModels',
   'settings.model.useExternalFile',
   'settings.model.details',
   'settings.dictationLanguage.name',
+  'settings.groups.readAloud',
+  'settings.readAloud.hotkey',
+  'settings.readAloud.voice',
+  'settings.readAloud.speed',
   'settings.groups.capture',
   'settings.microphone.name',
   'settings.microphone.default',
@@ -324,31 +331,6 @@ export class LocalSttSettingTab extends PluginSettingTab {
       });
     });
 
-    // --- Read aloud ---
-    const readAloudSection = createSettingGroup(containerEl, t('settings.groups.readAloud'));
-    const readAloudControls = readAloudSection.createDiv({
-      cls: 'local-stt-read-aloud-settings-controls',
-    });
-    this.disposeReadAloudSection = renderReadAloudModelControls(readAloudControls, {
-      getSettings: () => this.dependencies.getSettings(),
-      manager,
-      openModelPicker: (options) => this.dependencies.openModelPicker(options),
-      persistVoice: (voice) => this.access.persistOne('selectedTtsVoice', voice),
-    });
-
-    new Setting(readAloudSection)
-      .setName(t('settings.readAloud.speed'))
-      .setDesc(t('settings.readAloud.speedDesc'))
-      .addSlider((slider) => {
-        slider
-          .setLimits(MIN_TTS_SPEED, MAX_TTS_SPEED, 0.05)
-          .setValue(settings.ttsSpeed)
-          .setDynamicTooltip()
-          .onChange(async (speed) => {
-            await this.access.persistOne('ttsSpeed', speed);
-          });
-      });
-
     // --- Capture ---
     const captureCard = createSettingGroup(containerEl, t('settings.groups.capture'));
 
@@ -449,6 +431,49 @@ export class LocalSttSettingTab extends PluginSettingTab {
 
     const timestampsCard = createSettingGroup(containerEl, t('settings.groups.timestamps'));
     this.renderTimestampSettings(timestampsCard, settings);
+
+    // --- Read aloud ---
+    const readAloudSection = createSettingGroup(containerEl, t('settings.groups.readAloud'));
+    const hotkeySetting = new Setting(readAloudSection)
+      .setName(t('settings.readAloud.hotkey'))
+      .setDesc(t('settings.readAloud.hotkeyDesc'))
+      .addButton((button) => {
+        button.setButtonText(t('setup.wizard.openHotkeySettings')).onClick(() => {
+          openFilteredHotkeySettings(this.app, t('commands.readAloud'), (error) => {
+            this.dependencies.feedback.show({
+              cause: error,
+              intent: 'warning',
+              message: t('setup.wizard.openHotkeySettingsFallback'),
+            });
+          });
+        });
+      });
+
+    new Setting(readAloudSection)
+      .setName(t('settings.readAloud.speed'))
+      .setDesc(t('settings.readAloud.speedDesc'))
+      .addSlider((slider) => {
+        slider
+          .setLimits(MIN_TTS_SPEED, MAX_TTS_SPEED, 0.05)
+          .setValue(settings.ttsSpeed)
+          .setDynamicTooltip()
+          .onChange(async (speed) => {
+            await this.access.persistOne('ttsSpeed', speed);
+          });
+      });
+
+    this.disposeReadAloudSection = renderTextToSpeechSettings(
+      modelSection,
+      languageSetting.settingEl,
+      readAloudSection,
+      hotkeySetting.settingEl,
+      {
+        getSettings: () => this.dependencies.getSettings(),
+        manager,
+        openModelPicker: (options) => this.dependencies.openModelPicker(options),
+        persistVoice: (voice) => this.access.persistOne('selectedTtsVoice', voice),
+      },
+    );
 
     const llmCard = createSettingGroup(containerEl, t('settings.groups.llmTransformation'));
     const enableLlmSetting = new Setting(llmCard)

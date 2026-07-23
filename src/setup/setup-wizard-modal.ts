@@ -2,6 +2,7 @@ import type { App } from 'obsidian';
 import { Modal, Platform, setIcon } from 'obsidian';
 import { ManageModelsModal } from '../models/manage-models-modal';
 import type { ModelInstallManager } from '../models/model-install-manager';
+import { openFilteredHotkeySettings } from '../settings/open-hotkey-settings';
 import { t } from '../shared/i18n';
 import type { PluginLogger } from '../shared/plugin-logger';
 import type { UserFeedback } from '../shared/user-feedback';
@@ -315,26 +316,13 @@ export class SetupWizardModal extends Modal {
   }
 
   private openHotkeySettings(): void {
-    // Obsidian's documented setting-open API: opens the hotkeys tab and filters by command name.
-    type SettingHost = {
-      setting?: { open?: () => void; openTabById?: (id: string) => unknown };
-    };
-    type HotkeysTab = { searchInputEl?: HTMLInputElement; updateHotkeyVisibility?: () => void };
-    const host = this.deps.app as unknown as SettingHost;
-    try {
-      host.setting?.open?.();
-      const tab = host.setting?.openTabById?.('hotkeys') as HotkeysTab | undefined;
-      if (tab !== undefined && tab.searchInputEl !== undefined) {
-        tab.searchInputEl.value = 'Local Dictation';
-        tab.searchInputEl.dispatchEvent(new Event('input'));
-      }
-    } catch (error) {
+    openFilteredHotkeySettings(this.deps.app, 'Local Dictation', (error) => {
       this.deps.feedback.show({
         cause: error,
         intent: 'warning',
         message: t('setup.wizard.openHotkeySettingsFallback'),
       });
-    }
+    });
   }
 
   // ---------------- Navigation ----------------

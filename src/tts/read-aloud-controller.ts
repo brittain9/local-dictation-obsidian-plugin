@@ -14,6 +14,7 @@ import type { SidecarEvent, SynthesisAudioFrame, SynthesisTextChunk } from '../s
 import type { SidecarConnection } from '../sidecar/sidecar-connection';
 import { localizeKnownSidecarEventCode } from '../sidecar/sidecar-event-localization';
 import { extractAndSegmentMarkdown } from './markdown-extractor';
+import { resolveReadAloudVoiceId } from './read-aloud-selection';
 
 export type ReadAloudState = 'idle' | 'paused' | 'reading';
 
@@ -82,9 +83,9 @@ export class ReadAloudController {
     return this.state !== 'idle';
   }
 
-  async read(editor: Editor, entireNote = false): Promise<void> {
+  async read(editor: Editor): Promise<void> {
     const source = editor.getValue();
-    const range = resolveReadRange(editor, source, entireNote);
+    const range = resolveReadRange(editor, source);
     const chunks = extractAndSegmentMarkdown(source, range);
     if (chunks.length === 0) {
       this.deps.feedback.show({ intent: 'warning', message: t('tts.notice.noText') });
@@ -199,7 +200,7 @@ export class ReadAloudController {
       this.stop();
       return null;
     }
-    const voiceId = settings.selectedTtsVoice ?? catalogModel.defaultVoice ?? null;
+    const voiceId = resolveReadAloudVoiceId(settings.selectedTtsVoice, catalogModel.defaultVoice);
     if (voiceId === null) {
       this.deps.feedback.show({ intent: 'warning', message: t('tts.notice.voiceRequired') });
       this.stop();
@@ -287,25 +288,12 @@ export class ReadAloudController {
   }
 }
 
-export function resolveReadRange(
-  editor: Editor,
-  source: string,
-  entireNote: boolean,
-): { from: number; to: number } {
-  if (entireNote) return { from: 0, to: source.length };
+export function resolveReadRange(editor: Editor, source: string): { from: number; to: number } {
   if (editor.somethingSelected()) {
     const anchor = editor.posToOffset(editor.getCursor('anchor'));
     const head = editor.posToOffset(editor.getCursor('head'));
     return { from: Math.min(anchor, head), to: Math.max(anchor, head) };
   }
 
-  const cursor = editor.getCursor();
-  let blockStartLine = cursor.line;
-  while (blockStartLine > 0 && editor.getLine(blockStartLine - 1).trim().length > 0) {
-    blockStartLine -= 1;
-  }
-  return {
-    from: editor.posToOffset({ ch: 0, line: blockStartLine }),
-    to: source.length,
-  };
+  return { from: 0, to: source.length };
 }

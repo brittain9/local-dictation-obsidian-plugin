@@ -223,6 +223,12 @@
   background: transparent;
 }
 
+.local-stt-read-aloud-status__menu {
+  padding: 0 4px;
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+}
+
 .local-stt-tab-bar {
   display: flex;
   gap: 0;

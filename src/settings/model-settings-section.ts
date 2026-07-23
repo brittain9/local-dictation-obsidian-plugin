@@ -64,7 +64,8 @@ export function renderModelSection(
 
     // --- Current model row ---
     const descFragment = createFragment();
-    let hasMetadata = false;
+    descFragment.createSpan({ text: currentModel.displayName });
+    let hasMetadata = currentModel.displayName.length > 0;
     const appendSeparator = (): void => {
       if (hasMetadata) {
         descFragment.createSpan({ text: ' \u00b7 ' });
@@ -100,7 +101,7 @@ export function renderModelSection(
     }
 
     const cardSetting = new Setting(container)
-      .setName(currentModel.displayName)
+      .setName(t('settings.model.speechToText'))
       .setDesc(descFragment);
 
     cardSetting.addButton((button) => {

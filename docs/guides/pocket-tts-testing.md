@@ -15,6 +15,8 @@ selected model, voice, and any buffering.
    status control.
 4. Select another installed language and confirm its voice selection is
    independent from the dictation model and dictation language.
+5. Use the **Recommended shortcut** button. Confirm Obsidian opens Hotkeys
+   filtered to **Read aloud**, then assign a test hotkey.
 
 ## Reading and playback
 
@@ -22,19 +24,21 @@ Test a note containing frontmatter, headings, emphasis, lists, links, embeds, a
 table, inline code, a fenced code block, inline math, and display math.
 
 1. With a selection, run **Read aloud** and confirm only the selected prose is
-   spoken. With no selection, confirm reading begins at the current Markdown
-   block. Run **Read entire note** and confirm frontmatter, code, and math are
-   skipped while readable labels and table cells are retained.
+   spoken. With no selection, confirm reading begins at the start of the note.
+   Confirm frontmatter, code, and math are skipped while readable labels and
+   table cells are retained.
 2. Pause for at least 30 seconds, resume, and confirm playback continues without
    a gap, duplicate sentence, or unbounded background CPU use.
 3. Stop during model load, during the first sentence, and after several queued
    sentences. Confirm audio stops and does not restart later.
-4. Test 0.75×, 1×, and 2×. Change speed and voice during playback; the current
-   sentence may restart, but pitch should remain natural and stale audio must
-   not return. Record first-audio latency and any buffering at 2×. The French
-   24-layer model is certified for real-time 1× synthesis on Linux x86_64 CI,
-   not uninterrupted 2× playback, so distinguish its documented buffering from
-   control or audio corruption bugs.
+4. Confirm the active-only status player shows the current language/model,
+   speed, and voice. Test every active speed preset: 0.75×, 1×, 1.25×, 1.5×,
+   and 2×. Change model, speed, and voice during playback; the current sentence
+   may restart, but pitch should remain natural and stale audio must not return.
+   Record first-audio latency and any buffering at 2×. The French 24-layer model
+   is certified for real-time 1× synthesis on Linux x86_64 CI, not uninterrupted
+   2× playback, so distinguish its documented buffering from control or audio
+   corruption bugs.
 5. Start Read aloud during dictation and then start dictation during Read aloud.
    Confirm the first operation stops cleanly before the second begins and the
    final dictation transcript is retained.

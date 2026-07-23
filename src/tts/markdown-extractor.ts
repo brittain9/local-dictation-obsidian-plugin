@@ -196,7 +196,7 @@ export function segmentSpeakableText(
   mapped: MappedText,
   options: { locale?: string; maximumCharacters?: number; minimumCharacters?: number } = {},
 ): SynthesisTextChunk[] {
-  const minimumCharacters = options.minimumCharacters ?? 80;
+  const minimumCharacters = options.minimumCharacters ?? 1;
   const maximumCharacters = options.maximumCharacters ?? 300;
   const segmenter = new Intl.Segmenter(options.locale ?? 'en', { granularity: 'sentence' });
   const sentences = [...segmenter.segment(mapped.text)].flatMap((sentence) =>

@@ -27,7 +27,6 @@ describe('registerCommands', () => {
       isReadAloudActive: () => false,
       plugin,
       readAloud: vi.fn(async () => {}),
-      readEntireNote: vi.fn(async () => {}),
       reinsertLastUtterance,
       restoreRawTranscript: vi.fn(),
       restartSidecar: vi.fn(async () => {}),
@@ -88,7 +87,6 @@ describe('registerCommands', () => {
       isReadAloudActive: () => false,
       plugin,
       readAloud: vi.fn(async () => {}),
-      readEntireNote: vi.fn(async () => {}),
       reinsertLastUtterance: vi.fn(),
       restoreRawTranscript,
       restartSidecar: vi.fn(async () => {}),
@@ -124,5 +122,38 @@ describe('registerCommands', () => {
     expect(copyRawTranscript).toHaveBeenCalledOnce();
     expect(clearRawTranscriptRecovery).toHaveBeenCalledOnce();
     expect(restoreCommand?.checkCallback?.(true)).toBe(false);
+  });
+
+  it('registers one read-aloud start command', () => {
+    const commands: Command[] = [];
+    const plugin = {
+      addCommand: vi.fn((command: Command) => {
+        commands.push(command);
+      }),
+    } as unknown as Plugin;
+
+    registerCommands({
+      cancelDictation: vi.fn(async () => {}),
+      clearLastUtterance: vi.fn(),
+      clearRawTranscriptRecovery: vi.fn(),
+      checkSidecarHealth: vi.fn(async () => {}),
+      copyRawTranscript: vi.fn(),
+      hasLastUtterance: () => false,
+      hasRawTranscriptRecovery: () => false,
+      isReadAloudActive: () => false,
+      plugin,
+      readAloud: vi.fn(async () => {}),
+      reinsertLastUtterance: vi.fn(),
+      restoreRawTranscript: vi.fn(),
+      restartSidecar: vi.fn(async () => {}),
+      startDictation: vi.fn(async () => {}),
+      stopReadAloud: vi.fn(),
+      stopDictation: vi.fn(async () => {}),
+      toggleDictation: vi.fn(async () => {}),
+      toggleReadAloudPaused: vi.fn(async () => {}),
+    });
+
+    expect(commands.filter(({ id }) => id === 'read-aloud')).toHaveLength(1);
+    expect(commands.some(({ id }) => id === 'read-entire-note')).toBe(false);
   });
 });

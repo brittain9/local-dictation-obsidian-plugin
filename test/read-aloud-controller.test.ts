@@ -8,6 +8,7 @@ import type { StartSynthesisCommand } from '../src/sidecar/protocol';
 const playback = vi.hoisted(() => ({
   enqueue: vi.fn(),
   markGenerationComplete: vi.fn(),
+  playThrough: vi.fn<(sequence: number) => void>(),
   start: vi.fn(),
   stop: vi.fn(),
   togglePaused: vi.fn(async () => false),
@@ -15,6 +16,10 @@ const playback = vi.hoisted(() => ({
 
 vi.mock('../src/audio/pcm-playback-queue', () => ({
   PcmPlaybackQueue: class {
+    constructor(options: { onPlayedThrough: (sequence: number) => void }) {
+      playback.playThrough.mockImplementation(options.onPlayedThrough);
+    }
+
     enqueue = playback.enqueue;
     markGenerationComplete = playback.markGenerationComplete;
     start = playback.start;
@@ -114,25 +119,16 @@ beforeEach(() => {
 describe('resolveReadRange', () => {
   it('reads an exact selection regardless of selection direction', () => {
     const source = 'Before selected after';
-    expect(resolveReadRange(editorFor(source, { ch: 0, line: 0 }, [15, 7]), source, false)).toEqual(
-      {
-        from: 7,
-        to: 15,
-      },
-    );
+    expect(resolveReadRange(editorFor(source, { ch: 0, line: 0 }, [15, 7]), source)).toEqual({
+      from: 7,
+      to: 15,
+    });
   });
 
-  it('starts at the current Markdown block and continues to the end', () => {
+  it('reads the entire note when there is no selection', () => {
     const source = 'First block\ncontinues\n\nCurrent block\ncontinues\n\nLast';
     const editor = editorFor(source, { ch: 3, line: 4 });
-    expect(source.slice(resolveReadRange(editor, source, false).from)).toBe(
-      'Current block\ncontinues\n\nLast',
-    );
-  });
-
-  it('reads the entire note for the explicit scope', () => {
-    const source = 'One\n\nTwo';
-    expect(resolveReadRange(editorFor(source, { ch: 1, line: 2 }), source, true)).toEqual({
+    expect(resolveReadRange(editor, source)).toEqual({
       from: 0,
       to: source.length,
     });
@@ -140,6 +136,24 @@ describe('resolveReadRange', () => {
 });
 
 describe('ReadAloudController', () => {
+  it('restarts settings changes from the current sentence', async () => {
+    const harness = controllerHarness({ selected: true });
+    const editor = editorFor('First sentence. Second sentence. Third sentence.', {
+      ch: 0,
+      line: 0,
+    });
+
+    await harness.controller.read(editor);
+    playback.playThrough(0);
+    await harness.controller.applySpeed(1.5);
+
+    expect(harness.startSynthesis).toHaveBeenCalledTimes(2);
+    expect(harness.startSynthesis.mock.calls[1]?.[0]).toMatchObject({
+      chunks: [{ text: 'Second sentence.' }, { text: 'Third sentence.' }],
+      speed: 1.5,
+    });
+  });
+
   it('validates TTS configuration before stopping dictation', async () => {
     const harness = controllerHarness({ selected: false });
 

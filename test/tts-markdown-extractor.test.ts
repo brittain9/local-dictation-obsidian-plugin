@@ -57,6 +57,13 @@ describe('extractSpeakableMarkdown', () => {
 });
 
 describe('segmentSpeakableText', () => {
+  it('keeps sentence boundaries as restart points by default', () => {
+    const source = 'One. Two. Three.';
+    expect(
+      segmentSpeakableText(extractSpeakableMarkdown(source)).map((chunk) => chunk.text),
+    ).toEqual(['One.', 'Two.', 'Three.']);
+  });
+
   it('merges short sentences and preserves source ranges', () => {
     const source = 'One. Two. This sentence is long enough to flush the merged chunk.';
     const mapped = extractSpeakableMarkdown(source);

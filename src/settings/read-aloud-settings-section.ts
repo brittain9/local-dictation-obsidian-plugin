@@ -5,6 +5,7 @@ import type { ModelInstallManager, ModelManagerState } from '../models/model-ins
 import { matchesModelTriple } from '../models/model-management-types';
 import { formatVoiceLabel } from '../shared/format-utils';
 import { t } from '../shared/i18n';
+import { resolveReadAloudVoiceId } from '../tts/read-aloud-selection';
 import type { PluginSettings } from './plugin-settings';
 
 interface ReadAloudSettingsSectionDependencies {
@@ -33,14 +34,20 @@ export function readAloudControlsFingerprint(
   ].join(':');
 }
 
-export function renderReadAloudModelControls(
-  container: HTMLDivElement,
+export function renderTextToSpeechSettings(
+  modelContainer: HTMLDivElement,
+  modelBefore: HTMLElement,
+  readAloudContainer: HTMLDivElement,
+  readAloudBefore: HTMLElement,
   dependencies: ReadAloudSettingsSectionDependencies,
 ): () => void {
   let fingerprint = readAloudControlsFingerprint(dependencies.manager.getState());
+  let modelSettingEl: HTMLElement | null = null;
+  let voiceSettingEl: HTMLElement | null = null;
 
   const render = (): void => {
-    container.empty();
+    if (modelSettingEl !== null) modelContainer.removeChild(modelSettingEl);
+    if (voiceSettingEl !== null) readAloudContainer.removeChild(voiceSettingEl);
     const settings = dependencies.getSettings();
     const state = dependencies.manager.getState();
     const selection = settings.selectedTtsModel;
@@ -51,9 +58,9 @@ export function renderReadAloudModelControls(
           ) ?? null)
         : null;
 
-    new Setting(container)
-      .setName(catalogModel?.displayName ?? t('settings.readAloud.noModel'))
-      .setDesc(t('settings.readAloud.modelDesc'))
+    const modelSetting = new Setting(modelContainer)
+      .setName(t('settings.model.textToSpeech'))
+      .setDesc(catalogModel?.displayName ?? t('settings.model.noModelSelected'))
       .addButton((button) => {
         button
           .setCta()
@@ -62,6 +69,8 @@ export function renderReadAloudModelControls(
             void dependencies.openModelPicker({ initialTask: 'tts' });
           });
       });
+    modelSettingEl = modelSetting.settingEl;
+    modelContainer.insertBefore(modelSettingEl, modelBefore);
 
     const installed =
       catalogModel === null
@@ -75,7 +84,7 @@ export function renderReadAloudModelControls(
             ),
           ) ?? null);
     const installedVoices = installed?.installedVoiceIds ?? [];
-    new Setting(container)
+    const voiceSetting = new Setting(readAloudContainer)
       .setName(t('settings.readAloud.voice'))
       .setDesc(t('settings.readAloud.voiceDesc'))
       .addDropdown((dropdown) => {
@@ -85,12 +94,16 @@ export function renderReadAloudModelControls(
         for (const voice of installedVoices) {
           dropdown.addOption(voice, formatVoiceLabel(voice));
         }
-        dropdown.setValue(settings.selectedTtsVoice ?? installedVoices[0] ?? '');
+        dropdown.setValue(
+          resolveReadAloudVoiceId(settings.selectedTtsVoice, catalogModel?.defaultVoice) ?? '',
+        );
         dropdown.setDisabled(installedVoices.length === 0);
         dropdown.onChange(async (voice) => {
           await dependencies.persistVoice(voice.length === 0 ? null : voice);
         });
       });
+    voiceSettingEl = voiceSetting.settingEl;
+    readAloudContainer.insertBefore(voiceSettingEl, readAloudBefore);
   };
 
   render();

@@ -18,7 +18,11 @@ import type { LlmCleanupFailure } from './llm/provider';
 import { createLlmRouter } from './llm/router';
 import { ManageModelsModal, type ModelPickerOptions } from './models/manage-models-modal';
 import { ModelInstallManager } from './models/model-install-manager';
-import { matchesModelTriple, selectedModelEquals } from './models/model-management-types';
+import {
+  type CatalogModelRecord,
+  type CatalogModelSelection,
+  matchesModelTriple,
+} from './models/model-management-types';
 import { Session } from './session/session';
 import { logAccelerationFallbacks } from './settings/acceleration-info';
 import { LlmPresetStateStore } from './settings/llm-preset-state';
@@ -56,8 +60,9 @@ import {
   detectSidecarVersionDrift,
   type SidecarVersionDrift,
 } from './sidecar/sidecar-version-drift';
-import { readAloudControlLabels } from './tts/read-aloud-control-labels';
+import { READ_ALOUD_SPEED_PRESETS, readAloudControlLabels } from './tts/read-aloud-control-labels';
 import { ReadAloudController, type ReadAloudState } from './tts/read-aloud-controller';
+import { didReadAloudSettingsChange, resolveReadAloudVoiceId } from './tts/read-aloud-selection';
 import { DictationRibbonController } from './ui/dictation-ribbon';
 import { LOCAL_DICTATION_VIEW_TYPE, LocalDictationView } from './ui/local-dictation-view';
 
@@ -82,6 +87,7 @@ export default class LocalSttPlugin extends Plugin {
   });
   private ribbonController: DictationRibbonController | null = null;
   private readAloudController: ReadAloudController | null = null;
+  private releaseReadAloudModelSubscription: (() => void) | null = null;
   private readAloudStatus: HTMLElement | null = null;
   override settings: PluginSettings = DEFAULT_PLUGIN_SETTINGS;
   private sidecarConnection: SidecarConnection | null = null;
@@ -254,6 +260,9 @@ export default class LocalSttPlugin extends Plugin {
       stopDictation: () => this.requireDictationController().stopDictation(),
     });
     this.renderReadAloudStatus('idle');
+    this.releaseReadAloudModelSubscription = this.requireModelInstallManager().subscribe(() => {
+      this.renderReadAloudStatus(this.readAloudController?.getState() ?? 'idle');
+    });
 
     this.addSettingTab(
       new LocalSttSettingTab(this.app, this, {
@@ -305,7 +314,6 @@ export default class LocalSttPlugin extends Plugin {
       isReadAloudActive: () => this.requireReadAloudController().isActive(),
       plugin: this,
       readAloud: (editor) => this.requireReadAloudController().read(editor),
-      readEntireNote: (editor) => this.requireReadAloudController().read(editor, true),
       reinsertLastUtterance: (editor) => {
         this.lastUtteranceRecovery.reinsert(editor);
       },
@@ -485,6 +493,8 @@ export default class LocalSttPlugin extends Plugin {
   private async disposeAll(): Promise<void> {
     this.lastUtteranceRecovery.clear();
     this.rawTranscriptRecovery.clear();
+    this.releaseReadAloudModelSubscription?.();
+    this.releaseReadAloudModelSubscription = null;
 
     try {
       this.modelInstallManager?.dispose();
@@ -600,15 +610,9 @@ export default class LocalSttPlugin extends Plugin {
     if (options.persist) {
       await this.saveData(this.settings);
     }
-    if (
-      previousSettings.ttsSpeed !== this.settings.ttsSpeed ||
-      previousSettings.selectedTtsVoice !== this.settings.selectedTtsVoice ||
-      !nullableSelectedModelsEqual(
-        previousSettings.selectedTtsModel,
-        this.settings.selectedTtsModel,
-      )
-    ) {
+    if (didReadAloudSettingsChange(previousSettings, this.settings)) {
       await this.readAloudController?.applySpeed(this.settings.ttsSpeed);
+      this.renderReadAloudStatus(this.readAloudController?.getState() ?? 'idle');
     }
     if (previousSettings.llmFeaturesEnabled !== this.settings.llmFeaturesEnabled) {
       await this.syncLocalDictationSidebar();
@@ -671,11 +675,70 @@ export default class LocalSttPlugin extends Plugin {
     status.setAttribute('aria-live', 'polite');
     status.setAttribute('role', 'status');
     if (state === 'idle') return;
+    const selectedModel = this.selectedReadAloudModel();
+    const installedModels = this.installedReadAloudModels();
     const installedVoices = this.installedReadAloudVoices();
-    const selectedVoice = this.settings.selectedTtsVoice ?? installedVoices[0] ?? '';
-    const labels = readAloudControlLabels(state, selectedVoice);
+    const selectedVoice =
+      resolveReadAloudVoiceId(this.settings.selectedTtsVoice, selectedModel?.defaultVoice) ?? '';
+    const labels = readAloudControlLabels(state, {
+      modelName: selectedModel?.displayName ?? t('settings.model.noModelSelected'),
+      speed: this.settings.ttsSpeed,
+      voiceId: selectedVoice,
+    });
     status.createSpan({
       text: labels.state,
+    });
+    if (selectedModel !== null) {
+      const model = status.createEl('button', {
+        attr: { 'aria-label': labels.model, title: labels.model },
+        cls: 'local-stt-read-aloud-status__menu',
+        text: selectedModel.displayName,
+      });
+      model.addEventListener('click', (event) => {
+        const menu = new Menu();
+        for (const availableModel of installedModels) {
+          menu.addItem((item) => {
+            item
+              .setTitle(availableModel.displayName)
+              .setChecked(
+                matchesModelTriple(
+                  availableModel,
+                  selectedModel.runtimeId,
+                  selectedModel.familyId,
+                  selectedModel.modelId,
+                ),
+              )
+              .onClick(() => {
+                void this.selectReadAloudModel({
+                  familyId: availableModel.familyId,
+                  kind: 'catalog_model',
+                  modelId: availableModel.modelId,
+                  runtimeId: availableModel.runtimeId,
+                });
+              });
+          });
+        }
+        menu.showAtMouseEvent(event);
+      });
+    }
+    const speed = status.createEl('button', {
+      attr: { 'aria-label': labels.speed, title: labels.speed },
+      cls: 'local-stt-read-aloud-status__menu',
+      text: labels.speedValue,
+    });
+    speed.addEventListener('click', (event) => {
+      const menu = new Menu();
+      for (const value of READ_ALOUD_SPEED_PRESETS) {
+        menu.addItem((item) => {
+          item
+            .setTitle(`${value}×`)
+            .setChecked(value === this.settings.ttsSpeed)
+            .onClick(() => {
+              void this.updateSettings({ ...this.settings, ttsSpeed: value });
+            });
+        });
+      }
+      menu.showAtMouseEvent(event);
     });
     if (installedVoices.length > 0) {
       const voice = status.createEl('button', {
@@ -712,6 +775,42 @@ export default class LocalSttPlugin extends Plugin {
     });
     setIcon(stop, 'square');
     stop.addEventListener('click', () => this.requireReadAloudController().stop());
+  }
+
+  private installedReadAloudModels(): CatalogModelRecord[] {
+    const state = this.requireModelInstallManager().getState();
+    return state.catalog.models.filter(
+      (model) =>
+        model.task === 'tts' &&
+        state.installedModels.some((installed) =>
+          matchesModelTriple(installed, model.runtimeId, model.familyId, model.modelId),
+        ),
+    );
+  }
+
+  private selectedReadAloudModel(): CatalogModelRecord | null {
+    const selection = this.settings.selectedTtsModel;
+    if (selection === null || selection.kind !== 'catalog_model') return null;
+    return (
+      this.requireModelInstallManager()
+        .getState()
+        .catalog.models.find((model) =>
+          matchesModelTriple(model, selection.runtimeId, selection.familyId, selection.modelId),
+        ) ?? null
+    );
+  }
+
+  private async selectReadAloudModel(selection: CatalogModelSelection): Promise<void> {
+    try {
+      await this.requireModelInstallManager().select(selection);
+    } catch (error) {
+      this.logger.error('tts', 'failed to select read-aloud model', error);
+      this.feedback.show({
+        cause: error,
+        intent: 'error',
+        message: t('models.manage.selectFailed'),
+      });
+    }
   }
 
   private installedReadAloudVoices(): string[] {
@@ -922,12 +1021,4 @@ export default class LocalSttPlugin extends Plugin {
 
 function getSidecarExecutableName(): string {
   return formatSidecarExecutableName(Platform.isWin);
-}
-
-function nullableSelectedModelsEqual(
-  left: PluginSettings['selectedTtsModel'],
-  right: PluginSettings['selectedTtsModel'],
-): boolean {
-  if (left === null || right === null) return left === right;
-  return selectedModelEquals(left, right);
 }

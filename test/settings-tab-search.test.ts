@@ -15,6 +15,8 @@ describe('LocalSttSettingTab settings search', () => {
     expect(definition.aliases).toEqual(
       expect.arrayContaining([
         'Manage models',
+        'Speech-to-text model',
+        'Text-to-speech model',
         'Microphone',
         'Transcript formatting',
         'Use timestamps',

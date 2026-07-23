@@ -25,7 +25,6 @@ interface CommandDependencies {
   restoreRawTranscript: () => void;
   restartSidecar: () => Promise<void>;
   readAloud: (editor: Editor) => Promise<void>;
-  readEntireNote: (editor: Editor) => Promise<void>;
   stopReadAloud: () => void;
   toggleReadAloudPaused: () => Promise<void>;
   startDictation: () => Promise<void>;
@@ -38,12 +37,6 @@ export function registerCommands(dependencies: CommandDependencies): void {
     id: 'read-aloud',
     name: t('commands.readAloud'),
     editorCallback: async (editor) => dependencies.readAloud(editor),
-  });
-
-  dependencies.plugin.addCommand({
-    id: 'read-entire-note',
-    name: t('commands.readEntireNote'),
-    editorCallback: async (editor) => dependencies.readEntireNote(editor),
   });
 
   dependencies.plugin.addCommand({
