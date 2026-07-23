@@ -1,4 +1,4 @@
-import type { App, Plugin } from 'obsidian';
+import type { App, Plugin, SettingDefinitionItem } from 'obsidian';
 import { Platform, PluginSettingTab, Setting } from 'obsidian';
 
 import { formatSystemAudioProbeResultMessage } from '../audio/system-audio-permission-message';
@@ -25,6 +25,7 @@ import {
 } from '../sidecar/sidecar-install-manager';
 import { readInstallManifest, variantDirectoryPath } from '../sidecar/sidecar-installer';
 import { ConfirmModal } from '../ui/confirm-modal';
+import { styleDestructiveButton } from '../ui/destructive-button';
 import { diarizationSettingDescription } from './diarization-setting';
 import { DiarizationSettingsModal } from './diarization-settings-modal';
 import { renderActiveInstallCard } from './install-progress-row';
@@ -105,6 +106,75 @@ const SPEAKING_STYLE_OPTIONS: ReadonlyArray<DropdownOption<SpeakingStyle>> = [
   { label: t('settings.phraseFinalization.patientOption'), value: 'patient' },
 ];
 
+// The settings tab is highly dynamic: model/install state, platform capabilities,
+// microphone enumeration, and several controls with side effects all affect its
+// contents. Obsidian's declarative `render` escape hatch lets 1.13+ index that UI
+// without duplicating it. Keep every user-facing setting name here so global
+// settings search can match the single composite definition in the active locale.
+const SETTINGS_SEARCH_ALIAS_KEYS = [
+  'settings.groups.model',
+  'settings.model.manageModels',
+  'settings.model.useExternalFile',
+  'settings.model.details',
+  'settings.dictationLanguage.name',
+  'settings.groups.capture',
+  'settings.microphone.name',
+  'settings.microphone.default',
+  'settings.systemAudio.name',
+  'settings.listeningMode.name',
+  'settings.listeningMode.alwaysOn',
+  'settings.listeningMode.oneSentence',
+  'settings.phraseFinalization.name',
+  'settings.phraseFinalization.responsiveOption',
+  'settings.phraseFinalization.balancedOption',
+  'settings.phraseFinalization.patientOption',
+  'settings.groups.transcriptOutput',
+  'settings.insertText.name',
+  'settings.insertText.atCursor',
+  'settings.insertText.endOfNote',
+  'settings.transcriptFormatting.name',
+  'settings.transcriptFormatting.smartParagraphs',
+  'settings.transcriptFormatting.space',
+  'settings.transcriptFormatting.newLine',
+  'settings.transcriptFormatting.newParagraph',
+  'settings.smartParagraph.modal.title',
+  'settings.smartParagraph.lineBreakPause.name',
+  'settings.smartParagraph.paragraphPause.name',
+  'settings.speakerLabels.name',
+  'settings.speakerLabels.modal.title',
+  'settings.speakerLabels.maximumSpeakers.name',
+  'settings.groups.timestamps',
+  'settings.timestamps.enable.name',
+  'settings.timestamps.modal.title',
+  'settings.timestamps.sessionHeader.name',
+  'settings.timestamps.referenceClock.name',
+  'settings.timestamps.frequency.name',
+  'settings.timestamps.interval.name',
+  'settings.groups.llmTransformation',
+  'settings.llm.enableFeatures.name',
+  'settings.llm.enableRemote.name',
+  'settings.llm.restoreDefaults.name',
+  'settings.groups.engine',
+  'settings.hardwareAcceleration.name',
+  'settings.noteContext.name',
+  'settings.groups.advanced',
+  'settings.missingSidecar.name',
+  'settings.sidecar.name',
+  'settings.sidecar.cpuName',
+  'settings.sidecar.gpuName',
+  'settings.sidecar.cudaLibraryPath.name',
+  'settings.recoveryMemory.name',
+  'settings.modelStoreOverride.name',
+  'settings.runSetup.name',
+] as const;
+
+const SETTINGS_SEARCH_LITERAL_ALIASES = [
+  'Developer mode',
+  'Sidecar path override',
+  'Startup timeout',
+  'Request timeout',
+] as const;
+
 export class LocalSttSettingTab extends PluginSettingTab {
   override readonly icon = 'audio-lines';
 
@@ -135,10 +205,40 @@ export class LocalSttSettingTab extends PluginSettingTab {
     };
   }
 
-  override display(): void {
-    this.tearDown();
+  override getSettingDefinitions(): SettingDefinitionItem[] {
+    return [
+      {
+        aliases: [
+          ...new Set([
+            ...SETTINGS_SEARCH_ALIAS_KEYS.map((key) => t(key)),
+            ...SETTINGS_SEARCH_LITERAL_ALIASES,
+          ]),
+        ],
+        name: t('plugin.name'),
+        render: (setting) => {
+          // Replace the declarative row instead of nesting the existing setting
+          // groups inside `.setting-item`, which would change Obsidian's layout.
+          const parent = setting.settingEl.parentElement;
+          if (parent === null) return;
+          const host = parent.createDiv();
+          setting.settingEl.replaceWith(host);
+          this.renderSettings(host);
 
-    const { containerEl } = this;
+          return () => {
+            this.tearDown();
+            host.remove();
+          };
+        },
+      },
+    ];
+  }
+
+  override display(): void {
+    this.renderSettings(this.containerEl);
+  }
+
+  private renderSettings(containerEl: HTMLElement): void {
+    this.tearDown();
     const settings = this.dependencies.getSettings();
 
     containerEl.empty();
@@ -155,7 +255,7 @@ export class LocalSttSettingTab extends PluginSettingTab {
         void this.dependencies.openModelPicker({
           initialTask: 'stt',
           onChanged: () => {
-            this.display();
+            this.refreshSettingsTab();
           },
         });
       },
@@ -168,7 +268,7 @@ export class LocalSttSettingTab extends PluginSettingTab {
             feedback: this.dependencies.feedback,
             manager,
             onChanged: async () => {
-              this.display();
+              this.refreshSettingsTab();
             },
           },
         ).open();
@@ -272,7 +372,7 @@ export class LocalSttSettingTab extends PluginSettingTab {
             // Capture cannot work; leaving the toggle on would just fail
             // every session start with the same error.
             await this.access.persistOne('includeSystemAudio', false);
-            this.display();
+            this.refreshSettingsTab();
           }
         },
       });
@@ -337,7 +437,7 @@ export class LocalSttSettingTab extends PluginSettingTab {
           new DiarizationSettingsModal(this.app, {
             getSettings: () => this.dependencies.getSettings(),
             onSave: () => {
-              this.display();
+              this.refreshSettingsTab();
             },
             saveSettings: async (nextSettings) => {
               await this.dependencies.saveSettings(nextSettings);
@@ -358,7 +458,7 @@ export class LocalSttSettingTab extends PluginSettingTab {
       toggle.setValue(settings.llmFeaturesEnabled);
       toggle.onChange(async (value) => {
         await this.access.persistOne('llmFeaturesEnabled', value);
-        this.display();
+        this.refreshSettingsTab();
       });
     });
 
@@ -378,21 +478,20 @@ export class LocalSttSettingTab extends PluginSettingTab {
       .setName(t('settings.llm.restoreDefaults.name'))
       .setDesc(t('settings.llm.restoreDefaults.desc'))
       .addButton((button) => {
-        button
-          .setButtonText(t('settings.llm.restoreDefaults.button'))
-          .setWarning()
-          .onClick(() => {
-            new ConfirmModal(this.app, {
-              confirmLabel: t('settings.llm.restoreDefaults.button'),
-              destructive: true,
-              message: t('settings.llm.restoreDefaults.confirmMessage'),
-              onConfirm: async () => {
-                await this.dependencies.resetLlmTransformation();
-                this.display();
-              },
-              title: t('settings.llm.restoreDefaults.name'),
-            }).open();
-          });
+        styleDestructiveButton(
+          button.setButtonText(t('settings.llm.restoreDefaults.button')),
+        ).onClick(() => {
+          new ConfirmModal(this.app, {
+            confirmLabel: t('settings.llm.restoreDefaults.button'),
+            destructive: true,
+            message: t('settings.llm.restoreDefaults.confirmMessage'),
+            onConfirm: async () => {
+              await this.dependencies.resetLlmTransformation();
+              this.refreshSettingsTab();
+            },
+            title: t('settings.llm.restoreDefaults.name'),
+          }).open();
+        });
       });
 
     // --- Engine options ---
@@ -452,7 +551,7 @@ export class LocalSttSettingTab extends PluginSettingTab {
       toggle.setValue(this.dependencies.getSettings().developerMode);
       toggle.onChange(async (value) => {
         await this.access.persistOne('developerMode', value);
-        this.display();
+        this.refreshSettingsTab();
       });
     });
   }
@@ -477,6 +576,18 @@ export class LocalSttSettingTab extends PluginSettingTab {
     this.disposeMissingSidecarBanner?.();
     this.disposeMissingSidecarBanner = null;
     this.missingSidecarProgressEl = null;
+  }
+
+  private refreshSettingsTab(): void {
+    // `update()` was added in Obsidian 1.13. Keep the runtime feature check so
+    // the legacy display path continues to work at the manifest's 1.11.5 floor.
+    const update = (this as { update?: () => void }).update;
+    if (typeof update === 'function') {
+      update.call(this);
+      return;
+    }
+    const display = (this as { display: () => void }).display;
+    display.call(this);
   }
 
   /** Returns whether the probe confirmed capture is usable. */
@@ -523,7 +634,7 @@ export class LocalSttSettingTab extends PluginSettingTab {
           new SmartParagraphSettingsModal(this.app, {
             getSettings: () => this.dependencies.getSettings(),
             onSave: () => {
-              this.display();
+              this.refreshSettingsTab();
             },
             saveSettings: async (settings) => {
               await this.dependencies.saveSettings(settings);
@@ -553,7 +664,7 @@ export class LocalSttSettingTab extends PluginSettingTab {
           new TimestampSettingsModal(this.app, {
             getSettings: () => this.dependencies.getSettings(),
             onSave: () => {
-              this.display();
+              this.refreshSettingsTab();
             },
             saveSettings: async (nextSettings) => {
               await this.dependencies.saveSettings(nextSettings);
@@ -776,7 +887,7 @@ export class LocalSttSettingTab extends PluginSettingTab {
       modelInstallManager: this.dependencies.modelInstallManager,
       pluginVersion: this.dependencies.pluginVersion,
       refreshSettingsTab: () => {
-        this.display();
+        this.refreshSettingsTab();
       },
       restartSidecar: this.dependencies.restartSidecar,
       sidecarConnection: this.dependencies.sidecarConnection,

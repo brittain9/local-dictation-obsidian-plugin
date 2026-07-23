@@ -26,6 +26,7 @@ import {
   variantDirectoryPath,
 } from '../sidecar/sidecar-installer';
 import { SidecarNotInstalledError } from '../sidecar/sidecar-paths';
+import { styleDestructiveButton } from '../ui/destructive-button';
 import { renderActiveInstallCard } from './install-progress-row';
 import { addPositiveIntSetting, addTextSetting, type SettingAccess } from './setting-helpers';
 
@@ -444,7 +445,9 @@ function addInstallButtons(
       button.setButtonText(t('settings.sidecar.reinstall')).onClick(opts.onReinstall);
     });
     setting.addButton((button) => {
-      button.setButtonText(t('settings.sidecar.uninstall')).setWarning().onClick(opts.onUninstall);
+      styleDestructiveButton(button.setButtonText(t('settings.sidecar.uninstall'))).onClick(
+        opts.onUninstall,
+      );
     });
     return;
   }

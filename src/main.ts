@@ -83,7 +83,7 @@ export default class LocalSttPlugin extends Plugin {
   private ribbonController: DictationRibbonController | null = null;
   private readAloudController: ReadAloudController | null = null;
   private readAloudStatus: HTMLElement | null = null;
-  private settings: PluginSettings = DEFAULT_PLUGIN_SETTINGS;
+  override settings: PluginSettings = DEFAULT_PLUGIN_SETTINGS;
   private sidecarConnection: SidecarConnection | null = null;
   private sidecarInstallManager: SidecarInstallManager | null = null;
   private readonly temporaryLeafPinLeaseManager = new TemporaryLeafPinLeaseManager();

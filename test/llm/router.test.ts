@@ -85,23 +85,23 @@ describe('createLlmRouter', () => {
     expect(createProvider).toHaveBeenCalledWith('openrouter', expect.any(Object), 'sk-or-secure');
   });
 
-  it.each([
-    'remote',
-    'auto',
-  ] as const)('forces %s routing through Ollama when remote LLM features are disabled', async (llmRouting) => {
-    const { calls, router } = routerWithSpy(
-      settings({
-        llmRemoteFeaturesEnabled: false,
-        llmRemoteThresholdChars: 100,
-        llmRouting,
-      }),
-    );
+  it.each(['remote', 'auto'] as const)(
+    'forces %s routing through Ollama when remote LLM features are disabled',
+    async (llmRouting) => {
+      const { calls, router } = routerWithSpy(
+        settings({
+          llmRemoteFeaturesEnabled: false,
+          llmRemoteThresholdChars: 100,
+          llmRouting,
+        }),
+      );
 
-    const result = await router.cleanup(cleanupArgs('x'.repeat(1_000)));
+      const result = await router.cleanup(cleanupArgs('x'.repeat(1_000)));
 
-    expect(result.providerId).toBe('ollama');
-    expect(calls).toEqual([{ model: 'llama3.2:latest', providerId: 'ollama' }]);
-  });
+      expect(result.providerId).toBe('ollama');
+      expect(calls).toEqual([{ model: 'llama3.2:latest', providerId: 'ollama' }]);
+    },
+  );
 
   it('re-checks remote availability when cleanup runs', async () => {
     let remoteEnabled = true;

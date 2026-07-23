@@ -51,22 +51,25 @@ describe('user feedback', () => {
     ['warning', 8_000, 'warn'],
     ['error', 10_000, 'error'],
     ['action-required', 0, 'warn'],
-  ] as const)('maps %s feedback to its presentation and log policy', (intent, durationMs, level) => {
-    const { feedback, logger, presentations } = createHarness();
+  ] as const)(
+    'maps %s feedback to its presentation and log policy',
+    (intent, durationMs, level) => {
+      const { feedback, logger, presentations } = createHarness();
 
-    feedback.show({ intent, message: 'Speech engine needs attention.' });
+      feedback.show({ intent, message: 'Speech engine needs attention.' });
 
-    expect(presentations).toEqual([
-      expect.objectContaining({
-        durationMs,
-        message: 'Local Dictation: Speech engine needs attention.',
-      }),
-    ]);
-    expect(logger[level]).toHaveBeenCalledWith(
-      'feedback',
-      `${intent}: Speech engine needs attention.`,
-    );
-  });
+      expect(presentations).toEqual([
+        expect.objectContaining({
+          durationMs,
+          message: 'Local Dictation: Speech engine needs attention.',
+        }),
+      ]);
+      expect(logger[level]).toHaveBeenCalledWith(
+        'feedback',
+        `${intent}: Speech engine needs attention.`,
+      );
+    },
+  );
 
   it('keeps a technical cause out of user copy while retaining it in the durable log', () => {
     const { feedback, logger, presentations } = createHarness();

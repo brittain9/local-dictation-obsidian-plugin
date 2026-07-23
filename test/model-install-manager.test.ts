@@ -59,14 +59,12 @@ describe('createInstallLifecycleLogMessage', () => {
     );
   });
 
-  it.each([
-    'failed',
-    'verifying',
-    'probing',
-    'queued',
-  ] as const)('returns null at intermediate state %s', (state) => {
-    expect(createInstallLifecycleLogMessage({ ...sampleInstallUpdate(), state })).toBeNull();
-  });
+  it.each(['failed', 'verifying', 'probing', 'queued'] as const)(
+    'returns null at intermediate state %s',
+    (state) => {
+      expect(createInstallLifecycleLogMessage({ ...sampleInstallUpdate(), state })).toBeNull();
+    },
+  );
 });
 
 // ---------------------------------------------------------------------------
@@ -240,16 +238,15 @@ describe('ModelInstallManager', () => {
       expect(harness.manager.getState().activeInstall?.installUpdate.downloadedBytes).toBe(400);
     });
 
-    it.each([
-      'completed',
-      'failed',
-      'cancelled',
-    ] as const)('returns to idle on terminal state %s', (state) => {
-      emitInstallUpdate(harness);
-      emitInstallUpdate(harness, { state });
+    it.each(['completed', 'failed', 'cancelled'] as const)(
+      'returns to idle on terminal state %s',
+      (state) => {
+        emitInstallUpdate(harness);
+        emitInstallUpdate(harness, { state });
 
-      expect(harness.manager.getState().activeInstall).toBeNull();
-    });
+        expect(harness.manager.getState().activeInstall).toBeNull();
+      },
+    );
 
     it('refreshes installedModels after a completed event', async () => {
       expect(harness.manager.getState().installedModels).toHaveLength(1);

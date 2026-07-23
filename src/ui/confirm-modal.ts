@@ -2,6 +2,7 @@ import type { App } from 'obsidian';
 import { Modal, Setting } from 'obsidian';
 
 import { t } from '../shared/i18n';
+import { styleDestructiveButton } from './destructive-button';
 
 export interface ConfirmModalOptions {
   cancelLabel?: string;
@@ -34,7 +35,7 @@ export class ConfirmModal extends Modal {
       .addButton((button) => {
         button.setButtonText(this.options.confirmLabel);
         if (this.options.destructive === true) {
-          button.setWarning();
+          styleDestructiveButton(button, { primary: true });
         } else {
           button.setCta();
         }
