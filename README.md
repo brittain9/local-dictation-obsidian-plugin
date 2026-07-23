@@ -99,7 +99,9 @@ macOS and Windows are the primary tested targets. Fedora native and Flatpak inst
 
 ## Support development
 
-If Local Dictation is useful to you and you would like to support continued local-first development, you can [buy me a coffee](https://buymeacoffee.com/alexbrittaq).
+If Local Dictation is useful to you, you can support continued local-first development:
+
+<a href="https://buymeacoffee.com/alexbrittaq"><img src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png" alt="Buy Me a Coffee" width="217"></a>
 
 ## Development and project links
 
