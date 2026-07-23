@@ -67,6 +67,22 @@ export class TestElement {
     return undefined;
   }
 
+  insertBefore(child: TestElement, before: TestElement): TestElement {
+    const existingIndex = this.children.indexOf(child);
+    if (existingIndex >= 0) this.children.splice(existingIndex, 1);
+    const beforeIndex = this.children.indexOf(before);
+    if (beforeIndex < 0) throw new Error('Reference child not found');
+    this.children.splice(beforeIndex, 0, child);
+    return child;
+  }
+
+  removeChild(child: TestElement): TestElement {
+    const index = this.children.indexOf(child);
+    if (index < 0) throw new Error('Child not found');
+    this.children.splice(index, 1);
+    return child;
+  }
+
   setText(text: string): void {
     this.textContent = text;
   }

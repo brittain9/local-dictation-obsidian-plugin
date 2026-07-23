@@ -1,17 +1,17 @@
 # System Architecture
 
-Local Dictation is an Obsidian plugin that turns speech into text entirely
-on-device. Audio flows from a capture source through a browser audio layer,
-across a binary protocol into a native Rust sidecar, and back as a transcript
-that the plugin renders into the active editor.
+Local Dictation is an Obsidian plugin that handles speech in both directions
+entirely on-device. Dictation audio crosses a binary protocol into a native
+Rust sidecar and returns as text. Read-aloud text takes the inverse path and
+returns as audio for playback in Obsidian.
 
 The split is deliberate:
 
-- **The plugin (TypeScript, `src/`)** owns Obsidian UX — capture, settings,
-  orchestration, the optional LLM transform, rendering, and editor insertion.
-- **The sidecar (Rust, `native/`)** owns everything between "audio in" and
-  "transcript out" — voice-activity detection, inference, the post-engine stage
-  chain, and optional speaker diarization.
+- **The plugin (TypeScript, `src/`)** owns Obsidian UX — capture and playback,
+  settings, orchestration, Markdown extraction, the optional LLM transform,
+  rendering, and editor insertion.
+- **The sidecar (Rust, `native/`)** owns local speech inference — the complete
+  audio-to-text pipeline plus text-to-audio synthesis and speed processing.
 
 ```mermaid
 flowchart LR
@@ -20,6 +20,8 @@ flowchart LR
         CFG["Session config + commands"]
         LLM["LLM transform<br/>(optional · Ollama / OpenRouter)"]
         REND["Render + insert<br/>(timestamps, formatting, speaker labels)"]
+        TEXT["Markdown extraction<br/>+ sentence chunks"]
+        PLAY["Web Audio playback"]
     end
 
     subgraph Sidecar ["Native sidecar (Rust)"]
@@ -27,17 +29,20 @@ flowchart LR
         INF["Inference · engine registry"]
         STAGE["Post-engine stages<br/>(hallucination filter)"]
         DIA["Diarization<br/>(optional)"]
+        SYNTH["Pocket TTS synthesis<br/>+ time stretch"]
         VAD --> INF --> STAGE --> DIA
     end
 
     CAP -->|"stdin: audio frames"| VAD
     CFG -->|"stdin: JSON commands"| VAD
     DIA -->|"stdout: transcript_ready"| LLM --> REND
+    TEXT -->|"stdin: start_synthesis"| SYNTH
+    SYNTH -->|"stdout: 24 kHz PCM"| PLAY
 ```
 
 The plugin and sidecar talk over a single framed byte stream on the sidecar's
-stdin/stdout. Audio frames and JSON commands share stdin; JSON events come back
-on stdout. `transcript_ready` carries revisioned text. Batch families emit one
+stdin/stdout. Dictation audio frames and JSON commands share stdin; JSON events
+and read-aloud PCM frames come back on stdout. `transcript_ready` carries revisioned text. Batch families emit one
 final revision per utterance; streaming families can emit changed partial
 revisions before the final. LLM transforms and editor rendering remain plugin
 concerns.
@@ -92,7 +97,7 @@ sequenceDiagram
     participant S as Sidecar
 
     Note over P,S: stdin — audio frames + JSON commands
-    Note over P,S: stdout — JSON events only
+    Note over P,S: stdout — JSON events + synthesis PCM
 
     P->>S: audio frame
     P->>S: start_session
@@ -100,6 +105,9 @@ sequenceDiagram
     S->>P: session_state_changed
     P->>S: audio frame
     S->>P: transcript_ready
+    P->>S: start_synthesis
+    S->>P: synthesis_started
+    S->>P: synthesis_chunk_meta + PCM frame
 ```
 
 The sidecar is spawned as a subprocess of Obsidian (`child_process.spawn`,
@@ -109,7 +117,9 @@ no WebSocket, no IPC library. `FramedMessageParser` (TS) and `read_frame` (Rust)
 reassemble frames across chunk boundaries.
 
 - `stdin` (TS → Rust): audio frames (`0x02`) and JSON command frames (`0x01`).
-- `stdout` (Rust → TS): JSON event frames (`0x01`) only.
+- `stdout` (Rust → TS): JSON event frames (`0x01`) and read-aloud PCM16LE
+  frames (`0x03`). A synthesis frame starts with little-endian
+  `u32 synthesisId` + `u32 seq`, followed by mono PCM.
 
 **Commands (TS → Rust):**
 
@@ -129,6 +139,9 @@ reassemble frames across chunk boundaries.
 | `install_model` | Start a model download + install |
 | `cancel_model_install` | Cancel a pending install |
 | `remove_model` | Delete an installed model |
+| `start_synthesis` | Start read aloud for ordered text chunks, model, voice, and speed |
+| `cancel_synthesis` | Cancel the matching synthesis session immediately |
+| `synthesis_playback_position` | Acknowledge the last played chunk for audio-ahead flow control |
 
 **Events (Rust → TS):**
 
@@ -151,6 +164,10 @@ reassemble frames across chunk boundaries.
 | `model_probe_result` | Availability check + merged capabilities for the selection |
 | `model_install_update` | Install progress |
 | `model_removed` | Deletion confirmation |
+| `synthesis_started` | Synthesis accepted, including the output sample rate |
+| `synthesis_chunk_meta` | Sequence, source range, and duration for the following PCM frame |
+| `synthesis_complete` | All synthesis audio has been produced |
+| `synthesis_error` | Typed failure for one synthesis session |
 
 Transport latency is sub-millisecond per frame; the main loop polls at 10 ms.
 
@@ -254,11 +271,14 @@ the model, and produces timestamped text segments.
 | Family adapter | `ModelFamilyAdapter` | Model shape: graph I/O, tokenizer, prompt tokens, audio limits, probe rules |
 | Loaded batch model | `LoadedModel` | Per-session batch inference state; `transcribe(&TranscriptionRequest)` |
 | Loaded streaming model | `StreamingModel` | Per-utterance PCM acceptance, partial decode, final decode, reset |
+| Loaded synthesis model | `SynthesisModel` | Text + voice to mono PCM for read aloud |
 
 `EngineRegistry::build()` is the single registration site. Worker dispatch uses
 `adapter.load → loaded.transcribe` for batch families and
 `adapter.load_streaming → accept_audio / partial / finalize_utterance` for a
 streaming family.
+Pocket TTS uses `adapter.load_synthesis → synthesis_model.synthesize` on a
+separate synthesis worker, so it does not enter the dictation session pipeline.
 Capabilities reach the plugin two ways: inventory (`system_info`) and
 per-selection merge (`model_probe_result.mergedCapabilities`). Each runtime probes
 its accelerators at startup — `whisper_cpp` checks for a usable Metal or CUDA
@@ -270,10 +290,10 @@ reports what's actually available.
 | Runtime | Crate | Model format | Adapter |
 |---|---|---|---|
 | `whisper_cpp` | whisper-rs (whisper.cpp) | GGML `.bin` | `whisper` |
-| `onnx_runtime` | ort (ONNX Runtime) | ONNX / ORT | `cohere_transcribe`, `moonshine`, `nemotron_asr` |
+| `onnx_runtime` | ort (ONNX Runtime) | ONNX / ORT | `cohere_transcribe`, `moonshine`, `nemotron_asr`, `pocket_tts` |
 
 Cargo features: `engine-whisper`, `engine-cohere-transcribe`,
-`engine-moonshine`, `engine-nemotron-asr`, `gpu-metal`, `gpu-cuda`,
+`engine-moonshine`, `engine-nemotron-asr`, `engine-pocket-tts`, `gpu-metal`, `gpu-cuda`,
 `gpu-ort-cuda`. A missing
 `(runtimeId, familyId)` pair surfaces as an `unsupported_engine` error rather
 than a silent failure.
@@ -424,6 +444,28 @@ The plugin consumes every accepted `transcript_ready` revision:
    span, clears the decoration, and prevents all later model revisions from
    overwriting it. Final, latch, and session teardown all clear provisional
    state.
+
+---
+
+### Stage 8: Read Aloud
+
+The read-aloud path is independent from microphone capture and transcription:
+
+1. The plugin selects the active text scope, removes Markdown syntax, skips
+   frontmatter/code/math, and sends ordered sentence chunks with source ranges.
+2. The sidecar resolves a catalog model whose task is `tts`, loads its selected
+   voice, synthesizes 24 kHz mono audio, and applies pitch-preserving speed
+   adjustment for the supported 0.75–2.0× range.
+3. Chunk metadata and binary PCM frames share stdout. The plugin schedules them
+   through Web Audio and reports each played sequence to bound synthesis to
+   roughly 30 seconds of audio ahead.
+4. Pause suspends the playback context; Stop cancels native synthesis and clears
+   queued audio. Read aloud and dictation are mutually exclusive so playback
+   cannot feed an active capture session.
+
+The model catalog and settings keep independent `stt` and `tts` selections.
+Pocket TTS models and optional voices are downloaded on demand and verified by
+their pinned size and SHA-256 before activation.
 
 ---
 

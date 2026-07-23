@@ -28,7 +28,7 @@ export const de = {
   'notice.sidecarRestarted': 'sidecar ({version}) neu gestartet.',
   'notice.sidecarRestartFailed': 'Sidecar-Neustart fehlgeschlagen',
   'notice.sidecarRestartRequiresIdle':
-    'Starten Sie den sidecar nur dann neu, wenn das Diktieren im Leerlauf ist.',
+    'Starten Sie den sidecar nur neu, wenn Diktat und Vorlesen inaktiv sind.',
   'notice.transcriptRecordFailed': 'Das Transkript konnte nicht aufgezeichnet werden.',
   'notice.sidecarSessionError': 'Die Sprach-Engine hat einen Fehler gemeldet.',
   'notice.sidecarVersionDrift.actionMultiple': 'Sprach-Engines aktualisieren',
@@ -129,7 +129,7 @@ export const de = {
     'Wählen Sie die Sprache, die Sie sprechen möchten. Die manuelle Auswahl ermöglicht die vorhersehbarste Bereinigung. Die automatische Erkennung startet möglicherweise langsamer und wählt eine Sprache pro Äußerung aus.',
   'settings.dictationLanguage.unsupported': '{language} (nicht unterstützt)',
   'settings.engine.named': '{engine}-Engine',
-  'settings.groups.model': 'Modell',
+  'settings.groups.model': 'Modelle',
   'settings.groups.capture': 'Aufnahme',
   'settings.groups.transcriptOutput': 'Transkriptausgabe',
   'settings.groups.timestamps': 'Zeitstempel',
@@ -750,6 +750,8 @@ export const de = {
   'sidecarError.invalid_frame': 'Die Sprach-Engine hat einen ungültigen Protokollrahmen empfangen.',
   'sidecarError.invalid_model_file':
     'Die Modelldatei fehlt, ist nicht lesbar oder wird nicht unterstützt.',
+  'sidecarError.invalid_model_task':
+    'Das ausgewählte Modell kann nicht zum Diktieren verwendet werden.',
   'sidecarError.invalid_model_store': 'Der Modellspeicherordner ist nicht verfügbar oder ungültig.',
   'sidecarError.missing_model_file': 'Modelldatei existiert nicht oder ist keine normale Datei.',
   'sidecarError.no_active_install': 'Es gibt keine aktive Modellinstallation zum Abbrechen.',
@@ -811,4 +813,49 @@ export const de = {
     'Dieser Sprach-Engine-Build ist für Ihre Plattform oder Architektur nicht verfügbar.',
   'setup.sidecar.modal.genericInstallError':
     'Die Sprach-Engine konnte nicht installiert werden. Überprüfen Sie die Plugin-Protokolle auf Details und versuchen Sie es dann erneut.',
+  'commands.readAloud': 'Vorlesen',
+  'commands.pauseResumeReadAloud': 'Vorlesen pausieren oder fortsetzen',
+  'commands.stopReadAloud': 'Vorlesen beenden',
+  'settings.groups.readAloud': 'Vorlesen',
+  'settings.model.noModelSelected': 'Kein Modell ausgewählt',
+  'settings.model.speechToText': 'Sprach-zu-Text-Modell',
+  'settings.model.textToSpeech': 'Text-zu-Sprache-Modell',
+  'settings.readAloud.hotkey': 'Empfohlene Tastenkombination',
+  'settings.readAloud.hotkeyDesc':
+    'Lege eine Tastenkombination für Vorlesen fest. Markierter Text wird vorgelesen, andernfalls die gesamte Notiz.',
+  'settings.readAloud.voice': 'Stimme',
+  'settings.readAloud.voiceDesc': 'Wähle eine für das ausgewählte Modell installierte Stimme.',
+  'settings.readAloud.noVoices': 'Keine installierten Stimmen',
+  'settings.readAloud.speed': 'Lesegeschwindigkeit',
+  'settings.readAloud.speedDesc':
+    'Eine Änderung während des Vorlesens startet am aktuellen Satz neu.',
+  'models.manage.dictationModels': 'Sprache zu Text',
+  'models.manage.readAloudModels': 'Text zu Sprache',
+  'models.manage.allLanguages': 'Alle Sprachen',
+  'models.manage.familiesLabel': 'Modellfamilien',
+  'models.manage.noneForLanguage': 'Für diese Aufgabe und Sprache sind keine Modelle verfügbar.',
+  'models.manage.optionalVoice': 'Optionale lokale Stimme',
+  'models.manage.voiceInstalled': 'Installiert',
+  'tts.status.reading': 'Wird vorgelesen…',
+  'tts.status.paused': 'Vorlesen pausiert',
+  'tts.control.model': 'Modell: {model}',
+  'tts.control.speed': 'Geschwindigkeit: {speed}',
+  'tts.notice.noText': 'Hier gibt es keinen vorlesbaren Text.',
+  'tts.notice.modelRequired': 'Installiere und wähle zuerst ein Vorlesemodell.',
+  'tts.notice.voiceRequired': 'Wähle zuerst eine installierte Stimme.',
+  'tts.notice.startFailed': 'Vorlesen konnte nicht gestartet werden.',
+  'tts.notice.playbackFailed': 'Audiowiedergabe fehlgeschlagen.',
+  'tts.notice.sidecarExited':
+    'Das Vorlesen wurde beendet, weil der Sidecar unerwartet beendet wurde.',
+  'sidecarError.invalid_synthesis_request': 'Die Vorleseanfrage ist ungültig.',
+  'sidecarError.missing_voice_file': 'Die ausgewählte Vorlesestimme ist nicht installiert.',
+  'sidecarError.sidecar_exited': 'Der Sidecar-Prozess wurde unerwartet beendet.',
+  'sidecarError.synthesis_cancelled': 'Das Vorlesen wurde abgebrochen.',
+  'sidecarError.synthesis_failed': 'Die lokale Sprachsynthese ist fehlgeschlagen.',
+  'sidecarError.synthesis_worker_unavailable':
+    'Der lokale Sprachsynthese-Worker ist nicht verfügbar.',
+  'catalog.pocket_tts_english_2026_04_int8.summary':
+    'Natürliches lokales Vorlesen auf Englisch mit auswählbaren Stimmen.',
+  'catalog.family.pocket_tts.summary':
+    'Liest Notizen lokal auf Englisch, Französisch, Deutsch, Spanisch, Portugiesisch und Italienisch mit auswählbaren Stimmen und tonhöhentreuer Geschwindigkeitssteuerung vor.',
 } as const satisfies TranslationCatalog;

@@ -1,6 +1,6 @@
 import { dirname, join } from 'node:path';
 import { IS_PRODUCTION_BUILD } from 'virtual:build-mode';
-import { FileSystemAdapter, getLanguage, Platform, Plugin } from 'obsidian';
+import { FileSystemAdapter, getLanguage, Menu, Platform, Plugin, setIcon } from 'obsidian';
 
 import { AudioCaptureStream } from './audio/audio-capture-stream';
 import { SidecarAudioLevelMeter } from './audio/sidecar-audio-level-meter';
@@ -16,8 +16,13 @@ import { TemporaryLeafPinLeaseManager } from './editor/temporary-leaf-pin';
 import { syncDictationLanguageWithObsidian } from './language/dictation-language-sync';
 import type { LlmCleanupFailure } from './llm/provider';
 import { createLlmRouter } from './llm/router';
-import { ManageModelsModal } from './models/manage-models-modal';
+import { ManageModelsModal, type ModelPickerOptions } from './models/manage-models-modal';
 import { ModelInstallManager } from './models/model-install-manager';
+import {
+  type CatalogModelRecord,
+  type CatalogModelSelection,
+  matchesModelTriple,
+} from './models/model-management-types';
 import { Session } from './session/session';
 import { logAccelerationFallbacks } from './settings/acceleration-info';
 import { LlmPresetStateStore } from './settings/llm-preset-state';
@@ -36,6 +41,7 @@ import {
   type SidecarInstallActionDeps,
 } from './settings/sidecar-settings-section';
 import { SetupWizardModal } from './setup/setup-wizard-modal';
+import { formatVoiceLabel } from './shared/format-utils';
 import { t } from './shared/i18n';
 import { createObsidianFeedbackPresenter } from './shared/obsidian-feedback-presenter';
 import { createPluginLogger, type PluginLogger } from './shared/plugin-logger';
@@ -54,6 +60,9 @@ import {
   detectSidecarVersionDrift,
   type SidecarVersionDrift,
 } from './sidecar/sidecar-version-drift';
+import { READ_ALOUD_SPEED_PRESETS, readAloudControlLabels } from './tts/read-aloud-control-labels';
+import { ReadAloudController, type ReadAloudState } from './tts/read-aloud-controller';
+import { didReadAloudSettingsChange, resolveReadAloudVoiceId } from './tts/read-aloud-selection';
 import { DictationRibbonController } from './ui/dictation-ribbon';
 import { LOCAL_DICTATION_VIEW_TYPE, LocalDictationView } from './ui/local-dictation-view';
 
@@ -77,6 +86,9 @@ export default class LocalSttPlugin extends Plugin {
     workspace: this.app.workspace,
   });
   private ribbonController: DictationRibbonController | null = null;
+  private readAloudController: ReadAloudController | null = null;
+  private releaseReadAloudModelSubscription: (() => void) | null = null;
+  private readAloudStatus: HTMLElement | null = null;
   override settings: PluginSettings = DEFAULT_PLUGIN_SETTINGS;
   private sidecarConnection: SidecarConnection | null = null;
   private sidecarInstallManager: SidecarInstallManager | null = null;
@@ -179,7 +191,7 @@ export default class LocalSttPlugin extends Plugin {
     );
 
     const ribbonElement = this.addRibbonIcon('mic', t('ribbon.idle'), () => {
-      void this.requireDictationController().toggleDictation();
+      void this.toggleDictationWithInterlock();
     });
     this.ribbonController = new DictationRibbonController(ribbonElement);
     this.ribbonController.setVisualizer(this.audioLevelMeter);
@@ -235,6 +247,22 @@ export default class LocalSttPlugin extends Plugin {
       },
       sidecarConnection: this.sidecarConnection,
     });
+    this.readAloudStatus = this.addStatusBarItem();
+    this.readAloudStatus.addClass('local-stt-read-aloud-status');
+    this.readAloudController = new ReadAloudController({
+      feedback: this.feedback,
+      getCatalog: () => this.requireModelInstallManager().getState().catalog,
+      getSettings: () => this.settings,
+      isDictationBusy: () => this.requireDictationController().isCaptureActive(),
+      logger: this.logger,
+      onStateChange: (state) => this.renderReadAloudStatus(state),
+      sidecarConnection: this.sidecarConnection,
+      stopDictation: () => this.requireDictationController().stopDictation(),
+    });
+    this.renderReadAloudStatus('idle');
+    this.releaseReadAloudModelSubscription = this.requireModelInstallManager().subscribe(() => {
+      this.renderReadAloudStatus(this.readAloudController?.getState() ?? 'idle');
+    });
 
     this.addSettingTab(
       new LocalSttSettingTab(this.app, this, {
@@ -283,7 +311,9 @@ export default class LocalSttPlugin extends Plugin {
       },
       hasLastUtterance: () => this.lastUtteranceRecovery.hasUtterance(),
       hasRawTranscriptRecovery: () => this.rawTranscriptRecovery.hasRecovery(),
+      isReadAloudActive: () => this.requireReadAloudController().isActive(),
       plugin: this,
+      readAloud: (editor) => this.requireReadAloudController().read(editor),
       reinsertLastUtterance: (editor) => {
         this.lastUtteranceRecovery.reinsert(editor);
       },
@@ -291,10 +321,26 @@ export default class LocalSttPlugin extends Plugin {
         this.rawTranscriptRecovery.restoreRawTranscript();
       },
       restartSidecar: async () => this.restartSidecar(),
-      startDictation: async () => this.requireDictationController().startDictation(),
+      startDictation: async () => this.startDictationWithInterlock(),
+      stopReadAloud: () => this.requireReadAloudController().stop(),
       stopDictation: async () => this.requireDictationController().stopDictation(),
-      toggleDictation: async () => this.requireDictationController().toggleDictation(),
+      toggleDictation: async () => this.toggleDictationWithInterlock(),
+      toggleReadAloudPaused: () => this.requireReadAloudController().togglePaused(),
     });
+
+    this.registerEvent(
+      this.app.workspace.on('editor-menu', (menu, editor) => {
+        if (!editor.somethingSelected()) return;
+        menu.addItem((item) => {
+          item
+            .setTitle(t('commands.readAloud'))
+            .setIcon('audio-lines')
+            .onClick(() => {
+              void this.requireReadAloudController().read(editor);
+            });
+        });
+      }),
+    );
 
     this.app.workspace.onLayoutReady(() => {
       void this.runPostLayoutStartup();
@@ -407,18 +453,19 @@ export default class LocalSttPlugin extends Plugin {
       sidecarConnection: this.requireSidecarConnection(),
       sidecarInstallManager: this.requireSidecarInstallManager(),
       sidecarStartupTimeoutMs: this.settings.sidecarStartupTimeoutSeconds * 1000,
-      startDictation: () => this.requireDictationController().startDictation(),
+      startDictation: () => this.startDictationWithInterlock(),
     });
     modal.open();
   }
 
-  async openModelPicker(options: { onChanged?: () => void } = {}): Promise<void> {
+  async openModelPicker(options: ModelPickerOptions = {}): Promise<void> {
     if (!(await this.isSidecarInstalled())) {
       await this.openSetupWizard();
       return;
     }
     new ManageModelsModal(this.app, {
       feedback: this.feedback,
+      ...(options.initialTask === undefined ? {} : { initialTask: options.initialTask }),
       manager: this.requireModelInstallManager(),
       onChanged: options.onChanged ?? (() => {}),
       onRunSetup: () => {
@@ -446,6 +493,8 @@ export default class LocalSttPlugin extends Plugin {
   private async disposeAll(): Promise<void> {
     this.lastUtteranceRecovery.clear();
     this.rawTranscriptRecovery.clear();
+    this.releaseReadAloudModelSubscription?.();
+    this.releaseReadAloudModelSubscription = null;
 
     try {
       this.modelInstallManager?.dispose();
@@ -457,6 +506,12 @@ export default class LocalSttPlugin extends Plugin {
       this.sidecarInstallManager?.dispose();
     } catch (error) {
       this.logger.error('installer', 'failed to dispose sidecar install manager cleanly', error);
+    }
+
+    try {
+      this.readAloudController?.dispose();
+    } catch (error) {
+      this.logger.error('tts', 'failed to dispose read-aloud controller cleanly', error);
     }
 
     try {
@@ -509,7 +564,10 @@ export default class LocalSttPlugin extends Plugin {
   }
 
   private async restartSidecar(): Promise<void> {
-    if (this.requireDictationController().isBusy()) {
+    if (
+      this.requireDictationController().isBusy() ||
+      (this.readAloudController?.isActive() ?? false)
+    ) {
       this.feedback.show({
         intent: 'warning',
         message: t('notice.sidecarRestartRequiresIdle'),
@@ -552,6 +610,10 @@ export default class LocalSttPlugin extends Plugin {
     if (options.persist) {
       await this.saveData(this.settings);
     }
+    if (didReadAloudSettingsChange(previousSettings, this.settings)) {
+      await this.readAloudController?.applySpeed(this.settings.ttsSpeed);
+      this.renderReadAloudStatus(this.readAloudController?.getState() ?? 'idle');
+    }
     if (previousSettings.llmFeaturesEnabled !== this.settings.llmFeaturesEnabled) {
       await this.syncLocalDictationSidebar();
       return;
@@ -585,6 +647,181 @@ export default class LocalSttPlugin extends Plugin {
     }
 
     return this.dictationController;
+  }
+
+  private requireReadAloudController(): ReadAloudController {
+    if (this.readAloudController === null) {
+      throw new Error('Read-aloud controller has not been initialized.');
+    }
+    return this.readAloudController;
+  }
+
+  private async startDictationWithInterlock(): Promise<void> {
+    this.readAloudController?.stop();
+    await this.requireDictationController().startDictation();
+  }
+
+  private async toggleDictationWithInterlock(): Promise<void> {
+    const controller = this.requireDictationController();
+    if (!controller.isCaptureActive()) this.readAloudController?.stop();
+    await controller.toggleDictation();
+  }
+
+  private renderReadAloudStatus(state: ReadAloudState): void {
+    const status = this.readAloudStatus;
+    if (status === null) return;
+    status.empty();
+    status.toggleClass('is-hidden', state === 'idle');
+    status.setAttribute('aria-live', 'polite');
+    status.setAttribute('role', 'status');
+    if (state === 'idle') return;
+    const selectedModel = this.selectedReadAloudModel();
+    const installedModels = this.installedReadAloudModels();
+    const installedVoices = this.installedReadAloudVoices();
+    const selectedVoice =
+      resolveReadAloudVoiceId(this.settings.selectedTtsVoice, selectedModel?.defaultVoice) ?? '';
+    const labels = readAloudControlLabels(state, {
+      modelName: selectedModel?.displayName ?? t('settings.model.noModelSelected'),
+      speed: this.settings.ttsSpeed,
+      voiceId: selectedVoice,
+    });
+    status.createSpan({
+      text: labels.state,
+    });
+    if (selectedModel !== null) {
+      const model = status.createEl('button', {
+        attr: { 'aria-label': labels.model, title: labels.model },
+        cls: 'local-stt-read-aloud-status__menu',
+        text: selectedModel.displayName,
+      });
+      model.addEventListener('click', (event) => {
+        const menu = new Menu();
+        for (const availableModel of installedModels) {
+          menu.addItem((item) => {
+            item
+              .setTitle(availableModel.displayName)
+              .setChecked(
+                matchesModelTriple(
+                  availableModel,
+                  selectedModel.runtimeId,
+                  selectedModel.familyId,
+                  selectedModel.modelId,
+                ),
+              )
+              .onClick(() => {
+                void this.selectReadAloudModel({
+                  familyId: availableModel.familyId,
+                  kind: 'catalog_model',
+                  modelId: availableModel.modelId,
+                  runtimeId: availableModel.runtimeId,
+                });
+              });
+          });
+        }
+        menu.showAtMouseEvent(event);
+      });
+    }
+    const speed = status.createEl('button', {
+      attr: { 'aria-label': labels.speed, title: labels.speed },
+      cls: 'local-stt-read-aloud-status__menu',
+      text: labels.speedValue,
+    });
+    speed.addEventListener('click', (event) => {
+      const menu = new Menu();
+      for (const value of READ_ALOUD_SPEED_PRESETS) {
+        menu.addItem((item) => {
+          item
+            .setTitle(`${value}×`)
+            .setChecked(value === this.settings.ttsSpeed)
+            .onClick(() => {
+              void this.updateSettings({ ...this.settings, ttsSpeed: value });
+            });
+        });
+      }
+      menu.showAtMouseEvent(event);
+    });
+    if (installedVoices.length > 0) {
+      const voice = status.createEl('button', {
+        attr: { 'aria-label': labels.voice, title: labels.voice },
+        cls: 'clickable-icon',
+      });
+      setIcon(voice, 'audio-waveform');
+      voice.addEventListener('click', (event) => {
+        const menu = new Menu();
+        for (const voiceId of installedVoices) {
+          menu.addItem((item) => {
+            item
+              .setTitle(formatVoiceLabel(voiceId))
+              .setChecked(voiceId === selectedVoice)
+              .onClick(() => {
+                void this.updateSettings({ ...this.settings, selectedTtsVoice: voiceId });
+              });
+          });
+        }
+        menu.showAtMouseEvent(event);
+      });
+    }
+    const pause = status.createEl('button', {
+      attr: { 'aria-label': labels.pauseResume, title: labels.pauseResume },
+      cls: 'clickable-icon',
+    });
+    setIcon(pause, state === 'paused' ? 'play' : 'pause');
+    pause.addEventListener('click', () => {
+      void this.requireReadAloudController().togglePaused();
+    });
+    const stop = status.createEl('button', {
+      attr: { 'aria-label': labels.stop, title: labels.stop },
+      cls: 'clickable-icon',
+    });
+    setIcon(stop, 'square');
+    stop.addEventListener('click', () => this.requireReadAloudController().stop());
+  }
+
+  private installedReadAloudModels(): CatalogModelRecord[] {
+    const state = this.requireModelInstallManager().getState();
+    return state.catalog.models.filter(
+      (model) =>
+        model.task === 'tts' &&
+        state.installedModels.some((installed) =>
+          matchesModelTriple(installed, model.runtimeId, model.familyId, model.modelId),
+        ),
+    );
+  }
+
+  private selectedReadAloudModel(): CatalogModelRecord | null {
+    const selection = this.settings.selectedTtsModel;
+    if (selection === null || selection.kind !== 'catalog_model') return null;
+    return (
+      this.requireModelInstallManager()
+        .getState()
+        .catalog.models.find((model) =>
+          matchesModelTriple(model, selection.runtimeId, selection.familyId, selection.modelId),
+        ) ?? null
+    );
+  }
+
+  private async selectReadAloudModel(selection: CatalogModelSelection): Promise<void> {
+    try {
+      await this.requireModelInstallManager().select(selection);
+    } catch (error) {
+      this.logger.error('tts', 'failed to select read-aloud model', error);
+      this.feedback.show({
+        cause: error,
+        intent: 'error',
+        message: t('models.manage.selectFailed'),
+      });
+    }
+  }
+
+  private installedReadAloudVoices(): string[] {
+    const selection = this.settings.selectedTtsModel;
+    if (selection === null || selection.kind !== 'catalog_model') return [];
+    const installed = this.modelInstallManager
+      ?.getState()
+      .installedModels.find((model) =>
+        matchesModelTriple(model, selection.runtimeId, selection.familyId, selection.modelId),
+      );
+    return installed?.installedVoiceIds ?? [];
   }
 
   private requirePresetStateStore(): LlmPresetStateStore {

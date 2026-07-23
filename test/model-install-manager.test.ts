@@ -268,6 +268,43 @@ describe('ModelInstallManager', () => {
         expect(harness.manager.getState().installedModels).toHaveLength(2);
       });
     });
+
+    it('publishes refreshed same-model voice metadata after an incremental install', async () => {
+      harness = createManagerHarness({ selectedModel: sampleSelection() });
+      configureSidecarForInit(harness.sidecarConnection);
+      await harness.manager.init();
+      const installedTts = sampleInstalledModel('pocket_tts_english_2026_04_int8', {
+        familyId: 'pocket_tts',
+        installedVoiceIds: ['alba', 'cosette'],
+        runtimeId: 'onnx_runtime',
+      });
+      harness.sidecarConnection.listInstalledModels.mockResolvedValueOnce({
+        models: [sampleInstalledModel(), installedTts],
+      });
+
+      emitInstallUpdate(harness, {
+        familyId: 'pocket_tts',
+        installId: 'voice-install',
+        modelId: installedTts.modelId,
+        runtimeId: 'onnx_runtime',
+      });
+      emitInstallUpdate(harness, {
+        familyId: 'pocket_tts',
+        installId: 'voice-install',
+        modelId: installedTts.modelId,
+        runtimeId: 'onnx_runtime',
+        state: 'completed',
+      });
+
+      await vi.waitFor(() => {
+        expect(
+          harness.manager
+            .getState()
+            .installedModels.find((model) => model.modelId === installedTts.modelId)
+            ?.installedVoiceIds,
+        ).toEqual(['alba', 'cosette']);
+      });
+    });
   });
 
   describe('cancel()', () => {
@@ -568,6 +605,63 @@ describe('ModelInstallManager', () => {
 
       expect(harness.getSettings().selectedModel).toBeNull();
       expect(harness.manager.getState().selectedModelCapabilities).toEqual({ status: 'none' });
+    });
+
+    it('keeps read-aloud selection and capabilities independent from dictation', async () => {
+      configureSidecarForInit(harness.sidecarConnection);
+      await harness.manager.init();
+      const selection = {
+        familyId: 'pocket_tts' as const,
+        kind: 'catalog_model' as const,
+        modelId: 'pocket_tts_english',
+        runtimeId: 'onnx_runtime' as const,
+      };
+      harness.manager.getState().catalog.models.push({
+        artifacts: [],
+        collectionId: 'read_aloud',
+        defaultVoice: 'alba',
+        displayName: 'Pocket TTS English',
+        familyId: 'pocket_tts',
+        languageTags: ['en'],
+        licenseLabel: 'CC-BY-4.0',
+        licenseUrl: 'https://example.com/license',
+        modelCardUrl: null,
+        modelId: selection.modelId,
+        notes: [],
+        runtimeId: 'onnx_runtime',
+        sourceUrl: 'https://example.com',
+        summary: 'Read aloud',
+        supportsAutomaticLanguageDetection: false,
+        task: 'tts',
+        uxTags: [],
+      });
+      const capabilities = {
+        ...sampleMergedCapabilities(),
+        family: {
+          ...sampleMergedCapabilities().family,
+          availableVoices: ['alba'],
+          outputSampleRate: 24_000,
+          supportsSpeedControl: true,
+          task: 'tts' as const,
+        },
+        familyId: 'pocket_tts' as const,
+        runtimeId: 'onnx_runtime' as const,
+      };
+      harness.sidecarConnection.probeModelSelection.mockResolvedValueOnce({
+        ...sampleReadyProbeResult(selection),
+        mergedCapabilities: capabilities,
+      });
+
+      await harness.manager.select(selection);
+
+      expect(harness.getSettings().selectedModel).toBeNull();
+      expect(harness.getSettings().selectedTtsModel).toEqual(selection);
+      expect(harness.getSettings().selectedTtsVoice).toBe('alba');
+      expect(harness.manager.getState().selectedTtsModelCapabilities).toEqual({
+        capabilities,
+        selection,
+        status: 'ready',
+      });
     });
   });
 
@@ -996,15 +1090,19 @@ function sampleSystemInfo(): SystemInfoEvent {
       {
         displayName: 'Cohere Transcribe',
         familyCapabilities: {
+          availableVoices: [],
           maxAudioDurationSecs: null,
+          outputSampleRate: null,
           producesPunctuation: true,
           supportedLanguages: { kind: 'all' as const },
           supportsInitialPrompt: false,
+          supportsSpeedControl: false,
           supportsStreaming: false,
           supportsLanguageSelection: true,
           supportsAutomaticLanguageDetection: false,
           supportsSegmentTimestamps: true,
           supportsWordTimestamps: false,
+          task: 'stt',
         },
         familyId: 'cohere_transcribe' as const,
         runtimeId: 'onnx_runtime' as const,
@@ -1012,15 +1110,19 @@ function sampleSystemInfo(): SystemInfoEvent {
       {
         displayName: 'Moonshine',
         familyCapabilities: {
+          availableVoices: [],
           maxAudioDurationSecs: null,
+          outputSampleRate: null,
           producesPunctuation: true,
           supportedLanguages: { kind: 'english_only' as const },
           supportsInitialPrompt: false,
+          supportsSpeedControl: false,
           supportsStreaming: true,
           supportsLanguageSelection: false,
           supportsAutomaticLanguageDetection: false,
           supportsSegmentTimestamps: false,
           supportsWordTimestamps: false,
+          task: 'stt',
         },
         familyId: 'moonshine' as const,
         runtimeId: 'onnx_runtime' as const,
@@ -1028,15 +1130,19 @@ function sampleSystemInfo(): SystemInfoEvent {
       {
         displayName: 'Whisper',
         familyCapabilities: {
+          availableVoices: [],
           maxAudioDurationSecs: null,
+          outputSampleRate: null,
           producesPunctuation: true,
           supportedLanguages: { kind: 'all' as const },
           supportsInitialPrompt: true,
+          supportsSpeedControl: false,
           supportsStreaming: false,
           supportsLanguageSelection: true,
           supportsAutomaticLanguageDetection: true,
           supportsSegmentTimestamps: true,
           supportsWordTimestamps: false,
+          task: 'stt',
         },
         familyId: 'whisper' as const,
         runtimeId: 'whisper_cpp' as const,
@@ -1075,15 +1181,19 @@ function sampleSystemInfo(): SystemInfoEvent {
 function sampleMergedCapabilities(): EngineCapabilitiesRecord {
   return {
     family: {
+      availableVoices: [],
       maxAudioDurationSecs: null,
+      outputSampleRate: null,
       producesPunctuation: true,
       supportedLanguages: { kind: 'english_only' },
       supportsInitialPrompt: true,
+      supportsSpeedControl: false,
       supportsStreaming: false,
       supportsLanguageSelection: false,
       supportsAutomaticLanguageDetection: false,
       supportsSegmentTimestamps: true,
       supportsWordTimestamps: false,
+      task: 'stt',
     },
     familyId: 'whisper',
     runtime: {

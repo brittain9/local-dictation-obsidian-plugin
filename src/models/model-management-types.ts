@@ -8,6 +8,7 @@ export const MODEL_FAMILY_IDS = [
   'cohere_transcribe',
   'moonshine',
   'nemotron_asr',
+  'pocket_tts',
   'whisper',
 ] as const;
 
@@ -16,6 +17,7 @@ export type ModelFamilyId = (typeof MODEL_FAMILY_IDS)[number];
 export type AcceleratorId = 'cpu' | 'cuda' | 'direct_ml' | 'metal';
 
 export type ModelFormat = 'ggml' | 'gguf' | 'onnx';
+export type ModelTask = 'stt' | 'tts';
 
 export type LanguageSupport =
   | { kind: 'all' }
@@ -35,6 +37,10 @@ export interface RuntimeCapabilitiesRecord {
 }
 
 export interface ModelFamilyCapabilitiesRecord {
+  task: ModelTask;
+  availableVoices: string[];
+  supportsSpeedControl: boolean;
+  outputSampleRate: number | null;
   supportsSegmentTimestamps: boolean;
   supportsWordTimestamps: boolean;
   supportsInitialPrompt: boolean;
@@ -74,7 +80,7 @@ export interface ExternalFileModelSelection {
 
 export type SelectedModel = CatalogModelSelection | ExternalFileModelSelection;
 
-type ModelArtifactRole = 'supporting_file' | 'transcription_model';
+type ModelArtifactRole = 'supporting_file' | 'synthesis_model' | 'transcription_model' | 'voice';
 
 export interface ModelArtifactRecord {
   artifactId: string;
@@ -82,6 +88,7 @@ export interface ModelArtifactRecord {
   filename: string;
   required: boolean;
   role: ModelArtifactRole;
+  voiceId?: string;
   sha256: string;
   sizeBytes: number;
 }
@@ -91,6 +98,7 @@ export interface ModelFamilyRecord {
   familyId: ModelFamilyId;
   runtimeId: RuntimeId;
   summary: string;
+  task: ModelTask;
 }
 
 export interface ModelCollectionRecord {
@@ -102,6 +110,7 @@ export interface ModelCollectionRecord {
 export interface CatalogModelRecord {
   artifacts: ModelArtifactRecord[];
   collectionId: string;
+  defaultVoice?: string;
   displayName: string;
   familyId: ModelFamilyId;
   languageTags: string[];
@@ -112,6 +121,7 @@ export interface CatalogModelRecord {
   modelId: string;
   notes: string[];
   runtimeId: RuntimeId;
+  task: ModelTask;
   sourceUrl: string;
   summary: string;
   uxTags: string[];
@@ -133,6 +143,7 @@ export interface InstalledModelRecord {
   runtimeId: RuntimeId;
   runtimePath: string | null;
   totalSizeBytes: number;
+  installedVoiceIds: string[];
 }
 
 export interface ModelStoreRecord {
@@ -258,6 +269,11 @@ function isLanguageSupport(value: unknown): value is LanguageSupport {
 function isModelFamilyCapabilitiesRecord(value: unknown): value is ModelFamilyCapabilitiesRecord {
   return (
     isRecord(value) &&
+    (value.task === 'stt' || value.task === 'tts') &&
+    Array.isArray(value.availableVoices) &&
+    value.availableVoices.every((voice) => typeof voice === 'string') &&
+    typeof value.supportsSpeedControl === 'boolean' &&
+    (value.outputSampleRate === null || typeof value.outputSampleRate === 'number') &&
     typeof value.supportsSegmentTimestamps === 'boolean' &&
     typeof value.supportsWordTimestamps === 'boolean' &&
     typeof value.supportsInitialPrompt === 'boolean' &&
@@ -328,7 +344,9 @@ export function normalizeSelectedModel(value: SelectedModel): SelectedModel {
 }
 
 export function getTotalModelSize(model: CatalogModelRecord): number {
-  return model.artifacts.reduce((sum, a) => sum + a.sizeBytes, 0);
+  return model.artifacts
+    .filter((artifact) => artifact.required)
+    .reduce((sum, artifact) => sum + artifact.sizeBytes, 0);
 }
 
 export function matchesModelTriple(
@@ -363,9 +381,6 @@ export function selectedModelEquals(left: SelectedModel, right: SelectedModel): 
 }
 
 export function getPrimaryArtifact(model: CatalogModelRecord): ModelArtifactRecord | null {
-  return (
-    model.artifacts.find(
-      (artifact) => artifact.required && artifact.role === 'transcription_model',
-    ) ?? null
-  );
+  const role = model.task === 'tts' ? 'synthesis_model' : 'transcription_model';
+  return model.artifacts.find((artifact) => artifact.required && artifact.role === role) ?? null;
 }

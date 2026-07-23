@@ -7,6 +7,7 @@ import {
   MAX_FRAME_PAYLOAD_BYTES,
   type ModelInstallUpdateEvent,
   type SidecarEvent,
+  SYNTHESIS_AUDIO_FRAME_KIND,
   type TranscriptReadyEvent,
   type WarningEvent,
 } from '../src/sidecar/protocol';
@@ -234,6 +235,45 @@ describe('SidecarConnection', () => {
 
     expect(listener).toHaveBeenCalledTimes(1);
     expect(listener).toHaveBeenCalledWith(warningEvent({ message: 'first' }));
+  });
+
+  it('notifies active features when the sidecar exits unexpectedly', () => {
+    const { connection, process } = createHarness();
+    const listener = vi.fn();
+    connection.subscribe(listener);
+
+    process.exit(9, null);
+
+    expect(listener).toHaveBeenCalledWith({
+      code: 'sidecar_exited',
+      details: 'code: 9, signal: null',
+      message: 'The sidecar process exited unexpectedly.',
+      type: 'error',
+    });
+  });
+
+  it('delivers synthesis PCM on the binary-audio subscription', () => {
+    const { connection, process } = createHarness();
+    const listener = vi.fn();
+    connection.subscribeSynthesisAudio(listener);
+    const payload = new Uint8Array(12);
+    const view = new DataView(payload.buffer);
+    view.setUint32(0, 19, true);
+    view.setUint32(4, 3, true);
+    payload.set([1, 2, 3, 4], 8);
+    const frame = new Uint8Array(FRAME_HEADER_LENGTH + payload.length);
+    frame[0] = SYNTHESIS_AUDIO_FRAME_KIND;
+    new DataView(frame.buffer).setUint32(1, payload.length, true);
+    frame.set(payload, FRAME_HEADER_LENGTH);
+
+    process.stdout(frame);
+
+    expect(listener).toHaveBeenCalledWith({
+      kind: SYNTHESIS_AUDIO_FRAME_KIND,
+      pcm16le: new Uint8Array([1, 2, 3, 4]),
+      seq: 3,
+      synthesisId: 19,
+    });
   });
 
   it('rejects a waiter when the matching event times out', async () => {

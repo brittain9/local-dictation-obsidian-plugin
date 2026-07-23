@@ -5,6 +5,7 @@ import {
   type ContextWindow,
   createCancelModelInstallCommand,
   createCancelSessionCommand,
+  createCancelSynthesisCommand,
   createContextResponseCommand,
   createGetModelStoreCommand,
   createGetSystemInfoCommand,
@@ -16,7 +17,9 @@ import {
   createProbeSystemAudioCommand,
   createRemoveModelCommand,
   createStartSessionCommand,
+  createStartSynthesisCommand,
   createStopSessionCommand,
+  createSynthesisPlaybackPositionCommand,
   type ErrorEvent,
   encodeAudioFrame,
   encodeJsonFrame,
@@ -35,6 +38,9 @@ import {
   type SidecarCommand,
   type SidecarEvent,
   type StartSessionCommand,
+  type StartSynthesisCommand,
+  SYNTHESIS_AUDIO_FRAME_KIND,
+  type SynthesisAudioFrame,
   type SystemAudioProbeResultEvent,
   type SystemInfoEvent,
 } from './protocol';
@@ -43,6 +49,7 @@ import { createSidecarStderrLogEntry } from './sidecar-logging';
 import { type ResolveSidecarLaunchSpec, SidecarProcess } from './sidecar-process';
 
 type SidecarEventListener = (event: SidecarEvent) => void;
+type SynthesisAudioListener = (frame: SynthesisAudioFrame) => void;
 
 export class SidecarError extends Error {
   readonly code: string;
@@ -88,6 +95,7 @@ interface SidecarConnectionOptions {
 
 export class SidecarConnection {
   private readonly eventListeners = new Set<SidecarEventListener>();
+  private readonly synthesisAudioListeners = new Set<SynthesisAudioListener>();
   private readonly frameParser = new FramedMessageParser(parseEventFrame);
   private readonly pendingWaiters = new Set<PendingEventWaiter>();
   private readonly process: SidecarProcessLike;
@@ -98,7 +106,8 @@ export class SidecarConnection {
   constructor(private readonly options: SidecarConnectionOptions) {
     const handlers = {
       onExit: (code: number | null, signal: NodeJS.Signals | null) => {
-        if (this.expectedStop) {
+        const expectedStop = this.expectedStop;
+        if (expectedStop) {
           this.options.logger?.debug(
             'sidecar',
             `sidecar stopped (code: ${String(code)}, signal: ${String(signal)})`,
@@ -116,6 +125,14 @@ export class SidecarConnection {
             `Sidecar exited unexpectedly (code: ${String(code)}, signal: ${String(signal)}).`,
           ),
         );
+        if (!expectedStop) {
+          this.dispatchEvent({
+            code: 'sidecar_exited',
+            details: `code: ${String(code)}, signal: ${String(signal)}`,
+            message: 'The sidecar process exited unexpectedly.',
+            type: 'error',
+          });
+        }
       },
       onStderrLine: (line: string) => {
         const entry = createSidecarStderrLogEntry(line);
@@ -259,6 +276,25 @@ export class SidecarConnection {
     this.process.write(encodeJsonFrame(createCancelModelInstallCommand(installId)));
   }
 
+  async startSynthesis(payload: Omit<StartSynthesisCommand, 'type'>): Promise<void> {
+    await this.ensureStarted();
+    this.process.write(encodeJsonFrame(createStartSynthesisCommand(payload)));
+  }
+
+  cancelSynthesis(synthesisId: number): void {
+    if (this.process.isRunning()) {
+      this.process.write(encodeJsonFrame(createCancelSynthesisCommand(synthesisId)));
+    }
+  }
+
+  reportSynthesisPlaybackPosition(synthesisId: number, playedThroughSeq: number): void {
+    if (this.process.isRunning()) {
+      this.process.write(
+        encodeJsonFrame(createSynthesisPlaybackPositionCommand(synthesisId, playedThroughSeq)),
+      );
+    }
+  }
+
   async startSession(
     payload: Omit<StartSessionCommand, 'type'>,
     timeoutMs = this.options.getRequestTimeoutMs(),
@@ -329,6 +365,7 @@ export class SidecarConnection {
 
   dispose(): void {
     this.eventListeners.clear();
+    this.synthesisAudioListeners.clear();
     this.rejectPendingWaiters(new Error('SidecarConnection disposed'));
   }
 
@@ -338,6 +375,11 @@ export class SidecarConnection {
     return () => {
       this.eventListeners.delete(listener);
     };
+  }
+
+  subscribeSynthesisAudio(listener: SynthesisAudioListener): () => void {
+    this.synthesisAudioListeners.add(listener);
+    return () => this.synthesisAudioListeners.delete(listener);
   }
 
   private async sendCommandAndWait<TEvent extends SidecarEvent>(
@@ -399,6 +441,12 @@ export class SidecarConnection {
     const { fatal, frames } = this.frameParser.pushChunk(chunk);
 
     for (const frame of frames) {
+      if (frame.kind === SYNTHESIS_AUDIO_FRAME_KIND) {
+        for (const listener of this.synthesisAudioListeners) {
+          listener(frame);
+        }
+        continue;
+      }
       if (frame.kind !== JSON_FRAME_KIND) {
         this.options.logger?.warn(
           'protocol',

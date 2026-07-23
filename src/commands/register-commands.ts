@@ -18,17 +18,47 @@ interface CommandDependencies {
   checkSidecarHealth: () => Promise<void>;
   copyRawTranscript: () => void;
   hasRawTranscriptRecovery: () => boolean;
+  isReadAloudActive: () => boolean;
   plugin: Plugin;
   hasLastUtterance: () => boolean;
   reinsertLastUtterance: (editor: Editor) => void;
   restoreRawTranscript: () => void;
   restartSidecar: () => Promise<void>;
+  readAloud: (editor: Editor) => Promise<void>;
+  stopReadAloud: () => void;
+  toggleReadAloudPaused: () => Promise<void>;
   startDictation: () => Promise<void>;
   stopDictation: () => Promise<void>;
   toggleDictation: () => Promise<void>;
 }
 
 export function registerCommands(dependencies: CommandDependencies): void {
+  dependencies.plugin.addCommand({
+    id: 'read-aloud',
+    name: t('commands.readAloud'),
+    editorCallback: async (editor) => dependencies.readAloud(editor),
+  });
+
+  dependencies.plugin.addCommand({
+    id: 'pause-resume-read-aloud',
+    name: t('commands.pauseResumeReadAloud'),
+    checkCallback: (checking) => {
+      if (!dependencies.isReadAloudActive()) return false;
+      if (!checking) void dependencies.toggleReadAloudPaused();
+      return true;
+    },
+  });
+
+  dependencies.plugin.addCommand({
+    id: 'stop-read-aloud',
+    name: t('commands.stopReadAloud'),
+    checkCallback: (checking) => {
+      if (!dependencies.isReadAloudActive()) return false;
+      if (!checking) dependencies.stopReadAloud();
+      return true;
+    },
+  });
+
   dependencies.plugin.addCommand({
     id: TOGGLE_DICTATION_COMMAND_ID,
     name: t('commands.toggleDictation'),

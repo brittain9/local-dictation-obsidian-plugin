@@ -7,13 +7,15 @@ use tokio::sync::watch;
 use uuid::Uuid;
 
 use crate::audio_mixer::{AudioMixer, AudioMixerError, MixedAudioFrame};
-use crate::catalog::ModelCatalog;
-use crate::engine::capabilities::{AcceleratorId, LanguageSupport, ModelFamilyId, RuntimeId};
+use crate::catalog::{ArtifactRole, ModelCatalog};
+use crate::engine::capabilities::{
+    AcceleratorId, LanguageSupport, ModelFamilyId, ModelTask, RuntimeId,
+};
 use crate::engine::registry::EngineRegistry;
 use crate::installer::{InstallRequest, ModelInstallManager, ModelProbe};
 use crate::model_store::{
-    remove_installed_model, resolve_catalog_model_runtime_path, resolve_model_store_info,
-    scan_installed_models,
+    remove_installed_model, resolve_catalog_model_runtime_path, resolve_model_install_dir,
+    resolve_model_store_info, scan_installed_models,
 };
 use crate::protocol::{
     AccelerationPreference, AudioFrame, Command, CompiledAdapterInfo, CompiledRuntimeInfo,
@@ -25,6 +27,8 @@ use crate::session::{
     SessionInitError,
 };
 use crate::stages::StageEnablement;
+use crate::synthesis::SynthesisCancellation;
+use crate::synthesis_worker::{StartSynthesis as WorkerStartSynthesis, SynthesisWorker};
 use crate::system_audio::{AudioFrameSink, SystemAudioCapture, SystemAudioController};
 use crate::transcription::{ENGLISH_LANGUAGE_TAG, GpuConfig};
 use crate::worker::{SessionMetadata, TranscriptionWorker, WorkerCommand, WorkerEvent};
@@ -63,6 +67,7 @@ pub struct AppState {
     session_factory: SessionFactory,
     sidecar_version: String,
     system_audio: Box<dyn SystemAudioCapture>,
+    synthesis_worker: SynthesisWorker,
     transcription_worker: TranscriptionWorker,
 }
 
@@ -164,6 +169,7 @@ impl AppState {
             session_factory,
             sidecar_version: sidecar_version.into(),
             system_audio,
+            synthesis_worker: SynthesisWorker::spawn(Arc::clone(&registry)),
             transcription_worker: TranscriptionWorker::spawn(Arc::clone(&registry)),
         }
     }
@@ -196,6 +202,10 @@ impl AppState {
 
         while let Some(install_event) = self.install_manager.poll_event() {
             events.push(install_event);
+        }
+
+        while let Some(synthesis_event) = self.synthesis_worker.poll_event() {
+            events.push(synthesis_event);
         }
 
         events
@@ -385,6 +395,7 @@ impl AppState {
                 family_id,
                 install_id,
                 model_id,
+                artifact_ids,
                 model_store_path_override,
             } => {
                 match self
@@ -407,13 +418,57 @@ impl AppState {
                         total_bytes: None,
                     }),
                     Some(model) => {
+                        let incremental = !artifact_ids.is_empty();
+                        let artifacts = if incremental {
+                            let requested = artifact_ids
+                                .iter()
+                                .collect::<std::collections::HashSet<_>>();
+                            let artifacts = model
+                                .artifacts
+                                .iter()
+                                .filter(|artifact| requested.contains(&artifact.artifact_id))
+                                .cloned()
+                                .collect::<Vec<_>>();
+                            let only_optional_voices = artifacts.len() == requested.len()
+                                && artifacts.iter().all(|artifact| {
+                                    !artifact.required
+                                        && artifact.role == crate::catalog::ArtifactRole::Voice
+                                });
+                            if !only_optional_voices {
+                                events.push(Event::ModelInstallUpdate {
+                                    details: Some(
+                                        "Artifact subsets may contain only declared optional voice artifacts."
+                                            .to_string(),
+                                    ),
+                                    downloaded_bytes: None,
+                                    runtime_id,
+                                    family_id,
+                                    install_id,
+                                    message: Some("The requested voice install is invalid.".to_string()),
+                                    model_id,
+                                    state: ModelInstallState::Failed,
+                                    total_bytes: None,
+                                });
+                                return (ControlFlow::Continue, events);
+                            }
+                            artifacts
+                        } else {
+                            model
+                                .artifacts
+                                .iter()
+                                .filter(|artifact| artifact.required)
+                                .cloned()
+                                .collect()
+                        };
                         match resolve_model_store_info(model_store_path_override.as_deref()) {
                             Ok(info) => {
                                 events.push(self.install_manager.start_install(InstallRequest {
+                                    artifacts,
                                     catalog: Arc::clone(&self.catalog),
                                     runtime_id,
                                     family_id,
                                     install_id,
+                                    incremental,
                                     model,
                                     model_id,
                                     store_root: info.path,
@@ -441,6 +496,138 @@ impl AppState {
                     events.push(event);
                 }
 
+                (ControlFlow::Continue, events)
+            }
+            Command::StartSynthesis {
+                synthesis_id,
+                model_selection,
+                voice_id,
+                speed,
+                chunks,
+                model_store_path_override,
+            } => {
+                type SynthesisStartFailure = (&'static str, &'static str, Option<String>);
+                let result = (|| -> Result<WorkerStartSynthesis, SynthesisStartFailure> {
+                    let SelectedModel::CatalogModel {
+                        runtime_id,
+                        family_id,
+                        model_id,
+                    } = &model_selection
+                    else {
+                        return Err((
+                            "invalid_synthesis_request",
+                            "Read aloud requires an installed catalog model.",
+                            None,
+                        ));
+                    };
+                    let model = self
+                        .catalog
+                        .find_model(*runtime_id, *family_id, model_id)
+                        .ok_or({
+                            (
+                                "missing_model_file",
+                                "The selected read-aloud model is not in the bundled catalog.",
+                                None,
+                            )
+                        })?;
+                    if model.task != ModelTask::Tts {
+                        return Err((
+                            "invalid_synthesis_request",
+                            "The selected model is a dictation model, not a read-aloud model.",
+                            None,
+                        ));
+                    }
+                    let voice = model
+                        .artifacts
+                        .iter()
+                        .find(|artifact| {
+                            artifact.role == ArtifactRole::Voice
+                                && artifact.voice_id.as_deref() == Some(voice_id.as_str())
+                        })
+                        .ok_or_else(|| {
+                            (
+                                "invalid_synthesis_request",
+                                "The selected voice is not available for this model.",
+                                Some(voice_id.clone()),
+                            )
+                        })?;
+                    let store = resolve_model_store_info(model_store_path_override.as_deref())
+                        .map_err(|error| {
+                            (
+                                "invalid_model_store",
+                                "The configured model store is invalid.",
+                                Some(format!("{error:#}")),
+                            )
+                        })?;
+                    let model_path = resolve_catalog_model_runtime_path(
+                        &self.catalog,
+                        &store.path,
+                        *runtime_id,
+                        *family_id,
+                        model_id,
+                    )
+                    .map_err(|error| {
+                        (
+                            "missing_model_file",
+                            "Install the selected read-aloud model before using it.",
+                            Some(format!("{error:#}")),
+                        )
+                    })?;
+                    let install_dir =
+                        resolve_model_install_dir(&store.path, *runtime_id, *family_id, model_id)
+                            .map_err(|error| {
+                            (
+                                "invalid_model_store",
+                                "The installed model path is invalid.",
+                                Some(format!("{error:#}")),
+                            )
+                        })?;
+                    let voice_path = install_dir.join(&voice.filename);
+                    if !voice_path.is_file() {
+                        return Err((
+                            "missing_voice_file",
+                            "Install the selected voice before using it.",
+                            Some(voice.filename.clone()),
+                        ));
+                    }
+                    Ok(WorkerStartSynthesis {
+                        synthesis_id,
+                        runtime_id: *runtime_id,
+                        family_id: *family_id,
+                        model_path,
+                        voice_path,
+                        speed,
+                        chunks,
+                        cancellation: SynthesisCancellation::new(),
+                    })
+                })();
+                match result {
+                    Ok(request) => {
+                        if let Err(message) = self.synthesis_worker.start(request) {
+                            events.push(synthesis_error_event(
+                                synthesis_id,
+                                "synthesis_worker_unavailable",
+                                &message,
+                                None,
+                            ));
+                        }
+                    }
+                    Err((code, message, details)) => {
+                        events.push(synthesis_error_event(synthesis_id, code, message, details));
+                    }
+                }
+                (ControlFlow::Continue, events)
+            }
+            Command::CancelSynthesis { synthesis_id } => {
+                self.synthesis_worker.cancel(synthesis_id);
+                (ControlFlow::Continue, events)
+            }
+            Command::SynthesisPlaybackPosition {
+                synthesis_id,
+                played_through_seq,
+            } => {
+                self.synthesis_worker
+                    .update_playback_position(synthesis_id, played_through_seq);
                 (ControlFlow::Continue, events)
             }
             Command::GetSystemInfo => {
@@ -503,6 +690,22 @@ impl AppState {
                     model_store_path_override.as_deref(),
                 ) {
                     Ok(resolved_model) => {
+                        if self
+                            .registry
+                            .adapter(resolved_model.runtime_id, resolved_model.family_id)
+                            .is_some_and(|adapter| adapter.capabilities().task != ModelTask::Stt)
+                        {
+                            events.push(Event::Error {
+                                code: "invalid_model_task".to_string(),
+                                details: Some(format!(
+                                    "family={} task=tts",
+                                    resolved_model.family_id.as_str()
+                                )),
+                                message: "The selected model is not a dictation model.".to_string(),
+                                session_id: Some(session_id),
+                            });
+                            return (ControlFlow::Continue, events);
+                        }
                         let use_gpu = resolve_use_gpu(
                             resolved_model.runtime_id,
                             acceleration_preference,
@@ -1745,6 +1948,20 @@ fn internal_error_event(code: &str, message: &str, details: Option<String>) -> E
     }
 }
 
+fn synthesis_error_event(
+    synthesis_id: u32,
+    code: &str,
+    message: &str,
+    details: Option<String>,
+) -> Event {
+    Event::SynthesisError {
+        synthesis_id,
+        code: code.to_string(),
+        message: message.to_string(),
+        details,
+    }
+}
+
 fn resolve_use_gpu(
     runtime_id: RuntimeId,
     acceleration_preference: AccelerationPreference,
@@ -1793,14 +2010,15 @@ mod tests {
     };
     use crate::engine::capabilities::{
         AcceleratorAvailability, AcceleratorId, LanguageSupport, ModelFamilyCapabilities,
-        ModelFamilyId, ModelFormat, RuntimeCapabilities, RuntimeId,
+        ModelFamilyId, ModelFormat, ModelTask, RuntimeCapabilities, RuntimeId,
     };
     use crate::engine::registry::EngineRegistry;
     use crate::engine::traits::{LoadedModel, ModelFamilyAdapter, Runtime};
     use crate::protocol::{
         AccelerationPreference, AudioFrame, Command, ContextWindow, ContextWindowSource, Event,
         HealthStatus, ListeningMode, ModelProbeStatus, PCM_BYTES_PER_FRAME, QueueBackpressureTier,
-        SelectedModel, SessionState, SessionStopReason, StageId, StageOutcome, StageStatus,
+        SelectedModel, SessionState, SessionStopReason, SourceRange, StageId, StageOutcome,
+        StageStatus, SynthesisTextChunk,
     };
     use crate::session::{FinalizedUtterance, ListeningSession, SessionInitError, SpeakingStyle};
     use crate::system_audio::{AudioFrameSink, SystemAudioCapture, SystemAudioError};
@@ -1904,6 +2122,10 @@ mod tests {
                 family_id: ModelFamilyId::Whisper,
                 runtime_id: RuntimeId::WhisperCpp,
                 capabilities: ModelFamilyCapabilities {
+                    task: ModelTask::Stt,
+                    available_voices: Vec::new(),
+                    supports_speed_control: false,
+                    output_sample_rate: None,
                     supports_segment_timestamps: true,
                     supports_word_timestamps: false,
                     supports_initial_prompt,
@@ -1937,6 +2159,13 @@ mod tests {
             let mut adapter = Self::new();
             adapter.runtime_id = runtime_id;
             adapter.family_id = family_id;
+            adapter
+        }
+
+        fn tts() -> Self {
+            let mut adapter = Self::for_family(RuntimeId::OnnxRuntime, ModelFamilyId::PocketTts);
+            adapter.capabilities.task = ModelTask::Tts;
+            adapter.capabilities.supports_streaming = true;
             adapter
         }
 
@@ -2078,6 +2307,31 @@ mod tests {
 
     fn test_app() -> AppState {
         test_app_with_registry(fake_registry())
+    }
+
+    #[test]
+    fn start_synthesis_rejects_a_dictation_catalog_model_with_a_typed_error() {
+        let (_, events) = test_app().handle_command(Command::StartSynthesis {
+            synthesis_id: 42,
+            model_selection: SelectedModel::CatalogModel {
+                runtime_id: RuntimeId::WhisperCpp,
+                family_id: ModelFamilyId::Whisper,
+                model_id: "small".to_string(),
+            },
+            voice_id: "alba".to_string(),
+            speed: 1.0,
+            chunks: vec![SynthesisTextChunk {
+                text: "Hello.".to_string(),
+                source_range: SourceRange { from: 0, to: 6 },
+            }],
+            model_store_path_override: None,
+        });
+
+        assert!(matches!(
+            events.as_slice(),
+            [Event::SynthesisError { synthesis_id: 42, code, .. }]
+                if code == "invalid_synthesis_request"
+        ));
     }
 
     fn test_app_with_registry(registry: Arc<EngineRegistry>) -> AppState {
@@ -2422,6 +2676,33 @@ mod tests {
         assert!(
             matches!(events.first(), Some(Event::Error { code, .. }) if code == "missing_model_file")
         );
+    }
+
+    #[test]
+    fn start_session_rejects_a_tts_model_before_starting_a_worker_session() {
+        let model_file_path = create_model_file();
+        let mut registry = EngineRegistry::default();
+        registry.register_runtime(Box::new(FakeRuntime::onnx()));
+        registry.register_adapter(Box::new(FakeAdapter::tts()));
+        let mut command = start_session_command("session-1", &model_file_path);
+        let Command::StartSession {
+            model_selection, ..
+        } = &mut command
+        else {
+            panic!("expected start session command");
+        };
+        *model_selection = SelectedModel::ExternalFile {
+            runtime_id: RuntimeId::OnnxRuntime,
+            family_id: ModelFamilyId::PocketTts,
+            file_path: model_file_path.display().to_string(),
+        };
+
+        let (_, events) = test_app_with_registry(Arc::new(registry)).handle_command(command);
+
+        assert!(matches!(
+            events.as_slice(),
+            [Event::Error { code, .. }] if code == "invalid_model_task"
+        ));
     }
 
     #[test]
@@ -3762,6 +4043,7 @@ mod tests {
             families: vec![ModelFamilyDescriptor {
                 family_id: ModelFamilyId::Whisper,
                 runtime_id: RuntimeId::WhisperCpp,
+                task: ModelTask::Stt,
                 display_name: "Whisper".to_string(),
                 summary: "summary".to_string(),
             }],
@@ -3772,6 +4054,7 @@ mod tests {
                     filename: "model.bin".to_string(),
                     required: true,
                     role: ArtifactRole::TranscriptionModel,
+                    voice_id: None,
                     sha256: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
                         .to_string(),
                     size_bytes: 10,
@@ -3780,8 +4063,10 @@ mod tests {
                 display_name: "Model".to_string(),
                 runtime_id: RuntimeId::WhisperCpp,
                 family_id: ModelFamilyId::Whisper,
+                task: ModelTask::Stt,
                 language_tags: vec!["en".to_string()],
                 supports_automatic_language_detection: false,
+                default_voice: None,
                 license_label: "MIT".to_string(),
                 license_url: "https://example.com/license".to_string(),
                 model_card_url: None,

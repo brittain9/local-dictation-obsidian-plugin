@@ -33,6 +33,7 @@ export function sampleCatalogModel(input: {
     runtimeId: 'whisper_cpp',
     sourceUrl: 'https://example.com/source',
     summary: 'Test model',
+    task: 'stt',
     uxTags: [],
   };
 }
@@ -71,6 +72,7 @@ export function sampleMoonshineCatalogModel(): CatalogModelRecord {
     runtimeId: 'onnx_runtime',
     sourceUrl: 'https://example.com/moonshine',
     summary: 'Test Moonshine streaming model',
+    task: 'stt',
     uxTags: ['balanced'],
   };
 }
@@ -96,18 +98,21 @@ export function sampleCatalog(): ModelCatalogRecord {
         familyId: 'whisper',
         runtimeId: 'whisper_cpp',
         summary: 'summary',
+        task: 'stt',
       },
       {
         displayName: 'Cohere Transcribe',
         familyId: 'cohere_transcribe',
         runtimeId: 'onnx_runtime',
         summary: 'summary',
+        task: 'stt',
       },
       {
         displayName: 'Moonshine',
         familyId: 'moonshine',
         runtimeId: 'onnx_runtime',
         summary: 'summary',
+        task: 'stt',
       },
     ],
     models: [

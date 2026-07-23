@@ -8,6 +8,7 @@ import {
   supportedDictationLanguageOptions,
 } from '../language/dictation-language';
 import { resolveEngineCapabilities } from '../models/capability-view';
+import type { ModelPickerOptions } from '../models/manage-models-modal';
 import type { ModelInstallManager } from '../models/model-install-manager';
 import { updateInstallProgressElement } from '../models/model-install-progress';
 import { ExternalModelFileModal, ModelDetailsModal } from '../models/model-management-modals';
@@ -30,6 +31,7 @@ import { DiarizationSettingsModal } from './diarization-settings-modal';
 import { renderActiveInstallCard } from './install-progress-row';
 import { renderMicrophonePicker } from './microphone-picker';
 import { renderModelSection } from './model-settings-section';
+import { openFilteredHotkeySettings } from './open-hotkey-settings';
 import {
   PHRASE_FINALIZATION_TOOLTIP,
   phraseFinalizationDescription,
@@ -41,9 +43,12 @@ import {
   isRemoteLlmEffectivelyEnabled,
   isSpeakingStyle,
   isTranscriptFormattingMode,
+  MAX_TTS_SPEED,
+  MIN_TTS_SPEED,
   type PluginSettings,
   type TranscriptFormattingMode,
 } from './plugin-settings';
+import { renderTextToSpeechSettings } from './read-aloud-settings-section';
 import {
   addEnumSetting,
   addTextSetting,
@@ -68,7 +73,7 @@ interface SettingsTabDependencies {
   isDictationBusy: () => boolean;
   logger?: PluginLogger | undefined;
   modelInstallManager: ModelInstallManager;
-  openModelPicker: (options?: { onChanged?: () => void }) => Promise<void>;
+  openModelPicker: (options?: ModelPickerOptions) => Promise<void>;
   openSetupWizard: () => Promise<void>;
   pluginVersion: string;
   resolvePluginDirectory: () => Promise<string>;
@@ -109,10 +114,16 @@ const SPEAKING_STYLE_OPTIONS: ReadonlyArray<DropdownOption<SpeakingStyle>> = [
 // settings search can match the single composite definition in the active locale.
 const SETTINGS_SEARCH_ALIAS_KEYS = [
   'settings.groups.model',
+  'settings.model.speechToText',
+  'settings.model.textToSpeech',
   'settings.model.manageModels',
   'settings.model.useExternalFile',
   'settings.model.details',
   'settings.dictationLanguage.name',
+  'settings.groups.readAloud',
+  'settings.readAloud.hotkey',
+  'settings.readAloud.voice',
+  'settings.readAloud.speed',
   'settings.groups.capture',
   'settings.microphone.name',
   'settings.microphone.default',
@@ -180,6 +191,7 @@ export class LocalSttSettingTab extends PluginSettingTab {
   private disposeMicrophoneSection: (() => void) | null = null;
   private disposeMissingSidecarBanner: (() => void) | null = null;
   private disposeModelSection: (() => void) | null = null;
+  private disposeReadAloudSection: (() => void) | null = null;
   private disposeSidecarSection: (() => void) | null = null;
   private missingSidecarProgressEl: HTMLDivElement | null = null;
 
@@ -248,6 +260,7 @@ export class LocalSttSettingTab extends PluginSettingTab {
     this.disposeModelSection = renderModelSection(modelSummary, manager, {
       onManageModels: () => {
         void this.dependencies.openModelPicker({
+          initialTask: 'stt',
           onChanged: () => {
             this.refreshSettingsTab();
           },
@@ -419,6 +432,49 @@ export class LocalSttSettingTab extends PluginSettingTab {
     const timestampsCard = createSettingGroup(containerEl, t('settings.groups.timestamps'));
     this.renderTimestampSettings(timestampsCard, settings);
 
+    // --- Read aloud ---
+    const readAloudSection = createSettingGroup(containerEl, t('settings.groups.readAloud'));
+    const hotkeySetting = new Setting(readAloudSection)
+      .setName(t('settings.readAloud.hotkey'))
+      .setDesc(t('settings.readAloud.hotkeyDesc'))
+      .addButton((button) => {
+        button.setButtonText(t('setup.wizard.openHotkeySettings')).onClick(() => {
+          openFilteredHotkeySettings(this.app, t('commands.readAloud'), (error) => {
+            this.dependencies.feedback.show({
+              cause: error,
+              intent: 'warning',
+              message: t('setup.wizard.openHotkeySettingsFallback'),
+            });
+          });
+        });
+      });
+
+    new Setting(readAloudSection)
+      .setName(t('settings.readAloud.speed'))
+      .setDesc(t('settings.readAloud.speedDesc'))
+      .addSlider((slider) => {
+        slider
+          .setLimits(MIN_TTS_SPEED, MAX_TTS_SPEED, 0.05)
+          .setValue(settings.ttsSpeed)
+          .setDynamicTooltip()
+          .onChange(async (speed) => {
+            await this.access.persistOne('ttsSpeed', speed);
+          });
+      });
+
+    this.disposeReadAloudSection = renderTextToSpeechSettings(
+      modelSection,
+      languageSetting.settingEl,
+      readAloudSection,
+      hotkeySetting.settingEl,
+      {
+        getSettings: () => this.dependencies.getSettings(),
+        manager,
+        openModelPicker: (options) => this.dependencies.openModelPicker(options),
+        persistVoice: (voice) => this.access.persistOne('selectedTtsVoice', voice),
+      },
+    );
+
     const llmCard = createSettingGroup(containerEl, t('settings.groups.llmTransformation'));
     const enableLlmSetting = new Setting(llmCard)
       .setName(t('settings.llm.enableFeatures.name'))
@@ -532,6 +588,8 @@ export class LocalSttSettingTab extends PluginSettingTab {
   private tearDown(): void {
     this.disposeModelSection?.();
     this.disposeModelSection = null;
+    this.disposeReadAloudSection?.();
+    this.disposeReadAloudSection = null;
     this.disposeDiarizationDesc?.();
     this.disposeDiarizationDesc = null;
     this.disposeEngineSection?.();

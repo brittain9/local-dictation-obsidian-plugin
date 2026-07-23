@@ -9,7 +9,9 @@ use local_dictation_sidecar::app::{AppState, ControlFlow};
 use local_dictation_sidecar::catalog::ModelCatalog;
 use local_dictation_sidecar::protocol::{
     AudioFrame, Command, Event, IncomingFrame, read_frame, write_event_frame,
+    write_synthesis_audio_frame,
 };
+#[cfg(feature = "engine-whisper")]
 use whisper_rs::install_logging_hooks;
 
 enum InputMessage {
@@ -17,10 +19,11 @@ enum InputMessage {
     Frame(IncomingFrame),
     ProtocolError(String),
     SystemAudio(AudioFrame),
-    SystemAudioProbeResult(Event),
+    SystemAudioProbeResult(Box<Event>),
 }
 
 fn main() -> Result<()> {
+    #[cfg(feature = "engine-whisper")]
     install_logging_hooks();
 
     let catalog = ModelCatalog::load_bundled()?;
@@ -75,7 +78,7 @@ fn run_stdio(catalog: ModelCatalog, sidecar_version: String) -> Result<()> {
                 )?;
             }
             Ok(InputMessage::SystemAudioProbeResult(event)) => {
-                write_events(&mut writer, vec![event])?;
+                write_events(&mut writer, vec![*event])?;
             }
             Ok(InputMessage::ProtocolError(details)) => {
                 write_events(
@@ -141,13 +144,21 @@ fn spawn_system_audio_probe(tx: Sender<InputMessage>) {
             },
         };
 
-        let _ = tx.send(InputMessage::SystemAudioProbeResult(event));
+        let _ = tx.send(InputMessage::SystemAudioProbeResult(Box::new(event)));
     });
 }
 
 fn write_events(writer: &mut impl Write, events: Vec<Event>) -> Result<()> {
     for event in events {
-        write_event_frame(writer, &event).context("failed to write event frame")?;
+        match event {
+            Event::SynthesisAudio {
+                synthesis_id,
+                seq,
+                pcm16le,
+            } => write_synthesis_audio_frame(writer, synthesis_id, seq, &pcm16le)
+                .context("failed to write synthesis audio frame")?,
+            event => write_event_frame(writer, &event).context("failed to write event frame")?,
+        }
     }
 
     Ok(())

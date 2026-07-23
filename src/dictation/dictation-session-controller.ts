@@ -211,6 +211,7 @@ export class DictationSessionController {
   private readonly cancellationPromises = new Map<string, Promise<void>>();
   private readonly releaseSidecarSubscription: () => void;
   private readonly sessions = new Map<string, ManagedSession>();
+  private startRevision = 0;
   private state: DictationControllerState = 'idle';
 
   constructor(private readonly dependencies: DictationSessionControllerDependencies) {
@@ -228,7 +229,13 @@ export class DictationSessionController {
     return this.activeSessionId !== null || this.sessions.size > 0 || this.state === 'starting';
   }
 
+  isCaptureActive(): boolean {
+    return this.activeSessionId !== null || this.state === 'starting';
+  }
+
   async cancelDictation(): Promise<void> {
+    const pendingStartCancelled = this.cancelPendingStart();
+    if (pendingStartCancelled) return;
     const sessionId = this.activeSessionId ?? this.latestSessionId();
 
     if (sessionId === null) {
@@ -244,6 +251,7 @@ export class DictationSessionController {
   }
 
   async dispose(): Promise<void> {
+    this.cancelPendingStart();
     if (this.activeSessionId !== null) {
       await this.clearActiveSession(this.activeSessionId);
     } else {
@@ -267,7 +275,7 @@ export class DictationSessionController {
       return;
     }
 
-    if (this.activeSessionId !== null) {
+    if (this.isCaptureActive()) {
       await this.stopDictation();
       return;
     }
@@ -280,10 +288,11 @@ export class DictationSessionController {
   }
 
   async startDictation(): Promise<void> {
-    if (this.activeSessionId !== null || this.sessions.size >= MAX_CONTROLLER_SESSIONS) {
+    if (this.isCaptureActive() || this.sessions.size >= MAX_CONTROLLER_SESSIONS) {
       return;
     }
 
+    const startRevision = ++this.startRevision;
     this.applyUiState('starting');
 
     const settings = this.dependencies.getSettings();
@@ -297,13 +306,16 @@ export class DictationSessionController {
     try {
       await this.assertMicrophoneInputAvailable();
     } catch (error) {
+      if (startRevision !== this.startRevision) return;
       this.handleError(FEEDBACK_FAILURES.startDictation, error);
       return;
     }
+    if (startRevision !== this.startRevision) return;
 
     try {
       await this.dependencies.sidecarConnection.ensureStarted();
     } catch (error) {
+      if (startRevision !== this.startRevision) return;
       if (error instanceof SidecarNotInstalledError) {
         this.dependencies.logger?.debug('sidecar', 'sidecar not installed; prompting install');
         this.applyUiState('idle');
@@ -313,6 +325,7 @@ export class DictationSessionController {
       this.handleError(FEEDBACK_FAILURES.startDictation, error);
       return;
     }
+    if (startRevision !== this.startRevision) return;
 
     const sessionId = createSessionId();
     const snapshot = createSessionSnapshot(
@@ -435,9 +448,11 @@ export class DictationSessionController {
   }
 
   async stopDictation(): Promise<void> {
+    const pendingStartCancelled = this.cancelPendingStart();
     const sessionId = this.activeSessionId;
 
     if (sessionId === null) {
+      if (pendingStartCancelled) return;
       this.dependencies.feedback.show({
         intent: 'information',
         key: 'dictation-not-active',
@@ -462,6 +477,13 @@ export class DictationSessionController {
       this.disposeLocalSession(sessionId);
       this.handleError(FEEDBACK_FAILURES.stopDictation, error, entry);
     }
+  }
+
+  private cancelPendingStart(): boolean {
+    this.startRevision += 1;
+    if (this.activeSessionId !== null || this.state !== 'starting') return false;
+    this.applyUiState('idle');
+    return true;
   }
 
   async handleAudioCaptureEnded(sessionId: string): Promise<void> {

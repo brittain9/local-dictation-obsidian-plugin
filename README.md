@@ -4,7 +4,7 @@
 
 Your notes already have Markdown, links, properties, search, templates, and a place in your knowledge system. Local Dictation adds the missing spoken workflow directly to that foundation.
 
-Dictate live. Transcribe meetings. Shape the result. Soon, listen to any note with local voices.
+Dictate live. Transcribe meetings. Shape the result. Listen to notes with local voices.
 
 [Install Local Dictation from Obsidian Community Plugins](https://obsidian.md/plugins?id=local-dictation)
 
@@ -30,7 +30,11 @@ Capture meetings, calls, interviews, or videos with microphone and system audio 
 
 ### Listen
 
-Local text-to-speech is coming next. The same integration will work in the other direction, turning notes into natural audio without requiring a reading service.
+Run **Read aloud** from the command palette or bind it to a hotkey. It reads the
+selected text when there is a selection, or starts at the beginning of the note
+when there is not. Pocket TTS playback stays local and provides active controls
+for language/model, speed, voice, pause/resume, and stop without adding another
+ribbon icon.
 
 ## Model choice without model management pain
 
@@ -41,6 +45,7 @@ Choose the speech engine that fits the job, then install it from Settings.
 | Responsive live English text | Moonshine streaming models |
 | Multilingual live text | Experimental Nemotron 3.5 ASR |
 | Higher-accuracy notes | Whisper Large V3 Turbo, Cohere Transcribe, and other batch models |
+| Local read aloud | Pocket TTS in English, French, German, Spanish, Portuguese, and Italian |
 | Local text cleanup | Ollama |
 | Selected remote text cleanup | OpenRouter |
 
@@ -48,7 +53,11 @@ The setup wizard gets the native engine and first model in place. You can change
 
 ## Designed for repeated use
 
-Start from the ribbon, command palette, or hotkey. Model downloads are managed. Session state is controlled. Short-lived recovery can restore a recent utterance or the raw text behind a cleanup.
+Start dictation from the ribbon, command palette, or hotkey. For read aloud, the
+recommended workflow is the **Read aloud** command bound to a hotkey, with the
+selection context menu as a discoverable alternative. Model downloads are
+managed. Session state is controlled. Short-lived recovery can restore a recent
+utterance or the raw text behind a cleanup.
 
 The goal is dictation reliable enough to become muscle memory.
 
@@ -81,6 +90,7 @@ macOS and Windows are the primary tested targets. Fedora native and Flatpak inst
 ## Local by default, flexible by choice
 
 - Audio is processed locally for speech recognition.
+- Note text is synthesized locally for read aloud.
 - Model downloads are visible and explicit.
 - Transcription remains available offline after setup.
 - Ollama transformations stay on your computer.

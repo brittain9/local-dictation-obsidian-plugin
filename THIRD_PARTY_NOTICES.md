@@ -1,7 +1,8 @@
 # Third-Party Notices
 
-The local-dictation sidecar embeds the following model artifacts so speech
-processing works offline.
+Local Dictation embeds or downloads the following model artifacts so speech
+processing works offline. Downloaded catalog artifacts are verified against
+pinned sizes and SHA-256 hashes before activation.
 
 ## Silero voice-activity-detection model
 
@@ -122,6 +123,24 @@ USE THEREOF OR OTHER DEALINGS THEREIN.
 The Nemotron adapter's native Rust graph orchestration and feature frontend
 follow these reference implementations' published behavior. No NeMo,
 sherpa-onnx, or kaldi-native-fbank binary is linked or bundled.
+
+## Pocket TTS read-aloud models
+
+- Work: Pocket TTS
+- Creator: Kyutai
+- Model and voice-state source:
+  https://huggingface.co/kyutai/pocket-tts-without-voice-cloning/tree/e041936c75475d350b405bc870bcf7c22da4e9e6
+- Derived INT8 ONNX export:
+  https://huggingface.co/KevinAHM/pocket-tts-onnx/tree/58a6d00cf13d239b6748cb0769f35c580a8f606c
+- License: Creative Commons Attribution 4.0 International (CC BY 4.0)
+  https://creativecommons.org/licenses/by/4.0/
+
+The model catalog downloads selected Pocket TTS graphs and voice embeddings on
+demand for English, French, German, Spanish, Portuguese, and Italian read
+aloud. The derived artifacts convert and quantize the original weights to INT8
+ONNX, changing their packaging and numerical representation. They are not
+covered by this project's MIT license. No endorsement by Kyutai or the ONNX
+export author is implied.
 
 ## FLEURS multilingual speech fixtures
 

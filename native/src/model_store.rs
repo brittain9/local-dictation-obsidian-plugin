@@ -5,7 +5,7 @@ use anyhow::{Context, Result, anyhow, ensure};
 use directories::ProjectDirs;
 use serde::{Deserialize, Serialize};
 
-use crate::catalog::ModelCatalog;
+use crate::catalog::{ModelArtifact, ModelCatalog};
 use crate::engine::capabilities::{ModelFamilyId, RuntimeId};
 
 const INSTALL_METADATA_FILENAME: &str = "install.json";
@@ -34,10 +34,14 @@ pub struct InstallMetadata {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct InstalledArtifact {
+    #[serde(default, rename = "artifactId")]
+    pub artifact_id: String,
     pub filename: String,
     pub sha256: String,
     #[serde(rename = "sizeBytes")]
     pub size_bytes: u64,
+    #[serde(default, rename = "voiceId", skip_serializing_if = "Option::is_none")]
+    pub voice_id: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -58,6 +62,8 @@ pub struct InstalledModelRecord {
     pub runtime_path: Option<String>,
     #[serde(rename = "totalSizeBytes")]
     pub total_size_bytes: u64,
+    #[serde(rename = "installedVoiceIds")]
+    pub installed_voice_ids: Vec<String>,
 }
 
 pub fn create_install_metadata(
@@ -76,15 +82,40 @@ pub fn create_install_metadata(
             )
         })?;
 
+    let artifacts = model
+        .artifacts
+        .iter()
+        .filter(|artifact| artifact.required)
+        .cloned()
+        .collect::<Vec<_>>();
+    create_install_metadata_for_artifacts(catalog, runtime_id, family_id, model_id, &artifacts)
+}
+
+pub fn create_install_metadata_for_artifacts(
+    catalog: &ModelCatalog,
+    runtime_id: RuntimeId,
+    family_id: ModelFamilyId,
+    model_id: &str,
+    artifacts: &[ModelArtifact],
+) -> Result<InstallMetadata> {
+    ensure!(
+        catalog
+            .find_model(runtime_id, family_id, model_id)
+            .is_some(),
+        "unknown model {}:{}:{model_id}",
+        runtime_id.as_str(),
+        family_id.as_str()
+    );
+
     Ok(InstallMetadata {
-        artifacts: model
-            .artifacts
+        artifacts: artifacts
             .iter()
-            .filter(|artifact| artifact.required)
             .map(|artifact| InstalledArtifact {
+                artifact_id: artifact.artifact_id.clone(),
                 filename: artifact.filename.clone(),
                 sha256: artifact.sha256.clone(),
                 size_bytes: artifact.size_bytes,
+                voice_id: artifact.voice_id.clone(),
             })
             .collect(),
         catalog_version: catalog.catalog_version,
@@ -283,6 +314,19 @@ pub fn scan_installed_models(
                     Err(_) => continue,
                 };
 
+                let expected_install_dir = match resolve_model_install_dir(
+                    model_store_root,
+                    metadata.runtime_id,
+                    metadata.family_id,
+                    &metadata.model_id,
+                ) {
+                    Ok(path) => path,
+                    Err(_) => continue,
+                };
+                if install_dir != expected_install_dir {
+                    continue;
+                }
+
                 if metadata
                     .artifacts
                     .iter()
@@ -310,6 +354,11 @@ pub fn scan_installed_models(
                         .iter()
                         .map(|artifact| artifact.size_bytes)
                         .sum(),
+                    installed_voice_ids: metadata
+                        .artifacts
+                        .iter()
+                        .filter_map(|artifact| artifact.voice_id.clone())
+                        .collect(),
                 });
             }
         }
@@ -350,7 +399,7 @@ mod tests {
         ArtifactRole, CatalogModel, ModelArtifact, ModelCatalog, ModelCollection,
         ModelFamilyDescriptor, ModelRuntimeDescriptor,
     };
-    use crate::engine::capabilities::{ModelFamilyId, RuntimeId};
+    use crate::engine::capabilities::{ModelFamilyId, ModelTask, RuntimeId};
 
     #[test]
     fn resolve_model_store_info_uses_absolute_override() {
@@ -368,9 +417,11 @@ mod tests {
         let temp_dir = tempfile_dir("metadata");
         let metadata = InstallMetadata {
             artifacts: vec![InstalledArtifact {
+                artifact_id: "model".to_string(),
                 filename: "model.bin".to_string(),
                 sha256: "abc".to_string(),
                 size_bytes: 42,
+                voice_id: None,
             }],
             catalog_version: 2,
             runtime_id: RuntimeId::WhisperCpp,
@@ -394,9 +445,11 @@ mod tests {
             &install_dir,
             &InstallMetadata {
                 artifacts: vec![InstalledArtifact {
+                    artifact_id: "model".to_string(),
                     filename: "missing.bin".to_string(),
                     sha256: "abc".to_string(),
                     size_bytes: 10,
+                    voice_id: None,
                 }],
                 catalog_version: 2,
                 runtime_id: RuntimeId::WhisperCpp,
@@ -411,6 +464,38 @@ mod tests {
             scan_installed_models(&sample_catalog(), &temp_dir).expect("scan should succeed");
 
         assert!(installed.is_empty());
+    }
+
+    #[test]
+    fn scan_installed_models_ignores_stale_backup_directories() {
+        let temp_dir = tempfile_dir("scan-backup");
+        let install_dir = temp_dir.join("whisper_cpp").join("whisper").join("small");
+        let backup_dir = install_dir.with_extension("backup-stale");
+        let metadata = InstallMetadata {
+            artifacts: vec![InstalledArtifact {
+                artifact_id: "model".to_string(),
+                filename: "model.bin".to_string(),
+                sha256: "abc".to_string(),
+                size_bytes: 10,
+                voice_id: None,
+            }],
+            catalog_version: 2,
+            runtime_id: RuntimeId::WhisperCpp,
+            family_id: ModelFamilyId::Whisper,
+            installed_at_unix_ms: 10,
+            model_id: "small".to_string(),
+        };
+        for directory in [&install_dir, &backup_dir] {
+            create_dir_all(directory).expect("install dir should create");
+            write(directory.join("model.bin"), b"model").expect("artifact should write");
+            write_install_metadata(directory, &metadata).expect("metadata should write");
+        }
+
+        let installed =
+            scan_installed_models(&sample_catalog(), &temp_dir).expect("scan should succeed");
+
+        assert_eq!(installed.len(), 1);
+        assert_eq!(installed[0].install_path, install_dir.display().to_string());
     }
 
     #[test]
@@ -497,6 +582,7 @@ mod tests {
             families: vec![ModelFamilyDescriptor {
                 family_id: ModelFamilyId::Whisper,
                 runtime_id: RuntimeId::WhisperCpp,
+                task: ModelTask::Stt,
                 display_name: "Whisper".to_string(),
                 summary: "summary".to_string(),
             }],
@@ -507,6 +593,7 @@ mod tests {
                     filename: "model.bin".to_string(),
                     required: true,
                     role: ArtifactRole::TranscriptionModel,
+                    voice_id: None,
                     sha256: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
                         .to_string(),
                     size_bytes: 10,
@@ -515,8 +602,10 @@ mod tests {
                 display_name: "Model".to_string(),
                 runtime_id: RuntimeId::WhisperCpp,
                 family_id: ModelFamilyId::Whisper,
+                task: ModelTask::Stt,
                 language_tags: vec!["en".to_string()],
                 supports_automatic_language_detection: false,
+                default_voice: None,
                 license_label: "MIT".to_string(),
                 license_url: "https://example.com/license".to_string(),
                 model_card_url: None,

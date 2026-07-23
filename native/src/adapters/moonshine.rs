@@ -7,7 +7,7 @@ use ort::value::{DynValue, PrimitiveTensorElementType, Tensor, Value};
 use serde::Deserialize;
 
 use crate::engine::capabilities::{
-    LanguageSupport, ModelFamilyCapabilities, ModelFamilyId, RuntimeId,
+    LanguageSupport, ModelFamilyCapabilities, ModelFamilyId, ModelTask, RuntimeId,
 };
 use crate::engine::traits::{LoadedModel, ModelFamilyAdapter, StreamingModel};
 use crate::protocol::{TimestampGranularity, TimestampSource, TranscriptSegment};
@@ -45,7 +45,11 @@ const REQUIRED_SIBLINGS: &[&str] = &[
     TOKENIZER_FILENAME,
 ];
 
-const CAPABILITIES: ModelFamilyCapabilities = ModelFamilyCapabilities {
+static CAPABILITIES: ModelFamilyCapabilities = ModelFamilyCapabilities {
+    task: ModelTask::Stt,
+    available_voices: Vec::new(),
+    supports_speed_control: false,
+    output_sample_rate: None,
     supports_segment_timestamps: false,
     supports_word_timestamps: false,
     supports_initial_prompt: false,

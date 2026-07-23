@@ -15,15 +15,19 @@ const RUNTIME_CAPS_DEFAULT: RuntimeCapabilitiesRecord = {
 };
 
 const FAMILY_CAPS_DEFAULT: ModelFamilyCapabilitiesRecord = {
+  availableVoices: [],
   maxAudioDurationSecs: null,
   producesPunctuation: false,
+  outputSampleRate: null,
   supportedLanguages: { kind: 'all' },
   supportsInitialPrompt: false,
   supportsStreaming: false,
+  supportsSpeedControl: false,
   supportsLanguageSelection: false,
   supportsAutomaticLanguageDetection: false,
   supportsSegmentTimestamps: false,
   supportsWordTimestamps: false,
+  task: 'stt',
 };
 
 function runtime(

@@ -1,0 +1,6 @@
+huggingface-hub==1.7.1
+numpy==2.2.6
+onnxruntime==1.23.2
+safetensors==0.7.0
+sentencepiece==0.2.1
+soundfile==0.13.1

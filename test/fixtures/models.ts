@@ -21,6 +21,7 @@ export function sampleInstalledModel(
     runtimeId: 'whisper_cpp',
     runtimePath: `/models/whisper_cpp/${modelId}/model.bin`,
     totalSizeBytes: modelId === DEFAULT_MODEL_ID ? 900 : 100,
+    installedVoiceIds: [],
     ...overrides,
   };
 }

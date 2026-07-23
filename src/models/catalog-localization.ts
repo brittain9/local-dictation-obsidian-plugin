@@ -8,6 +8,12 @@ const MODEL_SUMMARY_KEYS = {
   moonshine_small_streaming_en: 'catalog.moonshine_small_streaming_en.summary',
   moonshine_tiny_streaming_en: 'catalog.moonshine_tiny_streaming_en.summary',
   nemotron_asr_0_6b_int8_streaming_560ms: 'catalog.nemotron_asr_0_6b_int8_streaming_560ms.summary',
+  pocket_tts_english_2026_04_int8: 'catalog.pocket_tts_english_2026_04_int8.summary',
+  pocket_tts_french_24l_int8: 'catalog.pocket_tts_french_24l_int8.summary',
+  pocket_tts_german_int8: 'catalog.pocket_tts_german_int8.summary',
+  pocket_tts_spanish_int8: 'catalog.pocket_tts_spanish_int8.summary',
+  pocket_tts_portuguese_int8: 'catalog.pocket_tts_portuguese_int8.summary',
+  pocket_tts_italian_int8: 'catalog.pocket_tts_italian_int8.summary',
   whisper_base_en_q8_0: 'catalog.whisper_base_en_q8_0.summary',
   whisper_large_v3_turbo_q8_0: 'catalog.whisper_large_v3_turbo_q8_0.summary',
   whisper_medium_en_q5_0: 'catalog.whisper_medium_en_q5_0.summary',
@@ -19,6 +25,7 @@ const FAMILY_SUMMARY_KEYS = {
   cohere_transcribe: 'catalog.family.cohere_transcribe.summary',
   moonshine: 'catalog.family.moonshine.summary',
   nemotron_asr: 'catalog.family.nemotron_asr.summary',
+  pocket_tts: 'catalog.family.pocket_tts.summary',
   whisper: 'catalog.family.whisper.summary',
 } as const;
 
