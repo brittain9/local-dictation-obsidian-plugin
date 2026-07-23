@@ -97,6 +97,10 @@ macOS and Windows are the primary tested targets. Fedora native and Flatpak inst
 - OpenRouter is optional and receives text, not audio, only when you select it.
 - Speaker embeddings and recovery records are short-lived rather than stored as profiles.
 
+## Support development
+
+If Local Dictation is useful to you and you would like to support continued local-first development, you can [buy me a coffee](https://buymeacoffee.com/alexbrittaq).
+
 ## Development and project links
 
 Local Dictation pairs a TypeScript plugin with a Rust native sidecar. See [CONTRIBUTING.md](CONTRIBUTING.md) for architecture, setup, and development workflow.
