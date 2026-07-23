@@ -1,6 +1,6 @@
 {
   "name": "local-dictation",
-  "version": "2026.7.10",
+  "version": "2026.7.11",
   "description": "Local speech-to-text and text-to-speech for notes and meetings. Dictate live, transcribe microphone and system audio with Whisper and other models, add speaker labels and timestamps, shape transcripts, and read notes aloud.",
   "private": true,
   "license": "MIT",
