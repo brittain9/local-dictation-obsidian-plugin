@@ -49,7 +49,7 @@ describe('RawTranscriptRecovery', () => {
     });
   });
 
-  it('overwrites the prior record and replaces its notice with an action for the latest receipt', async () => {
+  it('overwrites the prior record and replaces its notice with an action for the latest receipt', () => {
     const harness = createHarness('clean one');
     harness.recovery.record(harness.receipt({ rawText: 'raw one' }));
     const firstAction = recoveryAction(harness);
@@ -71,6 +71,23 @@ describe('RawTranscriptRecovery', () => {
 
     firstAction.run();
     expect(harness.view.state.doc.toString()).toBe('raw two');
+  });
+
+  it('copies the retained raw transcript without consuming recovery', async () => {
+    const rawText = 'private raw transcript';
+    const harness = createHarness('clean');
+    harness.recovery.record(harness.receipt({ rawText }));
+
+    expect(await harness.recovery.copyRawTranscript()).toBe(true);
+
+    expect(harness.writeText).toHaveBeenCalledExactlyOnceWith(rawText);
+    expect(harness.recovery.hasRecovery()).toBe(true);
+    expect(harness.feedback.show).toHaveBeenLastCalledWith({
+      intent: 'success',
+      key: 'raw-transcript-copied',
+      message: 'Copied the raw transcript.',
+    });
+    expect(JSON.stringify(harness.feedback.show.mock.calls)).not.toContain(rawText);
   });
 
   it('clears immediately when disabled and ignores records until re-enabled', () => {
