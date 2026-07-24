@@ -46,6 +46,7 @@ import { t } from './shared/i18n';
 import { createObsidianFeedbackPresenter } from './shared/obsidian-feedback-presenter';
 import { createPluginLogger, type PluginLogger } from './shared/plugin-logger';
 import { createUserFeedback, type UserFeedback } from './shared/user-feedback';
+import { detectCudaCompatibility } from './sidecar/gpu-precheck';
 import { assertSidecarExecutableIsFresh } from './sidecar/sidecar-build-state';
 import { SidecarConnection } from './sidecar/sidecar-connection';
 import { formatSidecarExecutableName } from './sidecar/sidecar-executable';
@@ -930,11 +931,12 @@ export default class LocalSttPlugin extends Plugin {
 
     let drift: SidecarVersionDrift[];
     try {
+      const cudaCompatibility = await detectCudaCompatibility();
       drift = await detectSidecarVersionDrift({
         pluginDirectory,
         pluginVersion: this.manifest.version,
         preferredVariant: this.settings.accelerationPreference === 'cpu_only' ? 'cpu' : 'cuda',
-        supportsCuda: !Platform.isMacOS,
+        supportsCuda: cudaCompatibility.status === 'compatible',
       });
     } catch (error) {
       this.logger.error('sidecar', 'version drift check failed', error);

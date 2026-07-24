@@ -2,13 +2,22 @@ import { spawn } from 'node:child_process';
 
 import releaseBuildConfig from '../../.github/release-build-config.json';
 
-const CUDA_TOOLKIT_MINIMUM_DRIVER_MAJOR: Readonly<Record<string, number>> = {
-  '13.2.0': 595,
+const CUDA_TOOLKIT_MINIMUM_DRIVER_VERSIONS: Readonly<
+  Record<string, Readonly<Record<CudaReleasePlatform, string>>>
+> = {
+  '13.2.0': {
+    linux: '595.45.04',
+    win32: '595.97',
+  },
 };
 
+type CudaReleasePlatform = 'linux' | 'win32';
+
+const minimumDriverVersions = resolveMinimumDriverVersions(releaseBuildConfig.cudaToolkitVersion);
 export const CUDA_COMPATIBILITY_REQUIREMENTS = {
   minimumComputeCapability: resolveMinimumComputeCapability(releaseBuildConfig.cudaArchitectures),
-  minimumDriverMajor: resolveMinimumDriverMajor(releaseBuildConfig.cudaToolkitVersion),
+  minimumDriverMajor: Number(minimumDriverVersions.linux.split('.', 1)[0]),
+  minimumDriverVersions,
 } as const;
 
 export const CUDA_PROBE_OUTPUT_LIMIT_BYTES = 64 * 1024;
@@ -68,9 +77,12 @@ export function parseCudaProbeOutput(output: string): CudaProbeOutput | null {
   return driverVersion === null ? null : { computeCapabilities, driverVersion };
 }
 
-export function classifyCudaCompatibility(probe: CudaProbeOutput): CudaCompatibility {
-  const driverMajor = Number(probe.driverVersion.split('.', 1)[0]);
-  if (driverMajor < CUDA_COMPATIBILITY_REQUIREMENTS.minimumDriverMajor) {
+export function classifyCudaCompatibility(
+  probe: CudaProbeOutput,
+  platform: CudaReleasePlatform = process.platform === 'win32' ? 'win32' : 'linux',
+): CudaCompatibility {
+  const minimumDriverVersion = CUDA_COMPATIBILITY_REQUIREMENTS.minimumDriverVersions[platform];
+  if (compareNumericVersions(probe.driverVersion, minimumDriverVersion) < 0) {
     return { ...probe, status: 'incompatible_driver' };
   }
 
@@ -193,6 +205,18 @@ function isDriverVersion(value: string): boolean {
   );
 }
 
+function compareNumericVersions(left: string, right: string): number {
+  const leftParts = left.split('.').map(Number);
+  const rightParts = right.split('.').map(Number);
+  const length = Math.max(leftParts.length, rightParts.length);
+
+  for (let index = 0; index < length; index += 1) {
+    const difference = (leftParts[index] ?? 0) - (rightParts[index] ?? 0);
+    if (difference !== 0) return Math.sign(difference);
+  }
+  return 0;
+}
+
 function meetsMinimumComputeCapability(value: string): boolean {
   const match = COMPUTE_CAPABILITY_PATTERN.exec(value);
   if (match === null) return false;
@@ -214,8 +238,10 @@ function resolveMinimumComputeCapability(cudaArchitectures: string): {
   return { major: Number(match[1]), minor: Number(match[2]) };
 }
 
-function resolveMinimumDriverMajor(cudaToolkitVersion: string): number {
-  const minimum = CUDA_TOOLKIT_MINIMUM_DRIVER_MAJOR[cudaToolkitVersion];
+function resolveMinimumDriverVersions(
+  cudaToolkitVersion: string,
+): Readonly<Record<CudaReleasePlatform, string>> {
+  const minimum = CUDA_TOOLKIT_MINIMUM_DRIVER_VERSIONS[cudaToolkitVersion];
   if (minimum === undefined) {
     throw new Error(`No minimum NVIDIA driver is defined for CUDA toolkit ${cudaToolkitVersion}`);
   }

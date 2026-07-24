@@ -97,10 +97,11 @@ describe('parseCudaProbeOutput', () => {
 describe('classifyCudaCompatibility', () => {
   it.each([
     ['594.99', ['8.9'], 'incompatible_driver'],
-    ['595.0', ['7.4'], 'incompatible_gpu'],
-    ['595.0', ['7.5'], 'compatible'],
-    ['595.0', ['7.4', '8.9'], 'incompatible_gpu'],
-    ['595.0', [], 'incompatible_gpu'],
+    ['595.45.03', ['8.9'], 'incompatible_driver'],
+    ['595.45.04', ['7.4'], 'incompatible_gpu'],
+    ['595.45.04', ['7.5'], 'compatible'],
+    ['595.45.04', ['7.4', '8.9'], 'incompatible_gpu'],
+    ['595.45.04', [], 'incompatible_gpu'],
     ['596.0.1', ['10.0', '12.1'], 'compatible'],
   ] as const)(
     'classifies driver %s and GPUs %j as %s',
@@ -121,7 +122,20 @@ describe('classifyCudaCompatibility', () => {
     expect(CUDA_COMPATIBILITY_REQUIREMENTS).toEqual({
       minimumComputeCapability: { major: 7, minor: 5 },
       minimumDriverMajor: 595,
+      minimumDriverVersions: {
+        linux: '595.45.04',
+        win32: '595.97',
+      },
     });
+  });
+
+  it.each([
+    ['595.96', 'incompatible_driver'],
+    ['595.97', 'compatible'],
+  ] as const)('classifies Windows driver %s as %s', (driverVersion, status) => {
+    expect(
+      classifyCudaCompatibility({ driverVersion, computeCapabilities: ['7.5'] }, 'win32'),
+    ).toMatchObject({ status });
   });
 });
 
@@ -136,13 +150,13 @@ describe('detectCudaCompatibility', () => {
       { shell: false, stdio: ['ignore', 'pipe', 'ignore'], windowsHide: true },
     );
 
-    child.stdout.emit('data', Buffer.from('595.12, 7.5\n'));
+    child.stdout.emit('data', Buffer.from('595.45.04, 7.5\n'));
     child.emit('exit', 0, null);
     child.emit('close', 0, null);
 
     await expect(promise).resolves.toEqual({
       computeCapabilities: ['7.5'],
-      driverVersion: '595.12',
+      driverVersion: '595.45.04',
       status: 'compatible',
     });
     expect(child.listenerCount('close')).toBe(0);
@@ -159,7 +173,7 @@ describe('detectCudaCompatibility', () => {
       return result;
     });
 
-    child.stdout.emit('data', '595.12, ');
+    child.stdout.emit('data', '595.45.04, ');
     child.emit('exit', 0, null);
     await Promise.resolve();
     expect(settled).not.toHaveBeenCalled();
@@ -169,7 +183,7 @@ describe('detectCudaCompatibility', () => {
 
     await expect(promise).resolves.toEqual({
       computeCapabilities: ['7.5'],
-      driverVersion: '595.12',
+      driverVersion: '595.45.04',
       status: 'compatible',
     });
   });
@@ -289,6 +303,7 @@ describe('detectCudaCompatibility', () => {
 
   it.each([
     ['darwin', 'arm64'],
+    ['darwin', 'x64'],
     ['linux', 'arm64'],
     ['win32', 'arm64'],
   ] as const)('does not spawn on unsupported %s %s', async (platform, arch) => {
