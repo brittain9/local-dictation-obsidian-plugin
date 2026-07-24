@@ -3,15 +3,14 @@ import { Modal, Setting, setIcon } from 'obsidian';
 
 import {
   catalogModelSupportsLanguage,
-  DICTATION_LANGUAGE_OPTIONS,
   dictationLanguageLabel,
+  formatCatalogLanguageLabel,
 } from '../language/dictation-language';
 import { formatBytes, formatVoiceLabel } from '../shared/format-utils';
 import { t } from '../shared/i18n';
 import type { UserFeedback } from '../shared/user-feedback';
 import { ConfirmModal } from '../ui/confirm-modal';
 import { styleDestructiveButton } from '../ui/destructive-button';
-import { resolveEngineCapabilities } from './capability-view';
 import { localizeFamilySummary } from './catalog-localization';
 import { formatModelTagLabel } from './model-guidance';
 import { isCancellingPhase, type ModelInstallManager } from './model-install-manager';
@@ -20,7 +19,7 @@ import {
   type InstallProgressState,
   updateInstallProgressElement,
 } from './model-install-progress';
-import { ModelDetailsModal } from './model-management-modals';
+import { openModelDetailsModal } from './model-management-modals';
 import {
   type CatalogModelRecord,
   getTotalModelSize,
@@ -678,21 +677,12 @@ export class ManageModelsModal extends Modal {
               .setTooltip(t('models.manage.details'))
               .onClick(() => {
                 const state = this.deps.manager.getState();
-                const installedModel = state.installedModels.find((m) =>
-                  matchesModelTriple(m, row.model.runtimeId, row.model.familyId, row.model.modelId),
-                );
-                const capabilities = resolveEngineCapabilities(
-                  state.compiledRuntimes,
-                  state.compiledAdapters,
-                  row.model.runtimeId,
-                  row.model.familyId,
-                );
-                new ModelDetailsModal(
-                  this.app,
-                  row.model,
-                  installedModel?.installPath ?? null,
-                  capabilities,
-                ).open();
+                openModelDetailsModal(this.app, state, {
+                  familyId: row.model.familyId,
+                  kind: 'catalog_model',
+                  modelId: row.model.modelId,
+                  runtimeId: row.model.runtimeId,
+                });
               });
           });
           break;
@@ -1033,16 +1023,7 @@ function matchesAdapterTab(left: AdapterTabKey, right: AdapterTabKey | null): bo
 }
 
 function modelLanguageLabel(tag: string): string {
-  const known = DICTATION_LANGUAGE_OPTIONS.find(
-    (option) => option.value !== 'auto' && option.value === tag,
-  );
-  if (known !== undefined) return known.label;
-
-  try {
-    return new Intl.DisplayNames([tag], { type: 'language' }).of(tag) ?? tag.toUpperCase();
-  } catch {
-    return tag.toUpperCase();
-  }
+  return formatCatalogLanguageLabel(tag);
 }
 
 function getRowKey(row: ModelRowState): string {

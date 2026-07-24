@@ -7,12 +7,13 @@ import {
   isDictationLanguage,
   supportedDictationLanguageOptions,
 } from '../language/dictation-language';
-import { resolveEngineCapabilities } from '../models/capability-view';
 import type { ModelPickerOptions } from '../models/manage-models-modal';
 import type { ModelInstallManager } from '../models/model-install-manager';
 import { updateInstallProgressElement } from '../models/model-install-progress';
-import { ExternalModelFileModal, ModelDetailsModal } from '../models/model-management-modals';
-import { matchesModelTriple } from '../models/model-management-types';
+import {
+  ExternalModelFileModal,
+  openSelectedModelDetailsModal,
+} from '../models/model-management-modals';
 import { deriveCurrentModelDisplay } from '../models/model-row-state';
 import { t } from '../shared/i18n';
 import type { PluginLogger } from '../shared/plugin-logger';
@@ -292,7 +293,10 @@ export class LocalSttSettingTab extends PluginSettingTab {
           },
         ).open();
       },
-      onModelInfo: this.buildModelInfoCallback(manager, settings),
+      onModelInfo:
+        settings.selectedModel?.kind === 'catalog_model'
+          ? this.buildModelInfoCallback(manager, 'stt')
+          : null,
     });
 
     const modelState = manager.getState();
@@ -484,6 +488,7 @@ export class LocalSttSettingTab extends PluginSettingTab {
       {
         getSettings: () => this.dependencies.getSettings(),
         manager,
+        openSelectedModelDetails: this.buildModelInfoCallback(manager, 'tts'),
         openModelPicker: (options) => this.dependencies.openModelPicker(options),
         persistVoice: (voice) => this.access.persistOne('selectedTtsVoice', voice),
       },
@@ -714,39 +719,9 @@ export class LocalSttSettingTab extends PluginSettingTab {
     });
   }
 
-  private buildModelInfoCallback(
-    manager: ModelInstallManager,
-    settings: PluginSettings,
-  ): (() => void) | null {
-    const sel = settings.selectedModel;
-
-    if (sel === null || sel.kind !== 'catalog_model') {
-      return null;
-    }
-
-    const { runtimeId, familyId, modelId } = sel;
-
+  private buildModelInfoCallback(manager: ModelInstallManager, task: 'stt' | 'tts'): () => void {
     return () => {
-      const state = manager.getState();
-      const catalogModel = state.catalog.models.find((m) =>
-        matchesModelTriple(m, runtimeId, familyId, modelId),
-      );
-      if (catalogModel === undefined) return;
-      const installedModel = state.installedModels.find((m) =>
-        matchesModelTriple(m, runtimeId, familyId, modelId),
-      );
-      const capabilities = resolveEngineCapabilities(
-        state.compiledRuntimes,
-        state.compiledAdapters,
-        catalogModel.runtimeId,
-        catalogModel.familyId,
-      );
-      new ModelDetailsModal(
-        this.app,
-        catalogModel,
-        installedModel?.installPath ?? null,
-        capabilities,
-      ).open();
+      openSelectedModelDetailsModal(this.app, manager, task);
     };
   }
 
