@@ -2,6 +2,8 @@ import { vi } from 'vitest';
 
 export const getLanguage = vi.fn(() => 'en');
 
+const elementParents = new WeakMap<TestElement, TestElement>();
+
 export abstract class AbstractInputSuggest<T> {
   abstract getSuggestions(query: string): T[] | Promise<T[]>;
   abstract renderSuggestion(value: T, el: HTMLElement): void;
@@ -21,7 +23,20 @@ export class TestElement {
   disabled = false;
   id = '';
   innerHTML = '';
+  style = { width: '' };
   textContent = '';
+
+  readonly classList = {
+    add: (className: string): void => {
+      this.setClass(className, true);
+    },
+    contains: (className: string): boolean => this.classes().has(className),
+    toggle: (className: string, force?: boolean): boolean => {
+      const enabled = force ?? !this.classes().has(className);
+      this.setClass(className, enabled);
+      return enabled;
+    },
+  };
 
   addClass(className: string): void {
     this.className = [this.className, className].filter(Boolean).join(' ');
@@ -38,7 +53,7 @@ export class TestElement {
     for (const [name, value] of Object.entries(options.attr ?? {})) {
       element.setAttribute(name, value);
     }
-    this.children.push(element);
+    this.append(element);
     return element;
   }
 
@@ -47,9 +62,44 @@ export class TestElement {
   }
 
   empty(): void {
+    for (const child of this.children) {
+      elementParents.delete(child);
+    }
     this.children.length = 0;
     this.innerHTML = '';
     this.textContent = '';
+  }
+
+  append(...children: TestElement[]): void {
+    for (const child of children) {
+      child.remove();
+      elementParents.set(child, this);
+      this.children.push(child);
+    }
+  }
+
+  getAttribute(name: string): string | null {
+    return this.attributes.get(name) ?? null;
+  }
+
+  querySelector(selector: string): TestElement | null {
+    const className = selector.startsWith('.') ? selector.slice(1) : selector;
+    for (const child of this.children) {
+      if (child.classList.contains(className)) return child;
+      const match = child.querySelector(selector);
+      if (match !== null) return match;
+    }
+    return null;
+  }
+
+  remove(): void {
+    const parent = elementParents.get(this);
+    if (parent === undefined) return;
+    parent.removeChild(this);
+  }
+
+  removeAttribute(name: string): void {
+    this.attributes.delete(name);
   }
 
   setAttribute(name: string, value: string): void {
@@ -69,9 +119,15 @@ export class TestElement {
 
   insertBefore(child: TestElement, before: TestElement): TestElement {
     const existingIndex = this.children.indexOf(child);
-    if (existingIndex >= 0) this.children.splice(existingIndex, 1);
+    if (existingIndex >= 0) {
+      this.children.splice(existingIndex, 1);
+      elementParents.delete(child);
+    } else {
+      child.remove();
+    }
     const beforeIndex = this.children.indexOf(before);
     if (beforeIndex < 0) throw new Error('Reference child not found');
+    elementParents.set(child, this);
     this.children.splice(beforeIndex, 0, child);
     return child;
   }
@@ -80,6 +136,7 @@ export class TestElement {
     const index = this.children.indexOf(child);
     if (index < 0) throw new Error('Child not found');
     this.children.splice(index, 1);
+    elementParents.delete(child);
     return child;
   }
 
@@ -97,8 +154,15 @@ export class TestElement {
   }
 
   toggleClass(className: string, force?: boolean): void {
-    const classes = new Set(this.className.split(/\s+/u).filter(Boolean));
-    const enabled = force ?? !classes.has(className);
+    this.classList.toggle(className, force);
+  }
+
+  private classes(): Set<string> {
+    return new Set(this.className.split(/\s+/u).filter(Boolean));
+  }
+
+  private setClass(className: string, enabled: boolean): void {
+    const classes = this.classes();
     if (enabled) {
       classes.add(className);
     } else {
