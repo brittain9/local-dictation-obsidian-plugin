@@ -271,9 +271,11 @@ export class ReadAloudController {
       action: {
         label: t('tts.action.chooseModel'),
         run: () => {
-          void Promise.resolve(this.deps.onModelMissing()).catch((error: unknown) => {
-            this.reportModelRequired(error);
-          });
+          void Promise.resolve()
+            .then(() => this.deps.onModelMissing())
+            .catch((error: unknown) => {
+              this.reportModelRequired(error);
+            });
         },
       },
       ...(cause === undefined ? {} : { cause }),

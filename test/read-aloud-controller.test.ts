@@ -292,12 +292,36 @@ describe('ReadAloudController', () => {
 
     request.action.run();
 
-    expect(harness.onModelMissing).toHaveBeenCalledOnce();
+    await vi.waitFor(() => expect(harness.onModelMissing).toHaveBeenCalledOnce());
   });
 
   it('restores the model setup action when opening recovery fails', async () => {
     const onModelMissing = vi.fn(async () => {
       throw new Error('model picker failed');
+    });
+    const harness = controllerHarness({ onModelMissing, selected: false });
+
+    await harness.controller.read(editorFor('Speak this.', { ch: 0, line: 0 }));
+    const request = harness.feedback.show.mock.calls[0]?.[0];
+    if (request?.action === undefined) throw new Error('model setup action was not offered');
+    request.action.run();
+
+    await vi.waitFor(() => expect(harness.feedback.show).toHaveBeenCalledTimes(2));
+    expect(harness.feedback.show).toHaveBeenLastCalledWith({
+      action: {
+        label: 'Choose model',
+        run: expect.any(Function),
+      },
+      cause: expect.any(Error),
+      intent: 'action-required',
+      key: 'read-aloud-model-required',
+      message: 'Install and select a read-aloud model first.',
+    });
+  });
+
+  it('restores the model setup action when recovery throws synchronously', async () => {
+    const onModelMissing = vi.fn(() => {
+      throw new Error('model picker threw');
     });
     const harness = controllerHarness({ onModelMissing, selected: false });
 
