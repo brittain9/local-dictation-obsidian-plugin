@@ -1,4 +1,4 @@
-export type SidecarLifecycleKind = 'mutation' | 'speech';
+export type SidecarLifecycleKind = 'mutation' | 'speech' | 'use';
 
 export class SidecarLifecycleConflictError extends Error {
   constructor(
@@ -23,9 +23,19 @@ export interface SidecarLifecycleLease {
 export class SidecarLifecycleGate {
   private mutationToken: symbol | null = null;
   private readonly speechTokens = new Set<symbol>();
+  private readonly useTokens = new Set<symbol>();
 
   async runMutation<T>(operation: () => Promise<T>): Promise<T> {
     const lease = this.acquireMutation();
+    try {
+      return await operation();
+    } finally {
+      lease.release();
+    }
+  }
+
+  async runUse<T>(operation: () => Promise<T>): Promise<T> {
+    const lease = this.acquireUse();
     try {
       return await operation();
     } finally {
@@ -39,6 +49,9 @@ export class SidecarLifecycleGate {
     }
     if (this.speechTokens.size > 0) {
       throw new SidecarLifecycleConflictError('mutation', 'speech');
+    }
+    if (this.useTokens.size > 0) {
+      throw new SidecarLifecycleConflictError('mutation', 'use');
     }
 
     const token = Symbol('sidecar-mutation');
@@ -59,6 +72,18 @@ export class SidecarLifecycleGate {
     this.speechTokens.add(token);
     return createLease(() => {
       this.speechTokens.delete(token);
+    });
+  }
+
+  acquireUse(): SidecarLifecycleLease {
+    if (this.mutationToken !== null) {
+      throw new SidecarLifecycleConflictError('use', 'mutation');
+    }
+
+    const token = Symbol('sidecar-use');
+    this.useTokens.add(token);
+    return createLease(() => {
+      this.useTokens.delete(token);
     });
   }
 }

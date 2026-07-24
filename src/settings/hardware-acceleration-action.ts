@@ -47,6 +47,19 @@ export async function changeHardwareAcceleration(
     });
   } catch (error) {
     if (!preferencePersisted) {
+      try {
+        // Production settings are updated in memory before the persisted write
+        // settles. Restore the authoritative value even when that first write
+        // rejects, rather than assuming a rejected promise left state untouched.
+        await deps.access.persistOne('accelerationPreference', previousPreference);
+      } catch (rollbackError) {
+        deps.feedback.show({
+          cause: rollbackError,
+          intent: 'error',
+          message: t('settings.hardwareAcceleration.rollbackSaveFailed'),
+        });
+        return;
+      }
       deps.feedback.show({
         cause: error,
         intent: 'error',

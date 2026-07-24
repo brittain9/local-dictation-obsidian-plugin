@@ -221,9 +221,10 @@ describe('hardware acceleration mutation', () => {
   });
 
   it('restores the UI when initial persistence fails without restarting', async () => {
-    const saveSettings = vi.fn(async () => {
-      throw new Error('disk unavailable');
-    });
+    const saveSettings = vi
+      .fn<(settings: typeof DEFAULT_PLUGIN_SETTINGS) => Promise<void>>()
+      .mockRejectedValueOnce(new Error('disk unavailable'))
+      .mockResolvedValueOnce(undefined);
     const restartSidecar = vi.fn(async () => {});
     const feedbackShow = vi.fn();
     const { getSettings, toggle } = renderHardwareToggle({
@@ -243,10 +244,52 @@ describe('hardware acceleration mutation', () => {
       }),
     );
 
+    expect(saveSettings.mock.calls.map(([settings]) => settings.accelerationPreference)).toEqual([
+      'cpu_only',
+      'auto',
+    ]);
     expect(getSettings().accelerationPreference).toBe('auto');
     expect(toggle.value).toBe(true);
     expect(toggle.toggleEl.disabled).toBe(false);
     expect(restartSidecar).not.toHaveBeenCalled();
+  });
+
+  it('restores production-ordered in-memory state when initial persistence fails', async () => {
+    let settings = { ...DEFAULT_PLUGIN_SETTINGS };
+    const persistOne = vi
+      .fn<SettingAccess['persistOne']>()
+      .mockImplementationOnce(async (key, value) => {
+        settings = { ...settings, [key]: value };
+        throw new Error('disk unavailable');
+      })
+      .mockImplementationOnce(async (key, value) => {
+        settings = { ...settings, [key]: value };
+      });
+    const feedbackShow = vi.fn();
+    const restartSidecar = vi.fn(async () => {});
+
+    await changeHardwareAcceleration(
+      {
+        access: {
+          getSettings: () => settings,
+          persistOne,
+        },
+        feedback: { show: feedbackShow },
+        restartSidecar,
+        sidecarLifecycleGate: new SidecarLifecycleGate(),
+      },
+      false,
+    );
+
+    expect(persistOne.mock.calls.map(([, value]) => value)).toEqual(['cpu_only', 'auto']);
+    expect(settings.accelerationPreference).toBe('auto');
+    expect(restartSidecar).not.toHaveBeenCalled();
+    expect(feedbackShow).toHaveBeenCalledWith({
+      cause: expect.any(Error),
+      intent: 'error',
+      message:
+        'Could not save the hardware acceleration setting. The previous setting is still active.',
+    });
   });
 
   it('rolls persistence and the engine back after a restart failure', async () => {

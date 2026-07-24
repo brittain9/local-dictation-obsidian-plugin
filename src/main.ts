@@ -369,15 +369,17 @@ export default class LocalSttPlugin extends Plugin {
   private async runPostLayoutStartup(): Promise<void> {
     await this.bootstrapLocalDictationSidebar();
 
-    // Surface sidecar/plugin version drift before the health handshake. An
-    // Obsidian update swaps the plugin files but never the separately-installed
-    // sidecar, so a stale sidecar may even be the reason the handshake fails.
-    await this.checkSidecarVersionDrift();
-
     try {
-      await this.checkSidecarHealth({ showNotice: false });
-      const systemInfo = await this.requireSidecarConnection().getSystemInfo();
-      logAccelerationFallbacks(systemInfo, this.settings.accelerationPreference, this.logger);
+      await this.sidecarLifecycleGate.runUse(async () => {
+        // Surface sidecar/plugin version drift before the health handshake. An
+        // Obsidian update swaps the plugin files but never the separately-installed
+        // sidecar, so a stale sidecar may even be the reason the handshake fails.
+        await this.checkSidecarVersionDrift();
+
+        await this.checkSidecarHealth({ showNotice: false, useLease: false });
+        const systemInfo = await this.requireSidecarConnection().getSystemInfo();
+        logAccelerationFallbacks(systemInfo, this.settings.accelerationPreference, this.logger);
+      });
     } catch (error) {
       if (error instanceof SidecarNotInstalledError) {
         this.logger.debug('sidecar', 'sidecar not installed on startup');
@@ -541,13 +543,17 @@ export default class LocalSttPlugin extends Plugin {
     this.ribbonController?.dispose();
   }
 
-  private async checkSidecarHealth(options: { showNotice?: boolean } = {}): Promise<void> {
+  private async checkSidecarHealth(
+    options: { showNotice?: boolean; useLease?: boolean } = {},
+  ): Promise<void> {
     const sidecarConnection = this.requireSidecarConnection();
 
     try {
-      const health = await sidecarConnection.healthCheck(
-        this.settings.sidecarStartupTimeoutSeconds * 1000,
-      );
+      const health = await ((options.useLease ?? true)
+        ? this.sidecarLifecycleGate.runUse(async () =>
+            sidecarConnection.healthCheck(this.settings.sidecarStartupTimeoutSeconds * 1000),
+          )
+        : sidecarConnection.healthCheck(this.settings.sidecarStartupTimeoutSeconds * 1000));
 
       if (options.showNotice ?? true) {
         this.feedback.show({
@@ -556,6 +562,15 @@ export default class LocalSttPlugin extends Plugin {
         });
       }
     } catch (error) {
+      if (error instanceof SidecarLifecycleConflictError) {
+        if (options.showNotice ?? true) {
+          this.feedback.show({
+            intent: 'warning',
+            message: t('settings.sidecar.operationInProgress'),
+          });
+        }
+        return;
+      }
       this.handleError(t('notice.sidecarHealthCheckFailed'), error, options.showNotice ?? true);
       throw error;
     }

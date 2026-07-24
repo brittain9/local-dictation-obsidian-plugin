@@ -6,6 +6,38 @@ import {
 } from '../src/sidecar/sidecar-lifecycle-gate';
 
 describe('SidecarLifecycleGate', () => {
+  it('blocks process use while mutation is active', () => {
+    const gate = new SidecarLifecycleGate();
+    const mutation = gate.acquireMutation();
+
+    expect(() => gate.acquireUse()).toThrow(
+      expect.objectContaining({
+        activeKind: 'mutation',
+        requestedKind: 'use',
+      }),
+    );
+
+    mutation.release();
+    const use = gate.acquireUse();
+    use.release();
+  });
+
+  it('blocks mutation while process use is active', () => {
+    const gate = new SidecarLifecycleGate();
+    const use = gate.acquireUse();
+
+    expect(() => gate.acquireMutation()).toThrow(
+      expect.objectContaining({
+        activeKind: 'use',
+        requestedKind: 'mutation',
+      }),
+    );
+
+    use.release();
+    const mutation = gate.acquireMutation();
+    mutation.release();
+  });
+
   it('rejects mutation synchronously while any speech lifecycle is held', () => {
     const gate = new SidecarLifecycleGate();
     const dictation = gate.acquireSpeech();
