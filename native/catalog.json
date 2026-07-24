@@ -47,6 +47,23 @@
       "runtimeId": "onnx_runtime",
       "displayName": "Pocket TTS",
       "summary": "Local read-aloud synthesis in English, French, German, Spanish, Portuguese, and Italian with selectable curated voices and pitch-preserving speed control."
+    },
+    {
+      "runtimeId": "onnx_runtime",
+      "familyId": "supertonic",
+      "task": "tts",
+      "displayName": "Supertonic 3",
+      "summary": "Lightning-fast on-device multilingual TTS via ONNX Runtime.",
+      "languageSupport": {
+        "kind": "list",
+        "tags": ["en", "es", "de", "fr", "pt", "it", "nl", "ja"]
+      },
+      "supportsStreaming": true,
+      "supportsLanguageSelection": false,
+      "supportsAutomaticLanguageDetection": false,
+      "supportsSpeedControl": true,
+      "availableVoices": ["F1", "F2", "F3", "F4", "F5", "M1", "M2", "M3", "M4", "M5"],
+      "outputSampleRate": 24000
     }
   ],
   "collections": [
@@ -69,6 +86,11 @@
       "collectionId": "nemotron_asr_streaming",
       "displayName": "NVIDIA Nemotron 3.5 ASR",
       "summary": "Experimental multilingual streaming transcription using the pinned 560 ms int8 export."
+    },
+    {
+      "collectionId": "supertonic_read_aloud",
+      "displayName": "Supertonic Read Aloud",
+      "summary": "Supertonic 3 multilingual local read-aloud model and built-in voices."
     },
     {
       "collectionId": "pocket_tts_read_aloud",
@@ -183,7 +205,7 @@
       "modelCardUrl": "https://github.com/ggml-org/whisper.cpp",
       "notes": [
         "Significantly better accuracy than Small, especially with technical vocabulary.",
-        "CPU inference is slower — consider GPU acceleration or patience."
+        "CPU inference is slower \u2014 consider GPU acceleration or patience."
       ],
       "artifacts": [
         {
@@ -215,7 +237,7 @@
       "notes": [
         "Highest accuracy available. The Turbo architecture is faster than standard Large V3.",
         "Supports automatic detection or explicit selection for the verified language list.",
-        "CPU inference is slow — best paired with hardware acceleration."
+        "CPU inference is slow \u2014 best paired with hardware acceleration."
       ],
       "artifacts": [
         {
@@ -755,6 +777,184 @@
     },
     {
       "runtimeId": "onnx_runtime",
+      "familyId": "supertonic",
+      "task": "tts",
+      "modelId": "supertonic_3_multilingual_2026_05",
+      "collectionId": "supertonic_read_aloud",
+      "displayName": "Supertonic 3 Multilingual",
+      "summary": "Lightning-fast local multilingual read-aloud synthesis with Supertonic 3 ONNX weights for the eight supported app languages.",
+      "languageTags": ["en", "es", "de", "fr", "pt", "it", "nl", "ja"],
+      "defaultVoice": "F1",
+      "uxTags": ["read-aloud", "cpu", "streaming", "recommended"],
+      "licenseLabel": "OpenRAIL-M",
+      "licenseUrl": "https://huggingface.co/Supertone/supertonic-3/blob/main/LICENSE",
+      "sourceUrl": "https://huggingface.co/Supertone/supertonic-3/tree/3cadd1ee6394adea1bd021217a0e650ede09a323",
+      "modelCardUrl": "https://huggingface.co/Supertone/supertonic-3",
+      "notes": [
+        "Supertonic 3 supports 31 languages upstream; this catalog entry exposes only the eight languages currently supported by Local Dictation.",
+        "The initial install includes the model and F1 voice; the remaining nine built-in voices are optional downloads.",
+        "Synthesis runs locally on CPU with ONNX Runtime and produces 24 kHz mono audio.",
+        "The model weights are licensed under OpenRAIL-M, not this project's MIT license."
+      ],
+      "artifacts": [
+        {
+          "artifactId": "config",
+          "role": "supporting_file",
+          "required": true,
+          "filename": "onnx/tts.json",
+          "downloadUrl": "https://huggingface.co/Supertone/supertonic-3/resolve/3cadd1ee6394adea1bd021217a0e650ede09a323/onnx/tts.json",
+          "sha256": "42078d3aef1cd43ab43021f3c54f47d2d75ceb4e75f627f118890128b06a0d09",
+          "sizeBytes": 8253
+        },
+        {
+          "artifactId": "unicode_indexer",
+          "role": "supporting_file",
+          "required": true,
+          "filename": "onnx/unicode_indexer.json",
+          "downloadUrl": "https://huggingface.co/Supertone/supertonic-3/resolve/3cadd1ee6394adea1bd021217a0e650ede09a323/onnx/unicode_indexer.json",
+          "sha256": "9bf7346e43883a81f8645c81224f786d43c5b57f3641f6e7671a7d6c493cb24f",
+          "sizeBytes": 277676
+        },
+        {
+          "artifactId": "duration_predictor",
+          "role": "supporting_file",
+          "required": true,
+          "filename": "onnx/duration_predictor.onnx",
+          "downloadUrl": "https://huggingface.co/Supertone/supertonic-3/resolve/3cadd1ee6394adea1bd021217a0e650ede09a323/onnx/duration_predictor.onnx",
+          "sha256": "3f5f4dec9c9b3d9074a8d13141f3acc852dd6e97a07e156e9dc669fe98506b0a",
+          "sizeBytes": 3700147
+        },
+        {
+          "artifactId": "text_encoder",
+          "role": "supporting_file",
+          "required": true,
+          "filename": "onnx/text_encoder.onnx",
+          "downloadUrl": "https://huggingface.co/Supertone/supertonic-3/resolve/3cadd1ee6394adea1bd021217a0e650ede09a323/onnx/text_encoder.onnx",
+          "sha256": "9303c918c4da455b341b200d061a82c6ac3b8ed1d678cda6d412e72acfdb936b",
+          "sizeBytes": 36416150
+        },
+        {
+          "artifactId": "vector_estimator",
+          "role": "synthesis_model",
+          "required": true,
+          "filename": "onnx/vector_estimator.onnx",
+          "downloadUrl": "https://huggingface.co/Supertone/supertonic-3/resolve/3cadd1ee6394adea1bd021217a0e650ede09a323/onnx/vector_estimator.onnx",
+          "sha256": "c39cede05082f67b544b19a3b0c0fc273a71d0d8d38a9e06f2512789e3bad7fe",
+          "sizeBytes": 256534781
+        },
+        {
+          "artifactId": "vocoder",
+          "role": "supporting_file",
+          "required": true,
+          "filename": "onnx/vocoder.onnx",
+          "downloadUrl": "https://huggingface.co/Supertone/supertonic-3/resolve/3cadd1ee6394adea1bd021217a0e650ede09a323/onnx/vocoder.onnx",
+          "sha256": "752c10c00131361ee3ff7de734566150cb26ae821a1245d177a7f682ed0cad4d",
+          "sizeBytes": 101424195
+        },
+        {
+          "artifactId": "voice_F1",
+          "role": "voice",
+          "required": true,
+          "voiceId": "F1",
+          "filename": "voice_styles/F1.json",
+          "downloadUrl": "https://huggingface.co/Supertone/supertonic-3/resolve/3cadd1ee6394adea1bd021217a0e650ede09a323/voice_styles/F1.json",
+          "sha256": "bbdec6ee00231c2c742ad05483df5334cab3b52fda3ba38e6a07059c4563dbc2",
+          "sizeBytes": 292046
+        },
+        {
+          "artifactId": "voice_F2",
+          "role": "voice",
+          "required": false,
+          "voiceId": "F2",
+          "filename": "voice_styles/F2.json",
+          "downloadUrl": "https://huggingface.co/Supertone/supertonic-3/resolve/3cadd1ee6394adea1bd021217a0e650ede09a323/voice_styles/F2.json",
+          "sha256": "7c722c6a72707b1a77f035d67f0d1351ba187738e06f7683e8c72b1df3477fc6",
+          "sizeBytes": 292423
+        },
+        {
+          "artifactId": "voice_F3",
+          "role": "voice",
+          "required": false,
+          "voiceId": "F3",
+          "filename": "voice_styles/F3.json",
+          "downloadUrl": "https://huggingface.co/Supertone/supertonic-3/resolve/3cadd1ee6394adea1bd021217a0e650ede09a323/voice_styles/F3.json",
+          "sha256": "12f6ef2573baa2defa1128069cb59f203e3ab67c92af77b42df8a0e3a2f7c6ab",
+          "sizeBytes": 290794
+        },
+        {
+          "artifactId": "voice_F4",
+          "role": "voice",
+          "required": false,
+          "voiceId": "F4",
+          "filename": "voice_styles/F4.json",
+          "downloadUrl": "https://huggingface.co/Supertone/supertonic-3/resolve/3cadd1ee6394adea1bd021217a0e650ede09a323/voice_styles/F4.json",
+          "sha256": "c2fa764c1225a76dfc3e2c73e8aa4f70d9ee48793860eb34c295fff01c2e032b",
+          "sizeBytes": 291808
+        },
+        {
+          "artifactId": "voice_F5",
+          "role": "voice",
+          "required": false,
+          "voiceId": "F5",
+          "filename": "voice_styles/F5.json",
+          "downloadUrl": "https://huggingface.co/Supertone/supertonic-3/resolve/3cadd1ee6394adea1bd021217a0e650ede09a323/voice_styles/F5.json",
+          "sha256": "45966e73316415626cf41a7d1c6f3b4c70dbc1ba2bee5c1978ef0ce33244fc8d",
+          "sizeBytes": 291479
+        },
+        {
+          "artifactId": "voice_M1",
+          "role": "voice",
+          "required": false,
+          "voiceId": "M1",
+          "filename": "voice_styles/M1.json",
+          "downloadUrl": "https://huggingface.co/Supertone/supertonic-3/resolve/3cadd1ee6394adea1bd021217a0e650ede09a323/voice_styles/M1.json",
+          "sha256": "e35604687f5d23694b8e91593a93eec0e4eca6c0b02bb8ed69139ab2ea6b0a5b",
+          "sizeBytes": 291748
+        },
+        {
+          "artifactId": "voice_M2",
+          "role": "voice",
+          "required": false,
+          "voiceId": "M2",
+          "filename": "voice_styles/M2.json",
+          "downloadUrl": "https://huggingface.co/Supertone/supertonic-3/resolve/3cadd1ee6394adea1bd021217a0e650ede09a323/voice_styles/M2.json",
+          "sha256": "b76cbf62bac707c710cf0ae5aba5e31eea1a6339a9734bfae33ab98499534a50",
+          "sizeBytes": 292055
+        },
+        {
+          "artifactId": "voice_M3",
+          "role": "voice",
+          "required": false,
+          "voiceId": "M3",
+          "filename": "voice_styles/M3.json",
+          "downloadUrl": "https://huggingface.co/Supertone/supertonic-3/resolve/3cadd1ee6394adea1bd021217a0e650ede09a323/voice_styles/M3.json",
+          "sha256": "ea1ac35ccb91b0d7ecad533a2fbd0eec10c91513d8951e3b25fbba99954e159b",
+          "sizeBytes": 290198
+        },
+        {
+          "artifactId": "voice_M4",
+          "role": "voice",
+          "required": false,
+          "voiceId": "M4",
+          "filename": "voice_styles/M4.json",
+          "downloadUrl": "https://huggingface.co/Supertone/supertonic-3/resolve/3cadd1ee6394adea1bd021217a0e650ede09a323/voice_styles/M4.json",
+          "sha256": "ca8eefad4fcd989c9379032ff3e50738adc547eeb5e221b82593a6d7b3bac303",
+          "sizeBytes": 291522
+        },
+        {
+          "artifactId": "voice_M5",
+          "role": "voice",
+          "required": false,
+          "voiceId": "M5",
+          "filename": "voice_styles/M5.json",
+          "downloadUrl": "https://huggingface.co/Supertone/supertonic-3/resolve/3cadd1ee6394adea1bd021217a0e650ede09a323/voice_styles/M5.json",
+          "sha256": "dd22b92740314321f8ae11c5e87f8dd60d060f15dd3a632b5adf77f471f77af2",
+          "sizeBytes": 291469
+        }
+      ]
+    },
+    {
+      "runtimeId": "onnx_runtime",
       "familyId": "pocket_tts",
       "task": "tts",
       "modelId": "pocket_tts_english_2026_04_int8",
@@ -1170,8 +1370,8 @@
       "task": "tts",
       "modelId": "pocket_tts_spanish_int8",
       "collectionId": "pocket_tts_read_aloud",
-      "displayName": "Pocket TTS Español",
-      "summary": "Fast local Español read-aloud synthesis using the pinned int8 ONNX export.",
+      "displayName": "Pocket TTS Espa\u00f1ol",
+      "summary": "Fast local Espa\u00f1ol read-aloud synthesis using the pinned int8 ONNX export.",
       "languageTags": ["es"],
       "defaultVoice": "alba",
       "uxTags": ["read-aloud", "cpu", "streaming"],
@@ -1307,8 +1507,8 @@
       "task": "tts",
       "modelId": "pocket_tts_portuguese_int8",
       "collectionId": "pocket_tts_read_aloud",
-      "displayName": "Pocket TTS Português",
-      "summary": "Fast local Português read-aloud synthesis using the pinned int8 ONNX export.",
+      "displayName": "Pocket TTS Portugu\u00eas",
+      "summary": "Fast local Portugu\u00eas read-aloud synthesis using the pinned int8 ONNX export.",
       "languageTags": ["pt"],
       "defaultVoice": "alba",
       "uxTags": ["read-aloud", "cpu", "streaming"],

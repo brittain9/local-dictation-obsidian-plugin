@@ -148,6 +148,9 @@ export const en = {
   'models.manage.allLanguages': 'All languages',
   'models.manage.familiesLabel': 'Model families',
   'models.manage.noneForLanguage': 'No models are available for this task and language.',
+  'models.manage.installAllVoices': 'Install all voices',
+  'models.manage.installAllVoicesDesc':
+    'Install the remaining {count} optional voices for this model.',
   'models.manage.optionalVoice': 'Optional local voice',
   'models.manage.voiceInstalled': 'Installed',
   'models.manage.taskLabel': 'Model task',
@@ -679,6 +682,8 @@ export const en = {
   'models.external.validation.selectEntryFile': 'Select {filename}.',
   'models.external.validation.nemotronEntryFile':
     'Nemotron 3.5 ASR requires its encoder.int8.onnx artifact. Select encoder.int8.onnx from the pinned 560 ms model directory.',
+  'models.external.validation.supertonicEntryFile':
+    'Select vector_estimator.onnx from the Supertonic onnx directory.',
   'models.external.validation.moonshineEntryFile':
     'Moonshine requires its primary frontend.ort artifact. Select frontend.ort from the streaming model directory.',
   'models.external.validation.generic': 'The speech engine could not validate this model.',
@@ -694,6 +699,12 @@ export const en = {
     'The same directory must contain encoder.ort, adapter.ort, cross_kv.ort, decoder_kv.ort, streaming_config.json, and tokenizer.bin.',
   'models.external.requirements.moonshine.compatibility':
     'Non-streaming Moonshine ONNX exports are not compatible.',
+  'models.external.requirements.supertonic.entry':
+    'Select onnx/vector_estimator.onnx from a Supertonic 3 model directory.',
+  'models.external.requirements.supertonic.siblings':
+    'Keep tts.json, unicode_indexer.json, duration_predictor.onnx, text_encoder.onnx, and vocoder.onnx beside it.',
+  'models.external.requirements.supertonic.voices':
+    'Keep built-in voice JSON files under the sibling voice_styles directory.',
   'models.external.requirements.whisper.entry':
     'Select one whisper.cpp-compatible GGML or GGUF model file.',
   'models.external.requirements.whisper.validation':
@@ -819,6 +830,8 @@ export const en = {
     'Natural local Portuguese read-aloud synthesis with selectable curated voices.',
   'catalog.pocket_tts_italian_int8.summary':
     'Natural local Italian read-aloud synthesis with selectable curated voices.',
+  'catalog.supertonic_3_multilingual_2026_05.summary':
+    'Lightning-fast local multilingual read-aloud synthesis for the eight supported app languages.',
   'catalog.family.whisper.summary':
     'Transcribes after each pause. Whisper provides more accurate timestamps than other model families, including optional word-level timing. Tiny and Base favor speed, Small balances speed and quality, and Medium and Large favor quality.',
   'catalog.family.cohere_transcribe.summary':
@@ -827,6 +840,8 @@ export const en = {
     'Shows words while you speak. Tiny favors lower resource use, Small balances speed and quality, and Medium favors quality.',
   'catalog.family.nemotron_asr.summary':
     'Experimental high-accuracy multilingual streaming with a larger download and higher resource use. Moonshine Small remains the recommended English live-dictation default.',
+  'catalog.family.supertonic.summary':
+    'Lightning-fast on-device multilingual TTS via ONNX Runtime.',
   'catalog.family.pocket_tts.summary':
     'Reads notes aloud locally in English, French, German, Spanish, Portuguese, and Italian with selectable voices and pitch-preserving speed control.',
   'setup.sidecar.modal.unsupportedPlatform':

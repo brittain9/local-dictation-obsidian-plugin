@@ -53,6 +53,8 @@ impl EngineRegistry {
 
         #[cfg(feature = "engine-pocket-tts")]
         registry.register_adapter(Box::new(crate::adapters::pocket_tts::PocketTtsAdapter));
+        #[cfg(feature = "engine-pocket-tts")]
+        registry.register_adapter(Box::new(crate::adapters::supertonic::SupertonicAdapter));
 
         registry
     }

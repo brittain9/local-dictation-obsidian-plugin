@@ -34,6 +34,7 @@ pub enum ModelFamilyId {
     Moonshine,
     NemotronAsr,
     PocketTts,
+    Supertonic,
     Whisper,
 }
 
@@ -44,6 +45,7 @@ impl ModelFamilyId {
             Self::Moonshine => "moonshine",
             Self::NemotronAsr => "nemotron_asr",
             Self::PocketTts => "pocket_tts",
+            Self::Supertonic => "supertonic",
             Self::Whisper => "whisper",
         }
     }
@@ -54,6 +56,7 @@ impl ModelFamilyId {
             Self::Moonshine => "Moonshine",
             Self::NemotronAsr => "NVIDIA Nemotron 3.5 ASR",
             Self::PocketTts => "Pocket TTS",
+            Self::Supertonic => "Supertonic 3",
             Self::Whisper => "Whisper",
         }
     }

@@ -658,6 +658,8 @@ export const ja = {
   'models.external.validation.selectEntryFile': '{filename}を選択してください。',
   'models.external.validation.nemotronEntryFile':
     'Nemotron 3.5 ASR には、encoder.int8.onnx アーティファクトが必要です。固定された 560 ミリ秒モデル ディレクトリから encoder.int8.onnx を選択します。',
+  'models.external.validation.supertonicEntryFile':
+    'Select vector_estimator.onnx from the Supertonic onnx directory.',
   'models.external.validation.moonshineEntryFile':
     'Moonshine には、プライマリのfrontend.ort アーティファクトが必要です。ストリーミング モデル ディレクトリからfrontend.ortを選択します。',
   'models.external.validation.generic': '音声エンジンはこのモデルを検証できませんでした。',
@@ -673,6 +675,12 @@ export const ja = {
     '同じディレクトリには、encoder.ort、adapter.ort、cross_kv.ort、decoder_kv.ort、streaming_config.json、および tokenizer.bin が含まれている必要があります。',
   'models.external.requirements.moonshine.compatibility':
     '非ストリーミング Moonshine ONNX エクスポートには互換性がありません。',
+  'models.external.requirements.supertonic.entry':
+    'Select onnx/vector_estimator.onnx from a Supertonic 3 model directory.',
+  'models.external.requirements.supertonic.siblings':
+    'Keep tts.json, unicode_indexer.json, duration_predictor.onnx, text_encoder.onnx, and vocoder.onnx beside it.',
+  'models.external.requirements.supertonic.voices':
+    'Keep built-in voice JSON files under the sibling voice_styles directory.',
   'models.external.requirements.whisper.entry':
     'Whisper.cpp 互換の GGML または GGUF モデル ファイルを 1 つ選択します。',
   'models.external.requirements.whisper.validation':
@@ -819,6 +827,9 @@ export const ja = {
   'models.manage.allLanguages': 'すべての言語',
   'models.manage.familiesLabel': 'モデルファミリー',
   'models.manage.noneForLanguage': 'このタスクと言語で利用できるモデルはありません。',
+  'models.manage.installAllVoices': 'Install all voices',
+  'models.manage.installAllVoicesDesc':
+    'Install the remaining {count} optional voices for this model.',
   'models.manage.optionalVoice': '追加のローカル音声',
   'models.manage.voiceInstalled': 'インストール済み',
   'tts.status.reading': '読み上げ中…',
@@ -839,6 +850,10 @@ export const ja = {
   'sidecarError.synthesis_worker_unavailable': 'ローカル音声合成ワーカーを利用できません。',
   'catalog.pocket_tts_english_2026_04_int8.summary':
     '厳選された音声を選べる、自然なローカル英語読み上げです。',
+  'catalog.supertonic_3_multilingual_2026_05.summary':
+    'Lightning-fast local multilingual read-aloud synthesis for the eight supported app languages.',
+  'catalog.family.supertonic.summary':
+    'Lightning-fast on-device multilingual TTS via ONNX Runtime.',
   'catalog.family.pocket_tts.summary':
     '英語、フランス語、ドイツ語、スペイン語、ポルトガル語、イタリア語のノートを、選択可能な音声と音程を保つ速度調整でローカルに読み上げます。',
 } as const satisfies TranslationCatalog;

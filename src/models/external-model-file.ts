@@ -11,7 +11,8 @@ export interface ExternalFileEngineOption {
   entryFilename?: string;
   entryFilenameErrorKey?:
     | 'models.external.validation.nemotronEntryFile'
-    | 'models.external.validation.moonshineEntryFile';
+    | 'models.external.validation.moonshineEntryFile'
+    | 'models.external.validation.supertonicEntryFile';
   label: string;
   placeholder: string;
   requirements: string[];
@@ -47,6 +48,18 @@ export const EXTERNAL_FILE_ENGINES: readonly ExternalFileEngineOption[] = [
       t('models.external.requirements.moonshine.compatibility'),
     ],
     selection: { familyId: 'moonshine', runtimeId: 'onnx_runtime' },
+  },
+  {
+    entryFilename: 'vector_estimator.onnx',
+    entryFilenameErrorKey: 'models.external.validation.supertonicEntryFile',
+    label: 'Supertonic 3 TTS (ONNX Runtime)',
+    placeholder: '/absolute/path/to/supertonic-3/onnx/vector_estimator.onnx',
+    requirements: [
+      t('models.external.requirements.supertonic.entry'),
+      t('models.external.requirements.supertonic.siblings'),
+      t('models.external.requirements.supertonic.voices'),
+    ],
+    selection: { familyId: 'supertonic', runtimeId: 'onnx_runtime' },
   },
   {
     label: 'Whisper (whisper.cpp)',

@@ -662,6 +662,8 @@ export const nl = {
   'models.external.validation.selectEntryFile': 'Selecteer {filename}.',
   'models.external.validation.nemotronEntryFile':
     'Nemotron 3.5 ASR vereist het encoder.int8.onnx-artefact. Selecteer encoder.int8.onnx in de vastgezette 560 ms-modelmap.',
+  'models.external.validation.supertonicEntryFile':
+    'Select vector_estimator.onnx from the Supertonic onnx directory.',
   'models.external.validation.moonshineEntryFile':
     'Moonshine vereist het primaire frontend.ort-artefact. Selecteer frontend.ort in de streamingmodelmap.',
   'models.external.validation.generic': 'De spraakengine kon dit model niet valideren.',
@@ -677,6 +679,12 @@ export const nl = {
     'Dezelfde map moet encoder.ort, adapter.ort, cross_kv.ort, decoder_kv.ort, streaming_config.json en tokenizer.bin bevatten.',
   'models.external.requirements.moonshine.compatibility':
     'Niet-streaming Moonshine ONNX-exports zijn niet compatibel.',
+  'models.external.requirements.supertonic.entry':
+    'Select onnx/vector_estimator.onnx from a Supertonic 3 model directory.',
+  'models.external.requirements.supertonic.siblings':
+    'Keep tts.json, unicode_indexer.json, duration_predictor.onnx, text_encoder.onnx, and vocoder.onnx beside it.',
+  'models.external.requirements.supertonic.voices':
+    'Keep built-in voice JSON files under the sibling voice_styles directory.',
   'models.external.requirements.whisper.entry':
     'Selecteer één Whisper.cpp-compatibel GGML- of GGUF-modelbestand.',
   'models.external.requirements.whisper.validation':
@@ -821,6 +829,9 @@ export const nl = {
   'models.manage.allLanguages': 'Alle talen',
   'models.manage.familiesLabel': 'Modelfamilies',
   'models.manage.noneForLanguage': 'Er zijn geen modellen voor deze taak en taal beschikbaar.',
+  'models.manage.installAllVoices': 'Install all voices',
+  'models.manage.installAllVoicesDesc':
+    'Install the remaining {count} optional voices for this model.',
   'models.manage.optionalVoice': 'Optionele lokale stem',
   'models.manage.voiceInstalled': 'Geïnstalleerd',
   'tts.status.reading': 'Bezig met voorlezen…',
@@ -842,6 +853,10 @@ export const nl = {
     'De lokale spraaksyntheseworker is niet beschikbaar.',
   'catalog.pocket_tts_english_2026_04_int8.summary':
     'Natuurlijk lokaal Engels voorlezen met een keuze uit samengestelde stemmen.',
+  'catalog.supertonic_3_multilingual_2026_05.summary':
+    'Lightning-fast local multilingual read-aloud synthesis for the eight supported app languages.',
+  'catalog.family.supertonic.summary':
+    'Lightning-fast on-device multilingual TTS via ONNX Runtime.',
   'catalog.family.pocket_tts.summary':
     'Leest notities lokaal voor in het Engels, Frans, Duits, Spaans, Portugees en Italiaans met selecteerbare stemmen en toonhoogtebehoudende snelheidsregeling.',
 } as const satisfies TranslationCatalog;
