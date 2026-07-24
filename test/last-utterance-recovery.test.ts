@@ -54,6 +54,7 @@ describe('LastUtteranceRecovery', () => {
 
     expect(writeText).toHaveBeenCalledOnce();
     expect(writeText).toHaveBeenCalledWith('normalized utterance');
+    expect(recovery.hasUtterance()).toBe(true);
     expect(feedback.show).toHaveBeenCalledWith({
       intent: 'success',
       key: 'last-utterance-copied',

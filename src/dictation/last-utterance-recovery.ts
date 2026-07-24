@@ -1,4 +1,5 @@
 import type { Editor, EditorPosition } from 'obsidian';
+import { type ClipboardProvider, tryWriteClipboardText } from '../shared/clipboard';
 import { t } from '../shared/i18n';
 import type { UserFeedback } from '../shared/user-feedback';
 
@@ -10,13 +11,9 @@ export type UtteranceRecoveryEditor = Pick<
   'getCursor' | 'getLine' | 'replaceRange' | 'setCursor'
 >;
 
-interface ClipboardWriter {
-  writeText(text: string): Promise<void>;
-}
-
 interface LastUtteranceRecoveryDependencies {
   feedback: Pick<UserFeedback, 'show'>;
-  getClipboard: () => ClipboardWriter | null | undefined;
+  getClipboard: ClipboardProvider;
 }
 
 export class LastUtteranceRecovery {
@@ -57,15 +54,7 @@ export class LastUtteranceRecovery {
       return false;
     }
 
-    try {
-      const clipboard = this.dependencies.getClipboard();
-      if (clipboard === null || clipboard === undefined) {
-        throw new Error('Clipboard API unavailable.');
-      }
-      await clipboard.writeText(text);
-    } catch {
-      // Do not attach the clipboard error as feedback cause: a hostile or buggy
-      // implementation could echo the private text it was asked to copy.
+    if (!(await tryWriteClipboardText(this.dependencies.getClipboard, text))) {
       this.dependencies.feedback.show({
         intent: 'error',
         key: 'last-utterance-copy-failed',
