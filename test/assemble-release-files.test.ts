@@ -111,7 +111,7 @@ describe('assembleReleaseFiles', () => {
     return path;
   }
 
-  async function seedInputs(rootDir: string): Promise<void> {
+  async function seedPluginBundle(rootDir: string): Promise<void> {
     const pluginBundleDir = join(rootDir, 'dist', 'plugin-bundle');
     const releaseDir = join(rootDir, 'dist', 'release');
     await mkdir(pluginBundleDir, { recursive: true });
@@ -120,17 +120,42 @@ describe('assembleReleaseFiles', () => {
     for (const file of ['main.js', 'manifest.json', 'styles.css']) {
       await writeFile(join(pluginBundleDir, file), `body-of-${file}`);
     }
+  }
+
+  async function seedInputs(rootDir: string): Promise<void> {
+    await seedPluginBundle(rootDir);
+    const releaseDir = join(rootDir, 'dist', 'release');
 
     for (const archive of EXPECTED_SIDECAR_ARCHIVES) {
       await writeFile(join(releaseDir, archive), `archive-${archive}`);
     }
   }
 
+  it('assembles exactly the Obsidian files for a plugin-only release', async () => {
+    const rootDir = await createTempRoot();
+    await seedPluginBundle(rootDir);
+
+    const result = await assembleReleaseFiles(rootDir);
+
+    expect((await readdir(result.releaseDir)).sort()).toEqual(
+      ['main.js', 'manifest.json', 'styles.css'].sort(),
+    );
+  });
+
+  it('rejects sidecar artifacts in plugin-only mode', async () => {
+    const rootDir = await createTempRoot();
+    await seedInputs(rootDir);
+
+    await expect(assembleReleaseFiles(rootDir)).rejects.toThrow(
+      /plugin-only release contains sidecar files/,
+    );
+  });
+
   it('assembles plugin files, sidecar archives, and checksums into dist/release', async () => {
     const rootDir = await createTempRoot();
     await seedInputs(rootDir);
 
-    const result = await assembleReleaseFiles(rootDir);
+    const result = await assembleReleaseFiles(rootDir, { includeSidecars: true });
 
     expect(result.releaseDir).toBe(join(rootDir, 'dist', 'release'));
 
@@ -157,7 +182,7 @@ describe('assembleReleaseFiles', () => {
     await seedInputs(rootDir);
     await rm(join(rootDir, 'dist', 'release', 'sidecar-macos-arm64.tar.gz'));
 
-    await expect(assembleReleaseFiles(rootDir)).rejects.toThrow(
+    await expect(assembleReleaseFiles(rootDir, { includeSidecars: true })).rejects.toThrow(
       /release archive validation failed/,
     );
   });

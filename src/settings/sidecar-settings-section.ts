@@ -36,9 +36,9 @@ export interface SidecarInstallActionDeps {
   isDictationBusy(): boolean;
   logger?: PluginLogger | undefined;
   modelInstallManager: ModelInstallManager;
-  pluginVersion: string;
   refreshSettingsTab(): void;
   restartSidecar(): Promise<void>;
+  sidecarVersion: string;
   sidecarConnection: Pick<SidecarConnection, 'shutdown'>;
   sidecarInstallManager: SidecarInstallManager;
 }
@@ -320,7 +320,7 @@ export function openSidecarInstallModal(
     },
     pluginDirectory: opts.pluginDirectory,
     variants: [opts.variant],
-    version: deps.pluginVersion,
+    version: deps.sidecarVersion,
   }).open();
 }
 
@@ -356,7 +356,7 @@ export function openSidecarUpdateModal(
     },
     pluginDirectory: opts.pluginDirectory,
     variants: opts.variants,
-    version: deps.pluginVersion,
+    version: deps.sidecarVersion,
   }).open();
 }
 

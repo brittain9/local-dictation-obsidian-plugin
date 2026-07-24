@@ -24,7 +24,7 @@ interface WizardDependencies {
   onCompleted: () => Promise<void>;
   pluginDirectory: string;
   postSidecarInstalled: () => Promise<void>;
-  pluginVersion: string;
+  sidecarVersion: string;
   sidecarConnection: Pick<SidecarConnection, 'restart'>;
   sidecarInstallManager: SidecarInstallManager;
   sidecarStartupTimeoutMs: number;
@@ -198,7 +198,7 @@ export class SetupWizardModal extends Modal {
       },
       pluginDirectory: this.deps.pluginDirectory,
       variants: ['cpu'],
-      version: this.deps.pluginVersion,
+      version: this.deps.sidecarVersion,
     });
     modal.open();
   }

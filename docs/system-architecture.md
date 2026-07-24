@@ -544,7 +544,8 @@ A representative slice of user-facing settings (full list and defaults in
 ## Where Things Live
 
 - **Sidecar binary:** `.obsidian/plugins/local-dictation/bin/<variant>/`
-  (`cpu`, `cuda`), installed by the plugin from the matching GitHub Release.
+  (`cpu`, `cuda`), installed by the plugin from the GitHub Release named in
+  `sidecar-version.json`. Plugin-only releases can reuse an earlier sidecar.
 - **Models:** outside the vault, in the user data directory, so they aren't
   duplicated per-vault:
   - Windows: `%LOCALAPPDATA%\obsidian-local-stt\models`

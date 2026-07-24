@@ -11,7 +11,8 @@ import { readReleaseMetadata, validateReleaseMetadata } from './lib/release-meta
 export async function checkRelease(options = {}) {
   const rootDir = resolve(options.rootDir ?? '.');
   const metadata = await readReleaseMetadata(rootDir);
-  const { minAppVersion, version } = validateReleaseMetadata(metadata);
+  const { includesSidecar, minAppVersion, sidecarVersion, version } =
+    validateReleaseMetadata(metadata);
 
   if (options.tag !== undefined) {
     parseCalver(options.tag, 'release tag');
@@ -25,7 +26,7 @@ export async function checkRelease(options = {}) {
   const notesPath = join(rootDir, 'docs', 'release', 'notes', `${version}.md`);
   await validateReleaseNotes(notesPath);
 
-  return { minAppVersion, notesPath, version };
+  return { includesSidecar, minAppVersion, notesPath, sidecarVersion, version };
 }
 
 export async function validateReleaseNotes(notesPath) {
@@ -75,6 +76,10 @@ if (isDirectInvocation) {
   const rootDir = resolve('.');
   const result = await checkRelease({ ...parseArgs(process.argv.slice(2)), rootDir });
   console.log(
-    `Release ${result.version} metadata and ${relative(rootDir, result.notesPath)} are valid.`,
+    `Release ${result.version} metadata and ${relative(rootDir, result.notesPath)} are valid; ${
+      result.includesSidecar
+        ? `publishing sidecar ${result.sidecarVersion}`
+        : `reusing sidecar ${result.sidecarVersion}`
+    }.`,
   );
 }

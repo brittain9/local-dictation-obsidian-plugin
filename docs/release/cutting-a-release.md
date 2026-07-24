@@ -14,20 +14,24 @@ Format rules enforced by `scripts/read-release-version.mjs`:
   31 because it counts releases, not calendar days.
 - The git tag is **bare, no `v` prefix**, and must equal `manifest.json` exactly.
 
-## Files that carry the version
+## Plugin and sidecar versions
 
-`manifest.json` is the source of truth. All of these must agree, or the release
-fails at the CI metadata gate:
+Plugin and sidecar versions advance independently. `manifest.json` is the source
+of truth for the plugin release; its mirrors must agree on every release:
 
 | File | What to change |
 | --- | --- |
 | `manifest.json` | `version`. Bump `minAppVersion` **only** if the runtime floor actually changed. |
 | `package.json` | `version`. |
 | `package-lock.json` | top-level `version` and the root package version under `packages[""]`. |
-| `native/Cargo.toml` | `version` of the `local-dictation-sidecar` crate. |
-| `native/Cargo.lock` | the `version` under `[[package]] name = "local-dictation-sidecar"`. |
 | `versions.json` | add `"<version>": "<minAppVersion>"` for Obsidian's minimum-app map. |
 | `docs/release/notes/<version>.md` | new, non-empty, curated release notes. |
+
+`sidecar-version.json` is the source of truth for the sidecar release required
+by the plugin bundle. `native/Cargo.toml` and the `local-dictation-sidecar`
+entry in `native/Cargo.lock` must match it. The value is the GitHub release tag
+that contains the compatible sidecar archives, so it may be older than the
+plugin version but never newer.
 
 Do not update historical version examples in specifications, tests, or media
 capture records just because they mention the previous release.
@@ -42,18 +46,28 @@ Release tooling changes must land in their own PR before the release metadata
 PR. That keeps the release PR mechanical and ensures it uses the exact checks
 that will validate it.
 
-Start from a clean branch and supply the version explicitly:
+Start from a clean branch and supply the plugin version explicitly. The default
+is a plugin-only release: it preserves `sidecar-version.json`, publishes no
+native archives, and lets both existing and new installations reuse the last
+compatible sidecar:
 
 ```bash
 git switch -c chore/release-<version>
 npm run release:prepare -- --version <version>
 ```
 
-The command validates the current release state before changing anything,
-updates every version-bearing file above, and creates a comments-only notes
-scaffold. It refuses to overwrite existing notes. To change the Obsidian floor
-for a release, pass `--min-app-version <version>`; otherwise the current floor
-is preserved.
+Only when the release must ship changed native code, add `--sidecar`:
+
+```bash
+npm run release:prepare -- --version <version> --sidecar
+```
+
+That flag advances `sidecar-version.json` and both Cargo mirrors to the new
+plugin tag. The release workflow then builds and attaches the complete sidecar
+set. The command validates the current release state before changing anything
+and creates a comments-only notes scaffold. It refuses to overwrite existing
+notes. To change the Obsidian floor, also pass `--min-app-version <version>`;
+otherwise the current floor is preserved.
 
 ### Curate release notes
 
@@ -104,47 +118,54 @@ From the repo root, after bumping all files:
 ```bash
 npm run check:release
 node scripts/read-release-version.mjs --tag <version>
+node scripts/read-sidecar-version.mjs
 npm run check
 ```
 
 `check:release` verifies every metadata mirror, the current `versions.json`
-mapping, and curated notes. Normal PR CI and the tag workflow run the same gate.
-The explicit tag check must print `<version>` with no error.
+mapping, the sidecar-to-plugin ordering, and curated notes. Normal PR CI and the
+tag workflow run the same gate. The explicit tag check must print `<version>`
+with no error. Record the sidecar version printed by the third command; when it
+equals `<version>`, this is a sidecar release. Otherwise it is plugin-only.
 
 ## Cut it
 
 ```bash
 # 1. Land all the bumps on main via a PR — main is protected, so direct
 #    pushes are rejected by branch-protection rules.
-# 2. Wait for the Windows CUDA cache warmer at that exact main commit. The
-#    release-metadata bump triggers it automatically; dispatch it on main if a
-#    retry is needed. Do not tag while this run is queued or in progress:
+# 2. Resolve whether this tag publishes a sidecar:
 git fetch origin
 main_sha=$(git rev-parse origin/main)
-gh run list --workflow windows-cuda-cache.yml --commit "$main_sha" --limit 1
-# If no run exists, or the matching run needs a clean retry:
-gh workflow run windows-cuda-cache.yml --ref main
-run_id=$(gh run list --workflow windows-cuda-cache.yml --commit "$main_sha" --limit 1 --json databaseId --jq '.[0].databaseId')
-test -n "$run_id"
-gh run watch "$run_id" --exit-status
+plugin_version=$(node scripts/read-release-version.mjs)
+sidecar_version=$(node scripts/read-sidecar-version.mjs)
 
-# 3. The successful exact-commit run above is the release gate. List the two
-#    default-branch cache families as a diagnostic; broad key prefixes alone do
-#    not prove that a cache matches the commit being tagged.
-gh cache list --ref refs/heads/main --limit 100 --json key,ref,createdAt,lastAccessedAt --jq \
-  '.[] | select(.key | startswith("cuda-Windows-") or contains("sidecar-windows-x86_64-cuda"))'
+# 3-4. SIDECAR RELEASES ONLY: wait for the exact-commit Windows CUDA warm and
+#      inspect the cache families. Plugin-only releases bypass this block.
+if [[ "$plugin_version" == "$sidecar_version" ]]; then
+  gh run list --workflow windows-cuda-cache.yml --commit "$main_sha" --limit 1
+  # If no run exists, or the matching run needs a clean retry:
+  gh workflow run windows-cuda-cache.yml --ref main
+  run_id=$(gh run list --workflow windows-cuda-cache.yml --commit "$main_sha" --limit 1 --json databaseId --jq '.[0].databaseId')
+  test -n "$run_id"
+  gh run watch "$run_id" --exit-status
 
-# 4. Tag main HEAD with the bare version and push:
+  gh cache list --ref refs/heads/main --limit 100 --json key,ref,createdAt,lastAccessedAt --jq \
+    '.[] | select(.key | startswith("cuda-Windows-") or contains("sidecar-windows-x86_64-cuda"))'
+fi
+
+# 5. Tag main HEAD with the bare version and push:
 npm run check:release
 node scripts/read-release-version.mjs --tag <version>   # final check against the merged main content
 git tag <version> origin/main
 git push origin <version>                               # fires .github/workflows/release.yml
 ```
 
-The workflow runs: `metadata` validation → production plugin + native sidecar
-builds (macOS arm64, Linux x86_64 cpu+cuda, Windows cpu+cuda) → package and
-attest the final assets → `publish` (creates a **draft** release with the notes
-file as the body, then un-drafts it) → `release-report` (timing summary).
+The workflow always validates metadata and builds the production plugin. When
+the plugin and sidecar versions match, it also builds the native matrix (macOS
+arm64, Linux x86_64 cpu+cuda, Windows cpu+cuda), packages the archives, and
+generates checksums. When they differ, every native release job is skipped.
+Both paths attest the plugin assets, create a **draft** release with the notes
+file as the body, publish it, and produce the timing report.
 Unit, lint, and static-analysis gates run on pull requests and `main` in
 `ci.yml`; real-model certification runs in the scheduled or manually
 dispatchable E2E workflows and does not delay publication.
@@ -153,15 +174,17 @@ dispatchable E2E workflows and does not delay publication.
 
 ```bash
 gh run watch <run-id> --exit-status   # do NOT pipe through `tail`/`head` — that masks the run's exit code
-gh release view <version>             # confirm it published with sidecar assets attached
+gh release view <version>             # confirm the expected asset set was published
 ```
 
 ## What ships, and where it lands
 
-A release is one GitHub Release tagged `<version>`, carrying the plugin files and
-the sidecar archives:
+Every GitHub Release carries the plugin files Obsidian installs:
 
 - `main.js`, `manifest.json`, `styles.css` — what Obsidian's updater fetches.
+
+A sidecar release additionally carries:
+
 - `sidecar-macos-arm64.tar.gz` — Whisper Metal + Cohere CPU.
 - `sidecar-linux-x86_64-cpu.tar.gz`, `sidecar-linux-x86_64-cuda.tar.gz`.
 - `sidecar-windows-x86_64-cpu.tar.gz`, `sidecar-windows-x86_64-cuda.tar.gz`.
@@ -181,15 +204,17 @@ libraries ship after CUDA EULA review; cuDNN is NVIDIA-licensed and is **not**
 bundled, so Cohere CUDA users supply it themselves.
 
 Obsidian's updater only replaces `main.js`/`manifest.json`/`styles.css`, so the
-plugin installs the sidecar itself: it downloads the archive matching
-`manifest.version`, verifies it against `checksums.txt`, and unpacks into
+plugin installs the sidecar itself. It downloads the archive from the release
+tag compiled from `sidecar-version.json`, verifies it against that release's
+`checksums.txt`, and unpacks into
 `<vault>/.obsidian/plugins/local-dictation/bin/cpu/` or `bin/cuda/`.
 `resolveSidecarExecutablePath()` then picks the binary in order — `sidecarPathOverride`,
 then plugin-local `bin/cpu`/`bin/cuda` (by acceleration preference and host
 support), then a dev build under `native/target[-cuda]/debug`. Because the updater
 never touches the installed sidecar, the plugin compares its recorded version
-(`bin/<variant>/install.json`) against `manifest.version` on startup and offers a
-one-click reinstall when they drift.
+(`bin/<variant>/install.json`) against the required sidecar version on startup.
+A plugin-only update therefore produces no sidecar prompt; advancing the
+sidecar version offers a one-click update.
 
 ## Recovery
 
@@ -209,13 +234,17 @@ new one publishes so "Latest" is never broken.
 
 ## Gotchas (learned the hard way)
 
-- **Do not hand-edit a subset of version files.** Run `release:prepare`; the
-  metadata gate checks JavaScript, Rust, both lockfiles, and `versions.json`.
+- **Do not hand-edit a subset of version files.** Run `release:prepare`; add
+  `--sidecar` only when native binaries must ship. The metadata gate checks the
+  plugin mirrors, sidecar metadata, Cargo mirrors, and `versions.json`.
+- **Do not delete a referenced sidecar release.** New installations of a newer
+  plugin-only release still download its compatible binaries and checksums from
+  that historical tag.
 - **Never pipe `gh run watch` through `tail`/`head`.** A pipeline's exit status
   is the last command's, so a failed run looks like success.
-- **Wait for `windows-cuda-cache` before tagging.** GitHub lets a release tag
-  restore caches created on the default branch, but it cannot restore a cache
-  created by a different release tag. The warmer must finish successfully at
-  the exact `origin/main` commit being tagged.
+- **For sidecar releases, wait for `windows-cuda-cache` before tagging.** GitHub
+  lets a release tag restore caches created on the default branch, but it cannot
+  restore a cache created by a different release tag. The warmer must finish at
+  the exact `origin/main` commit being tagged. Plugin-only releases skip it.
 - **CUDA build legs are warm-cache fast** (~3 min) but cold runs are ~20+ min;
   don't assume a hang.

@@ -75,13 +75,13 @@ interface SettingsTabDependencies {
   modelInstallManager: ModelInstallManager;
   openModelPicker: (options?: ModelPickerOptions) => Promise<void>;
   openSetupWizard: () => Promise<void>;
-  pluginVersion: string;
   resolvePluginDirectory: () => Promise<string>;
   resetLlmTransformation: () => Promise<void>;
   restartSidecar: () => Promise<void>;
   saveSettings: (settings: PluginSettings) => Promise<void>;
   sidecarConnection: Pick<SidecarConnection, 'probeSystemAudio' | 'shutdown'>;
   sidecarInstallManager: SidecarInstallManager;
+  sidecarVersion: string;
 }
 
 const LISTENING_MODE_OPTIONS: ReadonlyArray<DropdownOption<'always_on' | 'one_sentence'>> = [
@@ -910,13 +910,13 @@ export class LocalSttSettingTab extends PluginSettingTab {
       isDictationBusy: this.dependencies.isDictationBusy,
       logger: this.dependencies.logger,
       modelInstallManager: this.dependencies.modelInstallManager,
-      pluginVersion: this.dependencies.pluginVersion,
       refreshSettingsTab: () => {
         this.refreshSettingsTab();
       },
       restartSidecar: this.dependencies.restartSidecar,
       sidecarConnection: this.dependencies.sidecarConnection,
       sidecarInstallManager: this.dependencies.sidecarInstallManager,
+      sidecarVersion: this.dependencies.sidecarVersion,
     };
   }
 }

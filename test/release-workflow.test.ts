@@ -52,6 +52,10 @@ describe('release workflow', () => {
       )}\n`,
     );
     await writeFile(
+      join(rootDir, 'sidecar-version.json'),
+      `${JSON.stringify({ version: '2026.7.3' }, null, 2)}\n`,
+    );
+    await writeFile(
       join(rootDir, 'native', 'Cargo.toml'),
       '[package]\nname = "local-dictation-sidecar"\nversion = "2026.7.3"\nedition = "2024"\n\n[dependencies]\nanyhow = "1.0"\n',
     );
@@ -71,7 +75,19 @@ describe('release workflow', () => {
     return rootDir;
   }
 
-  it('updates every release metadata mirror and scaffolds notes for an unbounded micro', async () => {
+  async function setSidecarVersion(rootDir: string, version: string): Promise<void> {
+    await writeFile(
+      join(rootDir, 'sidecar-version.json'),
+      `${JSON.stringify({ version }, null, 2)}\n`,
+    );
+    for (const relativePath of ['native/Cargo.toml', 'native/Cargo.lock']) {
+      const path = join(rootDir, relativePath);
+      const contents = await readFile(path, 'utf8');
+      await writeFile(path, contents.replaceAll('2026.7.3', version));
+    }
+  }
+
+  it('prepares a plugin-only release without advancing the sidecar', async () => {
     const rootDir = await createReleaseFixture();
 
     await prepareRelease({ rootDir, version: '2026.7.32' });
@@ -79,6 +95,9 @@ describe('release workflow', () => {
     const manifest = JSON.parse(await readFile(join(rootDir, 'manifest.json'), 'utf8'));
     const packageJson = JSON.parse(await readFile(join(rootDir, 'package.json'), 'utf8'));
     const packageLock = JSON.parse(await readFile(join(rootDir, 'package-lock.json'), 'utf8'));
+    const sidecarVersion = JSON.parse(
+      await readFile(join(rootDir, 'sidecar-version.json'), 'utf8'),
+    );
     const cargoManifest = await readFile(join(rootDir, 'native', 'Cargo.toml'), 'utf8');
     const cargoLock = await readFile(join(rootDir, 'native', 'Cargo.lock'), 'utf8');
     const versions = JSON.parse(await readFile(join(rootDir, 'versions.json'), 'utf8'));
@@ -88,12 +107,38 @@ describe('release workflow', () => {
     expect(packageJson.version).toBe('2026.7.32');
     expect(packageLock.version).toBe('2026.7.32');
     expect(packageLock.packages[''].version).toBe('2026.7.32');
-    expect(cargoManifest).toContain('version = "2026.7.32"');
+    expect(sidecarVersion.version).toBe('2026.7.3');
+    expect(cargoManifest).toContain('version = "2026.7.3"');
     expect(cargoManifest).toContain('anyhow = "1.0"');
-    expect(cargoLock).toContain('name = "local-dictation-sidecar"\nversion = "2026.7.32"');
+    expect(cargoLock).toContain('name = "local-dictation-sidecar"\nversion = "2026.7.3"');
     expect(cargoLock).toContain('name = "anyhow"\nversion = "1.0.99"');
     expect(versions['2026.7.32']).toBe('1.11.5');
     expect(notes).toContain('Replace this comment with curated release notes');
+  });
+
+  it('advances sidecar and Cargo versions only for an explicit sidecar release', async () => {
+    const rootDir = await createReleaseFixture();
+
+    const result = await prepareRelease({
+      includeSidecar: true,
+      rootDir,
+      version: '2026.7.4',
+    });
+
+    const sidecarVersion = JSON.parse(
+      await readFile(join(rootDir, 'sidecar-version.json'), 'utf8'),
+    );
+    const cargoManifest = await readFile(join(rootDir, 'native', 'Cargo.toml'), 'utf8');
+    const cargoLock = await readFile(join(rootDir, 'native', 'Cargo.lock'), 'utf8');
+
+    expect(result).toMatchObject({
+      includesSidecar: true,
+      sidecarVersion: '2026.7.4',
+      version: '2026.7.4',
+    });
+    expect(sidecarVersion.version).toBe('2026.7.4');
+    expect(cargoManifest).toContain('version = "2026.7.4"');
+    expect(cargoLock).toContain('name = "local-dictation-sidecar"\nversion = "2026.7.4"');
   });
 
   it('validates prepared metadata, curated notes, and the exact bare tag', async () => {
@@ -105,7 +150,9 @@ describe('release workflow', () => {
     );
 
     await expect(checkRelease({ rootDir, tag: '2026.7.4' })).resolves.toMatchObject({
+      includesSidecar: false,
       notesPath: join(rootDir, 'docs', 'release', 'notes', '2026.7.4.md'),
+      sidecarVersion: '2026.7.3',
       version: '2026.7.4',
     });
   });
@@ -215,6 +262,13 @@ describe('release workflow', () => {
       },
     ],
     [
+      'sidecar-version.json',
+      async (rootDir: string) => {
+        const path = join(rootDir, 'sidecar-version.json');
+        await writeFile(path, `${JSON.stringify({ version: '2026.7.2' }, null, 2)}\n`);
+      },
+    ],
+    [
       'native/Cargo.toml',
       async (rootDir: string) => {
         const path = join(rootDir, 'native', 'Cargo.toml');
@@ -234,7 +288,7 @@ describe('release workflow', () => {
     const rootDir = await createReleaseFixture();
     await introduceMismatch(rootDir);
 
-    await expect(checkRelease({ rootDir })).rejects.toThrow(/Release versions must match/);
+    await expect(checkRelease({ rootDir })).rejects.toThrow(/versions must match/);
   });
 
   it('requires the current versions.json mapping and minimum app version to agree', async () => {
@@ -246,6 +300,24 @@ describe('release workflow', () => {
 
     await expect(checkRelease({ rootDir })).rejects.toThrow(
       /must map 2026\.7\.3 to manifest minAppVersion 1\.11\.5/,
+    );
+  });
+
+  it('rejects a required sidecar newer than the plugin release', async () => {
+    const rootDir = await createReleaseFixture();
+    await setSidecarVersion(rootDir, '2026.7.4');
+
+    await expect(checkRelease({ rootDir })).rejects.toThrow(
+      /sidecar-version\.json version 2026\.7\.4 cannot be newer than plugin version 2026\.7\.3/,
+    );
+  });
+
+  it('requires the sidecar version to reference a retained plugin release', async () => {
+    const rootDir = await createReleaseFixture();
+    await setSidecarVersion(rootDir, '2026.7.1');
+
+    await expect(checkRelease({ rootDir })).rejects.toThrow(
+      /sidecar-version\.json version 2026\.7\.1 must reference a release in versions\.json/,
     );
   });
 
@@ -272,7 +344,7 @@ describe('release workflow', () => {
       await writeFile(path, contents.replaceAll('\n', '\r\n'));
     }
 
-    await prepareRelease({ rootDir, version: '2026.7.4' });
+    await prepareRelease({ includeSidecar: true, rootDir, version: '2026.7.4' });
 
     for (const path of cargoPaths) {
       const contents = await readFile(path, 'utf8');
@@ -301,5 +373,26 @@ describe('release workflow', () => {
 
     expect(result.status).not.toBe(0);
     expect(result.stderr).toContain('requires a clean tracked worktree');
+  });
+
+  it('supports explicit sidecar releases through the CLI flag', async () => {
+    const rootDir = await createReleaseFixture();
+    execFileSync('git', ['init'], { cwd: rootDir });
+    execFileSync('git', ['config', 'user.email', 'release-test@example.com'], { cwd: rootDir });
+    execFileSync('git', ['config', 'user.name', 'Release Test'], { cwd: rootDir });
+    execFileSync('git', ['add', '.'], { cwd: rootDir });
+    execFileSync('git', ['commit', '-m', 'fixture'], { cwd: rootDir });
+
+    const result = spawnSync(
+      process.execPath,
+      [join(process.cwd(), 'scripts', 'prepare-release.mjs'), '--version', '2026.7.4', '--sidecar'],
+      { cwd: rootDir, encoding: 'utf8' },
+    );
+
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain('Prepared release 2026.7.4 with sidecar 2026.7.4.');
+    expect(JSON.parse(await readFile(join(rootDir, 'sidecar-version.json'), 'utf8')).version).toBe(
+      '2026.7.4',
+    );
   });
 });
