@@ -34,7 +34,10 @@ export function resolveEngineCapabilities(
   };
 }
 
-export function buildCapabilityLabels(caps: EngineCapabilitiesRecord): string[] {
+export function buildCapabilityLabels(
+  caps: EngineCapabilitiesRecord,
+  options: { includeLanguageSupport?: boolean } = {},
+): string[] {
   const labels: string[] = [];
 
   const accelerators =
@@ -58,8 +61,10 @@ export function buildCapabilityLabels(caps: EngineCapabilitiesRecord): string[] 
   }
   if (caps.family.producesPunctuation) labels.push(t('models.capability.punctuation'));
 
-  const languageLabel = describeLanguageSupport(caps.family);
-  if (languageLabel !== null) labels.push(languageLabel);
+  if (options.includeLanguageSupport ?? true) {
+    const languageLabel = describeLanguageSupport(caps.family);
+    if (languageLabel !== null) labels.push(languageLabel);
+  }
 
   if (caps.family.maxAudioDurationSecs !== null) {
     labels.push(

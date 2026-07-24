@@ -4,20 +4,25 @@ import { Modal, Setting } from 'obsidian';
 import { formatBytes } from '../shared/format-utils';
 import { t } from '../shared/i18n';
 import type { UserFeedback } from '../shared/user-feedback';
-import { buildCapabilityLabels } from './capability-view';
-import { localizeModelSummary } from './catalog-localization';
+import { resolveEngineCapabilities } from './capability-view';
 import {
   DEFAULT_EXTERNAL_FILE_ENGINE_SELECTION,
   EXTERNAL_FILE_ENGINES,
   formatExternalModelValidationError,
   getExternalFileEngineOption,
 } from './external-model-file';
-import type { ModelInstallManager } from './model-install-manager';
+import {
+  buildModelDetailsPresentation,
+  type ModelDetailsPresentation,
+} from './model-details-presentation';
+import type { ModelInstallManager, ModelManagerState } from './model-install-manager';
 import {
   type CatalogModelRecord,
+  type CatalogModelSelection,
   type EngineCapabilitiesRecord,
   type ExternalFileModelSelection,
-  getTotalModelSize,
+  type InstalledModelRecord,
+  matchesModelTriple,
 } from './model-management-types';
 
 interface ExternalModelFileModalDependencies {
@@ -175,62 +180,143 @@ function engineKey(selection: Pick<ExternalFileModelSelection, 'familyId' | 'run
 }
 
 export class ModelDetailsModal extends Modal {
+  private readonly presentation: ModelDetailsPresentation;
+
   constructor(
     app: App,
-    private readonly model: CatalogModelRecord,
-    private readonly installPath: string | null,
-    private readonly capabilities: EngineCapabilitiesRecord | null,
+    model: CatalogModelRecord,
+    installedModel: InstalledModelRecord | null,
+    capabilities: EngineCapabilitiesRecord | null,
   ) {
     super(app);
+    this.presentation = buildModelDetailsPresentation(model, installedModel, capabilities);
   }
 
   override onOpen(): void {
-    this.titleEl.setText(this.model.displayName);
+    const presentation = this.presentation;
+    this.titleEl.setText(presentation.displayName);
     this.contentEl.empty();
     this.contentEl.createEl('p', {
-      text: localizeModelSummary(this.model.modelId, this.model.summary),
+      text: presentation.summary,
     });
 
     const dl = this.contentEl.createEl('dl', { cls: 'local-stt-details-grid' });
 
-    const totalSize = getTotalModelSize(this.model);
-    if (totalSize > 0) {
+    if (presentation.totalSizeBytes > 0) {
       dl.createEl('dt', { text: t('models.details.totalSize') });
-      dl.createEl('dd', { text: formatBytes(totalSize) });
+      dl.createEl('dd', { text: formatBytes(presentation.totalSizeBytes) });
     }
 
     dl.createEl('dt', { text: t('models.details.source') });
-    appendDetailsLink(dl.createEl('dd'), this.model.sourceUrl, this.model.sourceUrl, true);
+    appendDetailsLink(dl.createEl('dd'), presentation.sourceUrl, presentation.sourceUrl, true);
 
     dl.createEl('dt', { text: t('models.details.license') });
-    appendDetailsLink(dl.createEl('dd'), this.model.licenseLabel, this.model.licenseUrl);
+    appendDetailsLink(dl.createEl('dd'), presentation.licenseLabel, presentation.licenseUrl);
 
-    if (this.capabilities !== null) {
+    if (presentation.modelCardUrl !== null) {
+      dl.createEl('dt', { text: t('models.details.modelCard') });
+      appendDetailsLink(
+        dl.createEl('dd'),
+        t('models.details.modelCard'),
+        presentation.modelCardUrl,
+      );
+    }
+
+    if (presentation.capabilityLabels !== null) {
       dl.createEl('dt', { text: t('models.details.capabilities') });
-      dl.createEl('dd', { text: buildCapabilityLabels(this.capabilities).join(', ') });
+      dl.createEl('dd', { text: presentation.capabilityLabels.join(', ') });
     }
 
-    if (this.installPath !== null) {
+    if (presentation.installPath !== null) {
       dl.createEl('dt', { text: t('models.details.installPath') });
-      dl.createEl('dd', { text: this.installPath, cls: 'local-stt-mono' });
+      dl.createEl('dd', { text: presentation.installPath, cls: 'local-stt-mono' });
     }
 
-    if (this.model.artifacts.length > 0) {
+    if (presentation.tts !== null) {
+      appendDetailsList(dl, t('models.details.languages'), presentation.tts.languages);
+      appendDetailsList(
+        dl,
+        t('models.details.availableVoices'),
+        presentation.tts.availableVoices.map((voice) =>
+          voice.isDefault ? t('models.details.defaultVoice', { voice: voice.label }) : voice.label,
+        ),
+      );
+      appendDetailsList(
+        dl,
+        t('models.details.installedVoices'),
+        presentation.tts.installedVoices.map((voice) => voice.label),
+      );
+      if (presentation.tts.supportsSpeedControl) {
+        dl.createEl('dt', { text: t('models.details.speedControl') });
+        dl.createEl('dd', { text: t('models.details.supported') });
+      }
+      if (presentation.tts.outputSampleRate !== null) {
+        dl.createEl('dt', { text: t('models.details.outputSampleRate') });
+        dl.createEl('dd', { text: presentation.tts.outputSampleRate });
+      }
+    }
+
+    if (presentation.artifacts.length > 0) {
       const table = this.contentEl.createEl('table', { cls: 'local-stt-artifact-table' });
       const thead = table.createEl('thead');
       const headerRow = thead.createEl('tr');
       headerRow.createEl('th', {
-        text: t('models.details.files', { count: this.model.artifacts.length }),
+        text: t('models.details.files', { count: presentation.artifacts.length }),
       });
       headerRow.createEl('th', { text: t('models.details.size') });
 
       const tbody = table.createEl('tbody');
-      for (const artifact of this.model.artifacts) {
+      for (const artifact of presentation.artifacts) {
         const tr = tbody.createEl('tr');
         tr.createEl('td', { text: artifact.filename, cls: 'local-stt-mono' });
         tr.createEl('td', { text: formatBytes(artifact.sizeBytes) });
       }
     }
+  }
+}
+
+export function openModelDetailsModal(
+  app: App,
+  state: Pick<
+    ModelManagerState,
+    'catalog' | 'compiledAdapters' | 'compiledRuntimes' | 'installedModels'
+  >,
+  selection: CatalogModelSelection,
+): void {
+  const model = state.catalog.models.find((candidate) =>
+    matchesModelTriple(candidate, selection.runtimeId, selection.familyId, selection.modelId),
+  );
+  if (model === undefined) return;
+
+  const installedModel = state.installedModels.find((candidate) =>
+    matchesModelTriple(candidate, selection.runtimeId, selection.familyId, selection.modelId),
+  );
+  const capabilities = resolveEngineCapabilities(
+    state.compiledRuntimes,
+    state.compiledAdapters,
+    selection.runtimeId,
+    selection.familyId,
+  );
+  new ModelDetailsModal(app, model, installedModel ?? null, capabilities).open();
+}
+
+export function openSelectedModelDetailsModal(
+  app: App,
+  manager: Pick<ModelInstallManager, 'getState'>,
+  task: 'stt' | 'tts',
+): void {
+  const state = manager.getState();
+  const selection = task === 'stt' ? state.selectedModel : state.selectedTtsModel;
+  if (selection?.kind !== 'catalog_model') return;
+  openModelDetailsModal(app, state, selection);
+}
+
+function appendDetailsList(container: HTMLElement, label: string, values: readonly string[]): void {
+  if (values.length === 0) return;
+  container.createEl('dt', { text: label });
+  const list = container.createEl('dd').createEl('ul');
+  for (const value of values) {
+    list.createEl('li', { text: value });
   }
 }
 
