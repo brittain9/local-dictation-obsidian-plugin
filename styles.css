@@ -1174,6 +1174,44 @@
   font-variant-numeric: tabular-nums;
 }
 
+/* --- Settings attention ------------------------------------------ */
+
+.local-stt-settings-attention {
+  margin: 0 0 var(--size-4-6);
+  overflow: hidden;
+  border: 1px solid var(--background-modifier-border-hover);
+  border-radius: var(--radius-m);
+  background: var(--background-secondary);
+}
+
+.local-stt-settings-attention__heading {
+  margin: 0;
+  padding: var(--size-4-3) var(--size-4-4);
+  border-bottom: 1px solid var(--background-modifier-border);
+  color: var(--text-warning);
+  font-size: var(--font-ui-medium);
+}
+
+.local-stt-settings-attention .setting-items {
+  padding: 0 var(--size-4-4);
+}
+
+.local-stt-settings-attention__item .setting-item-name {
+  font-weight: var(--font-semibold);
+}
+
+@media (max-width: 500px) {
+  .local-stt-settings-attention .setting-item {
+    align-items: stretch;
+    flex-direction: column;
+    gap: var(--size-4-3);
+  }
+
+  .local-stt-settings-attention .setting-item-control {
+    justify-content: flex-start;
+  }
+}
+
 /* --- Setup wizard ------------------------------------------------- */
 
 .local-stt-setup-wizard {

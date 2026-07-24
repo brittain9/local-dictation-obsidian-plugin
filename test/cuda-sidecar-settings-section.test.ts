@@ -68,6 +68,11 @@ describe('CUDA sidecar Settings actions', () => {
       },
       app: {} as ConstructorParameters<typeof SidecarSettingsSection>[1]['app'],
       feedback: { show: vi.fn() },
+      getCudaCompatibility: async () => ({
+        computeCapabilities: ['8.9'],
+        driverVersion: '594.0',
+        status: 'incompatible_driver',
+      }),
       modelInstallManager: {
         init: vi.fn(async () => {}),
       } as unknown as ConstructorParameters<

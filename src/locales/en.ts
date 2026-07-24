@@ -341,6 +341,15 @@ export const en = {
   'settings.install.installingSidecarMac': 'Installing sidecar',
   'settings.install.cancelling': 'Cancelling...',
   'settings.install.cancel': 'Cancel',
+  'settings.attention.heading': 'Needs attention',
+  'settings.attention.installCuda.name': 'CUDA acceleration is available',
+  'settings.attention.installCuda.desc':
+    'A compatible NVIDIA GPU and driver were detected. Install the CUDA speech engine for faster transcription.',
+  'settings.attention.installCuda.action': 'Install CUDA acceleration',
+  'settings.attention.enableCuda.name': 'Enable CUDA acceleration',
+  'settings.attention.enableCuda.desc':
+    'The CUDA speech engine is installed and current, but hardware acceleration is turned off.',
+  'settings.attention.enableCuda.action': 'Enable',
   'settings.missingSidecar.name': 'Set up Local Dictation',
   'settings.missingSidecar.desc':
     "Local Dictation isn't ready yet. Run the setup wizard to install the speech engine and a model.",

@@ -2,7 +2,6 @@ import type { App } from 'obsidian';
 import { Platform, Setting } from 'obsidian';
 
 import type { ModelInstallManager } from '../models/model-install-manager';
-import { updateInstallProgressElement } from '../models/model-install-progress';
 import {
   getInstallCopy,
   getSidecarUpdateCopy,
@@ -12,16 +11,9 @@ import { SidecarInstallModal } from '../setup/sidecar-install-modal';
 import { t } from '../shared/i18n';
 import type { PluginLogger } from '../shared/plugin-logger';
 import type { UserFeedback } from '../shared/user-feedback';
-import {
-  CUDA_COMPATIBILITY_REQUIREMENTS,
-  type CudaCompatibility,
-  detectCudaCompatibility,
-} from '../sidecar/gpu-precheck';
+import { CUDA_COMPATIBILITY_REQUIREMENTS, type CudaCompatibility } from '../sidecar/gpu-precheck';
 import type { SidecarConnection } from '../sidecar/sidecar-connection';
-import {
-  buildSidecarProgressState,
-  type SidecarInstallManager,
-} from '../sidecar/sidecar-install-manager';
+import type { SidecarInstallManager } from '../sidecar/sidecar-install-manager';
 import {
   type InstallManifest,
   readInstallManifest,
@@ -36,8 +28,8 @@ import {
 } from '../sidecar/sidecar-lifecycle-gate';
 import { SidecarNotInstalledError } from '../sidecar/sidecar-paths';
 import { styleDestructiveButton } from '../ui/destructive-button';
-import { renderActiveInstallCard } from './install-progress-row';
 import { addPositiveIntSetting, addTextSetting, type SettingAccess } from './setting-helpers';
+import type { GetCudaCompatibility } from './settings-cuda-compatibility';
 
 export interface SidecarInstallActionDeps {
   app: App;
@@ -54,13 +46,14 @@ export interface SidecarInstallActionDeps {
 
 export interface SidecarSettingsSectionDependencies extends SidecarInstallActionDeps {
   access: SettingAccess;
+  getCudaCompatibility: GetCudaCompatibility;
   resolvePluginDirectory: () => Promise<string>;
 }
 
 export class SidecarSettingsSection {
   private disposed = false;
-  private cudaCompatibility: Promise<CudaCompatibility> | null = null;
-  private progressEl: HTMLDivElement | null = null;
+  private installWasActive = false;
+  private renderGeneration = 0;
 
   constructor(
     private readonly container: HTMLDivElement,
@@ -68,21 +61,22 @@ export class SidecarSettingsSection {
   ) {}
 
   init(): () => void {
+    this.installWasActive = this.deps.sidecarInstallManager.getState().activeInstall !== null;
     void this.render();
     const unsubscribe = this.deps.sidecarInstallManager.subscribe(() => this.handleStateChange());
     return () => {
       this.disposed = true;
+      this.renderGeneration += 1;
       unsubscribe();
-      this.progressEl = null;
-      this.cudaCompatibility = null;
     };
   }
 
   private async render(): Promise<void> {
+    const generation = ++this.renderGeneration;
     if (this.disposed || !this.container.isConnected) return;
 
     const pluginDirectory = await this.resolvePluginDirectorySafe();
-    if (this.disposed || pluginDirectory === null || !this.container.isConnected) return;
+    if (!this.canCommitRender(generation) || pluginDirectory === null) return;
 
     let cpuManifest: InstallManifest | null;
     let cudaManifest: InstallManifest | null = null;
@@ -90,38 +84,17 @@ export class SidecarSettingsSection {
 
     if (Platform.isMacOS) {
       cpuManifest = await readInstallManifest(variantDirectoryPath(pluginDirectory, 'cpu'));
-      if (this.disposed || !this.container.isConnected) return;
+      if (!this.canCommitRender(generation)) return;
     } else {
-      if (this.cudaCompatibility === null) {
-        this.cudaCompatibility = detectCudaCompatibility();
-      }
       [cpuManifest, cudaManifest, cudaCompatibility] = await Promise.all([
         readInstallManifest(variantDirectoryPath(pluginDirectory, 'cpu')),
         readInstallManifest(variantDirectoryPath(pluginDirectory, 'cuda')),
-        this.cudaCompatibility,
+        this.deps.getCudaCompatibility(),
       ]);
-      if (this.disposed || !this.container.isConnected) return;
+      if (!this.canCommitRender(generation)) return;
     }
 
     this.container.empty();
-    this.progressEl = null;
-
-    const activeInstall = this.deps.sidecarInstallManager.getState().activeInstall;
-    const renderActiveCard = (active: NonNullable<typeof activeInstall>): void => {
-      const { progressEl } = renderActiveInstallCard(this.container, {
-        isCancelling: active.phase === 'canceling',
-        name: Platform.isMacOS
-          ? t('settings.install.installingSidecarMac')
-          : t('settings.install.installingSidecar', {
-              variant: active.variant.toUpperCase(),
-            }),
-        onCancel: () => {
-          this.deps.sidecarInstallManager.cancel();
-        },
-        progressState: buildSidecarProgressState(active),
-      });
-      this.progressEl = progressEl;
-    };
 
     if (Platform.isMacOS) {
       this.renderInstallRow({
@@ -131,7 +104,6 @@ export class SidecarSettingsSection {
         pluginDirectory,
         variant: 'cpu',
       });
-      if (activeInstall !== null) renderActiveCard(activeInstall);
     } else {
       this.renderInstallRow({
         desc: t('settings.sidecar.cpuDesc'),
@@ -140,14 +112,8 @@ export class SidecarSettingsSection {
         pluginDirectory,
         variant: 'cpu',
       });
-      if (activeInstall !== null && activeInstall.variant === 'cpu') {
-        renderActiveCard(activeInstall);
-      }
 
       this.renderGpuRow(cudaManifest, pluginDirectory, cudaCompatibility);
-      if (activeInstall !== null && activeInstall.variant === 'cuda') {
-        renderActiveCard(activeInstall);
-      }
     }
 
     if (Platform.isLinux) {
@@ -187,14 +153,16 @@ export class SidecarSettingsSection {
   }
 
   private handleStateChange(): void {
-    const activeInstall = this.deps.sidecarInstallManager.getState().activeInstall;
-
-    if (activeInstall !== null && this.progressEl !== null) {
-      updateInstallProgressElement(this.progressEl, buildSidecarProgressState(activeInstall));
+    const isActive = this.deps.sidecarInstallManager.getState().activeInstall !== null;
+    if (isActive) {
+      this.installWasActive = true;
       return;
     }
 
-    void this.render();
+    if (this.installWasActive) {
+      this.installWasActive = false;
+      void this.render();
+    }
   }
 
   private renderInstallRow(opts: {
@@ -266,18 +234,15 @@ export class SidecarSettingsSection {
   }
 
   private openCudaInstallModal(pluginDirectory: string): void {
-    openSidecarInstallModal(this.deps, {
-      pluginDirectory,
-      variant: 'cuda',
-      intent: 'install',
-      onInstalled: async () => {
-        await this.deps.access.persistOne('accelerationPreference', 'auto');
-      },
-    });
+    openCudaInstallModal(this.deps, this.deps.access, pluginDirectory);
   }
 
   private resolvePluginDirectorySafe(): Promise<string | null> {
     return resolvePluginDirectorySafe(this.deps.resolvePluginDirectory, this.deps.logger);
+  }
+
+  private canCommitRender(generation: number): boolean {
+    return !this.disposed && generation === this.renderGeneration && this.container.isConnected;
   }
 }
 
@@ -347,6 +312,21 @@ export function openSidecarUpdateModal(
     variants: opts.variants,
     version: deps.pluginVersion,
   }).open();
+}
+
+export function openCudaInstallModal(
+  deps: SidecarInstallActionDeps,
+  access: SettingAccess,
+  pluginDirectory: string,
+): void {
+  openSidecarInstallModal(deps, {
+    pluginDirectory,
+    variant: 'cuda',
+    intent: 'install',
+    onInstalled: async () => {
+      await access.persistOne('accelerationPreference', 'auto');
+    },
+  });
 }
 
 export async function uninstallSidecarVariantWithUx(

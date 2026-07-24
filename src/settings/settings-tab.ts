@@ -9,7 +9,6 @@ import {
 } from '../language/dictation-language';
 import type { ModelPickerOptions } from '../models/manage-models-modal';
 import type { ModelInstallManager } from '../models/model-install-manager';
-import { updateInstallProgressElement } from '../models/model-install-progress';
 import {
   ExternalModelFileModal,
   openSelectedModelDetailsModal,
@@ -20,18 +19,14 @@ import type { PluginLogger } from '../shared/plugin-logger';
 import type { UserFeedback } from '../shared/user-feedback';
 import type { SpeakingStyle } from '../sidecar/protocol';
 import type { SidecarConnection } from '../sidecar/sidecar-connection';
-import {
-  buildSidecarProgressState,
-  type SidecarInstallManager,
-} from '../sidecar/sidecar-install-manager';
-import { readInstallManifest, variantDirectoryPath } from '../sidecar/sidecar-installer';
+import type { SidecarInstallManager } from '../sidecar/sidecar-install-manager';
 import type { SidecarLifecycleGate } from '../sidecar/sidecar-lifecycle-gate';
 import { ConfirmModal } from '../ui/confirm-modal';
 import { styleDestructiveButton } from '../ui/destructive-button';
 import { diarizationSettingDescription } from './diarization-setting';
 import { DiarizationSettingsModal } from './diarization-settings-modal';
+import { changeHardwareAcceleration } from './hardware-acceleration-action';
 import { renderHardwareAccelerationSetting } from './hardware-acceleration-setting';
-import { renderActiveInstallCard } from './install-progress-row';
 import { renderMicrophonePicker } from './microphone-picker';
 import { renderModelSection } from './model-settings-section';
 import { openFilteredHotkeySettings } from './open-hotkey-settings';
@@ -61,10 +56,11 @@ import {
   type DropdownOption,
   type SettingAccess,
 } from './setting-helpers';
+import { mountSettingsSidecarSurfaces } from './settings-sidecar-surfaces';
 import {
-  resolvePluginDirectorySafe,
+  openCudaInstallModal,
+  openSidecarUpdateModal,
   type SidecarInstallActionDeps,
-  SidecarSettingsSection,
 } from './sidecar-settings-section';
 import { SmartParagraphSettingsModal } from './smart-paragraph-settings-modal';
 import { isSystemAudioSupportedOnCurrentPlatform } from './system-audio-support';
@@ -169,6 +165,11 @@ const SETTINGS_SEARCH_ALIAS_KEYS = [
   'settings.hardwareAcceleration.name',
   'settings.noteContext.name',
   'settings.groups.advanced',
+  'settings.attention.heading',
+  'setup.sidecar.update.title_one',
+  'setup.sidecar.update.title_other',
+  'settings.attention.installCuda.name',
+  'settings.attention.enableCuda.name',
   'settings.missingSidecar.name',
   'settings.sidecar.name',
   'settings.sidecar.cpuName',
@@ -193,11 +194,9 @@ export class LocalSttSettingTab extends PluginSettingTab {
   private disposeDiarizationDesc: (() => void) | null = null;
   private disposeEngineSection: (() => void) | null = null;
   private disposeMicrophoneSection: (() => void) | null = null;
-  private disposeMissingSidecarBanner: (() => void) | null = null;
   private disposeModelSection: (() => void) | null = null;
   private disposeReadAloudSection: (() => void) | null = null;
-  private disposeSidecarSection: (() => void) | null = null;
-  private missingSidecarProgressEl: HTMLDivElement | null = null;
+  private disposeSidecarSurfaces: (() => void) | null = null;
 
   constructor(
     app: App,
@@ -251,11 +250,11 @@ export class LocalSttSettingTab extends PluginSettingTab {
   private renderSettings(containerEl: HTMLElement): void {
     this.tearDown();
     const settings = this.dependencies.getSettings();
+    const sidecarActionDeps = this.buildSidecarInstallActionDeps();
 
     containerEl.empty();
 
-    const missingSidecarGroup = containerEl.createDiv({ cls: 'setting-group' });
-    this.disposeMissingSidecarBanner = this.renderMissingSidecarBanner(missingSidecarGroup);
+    const attentionContainer = containerEl.createDiv();
 
     // --- Model ---
     const modelSection = createSettingGroup(containerEl, t('settings.groups.model'));
@@ -548,12 +547,45 @@ export class LocalSttSettingTab extends PluginSettingTab {
     // Sidecar rows live in their own owned container so re-renders can simply
     // empty + rebuild without disturbing the rest of the Advanced section.
     const sidecarContainer = advancedSection.createDiv();
-    const sidecarSection = new SidecarSettingsSection(sidecarContainer, {
-      ...this.buildSidecarInstallActionDeps(),
-      access: this.access,
-      resolvePluginDirectory: this.dependencies.resolvePluginDirectory,
-    });
-    this.disposeSidecarSection = sidecarSection.init();
+    this.disposeSidecarSurfaces = mountSettingsSidecarSurfaces(
+      attentionContainer,
+      sidecarContainer,
+      {
+        advanced: {
+          ...sidecarActionDeps,
+          access: this.access,
+          resolvePluginDirectory: this.dependencies.resolvePluginDirectory,
+        },
+        attention: {
+          actions: {
+            enableCuda: async () => {
+              await changeHardwareAcceleration(
+                {
+                  access: this.access,
+                  feedback: this.dependencies.feedback,
+                  restartSidecar: this.dependencies.restartSidecar,
+                  sidecarLifecycleGate: this.dependencies.sidecarLifecycleGate,
+                },
+                true,
+              );
+              this.refreshSettingsTab();
+            },
+            installCuda: (pluginDirectory) => {
+              openCudaInstallModal(sidecarActionDeps, this.access, pluginDirectory);
+            },
+            openSetup: this.dependencies.openSetupWizard,
+            updateSidecars: (pluginDirectory, variants) => {
+              openSidecarUpdateModal(sidecarActionDeps, { pluginDirectory, variants });
+            },
+          },
+          getSettings: this.dependencies.getSettings,
+          logger: this.dependencies.logger,
+          pluginVersion: this.dependencies.pluginVersion,
+          resolvePluginDirectory: this.dependencies.resolvePluginDirectory,
+          sidecarInstallManager: this.dependencies.sidecarInstallManager,
+        },
+      },
+    );
 
     addToggleSetting(advancedSection, this.access, {
       name: t('settings.recoveryMemory.name'),
@@ -604,11 +636,8 @@ export class LocalSttSettingTab extends PluginSettingTab {
     this.disposeEngineSection = null;
     this.disposeMicrophoneSection?.();
     this.disposeMicrophoneSection = null;
-    this.disposeSidecarSection?.();
-    this.disposeSidecarSection = null;
-    this.disposeMissingSidecarBanner?.();
-    this.disposeMissingSidecarBanner = null;
-    this.missingSidecarProgressEl = null;
+    this.disposeSidecarSurfaces?.();
+    this.disposeSidecarSurfaces = null;
   }
 
   private refreshSettingsTab(): void {
@@ -768,89 +797,6 @@ export class LocalSttSettingTab extends PluginSettingTab {
     }
 
     group.toggleClass('local-stt-hidden', rendered === 0);
-  }
-
-  private renderMissingSidecarBanner(group: HTMLDivElement): () => void {
-    let disposed = false;
-
-    const render = async (): Promise<void> => {
-      this.missingSidecarProgressEl = null;
-      group.empty();
-
-      const pluginDirectory = await this.resolvePluginDirectorySafe();
-      if (disposed || pluginDirectory === null || !group.isConnected) return;
-
-      const [cpuManifest, cudaManifest] = await Promise.all([
-        readInstallManifest(variantDirectoryPath(pluginDirectory, 'cpu')),
-        readInstallManifest(variantDirectoryPath(pluginDirectory, 'cuda')),
-      ]);
-      if (disposed || !group.isConnected) return;
-
-      const activeInstall = this.dependencies.sidecarInstallManager.getState().activeInstall;
-      const sidecarInstalled = cpuManifest !== null || cudaManifest !== null;
-      group.toggleClass('local-stt-hidden', sidecarInstalled);
-      if (sidecarInstalled) {
-        return;
-      }
-
-      const items = group.createDiv({ cls: 'setting-items' });
-
-      if (activeInstall !== null) {
-        const { progressEl } = renderActiveInstallCard(items, {
-          isCancelling: activeInstall.phase === 'canceling',
-          name: t('settings.install.installingSidecar', {
-            variant: activeInstall.variant.toUpperCase(),
-          }),
-          onCancel: () => {
-            this.dependencies.sidecarInstallManager.cancel();
-          },
-          progressState: buildSidecarProgressState(activeInstall),
-        });
-        this.missingSidecarProgressEl = progressEl;
-        return;
-      }
-
-      const setting = new Setting(items)
-        .setName(t('settings.missingSidecar.name'))
-        .setDesc(t('settings.missingSidecar.desc'));
-      setting.addButton((button) => {
-        button
-          .setCta()
-          .setButtonText(t('settings.runSetup.name'))
-          .onClick(() => {
-            void this.dependencies.openSetupWizard();
-          });
-      });
-    };
-
-    const handleChange = (): void => {
-      const activeInstall = this.dependencies.sidecarInstallManager.getState().activeInstall;
-
-      if (activeInstall !== null && this.missingSidecarProgressEl !== null) {
-        updateInstallProgressElement(
-          this.missingSidecarProgressEl,
-          buildSidecarProgressState(activeInstall),
-        );
-        return;
-      }
-
-      void render();
-    };
-
-    void render();
-    const unsubscribe = this.dependencies.sidecarInstallManager.subscribe(handleChange);
-
-    return () => {
-      disposed = true;
-      unsubscribe();
-    };
-  }
-
-  private resolvePluginDirectorySafe(): Promise<string | null> {
-    return resolvePluginDirectorySafe(
-      this.dependencies.resolvePluginDirectory,
-      this.dependencies.logger,
-    );
   }
 
   private buildSidecarInstallActionDeps(): SidecarInstallActionDeps {
