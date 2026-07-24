@@ -9,8 +9,10 @@ import {
   ModelInstallManager,
 } from '../src/models/model-install-manager';
 import type {
+  CatalogModelRecord,
   CatalogModelSelection,
   EngineCapabilitiesRecord,
+  InstalledModelRecord,
   ModelInstallUpdateRecord,
 } from '../src/models/model-management-types';
 import { DEFAULT_PLUGIN_SETTINGS, type PluginSettings } from '../src/settings/plugin-settings';
@@ -169,6 +171,8 @@ describe('ModelInstallManager', () => {
       });
 
       await harness.manager.install(selection);
+      const request = harness.sidecarConnection.installModel.mock.calls[0]?.[0];
+      if (request === undefined) throw new Error('Expected an install request');
 
       expect(harness.sidecarConnection.installModel).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -184,8 +188,16 @@ describe('ModelInstallManager', () => {
       harness.sidecarConnection.probeModelSelection.mockResolvedValueOnce(
         sampleReadyProbeResult(selection),
       );
-      emitInstallUpdate(harness, { ...installUpdate, state: 'downloading' });
-      emitInstallUpdate(harness, { ...installUpdate, state: 'completed' });
+      emitInstallUpdate(harness, {
+        ...installUpdate,
+        installId: request.installId,
+        state: 'downloading',
+      });
+      emitInstallUpdate(harness, {
+        ...installUpdate,
+        installId: request.installId,
+        state: 'completed',
+      });
 
       await vi.waitFor(() => {
         expect(harness.getSettings().selectedModel).toEqual(selection);
@@ -321,6 +333,337 @@ describe('ModelInstallManager', () => {
       );
       expect(onStateChange).toHaveBeenCalledOnce();
     });
+
+    it('resumes a rejected request when same-ID progress arrives late', async () => {
+      harness.sidecarConnection.installModel.mockRejectedValueOnce(
+        new Error('Timed out waiting for sidecar event'),
+      );
+
+      await expect(harness.manager.install(sampleSelection(), ['voice-alba'])).rejects.toThrow(
+        'Timed out waiting for sidecar event',
+      );
+      const request = harness.sidecarConnection.installModel.mock.calls[0]?.[0];
+      if (request === undefined) throw new Error('Expected an install request');
+
+      emitInstallUpdate(harness, {
+        downloadedBytes: 128,
+        installId: request.installId,
+        state: 'downloading',
+      });
+
+      expect(harness.manager.getState()).toMatchObject({
+        activeInstall: {
+          installUpdate: {
+            downloadedBytes: 128,
+            installId: request.installId,
+          },
+          phase: 'installing',
+        },
+        failedInstall: null,
+      });
+      await expect(
+        harness.manager.install(sampleSelection('whisper_small_en_q5_1')),
+      ).rejects.toThrow('Another model is already being installed.');
+      expect(harness.sidecarConnection.installModel).toHaveBeenCalledOnce();
+
+      harness.getSettings().selectedModel = sampleSelection();
+      emitInstallUpdate(harness, { installId: request.installId, state: 'completed' });
+      expect(harness.manager.getState()).toMatchObject({
+        activeInstall: null,
+        failedInstall: null,
+      });
+    });
+
+    it.each([
+      ['completed', null],
+      ['cancelled', null],
+      ['failed', 'retained'],
+    ] as const)(
+      'reconciles a rejected request when same-ID %s arrives late',
+      async (state, expectedFailure) => {
+        harness.sidecarConnection.installModel.mockRejectedValueOnce(
+          new Error('Timed out waiting for sidecar event'),
+        );
+        await expect(harness.manager.install(sampleSelection())).rejects.toThrow(
+          'Timed out waiting for sidecar event',
+        );
+        const request = harness.sidecarConnection.installModel.mock.calls[0]?.[0];
+        if (request === undefined) throw new Error('Expected an install request');
+        harness.getSettings().selectedModel = sampleSelection();
+
+        emitInstallUpdate(harness, { installId: request.installId, state });
+
+        expect(harness.manager.getState().activeInstall).toBeNull();
+        if (expectedFailure === null) {
+          expect(harness.manager.getState().failedInstall).toBeNull();
+        } else {
+          expect(harness.manager.getState().failedInstall?.failureId).toBe(request.installId);
+        }
+      },
+    );
+
+    it('refreshes without auto-selecting an unmatched completion over a newer request', async () => {
+      harness.sidecarConnection.installModel
+        .mockRejectedValueOnce(new Error('Timed out waiting for sidecar event'))
+        .mockResolvedValueOnce(sampleInstallUpdate({ state: 'queued' }));
+
+      await expect(harness.manager.install(sampleSelection())).rejects.toThrow(
+        'Timed out waiting for sidecar event',
+      );
+      const staleRequest = harness.sidecarConnection.installModel.mock.calls[0]?.[0];
+      if (staleRequest === undefined) throw new Error('Expected a stale install request');
+
+      await harness.manager.install(sampleSelection('whisper_small_en_q5_1'));
+      const currentRequest = harness.sidecarConnection.installModel.mock.calls[1]?.[0];
+      if (currentRequest === undefined) throw new Error('Expected a current install request');
+      harness.sidecarConnection.listInstalledModels.mockClear();
+      harness.sidecarConnection.probeModelSelection.mockClear();
+
+      emitInstallUpdate(harness, {
+        installId: staleRequest.installId,
+        modelId: staleRequest.modelId,
+        state: 'completed',
+      });
+
+      await vi.waitFor(() => {
+        expect(harness.sidecarConnection.listInstalledModels).toHaveBeenCalledOnce();
+      });
+      expect(harness.sidecarConnection.probeModelSelection).not.toHaveBeenCalled();
+      expect(harness.getSettings().selectedModel).toBeNull();
+      await expect(harness.manager.install(sampleSelection())).rejects.toThrow(
+        'Another model is already being installed.',
+      );
+      expect(harness.sidecarConnection.installModel).toHaveBeenCalledTimes(2);
+      expect(currentRequest.installId).not.toBe(staleRequest.installId);
+    });
+
+    it('does not auto-select when a newer install starts during the completion refresh', async () => {
+      const completedSelection = sampleSelection('whisper_small_en_q5_1');
+      harness.sidecarConnection.installModel.mockResolvedValue(
+        sampleInstallUpdate({ state: 'queued' }),
+      );
+      await harness.manager.install(completedSelection);
+      const completedRequest = harness.sidecarConnection.installModel.mock.calls[0]?.[0];
+      if (completedRequest === undefined) throw new Error('Expected a completed request');
+
+      let resolveRefresh: (value: { models: InstalledModelRecord[] }) => void = () => {};
+      const pendingRefresh = new Promise<{ models: InstalledModelRecord[] }>((resolve) => {
+        resolveRefresh = resolve;
+      });
+      harness.sidecarConnection.listInstalledModels.mockClear();
+      harness.sidecarConnection.listInstalledModels.mockReturnValueOnce(pendingRefresh);
+      harness.sidecarConnection.probeModelSelection.mockClear();
+
+      emitInstallUpdate(harness, {
+        installId: completedRequest.installId,
+        modelId: completedSelection.modelId,
+        state: 'completed',
+      });
+      await vi.waitFor(() => {
+        expect(harness.sidecarConnection.listInstalledModels).toHaveBeenCalledOnce();
+      });
+
+      await harness.manager.install(sampleSelection());
+      resolveRefresh({
+        models: [sampleInstalledModel(), sampleInstalledModel(completedSelection.modelId)],
+      });
+
+      await vi.waitFor(() => {
+        expect(harness.manager.getState().installedModels).toHaveLength(2);
+      });
+      expect(harness.getSettings().selectedModel).toBeNull();
+      expect(harness.sidecarConnection.probeModelSelection).not.toHaveBeenCalled();
+    });
+
+    it('does not auto-select over an explicit selection started during its probe', async () => {
+      const completedSelection = sampleSelection('whisper_small_en_q5_1');
+      const explicitSelection = sampleSelection();
+      harness.sidecarConnection.installModel.mockResolvedValue(
+        sampleInstallUpdate({ state: 'queued' }),
+      );
+      await harness.manager.install(completedSelection);
+      const completedRequest = harness.sidecarConnection.installModel.mock.calls[0]?.[0];
+      if (completedRequest === undefined) throw new Error('Expected a completed request');
+      harness.sidecarConnection.listInstalledModels.mockResolvedValueOnce({
+        models: [sampleInstalledModel(), sampleInstalledModel(completedSelection.modelId)],
+      });
+      const autoProbe = deferred<ReturnType<typeof sampleReadyProbeResult>>();
+      harness.sidecarConnection.probeModelSelection
+        .mockReturnValueOnce(autoProbe.promise)
+        .mockResolvedValueOnce(sampleReadyProbeResult(explicitSelection));
+
+      emitInstallUpdate(harness, {
+        installId: completedRequest.installId,
+        modelId: completedSelection.modelId,
+        state: 'completed',
+      });
+      await vi.waitFor(() => {
+        expect(harness.sidecarConnection.probeModelSelection).toHaveBeenCalledOnce();
+      });
+
+      await harness.manager.select(explicitSelection);
+      autoProbe.resolve(sampleReadyProbeResult(completedSelection));
+      await Promise.resolve();
+      await Promise.resolve();
+
+      await vi.waitFor(() => {
+        expect(harness.getSettings().selectedModel).toEqual(explicitSelection);
+      });
+      expect(harness.getSettings().selectedModel).not.toEqual(completedSelection);
+    });
+
+    it('does not auto-select when a newer install starts during its probe', async () => {
+      const completedSelection = sampleSelection('whisper_small_en_q5_1');
+      harness.sidecarConnection.installModel.mockResolvedValue(
+        sampleInstallUpdate({ state: 'queued' }),
+      );
+      await harness.manager.install(completedSelection);
+      const completedRequest = harness.sidecarConnection.installModel.mock.calls[0]?.[0];
+      if (completedRequest === undefined) throw new Error('Expected a completed request');
+      harness.sidecarConnection.listInstalledModels.mockResolvedValueOnce({
+        models: [sampleInstalledModel(), sampleInstalledModel(completedSelection.modelId)],
+      });
+      const autoProbe = deferred<ReturnType<typeof sampleReadyProbeResult>>();
+      harness.sidecarConnection.probeModelSelection.mockReturnValueOnce(autoProbe.promise);
+
+      emitInstallUpdate(harness, {
+        installId: completedRequest.installId,
+        modelId: completedSelection.modelId,
+        state: 'completed',
+      });
+      await vi.waitFor(() => {
+        expect(harness.sidecarConnection.probeModelSelection).toHaveBeenCalledOnce();
+      });
+
+      await harness.manager.install(sampleSelection());
+      autoProbe.resolve(sampleReadyProbeResult(completedSelection));
+      await Promise.resolve();
+      await Promise.resolve();
+
+      expect(harness.getSettings().selectedModel).toBeNull();
+    });
+
+    it('does not commit a pending completion refresh after disposal', async () => {
+      const completedSelection = sampleSelection('whisper_small_en_q5_1');
+      harness.sidecarConnection.installModel.mockResolvedValueOnce(
+        sampleInstallUpdate({ state: 'queued' }),
+      );
+      await harness.manager.install(completedSelection);
+      const completedRequest = harness.sidecarConnection.installModel.mock.calls[0]?.[0];
+      if (completedRequest === undefined) throw new Error('Expected a completed request');
+      const pendingRefresh = deferred<{ models: InstalledModelRecord[] }>();
+      harness.sidecarConnection.listInstalledModels.mockClear();
+      harness.sidecarConnection.listInstalledModels.mockReturnValueOnce(pendingRefresh.promise);
+      harness.sidecarConnection.probeModelSelection.mockClear();
+
+      emitInstallUpdate(harness, {
+        installId: completedRequest.installId,
+        modelId: completedSelection.modelId,
+        state: 'completed',
+      });
+      await vi.waitFor(() => {
+        expect(harness.sidecarConnection.listInstalledModels).toHaveBeenCalledOnce();
+      });
+
+      harness.manager.dispose();
+      pendingRefresh.resolve({
+        models: [sampleInstalledModel(), sampleInstalledModel(completedSelection.modelId)],
+      });
+      await Promise.resolve();
+
+      expect(harness.manager.getState().installedModels).toEqual([sampleInstalledModel()]);
+      expect(harness.getSettings().selectedModel).toBeNull();
+      expect(harness.sidecarConnection.probeModelSelection).not.toHaveBeenCalled();
+    });
+
+    it('clears a retry failure when the original timed-out install later completes', async () => {
+      vi.spyOn(Date, 'now').mockReturnValue(100);
+      vi.spyOn(Math, 'random').mockReturnValueOnce(0.1).mockReturnValueOnce(0.2);
+      const selection = sampleSelection('whisper_small_en_q5_1');
+      harness.sidecarConnection.installModel
+        .mockRejectedValueOnce(new Error('Timed out waiting for sidecar event'))
+        .mockRejectedValueOnce(new Error('Another install is already active'));
+
+      await expect(harness.manager.install(selection)).rejects.toThrow(
+        'Timed out waiting for sidecar event',
+      );
+      const originalRequest = harness.sidecarConnection.installModel.mock.calls[0]?.[0];
+      if (originalRequest === undefined) throw new Error('Expected an original request');
+
+      await expect(harness.manager.retryFailedInstall(originalRequest.installId)).rejects.toThrow(
+        'Another install is already active',
+      );
+      const retryFailure = harness.manager.getState().failedInstall;
+      if (retryFailure === null) throw new Error('Expected a retry failure');
+      expect(retryFailure.failureId).not.toBe(originalRequest.installId);
+
+      harness.sidecarConnection.listInstalledModels.mockResolvedValueOnce({
+        models: [sampleInstalledModel(), sampleInstalledModel(selection.modelId)],
+      });
+      harness.sidecarConnection.probeModelSelection.mockResolvedValueOnce(
+        sampleReadyProbeResult(selection),
+      );
+      emitInstallUpdate(harness, {
+        installId: originalRequest.installId,
+        modelId: selection.modelId,
+        state: 'completed',
+      });
+
+      await vi.waitFor(() => {
+        expect(harness.manager.getState().failedInstall).toBeNull();
+        expect(harness.getSettings().selectedModel).toEqual(selection);
+      });
+    });
+
+    it.each([
+      { expectedCleared: false, installedVoiceIds: [] },
+      { expectedCleared: true, installedVoiceIds: ['alba'] },
+    ])(
+      'clears a timed-out voice retry only when the requested voice is installed',
+      async ({ expectedCleared, installedVoiceIds }) => {
+        vi.spyOn(Date, 'now').mockReturnValue(100);
+        vi.spyOn(Math, 'random').mockReturnValueOnce(0.1).mockReturnValueOnce(0.2);
+        const selection = sampleTtsVoiceSelection();
+        harness.manager.getState().catalog.models.push(sampleTtsVoiceCatalogModel());
+        harness.getSettings().selectedTtsModel = selection;
+        harness.sidecarConnection.installModel
+          .mockRejectedValueOnce(new Error('Timed out waiting for sidecar event'))
+          .mockRejectedValueOnce(new Error('Another install is already active'));
+
+        await expect(harness.manager.install(selection, ['voice-alba'])).rejects.toThrow(
+          'Timed out waiting for sidecar event',
+        );
+        const originalRequest = harness.sidecarConnection.installModel.mock.calls[0]?.[0];
+        if (originalRequest === undefined) throw new Error('Expected an original request');
+        await expect(harness.manager.retryFailedInstall(originalRequest.installId)).rejects.toThrow(
+          'Another install is already active',
+        );
+
+        harness.sidecarConnection.listInstalledModels.mockClear();
+        harness.sidecarConnection.listInstalledModels.mockResolvedValueOnce({
+          models: [
+            sampleInstalledModel(),
+            sampleInstalledModel(selection.modelId, {
+              familyId: selection.familyId,
+              installedVoiceIds,
+              runtimeId: selection.runtimeId,
+            }),
+          ],
+        });
+        emitInstallUpdate(harness, {
+          familyId: selection.familyId,
+          installId: originalRequest.installId,
+          modelId: selection.modelId,
+          runtimeId: selection.runtimeId,
+          state: 'completed',
+        });
+
+        await vi.waitFor(() => {
+          expect(harness.sidecarConnection.listInstalledModels).toHaveBeenCalledOnce();
+          expect(harness.manager.getState().failedInstall === null).toBe(expectedCleared);
+        });
+      },
+    );
 
     it.each(['completed', 'cancelled'] as const)(
       'does not create a failure for a manager-initiated %s install',
@@ -917,6 +1260,44 @@ describe('ModelInstallManager', () => {
       expect(harness.manager.getState().activeInstall?.installUpdate.installId).toBe('install-sel');
     });
 
+    it('commits a newer explicit selection after an older persistence finishes', async () => {
+      await harness.manager.init();
+      harness.sidecarConnection.probeModelSelection.mockImplementation(async ({ modelSelection }) =>
+        sampleReadyProbeResult(modelSelection as CatalogModelSelection),
+      );
+      const firstSelection = sampleSelection('whisper_small_en_q5_1');
+      const newerSelection = sampleSelection();
+      const commitBlock = harness.blockNextConditionalCommit();
+
+      const selectingFirst = harness.manager.select(firstSelection);
+      await commitBlock.started;
+      const selectingNewer = harness.manager.select(newerSelection);
+
+      commitBlock.release();
+      await Promise.all([selectingFirst, selectingNewer]);
+
+      expect(harness.getSettings().selectedModel).toEqual(newerSelection);
+    });
+
+    it('commits a newer clear after an older selection persistence finishes', async () => {
+      await harness.manager.init();
+      const selection = sampleSelection('whisper_small_en_q5_1');
+      harness.sidecarConnection.probeModelSelection.mockResolvedValueOnce(
+        sampleReadyProbeResult(selection),
+      );
+      const commitBlock = harness.blockNextConditionalCommit();
+
+      const selecting = harness.manager.select(selection);
+      await commitBlock.started;
+      const clearing = harness.manager.clearSelection();
+
+      commitBlock.release();
+      await Promise.all([selecting, clearing]);
+
+      expect(harness.getSettings().selectedModel).toBeNull();
+      expect(harness.manager.getState().selectedModelCapabilities).toEqual({ status: 'none' });
+    });
+
     it('completing an install never mutates the persisted selection', async () => {
       harness = createManagerHarness({ selectedModel: sampleSelection() });
       configureSidecarForInit(harness.sidecarConnection);
@@ -1248,6 +1629,10 @@ describe('ModelInstallManager', () => {
 // ---------------------------------------------------------------------------
 
 interface ManagerHarness {
+  blockNextConditionalCommit(): {
+    release(): void;
+    started: Promise<void>;
+  };
   emit(event: SidecarEvent): void;
   getSettings(): PluginSettings;
   logger: {
@@ -1268,17 +1653,52 @@ function createManagerHarness(settingsOverride?: Partial<PluginSettings>): Manag
     error: vi.fn(),
     warn: vi.fn(),
   };
+  let settingsOperationTail: Promise<void> = Promise.resolve();
+  let nextConditionalCommitBlock: {
+    release: Deferred<void>;
+    started: Deferred<void>;
+  } | null = null;
+  const enqueueSettingsOperation = <T>(operation: () => Promise<T>): Promise<T> => {
+    const result = settingsOperationTail.then(operation, operation);
+    settingsOperationTail = result.then(
+      () => undefined,
+      () => undefined,
+    );
+    return result;
+  };
 
   const manager = new ModelInstallManager({
+    commitSettingsIf: (condition, createNextSettings) =>
+      enqueueSettingsOperation(async () => {
+        if (!condition(settings)) return false;
+        settings = createNextSettings(settings);
+        const block = nextConditionalCommitBlock;
+        nextConditionalCommitBlock = null;
+        if (block !== null) {
+          block.started.resolve(undefined);
+          await block.release.promise;
+        }
+        return true;
+      }),
     getSettings: () => settings,
     logger,
-    saveSettings: async (next) => {
-      settings = next;
-    },
+    saveSettings: (next) =>
+      enqueueSettingsOperation(async () => {
+        settings = next;
+      }),
     sidecarConnection,
   });
 
   return {
+    blockNextConditionalCommit: () => {
+      const release = deferred<void>();
+      const started = deferred<void>();
+      nextConditionalCommitBlock = { release, started };
+      return {
+        release: () => release.resolve(undefined),
+        started: started.promise,
+      };
+    },
     emit: (event) => {
       for (const listener of listeners) {
         listener(event);
@@ -1328,9 +1748,73 @@ function emitInstallUpdate(harness: ManagerHarness, overrides?: Partial<ModelIns
   });
 }
 
+interface Deferred<T> {
+  promise: Promise<T>;
+  resolve(value: T): void;
+}
+
+function deferred<T>(): Deferred<T> {
+  let resolvePromise: (value: T) => void = () => {};
+  const promise = new Promise<T>((resolve) => {
+    resolvePromise = resolve;
+  });
+  return { promise, resolve: resolvePromise };
+}
+
 // ---------------------------------------------------------------------------
 // Fixtures (test-local; shared model/install fixtures live in fixtures/models.ts)
 // ---------------------------------------------------------------------------
+
+function sampleTtsVoiceSelection(): CatalogModelSelection {
+  return {
+    familyId: 'pocket_tts',
+    kind: 'catalog_model',
+    modelId: 'pocket_tts_english',
+    runtimeId: 'onnx_runtime',
+  };
+}
+
+function sampleTtsVoiceCatalogModel(): CatalogModelRecord {
+  return {
+    artifacts: [
+      {
+        artifactId: 'synthesis',
+        downloadUrl: 'https://example.com/pocket-tts.onnx',
+        filename: 'pocket-tts.onnx',
+        required: true,
+        role: 'synthesis_model',
+        sha256: '1'.repeat(64),
+        sizeBytes: 100,
+      },
+      {
+        artifactId: 'voice-alba',
+        downloadUrl: 'https://example.com/alba.onnx',
+        filename: 'alba.onnx',
+        required: false,
+        role: 'voice',
+        sha256: '2'.repeat(64),
+        sizeBytes: 10,
+        voiceId: 'alba',
+      },
+    ],
+    collectionId: 'read_aloud',
+    defaultVoice: 'alba',
+    displayName: 'Pocket TTS English',
+    familyId: 'pocket_tts',
+    languageTags: ['en'],
+    licenseLabel: 'MIT',
+    licenseUrl: 'https://example.com/license',
+    modelCardUrl: null,
+    modelId: 'pocket_tts_english',
+    notes: [],
+    runtimeId: 'onnx_runtime',
+    sourceUrl: 'https://example.com/source',
+    summary: 'Local TTS',
+    supportsAutomaticLanguageDetection: false,
+    task: 'tts',
+    uxTags: [],
+  };
+}
 
 function sampleSystemInfo(): SystemInfoEvent {
   return {

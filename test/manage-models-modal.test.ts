@@ -286,6 +286,7 @@ describe('model browser', () => {
           runtimeId: 'onnx_runtime' as const,
         },
       ],
+      failedInstall: null,
       installedModels: [
         {
           catalogVersion: 1,
@@ -421,7 +422,7 @@ describe('model browser', () => {
     } finally {
       modal.close();
       if (originalAddEventListener === undefined) {
-        delete elementPrototype.addEventListener;
+        Reflect.deleteProperty(elementPrototype, 'addEventListener');
       } else {
         elementPrototype.addEventListener = originalAddEventListener;
       }

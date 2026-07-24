@@ -227,6 +227,7 @@ function detailsState(
         runtimeId: modelCapabilities.runtimeId,
       },
     ],
+    failedInstall: null,
     installedModels: [installed],
     loadError: null,
     loadStatus: 'ready',

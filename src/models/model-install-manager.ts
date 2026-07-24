@@ -67,6 +67,10 @@ export interface ModelManagerState {
 }
 
 interface ModelInstallManagerDependencies {
+  commitSettingsIf: (
+    condition: (settings: Readonly<PluginSettings>) => boolean,
+    createNextSettings: (settings: Readonly<PluginSettings>) => PluginSettings,
+  ) => Promise<boolean>;
   getSettings: () => PluginSettings;
   logger?: PluginLogger;
   saveSettings: (settings: PluginSettings) => Promise<void>;
@@ -157,10 +161,27 @@ function copyCatalogSelection(selection: CatalogModelSelection): CatalogModelSel
   return { ...selection };
 }
 
+function selectionFromInstallUpdate(update: ModelInstallUpdateRecord): CatalogModelSelection {
+  return {
+    familyId: update.familyId,
+    kind: 'catalog_model',
+    modelId: update.modelId,
+    runtimeId: update.runtimeId,
+  };
+}
+
 interface InstallRequest {
   artifactIds: string[] | null;
   installId: string;
   selection: CatalogModelSelection;
+}
+
+interface InstallRefresh {
+  completed: CatalogModelSelection | null;
+  expectedInstallGeneration: number;
+  expectedLifecycleGeneration: number;
+  expectedSelectionGeneration: number;
+  reconcileFailure: FailedInstallInfo | null;
 }
 
 function createFailedInstall(request: InstallRequest): FailedInstallInfo {
@@ -179,11 +200,20 @@ function copyFailedInstall(failedInstall: FailedInstallInfo): FailedInstallInfo 
   };
 }
 
+function restoreInstallRequest(failedInstall: FailedInstallInfo): InstallRequest {
+  return {
+    artifactIds: failedInstall.artifactIds === null ? null : [...failedInstall.artifactIds],
+    installId: failedInstall.failureId,
+    selection: copyCatalogSelection(failedInstall.selection),
+  };
+}
+
 // ---------------------------------------------------------------------------
 // ModelInstallManager
 // ---------------------------------------------------------------------------
 
 export class ModelInstallManager {
+  private activeSelectionCount = 0;
   private activeInstall: ActiveInstallInfo | null = null;
   private cancelStuckTimer: number | null = null;
   private catalog: ModelCatalogRecord = EMPTY_CATALOG;
@@ -191,14 +221,17 @@ export class ModelInstallManager {
   private compiledRuntimes: CompiledRuntimeInfo[] = [];
   private currentInstallRequest: InstallRequest | null = null;
   private failedInstall: FailedInstallInfo | null = null;
+  private installGeneration = 0;
   private installedModels: InstalledModelRecord[] = [];
   private lastLoggedInstallStateKey: string | null = null;
+  private lifecycleGeneration = 0;
   private readonly listeners = new Set<() => void>();
   private loadError: string | null = null;
   private loadStatus: LoadStatus = 'loading';
   private modelStore: ModelStoreRecord = EMPTY_MODEL_STORE;
   private releaseSidecarSubscription: (() => void) | null = null;
   private selectedModelCapabilities: SelectedModelCapabilities = { status: 'none' };
+  private selectionGeneration = 0;
   private selectedTtsModelCapabilities: SelectedModelCapabilities = { status: 'none' };
 
   constructor(private readonly deps: ModelInstallManagerDependencies) {}
@@ -302,6 +335,8 @@ export class ModelInstallManager {
   }
 
   dispose(): void {
+    this.lifecycleGeneration += 1;
+    this.selectionGeneration += 1;
     if (this.cancelStuckTimer !== null) {
       window.clearTimeout(this.cancelStuckTimer);
       this.cancelStuckTimer = null;
@@ -380,6 +415,7 @@ export class ModelInstallManager {
       selection: copyCatalogSelection(selection),
     };
     const clearedFailure = this.failedInstall !== null;
+    this.installGeneration += 1;
     this.currentInstallRequest = request;
     this.failedInstall = null;
     if (clearedFailure) {
@@ -524,17 +560,38 @@ export class ModelInstallManager {
   // -----------------------------------------------------------------------
 
   async select(selection: SelectedModel): Promise<ModelProbeResultEvent> {
+    const expectedLifecycleGeneration = this.lifecycleGeneration;
+    const expectedSelectionGeneration = ++this.selectionGeneration;
+    this.activeSelectionCount += 1;
+    try {
+      return await this.selectWithGuard(
+        selection,
+        () =>
+          this.lifecycleGeneration === expectedLifecycleGeneration &&
+          this.selectionGeneration === expectedSelectionGeneration,
+      );
+    } finally {
+      this.activeSelectionCount -= 1;
+    }
+  }
+
+  private async selectWithGuard(
+    selection: SelectedModel,
+    canCommit: (settings: Readonly<PluginSettings>) => boolean,
+  ): Promise<ModelProbeResultEvent> {
     const task = this.selectionTask(selection);
     const probeResult = await this.deps.sidecarConnection.probeModelSelection({
       modelSelection: selection,
       ...createModelStoreOverridePayload(this.deps.getSettings().modelStorePathOverride),
     });
+    if (!canCommit(this.deps.getSettings())) return probeResult;
 
     if (!probeResult.available) {
       // The user explicitly (re-)probed this exact selection and it's
       // confirmed broken now — drop any cached "ready" snapshot for it so a
       // future startup doesn't trust stale, now-incorrect capabilities.
       await this.applyProbeResultToCapabilities(selection, probeResult, task);
+      if (!canCommit(this.deps.getSettings())) return probeResult;
       await this.invalidateCapabilitiesSnapshot(selection, task);
       throw new Error(createProbeFailureMessage(probeResult));
     }
@@ -564,8 +621,10 @@ export class ModelInstallManager {
         (selection.kind === 'catalog_model' ? selection.modelId : selection.filePath);
       throw incompatibleLanguageError(displayName, currentLanguage);
     }
-    await this.updateSettings(
-      task === 'tts'
+    if (!canCommit(this.deps.getSettings())) return probeResult;
+    const committed = await this.deps.commitSettingsIf(canCommit, (currentSettings) => ({
+      ...currentSettings,
+      ...(task === 'tts'
         ? {
             selectedTtsModel: selection,
             selectedTtsVoice:
@@ -580,8 +639,9 @@ export class ModelInstallManager {
                   )?.defaultVoice ?? null)
                 : null,
           }
-        : { selectedModel: selection },
-    );
+        : { selectedModel: selection }),
+    }));
+    if (!committed || !canCommit(this.deps.getSettings())) return probeResult;
     await this.applyProbeResultToCapabilities(selection, probeResult, task);
     return probeResult;
   }
@@ -637,19 +697,40 @@ export class ModelInstallManager {
   }
 
   async clearSelection(): Promise<void> {
+    const expectedLifecycleGeneration = this.lifecycleGeneration;
+    const expectedSelectionGeneration = ++this.selectionGeneration;
     this.deps.logger?.debug('model', 'cleared selected model');
-    await this.updateSettings({ selectedModel: null, selectedModelCapabilitiesSnapshot: null });
+    const committed = await this.deps.commitSettingsIf(
+      () =>
+        this.lifecycleGeneration === expectedLifecycleGeneration &&
+        this.selectionGeneration === expectedSelectionGeneration,
+      (currentSettings) => ({
+        ...currentSettings,
+        selectedModel: null,
+        selectedModelCapabilitiesSnapshot: null,
+      }),
+    );
+    if (!committed) return;
     this.selectedModelCapabilities = { status: 'none' };
     this.notify();
   }
 
   async clearTtsSelection(): Promise<void> {
+    const expectedLifecycleGeneration = this.lifecycleGeneration;
+    const expectedSelectionGeneration = ++this.selectionGeneration;
     this.deps.logger?.debug('model', 'cleared selected read-aloud model');
-    await this.updateSettings({
-      selectedTtsModel: null,
-      selectedTtsModelCapabilitiesSnapshot: null,
-      selectedTtsVoice: null,
-    });
+    const committed = await this.deps.commitSettingsIf(
+      () =>
+        this.lifecycleGeneration === expectedLifecycleGeneration &&
+        this.selectionGeneration === expectedSelectionGeneration,
+      (currentSettings) => ({
+        ...currentSettings,
+        selectedTtsModel: null,
+        selectedTtsModelCapabilitiesSnapshot: null,
+        selectedTtsVoice: null,
+      }),
+    );
+    if (!committed) return;
     this.selectedTtsModelCapabilities = { status: 'none' };
     this.notify();
   }
@@ -795,16 +876,44 @@ export class ModelInstallManager {
     }
 
     const activeBeforeEvent = this.activeInstall;
-    const matchedRequest =
+    const matchedCurrentRequest =
       this.currentInstallRequest?.installId === event.installId ? this.currentInstallRequest : null;
-    const canUpdateActive =
+    const matchedFailedRequest =
+      this.currentInstallRequest === null && this.failedInstall?.failureId === event.installId
+        ? restoreInstallRequest(this.failedInstall)
+        : null;
+    const matchedRequest = matchedCurrentRequest ?? matchedFailedRequest;
+    const acceptsLifecycleEvent =
       matchedRequest !== null ||
       (this.currentInstallRequest === null && this.failedInstall === null);
-    if (canUpdateActive) {
-      this.activeInstall = this.resolveNextInstallState(this.activeInstall, event);
+    if (!acceptsLifecycleEvent) {
+      if (event.state === 'completed') {
+        const completed = selectionFromInstallUpdate(event);
+        const reconcileFailure =
+          this.failedInstall !== null &&
+          selectedModelEquals(this.failedInstall.selection, completed)
+            ? copyFailedInstall(this.failedInstall)
+            : null;
+        void this.refreshAfterInstall({
+          completed: reconcileFailure === null ? null : completed,
+          expectedInstallGeneration: this.installGeneration,
+          expectedLifecycleGeneration: this.lifecycleGeneration,
+          expectedSelectionGeneration: this.selectionGeneration,
+          reconcileFailure,
+        });
+      }
+      return;
     }
+
+    if (matchedFailedRequest !== null && !isTerminalInstallState(event.state)) {
+      this.currentInstallRequest = matchedFailedRequest;
+      this.failedInstall = null;
+    }
+    this.activeInstall = this.resolveNextInstallState(this.activeInstall, event);
     if (matchedRequest !== null && isTerminalInstallState(event.state)) {
-      this.currentInstallRequest = null;
+      if (matchedCurrentRequest !== null) {
+        this.currentInstallRequest = null;
+      }
       this.failedInstall = event.state === 'failed' ? createFailedInstall(matchedRequest) : null;
     }
     const installStateKey = `${event.installId}:${event.state}`;
@@ -831,11 +940,15 @@ export class ModelInstallManager {
     // On completed installs, refresh the installed models list so the UI
     // reflects the new model without requiring a restart.
     if (event.state === 'completed') {
+      if (matchedFailedRequest !== null) {
+        this.notify();
+      }
       void this.refreshAfterInstall({
-        familyId: event.familyId,
-        kind: 'catalog_model',
-        modelId: event.modelId,
-        runtimeId: event.runtimeId,
+        completed: selectionFromInstallUpdate(event),
+        expectedInstallGeneration: this.installGeneration,
+        expectedLifecycleGeneration: this.lifecycleGeneration,
+        expectedSelectionGeneration: this.selectionGeneration,
+        reconcileFailure: null,
       });
       return;
     }
@@ -843,7 +956,8 @@ export class ModelInstallManager {
     this.notify();
   }
 
-  private async refreshAfterInstall(completed?: CatalogModelSelection): Promise<void> {
+  private async refreshAfterInstall(refresh: InstallRefresh): Promise<void> {
+    let refreshed = false;
     try {
       const overridePayload = createModelStoreOverridePayload(
         this.deps.getSettings().modelStorePathOverride,
@@ -851,7 +965,9 @@ export class ModelInstallManager {
       const installedEvent = await this.deps.sidecarConnection.listInstalledModels(
         overridePayload.modelStorePathOverride,
       );
+      if (this.lifecycleGeneration !== refresh.expectedLifecycleGeneration) return;
       this.installedModels = installedEvent.models;
+      refreshed = true;
     } catch (error) {
       this.deps.logger?.warn(
         'model',
@@ -859,16 +975,39 @@ export class ModelInstallManager {
       );
     }
 
+    let reconciledFailure = false;
+    if (
+      refreshed &&
+      refresh.reconcileFailure !== null &&
+      this.failedInstall?.failureId === refresh.reconcileFailure.failureId &&
+      this.isFailedInstallSatisfied(refresh.reconcileFailure)
+    ) {
+      this.failedInstall = null;
+      reconciledFailure = true;
+    }
+
     // Auto-select on install when nothing is currently selected — new users
     // shouldn't have to figure out a second "Use" click after installing.
-    const completedTask = completed === undefined ? null : this.selectionTask(completed);
-    const selectedForTask =
-      completedTask === 'tts'
-        ? this.deps.getSettings().selectedTtsModel
-        : this.deps.getSettings().selectedModel;
-    if (completed !== undefined && selectedForTask === null) {
+    const canAutoSelectReconciledFailure = refresh.reconcileFailure === null || reconciledFailure;
+    if (refresh.completed !== null && canAutoSelectReconciledFailure) {
+      const completed = refresh.completed;
+      const completedTask = this.selectionTask(completed);
+      const canCommitAutoSelection = (settings: Readonly<PluginSettings>): boolean => {
+        const selectedForTask =
+          completedTask === 'tts' ? settings.selectedTtsModel : settings.selectedModel;
+        return (
+          this.lifecycleGeneration === refresh.expectedLifecycleGeneration &&
+          this.installGeneration === refresh.expectedInstallGeneration &&
+          this.selectionGeneration === refresh.expectedSelectionGeneration &&
+          this.activeSelectionCount === 0 &&
+          this.currentInstallRequest === null &&
+          selectedForTask === null
+        );
+      };
       try {
-        await this.select(completed);
+        if (canCommitAutoSelection(this.deps.getSettings())) {
+          await this.selectWithGuard(completed, canCommitAutoSelection);
+        }
       } catch (error) {
         this.deps.logger?.warn(
           'model',
@@ -877,7 +1016,43 @@ export class ModelInstallManager {
       }
     }
 
-    this.notify();
+    if (this.lifecycleGeneration === refresh.expectedLifecycleGeneration) {
+      this.notify();
+    }
+  }
+
+  private isFailedInstallSatisfied(failure: FailedInstallInfo): boolean {
+    const installed = this.installedModels.find((candidate) =>
+      matchesModelTriple(
+        candidate,
+        failure.selection.runtimeId,
+        failure.selection.familyId,
+        failure.selection.modelId,
+      ),
+    );
+    if (installed === undefined) return false;
+    if (failure.artifactIds === null) return true;
+
+    const catalogModel = this.catalog.models.find((candidate) =>
+      matchesModelTriple(
+        candidate,
+        failure.selection.runtimeId,
+        failure.selection.familyId,
+        failure.selection.modelId,
+      ),
+    );
+    if (catalogModel === undefined) return false;
+
+    return failure.artifactIds.every((artifactId) => {
+      const artifact = catalogModel.artifacts.find(
+        (candidate) => candidate.artifactId === artifactId,
+      );
+      if (artifact === undefined) return false;
+      return (
+        artifact.role !== 'voice' ||
+        (artifact.voiceId !== undefined && installed.installedVoiceIds.includes(artifact.voiceId))
+      );
+    });
   }
 
   private resolveNextInstallState(
