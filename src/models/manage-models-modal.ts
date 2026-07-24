@@ -13,7 +13,16 @@ import { ConfirmModal } from '../ui/confirm-modal';
 import { styleDestructiveButton } from '../ui/destructive-button';
 import { localizeFamilySummary } from './catalog-localization';
 import { formatModelTagLabel } from './model-guidance';
-import { isCancellingPhase, type ModelInstallManager } from './model-install-manager';
+import {
+  type ModelInstallFailurePanelHandle,
+  renderModelInstallFailurePanel,
+  resolveFailedInstallDisplayName,
+} from './model-install-failure-panel';
+import {
+  isCancellingPhase,
+  type ModelInstallManager,
+  type ModelManagerState,
+} from './model-install-manager';
 import {
   createInstallProgressElement,
   type InstallProgressState,
@@ -164,6 +173,8 @@ export class ManageModelsModal extends Modal {
   private activeTask: ModelPickerTask;
   private activeLanguage: ModelLanguageFilter = ALL_MODEL_LANGUAGES;
   private browserEl: HTMLDivElement | null = null;
+  private failurePanelContainer: HTMLDivElement | null = null;
+  private failurePanelHandle: ModelInstallFailurePanelHandle | null = null;
   private navigationEl: HTMLDivElement | null = null;
   private navigationSignature = '';
   private listContainer: HTMLDivElement | null = null;
@@ -174,6 +185,7 @@ export class ManageModelsModal extends Modal {
   private searchInputEl: HTMLInputElement | null = null;
   private searchQuery = '';
   private taskButtons = new Map<ModelPickerTask, HTMLButtonElement>();
+  private renderedFailureId: string | null = null;
 
   constructor(
     app: App,
@@ -197,8 +209,11 @@ export class ManageModelsModal extends Modal {
     this.contentEl.empty();
     this.progressElements.clear();
     this.browserEl = null;
+    this.failurePanelContainer = null;
+    this.failurePanelHandle = null;
     this.navigationEl = null;
     this.navigationSignature = '';
+    this.renderedFailureId = null;
     this.tabBarEl = null;
     this.listContainer = null;
     this.searchInputEl = null;
@@ -206,6 +221,11 @@ export class ManageModelsModal extends Modal {
     this.taskButtons.clear();
 
     const state = this.deps.manager.getState();
+    this.failurePanelContainer = this.contentEl.createDiv({
+      cls: 'local-stt-install-failure-region',
+    });
+    this.renderFailurePanel(state);
+
     if (state.loadStatus === 'error' && this.deps.onRunSetup !== undefined) {
       this.renderLoadErrorPanel();
       return;
@@ -294,6 +314,8 @@ export class ManageModelsModal extends Modal {
     this.releaseSubscription = null;
     this.actionInProgress = false;
     this.browserEl = null;
+    this.failurePanelContainer = null;
+    this.failurePanelHandle = null;
     this.navigationEl = null;
     this.navigationSignature = '';
     this.listContainer = null;
@@ -302,6 +324,7 @@ export class ManageModelsModal extends Modal {
     this.tabButtons.clear();
     this.taskButtons.clear();
     this.progressElements.clear();
+    this.renderedFailureId = null;
     this.contentEl.empty();
   }
 
@@ -820,6 +843,19 @@ export class ManageModelsModal extends Modal {
       return;
     }
 
+    const priorFailureId = this.renderedFailureId;
+    const nextFailureId = state.failedInstall?.failureId ?? null;
+    const failureChanged = priorFailureId !== nextFailureId;
+    if (failureChanged) {
+      this.renderFailurePanel(state);
+    } else {
+      this.updateFailurePanelBusyState(state);
+    }
+
+    if (priorFailureId !== null && nextFailureId === null && state.activeInstall === null) {
+      return;
+    }
+
     if (this.navigationSignature !== this.buildNavigationSignature()) {
       this.renderNavigation();
       this.renderModelList();
@@ -880,6 +916,7 @@ export class ManageModelsModal extends Modal {
     }
 
     this.actionInProgress = true;
+    this.updateFailurePanelBusyState();
     this.renderModelList();
 
     try {
@@ -898,6 +935,7 @@ export class ManageModelsModal extends Modal {
       }
     } finally {
       this.actionInProgress = false;
+      this.updateFailurePanelBusyState();
       this.renderModelList();
     }
   }
@@ -905,6 +943,44 @@ export class ManageModelsModal extends Modal {
   // -------------------------------------------------------------------------
   // Helpers
   // -------------------------------------------------------------------------
+
+  private renderFailurePanel(state: Readonly<ModelManagerState>): void {
+    if (this.failurePanelContainer === null) {
+      return;
+    }
+
+    this.failurePanelContainer.empty();
+    this.failurePanelHandle = null;
+    this.renderedFailureId = state.failedInstall?.failureId ?? null;
+    if (state.failedInstall === null) {
+      return;
+    }
+
+    this.failurePanelHandle = renderModelInstallFailurePanel(this.failurePanelContainer, {
+      disabled: this.actionInProgress || state.activeInstall !== null,
+      failureId: state.failedInstall.failureId,
+      modelName: resolveFailedInstallDisplayName(state.failedInstall, state.catalog.models),
+      onDismiss: (failureId) => {
+        this.deps.manager.dismissFailedInstall(failureId);
+      },
+      onRetry: (failureId) => {
+        void this.runAction(
+          async () => {
+            await this.deps.manager.retryFailedInstall(failureId);
+          },
+          { failureMessage: t('models.manage.installStartFailed') },
+        );
+      },
+    });
+  }
+
+  private updateFailurePanelBusyState(
+    state: Readonly<ModelManagerState> = this.deps.manager.getState(),
+  ): void {
+    this.failurePanelHandle?.setRetryDisabled(
+      this.actionInProgress || state.activeInstall !== null,
+    );
+  }
 
   private getActiveTab(): AdapterTabKey | null {
     return this.activeTabs.get(this.activeTask) ?? null;

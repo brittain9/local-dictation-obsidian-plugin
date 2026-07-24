@@ -669,6 +669,11 @@ export const en = {
   'models.manage.selected': 'Selected',
   'models.manage.cancelling': 'Cancelling…',
   'models.manage.details': 'Details',
+  'models.manage.installFailed': "Couldn't install {model}",
+  'models.manage.installFailedDesc':
+    'The install did not finish. Retry the same download, or dismiss this message.',
+  'models.manage.retryInstall': 'Retry',
+  'models.manage.dismissInstallFailure': 'Dismiss',
   'models.manage.installStartFailed': 'Could not start the model install. Try again.',
   'models.manage.selectFailed': 'Could not select the model. Check that its files are available.',
   'models.manage.selectedNotice': 'Model selected.',

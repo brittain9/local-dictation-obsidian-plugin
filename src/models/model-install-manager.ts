@@ -42,6 +42,12 @@ export interface ActiveInstallInfo {
   phase: InstallPhase;
 }
 
+export interface FailedInstallInfo {
+  artifactIds: string[] | null;
+  failureId: string;
+  selection: CatalogModelSelection;
+}
+
 type LoadStatus = 'error' | 'loading' | 'ready';
 
 export interface ModelManagerState {
@@ -49,6 +55,7 @@ export interface ModelManagerState {
   catalog: ModelCatalogRecord;
   compiledAdapters: CompiledAdapterInfo[];
   compiledRuntimes: CompiledRuntimeInfo[];
+  failedInstall: FailedInstallInfo | null;
   installedModels: InstalledModelRecord[];
   loadError: string | null;
   loadStatus: LoadStatus;
@@ -146,6 +153,32 @@ function createProbeFailureMessage(probeResult: ModelProbeResultEvent): string {
     : probeResult.message;
 }
 
+function copyCatalogSelection(selection: CatalogModelSelection): CatalogModelSelection {
+  return { ...selection };
+}
+
+interface InstallRequest {
+  artifactIds: string[] | null;
+  installId: string;
+  selection: CatalogModelSelection;
+}
+
+function createFailedInstall(request: InstallRequest): FailedInstallInfo {
+  return {
+    artifactIds: request.artifactIds === null ? null : [...request.artifactIds],
+    failureId: request.installId,
+    selection: copyCatalogSelection(request.selection),
+  };
+}
+
+function copyFailedInstall(failedInstall: FailedInstallInfo): FailedInstallInfo {
+  return {
+    artifactIds: failedInstall.artifactIds === null ? null : [...failedInstall.artifactIds],
+    failureId: failedInstall.failureId,
+    selection: copyCatalogSelection(failedInstall.selection),
+  };
+}
+
 // ---------------------------------------------------------------------------
 // ModelInstallManager
 // ---------------------------------------------------------------------------
@@ -156,6 +189,8 @@ export class ModelInstallManager {
   private catalog: ModelCatalogRecord = EMPTY_CATALOG;
   private compiledAdapters: CompiledAdapterInfo[] = [];
   private compiledRuntimes: CompiledRuntimeInfo[] = [];
+  private currentInstallRequest: InstallRequest | null = null;
+  private failedInstall: FailedInstallInfo | null = null;
   private installedModels: InstalledModelRecord[] = [];
   private lastLoggedInstallStateKey: string | null = null;
   private readonly listeners = new Set<() => void>();
@@ -277,6 +312,9 @@ export class ModelInstallManager {
       this.releaseSidecarSubscription = null;
     }
 
+    this.activeInstall = null;
+    this.currentInstallRequest = null;
+    this.failedInstall = null;
     this.listeners.clear();
   }
 
@@ -301,6 +339,7 @@ export class ModelInstallManager {
       catalog: this.catalog,
       compiledAdapters: this.compiledAdapters,
       compiledRuntimes: this.compiledRuntimes,
+      failedInstall: this.failedInstall === null ? null : copyFailedInstall(this.failedInstall),
       installedModels: this.installedModels,
       loadError: this.loadError,
       loadStatus: this.loadStatus,
@@ -324,7 +363,7 @@ export class ModelInstallManager {
     selection: CatalogModelSelection,
     artifactIds?: string[],
   ): Promise<ModelInstallUpdateEvent> {
-    if (this.activeInstall !== null) {
+    if (this.activeInstall !== null || this.currentInstallRequest !== null) {
       throw new Error('Another model is already being installed.');
     }
     const model = this.catalog.models.find((candidate) =>
@@ -335,18 +374,66 @@ export class ModelInstallManager {
       throw incompatibleLanguageError(model.displayName, language);
     }
 
+    const request: InstallRequest = {
+      artifactIds: artifactIds === undefined ? null : [...artifactIds],
+      installId: createInstallId(),
+      selection: copyCatalogSelection(selection),
+    };
+    const clearedFailure = this.failedInstall !== null;
+    this.currentInstallRequest = request;
+    this.failedInstall = null;
+    if (clearedFailure) {
+      this.notify();
+    }
+
     this.deps.logger?.debug(
       'model',
-      `initiating install for ${selection.runtimeId}:${selection.familyId}:${selection.modelId}`,
+      `initiating install for ${request.selection.runtimeId}:${request.selection.familyId}:${request.selection.modelId}`,
     );
-    return this.deps.sidecarConnection.installModel({
-      familyId: selection.familyId,
-      installId: createInstallId(),
-      ...(artifactIds === undefined ? {} : { artifactIds }),
-      modelId: selection.modelId,
-      runtimeId: selection.runtimeId,
-      ...createModelStoreOverridePayload(this.deps.getSettings().modelStorePathOverride),
-    });
+    try {
+      return await this.deps.sidecarConnection.installModel({
+        familyId: request.selection.familyId,
+        installId: request.installId,
+        ...(request.artifactIds === null ? {} : { artifactIds: [...request.artifactIds] }),
+        modelId: request.selection.modelId,
+        runtimeId: request.selection.runtimeId,
+        ...createModelStoreOverridePayload(this.deps.getSettings().modelStorePathOverride),
+      });
+    } catch (error) {
+      if (this.currentInstallRequest?.installId === request.installId) {
+        this.currentInstallRequest = null;
+        this.clearActiveInstall(request.installId);
+        this.failedInstall = createFailedInstall(request);
+        this.notify();
+      }
+      this.deps.logger?.warn(
+        'model',
+        `install ${request.selection.modelId} (${request.installId}) failed before progress`,
+        error,
+      );
+      throw error;
+    }
+  }
+
+  async retryFailedInstall(expectedFailureId: string): Promise<ModelInstallUpdateEvent | null> {
+    const failure = this.failedInstall;
+    if (failure === null || failure.failureId !== expectedFailureId) {
+      return null;
+    }
+
+    return this.install(
+      copyCatalogSelection(failure.selection),
+      failure.artifactIds === null ? undefined : [...failure.artifactIds],
+    );
+  }
+
+  dismissFailedInstall(expectedFailureId: string): void {
+    if (this.failedInstall?.failureId !== expectedFailureId) {
+      return;
+    }
+
+    this.failedInstall = null;
+    this.notify();
   }
 
   async cancel(): Promise<void> {
@@ -407,6 +494,7 @@ export class ModelInstallManager {
     if (this.activeInstall === null || this.activeInstall.phase !== 'cancelStuck') {
       return;
     }
+    const dismissedInstallId = this.activeInstall.installUpdate.installId;
 
     // Refresh installed models from sidecar to check if the model actually
     // completed while we were stuck.
@@ -425,6 +513,9 @@ export class ModelInstallManager {
     }
 
     this.activeInstall = null;
+    if (this.currentInstallRequest?.installId === dismissedInstallId) {
+      this.currentInstallRequest = null;
+    }
     this.notify();
   }
 
@@ -584,6 +675,12 @@ export class ModelInstallManager {
   // Private
   // -----------------------------------------------------------------------
 
+  private clearActiveInstall(installId: string): void {
+    if (this.activeInstall?.installUpdate.installId === installId) {
+      this.activeInstall = null;
+    }
+  }
+
   private async refreshSelectedCapabilities(
     selection: SelectedModel,
     task: 'stt' | 'tts' = 'stt',
@@ -697,12 +794,23 @@ export class ModelInstallManager {
       return;
     }
 
-    this.activeInstall = this.resolveNextInstallState(this.activeInstall, event);
+    const activeBeforeEvent = this.activeInstall;
+    const matchedRequest =
+      this.currentInstallRequest?.installId === event.installId ? this.currentInstallRequest : null;
+    const canUpdateActive =
+      matchedRequest !== null ||
+      (this.currentInstallRequest === null && this.failedInstall === null);
+    if (canUpdateActive) {
+      this.activeInstall = this.resolveNextInstallState(this.activeInstall, event);
+    }
+    if (matchedRequest !== null && isTerminalInstallState(event.state)) {
+      this.currentInstallRequest = null;
+      this.failedInstall = event.state === 'failed' ? createFailedInstall(matchedRequest) : null;
+    }
     const installStateKey = `${event.installId}:${event.state}`;
 
     if (installStateKey !== this.lastLoggedInstallStateKey) {
       const logMessage = createInstallLifecycleLogMessage(event);
-
       if (logMessage !== null) {
         this.deps.logger?.debug('model', logMessage);
       }
@@ -711,7 +819,11 @@ export class ModelInstallManager {
     this.lastLoggedInstallStateKey = isTerminalInstallState(event.state) ? null : installStateKey;
 
     // Clear cancel-stuck timer on any terminal event.
-    if (isTerminalInstallState(event.state) && this.cancelStuckTimer !== null) {
+    if (
+      isTerminalInstallState(event.state) &&
+      activeBeforeEvent?.installUpdate.installId === event.installId &&
+      this.cancelStuckTimer !== null
+    ) {
       window.clearTimeout(this.cancelStuckTimer);
       this.cancelStuckTimer = null;
     }
@@ -773,7 +885,9 @@ export class ModelInstallManager {
     installUpdate: ModelInstallUpdateEvent,
   ): ActiveInstallInfo | null {
     if (isTerminalInstallState(installUpdate.state)) {
-      return null;
+      return current !== null && current.installUpdate.installId !== installUpdate.installId
+        ? current
+        : null;
     }
 
     // Preserve the current phase if the incoming event belongs to the same

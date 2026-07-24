@@ -80,6 +80,7 @@ describe('ModelInstallManager', () => {
 
   afterEach(() => {
     harness.manager.dispose();
+    vi.restoreAllMocks();
   });
 
   describe('init()', () => {
@@ -248,6 +249,219 @@ describe('ModelInstallManager', () => {
       },
     );
 
+    it('retains a safe exact request when a manager-initiated install fails', async () => {
+      const artifactIds = ['voice-alba', 'voice-cosette'];
+      const selection = sampleSelection();
+      harness.sidecarConnection.installModel.mockResolvedValueOnce(
+        sampleInstallUpdate({ state: 'queued' }),
+      );
+
+      await harness.manager.install(selection, artifactIds);
+      const request = harness.sidecarConnection.installModel.mock.calls[0]?.[0];
+      if (request === undefined) throw new Error('Expected an install request');
+      selection.modelId = 'mutated-model';
+      artifactIds.push('mutated-voice');
+
+      emitInstallUpdate(harness, {
+        details: '/private/models/download.tmp',
+        installId: request.installId,
+        message: 'hash mismatch at https://download.example.com/model',
+        state: 'failed',
+      });
+
+      expect(harness.manager.getState()).toMatchObject({
+        activeInstall: null,
+        failedInstall: {
+          artifactIds: ['voice-alba', 'voice-cosette'],
+          failureId: request.installId,
+          selection: sampleSelection(),
+        },
+      });
+      expect(harness.manager.getState().failedInstall).not.toHaveProperty('message');
+      expect(harness.manager.getState().failedInstall).not.toHaveProperty('details');
+    });
+
+    it('copies failed request arrays when exposing state', async () => {
+      harness.sidecarConnection.installModel.mockResolvedValueOnce(
+        sampleInstallUpdate({ state: 'queued' }),
+      );
+      await harness.manager.install(sampleSelection(), ['voice-alba']);
+      const request = harness.sidecarConnection.installModel.mock.calls[0]?.[0];
+      if (request === undefined) throw new Error('Expected an install request');
+      emitInstallUpdate(harness, { installId: request.installId, state: 'failed' });
+
+      const exposed = harness.manager.getState().failedInstall;
+      if (exposed === null) throw new Error('Expected a failed install');
+      exposed.artifactIds?.push('mutated-voice');
+      exposed.selection.modelId = 'mutated-model';
+
+      expect(harness.manager.getState().failedInstall).toEqual({
+        artifactIds: ['voice-alba'],
+        failureId: request.installId,
+        selection: sampleSelection(),
+      });
+    });
+
+    it('publishes a recoverable failure and rethrows when the initial command rejects', async () => {
+      const error = new Error('permission denied at /private/models');
+      harness.sidecarConnection.installModel.mockRejectedValueOnce(error);
+      const onStateChange = vi.fn();
+      harness.manager.subscribe(onStateChange);
+
+      await expect(harness.manager.install(sampleSelection(), ['voice-alba'])).rejects.toBe(error);
+
+      expect(harness.manager.getState().failedInstall).toMatchObject({
+        artifactIds: ['voice-alba'],
+        selection: sampleSelection(),
+      });
+      expect(harness.logger.warn).toHaveBeenCalledWith(
+        'model',
+        expect.stringContaining('failed before progress'),
+        error,
+      );
+      expect(onStateChange).toHaveBeenCalledOnce();
+    });
+
+    it.each(['completed', 'cancelled'] as const)(
+      'does not create a failure for a manager-initiated %s install',
+      async (state) => {
+        harness.sidecarConnection.installModel.mockResolvedValueOnce(
+          sampleInstallUpdate({ state: 'queued' }),
+        );
+        await harness.manager.install(sampleSelection());
+        const request = harness.sidecarConnection.installModel.mock.calls[0]?.[0];
+        if (request === undefined) throw new Error('Expected an install request');
+
+        emitInstallUpdate(harness, { installId: request.installId, state });
+
+        expect(harness.manager.getState()).toMatchObject({
+          activeInstall: null,
+          failedInstall: null,
+        });
+      },
+    );
+
+    it('retries the exact request once with a fresh install ID', async () => {
+      vi.spyOn(Date, 'now').mockReturnValue(100);
+      vi.spyOn(Math, 'random').mockReturnValueOnce(0.1).mockReturnValueOnce(0.2);
+      harness.sidecarConnection.installModel.mockResolvedValue(
+        sampleInstallUpdate({ state: 'queued' }),
+      );
+
+      await harness.manager.install(sampleSelection(), ['voice-alba', 'voice-cosette']);
+      const firstRequest = harness.sidecarConnection.installModel.mock.calls[0]?.[0];
+      if (firstRequest === undefined) throw new Error('Expected an install request');
+      emitInstallUpdate(harness, { installId: firstRequest.installId, state: 'failed' });
+
+      const firstRetry = harness.manager.retryFailedInstall(firstRequest.installId);
+      const staleRetry = harness.manager.retryFailedInstall(firstRequest.installId);
+      await expect(staleRetry).resolves.toBeNull();
+      await firstRetry;
+
+      expect(harness.sidecarConnection.installModel).toHaveBeenCalledTimes(2);
+      const retryRequest = harness.sidecarConnection.installModel.mock.calls[1]?.[0];
+      expect(retryRequest).toMatchObject({
+        artifactIds: ['voice-alba', 'voice-cosette'],
+        familyId: firstRequest.familyId,
+        modelId: firstRequest.modelId,
+        runtimeId: firstRequest.runtimeId,
+      });
+      expect(retryRequest?.installId).not.toBe(firstRequest.installId);
+      expect(harness.manager.getState().failedInstall).toBeNull();
+    });
+
+    it('keeps stale dismiss and retry actions from affecting a newer failure', async () => {
+      vi.spyOn(Date, 'now').mockReturnValue(100);
+      vi.spyOn(Math, 'random')
+        .mockReturnValueOnce(0.1)
+        .mockReturnValueOnce(0.2)
+        .mockReturnValueOnce(0.3);
+      harness.sidecarConnection.installModel.mockResolvedValue(
+        sampleInstallUpdate({ state: 'queued' }),
+      );
+      await harness.manager.install(sampleSelection(), ['voice-alba']);
+      const firstRequest = harness.sidecarConnection.installModel.mock.calls[0]?.[0];
+      if (firstRequest === undefined) throw new Error('Expected an install request');
+      emitInstallUpdate(harness, { installId: firstRequest.installId, state: 'failed' });
+
+      await harness.manager.retryFailedInstall(firstRequest.installId);
+      const retryRequest = harness.sidecarConnection.installModel.mock.calls[1]?.[0];
+      if (retryRequest === undefined) throw new Error('Expected a retry request');
+      emitInstallUpdate(harness, { installId: retryRequest.installId, state: 'failed' });
+
+      harness.manager.dismissFailedInstall(firstRequest.installId);
+      await expect(harness.manager.retryFailedInstall(firstRequest.installId)).resolves.toBeNull();
+
+      expect(harness.manager.getState().failedInstall?.failureId).toBe(retryRequest.installId);
+      expect(harness.sidecarConnection.installModel).toHaveBeenCalledTimes(2);
+    });
+
+    it('preserves a failure across rejected preflight and clears it for an accepted attempt', async () => {
+      harness.sidecarConnection.installModel.mockResolvedValue(
+        sampleInstallUpdate({ state: 'queued' }),
+      );
+      await harness.manager.install(sampleSelection(), ['voice-alba']);
+      const failedRequest = harness.sidecarConnection.installModel.mock.calls[0]?.[0];
+      if (failedRequest === undefined) throw new Error('Expected an install request');
+      emitInstallUpdate(harness, { installId: failedRequest.installId, state: 'failed' });
+
+      harness.getSettings().dictationLanguage = 'ja';
+      await expect(harness.manager.install(sampleMoonshineSelection())).rejects.toThrow(
+        'does not support 日本語',
+      );
+      expect(harness.manager.getState().failedInstall?.failureId).toBe(failedRequest.installId);
+      expect(harness.sidecarConnection.installModel).toHaveBeenCalledOnce();
+
+      harness.getSettings().dictationLanguage = 'en';
+      const acceptedAttempt = harness.manager.install(sampleSelection('whisper_small_en_q5_1'));
+      expect(harness.manager.getState().failedInstall).toBeNull();
+      await acceptedAttempt;
+    });
+
+    it('ignores unmatched terminal failures without fabricating retry intent', async () => {
+      harness.sidecarConnection.installModel.mockResolvedValueOnce(
+        sampleInstallUpdate({ state: 'queued' }),
+      );
+      await harness.manager.install(sampleSelection(), ['voice-alba']);
+      const request = harness.sidecarConnection.installModel.mock.calls[0]?.[0];
+      if (request === undefined) throw new Error('Expected an install request');
+
+      emitInstallUpdate(harness, { installId: 'unmatched-install', state: 'failed' });
+
+      expect(harness.manager.getState().failedInstall).toBeNull();
+      await expect(harness.manager.install(sampleSelection())).rejects.toThrow(
+        'Another model is already being installed.',
+      );
+    });
+
+    it('dismisses only the matching failure and drops recovery state on dispose', async () => {
+      harness.sidecarConnection.installModel.mockResolvedValueOnce(
+        sampleInstallUpdate({ state: 'queued' }),
+      );
+      await harness.manager.install(sampleSelection());
+      const request = harness.sidecarConnection.installModel.mock.calls[0]?.[0];
+      if (request === undefined) throw new Error('Expected an install request');
+      emitInstallUpdate(harness, { installId: request.installId, state: 'failed' });
+
+      harness.manager.dismissFailedInstall('stale-failure');
+      expect(harness.manager.getState().failedInstall?.failureId).toBe(request.installId);
+      expect(harness.manager.getState().failedInstall?.artifactIds).toBeNull();
+      harness.manager.dismissFailedInstall(request.installId);
+      expect(harness.manager.getState().failedInstall).toBeNull();
+
+      harness.sidecarConnection.installModel.mockResolvedValueOnce(
+        sampleInstallUpdate({ state: 'queued' }),
+      );
+      await harness.manager.install(sampleSelection());
+      const nextRequest = harness.sidecarConnection.installModel.mock.calls[1]?.[0];
+      if (nextRequest === undefined) throw new Error('Expected another install request');
+      emitInstallUpdate(harness, { installId: nextRequest.installId, state: 'failed' });
+      expect(harness.manager.getState().failedInstall).not.toBeNull();
+
+      harness.manager.dispose();
+      expect(harness.manager.getState().failedInstall).toBeNull();
+    });
+
     it('refreshes installedModels after a completed event', async () => {
       expect(harness.manager.getState().installedModels).toHaveLength(1);
 
@@ -407,6 +621,28 @@ describe('ModelInstallManager', () => {
           expect.objectContaining({ modelId: 'whisper_small_en_q5_1' }),
         ]),
       });
+    });
+
+    it('dismissCancelStuck releases a manager-initiated request for a future install', async () => {
+      harness.sidecarConnection.installModel.mockResolvedValue(
+        sampleInstallUpdate({ state: 'queued' }),
+      );
+      await harness.manager.install(sampleSelection());
+      const request = harness.sidecarConnection.installModel.mock.calls[0]?.[0];
+      if (request === undefined) throw new Error('Expected an install request');
+      emitInstallUpdate(harness, { installId: request.installId });
+      await harness.manager.cancel();
+      vi.advanceTimersByTime(30_000);
+      harness.sidecarConnection.listInstalledModels.mockResolvedValueOnce({
+        models: [sampleInstalledModel()],
+      });
+
+      await harness.manager.dismissCancelStuck();
+
+      await expect(
+        harness.manager.install(sampleSelection('whisper_small_en_q5_1')),
+      ).resolves.toBeDefined();
+      expect(harness.sidecarConnection.installModel).toHaveBeenCalledTimes(2);
     });
 
     it('dismissCancelStuck is a no-op while the install is still running', async () => {
@@ -1014,6 +1250,11 @@ describe('ModelInstallManager', () => {
 interface ManagerHarness {
   emit(event: SidecarEvent): void;
   getSettings(): PluginSettings;
+  logger: {
+    debug: ReturnType<typeof vi.fn>;
+    error: ReturnType<typeof vi.fn>;
+    warn: ReturnType<typeof vi.fn>;
+  };
   manager: ModelInstallManager;
   sidecarConnection: ReturnType<typeof createSidecarConnectionStub>;
 }
@@ -1022,9 +1263,15 @@ function createManagerHarness(settingsOverride?: Partial<PluginSettings>): Manag
   const listeners = new Set<(event: SidecarEvent) => void>();
   const sidecarConnection = createSidecarConnectionStub(listeners);
   let settings: PluginSettings = { ...DEFAULT_PLUGIN_SETTINGS, ...settingsOverride };
+  const logger = {
+    debug: vi.fn(),
+    error: vi.fn(),
+    warn: vi.fn(),
+  };
 
   const manager = new ModelInstallManager({
     getSettings: () => settings,
+    logger,
     saveSettings: async (next) => {
       settings = next;
     },
@@ -1038,6 +1285,7 @@ function createManagerHarness(settingsOverride?: Partial<PluginSettings>): Manag
       }
     },
     getSettings: () => settings,
+    logger,
     manager,
     sidecarConnection,
   };
