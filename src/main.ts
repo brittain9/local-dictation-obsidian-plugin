@@ -40,6 +40,7 @@ import {
   openSidecarUpdateModal,
   type SidecarInstallActionDeps,
 } from './settings/sidecar-settings-section';
+import { buildStartupSidecarInstallActionDeps } from './settings/startup-sidecar-install-action-deps';
 import { SetupWizardModal } from './setup/setup-wizard-modal';
 import { formatVoiceLabel } from './shared/format-utils';
 import { t } from './shared/i18n';
@@ -60,6 +61,7 @@ import {
   assertSidecarIdle,
   createSidecarInUsePredicate,
   SidecarInUseError,
+  type SpeechSessionPredicates,
 } from './sidecar/sidecar-speech-interlock';
 import {
   detectSidecarVersionDrift,
@@ -75,10 +77,11 @@ export default class LocalSttPlugin extends Plugin {
   private audioCaptureStream: AudioCaptureStream | null = null;
   private audioLevelMeter: SidecarAudioLevelMeter | null = null;
   private dictationController: DictationSessionController | null = null;
-  private readonly isSidecarInUse = createSidecarInUsePredicate({
+  private readonly speechSessionPredicates: SpeechSessionPredicates = {
     isDictationBusy: () => this.dictationController?.isBusy() ?? false,
     isReadAloudActive: () => this.readAloudController?.isActive() ?? false,
-  });
+  };
+  private readonly isSidecarInUse = createSidecarInUsePredicate(this.speechSessionPredicates);
   private logger: PluginLogger = createPluginLogger(() => this.settings.developerMode);
   private readonly feedback: UserFeedback = createUserFeedback({
     logger: this.logger,
@@ -277,8 +280,8 @@ export default class LocalSttPlugin extends Plugin {
       new LocalSttSettingTab(this.app, this, {
         feedback: this.feedback,
         getSettings: () => this.settings,
-        isDictationBusy: () => this.dictationController?.isBusy() ?? false,
-        isSidecarInUse: () => this.isSidecarInUse(),
+        isDictationBusy: () => this.speechSessionPredicates.isDictationBusy(),
+        isSidecarInUse: this.isSidecarInUse,
         logger: this.logger,
         modelInstallManager: this.requireModelInstallManager(),
         openModelPicker: (options) => this.openModelPicker(options),
@@ -992,10 +995,9 @@ export default class LocalSttPlugin extends Plugin {
   }
 
   private buildSidecarInstallActionDeps(): SidecarInstallActionDeps {
-    return {
+    return buildStartupSidecarInstallActionDeps({
       app: this.app,
       feedback: this.feedback,
-      isSidecarInUse: () => this.isSidecarInUse(),
       logger: this.logger,
       modelInstallManager: this.requireModelInstallManager(),
       pluginVersion: this.manifest.version,
@@ -1008,7 +1010,8 @@ export default class LocalSttPlugin extends Plugin {
       },
       sidecarConnection: this.requireSidecarConnection(),
       sidecarInstallManager: this.requireSidecarInstallManager(),
-    };
+      speechPredicates: this.speechSessionPredicates,
+    });
   }
 
   private async resolvePluginDirectoryPath(): Promise<string> {

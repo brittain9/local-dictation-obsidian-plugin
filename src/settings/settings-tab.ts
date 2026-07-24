@@ -24,13 +24,16 @@ import {
   type SidecarInstallManager,
 } from '../sidecar/sidecar-install-manager';
 import { readInstallManifest, variantDirectoryPath } from '../sidecar/sidecar-installer';
-import { SidecarInUseError } from '../sidecar/sidecar-speech-interlock';
 import { ConfirmModal } from '../ui/confirm-modal';
 import { styleDestructiveButton } from '../ui/destructive-button';
 import { diarizationSettingDescription } from './diarization-setting';
 import { DiarizationSettingsModal } from './diarization-settings-modal';
+import { renderHardwareAccelerationSetting } from './hardware-acceleration-setting';
 import { renderActiveInstallCard } from './install-progress-row';
-import { renderMicrophonePicker } from './microphone-picker';
+import {
+  renderMicrophonePicker,
+  selectMicrophoneDetectionBusyPredicate,
+} from './microphone-picker';
 import { renderModelSection } from './model-settings-section';
 import { openFilteredHotkeySettings } from './open-hotkey-settings';
 import {
@@ -341,7 +344,7 @@ export class LocalSttSettingTab extends PluginSettingTab {
     this.disposeMicrophoneSection = renderMicrophonePicker(captureCard, {
       access: this.access,
       feedback: this.dependencies.feedback,
-      isDictationBusy: this.dependencies.isDictationBusy,
+      isDictationBusy: selectMicrophoneDetectionBusyPredicate(this.dependencies),
       logger: this.dependencies.logger,
     });
 
@@ -771,50 +774,12 @@ export class LocalSttSettingTab extends PluginSettingTab {
       false;
 
     if (!Platform.isMacOS && hasNonCpuAccelerator) {
-      // accelerationPreference is a string enum mapped onto a boolean toggle, so
-      // the addEnumSetting / addToggleSetting helpers don't fit.
-      new Setting(containerEl)
-        .setName(t('settings.hardwareAcceleration.name'))
-        .setDesc(t('settings.hardwareAcceleration.desc'))
-        .addToggle((toggle) => {
-          toggle.setValue(settings.accelerationPreference === 'auto');
-          toggle.onChange(async (value) => {
-            if (this.dependencies.isSidecarInUse()) {
-              this.dependencies.feedback.show({
-                intent: 'warning',
-                message: t('settings.hardwareAcceleration.busy'),
-              });
-              toggle.setValue(!value);
-              return;
-            }
-            const previousPreference = settings.accelerationPreference;
-            await this.access.persistOne('accelerationPreference', value ? 'auto' : 'cpu_only');
-            try {
-              await this.dependencies.restartSidecarWhenIdle();
-              this.dependencies.feedback.show({
-                intent: 'success',
-                message: value
-                  ? t('settings.hardwareAcceleration.on')
-                  : t('settings.hardwareAcceleration.off'),
-              });
-            } catch (error) {
-              if (error instanceof SidecarInUseError) {
-                await this.access.persistOne('accelerationPreference', previousPreference);
-                toggle.setValue(previousPreference === 'auto');
-                this.dependencies.feedback.show({
-                  intent: 'warning',
-                  message: error.userMessage,
-                });
-                return;
-              }
-              this.dependencies.feedback.show({
-                cause: error,
-                intent: 'error',
-                message: t('settings.hardwareAcceleration.restartFailed'),
-              });
-            }
-          });
-        });
+      renderHardwareAccelerationSetting(containerEl, {
+        access: this.access,
+        feedback: this.dependencies.feedback,
+        isSidecarInUse: this.dependencies.isSidecarInUse,
+        restartSidecarWhenIdle: this.dependencies.restartSidecarWhenIdle,
+      });
       rendered += 1;
     }
 

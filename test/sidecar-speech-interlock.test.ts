@@ -1,16 +1,21 @@
-import type { App, Plugin } from 'obsidian';
+import type { App } from 'obsidian';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import type { ModelInstallManager } from '../src/models/model-install-manager';
-import { renderMicrophonePicker } from '../src/settings/microphone-picker';
+import { renderHardwareAccelerationSetting } from '../src/settings/hardware-acceleration-setting';
+import {
+  renderMicrophonePicker,
+  selectMicrophoneDetectionBusyPredicate,
+} from '../src/settings/microphone-picker';
 import { DEFAULT_PLUGIN_SETTINGS } from '../src/settings/plugin-settings';
-import { LocalSttSettingTab } from '../src/settings/settings-tab';
+import type { SettingAccess } from '../src/settings/setting-helpers';
 import {
   openSidecarInstallModal,
   openSidecarUpdateModal,
   type SidecarInstallActionDeps,
   uninstallSidecarVariantWithUx,
 } from '../src/settings/sidecar-settings-section';
+import { buildStartupSidecarInstallActionDeps } from '../src/settings/startup-sidecar-install-action-deps';
 import type { FeedbackRequest } from '../src/shared/user-feedback';
 import type { SidecarInstallManager } from '../src/sidecar/sidecar-install-manager';
 import {
@@ -245,6 +250,47 @@ describe('sidecar speech interlock', () => {
     });
   });
 
+  it('rolls a later racing hardware change back to the last successful preference', async () => {
+    const saveSettings = vi.fn<(settings: typeof DEFAULT_PLUGIN_SETTINGS) => Promise<void>>(
+      async () => {},
+    );
+    const restartSidecarWhenIdle = vi.fn(async () => {});
+    const feedbackShow = vi.fn();
+    const toggle = renderHardwareToggle({
+      feedbackShow,
+      isSidecarInUse: () => false,
+      restartSidecarWhenIdle,
+      saveSettings,
+    });
+
+    toggle.change(false);
+    await vi.waitFor(() => expect(restartSidecarWhenIdle).toHaveBeenCalledOnce());
+    await vi.waitFor(() =>
+      expect(feedbackShow).toHaveBeenCalledWith({
+        intent: 'success',
+        message: 'Hardware acceleration off.',
+      }),
+    );
+    expect(toggle.value).toBe(false);
+
+    restartSidecarWhenIdle.mockRejectedValueOnce(new SidecarInUseError(BECAME_ACTIVE_MESSAGE));
+    feedbackShow.mockClear();
+    toggle.change(true);
+
+    await vi.waitFor(() => expect(saveSettings).toHaveBeenCalledTimes(3));
+    expect(saveSettings.mock.calls.map(([settings]) => settings.accelerationPreference)).toEqual([
+      'cpu_only',
+      'auto',
+      'cpu_only',
+    ]);
+    expect(toggle.value).toBe(false);
+    expect(feedbackShow).toHaveBeenCalledOnce();
+    expect(feedbackShow).toHaveBeenCalledWith({
+      intent: 'warning',
+      message: BECAME_ACTIVE_MESSAGE,
+    });
+  });
+
   it('derives sidecar use from both live predicates without caching either', () => {
     let dictationBusy = false;
     let readAloudActive = false;
@@ -261,7 +307,40 @@ describe('sidecar speech interlock', () => {
     expect(isSidecarInUse()).toBe(true);
   });
 
-  it('allows microphone detection when Read aloud alone is active', async () => {
+  it('wires the startup drift action to both live speech predicates', () => {
+    let dictationBusy = false;
+    let readAloudActive = false;
+    const baseDeps = createActionDeps(() => false);
+    const { isSidecarInUse: _unused, ...sources } = baseDeps;
+    const deps = buildStartupSidecarInstallActionDeps({
+      ...sources,
+      speechPredicates: {
+        isDictationBusy: () => dictationBusy,
+        isReadAloudActive: () => readAloudActive,
+      },
+    });
+
+    expect(deps.isSidecarInUse()).toBe(false);
+    dictationBusy = true;
+    expect(deps.isSidecarInUse()).toBe(true);
+    dictationBusy = false;
+    readAloudActive = true;
+    expect(deps.isSidecarInUse()).toBe(true);
+
+    openSidecarUpdateModal(deps, {
+      pluginDirectory: '/plugin',
+      variants: ['cpu'],
+    });
+
+    expect(capturedModalOptions).toEqual([]);
+    expect(baseDeps.feedbackShow).toHaveBeenCalledWith({
+      intent: 'warning',
+      message:
+        'Stop dictation or Read aloud before updating sidecars — the update restarts the engine. If dictation is still processing, run "Cancel dictation" to stop it now.',
+    });
+  });
+
+  it('wires Settings microphone detection to dictation only', async () => {
     const getUserMedia = vi.fn(async () => ({
       getTracks: () => [{ stop: vi.fn() }],
     }));
@@ -274,9 +353,14 @@ describe('sidecar speech interlock', () => {
       },
     });
     const isDictationBusy = vi.fn(() => false);
-    const isSidecarInUse = createSidecarInUsePredicate({
+    const combinedSidecarPredicate = createSidecarInUsePredicate({
       isDictationBusy,
       isReadAloudActive: () => true,
+    });
+    const isSidecarInUse = vi.fn(() => combinedSidecarPredicate());
+    const isMicrophoneDetectionBusy = selectMicrophoneDetectionBusyPredicate({
+      isDictationBusy,
+      isSidecarInUse,
     });
     const feedbackShow = vi.fn();
     const dispose = renderMicrophonePicker(new TestElement() as unknown as HTMLElement, {
@@ -285,13 +369,14 @@ describe('sidecar speech interlock', () => {
         persistOne: vi.fn(async () => {}),
       },
       feedback: { show: feedbackShow },
-      isDictationBusy,
+      isDictationBusy: isMicrophoneDetectionBusy,
     });
 
-    expect(isSidecarInUse()).toBe(true);
+    expect(combinedSidecarPredicate()).toBe(true);
     await Setting.named('Microphone').extraButtonComponents[0]?.click();
 
     expect(isDictationBusy).toHaveBeenCalled();
+    expect(isSidecarInUse).not.toHaveBeenCalled();
     expect(getUserMedia).toHaveBeenCalledWith({ audio: true });
     expect(feedbackShow).not.toHaveBeenCalledWith({
       intent: 'warning',
@@ -307,52 +392,23 @@ function renderHardwareToggle(deps: {
   restartSidecarWhenIdle: () => Promise<void>;
   saveSettings: (settings: typeof DEFAULT_PLUGIN_SETTINGS) => Promise<void>;
 }) {
-  const tab = new LocalSttSettingTab({} as App, {} as Plugin, {
-    feedback: { show: deps.feedbackShow },
-    getSettings: () => ({
-      ...DEFAULT_PLUGIN_SETTINGS,
-      selectedModel: {
-        familyId: 'whisper',
-        kind: 'catalog_model',
-        modelId: 'whisper_small_en_q5_1',
-        runtimeId: 'whisper_cpp',
-      },
-    }),
-    isDictationBusy: () => false,
-    isSidecarInUse: deps.isSidecarInUse,
-    modelInstallManager: {
-      getState: () => ({
-        compiledAdapters: [],
-        compiledRuntimes: [
-          {
-            runtimeCapabilities: { availableAccelerators: ['cpu', 'cuda'] },
-            runtimeId: 'whisper_cpp',
-          },
-        ],
-        selectedModelCapabilities: { status: 'none' },
-      }),
-    } as unknown as ModelInstallManager,
-    openModelPicker: vi.fn(async () => {}),
-    openSetupWizard: vi.fn(async () => {}),
-    pluginVersion: '2026.7.11',
-    resetLlmTransformation: vi.fn(async () => {}),
-    resolvePluginDirectory: vi.fn(async () => '/plugin'),
-    restartSidecarWhenIdle: deps.restartSidecarWhenIdle,
-    saveSettings: deps.saveSettings,
-    sidecarConnection: { probeSystemAudio: vi.fn(), shutdown: vi.fn(async () => {}) },
-    sidecarInstallManager: {} as SidecarInstallManager,
-  });
-  const group = new TestElement();
-  const heading = new Setting(group);
-  const container = new TestElement();
-  const renderer = tab as unknown as {
-    renderEngineOptions(group: HTMLDivElement, heading: Setting, container: HTMLDivElement): void;
+  let settings = { ...DEFAULT_PLUGIN_SETTINGS };
+  const access: SettingAccess = {
+    getSettings: () => settings,
+    persistOne: async (key, value) => {
+      const nextSettings = {
+        ...settings,
+        [key]: value,
+      };
+      await deps.saveSettings(nextSettings);
+      settings = nextSettings;
+    },
   };
-
-  renderer.renderEngineOptions(
-    group as unknown as HTMLDivElement,
-    heading,
-    container as unknown as HTMLDivElement,
-  );
+  renderHardwareAccelerationSetting(new TestElement() as unknown as HTMLElement, {
+    access,
+    feedback: { show: deps.feedbackShow },
+    isSidecarInUse: deps.isSidecarInUse,
+    restartSidecarWhenIdle: deps.restartSidecarWhenIdle,
+  });
   return Setting.named('Hardware acceleration').onlyToggle();
 }
