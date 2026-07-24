@@ -27,7 +27,7 @@ export interface RawTranscriptRecoveryReceipt {
 }
 
 interface RawTranscriptRecoveryDependencies {
-  feedback: Pick<UserFeedback, 'show'>;
+  feedback: Pick<UserFeedback, 'dismiss' | 'show'>;
   getClipboard: () => ClipboardWriter | null | undefined;
   workspace: Pick<App['workspace'], 'getLeavesOfType'>;
 }
@@ -70,6 +70,7 @@ export class RawTranscriptRecovery {
 
   clear(): void {
     this.receipt = null;
+    this.dependencies.feedback.dismiss('raw-transcript-recovery-available');
   }
 
   clearWithFeedback(): boolean {

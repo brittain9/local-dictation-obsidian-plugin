@@ -1093,7 +1093,7 @@ function createRecoveryIntegrationHarness(documentText: string): {
     view: view as unknown as EditorView,
   });
   const recovery = new RawTranscriptRecovery({
-    feedback: { show: vi.fn() },
+    feedback: { dismiss: vi.fn(), show: vi.fn() },
     getClipboard: () => null,
     workspace: workspace as never,
   });

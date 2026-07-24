@@ -42,6 +42,7 @@ describe('RawTranscriptRecovery', () => {
 
     expect(harness.view.state.doc.toString()).toBe('raw');
     expect(harness.recovery.hasRecovery()).toBe(false);
+    expect(harness.feedback.dismiss).toHaveBeenCalledWith('raw-transcript-recovery-available');
     expect(harness.feedback.show).toHaveBeenLastCalledWith({
       intent: 'success',
       key: 'raw-transcript-restored',
@@ -99,6 +100,7 @@ describe('RawTranscriptRecovery', () => {
     harness.recovery.record(harness.receipt({ rawText: 'must not persist' }));
 
     expect(harness.recovery.hasRecovery()).toBe(false);
+    expect(harness.feedback.dismiss).toHaveBeenCalledWith('raw-transcript-recovery-available');
     expect(harness.feedback.show).not.toHaveBeenCalled();
 
     harness.recovery.setEnabled(true);
@@ -129,6 +131,7 @@ describe('RawTranscriptRecovery', () => {
     });
     expect(harness.view.state.doc.toString()).toBe('before raw words after');
     expect(harness.recovery.hasRecovery()).toBe(false);
+    expect(harness.feedback.dismiss).toHaveBeenCalledWith('raw-transcript-recovery-available');
   });
 
   it('refuses restore after any document change without editing the note', () => {
@@ -245,6 +248,7 @@ describe('RawTranscriptRecovery', () => {
     expect(harness.recovery.clearWithFeedback()).toBe(true);
 
     expect(harness.recovery.hasRecovery()).toBe(false);
+    expect(harness.feedback.dismiss).toHaveBeenCalledWith('raw-transcript-recovery-available');
     expect(harness.feedback.show).toHaveBeenLastCalledWith({
       intent: 'success',
       key: 'raw-transcript-recovery-cleared',
@@ -323,7 +327,7 @@ function createHarness(
       },
     },
   ];
-  const feedback = { show: vi.fn() };
+  const feedback = { dismiss: vi.fn(), show: vi.fn() };
   const writeText = options.writeText ?? vi.fn(async (_text: string) => {});
   const recovery = new RawTranscriptRecovery({
     feedback,
