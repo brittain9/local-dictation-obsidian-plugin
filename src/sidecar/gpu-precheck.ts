@@ -78,8 +78,10 @@ export async function detectCudaCompatibility(): Promise<CudaCompatibility> {
   if (!isCudaReleaseTarget(process.platform, process.arch)) return { status: 'unsupported' };
 
   return new Promise((resolve) => {
+    let closed = false;
     let settled = false;
     let child: ReturnType<typeof spawn> | null = null;
+    let exitStatus: { code: number | null; signal: NodeJS.Signals | null } | null = null;
     let timeoutHandle: number | null = null;
 
     const onData = (chunk: Buffer | string): void => {
@@ -95,7 +97,16 @@ export async function detectCudaCompatibility(): Promise<CudaCompatibility> {
       settle(error.code === 'ENOENT' ? { status: 'absent' } : { status: 'unknown' });
     };
     const onExit = (code: number | null, signal: NodeJS.Signals | null): void => {
-      if (code !== 0 || signal !== null) {
+      exitStatus = { code, signal };
+    };
+    const onClose = (): void => {
+      closed = true;
+      if (settled) {
+        cleanup();
+        return;
+      }
+
+      if (exitStatus === null || exitStatus.code !== 0 || exitStatus.signal !== null) {
         settle({ status: 'unknown' });
         return;
       }
@@ -103,13 +114,17 @@ export async function detectCudaCompatibility(): Promise<CudaCompatibility> {
       const probe = parseCudaProbeOutput(output);
       settle(probe === null ? { status: 'unknown' } : classifyCudaCompatibility(probe));
     };
-    const onClose = (): void => {
-      child?.removeListener('error', onError);
-    };
     const cleanup = (): void => {
-      if (timeoutHandle !== null) window.clearTimeout(timeoutHandle);
+      if (timeoutHandle !== null) {
+        window.clearTimeout(timeoutHandle);
+        timeoutHandle = null;
+      }
       child?.stdout?.removeListener('data', onData);
       child?.removeListener('exit', onExit);
+      if (closed) {
+        child?.removeListener('error', onError);
+        child?.removeListener('close', onClose);
+      }
     };
     const settle = (result: CudaCompatibility): void => {
       if (settled) return;
@@ -139,9 +154,8 @@ export async function detectCudaCompatibility(): Promise<CudaCompatibility> {
     }
 
     child.stdout?.on('data', onData);
-    // Keep the one-shot error handler through close: a process ending at the
-    // same time as a timeout can still emit error, which must not become an
-    // unhandled EventEmitter error. onClose removes it if it never fires.
+    // Keep the one-shot error handler through close: a timeout can win while
+    // the process is ending, and a late error must not go unhandled.
     child.once('error', onError);
     child.once('exit', onExit);
     child.once('close', onClose);

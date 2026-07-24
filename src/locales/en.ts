@@ -347,9 +347,9 @@ export const en = {
   'settings.sidecar.cudaCompatibility.compatible':
     'Compatible NVIDIA CUDA environment detected. The CUDA sidecar can accelerate transcription.',
   'settings.sidecar.cudaCompatibility.incompatibleDriver':
-    'NVIDIA driver is too old. Update to R580 or later to use the published CUDA sidecar.',
+    'NVIDIA driver is too old. Update to R{minimumDriverMajor} or later to use the published CUDA sidecar.',
   'settings.sidecar.cudaCompatibility.incompatibleGpu':
-    'NVIDIA GPU needs compute capability 7.5 or later for the published CUDA sidecar.',
+    'NVIDIA GPU needs compute capability {minimumComputeCapability} or later for the published CUDA sidecar.',
   'settings.sidecar.cudaCompatibility.absent':
     'NVIDIA driver not detected. The CUDA sidecar requires a compatible NVIDIA GPU and driver.',
   'settings.sidecar.cudaCompatibility.unknown':

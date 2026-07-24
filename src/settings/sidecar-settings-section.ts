@@ -12,7 +12,11 @@ import { SidecarInstallModal } from '../setup/sidecar-install-modal';
 import { t } from '../shared/i18n';
 import type { PluginLogger } from '../shared/plugin-logger';
 import type { UserFeedback } from '../shared/user-feedback';
-import { type CudaCompatibility, detectCudaCompatibility } from '../sidecar/gpu-precheck';
+import {
+  CUDA_COMPATIBILITY_REQUIREMENTS,
+  type CudaCompatibility,
+  detectCudaCompatibility,
+} from '../sidecar/gpu-precheck';
 import type { SidecarConnection } from '../sidecar/sidecar-connection';
 import {
   buildSidecarProgressState,
@@ -488,14 +492,20 @@ export function getCudaInstallPresentation(compatibility: CudaCompatibility): {
       };
     case 'incompatible_driver':
       return {
-        description: t('settings.sidecar.cudaCompatibility.incompatibleDriver'),
+        description: t('settings.sidecar.cudaCompatibility.incompatibleDriver', {
+          minimumDriverMajor: CUDA_COMPATIBILITY_REQUIREMENTS.minimumDriverMajor,
+        }),
         installAction: 'manual',
       };
-    case 'incompatible_gpu':
+    case 'incompatible_gpu': {
+      const { major, minor } = CUDA_COMPATIBILITY_REQUIREMENTS.minimumComputeCapability;
       return {
-        description: t('settings.sidecar.cudaCompatibility.incompatibleGpu'),
+        description: t('settings.sidecar.cudaCompatibility.incompatibleGpu', {
+          minimumComputeCapability: `${major}.${minor}`,
+        }),
         installAction: 'manual',
       };
+    }
     case 'unknown':
       return {
         description: t('settings.sidecar.cudaCompatibility.unknown'),

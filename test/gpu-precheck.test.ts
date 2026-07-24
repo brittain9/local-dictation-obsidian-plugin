@@ -123,6 +123,34 @@ describe('detectCudaCompatibility', () => {
 
     child.stdout.emit('data', Buffer.from('580.12, 7.5\n'));
     child.emit('exit', 0, null);
+    child.emit('close', 0, null);
+
+    await expect(promise).resolves.toEqual({
+      computeCapabilities: ['7.5'],
+      driverVersion: '580.12',
+      status: 'compatible',
+    });
+    expect(child.listenerCount('close')).toBe(0);
+    expect(child.listenerCount('error')).toBe(0);
+    expect(child.listenerCount('exit')).toBe(0);
+    expect(child.stdout.listenerCount('data')).toBe(0);
+  });
+
+  it('waits for close so stdout arriving after exit is included', async () => {
+    const child = queueChild();
+    const settled = vi.fn();
+    const promise = detectCudaCompatibility().then((result) => {
+      settled(result);
+      return result;
+    });
+
+    child.stdout.emit('data', '580.12, ');
+    child.emit('exit', 0, null);
+    await Promise.resolve();
+    expect(settled).not.toHaveBeenCalled();
+
+    child.stdout.emit('data', '7.5\n');
+    child.emit('close', 0, null);
 
     await expect(promise).resolves.toEqual({
       computeCapabilities: ['7.5'],
@@ -150,14 +178,27 @@ describe('detectCudaCompatibility', () => {
   });
 
   it.each([
-    ['non-zero exit', (child: FakeChild) => child.emit('exit', 1, null)],
-    ['signal exit', (child: FakeChild) => child.emit('exit', null, 'SIGTERM')],
+    [
+      'non-zero exit',
+      (child: FakeChild) => {
+        child.emit('exit', 1, null);
+        child.emit('close', 1, null);
+      },
+    ],
+    [
+      'signal exit',
+      (child: FakeChild) => {
+        child.emit('exit', null, 'SIGTERM');
+        child.emit('close', null, 'SIGTERM');
+      },
+    ],
     ['unexpected process error', (child: FakeChild) => child.emit('error', new Error('denied'))],
     [
       'malformed output',
       (child: FakeChild) => {
         child.stdout.emit('data', '580.0, N/A\n');
         child.emit('exit', 0, null);
+        child.emit('close', 0, null);
       },
     ],
   ])('returns unknown on %s', async (_case, emit) => {
