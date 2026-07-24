@@ -300,13 +300,10 @@ export const fr = {
   'settings.sidecar.cpuName': 'CPU sidecar',
   'settings.sidecar.cpuDesc': 'Moteur de transcription. Requis.',
   'settings.sidecar.gpuName': 'GPU sidecar',
-  'settings.sidecar.cudaActive': 'Accélération CUDA active.',
   'settings.sidecar.cudaLibraryPath.name': 'Chemin de la bibliothèque CUDA',
   'settings.sidecar.cudaLibraryPath.desc':
     'Chemin de recherche de bibliothèque facultatif pour le sidecar (Flatpak, installations CUDA personnalisées).',
   'settings.sidecar.installAnyway': 'Installer quand même',
-  'settings.sidecar.installAnywayTooltip':
-    "Poursuivez l'installation de CUDA même si aucun pilote NVIDIA n'a été détecté.",
   'settings.sidecar.stopBeforeInstall':
     "Arrêtez la dictée avant d'installer un sidecar : l'installation redémarre le moteur. Si une transcription est toujours en cours de traitement, exécutez « Annuler la dictée » pour l'arrêter maintenant.",
   'settings.sidecar.stopBeforeUpdate':
@@ -325,17 +322,6 @@ export const fr = {
   'settings.sidecar.reinstall': 'Réinstaller',
   'settings.sidecar.uninstall': 'Désinstaller',
   'settings.sidecar.install': 'Installer',
-  'settings.sidecar.driver.present': 'NVIDIA GPU détecté – transcription plus rapide.',
-  'settings.sidecar.driver.presentTooltip':
-    "Télécharge l'archive CUDA sidecar à partir des versions GitHub.",
-  'settings.sidecar.driver.absent':
-    'Nécessite un NVIDIA GPU. Installez quand même si vous savez que le vôtre est pris en charge.',
-  'settings.sidecar.driver.absentTooltip':
-    "nvidia-smi n'a pas été trouvé sur PATH. Utilisez « Installer quand même » si vous êtes certain que votre système prend en charge CUDA.",
-  'settings.sidecar.driver.unknown':
-    'Impossible de rechercher NVIDIA : installez-le uniquement si vous en êtes sûr.',
-  'settings.sidecar.driver.unknownTooltip':
-    'Impossible de rechercher un pilote NVIDIA. Procédez uniquement si vous savez que votre GPU prend en charge CUDA.',
   'plugin.name': 'Local Dictation',
   'common.cancel': 'Annuler',
   'common.delete': 'Supprimer',

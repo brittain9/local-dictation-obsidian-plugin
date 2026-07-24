@@ -298,13 +298,10 @@ export const nl = {
   'settings.sidecar.cpuName': 'CPU sidecar',
   'settings.sidecar.cpuDesc': 'Spraak-naar-tekst-engine. Vereist.',
   'settings.sidecar.gpuName': 'GPU sidecar',
-  'settings.sidecar.cudaActive': 'CUDA-acceleratie actief.',
   'settings.sidecar.cudaLibraryPath.name': 'CUDA-bibliotheekpad',
   'settings.sidecar.cudaLibraryPath.desc':
     'Optioneel bibliotheekzoekpad voor de sidecar (Flatpak, aangepaste CUDA-installaties).',
   'settings.sidecar.installAnyway': 'Hoe dan ook installeren',
-  'settings.sidecar.installAnywayTooltip':
-    'Ga door met de installatie van CUDA, ook al is er geen NVIDIA-stuurprogramma gedetecteerd.',
   'settings.sidecar.stopBeforeInstall':
     'Stop het dicteren voordat u een sidecar installeert: tijdens de installatie wordt de engine opnieuw gestart. Als een transcriptie nog steeds wordt verwerkt, voert u "Dicteren annuleren" uit om het nu te stoppen.',
   'settings.sidecar.stopBeforeUpdate':
@@ -323,17 +320,6 @@ export const nl = {
   'settings.sidecar.reinstall': 'Opnieuw installeren',
   'settings.sidecar.uninstall': 'Verwijderen',
   'settings.sidecar.install': 'Installeren',
-  'settings.sidecar.driver.present': 'NVIDIA GPU gedetecteerd — snellere transcriptie.',
-  'settings.sidecar.driver.presentTooltip':
-    'Downloadt het CUDA sidecar-archief van GitHub-releases.',
-  'settings.sidecar.driver.absent':
-    'Vereist een NVIDIA GPU. Installeer het toch als u weet dat het uwe wordt ondersteund.',
-  'settings.sidecar.driver.absentTooltip':
-    "nvidia-smi is niet gevonden op PATH. Gebruik 'Toch installeren' als u zeker weet dat uw systeem CUDA ondersteunt.",
-  'settings.sidecar.driver.unknown':
-    'Kan NVIDIA niet vinden. Installeer het alleen als u het zeker weet.',
-  'settings.sidecar.driver.unknownTooltip':
-    'Kan niet zoeken naar een NVIDIA-stuurprogramma. Ga alleen verder als u weet dat uw GPU CUDA ondersteunt.',
   'plugin.name': 'Local Dictation',
   'common.cancel': 'Annuleren',
   'common.delete': 'Verwijderen',

@@ -338,13 +338,24 @@ export const en = {
   'settings.sidecar.cpuName': 'CPU sidecar',
   'settings.sidecar.cpuDesc': 'Speech-to-text engine. Required.',
   'settings.sidecar.gpuName': 'GPU sidecar',
-  'settings.sidecar.cudaActive': 'CUDA acceleration active.',
   'settings.sidecar.cudaLibraryPath.name': 'CUDA library path',
   'settings.sidecar.cudaLibraryPath.desc':
     'Optional library search path for the sidecar (Flatpak, custom CUDA installs).',
   'settings.sidecar.installAnyway': 'Install anyway',
-  'settings.sidecar.installAnywayTooltip':
-    'Proceed with CUDA install even though no NVIDIA driver was detected.',
+  'settings.sidecar.installUnverifiedTooltip':
+    'Proceed with CUDA install even though compatibility could not be confirmed.',
+  'settings.sidecar.cudaCompatibility.compatible':
+    'Compatible NVIDIA CUDA environment detected. The CUDA sidecar can accelerate transcription.',
+  'settings.sidecar.cudaCompatibility.incompatibleDriver':
+    'NVIDIA driver is too old. Update to R{minimumDriverMajor} or later to use the published CUDA sidecar.',
+  'settings.sidecar.cudaCompatibility.incompatibleGpu':
+    'NVIDIA GPU needs compute capability {minimumComputeCapability} or later for the published CUDA sidecar.',
+  'settings.sidecar.cudaCompatibility.absent':
+    'NVIDIA driver not detected. The CUDA sidecar requires a compatible NVIDIA GPU and driver.',
+  'settings.sidecar.cudaCompatibility.unknown':
+    'CUDA compatibility could not be confirmed. Check your NVIDIA driver and GPU before installing.',
+  'settings.sidecar.cudaCompatibility.unsupported':
+    'CUDA sidecar releases are available only for Windows and Linux x64.',
   'settings.sidecar.stopBeforeInstall':
     'Stop dictation before installing a sidecar — the install restarts the engine. If a transcript is still processing, run "Cancel dictation" to stop it now.',
   'settings.sidecar.stopBeforeUpdate':
@@ -363,16 +374,6 @@ export const en = {
   'settings.sidecar.reinstall': 'Reinstall',
   'settings.sidecar.uninstall': 'Uninstall',
   'settings.sidecar.install': 'Install',
-  'settings.sidecar.driver.present': 'NVIDIA GPU detected — faster transcription.',
-  'settings.sidecar.driver.presentTooltip':
-    'Downloads the CUDA sidecar archive from GitHub releases.',
-  'settings.sidecar.driver.absent':
-    'Requires an NVIDIA GPU. Install anyway if you know yours is supported.',
-  'settings.sidecar.driver.absentTooltip':
-    'nvidia-smi was not found on PATH. Use "Install anyway" if you are certain your system supports CUDA.',
-  'settings.sidecar.driver.unknown': "Couldn't probe for NVIDIA — install only if you're sure.",
-  'settings.sidecar.driver.unknownTooltip':
-    'Unable to probe for an NVIDIA driver. Proceed only if you know your GPU supports CUDA.',
   'plugin.name': 'Local Dictation',
   'common.cancel': 'Cancel',
   'common.delete': 'Delete',

@@ -304,13 +304,10 @@ export const es = {
   'settings.sidecar.cpuName': 'CPU sidecar',
   'settings.sidecar.cpuDesc': 'Motor de voz a texto. Requerido.',
   'settings.sidecar.gpuName': 'GPU sidecar',
-  'settings.sidecar.cudaActive': 'Aceleración CUDA activa.',
   'settings.sidecar.cudaLibraryPath.name': 'Ruta de la biblioteca CUDA',
   'settings.sidecar.cudaLibraryPath.desc':
     'Ruta de búsqueda de biblioteca opcional para sidecar (Flatpak, instalaciones personalizadas de CUDA).',
   'settings.sidecar.installAnyway': 'Instalar de todos modos',
-  'settings.sidecar.installAnywayTooltip':
-    'Continúe con la instalación de CUDA aunque no se haya detectado ningún controlador NVIDIA.',
   'settings.sidecar.stopBeforeInstall':
     'Detenga el dictado antes de instalar un sidecar: la instalación reinicia el motor. Si una transcripción aún se está procesando, ejecute "Cancelar dictado" para detenerla ahora.',
   'settings.sidecar.stopBeforeUpdate':
@@ -329,16 +326,6 @@ export const es = {
   'settings.sidecar.reinstall': 'Reinstalar',
   'settings.sidecar.uninstall': 'Desinstalar',
   'settings.sidecar.install': 'Instalar',
-  'settings.sidecar.driver.present': 'GPU NVIDIA detectada: transcripción más rápida.',
-  'settings.sidecar.driver.presentTooltip':
-    'Descarga el archivo CUDA sidecar de las versiones GitHub.',
-  'settings.sidecar.driver.absent':
-    'Requiere una GPU NVIDIA. Instálelo de todos modos si sabe que la suya es compatible.',
-  'settings.sidecar.driver.absentTooltip':
-    'nvidia-smi no se encontró en PATH. Utilice "Instalar de todos modos" si está seguro de que su sistema admite CUDA.',
-  'settings.sidecar.driver.unknown': 'No se pudo buscar NVIDIA; instálelo solo si está seguro.',
-  'settings.sidecar.driver.unknownTooltip':
-    'No se puede buscar un controlador NVIDIA. Continúe solo si sabe que su GPU es compatible con CUDA.',
   'plugin.name': 'Local Dictation',
   'common.cancel': 'Cancelar',
   'common.delete': 'Borrar',
