@@ -12,3 +12,6 @@ pub mod pocket_tts;
 
 #[cfg(feature = "engine-whisper")]
 pub mod whisper;
+
+#[cfg(feature = "engine-pocket-tts")]
+pub mod supertonic;

@@ -842,6 +842,10 @@ export const nl = {
     'De lokale spraaksyntheseworker is niet beschikbaar.',
   'catalog.pocket_tts_english_2026_04_int8.summary':
     'Natuurlijk lokaal Engels voorlezen met een keuze uit samengestelde stemmen.',
+  'catalog.supertonic_3_multilingual_2026_05.summary':
+    'Lightning-fast local multilingual read-aloud synthesis for the eight supported app languages.',
+  'catalog.family.supertonic.summary':
+    'Lightning-fast on-device multilingual TTS via ONNX Runtime.',
   'catalog.family.pocket_tts.summary':
     'Leest notities lokaal voor in het Engels, Frans, Duits, Spaans, Portugees en Italiaans met selecteerbare stemmen en toonhoogtebehoudende snelheidsregeling.',
 } as const satisfies TranslationCatalog;

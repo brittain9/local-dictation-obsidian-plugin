@@ -845,6 +845,10 @@ export const pt = {
     'O processo de síntese de voz local não está disponível.',
   'catalog.pocket_tts_english_2026_04_int8.summary':
     'Leitura natural local em inglês com uma seleção de vozes escolhidas.',
+  'catalog.supertonic_3_multilingual_2026_05.summary':
+    'Lightning-fast local multilingual read-aloud synthesis for the eight supported app languages.',
+  'catalog.family.supertonic.summary':
+    'Lightning-fast on-device multilingual TTS via ONNX Runtime.',
   'catalog.family.pocket_tts.summary':
     'Lê notas localmente em inglês, francês, alemão, espanhol, português e italiano com vozes selecionáveis e controlo de velocidade que preserva o tom.',
 } satisfies TranslationCatalog;

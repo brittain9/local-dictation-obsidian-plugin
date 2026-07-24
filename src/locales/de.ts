@@ -856,6 +856,10 @@ export const de = {
     'Der lokale Sprachsynthese-Worker ist nicht verfügbar.',
   'catalog.pocket_tts_english_2026_04_int8.summary':
     'Natürliches lokales Vorlesen auf Englisch mit auswählbaren Stimmen.',
+  'catalog.supertonic_3_multilingual_2026_05.summary':
+    'Lightning-fast local multilingual read-aloud synthesis for the eight supported app languages.',
+  'catalog.family.supertonic.summary':
+    'Lightning-fast on-device multilingual TTS via ONNX Runtime.',
   'catalog.family.pocket_tts.summary':
     'Liest Notizen lokal auf Englisch, Französisch, Deutsch, Spanisch, Portugiesisch und Italienisch mit auswählbaren Stimmen und tonhöhentreuer Geschwindigkeitssteuerung vor.',
 } as const satisfies TranslationCatalog;

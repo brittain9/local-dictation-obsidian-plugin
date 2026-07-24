@@ -839,6 +839,10 @@ export const ja = {
   'sidecarError.synthesis_worker_unavailable': 'ローカル音声合成ワーカーを利用できません。',
   'catalog.pocket_tts_english_2026_04_int8.summary':
     '厳選された音声を選べる、自然なローカル英語読み上げです。',
+  'catalog.supertonic_3_multilingual_2026_05.summary':
+    'Lightning-fast local multilingual read-aloud synthesis for the eight supported app languages.',
+  'catalog.family.supertonic.summary':
+    'Lightning-fast on-device multilingual TTS via ONNX Runtime.',
   'catalog.family.pocket_tts.summary':
     '英語、フランス語、ドイツ語、スペイン語、ポルトガル語、イタリア語のノートを、選択可能な音声と音程を保つ速度調整でローカルに読み上げます。',
 } as const satisfies TranslationCatalog;
