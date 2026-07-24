@@ -35,7 +35,7 @@ export function buildInstallProgressViewModel(
           : null;
   const progressPercent =
     downloadedBytes !== null && state.totalBytes !== null && state.totalBytes > 0
-      ? (downloadedBytes / state.totalBytes) * 100
+      ? Math.max(0, Math.min(100, (downloadedBytes / state.totalBytes) * 100))
       : null;
 
   return {
@@ -51,28 +51,14 @@ export function buildInstallProgressViewModel(
 }
 
 export function createInstallProgressElement(state: InstallProgressState): HTMLDivElement {
-  const viewModel = buildInstallProgressViewModel(state);
   const root = createDiv();
   const header = createDiv();
   const statusLine = createSpan();
 
   root.className = 'local-stt-install-progress';
-  if (viewModel.isCancelling) {
-    root.classList.add('local-stt-install-progress--cancelling');
-  }
-
   header.className = 'local-stt-install-progress__header';
   statusLine.className = 'local-stt-install-progress__status';
-  statusLine.textContent = viewModel.primaryLine;
   header.append(statusLine);
-
-  if (viewModel.bytesLabel !== null) {
-    const bytesLabel = createSpan();
-    bytesLabel.className = 'local-stt-install-progress__bytes';
-    bytesLabel.textContent = viewModel.bytesLabel;
-    header.append(bytesLabel);
-  }
-
   root.append(header);
 
   const progressTrack = createDiv();
@@ -80,21 +66,13 @@ export function createInstallProgressElement(state: InstallProgressState): HTMLD
 
   progressTrack.className = 'local-stt-install-progress__track';
   progressTrack.setAttribute('role', 'progressbar');
-  progressTrack.setAttribute('aria-label', viewModel.primaryLine);
   progressTrack.setAttribute('aria-valuemin', '0');
   progressTrack.setAttribute('aria-valuemax', '100');
-  progressTrack.setAttribute('aria-valuenow', String(Math.round(viewModel.progressPercent ?? 0)));
   progressFill.className = 'local-stt-install-progress__fill';
-  progressFill.style.width = `${viewModel.progressPercent ?? 0}%`;
   progressTrack.append(progressFill);
   root.append(progressTrack);
 
-  if (viewModel.secondaryLine !== null) {
-    const secondaryLine = createDiv();
-    secondaryLine.className = 'local-stt-install-progress__details';
-    secondaryLine.textContent = viewModel.secondaryLine;
-    root.append(secondaryLine);
-  }
+  renderInstallProgress(root, buildInstallProgressViewModel(state));
 
   return root;
 }
@@ -105,28 +83,70 @@ export function updateInstallProgressElement(
 ): void {
   const viewModel = buildInstallProgressViewModel(state);
 
+  renderInstallProgress(root, viewModel);
+}
+
+function renderInstallProgress(root: HTMLDivElement, viewModel: InstallProgressViewModel): void {
   root.classList.toggle('local-stt-install-progress--cancelling', viewModel.isCancelling);
 
   const status = root.querySelector<HTMLElement>('.local-stt-install-progress__status');
   if (status) status.textContent = viewModel.primaryLine;
 
-  const bytes = root.querySelector<HTMLElement>('.local-stt-install-progress__bytes');
-  if (bytes) bytes.textContent = viewModel.bytesLabel ?? '';
+  const header = root.querySelector<HTMLElement>('.local-stt-install-progress__header');
+  if (header) reconcileBytesLabel(header, viewModel.bytesLabel);
 
   const fill = root.querySelector<HTMLDivElement>('.local-stt-install-progress__fill');
   if (fill) fill.style.width = `${viewModel.progressPercent ?? 0}%`;
 
   const track = root.querySelector<HTMLElement>('.local-stt-install-progress__track');
   if (track) {
-    track.setAttribute('aria-valuenow', String(Math.round(viewModel.progressPercent ?? 0)));
     track.setAttribute('aria-label', viewModel.primaryLine);
+    if (viewModel.progressPercent === null) {
+      track.removeAttribute('aria-valuenow');
+    } else {
+      track.setAttribute('aria-valuenow', String(Math.round(viewModel.progressPercent)));
+    }
   }
 
-  const details = root.querySelector<HTMLElement>('.local-stt-install-progress__details');
-  if (details) {
-    details.textContent = viewModel.secondaryLine ?? '';
-    details.toggleClass('local-stt-hidden', viewModel.secondaryLine === null);
+  reconcileSecondaryLine(root, viewModel.secondaryLine);
+}
+
+function reconcileBytesLabel(header: HTMLElement, bytesLabel: string | null): void {
+  const existing = header.querySelector<HTMLElement>('.local-stt-install-progress__bytes');
+
+  if (bytesLabel === null) {
+    existing?.remove();
+    return;
   }
+
+  if (existing !== null) {
+    existing.textContent = bytesLabel;
+    return;
+  }
+
+  const bytes = createSpan();
+  bytes.className = 'local-stt-install-progress__bytes';
+  bytes.textContent = bytesLabel;
+  header.append(bytes);
+}
+
+function reconcileSecondaryLine(root: HTMLDivElement, secondaryLine: string | null): void {
+  const existing = root.querySelector<HTMLElement>('.local-stt-install-progress__details');
+
+  if (secondaryLine === null) {
+    existing?.remove();
+    return;
+  }
+
+  if (existing !== null) {
+    existing.textContent = secondaryLine;
+    return;
+  }
+
+  const details = createDiv();
+  details.className = 'local-stt-install-progress__details';
+  details.textContent = secondaryLine;
+  root.append(details);
 }
 
 function normalizeOptionalLine(value: string | null): string | null {

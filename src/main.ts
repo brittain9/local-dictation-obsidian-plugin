@@ -203,7 +203,7 @@ export default class LocalSttPlugin extends Plugin {
     );
 
     const ribbonElement = this.addRibbonIcon('mic', t('ribbon.idle'), () => {
-      void this.toggleDictationWithInterlock();
+      void this.requireDictationController().toggleDictation();
     });
     this.ribbonController = new DictationRibbonController(ribbonElement);
     this.ribbonController.setVisualizer(this.audioLevelMeter);
@@ -227,6 +227,7 @@ export default class LocalSttPlugin extends Plugin {
           () => this.getOpenRouterApiKey(),
         ),
       getSettings: () => this.settings,
+      hasDictationTarget: () => Session.hasDictationTarget(this.app),
       feedback: this.feedback,
       logger: this.logger,
       onLlmCleanupFailure: (failure) => {
@@ -258,6 +259,9 @@ export default class LocalSttPlugin extends Plugin {
         this.ribbonController?.setQueueTier(tier);
       },
       sidecarConnection: this.sidecarConnection,
+      stopConflictingSpeech: () => {
+        this.readAloudController?.stop();
+      },
     });
     this.readAloudStatus = this.addStatusBarItem();
     this.readAloudStatus.addClass('local-stt-read-aloud-status');
@@ -332,10 +336,10 @@ export default class LocalSttPlugin extends Plugin {
         this.rawTranscriptRecovery.restoreRawTranscript();
       },
       restartSidecar: async () => this.restartSidecar(),
-      startDictation: async () => this.startDictationWithInterlock(),
+      startDictation: async () => this.requireDictationController().startDictation(),
       stopReadAloud: () => this.requireReadAloudController().stop(),
       stopDictation: async () => this.requireDictationController().stopDictation(),
-      toggleDictation: async () => this.toggleDictationWithInterlock(),
+      toggleDictation: async () => this.requireDictationController().toggleDictation(),
       toggleReadAloudPaused: () => this.requireReadAloudController().togglePaused(),
     });
 
@@ -464,7 +468,7 @@ export default class LocalSttPlugin extends Plugin {
       sidecarConnection: this.requireSidecarConnection(),
       sidecarInstallManager: this.requireSidecarInstallManager(),
       sidecarStartupTimeoutMs: this.settings.sidecarStartupTimeoutSeconds * 1000,
-      startDictation: () => this.startDictationWithInterlock(),
+      startDictation: () => this.requireDictationController().startDictation(),
     });
     modal.open();
   }
@@ -666,17 +670,6 @@ export default class LocalSttPlugin extends Plugin {
       throw new Error('Read-aloud controller has not been initialized.');
     }
     return this.readAloudController;
-  }
-
-  private async startDictationWithInterlock(): Promise<void> {
-    this.readAloudController?.stop();
-    await this.requireDictationController().startDictation();
-  }
-
-  private async toggleDictationWithInterlock(): Promise<void> {
-    const controller = this.requireDictationController();
-    if (!controller.isCaptureActive()) this.readAloudController?.stop();
-    await controller.toggleDictation();
   }
 
   private renderReadAloudStatus(state: ReadAloudState): void {
