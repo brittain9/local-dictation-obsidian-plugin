@@ -716,6 +716,38 @@ export class ManageModelsModal extends Modal {
       .installedModels.find((model) =>
         matchesModelTriple(model, row.model.runtimeId, row.model.familyId, row.model.modelId),
       );
+    const missingOptionalVoices = optionalVoices.filter(
+      (artifact) =>
+        artifact.voiceId !== undefined &&
+        !(installed?.installedVoiceIds.includes(artifact.voiceId) ?? false),
+    );
+    if (missingOptionalVoices.length > 1) {
+      new Setting(details)
+        .setName(t('models.manage.installAllVoices'))
+        .setDesc(t('models.manage.installAllVoicesDesc', { count: missingOptionalVoices.length }))
+        .addButton((button) => {
+          button
+            .setButtonText(t('common.install'))
+            .setCta()
+            .setDisabled(this.actionInProgress)
+            .onClick(() => {
+              void this.runAction(
+                async () => {
+                  await this.deps.manager.install(
+                    {
+                      familyId: row.model.familyId,
+                      kind: 'catalog_model',
+                      modelId: row.model.modelId,
+                      runtimeId: row.model.runtimeId,
+                    },
+                    missingOptionalVoices.map((artifact) => artifact.artifactId),
+                  );
+                },
+                { failureMessage: t('models.manage.installStartFailed') },
+              );
+            });
+        });
+    }
     for (const artifact of optionalVoices) {
       const voiceId = artifact.voiceId;
       if (voiceId === undefined) continue;

@@ -22,12 +22,14 @@ half = { version = "2", optional = true, features = ["num-traits"] }
 ort = { version = "=2.0.0-rc.12", default-features = false, features = ["std", "download-binaries", "copy-dylibs", "ndarray", "preload-dylibs", "tls-rustls"] }
 realfft = { version = "3.5" }
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "stream"] }
+regex = { version = "1", optional = true }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 safetensors = { version = "0.6", optional = true }
 sentencepiece-rs = { version = "0.2.2", optional = true }
 sha2 = "0.11"
 tokio = { version = "1.52", features = ["macros", "rt", "sync"] }
+unicode-normalization = { version = "0.1", optional = true }
 uuid = { version = "1", features = ["v4", "serde"] }
 whisper-rs = { version = "0.16.0", optional = true }
 
@@ -38,9 +40,10 @@ engine-cohere-transcribe = ["half", "ort/half"]
 engine-moonshine = []
 engine-nemotron-asr = []
 engine-pocket-tts = ["dep:safetensors", "dep:sentencepiece-rs"]
+engine-supertonic = ["dep:regex", "dep:unicode-normalization"]
 gpu-metal = ["whisper-rs/metal"]
 gpu-cuda = ["whisper-rs/cuda"]
-gpu-ort-cuda = ["engine-cohere-transcribe", "engine-moonshine", "engine-nemotron-asr", "engine-pocket-tts", "ort/cuda"]
+gpu-ort-cuda = ["engine-cohere-transcribe", "engine-moonshine", "engine-nemotron-asr", "engine-pocket-tts", "engine-supertonic", "ort/cuda"]
 
 # Test/bench-only dependencies for the end-to-end quality suite under `tests/`
 # and `benches/`. Runtime `[dependencies]` above (serde, serde_json, sha2, uuid,

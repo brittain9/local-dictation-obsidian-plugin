@@ -9,6 +9,7 @@ export const MODEL_FAMILY_IDS = [
   'moonshine',
   'nemotron_asr',
   'pocket_tts',
+  'supertonic',
   'whisper',
 ] as const;
 

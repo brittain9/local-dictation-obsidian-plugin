@@ -20,6 +20,7 @@ pub const TEST_MODEL_ID: &str = "whisper_tiny_en_q8_0";
 pub const MULTILINGUAL_WHISPER_MODEL_ID: &str = "whisper_large_v3_turbo_q8_0";
 pub const NEMOTRON_MODEL_ID: &str = "nemotron_asr_0_6b_int8_streaming_560ms";
 pub const POCKET_TTS_MODEL_ID: &str = "pocket_tts_english_2026_04_int8";
+pub const SUPERTONIC_MODEL_ID: &str = "supertonic_3_multilingual_2026_05";
 
 /// Resolve a whisper model file for the suite. In priority order:
 /// 1. `STT_TEST_WHISPER_MODEL` — explicit path to an existing model.
@@ -179,6 +180,22 @@ pub fn require_pocket_tts_model_by_id(model_id: &str) -> PathBuf {
             "could not obtain the pinned Pocket TTS assets for {model_id}: {error}\n  Set \
              {directory_env}=/path/to/model to reuse verified local assets, or ensure network \
              access for the pinned catalog download."
+        )
+    })
+}
+
+pub fn require_supertonic_model() -> PathBuf {
+    resolve_catalog_model(
+        "SUPERTONIC_MODEL_DIR",
+        RuntimeId::OnnxRuntime,
+        ModelFamilyId::Supertonic,
+        SUPERTONIC_MODEL_ID,
+    )
+    .unwrap_or_else(|error| {
+        panic!(
+            "could not obtain the pinned Supertonic assets: {error}\n  Set \
+             SUPERTONIC_MODEL_DIR=/path/to/model to reuse verified local assets, or ensure \
+             network access for the pinned catalog download."
         )
     })
 }

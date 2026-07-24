@@ -16,7 +16,7 @@ run(
     'native/Cargo.toml',
     '--all-targets',
     '--features',
-    'engine-cohere-transcribe,engine-moonshine,engine-nemotron-asr,engine-pocket-tts,engine-whisper',
+    'engine-cohere-transcribe,engine-moonshine,engine-nemotron-asr,engine-pocket-tts,engine-supertonic,engine-whisper',
     '--',
     '-D',
     'warnings',
@@ -31,5 +31,5 @@ run('cargo', [
   '--manifest-path',
   'native/Cargo.toml',
   '--features',
-  'engine-cohere-transcribe,engine-moonshine,engine-nemotron-asr,engine-pocket-tts,engine-whisper',
+  'engine-cohere-transcribe,engine-moonshine,engine-nemotron-asr,engine-pocket-tts,engine-supertonic,engine-whisper',
 ]);

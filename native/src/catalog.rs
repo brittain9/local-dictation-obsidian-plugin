@@ -489,6 +489,55 @@ mod tests {
     }
 
     #[test]
+    fn bundled_supertonic_model_exposes_current_languages_and_optional_voice_pack() {
+        let catalog = ModelCatalog::load_bundled().expect("bundled catalog should load");
+        let model = catalog
+            .find_model(
+                RuntimeId::OnnxRuntime,
+                ModelFamilyId::Supertonic,
+                "supertonic_3_multilingual_2026_05",
+            )
+            .expect("Supertonic 3 multilingual model should be cataloged");
+
+        assert_eq!(model.task, ModelTask::Tts);
+        assert_eq!(
+            model.language_tags,
+            ["en", "es", "de", "fr", "pt", "it", "nl", "ja"]
+        );
+        assert_eq!(model.default_voice.as_deref(), Some("F1"));
+        assert_eq!(model.license_label, "OpenRAIL-M");
+        assert!(model.required_download_bytes() <= 400 * 1024 * 1024);
+        assert!(model.artifacts.iter().all(|artifact| {
+            artifact
+                .download_url
+                .contains("3cadd1ee6394adea1bd021217a0e650ede09a323")
+        }));
+        assert_eq!(
+            model
+                .primary_artifact()
+                .map(|artifact| artifact.filename.as_str()),
+            Some("onnx/vector_estimator.onnx")
+        );
+        assert_eq!(
+            model
+                .artifacts
+                .iter()
+                .filter(|artifact| artifact.role == ArtifactRole::Voice && artifact.required)
+                .filter_map(|artifact| artifact.voice_id.as_deref())
+                .collect::<Vec<_>>(),
+            ["F1"]
+        );
+        assert_eq!(
+            model
+                .artifacts
+                .iter()
+                .filter_map(|artifact| artifact.voice_id.as_deref())
+                .collect::<Vec<_>>(),
+            ["F1", "F2", "F3", "F4", "F5", "M1", "M2", "M3", "M4", "M5"]
+        );
+    }
+
+    #[test]
     fn validate_rejects_duplicate_runtime_ids() {
         let error = ModelCatalog {
             catalog_version: 2,

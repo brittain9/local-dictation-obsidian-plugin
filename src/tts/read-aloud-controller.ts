@@ -10,7 +10,12 @@ import type { PluginSettings } from '../settings/plugin-settings';
 import { t } from '../shared/i18n';
 import type { PluginLogger } from '../shared/plugin-logger';
 import type { UserFeedback } from '../shared/user-feedback';
-import type { SidecarEvent, SynthesisAudioFrame, SynthesisTextChunk } from '../sidecar/protocol';
+import type {
+  SidecarEvent,
+  SynthesisAudioFrame,
+  SynthesisLanguage,
+  SynthesisTextChunk,
+} from '../sidecar/protocol';
 import type { SidecarConnection } from '../sidecar/sidecar-connection';
 import { localizeKnownSidecarEventCode } from '../sidecar/sidecar-event-localization';
 import { extractAndSegmentMarkdown } from './markdown-extractor';
@@ -19,6 +24,7 @@ import { resolveReadAloudVoiceId } from './read-aloud-selection';
 export type ReadAloudState = 'idle' | 'paused' | 'reading';
 
 interface SynthesisConfiguration {
+  language: SynthesisLanguage;
   modelSelection: CatalogModelSelection;
   modelStorePathOverride?: string;
   voiceId: string;
@@ -207,6 +213,7 @@ export class ReadAloudController {
       return null;
     }
     return {
+      language: settings.dictationLanguage === 'auto' ? 'na' : settings.dictationLanguage,
       modelSelection: selection,
       ...(settings.modelStorePathOverride.length > 0
         ? { modelStorePathOverride: settings.modelStorePathOverride }

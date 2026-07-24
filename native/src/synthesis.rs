@@ -95,6 +95,7 @@ pub trait SynthesisModel: Send {
     fn synthesize(
         &mut self,
         text: &str,
+        language: &str,
         voice_path: &Path,
         cancellation: &SynthesisCancellation,
     ) -> Result<SynthesisPcm, SynthesisError>;

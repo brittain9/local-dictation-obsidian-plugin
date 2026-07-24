@@ -344,6 +344,7 @@ pub enum Command {
         synthesis_id: u32,
         model_selection: SelectedModel,
         voice_id: String,
+        language: String,
         speed: f32,
         chunks: Vec<SynthesisTextChunk>,
         #[serde(default)]
@@ -882,6 +883,7 @@ mod tests {
                 "modelId": "pocket_tts_english_2026_04_int8"
             },
             "voiceId": "alba",
+            "language": "en",
             "speed": 1.25,
             "chunks": [{
                 "text": "Read this sentence.",
@@ -891,12 +893,17 @@ mod tests {
         .unwrap();
         let mut framed = Vec::new();
         write_frame(&mut framed, JSON_FRAME_KIND, &payload).unwrap();
-        let IncomingFrame::Command(Command::StartSynthesis { chunks, speed, .. }) =
-            read_frame(&mut framed.as_slice()).unwrap().unwrap()
+        let IncomingFrame::Command(Command::StartSynthesis {
+            chunks,
+            language,
+            speed,
+            ..
+        }) = read_frame(&mut framed.as_slice()).unwrap().unwrap()
         else {
             panic!("expected start_synthesis");
         };
         assert_eq!(speed, 1.25);
+        assert_eq!(language, "en");
         assert_eq!(chunks[0].source_range, SourceRange { from: 10, to: 29 });
     }
 

@@ -57,6 +57,13 @@ artifacts on first run):
 npm run test:sidecar:nemotron:e2e
 ```
 
+Pinned Supertonic real-model smoke (downloads and SHA-verifies the required
+graphs and default voice on first run):
+
+```sh
+npm run test:sidecar:supertonic:smoke
+```
+
 > Use `--release`: whisper.cpp inference in a debug build is dramatically slower.
 
 Benchmark:

@@ -4,7 +4,8 @@ A TypeScript Obsidian plugin (`src/`) paired with a native Rust sidecar (`native
 that handles local speech inference. Dictation audio crosses the boundary as
 16 kHz mono PCM over stdin and transcripts return as JSON events. For read
 aloud, the plugin extracts text from Markdown, the sidecar synthesizes it, and
-24 kHz mono PCM returns over stdout for Web Audio playback in the plugin.
+model-native mono PCM (24 or 44.1 kHz) returns over stdout for Web Audio
+playback in the plugin.
 
 See [docs/system-architecture.md](docs/system-architecture.md) for the pipeline stages, the engine registry, and the wire protocol.
 

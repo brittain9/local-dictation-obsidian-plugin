@@ -304,6 +304,8 @@ function resolveFamilyDisplayName(
       return 'NVIDIA Nemotron 3.5 ASR';
     case 'pocket_tts':
       return 'Pocket TTS';
+    case 'supertonic':
+      return 'Supertonic 3';
     case 'whisper':
       return 'Whisper';
   }

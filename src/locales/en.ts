@@ -148,6 +148,9 @@ export const en = {
   'models.manage.allLanguages': 'All languages',
   'models.manage.familiesLabel': 'Model families',
   'models.manage.noneForLanguage': 'No models are available for this task and language.',
+  'models.manage.installAllVoices': 'Install all voices',
+  'models.manage.installAllVoicesDesc':
+    'Install the remaining {count} optional voices for this model.',
   'models.manage.optionalVoice': 'Optional local voice',
   'models.manage.voiceInstalled': 'Installed',
   'models.manage.taskLabel': 'Model task',
@@ -819,6 +822,8 @@ export const en = {
     'Natural local Portuguese read-aloud synthesis with selectable curated voices.',
   'catalog.pocket_tts_italian_int8.summary':
     'Natural local Italian read-aloud synthesis with selectable curated voices.',
+  'catalog.supertonic_3_multilingual_2026_05.summary':
+    'Lightning-fast local multilingual read-aloud synthesis for the eight supported app languages.',
   'catalog.family.whisper.summary':
     'Transcribes after each pause. Whisper provides more accurate timestamps than other model families, including optional word-level timing. Tiny and Base favor speed, Small balances speed and quality, and Medium and Large favor quality.',
   'catalog.family.cohere_transcribe.summary':
@@ -827,6 +832,8 @@ export const en = {
     'Shows words while you speak. Tiny favors lower resource use, Small balances speed and quality, and Medium favors quality.',
   'catalog.family.nemotron_asr.summary':
     'Experimental high-accuracy multilingual streaming with a larger download and higher resource use. Moonshine Small remains the recommended English live-dictation default.',
+  'catalog.family.supertonic.summary':
+    'Lightning-fast on-device multilingual TTS via ONNX Runtime.',
   'catalog.family.pocket_tts.summary':
     'Reads notes aloud locally in English, French, German, Spanish, Portuguese, and Italian with selectable voices and pitch-preserving speed control.',
   'setup.sidecar.modal.unsupportedPlatform':

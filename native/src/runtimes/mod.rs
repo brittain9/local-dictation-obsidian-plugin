@@ -2,7 +2,8 @@
     feature = "engine-cohere-transcribe",
     feature = "engine-moonshine",
     feature = "engine-nemotron-asr",
-    feature = "engine-pocket-tts"
+    feature = "engine-pocket-tts",
+    feature = "engine-supertonic"
 ))]
 pub mod onnx;
 

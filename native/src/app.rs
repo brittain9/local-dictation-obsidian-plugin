@@ -502,6 +502,7 @@ impl AppState {
                 synthesis_id,
                 model_selection,
                 voice_id,
+                language,
                 speed,
                 chunks,
                 model_store_path_override,
@@ -596,6 +597,7 @@ impl AppState {
                         family_id: *family_id,
                         model_path,
                         voice_path,
+                        language,
                         speed,
                         chunks,
                         cancellation: SynthesisCancellation::new(),
@@ -2319,6 +2321,7 @@ mod tests {
                 model_id: "small".to_string(),
             },
             voice_id: "alba".to_string(),
+            language: "en".to_string(),
             speed: 1.0,
             chunks: vec![SynthesisTextChunk {
                 text: "Hello.".to_string(),
