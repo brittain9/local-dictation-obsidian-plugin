@@ -48,6 +48,7 @@ fn pinned_english_model_synthesizes_non_silent_pcm() {
             family_id: ModelFamilyId::PocketTts,
             model_path,
             voice_path: model_dir.join("embeddings/alba.safetensors"),
+            language: "en".to_string(),
             speed: 1.0,
             chunks: vec![
                 SynthesisTextChunk {
@@ -144,6 +145,7 @@ fn pinned_english_model_round_trips_through_whisper() {
     let synthesized = synthesizer
         .synthesize(
             REFERENCE,
+            "en",
             &pocket_dir.join("embeddings/alba.safetensors"),
             &SynthesisCancellation::new(),
         )
@@ -239,7 +241,12 @@ fn pinned_multilingual_models_meet_quality_and_throughput_gates() {
         let voice_path = model_dir.join("embeddings/alba.safetensors");
         let first_audio_started_at = Instant::now();
         let first_audio = synthesizer
-            .synthesize(latency_prompt, &voice_path, &SynthesisCancellation::new())
+            .synthesize(
+                latency_prompt,
+                language,
+                &voice_path,
+                &SynthesisCancellation::new(),
+            )
             .unwrap_or_else(|error| panic!("{model_id} latency prompt should synthesize: {error}"));
         let first_audio_seconds = first_audio_started_at.elapsed().as_secs_f64();
         assert_eq!(
@@ -256,7 +263,12 @@ fn pinned_multilingual_models_meet_quality_and_throughput_gates() {
 
         let synthesis_started_at = Instant::now();
         let synthesized = synthesizer
-            .synthesize(reference, &voice_path, &SynthesisCancellation::new())
+            .synthesize(
+                reference,
+                language,
+                &voice_path,
+                &SynthesisCancellation::new(),
+            )
             .unwrap_or_else(|error| panic!("{model_id} should synthesize: {error}"));
         let synthesis_seconds = synthesis_started_at.elapsed().as_secs_f64();
         let raw_output_seconds = synthesized.samples.len() as f64 / synthesized.sample_rate as f64;

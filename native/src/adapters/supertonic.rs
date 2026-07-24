@@ -1,13 +1,16 @@
-#![cfg(feature = "engine-pocket-tts")]
+#![cfg(feature = "engine-supertonic")]
 
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::LazyLock;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use ndarray::{ArrayD, IxDyn};
 use ort::session::{Session, SessionInputValue};
 use ort::value::{DynValue, Value};
+use regex::Regex;
 use serde::Deserialize;
+use unicode_normalization::UnicodeNormalization;
 
 use crate::engine::capabilities::{
     LanguageSupport, ModelFamilyCapabilities, ModelFamilyId, ModelTask, RuntimeId,
@@ -16,9 +19,18 @@ use crate::engine::traits::{LoadedModel, ModelFamilyAdapter};
 use crate::synthesis::{SynthesisCancellation, SynthesisError, SynthesisModel, SynthesisPcm};
 use crate::transcription::{GpuConfig, TranscriptionError, validate_model_path};
 
-const SAMPLE_RATE: u32 = 24_000;
+const SAMPLE_RATE: u32 = 44_100;
 const DEFAULT_TOTAL_STEPS: usize = 8;
 const SUPPORTED_LANGUAGES: [&str; 8] = ["en", "es", "de", "fr", "pt", "it", "nl", "ja"];
+
+static EMOJI_PATTERN: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(
+        r"[\x{1F600}-\x{1F64F}\x{1F300}-\x{1F5FF}\x{1F680}-\x{1F6FF}\x{1F700}-\x{1F77F}\x{1F780}-\x{1F7FF}\x{1F800}-\x{1F8FF}\x{1F900}-\x{1F9FF}\x{1FA00}-\x{1FA6F}\x{1FA70}-\x{1FAFF}\x{2600}-\x{26FF}\x{2700}-\x{27BF}\x{1F1E6}-\x{1F1FF}]+",
+    )
+    .expect("Supertonic emoji pattern must compile")
+});
+static WHITESPACE_PATTERN: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"\s+").expect("Supertonic whitespace pattern must compile"));
 
 static CAPABILITIES: LazyLock<ModelFamilyCapabilities> =
     LazyLock::new(|| ModelFamilyCapabilities {
@@ -33,7 +45,7 @@ static CAPABILITIES: LazyLock<ModelFamilyCapabilities> =
         supports_word_timestamps: false,
         supports_initial_prompt: false,
         supports_streaming: true,
-        supports_language_selection: false,
+        supports_language_selection: true,
         supports_automatic_language_detection: false,
         supported_languages: LanguageSupport::List {
             tags: SUPPORTED_LANGUAGES
@@ -108,7 +120,7 @@ struct SupertonicModel {
     text_encoder: Session,
     vector: Session,
     vocoder: Session,
-    language: String,
+    random: XorShift64,
 }
 
 impl SupertonicModel {
@@ -135,24 +147,26 @@ impl SupertonicModel {
                 SynthesisError::invalid_model(format!("unicode_indexer.json: {e}"))
             })?)
             .map_err(|e| SynthesisError::invalid_model(format!("unicode_indexer.json: {e}")))?;
-        let mut model = Self {
+        let model = Self {
             config,
             indexer,
             duration: build_session(&paths.duration)?,
             text_encoder: build_session(&paths.text_encoder)?,
             vector: build_session(&paths.vector)?,
             vocoder: build_session(&paths.vocoder)?,
-            language: infer_language(primary_path),
+            random: XorShift64::seeded(),
         };
         verify_io(
             &model.duration,
             "duration predictor",
             &["text_ids", "style_dp", "text_mask"],
+            &["duration"],
         )?;
         verify_io(
             &model.text_encoder,
             "text encoder",
             &["text_ids", "style_ttl", "text_mask"],
+            &["text_emb"],
         )?;
         verify_io(
             &model.vector,
@@ -166,13 +180,18 @@ impl SupertonicModel {
                 "current_step",
                 "total_step",
             ],
+            &["denoised_latent"],
         )?;
-        verify_io(&model.vocoder, "vocoder", &["latent"])?;
+        verify_io(&model.vocoder, "vocoder", &["latent"], &["wav_tts"])?;
         Ok(model)
     }
 
-    fn text_id_data(&self, text: &str) -> Result<(Vec<i64>, usize), SynthesisError> {
-        let prepared = preprocess_text(text, &self.language);
+    fn text_id_data(
+        &self,
+        text: &str,
+        language: &str,
+    ) -> Result<(Vec<i64>, usize), SynthesisError> {
+        let prepared = preprocess_text(text, language)?;
         let mut ids = Vec::with_capacity(prepared.chars().count());
         for ch in prepared.chars() {
             let ord = ch as usize;
@@ -195,11 +214,12 @@ impl SupertonicModel {
     fn synthesize_inner(
         &mut self,
         text: &str,
+        language: &str,
         voice_path: &Path,
         cancellation: &SynthesisCancellation,
     ) -> Result<Vec<f32>, SynthesisError> {
         let style = load_style(voice_path)?;
-        let (text_id_data, text_id_len) = self.text_id_data(text)?;
+        let (text_id_data, text_id_len) = self.text_id_data(text, language)?;
         let text_mask_data = vec![1.0_f32; text_id_len];
         let dp = run(
             &mut self.duration,
@@ -216,7 +236,7 @@ impl SupertonicModel {
             ],
             "duration predictor",
         )?;
-        let duration = extract_f32(&dp[0].1, "duration")?;
+        let duration = extract_f32(&take_output(dp, "duration")?, "duration")?;
         if duration.is_empty() {
             return Err(SynthesisError::invalid_model(
                 "Supertonic duration predictor returned no duration",
@@ -236,16 +256,15 @@ impl SupertonicModel {
                 ),
             ],
             "text encoder",
-        )?
-        .remove(0)
-        .1;
+        )?;
+        let text_emb_value = take_output(text_emb_value, "text_emb")?;
         let text_emb = extract_tensor(&text_emb_value, "text embedding")?;
-        let (mut xt, latent_mask) = sample_latent(&duration, &self.config)?;
+        let (mut xt, latent_mask) = sample_latent(&duration, &self.config, &mut self.random)?;
         for step in 0..DEFAULT_TOTAL_STEPS {
             if cancellation.is_cancelled() {
                 return Err(SynthesisError::cancelled());
             }
-            xt = run(
+            let outputs = run(
                 &mut self.vector,
                 vec![
                     ("noisy_latent", xt),
@@ -263,14 +282,14 @@ impl SupertonicModel {
                     ),
                 ],
                 "vector estimator",
-            )?
-            .remove(0)
-            .1;
+            )?;
+            xt = take_output(outputs, "denoised_latent")?;
         }
-        let wav = run(&mut self.vocoder, vec![("latent", xt)], "vocoder")?
-            .remove(0)
-            .1;
-        extract_f32(&wav, "vocoder audio")
+        let wav = run(&mut self.vocoder, vec![("latent", xt)], "vocoder")?;
+        let mut samples = extract_f32(&take_output(wav, "wav_tts")?, "vocoder audio")?;
+        let expected_samples = (duration[0].max(0.0) * SAMPLE_RATE as f32).ceil() as usize;
+        samples.truncate(expected_samples.min(samples.len()));
+        Ok(samples)
     }
 }
 
@@ -278,11 +297,12 @@ impl SynthesisModel for SupertonicModel {
     fn synthesize(
         &mut self,
         text: &str,
+        language: &str,
         voice_path: &Path,
         cancellation: &SynthesisCancellation,
     ) -> Result<SynthesisPcm, SynthesisError> {
         Ok(SynthesisPcm {
-            samples: self.synthesize_inner(text, voice_path, cancellation)?,
+            samples: self.synthesize_inner(text, language, voice_path, cancellation)?,
             sample_rate: SAMPLE_RATE,
         })
     }
@@ -361,9 +381,6 @@ fn resolve_paths(primary: &Path) -> Result<ModelPaths, SynthesisError> {
     let onnx = primary.parent().ok_or_else(|| {
         SynthesisError::invalid_model("Supertonic model directory could not be resolved")
     })?;
-    let root = onnx.parent().ok_or_else(|| {
-        SynthesisError::invalid_model("Supertonic model root could not be resolved")
-    })?;
     let p = ModelPaths {
         config: onnx.join("tts.json"),
         indexer: onnx.join("unicode_indexer.json"),
@@ -387,37 +404,92 @@ fn resolve_paths(primary: &Path) -> Result<ModelPaths, SynthesisError> {
             )));
         }
     }
-    let _ = root;
     Ok(p)
 }
-fn infer_language(path: &Path) -> String {
-    path.components()
-        .filter_map(|c| c.as_os_str().to_str())
-        .find_map(|s| SUPPORTED_LANGUAGES.contains(&s).then(|| s.to_string()))
-        .unwrap_or_else(|| "na".to_string())
-}
-fn preprocess_text(text: &str, lang: &str) -> String {
-    let mut s = text.split_whitespace().collect::<Vec<_>>().join(" ");
-    if s.chars()
+fn preprocess_text(text: &str, language: &str) -> Result<String, SynthesisError> {
+    if language != "na" && !SUPPORTED_LANGUAGES.contains(&language) {
+        return Err(SynthesisError::invalid_request(format!(
+            "Supertonic does not support language '{language}'."
+        )));
+    }
+    let mut prepared = text.nfkd().collect::<String>();
+    prepared = EMOJI_PATTERN.replace_all(&prepared, "").into_owned();
+    for (from, to) in [
+        ("–", "-"),
+        ("‑", "-"),
+        ("—", "-"),
+        ("_", " "),
+        ("\u{201C}", "\""),
+        ("\u{201D}", "\""),
+        ("\u{2018}", "'"),
+        ("\u{2019}", "'"),
+        ("´", "'"),
+        ("`", "'"),
+        ("[", " "),
+        ("]", " "),
+        ("|", " "),
+        ("/", " "),
+        ("#", " "),
+        ("→", " "),
+        ("←", " "),
+        ("♥", ""),
+        ("☆", ""),
+        ("♡", ""),
+        ("©", ""),
+        ("\\", ""),
+        ("@", " at "),
+        ("e.g.,", "for example, "),
+        ("i.e.,", "that is, "),
+    ] {
+        prepared = prepared.replace(from, to);
+    }
+    for punctuation in [",", ".", "!", "?", ";", ":", "'"] {
+        prepared = prepared.replace(&format!(" {punctuation}"), punctuation);
+    }
+    while prepared.contains("\"\"") {
+        prepared = prepared.replace("\"\"", "\"");
+    }
+    while prepared.contains("''") {
+        prepared = prepared.replace("''", "'");
+    }
+    prepared = WHITESPACE_PATTERN
+        .replace_all(prepared.trim(), " ")
+        .into_owned();
+    if prepared.is_empty() {
+        return Err(SynthesisError::invalid_request(
+            "Synthesis text cannot be empty.",
+        ));
+    }
+    if prepared
+        .chars()
         .last()
         .is_none_or(|c| !".!?;:,'\"')]}…。」』】〉》›»".contains(c))
     {
-        s.push('.');
+        prepared.push('.');
     }
-    format!("<{lang}>{s}</{lang}>")
+    Ok(format!("<{language}>{prepared}</{language}>"))
 }
-fn sample_latent(duration: &[f32], cfg: &Config) -> Result<(DynValue, TensorData), SynthesisError> {
+fn sample_latent(
+    duration: &[f32],
+    cfg: &Config,
+    random: &mut XorShift64,
+) -> Result<(DynValue, TensorData), SynthesisError> {
     let dur = duration[0].max(0.1);
     let chunk = cfg.ae.base_chunk_size * cfg.ttl.chunk_compress_factor;
     let latent_len = (((dur * cfg.ae.sample_rate as f32) + chunk as f32 - 1.0) / chunk as f32)
         .floor()
         .max(1.0) as usize;
     let latent_dim = (cfg.ttl.latent_dim * cfg.ttl.chunk_compress_factor) as usize;
-    let xt = vec![0.0; latent_dim * latent_len];
+    let xt = (0..latent_dim * latent_len)
+        .map(|_| random.normal())
+        .collect();
     let mask = vec![1.0; latent_len];
     Ok((
         dyn_f32(&[1, latent_dim, latent_len], xt)?,
-        dyn_f32(&[1, 1, latent_len], mask)?,
+        TensorData {
+            shape: vec![1, 1, latent_len],
+            data: mask,
+        },
     ))
 }
 fn build_session(path: &Path) -> Result<Session, SynthesisError> {
@@ -430,18 +502,47 @@ fn build_session(path: &Path) -> Result<Session, SynthesisError> {
         .commit_from_file(path)
         .map_err(|e| SynthesisError::invalid_model(format!("{}: {e}", path.display())))
 }
-fn verify_io(session: &Session, graph: &str, expected: &[&str]) -> Result<(), SynthesisError> {
-    let actual = session
+fn verify_io(
+    session: &Session,
+    graph: &str,
+    expected_inputs: &[&str],
+    expected_outputs: &[&str],
+) -> Result<(), SynthesisError> {
+    let inputs = session
         .inputs()
         .iter()
         .map(|i| i.name())
         .collect::<Vec<_>>();
-    if actual != expected {
+    let outputs = session
+        .outputs()
+        .iter()
+        .map(|output| output.name())
+        .collect::<Vec<_>>();
+    let inputs_match = inputs.len() == expected_inputs.len()
+        && expected_inputs
+            .iter()
+            .all(|expected| inputs.contains(expected));
+    let outputs_match = outputs.len() == expected_outputs.len()
+        && expected_outputs
+            .iter()
+            .all(|expected| outputs.contains(expected));
+    if !inputs_match || !outputs_match {
         return Err(SynthesisError::invalid_model(format!(
-            "{graph} input mismatch: {actual:?}"
+            "{graph} I/O mismatch: inputs={inputs:?}, outputs={outputs:?}"
         )));
     }
     Ok(())
+}
+fn take_output(
+    outputs: Vec<(String, DynValue)>,
+    expected_name: &str,
+) -> Result<DynValue, SynthesisError> {
+    outputs
+        .into_iter()
+        .find_map(|(name, value)| (name == expected_name).then_some(value))
+        .ok_or_else(|| {
+            SynthesisError::invalid_model(format!("graph omitted {expected_name} output"))
+        })
 }
 fn run(
     session: &mut Session,
@@ -474,7 +575,7 @@ fn dyn_i64(shape: &[usize], data: Vec<i64>) -> Result<DynValue, SynthesisError> 
     .into_dyn())
 }
 fn extract_f32(value: &DynValue, label: &str) -> Result<Vec<f32>, SynthesisError> {
-    let (.., data) = value
+    let data = value
         .try_extract_array::<f32>()
         .map_err(|e| SynthesisError::invalid_model(format!("{label}: {e}")))?;
     Ok(data.iter().copied().collect())
@@ -488,4 +589,67 @@ fn extract_tensor(value: &DynValue, label: &str) -> Result<TensorData, Synthesis
         shape: array.shape().to_vec(),
         data: array.iter().copied().collect(),
     })
+}
+
+struct XorShift64(u64);
+
+impl XorShift64 {
+    fn seeded() -> Self {
+        let seed = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|duration| duration.as_nanos() as u64)
+            .unwrap_or(0x9e37_79b9_7f4a_7c15);
+        Self(seed.max(1))
+    }
+
+    fn uniform(&mut self) -> f32 {
+        let mut value = self.0;
+        value ^= value << 13;
+        value ^= value >> 7;
+        value ^= value << 17;
+        self.0 = value;
+        ((value >> 40) as f32 + 1.0) / ((1_u32 << 24) as f32 + 1.0)
+    }
+
+    fn normal(&mut self) -> f32 {
+        let radius = (-2.0 * self.uniform().ln()).sqrt();
+        radius * (std::f32::consts::TAU * self.uniform()).cos()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{AeConfig, Config, TtlConfig, XorShift64, preprocess_text, sample_latent};
+
+    #[test]
+    fn preprocessing_uses_the_explicit_language_and_normalizes_read_aloud_text() {
+        assert_eq!(
+            preprocess_text("  “Hello”  🌟 ", "en").expect("text should normalize"),
+            "<en>\"Hello\"</en>"
+        );
+        assert!(preprocess_text("Hello", "zh").is_err());
+    }
+
+    #[test]
+    fn latent_seed_uses_gaussian_noise_and_preserves_the_mask_shape() {
+        let config = Config {
+            ae: AeConfig {
+                sample_rate: 44_100,
+                base_chunk_size: 512,
+            },
+            ttl: TtlConfig {
+                chunk_compress_factor: 6,
+                latent_dim: 24,
+            },
+        };
+        let mut random = XorShift64(1);
+        let (latent, mask) =
+            sample_latent(&[0.5], &config, &mut random).expect("latent should build");
+        let latent = latent
+            .try_extract_array::<f32>()
+            .expect("latent should be float32");
+        assert!(latent.iter().any(|value| value.abs() > f32::EPSILON));
+        assert_eq!(mask.shape, vec![1, 1, 8]);
+        assert_eq!(mask.data, vec![1.0; 8]);
+    }
 }

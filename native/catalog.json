@@ -53,17 +53,7 @@
       "familyId": "supertonic",
       "task": "tts",
       "displayName": "Supertonic 3",
-      "summary": "Lightning-fast on-device multilingual TTS via ONNX Runtime.",
-      "languageSupport": {
-        "kind": "list",
-        "tags": ["en", "es", "de", "fr", "pt", "it", "nl", "ja"]
-      },
-      "supportsStreaming": true,
-      "supportsLanguageSelection": false,
-      "supportsAutomaticLanguageDetection": false,
-      "supportsSpeedControl": true,
-      "availableVoices": ["F1", "F2", "F3", "F4", "F5", "M1", "M2", "M3", "M4", "M5"],
-      "outputSampleRate": 24000
+      "summary": "Lightning-fast on-device multilingual TTS via ONNX Runtime."
     }
   ],
   "collections": [
@@ -205,7 +195,7 @@
       "modelCardUrl": "https://github.com/ggml-org/whisper.cpp",
       "notes": [
         "Significantly better accuracy than Small, especially with technical vocabulary.",
-        "CPU inference is slower \u2014 consider GPU acceleration or patience."
+        "CPU inference is slower — consider GPU acceleration or patience."
       ],
       "artifacts": [
         {
@@ -237,7 +227,7 @@
       "notes": [
         "Highest accuracy available. The Turbo architecture is faster than standard Large V3.",
         "Supports automatic detection or explicit selection for the verified language list.",
-        "CPU inference is slow \u2014 best paired with hardware acceleration."
+        "CPU inference is slow — best paired with hardware acceleration."
       ],
       "artifacts": [
         {
@@ -787,13 +777,13 @@
       "defaultVoice": "F1",
       "uxTags": ["read-aloud", "cpu", "streaming", "recommended"],
       "licenseLabel": "OpenRAIL-M",
-      "licenseUrl": "https://huggingface.co/Supertone/supertonic-3/blob/main/LICENSE",
+      "licenseUrl": "https://huggingface.co/Supertone/supertonic-3/blob/3cadd1ee6394adea1bd021217a0e650ede09a323/LICENSE",
       "sourceUrl": "https://huggingface.co/Supertone/supertonic-3/tree/3cadd1ee6394adea1bd021217a0e650ede09a323",
       "modelCardUrl": "https://huggingface.co/Supertone/supertonic-3",
       "notes": [
         "Supertonic 3 supports 31 languages upstream; this catalog entry exposes only the eight languages currently supported by Local Dictation.",
         "The initial install includes the model and F1 voice; the remaining nine built-in voices are optional downloads.",
-        "Synthesis runs locally on CPU with ONNX Runtime and produces 24 kHz mono audio.",
+        "Synthesis runs locally on CPU with ONNX Runtime and produces 44.1 kHz mono audio.",
         "The model weights are licensed under OpenRAIL-M, not this project's MIT license."
       ],
       "artifacts": [
@@ -821,7 +811,7 @@
           "required": true,
           "filename": "onnx/duration_predictor.onnx",
           "downloadUrl": "https://huggingface.co/Supertone/supertonic-3/resolve/3cadd1ee6394adea1bd021217a0e650ede09a323/onnx/duration_predictor.onnx",
-          "sha256": "3f5f4dec9c9b3d9074a8d13141f3acc852dd6e97a07e156e9dc669fe98506b0a",
+          "sha256": "c3eb91414d5ff8a7a239b7fe9e34e7e2bf8a8140d8375ffb14718b1c639325db",
           "sizeBytes": 3700147
         },
         {
@@ -830,7 +820,7 @@
           "required": true,
           "filename": "onnx/text_encoder.onnx",
           "downloadUrl": "https://huggingface.co/Supertone/supertonic-3/resolve/3cadd1ee6394adea1bd021217a0e650ede09a323/onnx/text_encoder.onnx",
-          "sha256": "9303c918c4da455b341b200d061a82c6ac3b8ed1d678cda6d412e72acfdb936b",
+          "sha256": "c7befd5ea8c3119769e8a6c1486c4edc6a3bc8365c67621c881bbb774b9902ff",
           "sizeBytes": 36416150
         },
         {
@@ -839,7 +829,7 @@
           "required": true,
           "filename": "onnx/vector_estimator.onnx",
           "downloadUrl": "https://huggingface.co/Supertone/supertonic-3/resolve/3cadd1ee6394adea1bd021217a0e650ede09a323/onnx/vector_estimator.onnx",
-          "sha256": "c39cede05082f67b544b19a3b0c0fc273a71d0d8d38a9e06f2512789e3bad7fe",
+          "sha256": "883ac868ea0275ef0e991524dc64f16b3c0376efd7c320af6b53f5b780d7c61c",
           "sizeBytes": 256534781
         },
         {
@@ -848,7 +838,7 @@
           "required": true,
           "filename": "onnx/vocoder.onnx",
           "downloadUrl": "https://huggingface.co/Supertone/supertonic-3/resolve/3cadd1ee6394adea1bd021217a0e650ede09a323/onnx/vocoder.onnx",
-          "sha256": "752c10c00131361ee3ff7de734566150cb26ae821a1245d177a7f682ed0cad4d",
+          "sha256": "085de76dd8e8d5836d6ca66826601f615939218f90e519f70ee8a36ed2a4c4ba",
           "sizeBytes": 101424195
         },
         {
@@ -1370,8 +1360,8 @@
       "task": "tts",
       "modelId": "pocket_tts_spanish_int8",
       "collectionId": "pocket_tts_read_aloud",
-      "displayName": "Pocket TTS Espa\u00f1ol",
-      "summary": "Fast local Espa\u00f1ol read-aloud synthesis using the pinned int8 ONNX export.",
+      "displayName": "Pocket TTS Español",
+      "summary": "Fast local Español read-aloud synthesis using the pinned int8 ONNX export.",
       "languageTags": ["es"],
       "defaultVoice": "alba",
       "uxTags": ["read-aloud", "cpu", "streaming"],
@@ -1507,8 +1497,8 @@
       "task": "tts",
       "modelId": "pocket_tts_portuguese_int8",
       "collectionId": "pocket_tts_read_aloud",
-      "displayName": "Pocket TTS Portugu\u00eas",
-      "summary": "Fast local Portugu\u00eas read-aloud synthesis using the pinned int8 ONNX export.",
+      "displayName": "Pocket TTS Português",
+      "summary": "Fast local Português read-aloud synthesis using the pinned int8 ONNX export.",
       "languageTags": ["pt"],
       "defaultVoice": "alba",
       "uxTags": ["read-aloud", "cpu", "streaming"],

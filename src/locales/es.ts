@@ -668,8 +668,6 @@ export const es = {
   'models.external.validation.selectEntryFile': 'Selecciona {filename}.',
   'models.external.validation.nemotronEntryFile':
     'Nemotron 3.5 ASR requiere su artefacto encoder.int8.onnx. Seleccione encoder.int8.onnx del directorio del modelo de 560 ms anclado.',
-  'models.external.validation.supertonicEntryFile':
-    'Select vector_estimator.onnx from the Supertonic onnx directory.',
   'models.external.validation.moonshineEntryFile':
     'Moonshine requiere su artefacto frontend.ort principal. Seleccione frontend.ort en el directorio del modelo de transmisión.',
   'models.external.validation.generic': 'El motor de voz no pudo validar este modelo.',
@@ -685,12 +683,6 @@ export const es = {
     'El mismo directorio debe contener encoder.ort, adapter.ort, cross_kv.ort, decoder_kv.ort, streaming_config.json y tokenizer.bin.',
   'models.external.requirements.moonshine.compatibility':
     'Las exportaciones Moonshine ONNX sin transmisión no son compatibles.',
-  'models.external.requirements.supertonic.entry':
-    'Select onnx/vector_estimator.onnx from a Supertonic 3 model directory.',
-  'models.external.requirements.supertonic.siblings':
-    'Keep tts.json, unicode_indexer.json, duration_predictor.onnx, text_encoder.onnx, and vocoder.onnx beside it.',
-  'models.external.requirements.supertonic.voices':
-    'Keep built-in voice JSON files under the sibling voice_styles directory.',
   'models.external.requirements.whisper.entry':
     'Seleccione un archivo de modelo GGML o GGUF compatible con whisper.cpp.',
   'models.external.requirements.whisper.validation':
@@ -833,9 +825,6 @@ export const es = {
   'models.manage.allLanguages': 'Todos los idiomas',
   'models.manage.familiesLabel': 'Familias de modelos',
   'models.manage.noneForLanguage': 'No hay modelos disponibles para esta tarea e idioma.',
-  'models.manage.installAllVoices': 'Install all voices',
-  'models.manage.installAllVoicesDesc':
-    'Install the remaining {count} optional voices for this model.',
   'models.manage.optionalVoice': 'Voz local opcional',
   'models.manage.voiceInstalled': 'Instalada',
   'tts.status.reading': 'Leyendo…',
@@ -857,10 +846,6 @@ export const es = {
     'El proceso de síntesis de voz local no está disponible.',
   'catalog.pocket_tts_english_2026_04_int8.summary':
     'Lectura local natural en inglés con voces seleccionables.',
-  'catalog.supertonic_3_multilingual_2026_05.summary':
-    'Lightning-fast local multilingual read-aloud synthesis for the eight supported app languages.',
-  'catalog.family.supertonic.summary':
-    'Lightning-fast on-device multilingual TTS via ONNX Runtime.',
   'catalog.family.pocket_tts.summary':
     'Lee notas localmente en inglés, francés, alemán, español, portugués e italiano con voces seleccionables y control de velocidad sin alterar el tono.',
 } as const satisfies TranslationCatalog;

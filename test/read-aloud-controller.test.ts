@@ -83,7 +83,11 @@ type StartSynthesisMock = ReturnType<
   typeof vi.fn<(payload: Omit<StartSynthesisCommand, 'type'>) => Promise<void>>
 >;
 
-function controllerHarness(options: { selected: boolean; startSynthesis?: StartSynthesisMock }) {
+function controllerHarness(options: {
+  dictationLanguage?: 'auto' | 'en';
+  selected: boolean;
+  startSynthesis?: StartSynthesisMock;
+}) {
   const feedback = { show: vi.fn() };
   const stopDictation = vi.fn(async (): Promise<void> => undefined);
   const cancelSynthesis = vi.fn();
@@ -95,6 +99,7 @@ function controllerHarness(options: { selected: boolean; startSynthesis?: StartS
     getCatalog: () => TTS_CATALOG,
     getSettings: () => ({
       ...DEFAULT_PLUGIN_SETTINGS,
+      dictationLanguage: options.dictationLanguage ?? DEFAULT_PLUGIN_SETTINGS.dictationLanguage,
       selectedTtsModel: options.selected ? TTS_SELECTION : null,
       selectedTtsVoice: options.selected ? 'alba' : null,
     }),
@@ -150,8 +155,19 @@ describe('ReadAloudController', () => {
     expect(harness.startSynthesis).toHaveBeenCalledTimes(2);
     expect(harness.startSynthesis.mock.calls[1]?.[0]).toMatchObject({
       chunks: [{ text: 'Second sentence.' }, { text: 'Third sentence.' }],
+      language: 'en',
       speed: 1.5,
     });
+  });
+
+  it('uses the dictation language and maps automatic detection to the model-neutral tag', async () => {
+    const harness = controllerHarness({ dictationLanguage: 'auto', selected: true });
+
+    await harness.controller.read(editorFor('Speak this.', { ch: 0, line: 0 }));
+
+    expect(harness.startSynthesis).toHaveBeenCalledWith(
+      expect.objectContaining({ language: 'na' }),
+    );
   });
 
   it('validates TTS configuration before stopping dictation', async () => {

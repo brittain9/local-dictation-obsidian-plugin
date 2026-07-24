@@ -29,7 +29,7 @@ flowchart LR
         INF["Inference · engine registry"]
         STAGE["Post-engine stages<br/>(hallucination filter)"]
         DIA["Diarization<br/>(optional)"]
-        SYNTH["Pocket TTS synthesis<br/>+ time stretch"]
+        SYNTH["Pocket TTS / Supertonic synthesis<br/>+ time stretch"]
         VAD --> INF --> STAGE --> DIA
     end
 
@@ -37,7 +37,7 @@ flowchart LR
     CFG -->|"stdin: JSON commands"| VAD
     DIA -->|"stdout: transcript_ready"| LLM --> REND
     TEXT -->|"stdin: start_synthesis"| SYNTH
-    SYNTH -->|"stdout: 24 kHz PCM"| PLAY
+    SYNTH -->|"stdout: model-native PCM"| PLAY
 ```
 
 The plugin and sidecar talk over a single framed byte stream on the sidecar's
@@ -139,7 +139,7 @@ reassemble frames across chunk boundaries.
 | `install_model` | Start a model download + install |
 | `cancel_model_install` | Cancel a pending install |
 | `remove_model` | Delete an installed model |
-| `start_synthesis` | Start read aloud for ordered text chunks, model, voice, and speed |
+| `start_synthesis` | Start read aloud for ordered text chunks, model, voice, language, and speed |
 | `cancel_synthesis` | Cancel the matching synthesis session immediately |
 | `synthesis_playback_position` | Acknowledge the last played chunk for audio-ahead flow control |
 
@@ -277,8 +277,9 @@ the model, and produces timestamped text segments.
 `adapter.load → loaded.transcribe` for batch families and
 `adapter.load_streaming → accept_audio / partial / finalize_utterance` for a
 streaming family.
-Pocket TTS uses `adapter.load_synthesis → synthesis_model.synthesize` on a
-separate synthesis worker, so it does not enter the dictation session pipeline.
+Pocket TTS and Supertonic use
+`adapter.load_synthesis → synthesis_model.synthesize` on a separate synthesis
+worker, so they do not enter the dictation session pipeline.
 Capabilities reach the plugin two ways: inventory (`system_info`) and
 per-selection merge (`model_probe_result.mergedCapabilities`). Each runtime probes
 its accelerators at startup — `whisper_cpp` checks for a usable Metal or CUDA
@@ -290,11 +291,11 @@ reports what's actually available.
 | Runtime | Crate | Model format | Adapter |
 |---|---|---|---|
 | `whisper_cpp` | whisper-rs (whisper.cpp) | GGML `.bin` | `whisper` |
-| `onnx_runtime` | ort (ONNX Runtime) | ONNX / ORT | `cohere_transcribe`, `moonshine`, `nemotron_asr`, `pocket_tts` |
+| `onnx_runtime` | ort (ONNX Runtime) | ONNX / ORT | `cohere_transcribe`, `moonshine`, `nemotron_asr`, `pocket_tts`, `supertonic` |
 
 Cargo features: `engine-whisper`, `engine-cohere-transcribe`,
-`engine-moonshine`, `engine-nemotron-asr`, `engine-pocket-tts`, `gpu-metal`, `gpu-cuda`,
-`gpu-ort-cuda`. A missing
+`engine-moonshine`, `engine-nemotron-asr`, `engine-pocket-tts`,
+`engine-supertonic`, `gpu-metal`, `gpu-cuda`, `gpu-ort-cuda`. A missing
 `(runtimeId, familyId)` pair surfaces as an `unsupported_engine` error rather
 than a silent failure.
 
@@ -336,6 +337,7 @@ than a silent failure.
 | Moonshine Small | `onnx_runtime` · `moonshine` | Quantized | 157 MB | Streaming (live), balanced, 123M params |
 | Moonshine Medium | `onnx_runtime` · `moonshine` | Quantized | 289 MB | Streaming (live), 245M params |
 | Nemotron 3.5 ASR 560 ms | `onnx_runtime` · `nemotron_asr` | INT8 | 651 MB | Experimental multilingual streaming |
+| Supertonic 3 | `onnx_runtime` · `supertonic` | ONNX | 398 MB | Read aloud in eight app languages, 10 voices |
 
 Moonshine models are streaming (live-dictation) entries in the managed catalog,
 installed through Manage Models like any other model. Each is a multi-file ORT
@@ -454,8 +456,9 @@ The read-aloud path is independent from microphone capture and transcription:
 1. The plugin selects the active text scope, removes Markdown syntax, skips
    frontmatter/code/math, and sends ordered sentence chunks with source ranges.
 2. The sidecar resolves a catalog model whose task is `tts`, loads its selected
-   voice, synthesizes 24 kHz mono audio, and applies pitch-preserving speed
-   adjustment for the supported 0.75–2.0× range.
+   voice, passes the selected dictation language, synthesizes model-native mono
+   audio (Pocket TTS at 24 kHz or Supertonic at 44.1 kHz), and applies
+   pitch-preserving speed adjustment for the supported 0.75–2.0× range.
 3. Chunk metadata and binary PCM frames share stdout. The plugin schedules them
    through Web Audio and reports each played sequence to bound synthesis to
    roughly 30 seconds of audio ahead.
@@ -464,8 +467,8 @@ The read-aloud path is independent from microphone capture and transcription:
    cannot feed an active capture session.
 
 The model catalog and settings keep independent `stt` and `tts` selections.
-Pocket TTS models and optional voices are downloaded on demand and verified by
-their pinned size and SHA-256 before activation.
+Pocket TTS and Supertonic models and optional voices are downloaded on demand
+and verified by their pinned size and SHA-256 before activation.
 
 ---
 

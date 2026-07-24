@@ -182,8 +182,11 @@ export interface SynthesisTextChunk {
   text: string;
 }
 
+export type SynthesisLanguage = 'de' | 'en' | 'es' | 'fr' | 'it' | 'ja' | 'na' | 'nl' | 'pt';
+
 export interface StartSynthesisCommand extends EnvelopeBase<'start_synthesis'> {
   chunks: SynthesisTextChunk[];
+  language: SynthesisLanguage;
   modelSelection: SelectedModel;
   modelStorePathOverride?: string;
   speed: number;

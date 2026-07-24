@@ -682,8 +682,6 @@ export const en = {
   'models.external.validation.selectEntryFile': 'Select {filename}.',
   'models.external.validation.nemotronEntryFile':
     'Nemotron 3.5 ASR requires its encoder.int8.onnx artifact. Select encoder.int8.onnx from the pinned 560 ms model directory.',
-  'models.external.validation.supertonicEntryFile':
-    'Select vector_estimator.onnx from the Supertonic onnx directory.',
   'models.external.validation.moonshineEntryFile':
     'Moonshine requires its primary frontend.ort artifact. Select frontend.ort from the streaming model directory.',
   'models.external.validation.generic': 'The speech engine could not validate this model.',
@@ -699,12 +697,6 @@ export const en = {
     'The same directory must contain encoder.ort, adapter.ort, cross_kv.ort, decoder_kv.ort, streaming_config.json, and tokenizer.bin.',
   'models.external.requirements.moonshine.compatibility':
     'Non-streaming Moonshine ONNX exports are not compatible.',
-  'models.external.requirements.supertonic.entry':
-    'Select onnx/vector_estimator.onnx from a Supertonic 3 model directory.',
-  'models.external.requirements.supertonic.siblings':
-    'Keep tts.json, unicode_indexer.json, duration_predictor.onnx, text_encoder.onnx, and vocoder.onnx beside it.',
-  'models.external.requirements.supertonic.voices':
-    'Keep built-in voice JSON files under the sibling voice_styles directory.',
   'models.external.requirements.whisper.entry':
     'Select one whisper.cpp-compatible GGML or GGUF model file.',
   'models.external.requirements.whisper.validation':

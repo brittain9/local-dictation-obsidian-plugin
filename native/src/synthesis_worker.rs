@@ -19,6 +19,7 @@ pub struct StartSynthesis {
     pub family_id: ModelFamilyId,
     pub model_path: PathBuf,
     pub voice_path: PathBuf,
+    pub language: String,
     pub speed: f32,
     pub chunks: Vec<SynthesisTextChunk>,
     pub cancellation: SynthesisCancellation,
@@ -178,7 +179,7 @@ fn run_synthesis(
     }
     let mut model = adapter.load_synthesis(&request.model_path)?;
     let sample_rate = adapter.capabilities().output_sample_rate.ok_or_else(|| {
-        SynthesisError::invalid_model("Pocket TTS does not declare an output sample rate")
+        SynthesisError::invalid_model("The TTS adapter does not declare an output sample rate")
     })?;
     event_tx
         .send(Event::SynthesisStarted {
@@ -204,7 +205,12 @@ fn run_synthesis(
         if request.cancellation.is_cancelled() {
             return Err(SynthesisError::cancelled());
         }
-        let pcm = model.synthesize(&chunk.text, &request.voice_path, &request.cancellation)?;
+        let pcm = model.synthesize(
+            &chunk.text,
+            &request.language,
+            &request.voice_path,
+            &request.cancellation,
+        )?;
         if request.cancellation.is_cancelled() {
             return Err(SynthesisError::cancelled());
         }
@@ -379,6 +385,7 @@ mod tests {
         fn synthesize(
             &mut self,
             text: &str,
+            _language: &str,
             _voice_path: &Path,
             _cancellation: &SynthesisCancellation,
         ) -> Result<SynthesisPcm, SynthesisError> {
@@ -405,6 +412,7 @@ mod tests {
             family_id: ModelFamilyId::PocketTts,
             model_path: PathBuf::from("model.onnx"),
             voice_path: PathBuf::from("voice.safetensors"),
+            language: "en".to_string(),
             speed: 1.0,
             chunks: texts
                 .iter()

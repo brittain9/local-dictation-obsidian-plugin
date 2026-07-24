@@ -32,7 +32,7 @@ Capture meetings, calls, interviews, or videos with microphone and system audio 
 
 Run **Read aloud** from the command palette or bind it to a hotkey. It reads the
 selected text when there is a selection, or starts at the beginning of the note
-when there is not. Pocket TTS playback stays local and provides active controls
+when there is not. Pocket TTS and Supertonic playback stays local and provides active controls
 for language/model, speed, voice, pause/resume, and stop without adding another
 ribbon icon.
 
@@ -45,7 +45,7 @@ Choose the speech engine that fits the job, then install it from Settings.
 | Responsive live English text | Moonshine streaming models |
 | Multilingual live text | Experimental Nemotron 3.5 ASR |
 | Higher-accuracy notes | Whisper Large V3 Turbo, Cohere Transcribe, and other batch models |
-| Local read aloud | Pocket TTS in English, French, German, Spanish, Portuguese, and Italian |
+| Local read aloud | Pocket TTS in six languages; Supertonic 3 in all eight app languages with 10 voices |
 | Local text cleanup | Ollama |
 | Selected remote text cleanup | OpenRouter |
 

@@ -142,6 +142,20 @@ ONNX, changing their packaging and numerical representation. They are not
 covered by this project's MIT license. No endorsement by Kyutai or the ONNX
 export author is implied.
 
+## Supertonic 3 read-aloud model
+
+- Work: Supertonic 3
+- Creator: Supertone
+- Model, ONNX graph, and voice-style source:
+  https://huggingface.co/Supertone/supertonic-3/tree/3cadd1ee6394adea1bd021217a0e650ede09a323
+- License: OpenRAIL-M
+  https://huggingface.co/Supertone/supertonic-3/blob/3cadd1ee6394adea1bd021217a0e650ede09a323/LICENSE
+
+The model catalog downloads the pinned Supertonic graphs and selected voice
+styles on demand for local read aloud. These artifacts are not covered by this
+project's MIT license; the catalog shows the model license before installation.
+No endorsement by Supertone is implied.
+
 ## FLEURS multilingual speech fixtures
 
 - Work: FLEURS: Few-shot Learning Evaluation of Universal Representations of

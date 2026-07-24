@@ -397,6 +397,7 @@ impl SynthesisModel for PocketTtsModel {
     fn synthesize(
         &mut self,
         text: &str,
+        _language: &str,
         voice_path: &Path,
         cancellation: &SynthesisCancellation,
     ) -> Result<SynthesisPcm, SynthesisError> {

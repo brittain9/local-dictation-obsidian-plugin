@@ -111,6 +111,26 @@ fn nemotron_asr_pair_is_registered_when_compiled() {
     );
 }
 
+#[cfg(feature = "engine-supertonic")]
+#[test]
+fn supertonic_pair_is_registered_when_compiled() {
+    let registry = EngineRegistry::build();
+
+    let adapter = registry
+        .adapter(RuntimeId::OnnxRuntime, ModelFamilyId::Supertonic)
+        .expect("Supertonic adapter must be registered when engine-supertonic is on");
+    let capabilities = adapter.capabilities();
+    assert_eq!(
+        capabilities.task,
+        local_dictation_sidecar::engine::ModelTask::Tts
+    );
+    assert_eq!(capabilities.output_sample_rate, Some(44_100));
+    assert!(matches!(
+        capabilities.supported_languages,
+        LanguageSupport::List { ref tags } if tags.contains(&"ja".to_string())
+    ));
+}
+
 #[test]
 fn probe_against_missing_path_surfaces_structured_error_for_registered_pair() {
     let registry = EngineRegistry::build();

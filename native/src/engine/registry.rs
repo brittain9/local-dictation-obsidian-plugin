@@ -34,7 +34,8 @@ impl EngineRegistry {
             feature = "engine-cohere-transcribe",
             feature = "engine-moonshine",
             feature = "engine-nemotron-asr",
-            feature = "engine-pocket-tts"
+            feature = "engine-pocket-tts",
+            feature = "engine-supertonic"
         ))]
         registry.register_runtime(Box::new(crate::runtimes::onnx::OnnxRuntime::probe()));
 
@@ -53,7 +54,7 @@ impl EngineRegistry {
 
         #[cfg(feature = "engine-pocket-tts")]
         registry.register_adapter(Box::new(crate::adapters::pocket_tts::PocketTtsAdapter));
-        #[cfg(feature = "engine-pocket-tts")]
+        #[cfg(feature = "engine-supertonic")]
         registry.register_adapter(Box::new(crate::adapters::supertonic::SupertonicAdapter));
 
         registry
