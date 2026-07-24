@@ -315,7 +315,13 @@ export class DictationSessionController {
       return;
     }
 
-    this.dependencies.stopConflictingSpeech();
+    try {
+      this.dependencies.stopConflictingSpeech();
+    } catch (error) {
+      if (startRevision !== this.startRevision) return;
+      this.handleError(FEEDBACK_FAILURES.startDictation, error);
+      return;
+    }
 
     try {
       await this.assertMicrophoneInputAvailable();

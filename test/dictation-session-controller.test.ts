@@ -255,6 +255,40 @@ describe('DictationSessionController', () => {
     expect(controller.getState()).toBe('listening');
   });
 
+  it('reports a start failure and stops when conflicting speech cannot be stopped', async () => {
+    const captureStream = new FakeCaptureStream();
+    const countAudioInputDevices = vi.fn(async () => 1);
+    const createSession = vi.fn();
+    const feedback = { show: vi.fn() };
+    const sidecarConnection = new FakeSidecarConnection();
+    const stopError = new Error('read aloud stop failed');
+    const controller = createController({
+      captureStream,
+      countAudioInputDevices,
+      createSession,
+      feedback,
+      sidecarConnection,
+      stopConflictingSpeech: vi.fn(() => {
+        throw stopError;
+      }),
+    });
+
+    await controller.startDictation();
+
+    expect(feedback.show).toHaveBeenCalledOnce();
+    expect(feedback.show).toHaveBeenCalledWith({
+      cause: stopError,
+      intent: 'error',
+      key: 'dictation-start-failed',
+      message: 'Could not start dictation.',
+    });
+    expect(countAudioInputDevices).not.toHaveBeenCalled();
+    expect(sidecarConnection.ensureStarted).not.toHaveBeenCalled();
+    expect(createSession).not.toHaveBeenCalled();
+    expect(captureStream.start).not.toHaveBeenCalled();
+    expect(controller.getState()).toBe('error');
+  });
+
   it('rechecks target availability on a later retry', async () => {
     let hasTarget = false;
     const feedback = { show: vi.fn() };
