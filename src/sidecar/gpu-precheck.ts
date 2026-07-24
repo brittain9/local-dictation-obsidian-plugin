@@ -1,40 +1,179 @@
 import { spawn } from 'node:child_process';
 
-export type NvidiaDriverStatus = 'present' | 'absent' | 'unknown';
+export const CUDA_COMPATIBILITY_REQUIREMENTS = {
+  minimumComputeCapability: { major: 7, minor: 5 },
+  minimumDriverMajor: 580,
+} as const;
+
+export const CUDA_PROBE_OUTPUT_LIMIT_BYTES = 64 * 1024;
 
 const PROBE_TIMEOUT_MS = 3_000;
+const NVIDIA_SMI_ARGS = [
+  '--query-gpu=driver_version,compute_cap',
+  '--format=csv,noheader,nounits',
+] as const;
+const DRIVER_VERSION_PATTERN = /^\d+(?:\.\d+)*$/u;
+const COMPUTE_CAPABILITY_PATTERN = /^(\d+)\.(\d+)$/u;
 
-export async function detectNvidiaDriver(): Promise<NvidiaDriverStatus> {
+export type CudaCompatibility =
+  | {
+      computeCapabilities: readonly string[];
+      driverVersion: string;
+      status: 'compatible' | 'incompatible_driver' | 'incompatible_gpu';
+    }
+  | { status: 'absent' | 'unknown' | 'unsupported' };
+
+export interface CudaProbeOutput {
+  computeCapabilities: readonly string[];
+  driverVersion: string;
+}
+
+export function isCudaReleaseTarget(platform: NodeJS.Platform, arch: string): boolean {
+  return arch === 'x64' && (platform === 'linux' || platform === 'win32');
+}
+
+export function parseCudaProbeOutput(output: string): CudaProbeOutput | null {
+  const rows = output.trim().split(/\r?\n/u);
+  if (rows.length === 0 || rows[0] === '') return null;
+
+  let driverVersion: string | null = null;
+  const computeCapabilities: string[] = [];
+
+  for (const row of rows) {
+    const columns = row.split(',');
+    if (columns.length !== 2) return null;
+
+    const rowDriverVersion = columns[0]?.trim();
+    const computeCapability = columns[1]?.trim();
+    if (
+      rowDriverVersion === undefined ||
+      computeCapability === undefined ||
+      !isDriverVersion(rowDriverVersion) ||
+      !isComputeCapability(computeCapability)
+    ) {
+      return null;
+    }
+
+    if (driverVersion !== null && driverVersion !== rowDriverVersion) return null;
+    driverVersion = rowDriverVersion;
+    computeCapabilities.push(computeCapability);
+  }
+
+  return driverVersion === null ? null : { computeCapabilities, driverVersion };
+}
+
+export function classifyCudaCompatibility(probe: CudaProbeOutput): CudaCompatibility {
+  const driverMajor = Number(probe.driverVersion.split('.', 1)[0]);
+  if (driverMajor < CUDA_COMPATIBILITY_REQUIREMENTS.minimumDriverMajor) {
+    return { ...probe, status: 'incompatible_driver' };
+  }
+
+  const hasCompatibleGpu = probe.computeCapabilities.some((computeCapability) =>
+    meetsMinimumComputeCapability(computeCapability),
+  );
+  return { ...probe, status: hasCompatibleGpu ? 'compatible' : 'incompatible_gpu' };
+}
+
+export async function detectCudaCompatibility(): Promise<CudaCompatibility> {
+  if (!isCudaReleaseTarget(process.platform, process.arch)) return { status: 'unsupported' };
+
   return new Promise((resolve) => {
     let settled = false;
-    const settle = (status: NvidiaDriverStatus): void => {
+    let child: ReturnType<typeof spawn> | null = null;
+    let timeoutHandle: number | null = null;
+
+    const onData = (chunk: Buffer | string): void => {
+      outputBytes += Buffer.byteLength(chunk);
+      if (outputBytes > CUDA_PROBE_OUTPUT_LIMIT_BYTES) {
+        stopChild();
+        settle({ status: 'unknown' });
+        return;
+      }
+      output += chunk.toString();
+    };
+    const onError = (error: NodeJS.ErrnoException): void => {
+      settle(error.code === 'ENOENT' ? { status: 'absent' } : { status: 'unknown' });
+    };
+    const onExit = (code: number | null, signal: NodeJS.Signals | null): void => {
+      if (code !== 0 || signal !== null) {
+        settle({ status: 'unknown' });
+        return;
+      }
+
+      const probe = parseCudaProbeOutput(output);
+      settle(probe === null ? { status: 'unknown' } : classifyCudaCompatibility(probe));
+    };
+    const onClose = (): void => {
+      child?.removeListener('error', onError);
+    };
+    const cleanup = (): void => {
+      if (timeoutHandle !== null) window.clearTimeout(timeoutHandle);
+      child?.stdout?.removeListener('data', onData);
+      child?.removeListener('exit', onExit);
+    };
+    const settle = (result: CudaCompatibility): void => {
       if (settled) return;
       settled = true;
-      resolve(status);
+      cleanup();
+      resolve(result);
     };
-
-    let child: ReturnType<typeof spawn>;
+    const stopChild = (): void => {
+      try {
+        child?.kill();
+      } catch {
+        // The result is already inconclusive; killing is best effort only.
+      }
+    };
+    let output = '';
+    let outputBytes = 0;
 
     try {
-      child = spawn('nvidia-smi', ['-L'], { stdio: 'ignore', windowsHide: true });
+      child = spawn('nvidia-smi', NVIDIA_SMI_ARGS, {
+        shell: false,
+        stdio: ['ignore', 'pipe', 'ignore'],
+        windowsHide: true,
+      });
     } catch {
-      settle('absent');
+      settle({ status: 'unknown' });
       return;
     }
 
-    const timeoutHandle = window.setTimeout(() => {
-      child.kill();
-      settle('unknown');
+    child.stdout?.on('data', onData);
+    // Keep the one-shot error handler through close: a process ending at the
+    // same time as a timeout can still emit error, which must not become an
+    // unhandled EventEmitter error. onClose removes it if it never fires.
+    child.once('error', onError);
+    child.once('exit', onExit);
+    child.once('close', onClose);
+    timeoutHandle = window.setTimeout(() => {
+      stopChild();
+      settle({ status: 'unknown' });
     }, PROBE_TIMEOUT_MS);
-
-    child.once('error', (error: NodeJS.ErrnoException) => {
-      window.clearTimeout(timeoutHandle);
-      settle(error.code === 'ENOENT' ? 'absent' : 'unknown');
-    });
-
-    child.once('exit', (code) => {
-      window.clearTimeout(timeoutHandle);
-      settle(code === 0 ? 'present' : 'unknown');
-    });
   });
+}
+
+function isComputeCapability(value: string): boolean {
+  const match = COMPUTE_CAPABILITY_PATTERN.exec(value);
+  return (
+    match !== null &&
+    Number.isSafeInteger(Number(match[1])) &&
+    Number.isSafeInteger(Number(match[2]))
+  );
+}
+
+function isDriverVersion(value: string): boolean {
+  return (
+    DRIVER_VERSION_PATTERN.test(value) &&
+    value.split('.').every((part) => Number.isSafeInteger(Number(part)))
+  );
+}
+
+function meetsMinimumComputeCapability(value: string): boolean {
+  const match = COMPUTE_CAPABILITY_PATTERN.exec(value);
+  if (match === null) return false;
+
+  const major = Number(match[1]);
+  const minor = Number(match[2]);
+  const minimum = CUDA_COMPATIBILITY_REQUIREMENTS.minimumComputeCapability;
+  return major > minimum.major || (major === minimum.major && minor >= minimum.minor);
 }

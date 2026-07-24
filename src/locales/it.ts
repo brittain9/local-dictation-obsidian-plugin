@@ -302,13 +302,10 @@ export const it = {
   'settings.sidecar.cpuName': 'Sidecar CPU',
   'settings.sidecar.cpuDesc': 'Motore di conversione da voce a testo. Obbligatorio.',
   'settings.sidecar.gpuName': 'Sidecar GPU',
-  'settings.sidecar.cudaActive': 'Accelerazione CUDA attiva.',
   'settings.sidecar.cudaLibraryPath.name': 'Percorso delle librerie CUDA',
   'settings.sidecar.cudaLibraryPath.desc':
     'Percorso facoltativo di ricerca delle librerie per il sidecar (Flatpak, installazioni CUDA personalizzate).',
   'settings.sidecar.installAnyway': 'Installa comunque',
-  'settings.sidecar.installAnywayTooltip':
-    'Procedi con l’installazione CUDA anche se non è stato rilevato alcun driver NVIDIA.',
   'settings.sidecar.stopBeforeInstall':
     'Interrompi la dettatura prima di installare un sidecar: l’installazione riavvia il motore. Se una trascrizione è ancora in elaborazione, esegui “Annulla la dettatura” per interromperla subito.',
   'settings.sidecar.stopBeforeUpdate':
@@ -327,17 +324,6 @@ export const it = {
   'settings.sidecar.reinstall': 'Reinstalla',
   'settings.sidecar.uninstall': 'Disinstalla',
   'settings.sidecar.install': 'Installa',
-  'settings.sidecar.driver.present': 'GPU NVIDIA rilevata — trascrizione più veloce.',
-  'settings.sidecar.driver.presentTooltip':
-    'Scarica l’archivio del sidecar CUDA dalle release di GitHub.',
-  'settings.sidecar.driver.absent':
-    'Richiede una GPU NVIDIA. Installa comunque se sai che la tua GPU è supportata.',
-  'settings.sidecar.driver.absentTooltip':
-    'nvidia-smi non è stato trovato in PATH. Usa “Installa comunque” se hai la certezza che il sistema supporti CUDA.',
-  'settings.sidecar.driver.unknown':
-    'Impossibile verificare NVIDIA — installa solo se hai la certezza che sia compatibile.',
-  'settings.sidecar.driver.unknownTooltip':
-    'Impossibile verificare la presenza di un driver NVIDIA. Procedi solo se sai che la GPU supporta CUDA.',
   'plugin.name': 'Local Dictation',
   'common.cancel': 'Annulla',
   'common.delete': 'Elimina',

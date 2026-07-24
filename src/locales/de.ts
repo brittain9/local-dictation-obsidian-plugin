@@ -302,13 +302,10 @@ export const de = {
   'settings.sidecar.cpuName': 'CPU sidecar',
   'settings.sidecar.cpuDesc': 'Speech-to-Text-Engine. Erforderlich.',
   'settings.sidecar.gpuName': 'GPU sidecar',
-  'settings.sidecar.cudaActive': 'CUDA Beschleunigung aktiv.',
   'settings.sidecar.cudaLibraryPath.name': 'CUDA Bibliothekspfad',
   'settings.sidecar.cudaLibraryPath.desc':
     'Optionaler Bibliothekssuchpfad für sidecar (Flatpak, benutzerdefinierte CUDA-Installationen).',
   'settings.sidecar.installAnyway': 'Trotzdem installieren',
-  'settings.sidecar.installAnywayTooltip':
-    'Fahren Sie mit der Installation von CUDA fort, auch wenn kein NVIDIA-Treiber erkannt wurde.',
   'settings.sidecar.stopBeforeInstall':
     'Stoppen Sie das Diktat, bevor Sie einen sidecar installieren — die Installation startet den Motor neu. Wenn ein Transkript noch verarbeitet wird, führen Sie "Diktat abbrechen" aus, um es jetzt zu stoppen.',
   'settings.sidecar.stopBeforeUpdate':
@@ -327,17 +324,6 @@ export const de = {
   'settings.sidecar.reinstall': 'Neu installieren',
   'settings.sidecar.uninstall': 'Deinstallieren',
   'settings.sidecar.install': 'Installieren',
-  'settings.sidecar.driver.present': 'NVIDIA GPU erkannt — schnellere Transkription.',
-  'settings.sidecar.driver.presentTooltip':
-    'Lädt das CUDA sidecar-Archiv von den GitHub-Versionen herunter.',
-  'settings.sidecar.driver.absent':
-    'Erfordert einen NVIDIA GPU. Installieren Sie es trotzdem, wenn Sie wissen, dass Ihr Gerät unterstützt wird.',
-  'settings.sidecar.driver.absentTooltip':
-    'nvidia-smi wurde auf PATH nicht gefunden. Verwenden Sie „Trotzdem installieren“, wenn Sie sicher sind, dass Ihr System CUDA unterstützt.',
-  'settings.sidecar.driver.unknown':
-    'Konnte nicht nach NVIDIA suchen – installieren Sie es nur, wenn Sie sicher sind.',
-  'settings.sidecar.driver.unknownTooltip':
-    'Es konnte nicht nach einem NVIDIA-Treiber gesucht werden. Fahren Sie nur fort, wenn Sie wissen, dass Ihr GPU CUDA unterstützt.',
   'plugin.name': 'Local Dictation',
   'common.cancel': 'Abbrechen',
   'common.delete': 'Löschen',
