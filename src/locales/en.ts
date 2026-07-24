@@ -14,6 +14,9 @@ export const en = {
   'notice.rawTranscriptCleared': 'Cleared the raw transcript recovery.',
   'notice.rawTranscriptCopied': 'Copied the raw transcript.',
   'notice.rawTranscriptCopyFailed': 'Could not copy the raw transcript.',
+  'notice.rawTranscriptRecoveryAvailable':
+    'Cleanup replaced the original transcript. You can restore it.',
+  'notice.rawTranscriptRecoveryAvailableAction': 'Restore original',
   'notice.rawTranscriptRestored': 'Restored the raw transcript.',
   'notice.rawTranscriptRestoreFailed': 'Could not restore the raw transcript.',
   'notice.rawTranscriptTargetUnavailable':
