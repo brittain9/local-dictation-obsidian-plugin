@@ -1,5 +1,9 @@
 import type { ModelPickerOptions } from './manage-models-modal';
 
+export const READ_ALOUD_MODEL_PICKER_OPTIONS = {
+  initialTask: 'tts',
+} as const satisfies ModelPickerOptions;
+
 interface ModelPickerRoutingDependencies {
   isSidecarInstalled: () => Promise<boolean>;
   openPicker: (options: ModelPickerOptions) => void;

@@ -1,6 +1,9 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import { openModelPickerWithSetup } from '../src/models/model-picker-routing';
+import {
+  openModelPickerWithSetup,
+  READ_ALOUD_MODEL_PICKER_OPTIONS,
+} from '../src/models/model-picker-routing';
 
 describe('openModelPickerWithSetup', () => {
   it('opens the requested picker when the sidecar is installed', async () => {
@@ -13,7 +16,7 @@ describe('openModelPickerWithSetup', () => {
         openPicker,
         openSetupWizard,
       },
-      { initialTask: 'tts' },
+      READ_ALOUD_MODEL_PICKER_OPTIONS,
     );
 
     expect(openPicker).toHaveBeenCalledExactlyOnceWith({ initialTask: 'tts' });
@@ -34,7 +37,7 @@ describe('openModelPickerWithSetup', () => {
           openPicker,
           openSetupWizard,
         },
-        { initialTask: 'tts' },
+        READ_ALOUD_MODEL_PICKER_OPTIONS,
       ),
     ).rejects.toBe(failure);
 

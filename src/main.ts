@@ -23,7 +23,10 @@ import {
   type CatalogModelSelection,
   matchesModelTriple,
 } from './models/model-management-types';
-import { openModelPickerWithSetup } from './models/model-picker-routing';
+import {
+  openModelPickerWithSetup,
+  READ_ALOUD_MODEL_PICKER_OPTIONS,
+} from './models/model-picker-routing';
 import { Session } from './session/session';
 import { logAccelerationFallbacks } from './settings/acceleration-info';
 import { LlmPresetStateStore } from './settings/llm-preset-state';
@@ -68,7 +71,6 @@ import {
 } from './sidecar/sidecar-version-drift';
 import { READ_ALOUD_SPEED_PRESETS, readAloudControlLabels } from './tts/read-aloud-control-labels';
 import { ReadAloudController, type ReadAloudState } from './tts/read-aloud-controller';
-import { openReadAloudModelRecovery } from './tts/read-aloud-model-recovery';
 import { didReadAloudSettingsChange, resolveReadAloudVoiceId } from './tts/read-aloud-selection';
 import { DictationRibbonController } from './ui/dictation-ribbon';
 import { LOCAL_DICTATION_VIEW_TYPE, LocalDictationView } from './ui/local-dictation-view';
@@ -269,7 +271,7 @@ export default class LocalSttPlugin extends Plugin {
       getSettings: () => this.settings,
       isDictationBusy: () => this.requireDictationController().isCaptureActive(),
       logger: this.logger,
-      onModelMissing: () => openReadAloudModelRecovery((options) => this.openModelPicker(options)),
+      onModelMissing: () => this.openModelPicker(READ_ALOUD_MODEL_PICKER_OPTIONS),
       onStateChange: (state) => this.renderReadAloudStatus(state),
       sidecarConnection: this.sidecarConnection,
       sidecarLifecycleGate: this.sidecarLifecycleGate,
