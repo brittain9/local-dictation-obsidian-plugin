@@ -283,7 +283,7 @@ export const en = {
   'settings.hardwareAcceleration.name': 'Hardware acceleration',
   'settings.hardwareAcceleration.desc': 'Run inference on the GPU when available.',
   'settings.hardwareAcceleration.busy':
-    'Cannot change hardware acceleration while dictation or Read aloud is active.',
+    'Cannot change hardware acceleration while dictation or Read aloud is active. If dictation is still processing after you stop it, run "Cancel dictation".',
   'settings.hardwareAcceleration.on': 'Hardware acceleration on.',
   'settings.hardwareAcceleration.off': 'Hardware acceleration off.',
   'settings.hardwareAcceleration.restartFailed':
@@ -347,11 +347,11 @@ export const en = {
   'settings.sidecar.installAnywayTooltip':
     'Proceed with CUDA install even though no NVIDIA driver was detected.',
   'settings.sidecar.stopBeforeInstall':
-    'Stop dictation or Read aloud before installing a sidecar — the install restarts the engine.',
+    'Stop dictation or Read aloud before installing a sidecar — the install restarts the engine. If dictation is still processing, run "Cancel dictation" to stop it now.',
   'settings.sidecar.stopBeforeUpdate':
-    'Stop dictation or Read aloud before updating sidecars — the update restarts the engine.',
+    'Stop dictation or Read aloud before updating sidecars — the update restarts the engine. If dictation is still processing, run "Cancel dictation" to stop it now.',
   'settings.sidecar.stopBeforeUninstall':
-    'Stop dictation or Read aloud before uninstalling the {sidecar}.',
+    'Stop dictation or Read aloud before uninstalling the {sidecar}. If dictation is still processing, run "Cancel dictation" to stop it now.',
   'settings.sidecar.uninstallFailed':
     'Could not uninstall the {sidecar}. Close other setup windows and try again.',
   'settings.sidecar.uninstalled': 'Sidecar uninstalled.',
@@ -360,7 +360,7 @@ export const en = {
   'settings.sidecar.restartFailed':
     'The speech engine could not restart. Restart Obsidian before dictating.',
   'settings.sidecar.becameActive':
-    'Dictation or Read aloud became active before the sidecar files could be changed. Stop it, then retry.',
+    'Dictation or Read aloud became active before the sidecar operation could finish. Stop Read aloud or dictation. If dictation is still processing, run "Cancel dictation", then retry.',
   'settings.sidecar.reinstall': 'Reinstall',
   'settings.sidecar.uninstall': 'Uninstall',
   'settings.sidecar.install': 'Install',

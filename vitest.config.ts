@@ -4,11 +4,6 @@ export default defineConfig({
   resolve: {
     alias: {
       obsidian: new URL('test/__mocks__/obsidian.ts', import.meta.url).pathname,
-      'virtual:build-mode': new URL('test/fixtures/build-mode.ts', import.meta.url).pathname,
-      'virtual:pcm-recorder-worklet-source': new URL(
-        'test/fixtures/pcm-recorder-worklet-source.ts',
-        import.meta.url,
-      ).pathname,
     },
   },
   test: {

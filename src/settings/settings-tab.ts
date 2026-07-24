@@ -24,6 +24,7 @@ import {
   type SidecarInstallManager,
 } from '../sidecar/sidecar-install-manager';
 import { readInstallManifest, variantDirectoryPath } from '../sidecar/sidecar-installer';
+import { SidecarInUseError } from '../sidecar/sidecar-speech-interlock';
 import { ConfirmModal } from '../ui/confirm-modal';
 import { styleDestructiveButton } from '../ui/destructive-button';
 import { diarizationSettingDescription } from './diarization-setting';
@@ -79,7 +80,7 @@ interface SettingsTabDependencies {
   pluginVersion: string;
   resolvePluginDirectory: () => Promise<string>;
   resetLlmTransformation: () => Promise<void>;
-  restartSidecar: () => Promise<void>;
+  restartSidecarWhenIdle: () => Promise<void>;
   saveSettings: (settings: PluginSettings) => Promise<void>;
   sidecarConnection: Pick<SidecarConnection, 'probeSystemAudio' | 'shutdown'>;
   sidecarInstallManager: SidecarInstallManager;
@@ -786,9 +787,10 @@ export class LocalSttSettingTab extends PluginSettingTab {
               toggle.setValue(!value);
               return;
             }
+            const previousPreference = settings.accelerationPreference;
             await this.access.persistOne('accelerationPreference', value ? 'auto' : 'cpu_only');
             try {
-              await this.dependencies.restartSidecar();
+              await this.dependencies.restartSidecarWhenIdle();
               this.dependencies.feedback.show({
                 intent: 'success',
                 message: value
@@ -796,6 +798,15 @@ export class LocalSttSettingTab extends PluginSettingTab {
                   : t('settings.hardwareAcceleration.off'),
               });
             } catch (error) {
+              if (error instanceof SidecarInUseError) {
+                await this.access.persistOne('accelerationPreference', previousPreference);
+                toggle.setValue(previousPreference === 'auto');
+                this.dependencies.feedback.show({
+                  intent: 'warning',
+                  message: error.userMessage,
+                });
+                return;
+              }
               this.dependencies.feedback.show({
                 cause: error,
                 intent: 'error',
@@ -915,7 +926,7 @@ export class LocalSttSettingTab extends PluginSettingTab {
       refreshSettingsTab: () => {
         this.refreshSettingsTab();
       },
-      restartSidecar: this.dependencies.restartSidecar,
+      restartSidecarWhenIdle: this.dependencies.restartSidecarWhenIdle,
       sidecarConnection: this.dependencies.sidecarConnection,
       sidecarInstallManager: this.dependencies.sidecarInstallManager,
     };

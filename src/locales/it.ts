@@ -247,7 +247,7 @@ export const it = {
   'settings.hardwareAcceleration.name': 'Accelerazione hardware',
   'settings.hardwareAcceleration.desc': 'Esegui l’inferenza sulla GPU quando disponibile.',
   'settings.hardwareAcceleration.busy':
-    'Non è possibile modificare l’accelerazione hardware durante la dettatura o la lettura ad alta voce.',
+    'Non è possibile modificare l’accelerazione hardware durante la dettatura o la lettura ad alta voce. Se la dettatura è ancora in elaborazione dopo averla interrotta, esegui “Annulla la dettatura”.',
   'settings.hardwareAcceleration.on': 'Accelerazione hardware attiva.',
   'settings.hardwareAcceleration.off': 'Accelerazione hardware disattivata.',
   'settings.hardwareAcceleration.restartFailed':
@@ -310,11 +310,11 @@ export const it = {
   'settings.sidecar.installAnywayTooltip':
     'Procedi con l’installazione CUDA anche se non è stato rilevato alcun driver NVIDIA.',
   'settings.sidecar.stopBeforeInstall':
-    'Interrompi la dettatura o la lettura ad alta voce prima di installare un sidecar: l’installazione riavvia il motore.',
+    'Interrompi la dettatura o la lettura ad alta voce prima di installare un sidecar: l’installazione riavvia il motore. Se la dettatura è ancora in elaborazione, esegui “Annulla la dettatura” per interromperla subito.',
   'settings.sidecar.stopBeforeUpdate':
-    'Interrompi la dettatura o la lettura ad alta voce prima di aggiornare i sidecar: l’aggiornamento riavvia il motore.',
+    'Interrompi la dettatura o la lettura ad alta voce prima di aggiornare i sidecar: l’aggiornamento riavvia il motore. Se la dettatura è ancora in elaborazione, esegui “Annulla la dettatura” per interromperla subito.',
   'settings.sidecar.stopBeforeUninstall':
-    'Interrompi la dettatura o la lettura ad alta voce prima di disinstallare il {sidecar}.',
+    'Interrompi la dettatura o la lettura ad alta voce prima di disinstallare il {sidecar}. Se la dettatura è ancora in elaborazione, esegui “Annulla la dettatura” per interromperla subito.',
   'settings.sidecar.uninstallFailed':
     'Impossibile disinstallare il {sidecar}. Chiudi le altre finestre di configurazione e riprova.',
   'settings.sidecar.uninstalled': 'Sidecar disinstallato.',
@@ -323,7 +323,7 @@ export const it = {
   'settings.sidecar.restartFailed':
     'Impossibile riavviare il motore di riconoscimento vocale. Riavvia Obsidian prima di dettare.',
   'settings.sidecar.becameActive':
-    'La dettatura o la lettura ad alta voce si è attivata prima che fosse possibile modificare i file del sidecar. Interrompila, quindi riprova.',
+    'La dettatura o la lettura ad alta voce si è attivata prima che l’operazione del sidecar potesse terminare. Interrompi la lettura ad alta voce o la dettatura. Se la dettatura è ancora in elaborazione, esegui “Annulla la dettatura”, quindi riprova.',
   'settings.sidecar.reinstall': 'Reinstalla',
   'settings.sidecar.uninstall': 'Disinstalla',
   'settings.sidecar.install': 'Installa',

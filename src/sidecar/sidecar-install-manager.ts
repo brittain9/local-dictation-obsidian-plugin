@@ -8,6 +8,7 @@ import {
   installSidecar,
   type SidecarInstallVariant,
 } from './sidecar-installer';
+import { SidecarInUseError } from './sidecar-speech-interlock';
 
 export type SidecarInstallPhase = 'canceling' | 'installing';
 
@@ -154,6 +155,7 @@ export class SidecarInstallManager {
             // stale variant until the whole batch has been replaced.
             await options.onVariantInstalled(variant);
           } catch (error) {
+            if (error instanceof SidecarInUseError) throw error;
             this.deps.logger?.warn(
               'installer',
               `intermediate restart after ${variant} sidecar update failed; continuing batch`,
@@ -171,6 +173,12 @@ export class SidecarInstallManager {
         this.deps.feedback.show({
           intent: 'information',
           message: t('setup.sidecar.installCancelled'),
+        });
+        this.lastError = null;
+      } else if (error instanceof SidecarInUseError) {
+        this.deps.feedback.show({
+          intent: 'warning',
+          message: error.userMessage,
         });
         this.lastError = null;
       } else {

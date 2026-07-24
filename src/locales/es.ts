@@ -249,7 +249,7 @@ export const es = {
   'settings.hardwareAcceleration.name': 'Aceleración de hardware',
   'settings.hardwareAcceleration.desc': 'Ejecute la inferencia en la GPU cuando esté disponible.',
   'settings.hardwareAcceleration.busy':
-    'No se puede cambiar la aceleración del hardware mientras el dictado o la lectura en voz alta estén activos.',
+    'No se puede cambiar la aceleración del hardware mientras el dictado o la lectura en voz alta estén activos. Si el dictado sigue procesándose después de detenerlo, ejecute "Cancelar dictado".',
   'settings.hardwareAcceleration.on': 'Aceleración de hardware activada.',
   'settings.hardwareAcceleration.off': 'Aceleración de hardware desactivada.',
   'settings.hardwareAcceleration.restartFailed':
@@ -312,11 +312,11 @@ export const es = {
   'settings.sidecar.installAnywayTooltip':
     'Continúe con la instalación de CUDA aunque no se haya detectado ningún controlador NVIDIA.',
   'settings.sidecar.stopBeforeInstall':
-    'Detenga el dictado o la lectura en voz alta antes de instalar un sidecar: la instalación reinicia el motor.',
+    'Detenga el dictado o la lectura en voz alta antes de instalar un sidecar: la instalación reinicia el motor. Si el dictado sigue procesándose, ejecute "Cancelar dictado" para detenerlo ahora.',
   'settings.sidecar.stopBeforeUpdate':
-    'Detenga el dictado o la lectura en voz alta antes de actualizar sidecars: la actualización reinicia el motor.',
+    'Detenga el dictado o la lectura en voz alta antes de actualizar sidecars: la actualización reinicia el motor. Si el dictado sigue procesándose, ejecute "Cancelar dictado" para detenerlo ahora.',
   'settings.sidecar.stopBeforeUninstall':
-    'Detén el dictado o la lectura en voz alta antes de desinstalar {sidecar}.',
+    'Detenga el dictado o la lectura en voz alta antes de desinstalar {sidecar}. Si el dictado sigue procesándose, ejecute "Cancelar dictado" para detenerlo ahora.',
   'settings.sidecar.uninstallFailed':
     'No se pudo desinstalar {sidecar}. Cierra las demás ventanas de configuración e inténtalo de nuevo.',
   'settings.sidecar.uninstalled': 'Sidecar desinstalado.',
@@ -325,7 +325,7 @@ export const es = {
   'settings.sidecar.restartFailed':
     'El motor de voz no pudo reiniciarse. Reinicie Obsidian antes de dictar.',
   'settings.sidecar.becameActive':
-    'El dictado o la lectura en voz alta se activaron antes de que se pudieran cambiar los archivos sidecar. Deténgalos y vuelva a intentarlo.',
+    'El dictado o la lectura en voz alta se activaron antes de que pudiera finalizar la operación del sidecar. Detenga la lectura en voz alta o el dictado. Si el dictado sigue procesándose, ejecute "Cancelar dictado" y vuelva a intentarlo.',
   'settings.sidecar.reinstall': 'Reinstalar',
   'settings.sidecar.uninstall': 'Desinstalar',
   'settings.sidecar.install': 'Instalar',

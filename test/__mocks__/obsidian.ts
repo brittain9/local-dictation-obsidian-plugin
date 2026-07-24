@@ -21,10 +21,43 @@ export class TestElement {
   disabled = false;
   id = '';
   innerHTML = '';
+  readonly style: Record<string, string> = {};
   textContent = '';
+  private readonly listeners = new Map<string, Array<() => unknown>>();
+
+  get classList(): {
+    add: (className: string) => void;
+    toggle: (className: string, force?: boolean) => void;
+  } {
+    return {
+      add: (className) => {
+        this.addClass(className);
+      },
+      toggle: (className, force) => {
+        this.toggleClass(className, force);
+      },
+    };
+  }
 
   addClass(className: string): void {
     this.className = [this.className, className].filter(Boolean).join(' ');
+  }
+
+  addEventListener(event: string, listener: () => unknown): void {
+    const listeners = this.listeners.get(event) ?? [];
+    listeners.push(listener);
+    this.listeners.set(event, listeners);
+  }
+
+  append(...children: TestElement[]): void {
+    this.children.push(...children);
+  }
+
+  async click(): Promise<void> {
+    for (const listener of this.listeners.get('click') ?? []) {
+      await listener();
+    }
+    await Promise.resolve();
   }
 
   createDiv(options: TestElementOptions = {}): TestElement {
@@ -67,6 +100,15 @@ export class TestElement {
     return undefined;
   }
 
+  findByText(text: string): TestElement | undefined {
+    if (this.textContent === text) return this;
+    for (const child of this.children) {
+      const match = child.findByText(text);
+      if (match !== undefined) return match;
+    }
+    return undefined;
+  }
+
   insertBefore(child: TestElement, before: TestElement): TestElement {
     const existingIndex = this.children.indexOf(child);
     if (existingIndex >= 0) this.children.splice(existingIndex, 1);
@@ -81,6 +123,10 @@ export class TestElement {
     if (index < 0) throw new Error('Child not found');
     this.children.splice(index, 1);
     return child;
+  }
+
+  querySelector<T>(): T | null {
+    return null;
   }
 
   setText(text: string): void {
@@ -192,6 +238,7 @@ export class ButtonComponent {
 }
 
 export class ExtraButtonComponent extends ButtonComponent {
+  readonly extraSettingsEl = new TestElement();
   icon = '';
   tooltip = '';
 
@@ -383,10 +430,14 @@ export class Setting {
 }
 
 export class Modal {
+  static readonly instances: Modal[] = [];
   readonly contentEl = new TestElement();
+  readonly modalEl = new TestElement();
   readonly titleEl = new TestElement();
 
-  constructor(readonly app: unknown) {}
+  constructor(readonly app: unknown) {
+    Modal.instances.push(this);
+  }
 
   close(): void {
     this.onClose();
@@ -408,13 +459,6 @@ export class PluginSettingTab {
     readonly app: unknown,
     readonly plugin: unknown,
   ) {}
-}
-
-export class Plugin {
-  app: unknown = {};
-  manifest = { id: 'local-dictation', version: '0.0.0' };
-
-  addSettingTab(): void {}
 }
 
 export class ItemView {

@@ -57,6 +57,11 @@ import {
 } from './sidecar/sidecar-paths';
 import type { SidecarLaunchSpec } from './sidecar/sidecar-process';
 import {
+  assertSidecarIdle,
+  createSidecarInUsePredicate,
+  SidecarInUseError,
+} from './sidecar/sidecar-speech-interlock';
+import {
   detectSidecarVersionDrift,
   type SidecarVersionDrift,
 } from './sidecar/sidecar-version-drift';
@@ -70,6 +75,10 @@ export default class LocalSttPlugin extends Plugin {
   private audioCaptureStream: AudioCaptureStream | null = null;
   private audioLevelMeter: SidecarAudioLevelMeter | null = null;
   private dictationController: DictationSessionController | null = null;
+  private readonly isSidecarInUse = createSidecarInUsePredicate({
+    isDictationBusy: () => this.dictationController?.isBusy() ?? false,
+    isReadAloudActive: () => this.readAloudController?.isActive() ?? false,
+  });
   private logger: PluginLogger = createPluginLogger(() => this.settings.developerMode);
   private readonly feedback: UserFeedback = createUserFeedback({
     logger: this.logger,
@@ -280,10 +289,8 @@ export default class LocalSttPlugin extends Plugin {
           restoreLlmTransformationDefaults({
             mutateSettings: (mutation) => this.requirePresetStateStore().mutateSettings(mutation),
           }),
-        restartSidecar: async () => {
-          await this.requireSidecarConnection().restart(
-            this.settings.sidecarStartupTimeoutSeconds * 1000,
-          );
+        restartSidecarWhenIdle: async () => {
+          await this.restartSidecarConnectionWhenIdle(t('settings.sidecar.becameActive'));
         },
         saveSettings: async (nextSettings) => {
           await this.updateSettings(nextSettings);
@@ -565,19 +572,9 @@ export default class LocalSttPlugin extends Plugin {
   }
 
   private async restartSidecar(): Promise<void> {
-    if (this.isSidecarInUse()) {
-      this.feedback.show({
-        intent: 'warning',
-        message: t('notice.sidecarRestartRequiresIdle'),
-      });
-      return;
-    }
-
-    const sidecarConnection = this.requireSidecarConnection();
-
     try {
-      const health = await sidecarConnection.restart(
-        this.settings.sidecarStartupTimeoutSeconds * 1000,
+      const health = await this.restartSidecarConnectionWhenIdle(
+        t('notice.sidecarRestartRequiresIdle'),
       );
 
       this.feedback.show({
@@ -585,8 +582,22 @@ export default class LocalSttPlugin extends Plugin {
         message: t('notice.sidecarRestarted', { version: health.sidecarVersion }),
       });
     } catch (error) {
+      if (error instanceof SidecarInUseError) {
+        this.feedback.show({
+          intent: 'warning',
+          message: error.userMessage,
+        });
+        return;
+      }
       this.handleError(t('notice.sidecarRestartFailed'), error, true);
     }
+  }
+
+  private async restartSidecarConnectionWhenIdle(blockedMessage: string) {
+    assertSidecarIdle(this.isSidecarInUse, blockedMessage);
+    return await this.requireSidecarConnection().restart(
+      this.settings.sidecarStartupTimeoutSeconds * 1000,
+    );
   }
 
   private async updateSettings(nextSettings: PluginSettings): Promise<void> {
@@ -992,21 +1003,12 @@ export default class LocalSttPlugin extends Plugin {
         // No-op: the settings tab re-reads install manifests on each render, so
         // a reinstall from this startup notice needs no explicit refresh.
       },
-      restartSidecar: async () => {
-        await this.requireSidecarConnection().restart(
-          this.settings.sidecarStartupTimeoutSeconds * 1000,
-        );
+      restartSidecarWhenIdle: async () => {
+        await this.restartSidecarConnectionWhenIdle(t('settings.sidecar.becameActive'));
       },
       sidecarConnection: this.requireSidecarConnection(),
       sidecarInstallManager: this.requireSidecarInstallManager(),
     };
-  }
-
-  private isSidecarInUse(): boolean {
-    return (
-      (this.dictationController?.isBusy() ?? false) ||
-      (this.readAloudController?.isActive() ?? false)
-    );
   }
 
   private async resolvePluginDirectoryPath(): Promise<string> {

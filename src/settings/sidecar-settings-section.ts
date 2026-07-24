@@ -26,6 +26,7 @@ import {
   variantDirectoryPath,
 } from '../sidecar/sidecar-installer';
 import { SidecarNotInstalledError } from '../sidecar/sidecar-paths';
+import { assertSidecarIdle, SidecarInUseError } from '../sidecar/sidecar-speech-interlock';
 import { styleDestructiveButton } from '../ui/destructive-button';
 import { renderActiveInstallCard } from './install-progress-row';
 import { addPositiveIntSetting, addTextSetting, type SettingAccess } from './setting-helpers';
@@ -38,7 +39,7 @@ export interface SidecarInstallActionDeps {
   modelInstallManager: ModelInstallManager;
   pluginVersion: string;
   refreshSettingsTab(): void;
-  restartSidecar(): Promise<void>;
+  restartSidecarWhenIdle(): Promise<void>;
   sidecarConnection: Pick<SidecarConnection, 'shutdown'>;
   sidecarInstallManager: SidecarInstallManager;
 }
@@ -314,7 +315,7 @@ export function openSidecarInstallModal(
     manager: deps.sidecarInstallManager,
     onInstalled: async () => {
       await opts.onInstalled?.();
-      await deps.restartSidecar();
+      await deps.restartSidecarWhenIdle();
       await deps.modelInstallManager.init();
       deps.refreshSettingsTab();
     },
@@ -347,12 +348,12 @@ export function openSidecarUpdateModal(
     feedback: deps.feedback,
     manager: deps.sidecarInstallManager,
     onInstalled: async () => {
-      await deps.restartSidecar();
+      await deps.restartSidecarWhenIdle();
       await deps.modelInstallManager.init();
       deps.refreshSettingsTab();
     },
     onVariantInstalled: async () => {
-      await deps.restartSidecar();
+      await deps.restartSidecarWhenIdle();
     },
     pluginDirectory: opts.pluginDirectory,
     variants: opts.variants,
@@ -360,7 +361,7 @@ export function openSidecarUpdateModal(
   }).open();
 }
 
-async function uninstallSidecarVariantWithUx(
+export async function uninstallSidecarVariantWithUx(
   deps: SidecarInstallActionDeps,
   pluginDirectory: string,
   variant: SidecarInstallVariant,
@@ -382,12 +383,35 @@ async function uninstallSidecarVariantWithUx(
     await shutdownSidecarBeforeFileMutation(deps, `${variantLabel} uninstall`);
     await uninstallSidecarVariant(pluginDirectory, variant);
   } catch (error) {
+    if (error instanceof SidecarInUseError) {
+      deps.feedback.show({
+        intent: 'warning',
+        message: error.userMessage,
+      });
+      return;
+    }
     deps.feedback.show({
       cause: error,
       intent: 'error',
       message: t('settings.sidecar.uninstallFailed', { sidecar: userFacingName }),
     });
     return;
+  }
+
+  let restartFailure: unknown;
+  try {
+    await deps.restartSidecarWhenIdle();
+  } catch (error) {
+    if (error instanceof SidecarInUseError) {
+      deps.feedback.show({
+        intent: 'warning',
+        message: error.userMessage,
+      });
+      return;
+    }
+    if (!(error instanceof SidecarNotInstalledError)) {
+      restartFailure = error;
+    }
   }
 
   deps.feedback.show({
@@ -400,12 +424,9 @@ async function uninstallSidecarVariantWithUx(
   });
   deps.refreshSettingsTab();
 
-  try {
-    await deps.restartSidecar();
-  } catch (error) {
-    if (error instanceof SidecarNotInstalledError) return;
+  if (restartFailure !== undefined) {
     deps.feedback.show({
-      cause: error,
+      cause: restartFailure,
       intent: 'warning',
       message: t('settings.sidecar.restartFailed'),
     });
@@ -416,9 +437,7 @@ async function shutdownSidecarBeforeFileMutation(
   deps: SidecarInstallActionDeps,
   reason: string,
 ): Promise<void> {
-  if (deps.isSidecarInUse()) {
-    throw new Error(t('settings.sidecar.becameActive'));
-  }
+  assertSidecarIdle(() => deps.isSidecarInUse(), t('settings.sidecar.becameActive'));
 
   // Windows holds DLL handles on the live sidecar process, so install and
   // uninstall paths must stop it before removing or replacing bin/*.

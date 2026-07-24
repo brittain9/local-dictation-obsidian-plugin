@@ -244,7 +244,7 @@ export const nl = {
   'settings.hardwareAcceleration.name': 'Hardwareversnelling',
   'settings.hardwareAcceleration.desc': 'Voer gevolgtrekking uit op de GPU, indien beschikbaar.',
   'settings.hardwareAcceleration.busy':
-    'Kan de hardwareversnelling niet wijzigen terwijl dicteren of voorlezen actief is.',
+    'Kan de hardwareversnelling niet wijzigen terwijl dicteren of voorlezen actief is. Als het dicteren na het stoppen nog wordt verwerkt, voert u ‘Dicteren annuleren’ uit.',
   'settings.hardwareAcceleration.on': 'Hardwareversnelling ingeschakeld.',
   'settings.hardwareAcceleration.off': 'Hardwareversnelling uitgeschakeld.',
   'settings.hardwareAcceleration.restartFailed':
@@ -306,11 +306,11 @@ export const nl = {
   'settings.sidecar.installAnywayTooltip':
     'Ga door met de installatie van CUDA, ook al is er geen NVIDIA-stuurprogramma gedetecteerd.',
   'settings.sidecar.stopBeforeInstall':
-    'Stop met dicteren of voorlezen voordat u een sidecar installeert: tijdens de installatie wordt de engine opnieuw gestart.',
+    'Stop met dicteren of voorlezen voordat u een sidecar installeert: tijdens de installatie wordt de engine opnieuw gestart. Als het dicteren nog wordt verwerkt, voert u ‘Dicteren annuleren’ uit om het nu te stoppen.',
   'settings.sidecar.stopBeforeUpdate':
-    'Stop met dicteren of voorlezen voordat u de sidecars bijwerkt: de update start de engine opnieuw.',
+    'Stop met dicteren of voorlezen voordat u de sidecars bijwerkt: de update start de engine opnieuw. Als het dicteren nog wordt verwerkt, voert u ‘Dicteren annuleren’ uit om het nu te stoppen.',
   'settings.sidecar.stopBeforeUninstall':
-    'Stop met dicteren of voorlezen voordat u {sidecar} verwijdert.',
+    'Stop met dicteren of voorlezen voordat u {sidecar} verwijdert. Als het dicteren nog wordt verwerkt, voert u ‘Dicteren annuleren’ uit om het nu te stoppen.',
   'settings.sidecar.uninstallFailed':
     'Kan {sidecar} niet verwijderen. Sluit andere installatievensters en probeer het opnieuw.',
   'settings.sidecar.uninstalled': 'Sidecar verwijderd.',
@@ -319,7 +319,7 @@ export const nl = {
   'settings.sidecar.restartFailed':
     'De spraakengine kon niet opnieuw opstarten. Start Obsidian opnieuw voordat u gaat dicteren.',
   'settings.sidecar.becameActive':
-    'Dicteren of voorlezen werd actief voordat de sidecar-bestanden konden worden gewijzigd. Stop het en probeer het opnieuw.',
+    'Dicteren of voorlezen werd actief voordat de sidecarbewerking kon worden voltooid. Stop het voorlezen of dicteren. Als het dicteren nog wordt verwerkt, voert u ‘Dicteren annuleren’ uit en probeert u het opnieuw.',
   'settings.sidecar.reinstall': 'Opnieuw installeren',
   'settings.sidecar.uninstall': 'Verwijderen',
   'settings.sidecar.install': 'Installeren',
