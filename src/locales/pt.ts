@@ -250,8 +250,6 @@ export const pt = {
     'Não é possível alterar a aceleração por hardware durante o ditado ou a leitura em voz alta. Se o ditado continuar a ser processado depois de o parar, execute «Cancelar ditado».',
   'settings.hardwareAcceleration.on': 'A aceleração por hardware está ativada.',
   'settings.hardwareAcceleration.off': 'A aceleração por hardware está desativada.',
-  'settings.hardwareAcceleration.restartFailed':
-    'A definição de aceleração por hardware foi guardada, mas não foi possível reiniciar o motor de voz. Reinicie o Obsidian para a aplicar.',
   'settings.noteContext.name': 'Utilizar a nota como contexto',
   'settings.noteContext.desc':
     'Para inglês selecionado manualmente, enviar termos específicos da nota aberta para melhorar a ortografia.',
@@ -311,8 +309,6 @@ export const pt = {
     'Prosseguir com a instalação CUDA apesar de não ter sido detetado um controlador NVIDIA.',
   'settings.sidecar.stopBeforeInstall':
     'Pare o ditado ou a leitura em voz alta antes de instalar um sidecar — a instalação reinicia o motor. Se o ditado ainda estiver a ser processado, execute «Cancelar ditado» para o parar agora.',
-  'settings.sidecar.stopBeforeUpdate':
-    'Pare o ditado ou a leitura em voz alta antes de atualizar sidecars — a atualização reinicia o motor. Se o ditado ainda estiver a ser processado, execute «Cancelar ditado» para o parar agora.',
   'settings.sidecar.stopBeforeUninstall':
     'Pare o ditado ou a leitura em voz alta antes de desinstalar o {sidecar}. Se o ditado ainda estiver a ser processado, execute «Cancelar ditado» para o parar agora.',
   'settings.sidecar.uninstallFailed':
@@ -322,8 +318,6 @@ export const pt = {
   'settings.sidecar.cpuUninstalled': 'O sidecar de CPU foi desinstalado.',
   'settings.sidecar.restartFailed':
     'Não foi possível reiniciar o motor de voz. Reinicie o Obsidian antes de ditar.',
-  'settings.sidecar.becameActive':
-    'O ditado ou a leitura em voz alta ficou ativo antes de a operação do sidecar poder terminar. Pare a leitura em voz alta ou o ditado. Se o ditado ainda estiver a ser processado, execute «Cancelar ditado» e tente novamente.',
   'settings.sidecar.reinstall': 'Reinstalar',
   'settings.sidecar.uninstall': 'Desinstalar',
   'settings.sidecar.install': 'Instalar',

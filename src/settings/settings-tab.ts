@@ -25,16 +25,14 @@ import {
   type SidecarInstallManager,
 } from '../sidecar/sidecar-install-manager';
 import { readInstallManifest, variantDirectoryPath } from '../sidecar/sidecar-installer';
+import type { SidecarLifecycleGate } from '../sidecar/sidecar-lifecycle-gate';
 import { ConfirmModal } from '../ui/confirm-modal';
 import { styleDestructiveButton } from '../ui/destructive-button';
 import { diarizationSettingDescription } from './diarization-setting';
 import { DiarizationSettingsModal } from './diarization-settings-modal';
 import { renderHardwareAccelerationSetting } from './hardware-acceleration-setting';
 import { renderActiveInstallCard } from './install-progress-row';
-import {
-  renderMicrophonePicker,
-  selectMicrophoneDetectionBusyPredicate,
-} from './microphone-picker';
+import { renderMicrophonePicker } from './microphone-picker';
 import { renderModelSection } from './model-settings-section';
 import { openFilteredHotkeySettings } from './open-hotkey-settings';
 import {
@@ -76,7 +74,6 @@ interface SettingsTabDependencies {
   feedback: Pick<UserFeedback, 'show'>;
   getSettings: () => PluginSettings;
   isDictationBusy: () => boolean;
-  isSidecarInUse: () => boolean;
   logger?: PluginLogger | undefined;
   modelInstallManager: ModelInstallManager;
   openModelPicker: (options?: ModelPickerOptions) => Promise<void>;
@@ -84,10 +81,11 @@ interface SettingsTabDependencies {
   pluginVersion: string;
   resolvePluginDirectory: () => Promise<string>;
   resetLlmTransformation: () => Promise<void>;
-  restartSidecarWhenIdle: () => Promise<void>;
+  restartSidecar: () => Promise<void>;
   saveSettings: (settings: PluginSettings) => Promise<void>;
   sidecarConnection: Pick<SidecarConnection, 'probeSystemAudio' | 'shutdown'>;
   sidecarInstallManager: SidecarInstallManager;
+  sidecarLifecycleGate: SidecarLifecycleGate;
 }
 
 const LISTENING_MODE_OPTIONS: ReadonlyArray<DropdownOption<'always_on' | 'one_sentence'>> = [
@@ -348,7 +346,7 @@ export class LocalSttSettingTab extends PluginSettingTab {
     this.disposeMicrophoneSection = renderMicrophonePicker(captureCard, {
       access: this.access,
       feedback: this.dependencies.feedback,
-      isDictationBusy: selectMicrophoneDetectionBusyPredicate(this.dependencies),
+      isDictationBusy: this.dependencies.isDictationBusy,
       logger: this.dependencies.logger,
     });
 
@@ -752,8 +750,8 @@ export class LocalSttSettingTab extends PluginSettingTab {
       renderHardwareAccelerationSetting(containerEl, {
         access: this.access,
         feedback: this.dependencies.feedback,
-        isSidecarInUse: this.dependencies.isSidecarInUse,
-        restartSidecarWhenIdle: this.dependencies.restartSidecarWhenIdle,
+        restartSidecar: this.dependencies.restartSidecar,
+        sidecarLifecycleGate: this.dependencies.sidecarLifecycleGate,
       });
       rendered += 1;
     }
@@ -859,16 +857,16 @@ export class LocalSttSettingTab extends PluginSettingTab {
     return {
       app: this.app,
       feedback: this.dependencies.feedback,
-      isSidecarInUse: this.dependencies.isSidecarInUse,
       logger: this.dependencies.logger,
       modelInstallManager: this.dependencies.modelInstallManager,
       pluginVersion: this.dependencies.pluginVersion,
       refreshSettingsTab: () => {
         this.refreshSettingsTab();
       },
-      restartSidecarWhenIdle: this.dependencies.restartSidecarWhenIdle,
+      restartSidecar: this.dependencies.restartSidecar,
       sidecarConnection: this.dependencies.sidecarConnection,
       sidecarInstallManager: this.dependencies.sidecarInstallManager,
+      sidecarLifecycleGate: this.dependencies.sidecarLifecycleGate,
     };
   }
 }

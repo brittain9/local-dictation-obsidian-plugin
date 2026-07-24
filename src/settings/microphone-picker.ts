@@ -30,19 +30,6 @@ export interface MicrophonePickerDependencies {
   logger?: PluginLogger | undefined;
 }
 
-export interface MicrophoneDetectionSpeechPredicates {
-  isDictationBusy: () => boolean;
-  isSidecarInUse: () => boolean;
-}
-
-// Read aloud occupies the sidecar but not the microphone, so microphone
-// detection must use the dictation-only signal from the Settings boundary.
-export function selectMicrophoneDetectionBusyPredicate(
-  predicates: MicrophoneDetectionSpeechPredicates,
-): () => boolean {
-  return predicates.isDictationBusy;
-}
-
 export function renderMicrophonePicker(
   parent: HTMLElement,
   deps: MicrophonePickerDependencies,

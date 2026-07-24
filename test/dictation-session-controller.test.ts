@@ -18,6 +18,10 @@ import type {
   SidecarEvent,
   StartSessionCommand,
 } from '../src/sidecar/protocol';
+import {
+  SidecarLifecycleConflictError,
+  SidecarLifecycleGate,
+} from '../src/sidecar/sidecar-lifecycle-gate';
 import type { TranscriptRenderOptions } from '../src/transcript/renderer';
 import { createFakeLlmRouter, createUserPreset } from './fixtures/llm';
 
@@ -157,6 +161,73 @@ class FakeAudioLevelMeter {
 }
 
 describe('DictationSessionController', () => {
+  it('refuses a start synchronously while sidecar maintenance is active', async () => {
+    const sidecarLifecycleGate = new SidecarLifecycleGate();
+    const mutation = sidecarLifecycleGate.acquireMutation();
+    const feedback = { show: vi.fn() };
+    const sidecarConnection = new FakeSidecarConnection();
+    const controller = createController({
+      feedback,
+      sidecarConnection,
+      sidecarLifecycleGate,
+    });
+
+    await controller.startDictation();
+
+    expect(sidecarConnection.ensureStarted).not.toHaveBeenCalled();
+    expect(feedback.show).toHaveBeenCalledWith({
+      intent: 'warning',
+      key: 'sidecar-maintenance',
+      message:
+        'The speech engine is being installed or restarted. Wait for it to finish, then try again.',
+    });
+    mutation.release();
+  });
+
+  it('holds its speech lease until a cancelled asynchronous start has unwound', async () => {
+    const sidecarLifecycleGate = new SidecarLifecycleGate();
+    const sidecarConnection = new FakeSidecarConnection();
+    let completeEnsureStarted: (() => void) | undefined;
+    sidecarConnection.ensureStarted.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          completeEnsureStarted = resolve;
+        }),
+    );
+    const controller = createController({ sidecarConnection, sidecarLifecycleGate });
+
+    const starting = controller.startDictation();
+    await vi.waitFor(() => expect(sidecarConnection.ensureStarted).toHaveBeenCalledOnce());
+    expect(() => sidecarLifecycleGate.acquireMutation()).toThrow(SidecarLifecycleConflictError);
+
+    await controller.cancelDictation();
+    expect(() => sidecarLifecycleGate.acquireMutation()).toThrow(SidecarLifecycleConflictError);
+
+    completeEnsureStarted?.();
+    await starting;
+    const mutation = sidecarLifecycleGate.acquireMutation();
+    mutation.release();
+  });
+
+  it('holds speech through dictation drain and releases it on terminal cleanup', async () => {
+    const sidecarLifecycleGate = new SidecarLifecycleGate();
+    const sidecarConnection = new FakeSidecarConnection();
+    const controller = createController({ sidecarConnection, sidecarLifecycleGate });
+
+    await controller.startDictation();
+    const sessionId = sidecarConnection.startSession.mock.calls[0]?.[0].sessionId ?? '';
+    expect(() => sidecarLifecycleGate.acquireMutation()).toThrow(SidecarLifecycleConflictError);
+
+    await controller.stopDictation();
+    expect(() => sidecarLifecycleGate.acquireMutation()).toThrow(SidecarLifecycleConflictError);
+
+    sidecarConnection.emit({ reason: 'user_stop', sessionId, type: 'session_stopped' });
+    await vi.waitFor(() => {
+      const mutation = sidecarLifecycleGate.acquireMutation();
+      mutation.release();
+    });
+  });
+
   it('warns and stays idle before touching microphone or sidecar prerequisites without a target', async () => {
     const captureStream = new FakeCaptureStream();
     const countAudioInputDevices = vi.fn(async () => 1);
@@ -2904,6 +2975,7 @@ function createController({
   logger = new FakeLogger(),
   feedback = { show: vi.fn() },
   sidecarConnection = new FakeSidecarConnection(),
+  sidecarLifecycleGate = new SidecarLifecycleGate(),
   onLlmCleanupFailure,
   onLlmCleanupSuccess,
   onFinalizedUtteranceAccepted,
@@ -2926,6 +2998,7 @@ function createController({
   onModelMissing?: () => void;
   onRawTranscriptRecoveryAvailable?: (receipt: RawTranscriptRecoveryReceipt) => void;
   sidecarConnection?: FakeSidecarConnection;
+  sidecarLifecycleGate?: SidecarLifecycleGate;
   stopConflictingSpeech?: () => void;
 } = {}): DictationSessionController {
   return new DictationSessionController({
@@ -2951,6 +3024,7 @@ function createController({
     setRibbonQueueTier: vi.fn((_tier: QueueBackpressureTier) => {}),
     setRibbonState: vi.fn((_state: DictationControllerState) => {}),
     sidecarConnection,
+    sidecarLifecycleGate,
     stopConflictingSpeech,
   });
 }

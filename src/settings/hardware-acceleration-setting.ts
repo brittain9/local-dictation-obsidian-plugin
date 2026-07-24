@@ -1,16 +1,12 @@
 import { Setting } from 'obsidian';
 
 import { t } from '../shared/i18n';
-import type { UserFeedback } from '../shared/user-feedback';
-import { SidecarInUseError } from '../sidecar/sidecar-speech-interlock';
-import type { SettingAccess } from './setting-helpers';
+import {
+  changeHardwareAcceleration,
+  type HardwareAccelerationActionDependencies,
+} from './hardware-acceleration-action';
 
-export interface HardwareAccelerationSettingDependencies {
-  access: SettingAccess;
-  feedback: Pick<UserFeedback, 'show'>;
-  isSidecarInUse: () => boolean;
-  restartSidecarWhenIdle: () => Promise<void>;
-}
+export type HardwareAccelerationSettingDependencies = HardwareAccelerationActionDependencies;
 
 export function renderHardwareAccelerationSetting(
   container: HTMLElement,
@@ -21,42 +17,26 @@ export function renderHardwareAccelerationSetting(
     .setDesc(t('settings.hardwareAcceleration.desc'));
 
   setting.addToggle((toggle) => {
-    toggle.setValue(deps.access.getSettings().accelerationPreference === 'auto');
+    let pending = false;
+    const restoreToggleFromSettings = (): void => {
+      toggle.setValue(deps.access.getSettings().accelerationPreference === 'auto');
+    };
+    restoreToggleFromSettings();
+
     toggle.onChange(async (value) => {
-      const previousPreference = deps.access.getSettings().accelerationPreference;
-      if (deps.isSidecarInUse()) {
-        deps.feedback.show({
-          intent: 'warning',
-          message: t('settings.hardwareAcceleration.busy'),
-        });
-        toggle.setValue(previousPreference === 'auto');
+      if (pending) {
+        restoreToggleFromSettings();
         return;
       }
 
-      await deps.access.persistOne('accelerationPreference', value ? 'auto' : 'cpu_only');
+      pending = true;
+      toggle.setDisabled(true);
       try {
-        await deps.restartSidecarWhenIdle();
-        deps.feedback.show({
-          intent: 'success',
-          message: value
-            ? t('settings.hardwareAcceleration.on')
-            : t('settings.hardwareAcceleration.off'),
-        });
-      } catch (error) {
-        if (error instanceof SidecarInUseError) {
-          await deps.access.persistOne('accelerationPreference', previousPreference);
-          toggle.setValue(previousPreference === 'auto');
-          deps.feedback.show({
-            intent: 'warning',
-            message: error.userMessage,
-          });
-          return;
-        }
-        deps.feedback.show({
-          cause: error,
-          intent: 'error',
-          message: t('settings.hardwareAcceleration.restartFailed'),
-        });
+        await changeHardwareAcceleration(deps, value);
+      } finally {
+        restoreToggleFromSettings();
+        pending = false;
+        toggle.setDisabled(false);
       }
     });
   });

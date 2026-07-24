@@ -25,6 +25,8 @@ export const en = {
   'notice.sidecarRestartFailed': 'Sidecar restart failed',
   'notice.sidecarRestartRequiresIdle':
     'Restart the sidecar only when dictation and reading are idle.',
+  'notice.sidecarMaintenanceInProgress':
+    'The speech engine is being installed or restarted. Wait for it to finish, then try again.',
   'notice.transcriptRecordFailed': 'Could not record the transcript.',
   'notice.sidecarSessionError': 'The speech engine reported an error.',
   'notice.sidecarVersionDrift.actionMultiple': 'Update speech engines',
@@ -286,8 +288,14 @@ export const en = {
     'Cannot change hardware acceleration while dictation or Read aloud is active. If dictation is still processing after you stop it, run "Cancel dictation".',
   'settings.hardwareAcceleration.on': 'Hardware acceleration on.',
   'settings.hardwareAcceleration.off': 'Hardware acceleration off.',
-  'settings.hardwareAcceleration.restartFailed':
-    'Hardware acceleration was saved, but the speech engine could not restart. Restart Obsidian to apply it.',
+  'settings.hardwareAcceleration.saveFailed':
+    'Could not save the hardware acceleration setting. The previous setting is still active.',
+  'settings.hardwareAcceleration.restartFailedRolledBack':
+    'The speech engine could not restart with that setting. The previous setting was restored.',
+  'settings.hardwareAcceleration.rollbackSaveFailed':
+    'The speech engine could not restart, and the previous hardware acceleration setting could not be restored. Restart Obsidian before trying again.',
+  'settings.hardwareAcceleration.rollbackRestartFailed':
+    'The previous hardware acceleration setting was restored, but the speech engine could not restart. Restart Obsidian before dictating.',
   'settings.noteContext.name': 'Use note as context',
   'settings.noteContext.desc':
     'For manually selected English, send distinctive terms from the open note to help spelling.',
@@ -348,10 +356,10 @@ export const en = {
     'Proceed with CUDA install even though no NVIDIA driver was detected.',
   'settings.sidecar.stopBeforeInstall':
     'Stop dictation or Read aloud before installing a sidecar — the install restarts the engine. If dictation is still processing, run "Cancel dictation" to stop it now.',
-  'settings.sidecar.stopBeforeUpdate':
-    'Stop dictation or Read aloud before updating sidecars — the update restarts the engine. If dictation is still processing, run "Cancel dictation" to stop it now.',
   'settings.sidecar.stopBeforeUninstall':
     'Stop dictation or Read aloud before uninstalling the {sidecar}. If dictation is still processing, run "Cancel dictation" to stop it now.',
+  'settings.sidecar.operationInProgress':
+    'Another speech-engine maintenance operation is in progress. Wait for it to finish, then try again.',
   'settings.sidecar.uninstallFailed':
     'Could not uninstall the {sidecar}. Close other setup windows and try again.',
   'settings.sidecar.uninstalled': 'Sidecar uninstalled.',
@@ -359,8 +367,6 @@ export const en = {
   'settings.sidecar.cpuUninstalled': 'CPU sidecar uninstalled.',
   'settings.sidecar.restartFailed':
     'The speech engine could not restart. Restart Obsidian before dictating.',
-  'settings.sidecar.becameActive':
-    'Dictation or Read aloud became active before the sidecar operation could finish. Stop Read aloud or dictation. If dictation is still processing, run "Cancel dictation", then retry.',
   'settings.sidecar.reinstall': 'Reinstall',
   'settings.sidecar.uninstall': 'Uninstall',
   'settings.sidecar.install': 'Install',

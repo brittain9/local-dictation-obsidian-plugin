@@ -40,7 +40,6 @@ import {
   openSidecarUpdateModal,
   type SidecarInstallActionDeps,
 } from './settings/sidecar-settings-section';
-import { buildStartupSidecarInstallActionDeps } from './settings/startup-sidecar-install-action-deps';
 import { SetupWizardModal } from './setup/setup-wizard-modal';
 import { formatVoiceLabel } from './shared/format-utils';
 import { t } from './shared/i18n';
@@ -52,17 +51,15 @@ import { SidecarConnection } from './sidecar/sidecar-connection';
 import { formatSidecarExecutableName } from './sidecar/sidecar-executable';
 import { SidecarInstallManager } from './sidecar/sidecar-install-manager';
 import {
+  SidecarLifecycleConflictError,
+  SidecarLifecycleGate,
+} from './sidecar/sidecar-lifecycle-gate';
+import {
   type ResolveSidecarExecutablePathOptions,
   resolveSidecarExecutablePath,
   SidecarNotInstalledError,
 } from './sidecar/sidecar-paths';
 import type { SidecarLaunchSpec } from './sidecar/sidecar-process';
-import {
-  assertSidecarIdle,
-  createSidecarInUsePredicate,
-  SidecarInUseError,
-  type SpeechSessionPredicates,
-} from './sidecar/sidecar-speech-interlock';
 import {
   detectSidecarVersionDrift,
   type SidecarVersionDrift,
@@ -77,11 +74,7 @@ export default class LocalSttPlugin extends Plugin {
   private audioCaptureStream: AudioCaptureStream | null = null;
   private audioLevelMeter: SidecarAudioLevelMeter | null = null;
   private dictationController: DictationSessionController | null = null;
-  private readonly speechSessionPredicates: SpeechSessionPredicates = {
-    isDictationBusy: () => this.dictationController?.isBusy() ?? false,
-    isReadAloudActive: () => this.readAloudController?.isActive() ?? false,
-  };
-  private readonly isSidecarInUse = createSidecarInUsePredicate(this.speechSessionPredicates);
+  private readonly sidecarLifecycleGate = new SidecarLifecycleGate();
   private logger: PluginLogger = createPluginLogger(() => this.settings.developerMode);
   private readonly feedback: UserFeedback = createUserFeedback({
     logger: this.logger,
@@ -174,6 +167,7 @@ export default class LocalSttPlugin extends Plugin {
     this.sidecarInstallManager = new SidecarInstallManager({
       feedback: this.feedback,
       logger: this.logger,
+      sidecarLifecycleGate: this.sidecarLifecycleGate,
     });
     this.registerView(
       LOCAL_DICTATION_VIEW_TYPE,
@@ -259,6 +253,7 @@ export default class LocalSttPlugin extends Plugin {
         this.ribbonController?.setQueueTier(tier);
       },
       sidecarConnection: this.sidecarConnection,
+      sidecarLifecycleGate: this.sidecarLifecycleGate,
       stopConflictingSpeech: () => {
         this.readAloudController?.stop();
       },
@@ -273,6 +268,7 @@ export default class LocalSttPlugin extends Plugin {
       logger: this.logger,
       onStateChange: (state) => this.renderReadAloudStatus(state),
       sidecarConnection: this.sidecarConnection,
+      sidecarLifecycleGate: this.sidecarLifecycleGate,
       stopDictation: () => this.requireDictationController().stopDictation(),
     });
     this.renderReadAloudStatus('idle');
@@ -284,8 +280,7 @@ export default class LocalSttPlugin extends Plugin {
       new LocalSttSettingTab(this.app, this, {
         feedback: this.feedback,
         getSettings: () => this.settings,
-        isDictationBusy: () => this.speechSessionPredicates.isDictationBusy(),
-        isSidecarInUse: this.isSidecarInUse,
+        isDictationBusy: () => this.dictationController?.isBusy() ?? false,
         logger: this.logger,
         modelInstallManager: this.requireModelInstallManager(),
         openModelPicker: (options) => this.openModelPicker(options),
@@ -296,14 +291,15 @@ export default class LocalSttPlugin extends Plugin {
           restoreLlmTransformationDefaults({
             mutateSettings: (mutation) => this.requirePresetStateStore().mutateSettings(mutation),
           }),
-        restartSidecarWhenIdle: async () => {
-          await this.restartSidecarConnectionWhenIdle(t('settings.sidecar.becameActive'));
+        restartSidecar: async () => {
+          await this.restartSidecarConnection();
         },
         saveSettings: async (nextSettings) => {
           await this.updateSettings(nextSettings);
         },
         sidecarConnection: this.requireSidecarConnection(),
         sidecarInstallManager: this.requireSidecarInstallManager(),
+        sidecarLifecycleGate: this.sidecarLifecycleGate,
       }),
     );
 
@@ -458,9 +454,7 @@ export default class LocalSttPlugin extends Plugin {
       pluginDirectory,
       pluginVersion: this.manifest.version,
       postSidecarInstalled: async () => {
-        await this.requireSidecarConnection().restart(
-          this.settings.sidecarStartupTimeoutSeconds * 1000,
-        );
+        await this.restartSidecarConnection();
         const systemInfo = await this.requireSidecarConnection().getSystemInfo();
         logAccelerationFallbacks(systemInfo, this.settings.accelerationPreference, this.logger);
         await this.requireModelInstallManager().init();
@@ -580,19 +574,21 @@ export default class LocalSttPlugin extends Plugin {
 
   private async restartSidecar(): Promise<void> {
     try {
-      const health = await this.restartSidecarConnectionWhenIdle(
-        t('notice.sidecarRestartRequiresIdle'),
+      const health = await this.sidecarLifecycleGate.runMutation(() =>
+        this.restartSidecarConnection(),
       );
-
       this.feedback.show({
         intent: 'success',
         message: t('notice.sidecarRestarted', { version: health.sidecarVersion }),
       });
     } catch (error) {
-      if (error instanceof SidecarInUseError) {
+      if (error instanceof SidecarLifecycleConflictError) {
         this.feedback.show({
           intent: 'warning',
-          message: error.userMessage,
+          message:
+            error.activeKind === 'speech'
+              ? t('notice.sidecarRestartRequiresIdle')
+              : t('settings.sidecar.operationInProgress'),
         });
         return;
       }
@@ -600,8 +596,7 @@ export default class LocalSttPlugin extends Plugin {
     }
   }
 
-  private async restartSidecarConnectionWhenIdle(blockedMessage: string) {
-    assertSidecarIdle(this.isSidecarInUse, blockedMessage);
+  private async restartSidecarConnection() {
     return await this.requireSidecarConnection().restart(
       this.settings.sidecarStartupTimeoutSeconds * 1000,
     );
@@ -988,7 +983,7 @@ export default class LocalSttPlugin extends Plugin {
   }
 
   private buildSidecarInstallActionDeps(): SidecarInstallActionDeps {
-    return buildStartupSidecarInstallActionDeps({
+    return {
       app: this.app,
       feedback: this.feedback,
       logger: this.logger,
@@ -998,13 +993,13 @@ export default class LocalSttPlugin extends Plugin {
         // No-op: the settings tab re-reads install manifests on each render, so
         // a reinstall from this startup notice needs no explicit refresh.
       },
-      restartSidecarWhenIdle: async () => {
-        await this.restartSidecarConnectionWhenIdle(t('settings.sidecar.becameActive'));
+      restartSidecar: async () => {
+        await this.restartSidecarConnection();
       },
       sidecarConnection: this.requireSidecarConnection(),
       sidecarInstallManager: this.requireSidecarInstallManager(),
-      speechPredicates: this.speechSessionPredicates,
-    });
+      sidecarLifecycleGate: this.sidecarLifecycleGate,
+    };
   }
 
   private async resolvePluginDirectoryPath(): Promise<string> {

@@ -38,6 +38,11 @@ import type {
 } from '../sidecar/protocol';
 import { type SidecarConnection, SidecarError } from '../sidecar/sidecar-connection';
 import { localizeSidecarEvent, rawSidecarEventDetail } from '../sidecar/sidecar-event-localization';
+import {
+  SidecarLifecycleConflictError,
+  type SidecarLifecycleGate,
+  type SidecarLifecycleLease,
+} from '../sidecar/sidecar-lifecycle-gate';
 import { SidecarNotInstalledError } from '../sidecar/sidecar-paths';
 import { buildTranscriptSpans, type TranscriptRenderOptions } from '../transcript/renderer';
 
@@ -114,6 +119,7 @@ interface ManagedSession {
   pendingTranscriptWork: Set<Promise<void>>;
   phase: SessionPhase;
   session: ControllerSession;
+  speechLease: SidecarLifecycleLease;
   snapshot: ActiveSessionSnapshot;
   terminalArbitration: TerminalArbitrationState;
 }
@@ -159,6 +165,7 @@ interface DictationSessionControllerDependencies {
     | 'startSession'
     | 'subscribe'
   >;
+  sidecarLifecycleGate: SidecarLifecycleGate;
   stopConflictingSpeech: () => void;
 }
 
@@ -211,6 +218,7 @@ const FEEDBACK_FAILURES = {
 export class DictationSessionController {
   private activeSessionId: string | null = null;
   private readonly cancellationPromises = new Map<string, Promise<void>>();
+  private pendingSpeechLease: SidecarLifecycleLease | null = null;
   private readonly releaseSidecarSubscription: () => void;
   private readonly sessions = new Map<string, ManagedSession>();
   private startRevision = 0;
@@ -294,6 +302,33 @@ export class DictationSessionController {
       return;
     }
 
+    let speechLease: SidecarLifecycleLease;
+    try {
+      speechLease = this.dependencies.sidecarLifecycleGate.acquireSpeech();
+    } catch (error) {
+      if (!(error instanceof SidecarLifecycleConflictError)) throw error;
+      this.dependencies.feedback.show({
+        intent: 'warning',
+        key: 'sidecar-maintenance',
+        message: t('notice.sidecarMaintenanceInProgress'),
+      });
+      return;
+    }
+
+    const releaseStartOperation = speechLease.retain();
+    this.pendingSpeechLease = speechLease;
+    try {
+      await this.startDictationWithLease(speechLease);
+    } finally {
+      if (this.pendingSpeechLease === speechLease) {
+        this.pendingSpeechLease = null;
+        speechLease.release();
+      }
+      releaseStartOperation();
+    }
+  }
+
+  private async startDictationWithLease(speechLease: SidecarLifecycleLease): Promise<void> {
     const startRevision = ++this.startRevision;
     this.applyUiState('starting');
 
@@ -394,10 +429,14 @@ export class DictationSessionController {
       pendingTranscriptWork: new Set(),
       phase: 'starting',
       session,
+      speechLease,
       snapshot,
       terminalArbitration: 'open',
     };
     this.sessions.set(sessionId, entry);
+    if (this.pendingSpeechLease === speechLease) {
+      this.pendingSpeechLease = null;
+    }
     this.activeSessionId = sessionId;
     this.dependencies.audioLevelMeter.bindSession(sessionId);
     this.dependencies.logger?.debug('session', `starting dictation session ${sessionId}`);
@@ -502,6 +541,8 @@ export class DictationSessionController {
   private cancelPendingStart(): boolean {
     this.startRevision += 1;
     if (this.activeSessionId !== null || this.state !== 'starting') return false;
+    this.pendingSpeechLease?.release();
+    this.pendingSpeechLease = null;
     this.applyUiState('idle');
     return true;
   }
@@ -661,6 +702,7 @@ export class DictationSessionController {
     entry.session.clearSessionProcessingMark();
     entry.session.dispose();
     this.sessions.delete(sessionId);
+    entry.speechLease.release();
 
     if (this.activeSessionId === sessionId) {
       this.activeSessionId = null;

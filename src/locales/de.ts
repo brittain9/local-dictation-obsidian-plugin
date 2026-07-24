@@ -250,8 +250,6 @@ export const de = {
     'Die Hardwarebeschleunigung kann nicht geändert werden, während Diktat oder Vorlesen aktiv ist. Wenn das Diktat nach dem Stoppen noch verarbeitet wird, führen Sie „Diktat abbrechen“ aus.',
   'settings.hardwareAcceleration.on': 'Hardwarebeschleunigung aktiviert.',
   'settings.hardwareAcceleration.off': 'Hardwarebeschleunigung ausgeschaltet.',
-  'settings.hardwareAcceleration.restartFailed':
-    'Die Hardwarebeschleunigung wurde gespeichert, aber die Sprach-Engine konnte nicht neu gestartet werden. Starten Sie Obsidian neu, um es anzuwenden.',
   'settings.noteContext.name': 'Verwenden Sie die Notiz als Kontext',
   'settings.noteContext.desc':
     'Sendet bei manuell ausgewähltem Englisch markante Begriffe aus der offenen Notiz, um die Rechtschreibung zu verbessern.',
@@ -311,8 +309,6 @@ export const de = {
     'Fahren Sie mit der Installation von CUDA fort, auch wenn kein NVIDIA-Treiber erkannt wurde.',
   'settings.sidecar.stopBeforeInstall':
     'Stoppen Sie Diktat oder Vorlesen, bevor Sie einen Sidecar installieren — die Installation startet den Motor neu. Wenn das Diktat noch verarbeitet wird, führen Sie „Diktat abbrechen“ aus, um es jetzt zu stoppen.',
-  'settings.sidecar.stopBeforeUpdate':
-    'Stoppen Sie Diktat oder Vorlesen, bevor Sie Sidecars aktualisieren — das Update startet die Engine neu. Wenn das Diktat noch verarbeitet wird, führen Sie „Diktat abbrechen“ aus, um es jetzt zu stoppen.',
   'settings.sidecar.stopBeforeUninstall':
     'Stoppen Sie Diktat oder Vorlesen, bevor Sie {sidecar} deinstallieren. Wenn das Diktat noch verarbeitet wird, führen Sie „Diktat abbrechen“ aus, um es jetzt zu stoppen.',
   'settings.sidecar.uninstallFailed':
@@ -322,8 +318,6 @@ export const de = {
   'settings.sidecar.cpuUninstalled': 'CPU sidecar deinstalliert.',
   'settings.sidecar.restartFailed':
     'Die Sprach-Engine konnte nicht neu gestartet werden. Starten Sie Obsidian neu, bevor Sie diktieren.',
-  'settings.sidecar.becameActive':
-    'Diktat oder Vorlesen wurde aktiv, bevor der Sidecar-Vorgang abgeschlossen werden konnte. Stoppen Sie Vorlesen oder Diktat. Wenn das Diktat noch verarbeitet wird, führen Sie „Diktat abbrechen“ aus und versuchen Sie es erneut.',
   'settings.sidecar.reinstall': 'Neu installieren',
   'settings.sidecar.uninstall': 'Deinstallieren',
   'settings.sidecar.install': 'Installieren',

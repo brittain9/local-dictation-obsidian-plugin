@@ -252,8 +252,6 @@ export const es = {
     'No se puede cambiar la aceleración del hardware mientras el dictado o la lectura en voz alta estén activos. Si el dictado sigue procesándose después de detenerlo, ejecute "Cancelar dictado".',
   'settings.hardwareAcceleration.on': 'Aceleración de hardware activada.',
   'settings.hardwareAcceleration.off': 'Aceleración de hardware desactivada.',
-  'settings.hardwareAcceleration.restartFailed':
-    'Se guardó la aceleración del hardware, pero el motor de voz no pudo reiniciarse. Reinicie Obsidian para aplicarlo.',
   'settings.noteContext.name': 'Usar nota como contexto',
   'settings.noteContext.desc':
     'Para inglés seleccionado manualmente, envía términos distintivos de la nota abierta para mejorar la ortografía.',
@@ -313,8 +311,6 @@ export const es = {
     'Continúe con la instalación de CUDA aunque no se haya detectado ningún controlador NVIDIA.',
   'settings.sidecar.stopBeforeInstall':
     'Detenga el dictado o la lectura en voz alta antes de instalar un sidecar: la instalación reinicia el motor. Si el dictado sigue procesándose, ejecute "Cancelar dictado" para detenerlo ahora.',
-  'settings.sidecar.stopBeforeUpdate':
-    'Detenga el dictado o la lectura en voz alta antes de actualizar sidecars: la actualización reinicia el motor. Si el dictado sigue procesándose, ejecute "Cancelar dictado" para detenerlo ahora.',
   'settings.sidecar.stopBeforeUninstall':
     'Detenga el dictado o la lectura en voz alta antes de desinstalar {sidecar}. Si el dictado sigue procesándose, ejecute "Cancelar dictado" para detenerlo ahora.',
   'settings.sidecar.uninstallFailed':
@@ -324,8 +320,6 @@ export const es = {
   'settings.sidecar.cpuUninstalled': 'CPU sidecar desinstalado.',
   'settings.sidecar.restartFailed':
     'El motor de voz no pudo reiniciarse. Reinicie Obsidian antes de dictar.',
-  'settings.sidecar.becameActive':
-    'El dictado o la lectura en voz alta se activaron antes de que pudiera finalizar la operación del sidecar. Detenga la lectura en voz alta o el dictado. Si el dictado sigue procesándose, ejecute "Cancelar dictado" y vuelva a intentarlo.',
   'settings.sidecar.reinstall': 'Reinstalar',
   'settings.sidecar.uninstall': 'Desinstalar',
   'settings.sidecar.install': 'Instalar',

@@ -247,8 +247,6 @@ export const nl = {
     'Kan de hardwareversnelling niet wijzigen terwijl dicteren of voorlezen actief is. Als het dicteren na het stoppen nog wordt verwerkt, voert u ‘Dicteren annuleren’ uit.',
   'settings.hardwareAcceleration.on': 'Hardwareversnelling ingeschakeld.',
   'settings.hardwareAcceleration.off': 'Hardwareversnelling uitgeschakeld.',
-  'settings.hardwareAcceleration.restartFailed':
-    'Hardwareversnelling werd opgeslagen, maar de spraakengine kon niet opnieuw opstarten. Start Obsidian opnieuw om het toe te passen.',
   'settings.noteContext.name': 'Gebruik notitie als context',
   'settings.noteContext.desc':
     'Stuur bij handmatig geselecteerd Engels onderscheidende termen uit de geopende notitie om de spelling te verbeteren.',
@@ -307,8 +305,6 @@ export const nl = {
     'Ga door met de installatie van CUDA, ook al is er geen NVIDIA-stuurprogramma gedetecteerd.',
   'settings.sidecar.stopBeforeInstall':
     'Stop met dicteren of voorlezen voordat u een sidecar installeert: tijdens de installatie wordt de engine opnieuw gestart. Als het dicteren nog wordt verwerkt, voert u ‘Dicteren annuleren’ uit om het nu te stoppen.',
-  'settings.sidecar.stopBeforeUpdate':
-    'Stop met dicteren of voorlezen voordat u de sidecars bijwerkt: de update start de engine opnieuw. Als het dicteren nog wordt verwerkt, voert u ‘Dicteren annuleren’ uit om het nu te stoppen.',
   'settings.sidecar.stopBeforeUninstall':
     'Stop met dicteren of voorlezen voordat u {sidecar} verwijdert. Als het dicteren nog wordt verwerkt, voert u ‘Dicteren annuleren’ uit om het nu te stoppen.',
   'settings.sidecar.uninstallFailed':
@@ -318,8 +314,6 @@ export const nl = {
   'settings.sidecar.cpuUninstalled': 'CPU sidecar verwijderd.',
   'settings.sidecar.restartFailed':
     'De spraakengine kon niet opnieuw opstarten. Start Obsidian opnieuw voordat u gaat dicteren.',
-  'settings.sidecar.becameActive':
-    'Dicteren of voorlezen werd actief voordat de sidecarbewerking kon worden voltooid. Stop het voorlezen of dicteren. Als het dicteren nog wordt verwerkt, voert u ‘Dicteren annuleren’ uit en probeert u het opnieuw.',
   'settings.sidecar.reinstall': 'Opnieuw installeren',
   'settings.sidecar.uninstall': 'Verwijderen',
   'settings.sidecar.install': 'Installeren',

@@ -248,8 +248,6 @@ export const fr = {
     "Impossible de modifier l'accélération matérielle pendant la dictée ou la lecture à voix haute. Si la dictée est toujours en cours de traitement après son arrêt, exécutez « Annuler la dictée ».",
   'settings.hardwareAcceleration.on': 'Accélération matérielle activée.',
   'settings.hardwareAcceleration.off': 'Accélération matérielle désactivée.',
-  'settings.hardwareAcceleration.restartFailed':
-    "L'accélération matérielle a été enregistrée, mais le moteur vocal n'a pas pu redémarrer. Redémarrez Obsidian pour l'appliquer.",
   'settings.noteContext.name': 'Utiliser la note comme contexte',
   'settings.noteContext.desc':
     'Pour l’anglais sélectionné manuellement, envoyez les termes distinctifs de la note ouverte afin d’améliorer l’orthographe.',
@@ -309,8 +307,6 @@ export const fr = {
     "Poursuivez l'installation de CUDA même si aucun pilote NVIDIA n'a été détecté.",
   'settings.sidecar.stopBeforeInstall':
     "Arrêtez la dictée ou la lecture à voix haute avant d'installer un sidecar : l'installation redémarre le moteur. Si la dictée est toujours en cours de traitement, exécutez « Annuler la dictée » pour l'arrêter maintenant.",
-  'settings.sidecar.stopBeforeUpdate':
-    'Arrêtez la dictée ou la lecture à voix haute avant de mettre à jour les sidecars : la mise à jour redémarre le moteur. Si la dictée est toujours en cours de traitement, exécutez « Annuler la dictée » pour l’arrêter maintenant.',
   'settings.sidecar.stopBeforeUninstall':
     'Arrêtez la dictée ou la lecture à voix haute avant de désinstaller le {sidecar}. Si la dictée est toujours en cours de traitement, exécutez « Annuler la dictée » pour l’arrêter maintenant.',
   'settings.sidecar.uninstallFailed':
@@ -320,8 +316,6 @@ export const fr = {
   'settings.sidecar.cpuUninstalled': 'CPU sidecar désinstallé.',
   'settings.sidecar.restartFailed':
     "Le moteur vocal n'a pas pu redémarrer. Redémarrez Obsidian avant de dicter.",
-  'settings.sidecar.becameActive':
-    'La dictée ou la lecture à voix haute est devenue active avant la fin de l’opération du sidecar. Arrêtez la lecture à voix haute ou la dictée. Si la dictée est toujours en cours de traitement, exécutez « Annuler la dictée », puis réessayez.',
   'settings.sidecar.reinstall': 'Réinstaller',
   'settings.sidecar.uninstall': 'Désinstaller',
   'settings.sidecar.install': 'Installer',

@@ -250,8 +250,6 @@ export const it = {
     'Non è possibile modificare l’accelerazione hardware durante la dettatura o la lettura ad alta voce. Se la dettatura è ancora in elaborazione dopo averla interrotta, esegui “Annulla la dettatura”.',
   'settings.hardwareAcceleration.on': 'Accelerazione hardware attiva.',
   'settings.hardwareAcceleration.off': 'Accelerazione hardware disattivata.',
-  'settings.hardwareAcceleration.restartFailed':
-    'L’impostazione dell’accelerazione hardware è stata salvata, ma non è stato possibile riavviare il motore di riconoscimento vocale. Riavvia Obsidian per applicarla.',
   'settings.noteContext.name': 'Usa la nota come contesto',
   'settings.noteContext.desc':
     'Per l’inglese selezionato manualmente, invia i termini distintivi della nota aperta per migliorare l’ortografia.',
@@ -311,8 +309,6 @@ export const it = {
     'Procedi con l’installazione CUDA anche se non è stato rilevato alcun driver NVIDIA.',
   'settings.sidecar.stopBeforeInstall':
     'Interrompi la dettatura o la lettura ad alta voce prima di installare un sidecar: l’installazione riavvia il motore. Se la dettatura è ancora in elaborazione, esegui “Annulla la dettatura” per interromperla subito.',
-  'settings.sidecar.stopBeforeUpdate':
-    'Interrompi la dettatura o la lettura ad alta voce prima di aggiornare i sidecar: l’aggiornamento riavvia il motore. Se la dettatura è ancora in elaborazione, esegui “Annulla la dettatura” per interromperla subito.',
   'settings.sidecar.stopBeforeUninstall':
     'Interrompi la dettatura o la lettura ad alta voce prima di disinstallare il {sidecar}. Se la dettatura è ancora in elaborazione, esegui “Annulla la dettatura” per interromperla subito.',
   'settings.sidecar.uninstallFailed':
@@ -322,8 +318,6 @@ export const it = {
   'settings.sidecar.cpuUninstalled': 'Sidecar CPU disinstallato.',
   'settings.sidecar.restartFailed':
     'Impossibile riavviare il motore di riconoscimento vocale. Riavvia Obsidian prima di dettare.',
-  'settings.sidecar.becameActive':
-    'La dettatura o la lettura ad alta voce si è attivata prima che l’operazione del sidecar potesse terminare. Interrompi la lettura ad alta voce o la dettatura. Se la dettatura è ancora in elaborazione, esegui “Annulla la dettatura”, quindi riprova.',
   'settings.sidecar.reinstall': 'Reinstalla',
   'settings.sidecar.uninstall': 'Disinstalla',
   'settings.sidecar.install': 'Installa',

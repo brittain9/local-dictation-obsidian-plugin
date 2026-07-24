@@ -244,8 +244,6 @@ export const ja = {
     'ディクテーションまたは読み上げがアクティブな間は、ハードウェア アクセラレーションを変更できません。停止後もディクテーションの処理が続いている場合は、「ディクテーションをキャンセル」を実行してください。',
   'settings.hardwareAcceleration.on': 'ハードウェアアクセラレーションがオンになっています。',
   'settings.hardwareAcceleration.off': 'ハードウェアアクセラレーションがオフになっています。',
-  'settings.hardwareAcceleration.restartFailed':
-    'ハードウェア アクセラレーションは保存されましたが、音声エンジンを再起動できませんでした。 Obsidian を再起動して適用します。',
   'settings.noteContext.name': 'メモをコンテキストとして使用する',
   'settings.noteContext.desc':
     '英語を手動で選択した場合、開いているメモから特徴的な用語を送信してスペル認識を改善します。',
@@ -304,8 +302,6 @@ export const ja = {
     'NVIDIA ドライバーが検出されなかった場合でも、CUDA のインストールを続行します。',
   'settings.sidecar.stopBeforeInstall':
     'sidecar をインストールする前に、ディクテーションまたは読み上げを停止してください。インストールするとエンジンが再起動されます。ディクテーションがまだ処理中の場合は、「ディクテーションをキャンセル」を実行してすぐに停止してください。',
-  'settings.sidecar.stopBeforeUpdate':
-    'sidecar を更新する前に、ディクテーションまたは読み上げを停止してください。更新によりエンジンが再起動されます。ディクテーションがまだ処理中の場合は、「ディクテーションをキャンセル」を実行してすぐに停止してください。',
   'settings.sidecar.stopBeforeUninstall':
     '{sidecar}をアンインストールする前に、ディクテーションまたは読み上げを停止してください。ディクテーションがまだ処理中の場合は、「ディクテーションをキャンセル」を実行してすぐに停止してください。',
   'settings.sidecar.uninstallFailed':
@@ -316,8 +312,6 @@ export const ja = {
   'settings.sidecar.cpuUninstalled': 'CPU sidecar がアンインストールされました。',
   'settings.sidecar.restartFailed':
     '音声エンジンを再起動できませんでした。ディクテーションの前に Obsidian を再起動します。',
-  'settings.sidecar.becameActive':
-    'sidecar の操作が完了する前に、ディクテーションまたは読み上げがアクティブになりました。読み上げまたはディクテーションを停止してください。ディクテーションがまだ処理中の場合は、「ディクテーションをキャンセル」を実行してから再試行してください。',
   'settings.sidecar.reinstall': '再インストール',
   'settings.sidecar.uninstall': 'アンインストール',
   'settings.sidecar.install': 'インストール',

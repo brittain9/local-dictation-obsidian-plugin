@@ -4,6 +4,10 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ModelCatalogRecord } from '../src/models/model-management-types';
 import { DEFAULT_PLUGIN_SETTINGS } from '../src/settings/plugin-settings';
 import type { StartSynthesisCommand } from '../src/sidecar/protocol';
+import {
+  SidecarLifecycleConflictError,
+  SidecarLifecycleGate,
+} from '../src/sidecar/sidecar-lifecycle-gate';
 
 const playback = vi.hoisted(() => ({
   enqueue: vi.fn(),
@@ -86,6 +90,7 @@ type StartSynthesisMock = ReturnType<
 function controllerHarness(options: {
   dictationLanguage?: 'auto' | 'en';
   selected: boolean;
+  sidecarLifecycleGate?: SidecarLifecycleGate;
   startSynthesis?: StartSynthesisMock;
 }) {
   const feedback = { show: vi.fn() };
@@ -112,6 +117,7 @@ function controllerHarness(options: {
       subscribe: vi.fn(() => vi.fn()),
       subscribeSynthesisAudio: vi.fn(() => vi.fn()),
     },
+    sidecarLifecycleGate: options.sidecarLifecycleGate ?? new SidecarLifecycleGate(),
     stopDictation,
   });
   return { cancelSynthesis, controller, feedback, startSynthesis, stopDictation };
@@ -141,6 +147,68 @@ describe('resolveReadRange', () => {
 });
 
 describe('ReadAloudController', () => {
+  it('refuses a start synchronously while sidecar maintenance is active', async () => {
+    const sidecarLifecycleGate = new SidecarLifecycleGate();
+    const mutation = sidecarLifecycleGate.acquireMutation();
+    const harness = controllerHarness({ selected: true, sidecarLifecycleGate });
+
+    await harness.controller.read(editorFor('Speak this.', { ch: 0, line: 0 }));
+
+    expect(harness.stopDictation).not.toHaveBeenCalled();
+    expect(harness.startSynthesis).not.toHaveBeenCalled();
+    expect(harness.feedback.show).toHaveBeenCalledWith({
+      intent: 'warning',
+      key: 'sidecar-maintenance',
+      message:
+        'The speech engine is being installed or restarted. Wait for it to finish, then try again.',
+    });
+    mutation.release();
+  });
+
+  it('holds its speech lease until a stopped asynchronous start has unwound', async () => {
+    const sidecarLifecycleGate = new SidecarLifecycleGate();
+    let completeStart: (() => void) | undefined;
+    const startSynthesis = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          completeStart = resolve;
+        }),
+    );
+    const harness = controllerHarness({
+      selected: true,
+      sidecarLifecycleGate,
+      startSynthesis,
+    });
+
+    const reading = harness.controller.read(editorFor('Speak this.', { ch: 0, line: 0 }));
+    await vi.waitFor(() => expect(startSynthesis).toHaveBeenCalledOnce());
+    expect(() => sidecarLifecycleGate.acquireMutation()).toThrow(SidecarLifecycleConflictError);
+
+    harness.controller.stop();
+    harness.controller.stop();
+    expect(() => sidecarLifecycleGate.acquireMutation()).toThrow(SidecarLifecycleConflictError);
+
+    completeStart?.();
+    await reading;
+    const mutation = sidecarLifecycleGate.acquireMutation();
+    mutation.release();
+  });
+
+  it('releases an active speech lease exactly once across repeated cleanup', async () => {
+    const sidecarLifecycleGate = new SidecarLifecycleGate();
+    const harness = controllerHarness({ selected: true, sidecarLifecycleGate });
+
+    await harness.controller.read(editorFor('Speak this.', { ch: 0, line: 0 }));
+    expect(() => sidecarLifecycleGate.acquireMutation()).toThrow(SidecarLifecycleConflictError);
+
+    harness.controller.stop();
+    harness.controller.dispose();
+    harness.controller.stop();
+
+    const mutation = sidecarLifecycleGate.acquireMutation();
+    mutation.release();
+  });
+
   it('restarts settings changes from the current sentence', async () => {
     const harness = controllerHarness({ selected: true });
     const editor = editorFor('First sentence. Second sentence. Third sentence.', {
@@ -181,6 +249,7 @@ describe('ReadAloudController', () => {
   });
 
   it('does not let a stale start failure clear a newer reading', async () => {
+    const sidecarLifecycleGate = new SidecarLifecycleGate();
     const firstStart: { reject?: (error: unknown) => void } = {};
     const firstStartPromise = new Promise<void>((_resolve, reject) => {
       firstStart.reject = reject;
@@ -189,7 +258,11 @@ describe('ReadAloudController', () => {
       .fn<(payload: Omit<StartSynthesisCommand, 'type'>) => Promise<void>>()
       .mockReturnValueOnce(firstStartPromise)
       .mockResolvedValueOnce(undefined);
-    const harness = controllerHarness({ selected: true, startSynthesis });
+    const harness = controllerHarness({
+      selected: true,
+      sidecarLifecycleGate,
+      startSynthesis,
+    });
     const editor = editorFor('Speak this sentence.', { ch: 0, line: 0 });
 
     const first = harness.controller.read(editor);
@@ -201,6 +274,11 @@ describe('ReadAloudController', () => {
 
     expect(harness.controller.getState()).toBe('reading');
     expect(harness.feedback.show).not.toHaveBeenCalled();
+    expect(() => sidecarLifecycleGate.acquireMutation()).toThrow(SidecarLifecycleConflictError);
+
+    harness.controller.stop();
+    const mutation = sidecarLifecycleGate.acquireMutation();
+    mutation.release();
   });
 
   it('does not start after Stop cancels a read waiting for dictation to drain', async () => {
