@@ -6,7 +6,7 @@ This guide covers enabling CUDA on Windows and Linux, and building from source.
 
 ## Requirements
 
-- A Turing-or-newer NVIDIA GPU (RTX 20-series / GTX 16-series or newer) with a driver compatible with CUDA 13.x (R580 or newer).
+- A Turing-or-newer NVIDIA GPU (RTX 20-series / GTX 16-series or newer) with an R595 or newer driver. Published releases use CUDA 13.2 with a PTX-only compute 7.5 target, so they require CUDA 13.2's native driver branch rather than CUDA minor-version compatibility.
 - The CUDA sidecar variant, installed from the plugin — or CUDA Toolkit `13.2` with `nvcc` to build from source.
 - For **Cohere** on CUDA: cuDNN `9.x` runtime libraries built for CUDA 13 (9.20 or newer). Without them, Cohere falls back to CPU; Whisper CUDA still works.
 
