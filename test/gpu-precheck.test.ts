@@ -1,6 +1,8 @@
 import { EventEmitter } from 'node:events';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import releaseBuildConfig from '../.github/release-build-config.json';
+
 vi.mock('node:child_process', () => ({
   spawn: vi.fn(),
 }));
@@ -8,6 +10,7 @@ vi.mock('node:child_process', () => ({
 const { spawn } = await import('node:child_process');
 const {
   classifyCudaCompatibility,
+  CUDA_COMPATIBILITY_REQUIREMENTS,
   CUDA_PROBE_OUTPUT_LIMIT_BYTES,
   detectCudaCompatibility,
   isCudaReleaseTarget,
@@ -93,11 +96,12 @@ describe('parseCudaProbeOutput', () => {
 
 describe('classifyCudaCompatibility', () => {
   it.each([
-    ['579.99', ['8.9'], 'incompatible_driver'],
-    ['580.0', ['7.4'], 'incompatible_gpu'],
-    ['580.0', ['7.5'], 'compatible'],
-    ['580.0', ['7.4', '8.9'], 'compatible'],
-    ['581.0.1', ['10.0', '12.1'], 'compatible'],
+    ['594.99', ['8.9'], 'incompatible_driver'],
+    ['595.0', ['7.4'], 'incompatible_gpu'],
+    ['595.0', ['7.5'], 'compatible'],
+    ['595.0', ['7.4', '8.9'], 'incompatible_gpu'],
+    ['595.0', [], 'incompatible_gpu'],
+    ['596.0.1', ['10.0', '12.1'], 'compatible'],
   ] as const)(
     'classifies driver %s and GPUs %j as %s',
     (driverVersion, computeCapabilities, status) => {
@@ -108,6 +112,17 @@ describe('classifyCudaCompatibility', () => {
       });
     },
   );
+
+  it('derives compatibility floors from the release build configuration', () => {
+    expect(releaseBuildConfig).toMatchObject({
+      cudaArchitectures: '75-virtual',
+      cudaToolkitVersion: '13.2.0',
+    });
+    expect(CUDA_COMPATIBILITY_REQUIREMENTS).toEqual({
+      minimumComputeCapability: { major: 7, minor: 5 },
+      minimumDriverMajor: 595,
+    });
+  });
 });
 
 describe('detectCudaCompatibility', () => {
@@ -121,13 +136,13 @@ describe('detectCudaCompatibility', () => {
       { shell: false, stdio: ['ignore', 'pipe', 'ignore'], windowsHide: true },
     );
 
-    child.stdout.emit('data', Buffer.from('580.12, 7.5\n'));
+    child.stdout.emit('data', Buffer.from('595.12, 7.5\n'));
     child.emit('exit', 0, null);
     child.emit('close', 0, null);
 
     await expect(promise).resolves.toEqual({
       computeCapabilities: ['7.5'],
-      driverVersion: '580.12',
+      driverVersion: '595.12',
       status: 'compatible',
     });
     expect(child.listenerCount('close')).toBe(0);
@@ -144,7 +159,7 @@ describe('detectCudaCompatibility', () => {
       return result;
     });
 
-    child.stdout.emit('data', '580.12, ');
+    child.stdout.emit('data', '595.12, ');
     child.emit('exit', 0, null);
     await Promise.resolve();
     expect(settled).not.toHaveBeenCalled();
@@ -154,7 +169,7 @@ describe('detectCudaCompatibility', () => {
 
     await expect(promise).resolves.toEqual({
       computeCapabilities: ['7.5'],
-      driverVersion: '580.12',
+      driverVersion: '595.12',
       status: 'compatible',
     });
   });

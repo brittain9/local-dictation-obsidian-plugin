@@ -1,8 +1,14 @@
 import { spawn } from 'node:child_process';
 
+import releaseBuildConfig from '../../.github/release-build-config.json';
+
+const CUDA_TOOLKIT_MINIMUM_DRIVER_MAJOR: Readonly<Record<string, number>> = {
+  '13.2.0': 595,
+};
+
 export const CUDA_COMPATIBILITY_REQUIREMENTS = {
-  minimumComputeCapability: { major: 7, minor: 5 },
-  minimumDriverMajor: 580,
+  minimumComputeCapability: resolveMinimumComputeCapability(releaseBuildConfig.cudaArchitectures),
+  minimumDriverMajor: resolveMinimumDriverMajor(releaseBuildConfig.cudaToolkitVersion),
 } as const;
 
 export const CUDA_PROBE_OUTPUT_LIMIT_BYTES = 64 * 1024;
@@ -68,10 +74,15 @@ export function classifyCudaCompatibility(probe: CudaProbeOutput): CudaCompatibi
     return { ...probe, status: 'incompatible_driver' };
   }
 
-  const hasCompatibleGpu = probe.computeCapabilities.some((computeCapability) =>
-    meetsMinimumComputeCapability(computeCapability),
-  );
-  return { ...probe, status: hasCompatibleGpu ? 'compatible' : 'incompatible_gpu' };
+  const allGpusAreCompatible =
+    probe.computeCapabilities.length > 0 &&
+    probe.computeCapabilities.every((computeCapability) =>
+      meetsMinimumComputeCapability(computeCapability),
+    );
+  return {
+    ...probe,
+    status: allGpusAreCompatible ? 'compatible' : 'incompatible_gpu',
+  };
 }
 
 export async function detectCudaCompatibility(): Promise<CudaCompatibility> {
@@ -190,4 +201,23 @@ function meetsMinimumComputeCapability(value: string): boolean {
   const minor = Number(match[2]);
   const minimum = CUDA_COMPATIBILITY_REQUIREMENTS.minimumComputeCapability;
   return major > minimum.major || (major === minimum.major && minor >= minimum.minor);
+}
+
+function resolveMinimumComputeCapability(cudaArchitectures: string): {
+  major: number;
+  minor: number;
+} {
+  const match = /^(\d)(\d)-virtual$/u.exec(cudaArchitectures);
+  if (match === null) {
+    throw new Error(`Unsupported release CUDA architecture configuration: ${cudaArchitectures}`);
+  }
+  return { major: Number(match[1]), minor: Number(match[2]) };
+}
+
+function resolveMinimumDriverMajor(cudaToolkitVersion: string): number {
+  const minimum = CUDA_TOOLKIT_MINIMUM_DRIVER_MAJOR[cudaToolkitVersion];
+  if (minimum === undefined) {
+    throw new Error(`No minimum NVIDIA driver is defined for CUDA toolkit ${cudaToolkitVersion}`);
+  }
+  return minimum;
 }

@@ -495,7 +495,7 @@ export function getCudaInstallPresentation(compatibility: CudaCompatibility): {
         description: t('settings.sidecar.cudaCompatibility.incompatibleDriver', {
           minimumDriverMajor: CUDA_COMPATIBILITY_REQUIREMENTS.minimumDriverMajor,
         }),
-        installAction: 'manual',
+        installAction: 'none',
       };
     case 'incompatible_gpu': {
       const { major, minor } = CUDA_COMPATIBILITY_REQUIREMENTS.minimumComputeCapability;
@@ -503,7 +503,7 @@ export function getCudaInstallPresentation(compatibility: CudaCompatibility): {
         description: t('settings.sidecar.cudaCompatibility.incompatibleGpu', {
           minimumComputeCapability: `${major}.${minor}`,
         }),
-        installAction: 'manual',
+        installAction: 'none',
       };
     }
     case 'unknown':
