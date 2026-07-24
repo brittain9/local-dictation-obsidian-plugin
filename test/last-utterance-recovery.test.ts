@@ -46,43 +46,6 @@ describe('LastUtteranceRecovery', () => {
     expect(recovery.hasUtterance()).toBe(true);
   });
 
-  it('copies the exact normalized finalized utterance and confirms success', async () => {
-    const { feedback, recovery, writeText } = createRecoveryHarness();
-    recovery.recordFinalizedUtterance('  normalized utterance  ');
-
-    expect(await recovery.copyLastUtterance()).toBe(true);
-
-    expect(writeText).toHaveBeenCalledOnce();
-    expect(writeText).toHaveBeenCalledWith('normalized utterance');
-    expect(recovery.hasUtterance()).toBe(true);
-    expect(feedback.show).toHaveBeenCalledWith({
-      intent: 'success',
-      key: 'last-utterance-copied',
-      message: 'Copied the last finalized utterance.',
-    });
-  });
-
-  it('keeps the utterance available and hides its text when copying fails', async () => {
-    const privateText = 'private finalized utterance';
-    const { feedback, recovery, writeText } = createRecoveryHarness({
-      writeText: vi.fn(async (text: string) => {
-        throw new Error(`clipboard rejected: ${text}`);
-      }),
-    });
-    recovery.recordFinalizedUtterance(privateText);
-
-    expect(await recovery.copyLastUtterance()).toBe(false);
-
-    expect(writeText).toHaveBeenCalledWith(privateText);
-    expect(recovery.hasUtterance()).toBe(true);
-    expect(JSON.stringify(feedback.show.mock.calls)).not.toContain(privateText);
-    expect(feedback.show).toHaveBeenCalledWith({
-      intent: 'error',
-      key: 'last-utterance-copy-failed',
-      message: 'Could not copy the last finalized utterance.',
-    });
-  });
-
   it('inserts at the cursor without replacing a selection and separates adjacent words', () => {
     const { feedback, recovery } = createRecoveryHarness();
     const editor = createEditorHarness('beforeafter', { ch: 6, line: 0 });
@@ -170,22 +133,14 @@ describe('LastUtteranceRecovery', () => {
   });
 });
 
-function createRecoveryHarness(
-  options: { writeText?: ReturnType<typeof vi.fn<(text: string) => Promise<void>>> } = {},
-): {
+function createRecoveryHarness(): {
   feedback: { show: ReturnType<typeof vi.fn> };
   recovery: LastUtteranceRecovery;
-  writeText: ReturnType<typeof vi.fn<(text: string) => Promise<void>>>;
 } {
   const feedback = { show: vi.fn() };
-  const writeText = options.writeText ?? vi.fn(async (_text: string) => {});
   return {
     feedback,
-    recovery: new LastUtteranceRecovery({
-      feedback,
-      getClipboard: () => ({ writeText }),
-    }),
-    writeText,
+    recovery: new LastUtteranceRecovery(feedback),
   };
 }
 

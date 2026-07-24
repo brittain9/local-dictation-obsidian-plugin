@@ -88,6 +88,18 @@ describe('resolvePluginSettings', () => {
     expect(resolvePluginSettings({ retainLastUtterance: 'no' }).retainLastUtterance).toBe(true);
   });
 
+  it('defaults finalized-utterance auto-copy off and honors only a persisted boolean opt-in', () => {
+    expect(DEFAULT_PLUGIN_SETTINGS.autoCopyFinalizedUtterances).toBe(false);
+    expect(resolvePluginSettings({}).autoCopyFinalizedUtterances).toBe(false);
+    expect(
+      resolvePluginSettings({ autoCopyFinalizedUtterances: true }).autoCopyFinalizedUtterances,
+    ).toBe(true);
+    expect(
+      resolvePluginSettings({ autoCopyFinalizedUtterances: 'yes' }).autoCopyFinalizedUtterances,
+    ).toBe(false);
+    expect(resolvePluginSettings({ autoCopyFinalizedUtterances: true }).schemaVersion).toBe(6);
+  });
+
   it('migrates legacy speaker label setting to diarization', () => {
     expect(resolvePluginSettings({ speakerLabelsEnabled: true }).diarizationEnabled).toBe(true);
     expect(

@@ -131,6 +131,7 @@ const SETTINGS_SEARCH_ALIAS_KEYS = [
   'settings.listeningMode.name',
   'settings.listeningMode.alwaysOn',
   'settings.listeningMode.oneSentence',
+  'settings.autoCopyFinalizedUtterances.name',
   'settings.phraseFinalization.name',
   'settings.phraseFinalization.responsiveOption',
   'settings.phraseFinalization.balancedOption',
@@ -181,6 +182,17 @@ const SETTINGS_SEARCH_LITERAL_ALIASES = [
   'Startup timeout',
   'Request timeout',
 ] as const;
+
+export function renderAutomaticCopyFinalizedUtterancesSetting(
+  parent: HTMLElement,
+  access: SettingAccess,
+): Setting {
+  return addToggleSetting(parent, access, {
+    name: t('settings.autoCopyFinalizedUtterances.name'),
+    desc: t('settings.autoCopyFinalizedUtterances.desc'),
+    key: 'autoCopyFinalizedUtterances',
+  });
+}
 
 export class LocalSttSettingTab extends PluginSettingTab {
   override readonly icon = 'audio-lines';
@@ -367,6 +379,8 @@ export class LocalSttSettingTab extends PluginSettingTab {
       options: LISTENING_MODE_OPTIONS,
       isValid: isListeningMode,
     });
+
+    renderAutomaticCopyFinalizedUtterancesSetting(captureCard, this.access);
 
     const phraseFinalizationSetting = new Setting(captureCard)
       .setName(t('settings.phraseFinalization.name'))

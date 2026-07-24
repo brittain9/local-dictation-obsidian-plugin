@@ -15,14 +15,12 @@ describe('registerCommands', () => {
     const clearLastUtterance = vi.fn(() => {
       available = false;
     });
-    const copyLastUtterance = vi.fn();
     const reinsertLastUtterance = vi.fn((_editor: Editor) => {});
     registerCommands({
       cancelDictation: vi.fn(async () => {}),
       clearLastUtterance,
       clearRawTranscriptRecovery: vi.fn(),
       checkSidecarHealth: vi.fn(async () => {}),
-      copyLastUtterance,
       copyRawTranscript: vi.fn(),
       hasLastUtterance: () => available,
       hasRawTranscriptRecovery: () => false,
@@ -39,39 +37,30 @@ describe('registerCommands', () => {
       toggleReadAloudPaused: vi.fn(async () => {}),
     });
     const reinsertCommand = commands.find(({ id }) => id === 'reinsert-last-utterance');
-    const copyCommand = commands.find(({ id }) => id === 'copy-last-utterance');
     const clearCommand = commands.find(({ id }) => id === 'clear-last-utterance');
     const editor = {} as Editor;
 
     expect(reinsertCommand?.name).toBe('Reinsert last utterance');
-    expect(copyCommand?.name).toBe('Copy last utterance');
     expect(clearCommand?.name).toBe('Clear last utterance');
+    expect(commands.some(({ id }) => id === 'copy-last-utterance')).toBe(false);
     expect(reinsertCommand?.editorCheckCallback?.(true, editor, {} as never)).toBe(false);
-    expect(copyCommand?.checkCallback?.(true)).toBe(false);
     expect(clearCommand?.checkCallback?.(true)).toBe(false);
     expect(reinsertLastUtterance).not.toHaveBeenCalled();
-    expect(copyLastUtterance).not.toHaveBeenCalled();
     expect(clearLastUtterance).not.toHaveBeenCalled();
 
     available = true;
     expect(reinsertCommand?.editorCheckCallback?.(true, editor, {} as never)).toBe(true);
-    expect(copyCommand?.checkCallback?.(true)).toBe(true);
     expect(clearCommand?.checkCallback?.(true)).toBe(true);
     expect(reinsertLastUtterance).not.toHaveBeenCalled();
-    expect(copyLastUtterance).not.toHaveBeenCalled();
     expect(clearLastUtterance).not.toHaveBeenCalled();
 
     expect(reinsertCommand?.editorCheckCallback?.(false, editor, {} as never)).toBe(true);
     expect(reinsertLastUtterance).toHaveBeenCalledOnce();
     expect(reinsertLastUtterance).toHaveBeenCalledWith(editor);
 
-    expect(copyCommand?.checkCallback?.(false)).toBe(true);
-    expect(copyLastUtterance).toHaveBeenCalledOnce();
-
     expect(clearCommand?.checkCallback?.(false)).toBe(true);
     expect(clearLastUtterance).toHaveBeenCalledOnce();
     expect(reinsertCommand?.editorCheckCallback?.(true, editor, {} as never)).toBe(false);
-    expect(copyCommand?.checkCallback?.(true)).toBe(false);
     expect(clearCommand?.checkCallback?.(true)).toBe(false);
   });
 
@@ -93,7 +82,6 @@ describe('registerCommands', () => {
       clearLastUtterance: vi.fn(),
       clearRawTranscriptRecovery,
       checkSidecarHealth: vi.fn(async () => {}),
-      copyLastUtterance: vi.fn(),
       copyRawTranscript,
       hasLastUtterance: () => false,
       hasRawTranscriptRecovery: () => available,
@@ -150,7 +138,6 @@ describe('registerCommands', () => {
       clearLastUtterance: vi.fn(),
       clearRawTranscriptRecovery: vi.fn(),
       checkSidecarHealth: vi.fn(async () => {}),
-      copyLastUtterance: vi.fn(),
       copyRawTranscript: vi.fn(),
       hasLastUtterance: () => false,
       hasRawTranscriptRecovery: () => false,

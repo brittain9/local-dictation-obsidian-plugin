@@ -1,7 +1,12 @@
 import type { SettingDefinition } from 'obsidian';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
-import { LocalSttSettingTab } from '../src/settings/settings-tab';
+import { DEFAULT_PLUGIN_SETTINGS } from '../src/settings/plugin-settings';
+import {
+  LocalSttSettingTab,
+  renderAutomaticCopyFinalizedUtterancesSetting,
+} from '../src/settings/settings-tab';
+import { type Setting as MockSetting, TestElement } from './__mocks__/obsidian';
 
 describe('LocalSttSettingTab settings search', () => {
   it('publishes localized search metadata for the composite settings UI', () => {
@@ -18,6 +23,7 @@ describe('LocalSttSettingTab settings search', () => {
         'Speech-to-text model',
         'Text-to-speech model',
         'Microphone',
+        'Automatically copy finalized utterances',
         'Transcript formatting',
         'Use timestamps',
         'Enable LLM features',
@@ -27,5 +33,26 @@ describe('LocalSttSettingTab settings search', () => {
       ]),
     );
     expect(definition.render).toBeTypeOf('function');
+  });
+
+  it('renders a default-off automatic-copy toggle with explicit clipboard replacement copy', async () => {
+    const persistOne = vi.fn(async () => {});
+    const setting = renderAutomaticCopyFinalizedUtterancesSetting(
+      new TestElement() as unknown as HTMLElement,
+      {
+        getSettings: () => DEFAULT_PLUGIN_SETTINGS,
+        persistOne,
+      },
+    ) as unknown as MockSetting;
+
+    expect(setting.name).toBe('Automatically copy finalized utterances');
+    expect(setting.descEl.textContent).toBe('Each finalized phrase replaces the system clipboard.');
+    expect(setting.onlyToggle().value).toBe(false);
+
+    setting.onlyToggle().change(true);
+
+    await vi.waitFor(() => {
+      expect(persistOne).toHaveBeenCalledWith('autoCopyFinalizedUtterances', true);
+    });
   });
 });

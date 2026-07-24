@@ -1,5 +1,4 @@
 import type { Editor, EditorPosition } from 'obsidian';
-import { type ClipboardProvider, tryWriteClipboardText } from '../shared/clipboard';
 import { t } from '../shared/i18n';
 import type { UserFeedback } from '../shared/user-feedback';
 
@@ -11,16 +10,11 @@ export type UtteranceRecoveryEditor = Pick<
   'getCursor' | 'getLine' | 'replaceRange' | 'setCursor'
 >;
 
-interface LastUtteranceRecoveryDependencies {
-  feedback: Pick<UserFeedback, 'show'>;
-  getClipboard: ClipboardProvider;
-}
-
 export class LastUtteranceRecovery {
   private enabled = true;
   private text: string | null = null;
 
-  constructor(private readonly dependencies: LastUtteranceRecoveryDependencies) {}
+  constructor(private readonly feedback: Pick<UserFeedback, 'show'>) {}
 
   hasUtterance(): boolean {
     return this.enabled && this.text !== null;
@@ -47,30 +41,6 @@ export class LastUtteranceRecovery {
     }
   }
 
-  async copyLastUtterance(): Promise<boolean> {
-    const text = this.text;
-    if (!this.enabled || text === null) {
-      this.reportUnavailable();
-      return false;
-    }
-
-    if (!(await tryWriteClipboardText(this.dependencies.getClipboard, text))) {
-      this.dependencies.feedback.show({
-        intent: 'error',
-        key: 'last-utterance-copy-failed',
-        message: t('notice.lastUtteranceCopyFailed'),
-      });
-      return false;
-    }
-
-    this.dependencies.feedback.show({
-      intent: 'success',
-      key: 'last-utterance-copied',
-      message: t('notice.lastUtteranceCopied'),
-    });
-    return true;
-  }
-
   reinsert(editor: UtteranceRecoveryEditor): boolean {
     if (this.text === null) {
       this.reportUnavailable();
@@ -83,14 +53,14 @@ export class LastUtteranceRecovery {
       const insertion = formatInsertion(this.text, line, cursor.ch);
       editor.replaceRange(insertion, cursor);
       editor.setCursor(advancePosition(cursor, insertion));
-      this.dependencies.feedback.show({
+      this.feedback.show({
         intent: 'success',
         key: 'last-utterance-reinserted',
         message: t('notice.lastUtteranceReinserted'),
       });
       return true;
     } catch (error) {
-      this.dependencies.feedback.show({
+      this.feedback.show({
         cause: error,
         intent: 'error',
         key: 'last-utterance-reinsert-failed',
@@ -101,7 +71,7 @@ export class LastUtteranceRecovery {
   }
 
   private reportUnavailable(): void {
-    this.dependencies.feedback.show({
+    this.feedback.show({
       intent: 'information',
       key: 'last-utterance-unavailable',
       message: t('notice.lastUtteranceUnavailable'),

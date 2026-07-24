@@ -598,7 +598,7 @@ describe('DictationSessionController', () => {
     });
   });
 
-  it('offers only accepted non-empty final revisions for last-utterance recovery', async () => {
+  it('offers only accepted non-empty final revisions to finalized-utterance consumers', async () => {
     const onFinalizedUtteranceAccepted = vi.fn();
     const sidecarConnection = new FakeSidecarConnection();
     const sessions: FakeSession[] = [];

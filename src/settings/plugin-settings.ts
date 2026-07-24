@@ -152,6 +152,7 @@ export interface PluginSettings {
   diarizationMaxSpeakers: number | null;
   dictationAnchor: DictationAnchor;
   dictationLanguage: DictationLanguage;
+  autoCopyFinalizedUtterances: boolean;
   listeningMode: ListeningMode;
   llmFeaturesEnabled: boolean;
   llmOpenRouterSecretId: string;
@@ -213,6 +214,7 @@ export const DEFAULT_PLUGIN_SETTINGS: PluginSettings = {
   diarizationMaxSpeakers: null,
   dictationAnchor: 'at_cursor',
   dictationLanguage: DEFAULT_DICTATION_LANGUAGE,
+  autoCopyFinalizedUtterances: false,
   listeningMode: 'always_on',
   llmFeaturesEnabled: true,
   llmOpenRouterSecretId: '',
@@ -291,6 +293,10 @@ export function resolvePluginSettings(data: unknown): PluginSettings {
     dictationLanguage: isDictationLanguage(raw.dictationLanguage)
       ? raw.dictationLanguage
       : DEFAULT_PLUGIN_SETTINGS.dictationLanguage,
+    autoCopyFinalizedUtterances: readBoolean(
+      raw.autoCopyFinalizedUtterances,
+      DEFAULT_PLUGIN_SETTINGS.autoCopyFinalizedUtterances,
+    ),
     listeningMode: readListeningMode(raw.listeningMode),
     llmFeaturesEnabled: readBoolean(
       raw.llmFeaturesEnabled,

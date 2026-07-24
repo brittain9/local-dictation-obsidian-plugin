@@ -6,6 +6,7 @@ import { AudioCaptureStream } from './audio/audio-capture-stream';
 import { SidecarAudioLevelMeter } from './audio/sidecar-audio-level-meter';
 import { registerCommands } from './commands/register-commands';
 import { DictationSessionController } from './dictation/dictation-session-controller';
+import { FinalizedUtteranceAutoCopy } from './dictation/finalized-utterance-auto-copy';
 import { LastUtteranceRecovery } from './dictation/last-utterance-recovery';
 import { dictationAnchorExtension } from './editor/dictation-anchor-extension';
 import { noteSurfaceUpdateListenerExtension } from './editor/note-surface';
@@ -75,11 +76,13 @@ export default class LocalSttPlugin extends Plugin {
     logger: this.logger,
     presenter: createObsidianFeedbackPresenter(),
   });
-  private llmCleanupFailure: LlmCleanupFailure | null = null;
-  private readonly lastUtteranceRecovery = new LastUtteranceRecovery({
+  private readonly finalizedUtteranceAutoCopy = new FinalizedUtteranceAutoCopy({
     feedback: this.feedback,
     getClipboard: () => window.navigator.clipboard,
+    getSettings: () => this.settings,
   });
+  private llmCleanupFailure: LlmCleanupFailure | null = null;
+  private readonly lastUtteranceRecovery = new LastUtteranceRecovery(this.feedback);
   private readonly llmCleanupFailureSubscribers = new Set<() => void>();
   private modelInstallManager: ModelInstallManager | null = null;
   private presetStateStore: LlmPresetStateStore | null = null;
@@ -232,6 +235,7 @@ export default class LocalSttPlugin extends Plugin {
       },
       onFinalizedUtteranceAccepted: (text) => {
         this.lastUtteranceRecovery.recordFinalizedUtterance(text);
+        void this.finalizedUtteranceAutoCopy.copyAcceptedUtterance(text);
       },
       onRawTranscriptRecoveryAvailable: (receipt) => {
         this.rawTranscriptRecovery.record(receipt);
@@ -309,9 +313,6 @@ export default class LocalSttPlugin extends Plugin {
         this.rawTranscriptRecovery.clearWithFeedback();
       },
       checkSidecarHealth: async () => this.checkSidecarHealth(),
-      copyLastUtterance: () => {
-        void this.lastUtteranceRecovery.copyLastUtterance();
-      },
       copyRawTranscript: () => {
         void this.rawTranscriptRecovery.copyRawTranscript();
       },
