@@ -269,6 +269,7 @@ export default class LocalSttPlugin extends Plugin {
         feedback: this.feedback,
         getSettings: () => this.settings,
         isDictationBusy: () => this.dictationController?.isBusy() ?? false,
+        isSidecarInUse: () => this.isSidecarInUse(),
         logger: this.logger,
         modelInstallManager: this.requireModelInstallManager(),
         openModelPicker: (options) => this.openModelPicker(options),
@@ -564,10 +565,7 @@ export default class LocalSttPlugin extends Plugin {
   }
 
   private async restartSidecar(): Promise<void> {
-    if (
-      this.requireDictationController().isBusy() ||
-      (this.readAloudController?.isActive() ?? false)
-    ) {
+    if (this.isSidecarInUse()) {
       this.feedback.show({
         intent: 'warning',
         message: t('notice.sidecarRestartRequiresIdle'),
@@ -986,7 +984,7 @@ export default class LocalSttPlugin extends Plugin {
     return {
       app: this.app,
       feedback: this.feedback,
-      isDictationBusy: () => this.dictationController?.isBusy() ?? false,
+      isSidecarInUse: () => this.isSidecarInUse(),
       logger: this.logger,
       modelInstallManager: this.requireModelInstallManager(),
       pluginVersion: this.manifest.version,
@@ -1002,6 +1000,13 @@ export default class LocalSttPlugin extends Plugin {
       sidecarConnection: this.requireSidecarConnection(),
       sidecarInstallManager: this.requireSidecarInstallManager(),
     };
+  }
+
+  private isSidecarInUse(): boolean {
+    return (
+      (this.dictationController?.isBusy() ?? false) ||
+      (this.readAloudController?.isActive() ?? false)
+    );
   }
 
   private async resolvePluginDirectoryPath(): Promise<string> {

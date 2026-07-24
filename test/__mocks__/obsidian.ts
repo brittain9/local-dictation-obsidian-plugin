@@ -410,6 +410,13 @@ export class PluginSettingTab {
   ) {}
 }
 
+export class Plugin {
+  app: unknown = {};
+  manifest = { id: 'local-dictation', version: '0.0.0' };
+
+  addSettingTab(): void {}
+}
+
 export class ItemView {
   readonly app: unknown;
   readonly contentEl = new TestElement();

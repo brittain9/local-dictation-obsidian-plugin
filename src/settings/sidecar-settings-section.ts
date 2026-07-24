@@ -33,7 +33,7 @@ import { addPositiveIntSetting, addTextSetting, type SettingAccess } from './set
 export interface SidecarInstallActionDeps {
   app: App;
   feedback: Pick<UserFeedback, 'show'>;
-  isDictationBusy(): boolean;
+  isSidecarInUse(): boolean;
   logger?: PluginLogger | undefined;
   modelInstallManager: ModelInstallManager;
   pluginVersion: string;
@@ -297,7 +297,7 @@ export function openSidecarInstallModal(
     variant: SidecarInstallVariant;
   },
 ): void {
-  if (deps.isDictationBusy()) {
+  if (deps.isSidecarInUse()) {
     deps.feedback.show({
       intent: 'warning',
       message: t('settings.sidecar.stopBeforeInstall'),
@@ -331,7 +331,7 @@ export function openSidecarUpdateModal(
     variants: readonly SidecarInstallVariant[];
   },
 ): void {
-  if (deps.isDictationBusy()) {
+  if (deps.isSidecarInUse()) {
     deps.feedback.show({
       intent: 'warning',
       message: t('settings.sidecar.stopBeforeUpdate'),
@@ -370,7 +370,7 @@ async function uninstallSidecarVariantWithUx(
     ? t('settings.sidecar.genericName')
     : t('settings.sidecar.variantName', { variant: variantLabel });
 
-  if (deps.isDictationBusy()) {
+  if (deps.isSidecarInUse()) {
     deps.feedback.show({
       intent: 'warning',
       message: t('settings.sidecar.stopBeforeUninstall', { sidecar: userFacingName }),
@@ -416,7 +416,7 @@ async function shutdownSidecarBeforeFileMutation(
   deps: SidecarInstallActionDeps,
   reason: string,
 ): Promise<void> {
-  if (deps.isDictationBusy()) {
+  if (deps.isSidecarInUse()) {
     throw new Error(t('settings.sidecar.becameActive'));
   }
 

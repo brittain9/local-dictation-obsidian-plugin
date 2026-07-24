@@ -71,6 +71,7 @@ interface SettingsTabDependencies {
   feedback: Pick<UserFeedback, 'show'>;
   getSettings: () => PluginSettings;
   isDictationBusy: () => boolean;
+  isSidecarInUse: () => boolean;
   logger?: PluginLogger | undefined;
   modelInstallManager: ModelInstallManager;
   openModelPicker: (options?: ModelPickerOptions) => Promise<void>;
@@ -777,7 +778,7 @@ export class LocalSttSettingTab extends PluginSettingTab {
         .addToggle((toggle) => {
           toggle.setValue(settings.accelerationPreference === 'auto');
           toggle.onChange(async (value) => {
-            if (this.dependencies.isDictationBusy()) {
+            if (this.dependencies.isSidecarInUse()) {
               this.dependencies.feedback.show({
                 intent: 'warning',
                 message: t('settings.hardwareAcceleration.busy'),
@@ -907,7 +908,7 @@ export class LocalSttSettingTab extends PluginSettingTab {
     return {
       app: this.app,
       feedback: this.dependencies.feedback,
-      isDictationBusy: this.dependencies.isDictationBusy,
+      isSidecarInUse: this.dependencies.isSidecarInUse,
       logger: this.dependencies.logger,
       modelInstallManager: this.dependencies.modelInstallManager,
       pluginVersion: this.dependencies.pluginVersion,
