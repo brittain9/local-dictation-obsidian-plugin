@@ -36,6 +36,7 @@ interface ReadAloudControllerDependencies {
   getSettings: () => PluginSettings;
   isDictationBusy: () => boolean;
   logger?: PluginLogger;
+  onModelMissing: () => void;
   onStateChange: (state: ReadAloudState) => void;
   sidecarConnection: Pick<
     SidecarConnection,
@@ -186,10 +187,7 @@ export class ReadAloudController {
     const settings = this.deps.getSettings();
     const selection = settings.selectedTtsModel;
     if (selection === null || selection.kind !== 'catalog_model') {
-      this.deps.feedback.show({
-        intent: 'warning',
-        message: t('tts.notice.modelRequired'),
-      });
+      this.reportModelRequired();
       this.stop();
       return null;
     }
@@ -199,10 +197,7 @@ export class ReadAloudController {
         matchesModelTriple(model, selection.runtimeId, selection.familyId, selection.modelId),
       );
     if (catalogModel === undefined) {
-      this.deps.feedback.show({
-        intent: 'warning',
-        message: t('tts.notice.modelRequired'),
-      });
+      this.reportModelRequired();
       this.stop();
       return null;
     }
@@ -220,6 +215,18 @@ export class ReadAloudController {
         : {}),
       voiceId,
     };
+  }
+
+  private reportModelRequired(): void {
+    this.deps.feedback.show({
+      action: {
+        label: t('tts.action.chooseModel'),
+        run: this.deps.onModelMissing,
+      },
+      intent: 'action-required',
+      key: 'read-aloud-model-required',
+      message: t('tts.notice.modelRequired'),
+    });
   }
 
   private handleEvent(event: SidecarEvent): void {

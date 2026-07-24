@@ -171,6 +171,7 @@ export const en = {
   'tts.control.pause': 'Pause reading',
   'tts.control.resume': 'Resume reading',
   'tts.control.stop': 'Stop reading',
+  'tts.action.chooseModel': 'Choose model',
   'tts.notice.noText': 'There is no speakable text here.',
   'tts.notice.modelRequired': 'Install and select a read-aloud model first.',
   'tts.notice.voiceRequired': 'Select an installed voice first.',

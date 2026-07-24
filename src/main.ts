@@ -255,6 +255,9 @@ export default class LocalSttPlugin extends Plugin {
       getSettings: () => this.settings,
       isDictationBusy: () => this.requireDictationController().isCaptureActive(),
       logger: this.logger,
+      onModelMissing: () => {
+        void this.openModelPicker({ initialTask: 'tts' });
+      },
       onStateChange: (state) => this.renderReadAloudStatus(state),
       sidecarConnection: this.sidecarConnection,
       stopDictation: () => this.requireDictationController().stopDictation(),
