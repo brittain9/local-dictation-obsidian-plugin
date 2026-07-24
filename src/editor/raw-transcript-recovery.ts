@@ -55,6 +55,17 @@ export class RawTranscriptRecovery {
     }
 
     this.receipt = { ...receipt };
+    this.dependencies.feedback.show({
+      action: {
+        label: t('notice.rawTranscriptRecoveryAvailableAction'),
+        run: () => {
+          this.restoreRawTranscript();
+        },
+      },
+      intent: 'warning',
+      key: 'raw-transcript-recovery-available',
+      message: t('notice.rawTranscriptRecoveryAvailable'),
+    });
   }
 
   clear(): void {
