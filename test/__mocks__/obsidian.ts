@@ -38,6 +38,8 @@ export class TestElement {
     },
   };
 
+  addEventListener(_type: string, _listener: unknown): void {}
+
   addClass(className: string): void {
     this.className = [this.className, className].filter(Boolean).join(' ');
   }
@@ -104,6 +106,10 @@ export class TestElement {
 
   setAttribute(name: string, value: string): void {
     this.attributes.set(name, value);
+  }
+
+  setAttr(name: string, value: string): void {
+    this.setAttribute(name, value);
   }
 
   findByClass(className: string): TestElement | undefined {
@@ -448,6 +454,7 @@ export class Setting {
 
 export class Modal {
   readonly contentEl = new TestElement();
+  readonly modalEl = new TestElement();
   readonly titleEl = new TestElement();
 
   constructor(readonly app: unknown) {}
