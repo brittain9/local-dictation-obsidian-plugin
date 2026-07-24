@@ -29,6 +29,11 @@ import {
   uninstallSidecarVariant,
   variantDirectoryPath,
 } from '../sidecar/sidecar-installer';
+import {
+  SidecarLifecycleConflictError,
+  type SidecarLifecycleGate,
+  type SidecarLifecycleLease,
+} from '../sidecar/sidecar-lifecycle-gate';
 import { SidecarNotInstalledError } from '../sidecar/sidecar-paths';
 import { styleDestructiveButton } from '../ui/destructive-button';
 import { renderActiveInstallCard } from './install-progress-row';
@@ -37,7 +42,6 @@ import { addPositiveIntSetting, addTextSetting, type SettingAccess } from './set
 export interface SidecarInstallActionDeps {
   app: App;
   feedback: Pick<UserFeedback, 'show'>;
-  isDictationBusy(): boolean;
   logger?: PluginLogger | undefined;
   modelInstallManager: ModelInstallManager;
   pluginVersion: string;
@@ -45,6 +49,7 @@ export interface SidecarInstallActionDeps {
   restartSidecar(): Promise<void>;
   sidecarConnection: Pick<SidecarConnection, 'shutdown'>;
   sidecarInstallManager: SidecarInstallManager;
+  sidecarLifecycleGate: SidecarLifecycleGate;
 }
 
 export interface SidecarSettingsSectionDependencies extends SidecarInstallActionDeps {
@@ -297,14 +302,6 @@ export function openSidecarInstallModal(
     variant: SidecarInstallVariant;
   },
 ): void {
-  if (deps.isDictationBusy()) {
-    deps.feedback.show({
-      intent: 'warning',
-      message: t('settings.sidecar.stopBeforeInstall'),
-    });
-    return;
-  }
-
   new SidecarInstallModal(deps.app, {
     beforeReplace: async () => {
       await shutdownSidecarBeforeFileMutation(deps, `${opts.variant} install`);
@@ -331,14 +328,6 @@ export function openSidecarUpdateModal(
     variants: readonly SidecarInstallVariant[];
   },
 ): void {
-  if (deps.isDictationBusy()) {
-    deps.feedback.show({
-      intent: 'warning',
-      message: t('settings.sidecar.stopBeforeUpdate'),
-    });
-    return;
-  }
-
   new SidecarInstallModal(deps.app, {
     beforeReplace: async () => {
       await shutdownSidecarBeforeFileMutation(deps, 'sidecar update');
@@ -360,7 +349,7 @@ export function openSidecarUpdateModal(
   }).open();
 }
 
-async function uninstallSidecarVariantWithUx(
+export async function uninstallSidecarVariantWithUx(
   deps: SidecarInstallActionDeps,
   pluginDirectory: string,
   variant: SidecarInstallVariant,
@@ -370,10 +359,17 @@ async function uninstallSidecarVariantWithUx(
     ? t('settings.sidecar.genericName')
     : t('settings.sidecar.variantName', { variant: variantLabel });
 
-  if (deps.isDictationBusy()) {
+  let mutationLease: SidecarLifecycleLease;
+  try {
+    mutationLease = deps.sidecarLifecycleGate.acquireMutation();
+  } catch (error) {
+    if (!(error instanceof SidecarLifecycleConflictError)) throw error;
     deps.feedback.show({
       intent: 'warning',
-      message: t('settings.sidecar.stopBeforeUninstall', { sidecar: userFacingName }),
+      message:
+        error.activeKind === 'speech'
+          ? t('settings.sidecar.stopBeforeUninstall', { sidecar: userFacingName })
+          : t('settings.sidecar.operationInProgress'),
     });
     return;
   }
@@ -381,34 +377,40 @@ async function uninstallSidecarVariantWithUx(
   try {
     await shutdownSidecarBeforeFileMutation(deps, `${variantLabel} uninstall`);
     await uninstallSidecarVariant(pluginDirectory, variant);
+    let restartFailure: unknown;
+    try {
+      await deps.restartSidecar();
+    } catch (error) {
+      if (!(error instanceof SidecarNotInstalledError)) {
+        restartFailure = error;
+      }
+    }
+
+    deps.feedback.show({
+      intent: 'success',
+      message: Platform.isMacOS
+        ? t('settings.sidecar.uninstalled')
+        : variant === 'cuda'
+          ? t('settings.sidecar.cudaUninstalled')
+          : t('settings.sidecar.cpuUninstalled'),
+    });
+    deps.refreshSettingsTab();
+
+    if (restartFailure !== undefined) {
+      deps.feedback.show({
+        cause: restartFailure,
+        intent: 'warning',
+        message: t('settings.sidecar.restartFailed'),
+      });
+    }
   } catch (error) {
     deps.feedback.show({
       cause: error,
       intent: 'error',
       message: t('settings.sidecar.uninstallFailed', { sidecar: userFacingName }),
     });
-    return;
-  }
-
-  deps.feedback.show({
-    intent: 'success',
-    message: Platform.isMacOS
-      ? t('settings.sidecar.uninstalled')
-      : variant === 'cuda'
-        ? t('settings.sidecar.cudaUninstalled')
-        : t('settings.sidecar.cpuUninstalled'),
-  });
-  deps.refreshSettingsTab();
-
-  try {
-    await deps.restartSidecar();
-  } catch (error) {
-    if (error instanceof SidecarNotInstalledError) return;
-    deps.feedback.show({
-      cause: error,
-      intent: 'warning',
-      message: t('settings.sidecar.restartFailed'),
-    });
+  } finally {
+    mutationLease.release();
   }
 }
 
@@ -416,10 +418,6 @@ async function shutdownSidecarBeforeFileMutation(
   deps: SidecarInstallActionDeps,
   reason: string,
 ): Promise<void> {
-  if (deps.isDictationBusy()) {
-    throw new Error(t('settings.sidecar.becameActive'));
-  }
-
   // Windows holds DLL handles on the live sidecar process, so install and
   // uninstall paths must stop it before removing or replacing bin/*.
   try {

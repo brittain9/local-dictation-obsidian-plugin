@@ -23,8 +23,9 @@ export class TestElement {
   disabled = false;
   id = '';
   innerHTML = '';
-  style = { width: '' };
+  readonly style: Record<string, string> = { width: '' };
   textContent = '';
+  private readonly listeners = new Map<string, Array<() => unknown>>();
 
   readonly classList = {
     add: (className: string): void => {
@@ -38,10 +39,21 @@ export class TestElement {
     },
   };
 
-  addEventListener(_type: string, _listener: unknown): void {}
-
   addClass(className: string): void {
     this.className = [this.className, className].filter(Boolean).join(' ');
+  }
+
+  addEventListener(event: string, listener: () => unknown): void {
+    const listeners = this.listeners.get(event) ?? [];
+    listeners.push(listener);
+    this.listeners.set(event, listeners);
+  }
+
+  async click(): Promise<void> {
+    for (const listener of this.listeners.get('click') ?? []) {
+      await listener();
+    }
+    await Promise.resolve();
   }
 
   createDiv(options: TestElementOptions = {}): TestElement {
@@ -118,6 +130,15 @@ export class TestElement {
     }
     for (const child of this.children) {
       const match = child.findByClass(className);
+      if (match !== undefined) return match;
+    }
+    return undefined;
+  }
+
+  findByText(text: string): TestElement | undefined {
+    if (this.textContent === text) return this;
+    for (const child of this.children) {
+      const match = child.findByText(text);
       if (match !== undefined) return match;
     }
     return undefined;
@@ -262,6 +283,7 @@ export class ButtonComponent {
 }
 
 export class ExtraButtonComponent extends ButtonComponent {
+  readonly extraSettingsEl = new TestElement();
   icon = '';
   tooltip = '';
 
@@ -453,11 +475,14 @@ export class Setting {
 }
 
 export class Modal {
+  static readonly instances: Modal[] = [];
   readonly contentEl = new TestElement();
   readonly modalEl = new TestElement();
   readonly titleEl = new TestElement();
 
-  constructor(readonly app: unknown) {}
+  constructor(readonly app: unknown) {
+    Modal.instances.push(this);
+  }
 
   close(): void {
     this.onClose();

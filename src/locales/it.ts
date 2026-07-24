@@ -247,11 +247,9 @@ export const it = {
   'settings.hardwareAcceleration.name': 'Accelerazione hardware',
   'settings.hardwareAcceleration.desc': 'Esegui l’inferenza sulla GPU quando disponibile.',
   'settings.hardwareAcceleration.busy':
-    'Non è possibile modificare l’accelerazione hardware durante la dettatura.',
+    'Non è possibile modificare l’accelerazione hardware durante la dettatura o la lettura ad alta voce. Se la dettatura è ancora in elaborazione dopo averla interrotta, esegui “Annulla la dettatura”.',
   'settings.hardwareAcceleration.on': 'Accelerazione hardware attiva.',
   'settings.hardwareAcceleration.off': 'Accelerazione hardware disattivata.',
-  'settings.hardwareAcceleration.restartFailed':
-    'L’impostazione dell’accelerazione hardware è stata salvata, ma non è stato possibile riavviare il motore di riconoscimento vocale. Riavvia Obsidian per applicarla.',
   'settings.noteContext.name': 'Usa la nota come contesto',
   'settings.noteContext.desc':
     'Per l’inglese selezionato manualmente, invia i termini distintivi della nota aperta per migliorare l’ortografia.',
@@ -307,11 +305,9 @@ export const it = {
     'Percorso facoltativo di ricerca delle librerie per il sidecar (Flatpak, installazioni CUDA personalizzate).',
   'settings.sidecar.installAnyway': 'Installa comunque',
   'settings.sidecar.stopBeforeInstall':
-    'Interrompi la dettatura prima di installare un sidecar: l’installazione riavvia il motore. Se una trascrizione è ancora in elaborazione, esegui “Annulla la dettatura” per interromperla subito.',
-  'settings.sidecar.stopBeforeUpdate':
-    'Interrompi la dettatura prima di aggiornare i sidecar: l’aggiornamento riavvia il motore. Se una trascrizione è ancora in elaborazione, esegui “Annulla la dettatura” per interromperla subito.',
+    'Interrompi la dettatura o la lettura ad alta voce prima di installare un sidecar: l’installazione riavvia il motore. Se la dettatura è ancora in elaborazione, esegui “Annulla la dettatura” per interromperla subito.',
   'settings.sidecar.stopBeforeUninstall':
-    'Interrompi la dettatura prima di disinstallare il {sidecar}. Se una trascrizione è ancora in elaborazione, esegui “Annulla la dettatura” per interromperla subito.',
+    'Interrompi la dettatura o la lettura ad alta voce prima di disinstallare il {sidecar}. Se la dettatura è ancora in elaborazione, esegui “Annulla la dettatura” per interromperla subito.',
   'settings.sidecar.uninstallFailed':
     'Impossibile disinstallare il {sidecar}. Chiudi le altre finestre di configurazione e riprova.',
   'settings.sidecar.uninstalled': 'Sidecar disinstallato.',
@@ -319,8 +315,6 @@ export const it = {
   'settings.sidecar.cpuUninstalled': 'Sidecar CPU disinstallato.',
   'settings.sidecar.restartFailed':
     'Impossibile riavviare il motore di riconoscimento vocale. Riavvia Obsidian prima di dettare.',
-  'settings.sidecar.becameActive':
-    'La dettatura si è attivata prima che fosse possibile modificare i file del sidecar. Interrompi o annulla la dettatura, quindi riprova.',
   'settings.sidecar.reinstall': 'Reinstalla',
   'settings.sidecar.uninstall': 'Disinstalla',
   'settings.sidecar.install': 'Installa',

@@ -244,11 +244,9 @@ export const nl = {
   'settings.hardwareAcceleration.name': 'Hardwareversnelling',
   'settings.hardwareAcceleration.desc': 'Voer gevolgtrekking uit op de GPU, indien beschikbaar.',
   'settings.hardwareAcceleration.busy':
-    'Kan de hardwareversnelling niet wijzigen tijdens het dicteren.',
+    'Kan de hardwareversnelling niet wijzigen terwijl dicteren of voorlezen actief is. Als het dicteren na het stoppen nog wordt verwerkt, voert u ‘Dicteren annuleren’ uit.',
   'settings.hardwareAcceleration.on': 'Hardwareversnelling ingeschakeld.',
   'settings.hardwareAcceleration.off': 'Hardwareversnelling uitgeschakeld.',
-  'settings.hardwareAcceleration.restartFailed':
-    'Hardwareversnelling werd opgeslagen, maar de spraakengine kon niet opnieuw opstarten. Start Obsidian opnieuw om het toe te passen.',
   'settings.noteContext.name': 'Gebruik notitie als context',
   'settings.noteContext.desc':
     'Stuur bij handmatig geselecteerd Engels onderscheidende termen uit de geopende notitie om de spelling te verbeteren.',
@@ -303,11 +301,9 @@ export const nl = {
     'Optioneel bibliotheekzoekpad voor de sidecar (Flatpak, aangepaste CUDA-installaties).',
   'settings.sidecar.installAnyway': 'Hoe dan ook installeren',
   'settings.sidecar.stopBeforeInstall':
-    'Stop het dicteren voordat u een sidecar installeert: tijdens de installatie wordt de engine opnieuw gestart. Als een transcriptie nog steeds wordt verwerkt, voert u "Dicteren annuleren" uit om het nu te stoppen.',
-  'settings.sidecar.stopBeforeUpdate':
-    'Stop het dicteren voordat u de sidecars bijwerkt: de update start de engine opnieuw. Als een transcriptie nog steeds wordt verwerkt, voert u "Dicteren annuleren" uit om het nu te stoppen.',
+    'Stop met dicteren of voorlezen voordat u een sidecar installeert: tijdens de installatie wordt de engine opnieuw gestart. Als het dicteren nog wordt verwerkt, voert u ‘Dicteren annuleren’ uit om het nu te stoppen.',
   'settings.sidecar.stopBeforeUninstall':
-    'Stop met dicteren voordat u {sidecar} verwijdert. Als een transcriptie nog wordt verwerkt, voert u ‘Dicteren annuleren’ uit om deze nu te stoppen.',
+    'Stop met dicteren of voorlezen voordat u {sidecar} verwijdert. Als het dicteren nog wordt verwerkt, voert u ‘Dicteren annuleren’ uit om het nu te stoppen.',
   'settings.sidecar.uninstallFailed':
     'Kan {sidecar} niet verwijderen. Sluit andere installatievensters en probeer het opnieuw.',
   'settings.sidecar.uninstalled': 'Sidecar verwijderd.',
@@ -315,8 +311,6 @@ export const nl = {
   'settings.sidecar.cpuUninstalled': 'CPU sidecar verwijderd.',
   'settings.sidecar.restartFailed':
     'De spraakengine kon niet opnieuw opstarten. Start Obsidian opnieuw voordat u gaat dicteren.',
-  'settings.sidecar.becameActive':
-    'Het dicteren werd actief voordat de sidecar-bestanden konden worden gewijzigd. Stop of annuleer het dicteren en probeer het opnieuw.',
   'settings.sidecar.reinstall': 'Opnieuw installeren',
   'settings.sidecar.uninstall': 'Verwijderen',
   'settings.sidecar.install': 'Installeren',

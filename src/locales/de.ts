@@ -247,11 +247,9 @@ export const de = {
   'settings.hardwareAcceleration.name': 'Hardwarebeschleunigung',
   'settings.hardwareAcceleration.desc': 'Inferenz auf der GPU ausführen, sofern verfügbar.',
   'settings.hardwareAcceleration.busy':
-    'Die Hardwarebeschleunigung kann beim Diktieren nicht geändert werden.',
+    'Die Hardwarebeschleunigung kann nicht geändert werden, während Diktat oder Vorlesen aktiv ist. Wenn das Diktat nach dem Stoppen noch verarbeitet wird, führen Sie „Diktat abbrechen“ aus.',
   'settings.hardwareAcceleration.on': 'Hardwarebeschleunigung aktiviert.',
   'settings.hardwareAcceleration.off': 'Hardwarebeschleunigung ausgeschaltet.',
-  'settings.hardwareAcceleration.restartFailed':
-    'Die Hardwarebeschleunigung wurde gespeichert, aber die Sprach-Engine konnte nicht neu gestartet werden. Starten Sie Obsidian neu, um es anzuwenden.',
   'settings.noteContext.name': 'Verwenden Sie die Notiz als Kontext',
   'settings.noteContext.desc':
     'Sendet bei manuell ausgewähltem Englisch markante Begriffe aus der offenen Notiz, um die Rechtschreibung zu verbessern.',
@@ -307,11 +305,9 @@ export const de = {
     'Optionaler Bibliothekssuchpfad für sidecar (Flatpak, benutzerdefinierte CUDA-Installationen).',
   'settings.sidecar.installAnyway': 'Trotzdem installieren',
   'settings.sidecar.stopBeforeInstall':
-    'Stoppen Sie das Diktat, bevor Sie einen sidecar installieren — die Installation startet den Motor neu. Wenn ein Transkript noch verarbeitet wird, führen Sie "Diktat abbrechen" aus, um es jetzt zu stoppen.',
-  'settings.sidecar.stopBeforeUpdate':
-    'Stoppen Sie das Diktat, bevor Sie sidecars aktualisieren – das Update startet die Engine neu. Wenn ein Transkript noch verarbeitet wird, führen Sie „Diktat abbrechen“ aus, um es jetzt zu stoppen.',
+    'Stoppen Sie Diktat oder Vorlesen, bevor Sie einen Sidecar installieren — die Installation startet den Motor neu. Wenn das Diktat noch verarbeitet wird, führen Sie „Diktat abbrechen“ aus, um es jetzt zu stoppen.',
   'settings.sidecar.stopBeforeUninstall':
-    'Stoppen Sie das Diktat, bevor Sie {sidecar} deinstallieren. Wenn ein Transkript noch verarbeitet wird, führen Sie „Diktat abbrechen“ aus, um es jetzt zu stoppen.',
+    'Stoppen Sie Diktat oder Vorlesen, bevor Sie {sidecar} deinstallieren. Wenn das Diktat noch verarbeitet wird, führen Sie „Diktat abbrechen“ aus, um es jetzt zu stoppen.',
   'settings.sidecar.uninstallFailed':
     '{sidecar} konnte nicht deinstalliert werden. Schließen Sie andere Setup-Fenster und versuchen Sie es erneut.',
   'settings.sidecar.uninstalled': 'Sidecar deinstalliert.',
@@ -319,8 +315,6 @@ export const de = {
   'settings.sidecar.cpuUninstalled': 'CPU sidecar deinstalliert.',
   'settings.sidecar.restartFailed':
     'Die Sprach-Engine konnte nicht neu gestartet werden. Starten Sie Obsidian neu, bevor Sie diktieren.',
-  'settings.sidecar.becameActive':
-    'Das Diktat wurde aktiviert, bevor die sidecar-Dateien geändert werden konnten. Stoppen oder brechen Sie das Diktat ab und versuchen Sie es erneut.',
   'settings.sidecar.reinstall': 'Neu installieren',
   'settings.sidecar.uninstall': 'Deinstallieren',
   'settings.sidecar.install': 'Installieren',

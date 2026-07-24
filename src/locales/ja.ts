@@ -241,11 +241,9 @@ export const ja = {
   'settings.hardwareAcceleration.name': 'ハードウェアアクセラレーション',
   'settings.hardwareAcceleration.desc': '利用可能な場合は、GPU で推論を実行します。',
   'settings.hardwareAcceleration.busy':
-    'ディクテーション中にハードウェア アクセラレーションを変更することはできません。',
+    'ディクテーションまたは読み上げがアクティブな間は、ハードウェア アクセラレーションを変更できません。停止後もディクテーションの処理が続いている場合は、「ディクテーションをキャンセル」を実行してください。',
   'settings.hardwareAcceleration.on': 'ハードウェアアクセラレーションがオンになっています。',
   'settings.hardwareAcceleration.off': 'ハードウェアアクセラレーションがオフになっています。',
-  'settings.hardwareAcceleration.restartFailed':
-    'ハードウェア アクセラレーションは保存されましたが、音声エンジンを再起動できませんでした。 Obsidian を再起動して適用します。',
   'settings.noteContext.name': 'メモをコンテキストとして使用する',
   'settings.noteContext.desc':
     '英語を手動で選択した場合、開いているメモから特徴的な用語を送信してスペル認識を改善します。',
@@ -300,11 +298,9 @@ export const ja = {
     'sidecar (Flatpak、カスタム CUDA インストール) のオプションのライブラリ検索パス。',
   'settings.sidecar.installAnyway': 'とにかくインストールする',
   'settings.sidecar.stopBeforeInstall':
-    'sidecar をインストールする前にディクテーションを停止してください。インストールするとエンジンが再起動されます。トランスクリプトがまだ処理中の場合は、「ディクテーションをキャンセル」を実行してすぐに停止してください。',
-  'settings.sidecar.stopBeforeUpdate':
-    'sidecar を更新する前にディクテーションを停止します。更新によりエンジンが再起動されます。トランスクリプトがまだ処理中の場合は、「ディクテーションをキャンセル」を実行してすぐに停止してください。',
+    'sidecar をインストールする前に、ディクテーションまたは読み上げを停止してください。インストールするとエンジンが再起動されます。ディクテーションがまだ処理中の場合は、「ディクテーションをキャンセル」を実行してすぐに停止してください。',
   'settings.sidecar.stopBeforeUninstall':
-    '{sidecar}をアンインストールする前に、ディクテーションを停止してください。トランスクリプトがまだ処理中の場合は、「ディクテーションをキャンセル」を実行してすぐに停止してください。',
+    '{sidecar}をアンインストールする前に、ディクテーションまたは読み上げを停止してください。ディクテーションがまだ処理中の場合は、「ディクテーションをキャンセル」を実行してすぐに停止してください。',
   'settings.sidecar.uninstallFailed':
     '{sidecar}をアンインストールできませんでした。他のセットアップウィンドウを閉じて、もう一度お試しください。',
   'settings.sidecar.uninstalled': 'Sidecarをアンインストールしました。',
@@ -313,8 +309,6 @@ export const ja = {
   'settings.sidecar.cpuUninstalled': 'CPU sidecar がアンインストールされました。',
   'settings.sidecar.restartFailed':
     '音声エンジンを再起動できませんでした。ディクテーションの前に Obsidian を再起動します。',
-  'settings.sidecar.becameActive':
-    'sidecar ファイルが変更される前に、ディクテーションがアクティブになりました。ディクテーションを停止またはキャンセルしてから、再試行してください。',
   'settings.sidecar.reinstall': '再インストール',
   'settings.sidecar.uninstall': 'アンインストール',
   'settings.sidecar.install': 'インストール',
