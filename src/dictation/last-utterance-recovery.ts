@@ -43,7 +43,11 @@ export class LastUtteranceRecovery {
 
   reinsert(editor: UtteranceRecoveryEditor): boolean {
     if (this.text === null) {
-      this.reportUnavailable();
+      this.feedback.show({
+        intent: 'information',
+        key: 'last-utterance-unavailable',
+        message: t('notice.lastUtteranceUnavailable'),
+      });
       return false;
     }
 
@@ -68,14 +72,6 @@ export class LastUtteranceRecovery {
       });
       return false;
     }
-  }
-
-  private reportUnavailable(): void {
-    this.feedback.show({
-      intent: 'information',
-      key: 'last-utterance-unavailable',
-      message: t('notice.lastUtteranceUnavailable'),
-    });
   }
 }
 

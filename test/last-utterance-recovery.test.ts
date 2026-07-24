@@ -138,10 +138,7 @@ function createRecoveryHarness(): {
   recovery: LastUtteranceRecovery;
 } {
   const feedback = { show: vi.fn() };
-  return {
-    feedback,
-    recovery: new LastUtteranceRecovery(feedback),
-  };
+  return { feedback, recovery: new LastUtteranceRecovery(feedback) };
 }
 
 function createEditorHarness(line: string, cursor: EditorPosition = { ch: 0, line: 0 }) {
