@@ -241,11 +241,9 @@ export const ja = {
   'settings.hardwareAcceleration.name': 'ハードウェアアクセラレーション',
   'settings.hardwareAcceleration.desc': '利用可能な場合は、GPU で推論を実行します。',
   'settings.hardwareAcceleration.busy':
-    'ディクテーション中にハードウェア アクセラレーションを変更することはできません。',
+    'ディクテーションまたは読み上げがアクティブな間は、ハードウェア アクセラレーションを変更できません。停止後もディクテーションの処理が続いている場合は、「ディクテーションをキャンセル」を実行してください。',
   'settings.hardwareAcceleration.on': 'ハードウェアアクセラレーションがオンになっています。',
   'settings.hardwareAcceleration.off': 'ハードウェアアクセラレーションがオフになっています。',
-  'settings.hardwareAcceleration.restartFailed':
-    'ハードウェア アクセラレーションは保存されましたが、音声エンジンを再起動できませんでした。 Obsidian を再起動して適用します。',
   'settings.noteContext.name': 'メモをコンテキストとして使用する',
   'settings.noteContext.desc':
     '英語を手動で選択した場合、開いているメモから特徴的な用語を送信してスペル認識を改善します。',
@@ -295,19 +293,14 @@ export const ja = {
   'settings.sidecar.cpuName': 'CPU sidecar',
   'settings.sidecar.cpuDesc': '音声テキスト変換エンジン。必須。',
   'settings.sidecar.gpuName': 'GPU sidecar',
-  'settings.sidecar.cudaActive': 'CUDA アクセラレーションがアクティブです。',
   'settings.sidecar.cudaLibraryPath.name': 'CUDA ライブラリ パス',
   'settings.sidecar.cudaLibraryPath.desc':
     'sidecar (Flatpak、カスタム CUDA インストール) のオプションのライブラリ検索パス。',
   'settings.sidecar.installAnyway': 'とにかくインストールする',
-  'settings.sidecar.installAnywayTooltip':
-    'NVIDIA ドライバーが検出されなかった場合でも、CUDA のインストールを続行します。',
   'settings.sidecar.stopBeforeInstall':
-    'sidecar をインストールする前にディクテーションを停止してください。インストールするとエンジンが再起動されます。トランスクリプトがまだ処理中の場合は、「ディクテーションをキャンセル」を実行してすぐに停止してください。',
-  'settings.sidecar.stopBeforeUpdate':
-    'sidecar を更新する前にディクテーションを停止します。更新によりエンジンが再起動されます。トランスクリプトがまだ処理中の場合は、「ディクテーションをキャンセル」を実行してすぐに停止してください。',
+    'sidecar をインストールする前に、ディクテーションまたは読み上げを停止してください。インストールするとエンジンが再起動されます。ディクテーションがまだ処理中の場合は、「ディクテーションをキャンセル」を実行してすぐに停止してください。',
   'settings.sidecar.stopBeforeUninstall':
-    '{sidecar}をアンインストールする前に、ディクテーションを停止してください。トランスクリプトがまだ処理中の場合は、「ディクテーションをキャンセル」を実行してすぐに停止してください。',
+    '{sidecar}をアンインストールする前に、ディクテーションまたは読み上げを停止してください。ディクテーションがまだ処理中の場合は、「ディクテーションをキャンセル」を実行してすぐに停止してください。',
   'settings.sidecar.uninstallFailed':
     '{sidecar}をアンインストールできませんでした。他のセットアップウィンドウを閉じて、もう一度お試しください。',
   'settings.sidecar.uninstalled': 'Sidecarをアンインストールしました。',
@@ -316,22 +309,9 @@ export const ja = {
   'settings.sidecar.cpuUninstalled': 'CPU sidecar がアンインストールされました。',
   'settings.sidecar.restartFailed':
     '音声エンジンを再起動できませんでした。ディクテーションの前に Obsidian を再起動します。',
-  'settings.sidecar.becameActive':
-    'sidecar ファイルが変更される前に、ディクテーションがアクティブになりました。ディクテーションを停止またはキャンセルしてから、再試行してください。',
   'settings.sidecar.reinstall': '再インストール',
   'settings.sidecar.uninstall': 'アンインストール',
   'settings.sidecar.install': 'インストール',
-  'settings.sidecar.driver.present': 'NVIDIA GPU が検出されました - 転写が高速化されました。',
-  'settings.sidecar.driver.presentTooltip':
-    'GitHub リリースから CUDA sidecar アーカイブをダウンロードします。',
-  'settings.sidecar.driver.absent':
-    'NVIDIA GPU が必要です。自分のものがサポートされていることがわかっている場合は、とにかくインストールしてください。',
-  'settings.sidecar.driver.absentTooltip':
-    'nvidia-smi が PATH 上に見つかりませんでした。システムが CUDA をサポートしていることが確実な場合は、「とにかくインストール」を使用してください。',
-  'settings.sidecar.driver.unknown':
-    'NVIDIA を調査できませんでした — 確実な場合のみインストールしてください。',
-  'settings.sidecar.driver.unknownTooltip':
-    'NVIDIA ドライバーをプローブできません。 GPU が CUDA をサポートしていることがわかっている場合にのみ続行してください。',
   'plugin.name': 'Local Dictation',
   'common.cancel': 'キャンセル',
   'common.delete': '削除',

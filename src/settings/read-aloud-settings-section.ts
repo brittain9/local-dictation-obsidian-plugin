@@ -11,6 +11,7 @@ import type { PluginSettings } from './plugin-settings';
 interface ReadAloudSettingsSectionDependencies {
   getSettings: () => PluginSettings;
   manager: ModelInstallManager;
+  openSelectedModelDetails: () => void;
   openModelPicker: (options?: ModelPickerOptions) => Promise<void>;
   persistVoice: (voice: string | null) => Promise<void>;
 }
@@ -22,6 +23,9 @@ export function readAloudControlsFingerprint(
   if (selection?.kind !== 'catalog_model') {
     return `${state.catalog.catalogVersion}:none`;
   }
+  const catalogModel = state.catalog.models.find((model) =>
+    matchesModelTriple(model, selection.runtimeId, selection.familyId, selection.modelId),
+  );
   const installed = state.installedModels.find((model) =>
     matchesModelTriple(model, selection.runtimeId, selection.familyId, selection.modelId),
   );
@@ -30,6 +34,7 @@ export function readAloudControlsFingerprint(
     selection.runtimeId,
     selection.familyId,
     selection.modelId,
+    catalogModel === undefined ? 'unresolved' : 'resolved',
     ...(installed?.installedVoiceIds ?? []),
   ].join(':');
 }
@@ -69,6 +74,16 @@ export function renderTextToSpeechSettings(
             void dependencies.openModelPicker({ initialTask: 'tts' });
           });
       });
+    if (catalogModel !== null) {
+      modelSetting.addExtraButton((button) => {
+        button
+          .setIcon('info')
+          .setTooltip(t('settings.model.details'))
+          .onClick(() => {
+            dependencies.openSelectedModelDetails();
+          });
+      });
+    }
     modelSettingEl = modelSetting.settingEl;
     modelContainer.insertBefore(modelSettingEl, modelBefore);
 

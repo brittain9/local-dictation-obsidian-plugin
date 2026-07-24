@@ -8,6 +8,11 @@ import {
   installSidecar,
   type SidecarInstallVariant,
 } from './sidecar-installer';
+import {
+  SidecarLifecycleConflictError,
+  type SidecarLifecycleGate,
+  type SidecarLifecycleLease,
+} from './sidecar-lifecycle-gate';
 
 export type SidecarInstallPhase = 'canceling' | 'installing';
 
@@ -45,6 +50,7 @@ export interface SidecarInstallBatchOptions extends Omit<SidecarInstallOptions, 
 interface SidecarInstallManagerDependencies {
   feedback: Pick<UserFeedback, 'show'>;
   logger?: PluginLogger | undefined;
+  sidecarLifecycleGate: SidecarLifecycleGate;
 }
 
 const INITIAL_PROGRESS: InstallProgress = {
@@ -124,6 +130,7 @@ export class SidecarInstallManager {
     options: SidecarInstallBatchOptions,
     signal: AbortSignal,
   ): Promise<void> {
+    const mutation = { lease: null as SidecarLifecycleLease | null };
     try {
       for (const [index, variant] of options.variants.entries()) {
         this.activeInstall = {
@@ -136,7 +143,10 @@ export class SidecarInstallManager {
         this.notify();
 
         await installSidecar({
-          beforeReplace: options.beforeReplace,
+          beforeReplace: async () => {
+            mutation.lease ??= this.deps.sidecarLifecycleGate.acquireMutation();
+            await options.beforeReplace?.();
+          },
           logger: this.deps.logger,
           onProgress: (progress) => {
             this.updateProgress(progress);
@@ -173,6 +183,15 @@ export class SidecarInstallManager {
           message: t('setup.sidecar.installCancelled'),
         });
         this.lastError = null;
+      } else if (error instanceof SidecarLifecycleConflictError) {
+        this.deps.feedback.show({
+          intent: 'warning',
+          message:
+            error.activeKind === 'speech'
+              ? t('settings.sidecar.stopBeforeInstall')
+              : t('settings.sidecar.operationInProgress'),
+        });
+        this.lastError = null;
       } else {
         const message = formatErrorMessage(error);
         this.lastError = message;
@@ -189,6 +208,7 @@ export class SidecarInstallManager {
         }
       }
     } finally {
+      mutation.lease?.release();
       if (this.abortController?.signal === signal) {
         this.abortController = null;
       }

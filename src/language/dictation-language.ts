@@ -21,6 +21,19 @@ export function dictationLanguageLabel(language: DictationLanguage): string {
   return DICTATION_LANGUAGE_OPTIONS.find((option) => option.value === language)?.label ?? language;
 }
 
+export function formatCatalogLanguageLabel(tag: string): string {
+  const known = DICTATION_LANGUAGE_OPTIONS.find(
+    (option) => option.value !== 'auto' && option.value === tag,
+  );
+  if (known !== undefined) return known.label;
+
+  try {
+    return new Intl.DisplayNames([tag], { type: 'language' }).of(tag) ?? tag.toUpperCase();
+  } catch {
+    return tag.toUpperCase();
+  }
+}
+
 export function isDictationLanguage(value: unknown): value is DictationLanguage {
   return DICTATION_LANGUAGE_OPTIONS.some((option) => option.value === value);
 }

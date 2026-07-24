@@ -18,6 +18,11 @@ import type {
 } from '../sidecar/protocol';
 import type { SidecarConnection } from '../sidecar/sidecar-connection';
 import { localizeKnownSidecarEventCode } from '../sidecar/sidecar-event-localization';
+import {
+  SidecarLifecycleConflictError,
+  type SidecarLifecycleGate,
+  type SidecarLifecycleLease,
+} from '../sidecar/sidecar-lifecycle-gate';
 import { extractAndSegmentMarkdown } from './markdown-extractor';
 import { resolveReadAloudVoiceId } from './read-aloud-selection';
 
@@ -46,15 +51,18 @@ interface ReadAloudControllerDependencies {
     | 'subscribe'
     | 'subscribeSynthesisAudio'
   >;
+  sidecarLifecycleGate: SidecarLifecycleGate;
   stopDictation: () => Promise<void>;
 }
 
 export class ReadAloudController {
   private activeChunks: SynthesisTextChunk[] = [];
+  private activeSpeechLease: SidecarLifecycleLease | null = null;
   private activeSynthesisId: number | null = null;
   private lastPlayedSequence = -1;
   private nextSynthesisId = 1;
   private pendingStartRevision = 0;
+  private readonly pendingSpeechLeases = new Set<SidecarLifecycleLease>();
   private releaseAudio: (() => void) | null;
   private releaseEvents: (() => void) | null;
   private sampleRate: number | null = null;
@@ -100,10 +108,33 @@ export class ReadAloudController {
     }
     const configuration = this.resolveSynthesisConfiguration();
     if (configuration === null) return;
+
+    let speechLease: SidecarLifecycleLease;
+    try {
+      speechLease = this.deps.sidecarLifecycleGate.acquireSpeech();
+    } catch (error) {
+      if (!(error instanceof SidecarLifecycleConflictError)) throw error;
+      this.deps.feedback.show({
+        intent: 'warning',
+        key: 'sidecar-maintenance',
+        message: t('notice.sidecarMaintenanceInProgress'),
+      });
+      return;
+    }
+
+    const releaseStartOperation = speechLease.retain();
+    this.pendingSpeechLeases.add(speechLease);
     const startRevision = ++this.pendingStartRevision;
-    if (this.deps.isDictationBusy()) await this.deps.stopDictation();
-    if (startRevision !== this.pendingStartRevision) return;
-    await this.startChunks(chunks, this.deps.getSettings().ttsSpeed, configuration);
+    try {
+      if (this.deps.isDictationBusy()) await this.deps.stopDictation();
+      if (startRevision !== this.pendingStartRevision) return;
+      await this.startChunks(chunks, this.deps.getSettings().ttsSpeed, configuration, speechLease);
+    } finally {
+      if (this.pendingSpeechLeases.delete(speechLease)) {
+        speechLease.release();
+      }
+      releaseStartOperation();
+    }
   }
 
   async togglePaused(): Promise<void> {
@@ -116,6 +147,10 @@ export class ReadAloudController {
 
   stop(): void {
     this.pendingStartRevision += 1;
+    for (const lease of this.pendingSpeechLeases) {
+      lease.release();
+    }
+    this.pendingSpeechLeases.clear();
     const synthesisId = this.activeSynthesisId;
     this.clearActive();
     if (synthesisId !== null) this.deps.sidecarConnection.cancelSynthesis(synthesisId);
@@ -130,8 +165,15 @@ export class ReadAloudController {
     }
     const configuration = this.resolveSynthesisConfiguration();
     if (configuration === null) return;
+    const speechLease = this.activeSpeechLease;
+    if (speechLease === null) return;
+    const releaseStartOperation = speechLease.retain();
     this.pendingStartRevision += 1;
-    await this.startChunks(remaining, speed, configuration);
+    try {
+      await this.startChunks(remaining, speed, configuration, speechLease);
+    } finally {
+      releaseStartOperation();
+    }
   }
 
   dispose(): void {
@@ -146,10 +188,17 @@ export class ReadAloudController {
     chunks: SynthesisTextChunk[],
     speed: number,
     configuration: SynthesisConfiguration,
+    speechLease: SidecarLifecycleLease,
   ): Promise<void> {
     const previousSynthesisId = this.activeSynthesisId;
     if (previousSynthesisId !== null) {
       this.deps.sidecarConnection.cancelSynthesis(previousSynthesisId);
+    }
+    const previousSpeechLease = this.activeSpeechLease;
+    this.pendingSpeechLeases.delete(speechLease);
+    this.activeSpeechLease = speechLease;
+    if (previousSpeechLease !== null && previousSpeechLease !== speechLease) {
+      previousSpeechLease.release();
     }
     const synthesisId = this.allocateSynthesisId();
     this.activeChunks = chunks;
@@ -286,12 +335,15 @@ export class ReadAloudController {
   }
 
   private clearActive(): void {
+    const speechLease = this.activeSpeechLease;
+    this.activeSpeechLease = null;
     this.activeChunks = [];
     this.activeSynthesisId = null;
     this.lastPlayedSequence = -1;
     this.sampleRate = null;
     this.playback.stop();
     this.setState('idle');
+    speechLease?.release();
   }
 
   private setState(state: ReadAloudState): void {

@@ -7,12 +7,13 @@ import {
   isDictationLanguage,
   supportedDictationLanguageOptions,
 } from '../language/dictation-language';
-import { resolveEngineCapabilities } from '../models/capability-view';
 import type { ModelPickerOptions } from '../models/manage-models-modal';
 import type { ModelInstallManager } from '../models/model-install-manager';
 import { updateInstallProgressElement } from '../models/model-install-progress';
-import { ExternalModelFileModal, ModelDetailsModal } from '../models/model-management-modals';
-import { matchesModelTriple } from '../models/model-management-types';
+import {
+  ExternalModelFileModal,
+  openSelectedModelDetailsModal,
+} from '../models/model-management-modals';
 import { deriveCurrentModelDisplay } from '../models/model-row-state';
 import { t } from '../shared/i18n';
 import type { PluginLogger } from '../shared/plugin-logger';
@@ -24,10 +25,12 @@ import {
   type SidecarInstallManager,
 } from '../sidecar/sidecar-install-manager';
 import { readInstallManifest, variantDirectoryPath } from '../sidecar/sidecar-installer';
+import type { SidecarLifecycleGate } from '../sidecar/sidecar-lifecycle-gate';
 import { ConfirmModal } from '../ui/confirm-modal';
 import { styleDestructiveButton } from '../ui/destructive-button';
 import { diarizationSettingDescription } from './diarization-setting';
 import { DiarizationSettingsModal } from './diarization-settings-modal';
+import { renderHardwareAccelerationSetting } from './hardware-acceleration-setting';
 import { renderActiveInstallCard } from './install-progress-row';
 import { renderMicrophonePicker } from './microphone-picker';
 import { renderModelSection } from './model-settings-section';
@@ -82,6 +85,7 @@ interface SettingsTabDependencies {
   saveSettings: (settings: PluginSettings) => Promise<void>;
   sidecarConnection: Pick<SidecarConnection, 'probeSystemAudio' | 'shutdown'>;
   sidecarInstallManager: SidecarInstallManager;
+  sidecarLifecycleGate: SidecarLifecycleGate;
 }
 
 const LISTENING_MODE_OPTIONS: ReadonlyArray<DropdownOption<'always_on' | 'one_sentence'>> = [
@@ -280,7 +284,10 @@ export class LocalSttSettingTab extends PluginSettingTab {
           },
         ).open();
       },
-      onModelInfo: this.buildModelInfoCallback(manager, settings),
+      onModelInfo:
+        settings.selectedModel?.kind === 'catalog_model'
+          ? this.buildModelInfoCallback(manager, 'stt')
+          : null,
     });
 
     const modelState = manager.getState();
@@ -470,6 +477,7 @@ export class LocalSttSettingTab extends PluginSettingTab {
       {
         getSettings: () => this.dependencies.getSettings(),
         manager,
+        openSelectedModelDetails: this.buildModelInfoCallback(manager, 'tts'),
         openModelPicker: (options) => this.dependencies.openModelPicker(options),
         persistVoice: (voice) => this.access.persistOne('selectedTtsVoice', voice),
       },
@@ -700,39 +708,9 @@ export class LocalSttSettingTab extends PluginSettingTab {
     });
   }
 
-  private buildModelInfoCallback(
-    manager: ModelInstallManager,
-    settings: PluginSettings,
-  ): (() => void) | null {
-    const sel = settings.selectedModel;
-
-    if (sel === null || sel.kind !== 'catalog_model') {
-      return null;
-    }
-
-    const { runtimeId, familyId, modelId } = sel;
-
+  private buildModelInfoCallback(manager: ModelInstallManager, task: 'stt' | 'tts'): () => void {
     return () => {
-      const state = manager.getState();
-      const catalogModel = state.catalog.models.find((m) =>
-        matchesModelTriple(m, runtimeId, familyId, modelId),
-      );
-      if (catalogModel === undefined) return;
-      const installedModel = state.installedModels.find((m) =>
-        matchesModelTriple(m, runtimeId, familyId, modelId),
-      );
-      const capabilities = resolveEngineCapabilities(
-        state.compiledRuntimes,
-        state.compiledAdapters,
-        catalogModel.runtimeId,
-        catalogModel.familyId,
-      );
-      new ModelDetailsModal(
-        this.app,
-        catalogModel,
-        installedModel?.installPath ?? null,
-        capabilities,
-      ).open();
+      openSelectedModelDetailsModal(this.app, manager, task);
     };
   }
 
@@ -769,40 +747,12 @@ export class LocalSttSettingTab extends PluginSettingTab {
       false;
 
     if (!Platform.isMacOS && hasNonCpuAccelerator) {
-      // accelerationPreference is a string enum mapped onto a boolean toggle, so
-      // the addEnumSetting / addToggleSetting helpers don't fit.
-      new Setting(containerEl)
-        .setName(t('settings.hardwareAcceleration.name'))
-        .setDesc(t('settings.hardwareAcceleration.desc'))
-        .addToggle((toggle) => {
-          toggle.setValue(settings.accelerationPreference === 'auto');
-          toggle.onChange(async (value) => {
-            if (this.dependencies.isDictationBusy()) {
-              this.dependencies.feedback.show({
-                intent: 'warning',
-                message: t('settings.hardwareAcceleration.busy'),
-              });
-              toggle.setValue(!value);
-              return;
-            }
-            await this.access.persistOne('accelerationPreference', value ? 'auto' : 'cpu_only');
-            try {
-              await this.dependencies.restartSidecar();
-              this.dependencies.feedback.show({
-                intent: 'success',
-                message: value
-                  ? t('settings.hardwareAcceleration.on')
-                  : t('settings.hardwareAcceleration.off'),
-              });
-            } catch (error) {
-              this.dependencies.feedback.show({
-                cause: error,
-                intent: 'error',
-                message: t('settings.hardwareAcceleration.restartFailed'),
-              });
-            }
-          });
-        });
+      renderHardwareAccelerationSetting(containerEl, {
+        access: this.access,
+        feedback: this.dependencies.feedback,
+        restartSidecar: this.dependencies.restartSidecar,
+        sidecarLifecycleGate: this.dependencies.sidecarLifecycleGate,
+      });
       rendered += 1;
     }
 
@@ -907,7 +857,6 @@ export class LocalSttSettingTab extends PluginSettingTab {
     return {
       app: this.app,
       feedback: this.dependencies.feedback,
-      isDictationBusy: this.dependencies.isDictationBusy,
       logger: this.dependencies.logger,
       modelInstallManager: this.dependencies.modelInstallManager,
       pluginVersion: this.dependencies.pluginVersion,
@@ -917,6 +866,7 @@ export class LocalSttSettingTab extends PluginSettingTab {
       restartSidecar: this.dependencies.restartSidecar,
       sidecarConnection: this.dependencies.sidecarConnection,
       sidecarInstallManager: this.dependencies.sidecarInstallManager,
+      sidecarLifecycleGate: this.dependencies.sidecarLifecycleGate,
     };
   }
 }

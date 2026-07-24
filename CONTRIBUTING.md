@@ -20,7 +20,7 @@ See [docs/system-architecture.md](docs/system-architecture.md) for the pipeline 
 
 The recommended Node version is pinned in `package.json` `engines` (a compatibility floor, not an exact pin) and the Rust toolchain in `rust-toolchain.toml`. If you use [mise](https://mise.jdx.dev), `mise install` sets up the Node and Rust toolchains automatically.
 
-The CUDA Toolkit is a build-from-source dependency. Published Linux/Windows CUDA sidecar archives bundle the CUDA runtime libraries needed by Whisper CUDA; release users need only a Turing-or-newer NVIDIA GPU and a driver compatible with CUDA 13.x (R580 or newer). Cohere CUDA additionally needs cuDNN `9.x` runtime libraries built for CUDA 13 (9.20 or newer) installed until cuDNN redistribution is reviewed.
+The CUDA Toolkit is a build-from-source dependency. Published Linux/Windows CUDA sidecar archives bundle the CUDA runtime libraries needed by Whisper CUDA; release users need only a Turing-or-newer NVIDIA GPU and an R595 or newer driver. The archives use CUDA 13.2 with a PTX-only compute 7.5 target, so they require CUDA 13.2's native driver branch rather than CUDA minor-version compatibility. Cohere CUDA additionally needs cuDNN `9.x` runtime libraries built for CUDA 13 (9.20 or newer) installed until cuDNN redistribution is reviewed.
 
 ## Getting it running
 

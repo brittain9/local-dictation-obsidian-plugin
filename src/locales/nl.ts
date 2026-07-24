@@ -244,11 +244,9 @@ export const nl = {
   'settings.hardwareAcceleration.name': 'Hardwareversnelling',
   'settings.hardwareAcceleration.desc': 'Voer gevolgtrekking uit op de GPU, indien beschikbaar.',
   'settings.hardwareAcceleration.busy':
-    'Kan de hardwareversnelling niet wijzigen tijdens het dicteren.',
+    'Kan de hardwareversnelling niet wijzigen terwijl dicteren of voorlezen actief is. Als het dicteren na het stoppen nog wordt verwerkt, voert u ‘Dicteren annuleren’ uit.',
   'settings.hardwareAcceleration.on': 'Hardwareversnelling ingeschakeld.',
   'settings.hardwareAcceleration.off': 'Hardwareversnelling uitgeschakeld.',
-  'settings.hardwareAcceleration.restartFailed':
-    'Hardwareversnelling werd opgeslagen, maar de spraakengine kon niet opnieuw opstarten. Start Obsidian opnieuw om het toe te passen.',
   'settings.noteContext.name': 'Gebruik notitie als context',
   'settings.noteContext.desc':
     'Stuur bij handmatig geselecteerd Engels onderscheidende termen uit de geopende notitie om de spelling te verbeteren.',
@@ -298,19 +296,14 @@ export const nl = {
   'settings.sidecar.cpuName': 'CPU sidecar',
   'settings.sidecar.cpuDesc': 'Spraak-naar-tekst-engine. Vereist.',
   'settings.sidecar.gpuName': 'GPU sidecar',
-  'settings.sidecar.cudaActive': 'CUDA-acceleratie actief.',
   'settings.sidecar.cudaLibraryPath.name': 'CUDA-bibliotheekpad',
   'settings.sidecar.cudaLibraryPath.desc':
     'Optioneel bibliotheekzoekpad voor de sidecar (Flatpak, aangepaste CUDA-installaties).',
   'settings.sidecar.installAnyway': 'Hoe dan ook installeren',
-  'settings.sidecar.installAnywayTooltip':
-    'Ga door met de installatie van CUDA, ook al is er geen NVIDIA-stuurprogramma gedetecteerd.',
   'settings.sidecar.stopBeforeInstall':
-    'Stop het dicteren voordat u een sidecar installeert: tijdens de installatie wordt de engine opnieuw gestart. Als een transcriptie nog steeds wordt verwerkt, voert u "Dicteren annuleren" uit om het nu te stoppen.',
-  'settings.sidecar.stopBeforeUpdate':
-    'Stop het dicteren voordat u de sidecars bijwerkt: de update start de engine opnieuw. Als een transcriptie nog steeds wordt verwerkt, voert u "Dicteren annuleren" uit om het nu te stoppen.',
+    'Stop met dicteren of voorlezen voordat u een sidecar installeert: tijdens de installatie wordt de engine opnieuw gestart. Als het dicteren nog wordt verwerkt, voert u ‘Dicteren annuleren’ uit om het nu te stoppen.',
   'settings.sidecar.stopBeforeUninstall':
-    'Stop met dicteren voordat u {sidecar} verwijdert. Als een transcriptie nog wordt verwerkt, voert u ‘Dicteren annuleren’ uit om deze nu te stoppen.',
+    'Stop met dicteren of voorlezen voordat u {sidecar} verwijdert. Als het dicteren nog wordt verwerkt, voert u ‘Dicteren annuleren’ uit om het nu te stoppen.',
   'settings.sidecar.uninstallFailed':
     'Kan {sidecar} niet verwijderen. Sluit andere installatievensters en probeer het opnieuw.',
   'settings.sidecar.uninstalled': 'Sidecar verwijderd.',
@@ -318,22 +311,9 @@ export const nl = {
   'settings.sidecar.cpuUninstalled': 'CPU sidecar verwijderd.',
   'settings.sidecar.restartFailed':
     'De spraakengine kon niet opnieuw opstarten. Start Obsidian opnieuw voordat u gaat dicteren.',
-  'settings.sidecar.becameActive':
-    'Het dicteren werd actief voordat de sidecar-bestanden konden worden gewijzigd. Stop of annuleer het dicteren en probeer het opnieuw.',
   'settings.sidecar.reinstall': 'Opnieuw installeren',
   'settings.sidecar.uninstall': 'Verwijderen',
   'settings.sidecar.install': 'Installeren',
-  'settings.sidecar.driver.present': 'NVIDIA GPU gedetecteerd — snellere transcriptie.',
-  'settings.sidecar.driver.presentTooltip':
-    'Downloadt het CUDA sidecar-archief van GitHub-releases.',
-  'settings.sidecar.driver.absent':
-    'Vereist een NVIDIA GPU. Installeer het toch als u weet dat het uwe wordt ondersteund.',
-  'settings.sidecar.driver.absentTooltip':
-    "nvidia-smi is niet gevonden op PATH. Gebruik 'Toch installeren' als u zeker weet dat uw systeem CUDA ondersteunt.",
-  'settings.sidecar.driver.unknown':
-    'Kan NVIDIA niet vinden. Installeer het alleen als u het zeker weet.',
-  'settings.sidecar.driver.unknownTooltip':
-    'Kan niet zoeken naar een NVIDIA-stuurprogramma. Ga alleen verder als u weet dat uw GPU CUDA ondersteunt.',
   'plugin.name': 'Local Dictation',
   'common.cancel': 'Annuleren',
   'common.delete': 'Verwijderen',

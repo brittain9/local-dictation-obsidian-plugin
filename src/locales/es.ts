@@ -249,11 +249,9 @@ export const es = {
   'settings.hardwareAcceleration.name': 'Aceleración de hardware',
   'settings.hardwareAcceleration.desc': 'Ejecute la inferencia en la GPU cuando esté disponible.',
   'settings.hardwareAcceleration.busy':
-    'No se puede cambiar la aceleración del hardware mientras se dicta.',
+    'No se puede cambiar la aceleración del hardware mientras el dictado o la lectura en voz alta estén activos. Si el dictado sigue procesándose después de detenerlo, ejecute "Cancelar dictado".',
   'settings.hardwareAcceleration.on': 'Aceleración de hardware activada.',
   'settings.hardwareAcceleration.off': 'Aceleración de hardware desactivada.',
-  'settings.hardwareAcceleration.restartFailed':
-    'Se guardó la aceleración del hardware, pero el motor de voz no pudo reiniciarse. Reinicie Obsidian para aplicarlo.',
   'settings.noteContext.name': 'Usar nota como contexto',
   'settings.noteContext.desc':
     'Para inglés seleccionado manualmente, envía términos distintivos de la nota abierta para mejorar la ortografía.',
@@ -304,19 +302,14 @@ export const es = {
   'settings.sidecar.cpuName': 'CPU sidecar',
   'settings.sidecar.cpuDesc': 'Motor de voz a texto. Requerido.',
   'settings.sidecar.gpuName': 'GPU sidecar',
-  'settings.sidecar.cudaActive': 'Aceleración CUDA activa.',
   'settings.sidecar.cudaLibraryPath.name': 'Ruta de la biblioteca CUDA',
   'settings.sidecar.cudaLibraryPath.desc':
     'Ruta de búsqueda de biblioteca opcional para sidecar (Flatpak, instalaciones personalizadas de CUDA).',
   'settings.sidecar.installAnyway': 'Instalar de todos modos',
-  'settings.sidecar.installAnywayTooltip':
-    'Continúe con la instalación de CUDA aunque no se haya detectado ningún controlador NVIDIA.',
   'settings.sidecar.stopBeforeInstall':
-    'Detenga el dictado antes de instalar un sidecar: la instalación reinicia el motor. Si una transcripción aún se está procesando, ejecute "Cancelar dictado" para detenerla ahora.',
-  'settings.sidecar.stopBeforeUpdate':
-    'Detenga el dictado antes de actualizar sidecar: la actualización reinicia el motor. Si una transcripción aún se está procesando, ejecute "Cancelar dictado" para detenerla ahora.',
+    'Detenga el dictado o la lectura en voz alta antes de instalar un sidecar: la instalación reinicia el motor. Si el dictado sigue procesándose, ejecute "Cancelar dictado" para detenerlo ahora.',
   'settings.sidecar.stopBeforeUninstall':
-    'Detén el dictado antes de desinstalar {sidecar}. Si aún se está procesando una transcripción, ejecuta "Cancelar dictado" para detenerla ahora.',
+    'Detenga el dictado o la lectura en voz alta antes de desinstalar {sidecar}. Si el dictado sigue procesándose, ejecute "Cancelar dictado" para detenerlo ahora.',
   'settings.sidecar.uninstallFailed':
     'No se pudo desinstalar {sidecar}. Cierra las demás ventanas de configuración e inténtalo de nuevo.',
   'settings.sidecar.uninstalled': 'Sidecar desinstalado.',
@@ -324,21 +317,9 @@ export const es = {
   'settings.sidecar.cpuUninstalled': 'CPU sidecar desinstalado.',
   'settings.sidecar.restartFailed':
     'El motor de voz no pudo reiniciarse. Reinicie Obsidian antes de dictar.',
-  'settings.sidecar.becameActive':
-    'El dictado se activó antes de que se pudieran cambiar los archivos sidecar. Detenga o cancele el dictado y vuelva a intentarlo.',
   'settings.sidecar.reinstall': 'Reinstalar',
   'settings.sidecar.uninstall': 'Desinstalar',
   'settings.sidecar.install': 'Instalar',
-  'settings.sidecar.driver.present': 'GPU NVIDIA detectada: transcripción más rápida.',
-  'settings.sidecar.driver.presentTooltip':
-    'Descarga el archivo CUDA sidecar de las versiones GitHub.',
-  'settings.sidecar.driver.absent':
-    'Requiere una GPU NVIDIA. Instálelo de todos modos si sabe que la suya es compatible.',
-  'settings.sidecar.driver.absentTooltip':
-    'nvidia-smi no se encontró en PATH. Utilice "Instalar de todos modos" si está seguro de que su sistema admite CUDA.',
-  'settings.sidecar.driver.unknown': 'No se pudo buscar NVIDIA; instálelo solo si está seguro.',
-  'settings.sidecar.driver.unknownTooltip':
-    'No se puede buscar un controlador NVIDIA. Continúe solo si sabe que su GPU es compatible con CUDA.',
   'plugin.name': 'Local Dictation',
   'common.cancel': 'Cancelar',
   'common.delete': 'Borrar',

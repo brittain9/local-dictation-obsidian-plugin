@@ -132,4 +132,18 @@ describe('user feedback', () => {
       run.mock.invocationCallOrder[0] ?? Number.POSITIVE_INFINITY,
     );
   });
+
+  it('dismisses keyed feedback without presenting a replacement', () => {
+    const { dismissals, feedback, presentations } = createHarness();
+    feedback.show({
+      intent: 'warning',
+      key: 'recoverable-action',
+      message: 'Recovery is available.',
+    });
+
+    feedback.dismiss('recoverable-action');
+
+    expect(dismissals[0]).toHaveBeenCalledOnce();
+    expect(presentations).toHaveLength(1);
+  });
 });

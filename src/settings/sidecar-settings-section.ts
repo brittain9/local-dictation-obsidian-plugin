@@ -12,7 +12,11 @@ import { SidecarInstallModal } from '../setup/sidecar-install-modal';
 import { t } from '../shared/i18n';
 import type { PluginLogger } from '../shared/plugin-logger';
 import type { UserFeedback } from '../shared/user-feedback';
-import { detectNvidiaDriver, type NvidiaDriverStatus } from '../sidecar/gpu-precheck';
+import {
+  CUDA_COMPATIBILITY_REQUIREMENTS,
+  type CudaCompatibility,
+  detectCudaCompatibility,
+} from '../sidecar/gpu-precheck';
 import type { SidecarConnection } from '../sidecar/sidecar-connection';
 import {
   buildSidecarProgressState,
@@ -25,6 +29,11 @@ import {
   uninstallSidecarVariant,
   variantDirectoryPath,
 } from '../sidecar/sidecar-installer';
+import {
+  SidecarLifecycleConflictError,
+  type SidecarLifecycleGate,
+  type SidecarLifecycleLease,
+} from '../sidecar/sidecar-lifecycle-gate';
 import { SidecarNotInstalledError } from '../sidecar/sidecar-paths';
 import { styleDestructiveButton } from '../ui/destructive-button';
 import { renderActiveInstallCard } from './install-progress-row';
@@ -33,7 +42,6 @@ import { addPositiveIntSetting, addTextSetting, type SettingAccess } from './set
 export interface SidecarInstallActionDeps {
   app: App;
   feedback: Pick<UserFeedback, 'show'>;
-  isDictationBusy(): boolean;
   logger?: PluginLogger | undefined;
   modelInstallManager: ModelInstallManager;
   pluginVersion: string;
@@ -41,6 +49,7 @@ export interface SidecarInstallActionDeps {
   restartSidecar(): Promise<void>;
   sidecarConnection: Pick<SidecarConnection, 'shutdown'>;
   sidecarInstallManager: SidecarInstallManager;
+  sidecarLifecycleGate: SidecarLifecycleGate;
 }
 
 export interface SidecarSettingsSectionDependencies extends SidecarInstallActionDeps {
@@ -50,7 +59,7 @@ export interface SidecarSettingsSectionDependencies extends SidecarInstallAction
 
 export class SidecarSettingsSection {
   private disposed = false;
-  private nvidiaDriverStatus: Promise<NvidiaDriverStatus> | null = null;
+  private cudaCompatibility: Promise<CudaCompatibility> | null = null;
   private progressEl: HTMLDivElement | null = null;
 
   constructor(
@@ -65,7 +74,7 @@ export class SidecarSettingsSection {
       this.disposed = true;
       unsubscribe();
       this.progressEl = null;
-      this.nvidiaDriverStatus = null;
+      this.cudaCompatibility = null;
     };
   }
 
@@ -77,19 +86,19 @@ export class SidecarSettingsSection {
 
     let cpuManifest: InstallManifest | null;
     let cudaManifest: InstallManifest | null = null;
-    let driverStatus: NvidiaDriverStatus = 'absent';
+    let cudaCompatibility: CudaCompatibility = { status: 'unsupported' };
 
     if (Platform.isMacOS) {
       cpuManifest = await readInstallManifest(variantDirectoryPath(pluginDirectory, 'cpu'));
       if (this.disposed || !this.container.isConnected) return;
     } else {
-      if (this.nvidiaDriverStatus === null) {
-        this.nvidiaDriverStatus = detectNvidiaDriver();
+      if (this.cudaCompatibility === null) {
+        this.cudaCompatibility = detectCudaCompatibility();
       }
-      [cpuManifest, cudaManifest, driverStatus] = await Promise.all([
+      [cpuManifest, cudaManifest, cudaCompatibility] = await Promise.all([
         readInstallManifest(variantDirectoryPath(pluginDirectory, 'cpu')),
         readInstallManifest(variantDirectoryPath(pluginDirectory, 'cuda')),
-        this.nvidiaDriverStatus,
+        this.cudaCompatibility,
       ]);
       if (this.disposed || !this.container.isConnected) return;
     }
@@ -135,7 +144,7 @@ export class SidecarSettingsSection {
         renderActiveCard(activeInstall);
       }
 
-      this.renderGpuRow(cudaManifest, pluginDirectory, driverStatus);
+      this.renderGpuRow(cudaManifest, pluginDirectory, cudaCompatibility);
       if (activeInstall !== null && activeInstall.variant === 'cuda') {
         renderActiveCard(activeInstall);
       }
@@ -221,19 +230,25 @@ export class SidecarSettingsSection {
   private renderGpuRow(
     manifest: InstallManifest | null,
     pluginDirectory: string,
-    driverStatus: NvidiaDriverStatus,
+    compatibility: CudaCompatibility,
   ): void {
-    const driverReason = describeDriverStatus(driverStatus);
+    const presentation = getCudaInstallPresentation(compatibility);
     const isInstalled = manifest !== null;
 
     const setting = new Setting(this.container)
       .setName(t('settings.sidecar.gpuName'))
-      .setDesc(isInstalled ? t('settings.sidecar.cudaActive') : driverReason.label);
+      .setDesc(presentation.description);
     appendVersionChip(setting, manifest);
 
     addInstallButtons(setting, isInstalled, {
-      installCta: driverStatus === 'present',
-      installDisabled: driverStatus === 'absent',
+      allowInstall: presentation.installAction !== 'none',
+      installCta: presentation.installAction === 'cta',
+      installLabel:
+        presentation.installAction === 'manual' ? t('settings.sidecar.installAnyway') : undefined,
+      installTooltip:
+        presentation.installAction === 'manual'
+          ? t('settings.sidecar.installUnverifiedTooltip')
+          : undefined,
       onInstall: () => {
         this.openCudaInstallModal(pluginDirectory);
       },
@@ -248,16 +263,6 @@ export class SidecarSettingsSection {
         void uninstallSidecarVariantWithUx(this.deps, pluginDirectory, 'cuda');
       },
     });
-
-    if (!isInstalled && driverStatus === 'absent') {
-      setting.addButton((button) => {
-        button.setButtonText(t('settings.sidecar.installAnyway'));
-        button.setTooltip(t('settings.sidecar.installAnywayTooltip'));
-        button.onClick(() => {
-          this.openCudaInstallModal(pluginDirectory);
-        });
-      });
-    }
   }
 
   private openCudaInstallModal(pluginDirectory: string): void {
@@ -297,14 +302,6 @@ export function openSidecarInstallModal(
     variant: SidecarInstallVariant;
   },
 ): void {
-  if (deps.isDictationBusy()) {
-    deps.feedback.show({
-      intent: 'warning',
-      message: t('settings.sidecar.stopBeforeInstall'),
-    });
-    return;
-  }
-
   new SidecarInstallModal(deps.app, {
     beforeReplace: async () => {
       await shutdownSidecarBeforeFileMutation(deps, `${opts.variant} install`);
@@ -331,14 +328,6 @@ export function openSidecarUpdateModal(
     variants: readonly SidecarInstallVariant[];
   },
 ): void {
-  if (deps.isDictationBusy()) {
-    deps.feedback.show({
-      intent: 'warning',
-      message: t('settings.sidecar.stopBeforeUpdate'),
-    });
-    return;
-  }
-
   new SidecarInstallModal(deps.app, {
     beforeReplace: async () => {
       await shutdownSidecarBeforeFileMutation(deps, 'sidecar update');
@@ -360,7 +349,7 @@ export function openSidecarUpdateModal(
   }).open();
 }
 
-async function uninstallSidecarVariantWithUx(
+export async function uninstallSidecarVariantWithUx(
   deps: SidecarInstallActionDeps,
   pluginDirectory: string,
   variant: SidecarInstallVariant,
@@ -370,10 +359,17 @@ async function uninstallSidecarVariantWithUx(
     ? t('settings.sidecar.genericName')
     : t('settings.sidecar.variantName', { variant: variantLabel });
 
-  if (deps.isDictationBusy()) {
+  let mutationLease: SidecarLifecycleLease;
+  try {
+    mutationLease = deps.sidecarLifecycleGate.acquireMutation();
+  } catch (error) {
+    if (!(error instanceof SidecarLifecycleConflictError)) throw error;
     deps.feedback.show({
       intent: 'warning',
-      message: t('settings.sidecar.stopBeforeUninstall', { sidecar: userFacingName }),
+      message:
+        error.activeKind === 'speech'
+          ? t('settings.sidecar.stopBeforeUninstall', { sidecar: userFacingName })
+          : t('settings.sidecar.operationInProgress'),
     });
     return;
   }
@@ -381,34 +377,40 @@ async function uninstallSidecarVariantWithUx(
   try {
     await shutdownSidecarBeforeFileMutation(deps, `${variantLabel} uninstall`);
     await uninstallSidecarVariant(pluginDirectory, variant);
+    let restartFailure: unknown;
+    try {
+      await deps.restartSidecar();
+    } catch (error) {
+      if (!(error instanceof SidecarNotInstalledError)) {
+        restartFailure = error;
+      }
+    }
+
+    deps.feedback.show({
+      intent: 'success',
+      message: Platform.isMacOS
+        ? t('settings.sidecar.uninstalled')
+        : variant === 'cuda'
+          ? t('settings.sidecar.cudaUninstalled')
+          : t('settings.sidecar.cpuUninstalled'),
+    });
+    deps.refreshSettingsTab();
+
+    if (restartFailure !== undefined) {
+      deps.feedback.show({
+        cause: restartFailure,
+        intent: 'warning',
+        message: t('settings.sidecar.restartFailed'),
+      });
+    }
   } catch (error) {
     deps.feedback.show({
       cause: error,
       intent: 'error',
       message: t('settings.sidecar.uninstallFailed', { sidecar: userFacingName }),
     });
-    return;
-  }
-
-  deps.feedback.show({
-    intent: 'success',
-    message: Platform.isMacOS
-      ? t('settings.sidecar.uninstalled')
-      : variant === 'cuda'
-        ? t('settings.sidecar.cudaUninstalled')
-        : t('settings.sidecar.cpuUninstalled'),
-  });
-  deps.refreshSettingsTab();
-
-  try {
-    await deps.restartSidecar();
-  } catch (error) {
-    if (error instanceof SidecarNotInstalledError) return;
-    deps.feedback.show({
-      cause: error,
-      intent: 'warning',
-      message: t('settings.sidecar.restartFailed'),
-    });
+  } finally {
+    mutationLease.release();
   }
 }
 
@@ -416,10 +418,6 @@ async function shutdownSidecarBeforeFileMutation(
   deps: SidecarInstallActionDeps,
   reason: string,
 ): Promise<void> {
-  if (deps.isDictationBusy()) {
-    throw new Error(t('settings.sidecar.becameActive'));
-  }
-
   // Windows holds DLL handles on the live sidecar process, so install and
   // uninstall paths must stop it before removing or replacing bin/*.
   try {
@@ -433,17 +431,21 @@ function addInstallButtons(
   setting: Setting,
   isInstalled: boolean,
   opts: {
+    allowInstall?: boolean;
     installCta?: boolean;
-    installDisabled?: boolean;
+    installLabel?: string | undefined;
+    installTooltip?: string | undefined;
     onInstall: () => void;
     onReinstall: () => void;
     onUninstall: () => void;
   },
 ): void {
   if (isInstalled) {
-    setting.addButton((button) => {
-      button.setButtonText(t('settings.sidecar.reinstall')).onClick(opts.onReinstall);
-    });
+    if (opts.allowInstall ?? true) {
+      setting.addButton((button) => {
+        button.setButtonText(t('settings.sidecar.reinstall')).onClick(opts.onReinstall);
+      });
+    }
     setting.addButton((button) => {
       styleDestructiveButton(button.setButtonText(t('settings.sidecar.uninstall'))).onClick(
         opts.onUninstall,
@@ -452,10 +454,14 @@ function addInstallButtons(
     return;
   }
 
+  if (opts.allowInstall === false) return;
+
   setting.addButton((button) => {
-    button.setButtonText(t('settings.sidecar.install')).onClick(opts.onInstall);
+    button
+      .setButtonText(opts.installLabel ?? t('settings.sidecar.install'))
+      .onClick(opts.onInstall);
+    if (opts.installTooltip !== undefined) button.setTooltip(opts.installTooltip);
     if (opts.installCta ?? true) button.setCta();
-    if (opts.installDisabled === true) button.setDisabled(true);
   });
 }
 
@@ -467,22 +473,46 @@ function appendVersionChip(setting: Setting, manifest: InstallManifest | null): 
   });
 }
 
-function describeDriverStatus(status: NvidiaDriverStatus): { label: string; tooltip: string } {
-  switch (status) {
-    case 'present':
+export function getCudaInstallPresentation(compatibility: CudaCompatibility): {
+  description: string;
+  installAction: 'cta' | 'manual' | 'none';
+} {
+  switch (compatibility.status) {
+    case 'compatible':
       return {
-        label: t('settings.sidecar.driver.present'),
-        tooltip: t('settings.sidecar.driver.presentTooltip'),
+        description: t('settings.sidecar.cudaCompatibility.compatible'),
+        installAction: 'cta',
       };
     case 'absent':
       return {
-        label: t('settings.sidecar.driver.absent'),
-        tooltip: t('settings.sidecar.driver.absentTooltip'),
+        description: t('settings.sidecar.cudaCompatibility.absent'),
+        installAction: 'manual',
       };
+    case 'incompatible_driver':
+      return {
+        description: t('settings.sidecar.cudaCompatibility.incompatibleDriver', {
+          minimumDriverMajor: CUDA_COMPATIBILITY_REQUIREMENTS.minimumDriverMajor,
+        }),
+        installAction: 'none',
+      };
+    case 'incompatible_gpu': {
+      const { major, minor } = CUDA_COMPATIBILITY_REQUIREMENTS.minimumComputeCapability;
+      return {
+        description: t('settings.sidecar.cudaCompatibility.incompatibleGpu', {
+          minimumComputeCapability: `${major}.${minor}`,
+        }),
+        installAction: 'none',
+      };
+    }
     case 'unknown':
       return {
-        label: t('settings.sidecar.driver.unknown'),
-        tooltip: t('settings.sidecar.driver.unknownTooltip'),
+        description: t('settings.sidecar.cudaCompatibility.unknown'),
+        installAction: 'manual',
+      };
+    case 'unsupported':
+      return {
+        description: t('settings.sidecar.cudaCompatibility.unsupported'),
+        installAction: 'none',
       };
   }
 }
