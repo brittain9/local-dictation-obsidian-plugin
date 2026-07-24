@@ -10,11 +10,20 @@ export type UtteranceRecoveryEditor = Pick<
   'getCursor' | 'getLine' | 'replaceRange' | 'setCursor'
 >;
 
+interface ClipboardWriter {
+  writeText(text: string): Promise<void>;
+}
+
+interface LastUtteranceRecoveryDependencies {
+  feedback: Pick<UserFeedback, 'show'>;
+  getClipboard: () => ClipboardWriter | null | undefined;
+}
+
 export class LastUtteranceRecovery {
   private enabled = true;
   private text: string | null = null;
 
-  constructor(private readonly feedback: Pick<UserFeedback, 'show'>) {}
+  constructor(private readonly dependencies: LastUtteranceRecoveryDependencies) {}
 
   hasUtterance(): boolean {
     return this.enabled && this.text !== null;
@@ -41,13 +50,41 @@ export class LastUtteranceRecovery {
     }
   }
 
+  async copyLastUtterance(): Promise<boolean> {
+    const text = this.text;
+    if (!this.enabled || text === null) {
+      this.reportUnavailable();
+      return false;
+    }
+
+    try {
+      const clipboard = this.dependencies.getClipboard();
+      if (clipboard === null || clipboard === undefined) {
+        throw new Error('Clipboard API unavailable.');
+      }
+      await clipboard.writeText(text);
+    } catch {
+      // Do not attach the clipboard error as feedback cause: a hostile or buggy
+      // implementation could echo the private text it was asked to copy.
+      this.dependencies.feedback.show({
+        intent: 'error',
+        key: 'last-utterance-copy-failed',
+        message: t('notice.lastUtteranceCopyFailed'),
+      });
+      return false;
+    }
+
+    this.dependencies.feedback.show({
+      intent: 'success',
+      key: 'last-utterance-copied',
+      message: t('notice.lastUtteranceCopied'),
+    });
+    return true;
+  }
+
   reinsert(editor: UtteranceRecoveryEditor): boolean {
     if (this.text === null) {
-      this.feedback.show({
-        intent: 'information',
-        key: 'last-utterance-unavailable',
-        message: t('notice.lastUtteranceUnavailable'),
-      });
+      this.reportUnavailable();
       return false;
     }
 
@@ -57,14 +94,14 @@ export class LastUtteranceRecovery {
       const insertion = formatInsertion(this.text, line, cursor.ch);
       editor.replaceRange(insertion, cursor);
       editor.setCursor(advancePosition(cursor, insertion));
-      this.feedback.show({
+      this.dependencies.feedback.show({
         intent: 'success',
         key: 'last-utterance-reinserted',
         message: t('notice.lastUtteranceReinserted'),
       });
       return true;
     } catch (error) {
-      this.feedback.show({
+      this.dependencies.feedback.show({
         cause: error,
         intent: 'error',
         key: 'last-utterance-reinsert-failed',
@@ -72,6 +109,14 @@ export class LastUtteranceRecovery {
       });
       return false;
     }
+  }
+
+  private reportUnavailable(): void {
+    this.dependencies.feedback.show({
+      intent: 'information',
+      key: 'last-utterance-unavailable',
+      message: t('notice.lastUtteranceUnavailable'),
+    });
   }
 }
 

@@ -76,7 +76,10 @@ export default class LocalSttPlugin extends Plugin {
     presenter: createObsidianFeedbackPresenter(),
   });
   private llmCleanupFailure: LlmCleanupFailure | null = null;
-  private readonly lastUtteranceRecovery = new LastUtteranceRecovery(this.feedback);
+  private readonly lastUtteranceRecovery = new LastUtteranceRecovery({
+    feedback: this.feedback,
+    getClipboard: () => window.navigator.clipboard,
+  });
   private readonly llmCleanupFailureSubscribers = new Set<() => void>();
   private modelInstallManager: ModelInstallManager | null = null;
   private presetStateStore: LlmPresetStateStore | null = null;
@@ -306,6 +309,9 @@ export default class LocalSttPlugin extends Plugin {
         this.rawTranscriptRecovery.clearWithFeedback();
       },
       checkSidecarHealth: async () => this.checkSidecarHealth(),
+      copyLastUtterance: () => {
+        void this.lastUtteranceRecovery.copyLastUtterance();
+      },
       copyRawTranscript: () => {
         void this.rawTranscriptRecovery.copyRawTranscript();
       },
