@@ -36,7 +36,7 @@ interface ReadAloudControllerDependencies {
   getSettings: () => PluginSettings;
   isDictationBusy: () => boolean;
   logger?: PluginLogger;
-  onModelMissing: () => void;
+  onModelMissing: () => Promise<void> | void;
   onStateChange: (state: ReadAloudState) => void;
   sidecarConnection: Pick<
     SidecarConnection,
@@ -217,12 +217,17 @@ export class ReadAloudController {
     };
   }
 
-  private reportModelRequired(): void {
+  private reportModelRequired(cause?: unknown): void {
     this.deps.feedback.show({
       action: {
         label: t('tts.action.chooseModel'),
-        run: this.deps.onModelMissing,
+        run: () => {
+          void Promise.resolve(this.deps.onModelMissing()).catch((error: unknown) => {
+            this.reportModelRequired(error);
+          });
+        },
       },
+      ...(cause === undefined ? {} : { cause }),
       intent: 'action-required',
       key: 'read-aloud-model-required',
       message: t('tts.notice.modelRequired'),

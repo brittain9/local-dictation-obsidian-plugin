@@ -86,7 +86,7 @@ type StartSynthesisMock = ReturnType<
 function controllerHarness(options: {
   catalog?: ModelCatalogRecord;
   dictationLanguage?: 'auto' | 'en';
-  onModelMissing?: () => void;
+  onModelMissing?: () => Promise<void> | void;
   selected: boolean;
   selectedVoice?: string | null;
   startSynthesis?: StartSynthesisMock;
@@ -225,6 +225,30 @@ describe('ReadAloudController', () => {
     request.action.run();
 
     expect(harness.onModelMissing).toHaveBeenCalledOnce();
+  });
+
+  it('restores the model setup action when opening recovery fails', async () => {
+    const onModelMissing = vi.fn(async () => {
+      throw new Error('model picker failed');
+    });
+    const harness = controllerHarness({ onModelMissing, selected: false });
+
+    await harness.controller.read(editorFor('Speak this.', { ch: 0, line: 0 }));
+    const request = harness.feedback.show.mock.calls[0]?.[0];
+    if (request?.action === undefined) throw new Error('model setup action was not offered');
+    request.action.run();
+
+    await vi.waitFor(() => expect(harness.feedback.show).toHaveBeenCalledTimes(2));
+    expect(harness.feedback.show).toHaveBeenLastCalledWith({
+      action: {
+        label: 'Choose model',
+        run: expect.any(Function),
+      },
+      cause: expect.any(Error),
+      intent: 'action-required',
+      key: 'read-aloud-model-required',
+      message: 'Install and select a read-aloud model first.',
+    });
   });
 
   it('uses the stable model-required key across repeated invocations', async () => {
