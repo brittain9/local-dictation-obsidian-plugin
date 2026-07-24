@@ -157,6 +157,124 @@ class FakeAudioLevelMeter {
 }
 
 describe('DictationSessionController', () => {
+  it('warns and stays idle before touching microphone or sidecar prerequisites without a target', async () => {
+    const captureStream = new FakeCaptureStream();
+    const countAudioInputDevices = vi.fn(async () => 1);
+    const createSession = vi.fn();
+    const feedback = { show: vi.fn() };
+    const sidecarConnection = new FakeSidecarConnection();
+    const stopConflictingSpeech = vi.fn();
+    const controller = createController({
+      captureStream,
+      countAudioInputDevices,
+      createSession,
+      feedback,
+      hasDictationTarget: () => false,
+      sidecarConnection,
+      stopConflictingSpeech,
+    });
+
+    await controller.startDictation();
+
+    expect(feedback.show).toHaveBeenCalledOnce();
+    expect(feedback.show).toHaveBeenCalledWith({
+      intent: 'warning',
+      key: 'dictation-target-unavailable',
+      message: 'Open a Markdown note in editing mode, then try dictation again.',
+    });
+    expect(countAudioInputDevices).not.toHaveBeenCalled();
+    expect(captureStream.start).not.toHaveBeenCalled();
+    expect(sidecarConnection.ensureStarted).not.toHaveBeenCalled();
+    expect(sidecarConnection.startSession).not.toHaveBeenCalled();
+    expect(createSession).not.toHaveBeenCalled();
+    expect(stopConflictingSpeech).not.toHaveBeenCalled();
+    expect(controller.getState()).toBe('idle');
+  });
+
+  it('opens the model picker before checking the target when no model is selected', async () => {
+    const feedback = { show: vi.fn() };
+    const hasDictationTarget = vi.fn(() => false);
+    const onModelMissing = vi.fn();
+    const sidecarConnection = new FakeSidecarConnection();
+    const stopConflictingSpeech = vi.fn();
+    const controller = createController({
+      feedback,
+      getSettings: () => createSettings({ selectedModel: null }),
+      hasDictationTarget,
+      onModelMissing,
+      sidecarConnection,
+      stopConflictingSpeech,
+    });
+
+    await controller.startDictation();
+
+    expect(onModelMissing).toHaveBeenCalledOnce();
+    expect(hasDictationTarget).not.toHaveBeenCalled();
+    expect(feedback.show).not.toHaveBeenCalled();
+    expect(sidecarConnection.ensureStarted).not.toHaveBeenCalled();
+    expect(stopConflictingSpeech).not.toHaveBeenCalled();
+    expect(controller.getState()).toBe('idle');
+  });
+
+  it('stops conflicting speech once after preflight and before downstream prerequisites', async () => {
+    const captureStream = new FakeCaptureStream();
+    const countAudioInputDevices = vi.fn(async () => 1);
+    const createSession = vi.fn();
+    const hasDictationTarget = vi.fn(() => true);
+    const sidecarConnection = new FakeSidecarConnection();
+    const stopConflictingSpeech = vi.fn();
+    const controller = createController({
+      captureStream,
+      countAudioInputDevices,
+      createSession,
+      hasDictationTarget,
+      sidecarConnection,
+      stopConflictingSpeech,
+    });
+
+    await controller.startDictation();
+
+    expect(hasDictationTarget).toHaveBeenCalledOnce();
+    expect(stopConflictingSpeech).toHaveBeenCalledOnce();
+    const targetCallOrder = hasDictationTarget.mock.invocationCallOrder[0] ?? 0;
+    const stopCallOrder = stopConflictingSpeech.mock.invocationCallOrder[0] ?? 0;
+    expect(targetCallOrder).toBeLessThan(stopCallOrder);
+    for (const downstream of [
+      countAudioInputDevices,
+      sidecarConnection.ensureStarted,
+      createSession,
+      sidecarConnection.startSession,
+      captureStream.start,
+    ]) {
+      expect(stopCallOrder).toBeLessThan(downstream.mock.invocationCallOrder[0] ?? 0);
+    }
+    expect(sidecarConnection.ensureStarted).toHaveBeenCalledOnce();
+    expect(createSession).toHaveBeenCalledOnce();
+    expect(sidecarConnection.startSession).toHaveBeenCalledOnce();
+    expect(captureStream.start).toHaveBeenCalledOnce();
+    expect(controller.getState()).toBe('listening');
+  });
+
+  it('rechecks target availability on a later retry', async () => {
+    let hasTarget = false;
+    const feedback = { show: vi.fn() };
+    const sidecarConnection = new FakeSidecarConnection();
+    const controller = createController({
+      feedback,
+      hasDictationTarget: () => hasTarget,
+      sidecarConnection,
+    });
+
+    await controller.startDictation();
+    hasTarget = true;
+    await controller.startDictation();
+
+    expect(feedback.show).toHaveBeenCalledOnce();
+    expect(sidecarConnection.ensureStarted).toHaveBeenCalledOnce();
+    expect(sidecarConnection.startSession).toHaveBeenCalledOnce();
+    expect(controller.getState()).toBe('listening');
+  });
+
   it('starts a bare-UUID session and tags audio frames with that session id', async () => {
     const captureStream = new FakeCaptureStream();
     const sidecarConnection = new FakeSidecarConnection();
@@ -2748,27 +2866,33 @@ function createController({
   createSession,
   llmRouter = createFakeLlmRouter(),
   getSettings = () => createSettings({ selectedModel: createExternalModelSelection() }),
+  hasDictationTarget = () => true,
   logger = new FakeLogger(),
   feedback = { show: vi.fn() },
   sidecarConnection = new FakeSidecarConnection(),
   onLlmCleanupFailure,
   onLlmCleanupSuccess,
   onFinalizedUtteranceAccepted,
+  onModelMissing,
   onRawTranscriptRecoveryAvailable,
+  stopConflictingSpeech = vi.fn(),
 }: {
   audioLevelMeter?: FakeAudioLevelMeter;
   captureStream?: FakeCaptureStream;
   countAudioInputDevices?: () => Promise<number | null>;
   createSession?: (session: FakeSession, options: CreateSessionOptions) => void;
   getSettings?: () => PluginSettings;
+  hasDictationTarget?: () => boolean;
   llmRouter?: LlmRouter;
   logger?: FakeLogger;
   feedback?: Pick<UserFeedback, 'show'>;
   onLlmCleanupFailure?: (failure: LlmCleanupFailure) => void;
   onLlmCleanupSuccess?: () => void;
   onFinalizedUtteranceAccepted?: (text: string) => void;
+  onModelMissing?: () => void;
   onRawTranscriptRecoveryAvailable?: (receipt: RawTranscriptRecoveryReceipt) => void;
   sidecarConnection?: FakeSidecarConnection;
+  stopConflictingSpeech?: () => void;
 } = {}): DictationSessionController {
   return new DictationSessionController({
     captureStream,
@@ -2782,16 +2906,18 @@ function createController({
     createLlmRouter: () => llmRouter,
     feedback,
     getSettings,
+    hasDictationTarget,
     logger,
     ...(onLlmCleanupFailure !== undefined ? { onLlmCleanupFailure } : {}),
     ...(onLlmCleanupSuccess !== undefined ? { onLlmCleanupSuccess } : {}),
     ...(onFinalizedUtteranceAccepted !== undefined ? { onFinalizedUtteranceAccepted } : {}),
     ...(onRawTranscriptRecoveryAvailable !== undefined ? { onRawTranscriptRecoveryAvailable } : {}),
-    onModelMissing: vi.fn(),
+    onModelMissing: onModelMissing ?? vi.fn(),
     onSidecarMissing: vi.fn(),
     setRibbonQueueTier: vi.fn((_tier: QueueBackpressureTier) => {}),
     setRibbonState: vi.fn((_state: DictationControllerState) => {}),
     sidecarConnection,
+    stopConflictingSpeech,
   });
 }
 

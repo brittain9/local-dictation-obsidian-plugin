@@ -138,6 +138,7 @@ interface DictationSessionControllerDependencies {
   createLlmRouter: (settings: PluginSettings) => LlmRouter;
   feedback: Pick<UserFeedback, 'show'>;
   getSettings: () => PluginSettings;
+  hasDictationTarget: () => boolean;
   logger?: PluginLogger;
   onLlmCleanupFailure?: (failure: LlmCleanupFailure) => void;
   onLlmCleanupSuccess?: () => void;
@@ -158,6 +159,7 @@ interface DictationSessionControllerDependencies {
     | 'startSession'
     | 'subscribe'
   >;
+  stopConflictingSpeech: () => void;
 }
 
 const ANCHOR_VISIBLE_DELAY_MS = 2500;
@@ -302,6 +304,18 @@ export class DictationSessionController {
       this.dependencies.onModelMissing?.();
       return;
     }
+
+    if (!this.dependencies.hasDictationTarget()) {
+      this.dependencies.feedback.show({
+        intent: 'warning',
+        key: 'dictation-target-unavailable',
+        message: t('setup.ready.openMarkdownNote'),
+      });
+      this.applyUiState('idle');
+      return;
+    }
+
+    this.dependencies.stopConflictingSpeech();
 
     try {
       await this.assertMicrophoneInputAvailable();
