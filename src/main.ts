@@ -162,6 +162,8 @@ export default class LocalSttPlugin extends Plugin {
       },
     });
     this.modelInstallManager = new ModelInstallManager({
+      commitSettingsIf: (condition, createNextSettings) =>
+        this.requirePresetStateStore().commitPreservingPresetStateIf(condition, createNextSettings),
       getSettings: () => this.settings,
       logger: this.logger,
       saveSettings: async (nextSettings) => {

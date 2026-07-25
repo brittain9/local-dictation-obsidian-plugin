@@ -62,6 +62,7 @@ function state(
     },
     compiledAdapters: [],
     compiledRuntimes: [],
+    failedInstall: null,
     installedModels: [
       {
         catalogVersion: 5,

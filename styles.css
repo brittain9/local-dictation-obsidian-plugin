@@ -121,6 +121,21 @@
   min-width: 140px;
 }
 
+.local-stt-install-failure-region:not(:empty) {
+  margin-bottom: 12px;
+}
+
+.local-stt-install-failure {
+  padding: 10px 12px;
+  border: 1px solid var(--background-modifier-error, rgba(200, 0, 0, 0.15));
+  border-radius: var(--radius-s);
+  background: var(--background-modifier-error, rgba(200, 0, 0, 0.15));
+}
+
+.local-stt-install-failure .setting-item-name {
+  color: var(--text-error, #cd5c5c);
+}
+
 .local-stt-model-browser {
   display: grid;
   grid-template-columns: 148px minmax(0, 1fr);

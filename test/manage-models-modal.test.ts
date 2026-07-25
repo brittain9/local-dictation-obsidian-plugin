@@ -21,6 +21,7 @@ import type {
 import { resolveModelPresentationPolicy } from '../src/models/model-presentation-policy';
 import type { ModelRowState } from '../src/models/model-row-state';
 import { Setting, TestElement } from './__mocks__/obsidian';
+import { sampleSelection } from './fixtures/models';
 
 function ttsModel(
   modelId: string,
@@ -285,6 +286,7 @@ describe('model browser', () => {
           runtimeId: 'onnx_runtime' as const,
         },
       ],
+      failedInstall: null,
       installedModels: [
         {
           catalogVersion: 1,
@@ -359,6 +361,72 @@ describe('model browser', () => {
         'Speed control',
       ]),
     );
+  });
+
+  it('keeps failure recovery outside the filtered browser and restores it on reopen', () => {
+    Setting.reset();
+    const elementPrototype = TestElement.prototype as TestElement & {
+      addEventListener?: () => void;
+    };
+    const originalAddEventListener = elementPrototype.addEventListener;
+    elementPrototype.addEventListener = () => {};
+    let listener = (): void => {};
+    const state: ModelManagerState = {
+      activeInstall: null,
+      catalog: { catalogVersion: 1, collections: [], families: [], models: [] },
+      compiledAdapters: [],
+      compiledRuntimes: [],
+      failedInstall: {
+        artifactIds: ['voice-alba'],
+        failureId: 'install-failed',
+        selection: sampleSelection(),
+      },
+      installedModels: [],
+      loadError: null,
+      loadStatus: 'loading',
+      modelStore: { overridePath: null, path: '/models', usingDefaultPath: true },
+      selectedModel: null,
+      selectedModelCapabilities: { status: 'none' },
+      selectedTtsModel: null,
+      selectedTtsModelCapabilities: { status: 'none' },
+    };
+    const manager = {
+      getDictationLanguage: () => 'en',
+      getState: () => state,
+      subscribe: (next: () => void) => {
+        listener = next;
+        return () => {};
+      },
+    } as unknown as ModelInstallManager;
+    const modal = new ManageModelsModal({} as never, {
+      feedback: { show: vi.fn() },
+      manager,
+      onChanged: vi.fn(),
+    });
+    (modal as unknown as { modalEl: TestElement }).modalEl = new TestElement();
+
+    try {
+      modal.open();
+      const content = modal.contentEl as unknown as TestElement;
+      const initialPanel = content.findByClass('local-stt-install-failure');
+      expect(initialPanel).toBeDefined();
+      expect(content.children[0]?.className).toBe('local-stt-install-failure-region');
+      expect(content.findByClass('local-stt-model-browser')).toBeDefined();
+
+      listener();
+      expect(content.findByClass('local-stt-install-failure')).toBe(initialPanel);
+
+      modal.close();
+      modal.open();
+      expect(content.findByClass('local-stt-install-failure')).toBeDefined();
+    } finally {
+      modal.close();
+      if (originalAddEventListener === undefined) {
+        Reflect.deleteProperty(elementPrototype, 'addEventListener');
+      } else {
+        elementPrototype.addEventListener = originalAddEventListener;
+      }
+    }
   });
 });
 

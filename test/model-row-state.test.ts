@@ -34,6 +34,7 @@ function buildState(overrides?: Partial<ModelManagerState>): ModelManagerState {
     catalog: sampleCatalog(),
     compiledAdapters: [],
     compiledRuntimes: [],
+    failedInstall: null,
     installedModels: [],
     loadError: null,
     loadStatus: 'ready',
