@@ -286,10 +286,12 @@ describe('ModelInstallManager', () => {
         failedInstall: {
           artifactIds: ['voice-alba', 'voice-cosette'],
           failureId: request.installId,
+          // Kept verbatim: the row reports the reason in place, and "hash mismatch"
+          // is the only thing that tells the user a retry is worth attempting.
+          message: 'hash mismatch at https://download.example.com/model',
           selection: sampleSelection(),
         },
       });
-      expect(harness.manager.getState().failedInstall).not.toHaveProperty('message');
       expect(harness.manager.getState().failedInstall).not.toHaveProperty('details');
     });
 
@@ -300,7 +302,11 @@ describe('ModelInstallManager', () => {
       await harness.manager.install(sampleSelection(), ['voice-alba']);
       const request = harness.sidecarConnection.installModel.mock.calls[0]?.[0];
       if (request === undefined) throw new Error('Expected an install request');
-      emitInstallUpdate(harness, { installId: request.installId, state: 'failed' });
+      emitInstallUpdate(harness, {
+        installId: request.installId,
+        message: 'connection reset by peer',
+        state: 'failed',
+      });
 
       const exposed = harness.manager.getState().failedInstall;
       if (exposed === null) throw new Error('Expected a failed install');
@@ -310,6 +316,7 @@ describe('ModelInstallManager', () => {
       expect(harness.manager.getState().failedInstall).toEqual({
         artifactIds: ['voice-alba'],
         failureId: request.installId,
+        message: 'connection reset by peer',
         selection: sampleSelection(),
       });
     });

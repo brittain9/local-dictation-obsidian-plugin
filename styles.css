@@ -121,21 +121,6 @@
   min-width: 140px;
 }
 
-.local-stt-install-failure-region:not(:empty) {
-  margin-bottom: 12px;
-}
-
-.local-stt-install-failure {
-  padding: 10px 12px;
-  border: 1px solid var(--background-modifier-error, rgba(200, 0, 0, 0.15));
-  border-radius: var(--radius-s);
-  background: var(--background-modifier-error, rgba(200, 0, 0, 0.15));
-}
-
-.local-stt-install-failure .setting-item-name {
-  color: var(--text-error, #cd5c5c);
-}
-
 .local-stt-model-browser {
   display: grid;
   grid-template-columns: 148px minmax(0, 1fr);
@@ -357,6 +342,25 @@
 
 .local-stt-install-progress--cancelling .local-stt-install-progress__fill {
   opacity: 0.7;
+}
+
+/* A failed install keeps the same card in the same row and turns red, rather
+   than moving the report to a banner somewhere else in the modal. The track
+   itself carries the colour because a failure has no meaningful percentage. */
+.local-stt-install-progress--failed {
+  border-color: var(--text-error, #cd5c5c);
+}
+
+.local-stt-install-progress--failed .local-stt-install-progress__status {
+  color: var(--text-error, #cd5c5c);
+}
+
+.local-stt-install-progress--failed .local-stt-install-progress__track {
+  background: var(--text-error, #cd5c5c);
+}
+
+.local-stt-install-progress--failed .local-stt-install-progress__fill {
+  display: none;
 }
 
 /* --- Empty state -------------------------------------------------- */
@@ -1197,24 +1201,21 @@
 
 /* --- Settings attention ------------------------------------------ */
 
+/* Bordered in the theme accent rather than a muted grey: this callout is the
+   one thing in Settings that is asking to be acted on, and the previous
+   border/background pair made it read as inert chrome. The fill stays
+   `--background-secondary` so the row text keeps full contrast in every theme. */
 .local-stt-settings-attention {
   margin: 0 0 var(--size-4-6);
   overflow: hidden;
-  border: 1px solid var(--background-modifier-border-hover);
+  border: 1px solid var(--interactive-accent, #7c3aed);
+  border-left-width: 3px;
   border-radius: var(--radius-m);
   background: var(--background-secondary);
 }
 
-.local-stt-settings-attention__heading {
-  margin: 0;
-  padding: var(--size-4-3) var(--size-4-4);
-  border-bottom: 1px solid var(--background-modifier-border);
-  color: var(--text-warning);
-  font-size: var(--font-ui-medium);
-}
-
 .local-stt-settings-attention .setting-items {
-  padding: 0 var(--size-4-4);
+  padding: var(--size-4-1) var(--size-4-4);
 }
 
 .local-stt-settings-attention__item .setting-item-name {

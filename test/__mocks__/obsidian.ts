@@ -458,8 +458,15 @@ export class Setting {
     return this.toggleComponents[0] as ToggleComponent;
   }
 
-  setDesc(description: string): this {
-    this.descEl.setText(description);
+  // Obsidian accepts a string or a node here. Callers that pass a fragment build
+  // real elements into it, so keep them reachable as children instead of
+  // stringifying the fragment away.
+  setDesc(description: string | TestElement): this {
+    if (description instanceof TestElement) {
+      this.descEl.append(description);
+    } else {
+      this.descEl.setText(description);
+    }
     return this;
   }
 

@@ -54,7 +54,6 @@ interface RenderedAttention {
   updateProgress: ((activeInstall: ActiveSidecarInstall) => void) | null;
 }
 
-const ATTENTION_HEADING_ID = 'local-stt-settings-attention-heading';
 const UNKNOWN_MANIFESTS = {
   cpu: { status: 'unknown' },
   cuda: { status: 'unknown' },
@@ -257,20 +256,12 @@ export function renderSettingsAttention(
   container.toggleClass('local-stt-hidden', isEmpty);
   if (isEmpty) return { progressEl: null, updateProgress: null };
 
+  // No visible heading: this region only ever holds a single row, whose own
+  // name already states what needs doing, so a heading above it just repeats
+  // itself. The accessible name lives on the region instead.
   container.setAttribute('role', 'region');
-  container.setAttribute('aria-labelledby', ATTENTION_HEADING_ID);
-  container.createEl('h3', {
-    attr: { id: ATTENTION_HEADING_ID },
-    cls: 'local-stt-settings-attention__heading',
-    text: t('settings.attention.heading'),
-  });
-  const items = container.createDiv({
-    attr: {
-      'aria-labelledby': ATTENTION_HEADING_ID,
-      role: 'group',
-    },
-    cls: 'setting-items',
-  });
+  container.setAttribute('aria-label', t('settings.attention.regionLabel'));
+  const items = container.createDiv({ cls: 'setting-items' });
 
   if (resolution.kind === 'progress') {
     const activeInstall = resolution.activeInstall;

@@ -40,6 +40,7 @@ describe('install progress', () => {
         }),
       ).toEqual({
         bytesLabel: '512 B / 1.0 KiB',
+        hasFailed: false,
         isCancelling: false,
         primaryLine: 'Downloading vocab.json',
         progressPercent: 50,
@@ -81,7 +82,7 @@ describe('install progress', () => {
       expect(vm.isCancelling).toBe(true);
     });
 
-    it('does not render raw native diagnostics for a failed install', () => {
+    it('reports the failure reason and suppresses raw native diagnostics', () => {
       const vm = buildInstallProgressViewModel({
         details: 'permission denied at /private/model/path',
         downloadedBytes: null,
@@ -91,7 +92,22 @@ describe('install progress', () => {
         totalBytes: null,
       });
 
+      expect(vm.hasFailed).toBe(true);
       expect(vm.primaryLine).toBe('Model install failed');
+      // The reason, not `details` — that field carries native paths meant for logs.
+      expect(vm.secondaryLine).toBe('The model store path is invalid.');
+    });
+
+    it('leaves the second line empty when a failure reports no reason', () => {
+      const vm = buildInstallProgressViewModel({
+        details: 'permission denied at /private/model/path',
+        downloadedBytes: null,
+        isCancelling: false,
+        message: '   ',
+        state: 'failed',
+        totalBytes: null,
+      });
+
       expect(vm.secondaryLine).toBeNull();
     });
   });

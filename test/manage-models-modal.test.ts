@@ -21,7 +21,6 @@ import type {
 import { resolveModelPresentationPolicy } from '../src/models/model-presentation-policy';
 import type { ModelRowState } from '../src/models/model-row-state';
 import { Setting, TestElement } from './__mocks__/obsidian';
-import { sampleSelection } from './fixtures/models';
 
 function ttsModel(
   modelId: string,
@@ -88,6 +87,7 @@ function sttModel(
 function row(model: CatalogModelRecord): ModelRowState {
   return {
     allowedActions: ['install'],
+    failedInstall: null,
     installed: false,
     isCanceling: false,
     isInstalling: false,
@@ -363,27 +363,63 @@ describe('model browser', () => {
     );
   });
 
-  it('keeps failure recovery outside the filtered browser and restores it on reopen', () => {
+  it('reports an install failure on the failed model row and reveals it across tasks', () => {
     Setting.reset();
     const elementPrototype = TestElement.prototype as TestElement & {
       addEventListener?: () => void;
     };
     const originalAddEventListener = elementPrototype.addEventListener;
     elementPrototype.addEventListener = () => {};
-    let listener = (): void => {};
+    // The failed row builds a real progress element, which reaches for Obsidian's
+    // element helpers rather than the modal's own container methods.
+    const originalGlobals = {
+      createDiv: globalThis.createDiv,
+      createFragment: globalThis.createFragment,
+      createSpan: globalThis.createSpan,
+    };
+    globalThis.createDiv = () => new TestElement() as unknown as HTMLDivElement;
+    globalThis.createSpan = () => new TestElement() as unknown as HTMLSpanElement;
+    globalThis.createFragment = () => new TestElement() as unknown as DocumentFragment;
+    const failedModel = ttsModel('pocket-it', 'it');
     const state: ModelManagerState = {
       activeInstall: null,
-      catalog: { catalogVersion: 1, collections: [], families: [], models: [] },
-      compiledAdapters: [],
+      catalog: {
+        catalogVersion: 1,
+        collections: [],
+        families: [
+          {
+            displayName: 'Pocket TTS',
+            familyId: 'pocket_tts',
+            runtimeId: 'onnx_runtime',
+            summary: '',
+            task: 'tts',
+          },
+        ],
+        models: [failedModel],
+      },
+      compiledAdapters: [
+        {
+          displayName: 'Pocket TTS',
+          familyCapabilities: null,
+          familyId: 'pocket_tts',
+          runtimeId: 'onnx_runtime',
+        },
+      ] as unknown as ModelManagerState['compiledAdapters'],
       compiledRuntimes: [],
       failedInstall: {
         artifactIds: ['voice-alba'],
         failureId: 'install-failed',
-        selection: sampleSelection(),
+        message: 'connection reset by peer',
+        selection: {
+          familyId: 'pocket_tts',
+          kind: 'catalog_model',
+          modelId: 'pocket-it',
+          runtimeId: 'onnx_runtime',
+        },
       },
       installedModels: [],
       loadError: null,
-      loadStatus: 'loading',
+      loadStatus: 'ready',
       modelStore: { overridePath: null, path: '/models', usingDefaultPath: true },
       selectedModel: null,
       selectedModelCapabilities: { status: 'none' },
@@ -391,15 +427,16 @@ describe('model browser', () => {
       selectedTtsModelCapabilities: { status: 'none' },
     };
     const manager = {
+      dismissFailedInstall: vi.fn(),
       getDictationLanguage: () => 'en',
       getState: () => state,
-      subscribe: (next: () => void) => {
-        listener = next;
-        return () => {};
-      },
+      subscribe: () => () => {},
     } as unknown as ModelInstallManager;
+    // Opens on dictation models by default; the failure lives on a read-aloud
+    // model, so revealing it has to override the requested initial task.
     const modal = new ManageModelsModal({} as never, {
       feedback: { show: vi.fn() },
+      initialTask: 'stt',
       manager,
       onChanged: vi.fn(),
     });
@@ -408,19 +445,23 @@ describe('model browser', () => {
     try {
       modal.open();
       const content = modal.contentEl as unknown as TestElement;
-      const initialPanel = content.findByClass('local-stt-install-failure');
-      expect(initialPanel).toBeDefined();
-      expect(content.children[0]?.className).toBe('local-stt-install-failure-region');
-      expect(content.findByClass('local-stt-model-browser')).toBeDefined();
 
-      listener();
-      expect(content.findByClass('local-stt-install-failure')).toBe(initialPanel);
+      // No separate banner anywhere in the modal.
+      expect(content.findByClass('local-stt-install-failure')).toBeUndefined();
 
-      modal.close();
-      modal.open();
-      expect(content.findByClass('local-stt-install-failure')).toBeDefined();
+      const failedRow = Setting.named('Pocket TTS it');
+      const progress = failedRow.descEl.findByClass('local-stt-install-progress');
+      expect(progress?.className).toContain('local-stt-install-progress--failed');
+      expect(texts(failedRow.descEl)).toEqual(
+        expect.arrayContaining(['Model install failed', 'connection reset by peer']),
+      );
+      expect(Setting.buttonNamed('Retry')).toBeDefined();
+      expect(Setting.buttonNamed('Dismiss')).toBeDefined();
     } finally {
       modal.close();
+      globalThis.createDiv = originalGlobals.createDiv;
+      globalThis.createSpan = originalGlobals.createSpan;
+      globalThis.createFragment = originalGlobals.createFragment;
       if (originalAddEventListener === undefined) {
         Reflect.deleteProperty(elementPrototype, 'addEventListener');
       } else {

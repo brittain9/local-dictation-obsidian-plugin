@@ -45,6 +45,12 @@ export interface ActiveInstallInfo {
 export interface FailedInstallInfo {
   artifactIds: string[] | null;
   failureId: string;
+  /**
+   * Why the install stopped, as reported by the sidecar or the throwing call.
+   * `null` when nothing usable was reported. Surfaced verbatim so the user sees
+   * "connection reset" instead of a generic retry prompt that says nothing.
+   */
+  message: string | null;
   selection: CatalogModelSelection;
 }
 
@@ -184,18 +190,27 @@ interface InstallRefresh {
   reconcileFailure: FailedInstallInfo | null;
 }
 
-function createFailedInstall(request: InstallRequest): FailedInstallInfo {
+function createFailedInstall(request: InstallRequest, message: unknown): FailedInstallInfo {
   return {
     artifactIds: request.artifactIds === null ? null : [...request.artifactIds],
     failureId: request.installId,
+    message: normalizeFailureMessage(message),
     selection: copyCatalogSelection(request.selection),
   };
+}
+
+function normalizeFailureMessage(message: unknown): string | null {
+  const text =
+    message instanceof Error ? message.message : typeof message === 'string' ? message : '';
+  const trimmed = text.trim();
+  return trimmed.length > 0 ? trimmed : null;
 }
 
 function copyFailedInstall(failedInstall: FailedInstallInfo): FailedInstallInfo {
   return {
     artifactIds: failedInstall.artifactIds === null ? null : [...failedInstall.artifactIds],
     failureId: failedInstall.failureId,
+    message: failedInstall.message,
     selection: copyCatalogSelection(failedInstall.selection),
   };
 }
@@ -439,7 +454,7 @@ export class ModelInstallManager {
       if (this.currentInstallRequest?.installId === request.installId) {
         this.currentInstallRequest = null;
         this.clearActiveInstall(request.installId);
-        this.failedInstall = createFailedInstall(request);
+        this.failedInstall = createFailedInstall(request, error);
         this.notify();
       }
       this.deps.logger?.warn(
@@ -914,7 +929,8 @@ export class ModelInstallManager {
       if (matchedCurrentRequest !== null) {
         this.currentInstallRequest = null;
       }
-      this.failedInstall = event.state === 'failed' ? createFailedInstall(matchedRequest) : null;
+      this.failedInstall =
+        event.state === 'failed' ? createFailedInstall(matchedRequest, event.message) : null;
     }
     const installStateKey = `${event.installId}:${event.state}`;
 
