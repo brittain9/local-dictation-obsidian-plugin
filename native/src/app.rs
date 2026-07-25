@@ -28,7 +28,9 @@ use crate::session::{
 };
 use crate::stages::StageEnablement;
 use crate::synthesis::SynthesisCancellation;
-use crate::synthesis_worker::{StartSynthesis as WorkerStartSynthesis, SynthesisWorker};
+use crate::synthesis_worker::{
+    PrepareModelRemoval, StartSynthesis as WorkerStartSynthesis, SynthesisWorker,
+};
 use crate::system_audio::{AudioFrameSink, SystemAudioCapture, SystemAudioController};
 use crate::transcription::{ENGLISH_LANGUAGE_TAG, GpuConfig};
 use crate::worker::{SessionMetadata, TranscriptionWorker, WorkerCommand, WorkerEvent};
@@ -161,6 +163,8 @@ impl AppState {
             })
         };
 
+        let synthesis_worker = SynthesisWorker::spawn(Arc::clone(&registry));
+
         Self {
             active_sessions: HashMap::new(),
             catalog: Arc::new(catalog),
@@ -169,7 +173,7 @@ impl AppState {
             session_factory,
             sidecar_version: sidecar_version.into(),
             system_audio,
-            synthesis_worker: SynthesisWorker::spawn(Arc::clone(&registry)),
+            synthesis_worker,
             transcription_worker: TranscriptionWorker::spawn(Arc::clone(&registry)),
         }
     }
@@ -372,7 +376,23 @@ impl AppState {
                 model_store_path_override,
             } => {
                 match resolve_model_store_info(model_store_path_override.as_deref()).and_then(
-                    |info| remove_installed_model(&info.path, runtime_id, family_id, &model_id),
+                    |info| {
+                        let install_dir = resolve_model_install_dir(
+                            &info.path, runtime_id, family_id, &model_id,
+                        )?;
+                        match self.synthesis_worker.prepare_model_removal(
+                            runtime_id,
+                            family_id,
+                            &install_dir,
+                        ) {
+                            PrepareModelRemoval::Ready => {
+                                remove_installed_model(&info.path, runtime_id, family_id, &model_id)
+                            }
+                            PrepareModelRemoval::InUse | PrepareModelRemoval::WorkerUnavailable => {
+                                Ok(false)
+                            }
+                        }
+                    },
                 ) {
                     Ok(removed) => events.push(Event::ModelRemoved {
                         runtime_id,
@@ -465,6 +485,16 @@ impl AppState {
                                 events.push(self.install_manager.start_install(InstallRequest {
                                     artifacts,
                                     catalog: Arc::clone(&self.catalog),
+                                    before_model_replace: {
+                                        let invalidator = self.synthesis_worker.cache_invalidator();
+                                        Arc::new(move |runtime_id, family_id, install_dir| {
+                                            invalidator.invalidate_and_wait(
+                                                runtime_id,
+                                                family_id,
+                                                install_dir,
+                                            )
+                                        })
+                                    },
                                     runtime_id,
                                     family_id,
                                     install_id,
