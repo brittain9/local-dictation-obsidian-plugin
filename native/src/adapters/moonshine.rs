@@ -534,8 +534,15 @@ impl OrtMoonshineInference {
         let frontend = build_session(&paths.frontend, gpu)?;
         let encoder = build_session(&paths.encoder, gpu)?;
         let adapter = build_session(&paths.adapter, gpu)?;
+        // `decoder_kv` must run on CPU: it slices the self-attention KV cache with
+        // runtime-valued indices, and ORT's CUDA `Slice<true>` kernel reads those
+        // index tensors through host pointers while they live in device memory —
+        // it segfaults on the first decode step. Same shape of workaround as the
+        // Cohere and Nemotron decoders, which are pinned to CPU for their own ORT
+        // CUDA kernel gaps. The encoder side keeps the GPU, which is where the
+        // work is.
         let cross_kv = build_session(&paths.cross_kv, gpu)?;
-        let decoder_kv = build_session(&paths.decoder_kv, gpu)?;
+        let decoder_kv = build_session(&paths.decoder_kv, GpuConfig { use_gpu: false })?;
         verify_session_io(&encoder, "encoder", &["features"], &["encoded"])?;
         verify_session_io(&adapter, "adapter", &["encoded", "pos_offset"], &["memory"])?;
         verify_session_io(&cross_kv, "cross_kv", &["memory"], &["k_cross", "v_cross"])?;
