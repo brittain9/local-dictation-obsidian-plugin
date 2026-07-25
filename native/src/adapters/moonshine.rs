@@ -534,13 +534,17 @@ impl OrtMoonshineInference {
         let frontend = build_session(&paths.frontend, gpu)?;
         let encoder = build_session(&paths.encoder, gpu)?;
         let adapter = build_session(&paths.adapter, gpu)?;
-        // `decoder_kv` must run on CPU: it slices the self-attention KV cache with
-        // runtime-valued indices, and ORT's CUDA `Slice<true>` kernel reads those
-        // index tensors through host pointers while they live in device memory —
-        // it segfaults on the first decode step. Same shape of workaround as the
-        // Cohere and Nemotron decoders, which are pinned to CPU for their own ORT
-        // CUDA kernel gaps. The encoder side keeps the GPU, which is where the
-        // work is.
+        // UNRESOLVED: Moonshine segfaults under the CUDA EP inside
+        // `onnxruntime::cuda::Slice<true>::FillInputVectors`, which dereferences a
+        // Slice node's runtime index tensors as host pointers while they are
+        // device-resident. Pinning `decoder_kv` to CPU below did NOT stop it — the
+        // fault frame is unchanged — so the offending Slice is in a graph that is
+        // still on the GPU here. `adapter` is the prime suspect: it is the only
+        // one taking a runtime-valued index (`pos_offset`), and it holds the most
+        // Slice op references of the five. Verify before pinning anything else;
+        // this pin is retained only because Cohere and Nemotron pin their decoders
+        // for their own ORT CUDA kernel gaps, not because it was shown to help.
+        // See PR #327 for the full trace and method.
         let cross_kv = build_session(&paths.cross_kv, gpu)?;
         let decoder_kv = build_session(&paths.decoder_kv, GpuConfig { use_gpu: false })?;
         verify_session_io(&encoder, "encoder", &["features"], &["encoded"])?;
