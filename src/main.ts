@@ -23,6 +23,10 @@ import {
   type CatalogModelSelection,
   matchesModelTriple,
 } from './models/model-management-types';
+import {
+  openModelPickerWithSetup,
+  READ_ALOUD_MODEL_PICKER_OPTIONS,
+} from './models/model-picker-routing';
 import { Session } from './session/session';
 import { logAccelerationFallbacks } from './settings/acceleration-info';
 import { LlmPresetStateStore } from './settings/llm-preset-state';
@@ -267,6 +271,7 @@ export default class LocalSttPlugin extends Plugin {
       getSettings: () => this.settings,
       isDictationBusy: () => this.requireDictationController().isCaptureActive(),
       logger: this.logger,
+      onModelMissing: () => this.openModelPicker(READ_ALOUD_MODEL_PICKER_OPTIONS),
       onStateChange: (state) => this.renderReadAloudStatus(state),
       sidecarConnection: this.sidecarConnection,
       sidecarLifecycleGate: this.sidecarLifecycleGate,
@@ -429,13 +434,14 @@ export default class LocalSttPlugin extends Plugin {
     await this.ensureLocalDictationSidebar();
   }
 
-  async openSetupWizard(): Promise<void> {
+  async openSetupWizard(options: { throwOnFailure?: boolean } = {}): Promise<void> {
     let pluginDirectory: string;
 
     try {
       pluginDirectory = await this.resolvePluginDirectoryPath();
     } catch (error) {
       this.logger.error('installer', 'unable to resolve plugin directory for setup wizard', error);
+      if (options.throwOnFailure ?? false) throw error;
       return;
     }
 
@@ -471,19 +477,26 @@ export default class LocalSttPlugin extends Plugin {
   }
 
   async openModelPicker(options: ModelPickerOptions = {}): Promise<void> {
-    if (!(await this.isSidecarInstalled())) {
-      await this.openSetupWizard();
-      return;
-    }
-    new ManageModelsModal(this.app, {
-      feedback: this.feedback,
-      ...(options.initialTask === undefined ? {} : { initialTask: options.initialTask }),
-      manager: this.requireModelInstallManager(),
-      onChanged: options.onChanged ?? (() => {}),
-      onRunSetup: () => {
-        void this.openSetupWizard();
+    await openModelPickerWithSetup(
+      {
+        isSidecarInstalled: () => this.isSidecarInstalled(),
+        openPicker: (pickerOptions) => {
+          new ManageModelsModal(this.app, {
+            feedback: this.feedback,
+            ...(pickerOptions.initialTask === undefined
+              ? {}
+              : { initialTask: pickerOptions.initialTask }),
+            manager: this.requireModelInstallManager(),
+            onChanged: pickerOptions.onChanged ?? (() => {}),
+            onRunSetup: () => {
+              void this.openSetupWizard();
+            },
+          }).open();
+        },
+        openSetupWizard: () => this.openSetupWizard({ throwOnFailure: true }),
       },
-    }).open();
+      options,
+    );
   }
 
   private async isSidecarInstalled(): Promise<boolean> {

@@ -88,27 +88,37 @@ type StartSynthesisMock = ReturnType<
 >;
 
 function controllerHarness(options: {
+  catalog?: ModelCatalogRecord;
   dictationLanguage?: 'auto' | 'en';
+  onModelMissing?: () => Promise<void> | void;
   selected: boolean;
+  selectedVoice?: string | null;
   sidecarLifecycleGate?: SidecarLifecycleGate;
   startSynthesis?: StartSynthesisMock;
 }) {
   const feedback = { show: vi.fn() };
   const stopDictation = vi.fn(async (): Promise<void> => undefined);
   const cancelSynthesis = vi.fn();
+  const onModelMissing = options.onModelMissing ?? vi.fn();
   const startSynthesis =
     options.startSynthesis ??
     vi.fn(async (_payload: Omit<StartSynthesisCommand, 'type'>) => undefined);
   const controller = new ReadAloudController({
     feedback,
-    getCatalog: () => TTS_CATALOG,
+    getCatalog: () => options.catalog ?? TTS_CATALOG,
     getSettings: () => ({
       ...DEFAULT_PLUGIN_SETTINGS,
       dictationLanguage: options.dictationLanguage ?? DEFAULT_PLUGIN_SETTINGS.dictationLanguage,
       selectedTtsModel: options.selected ? TTS_SELECTION : null,
-      selectedTtsVoice: options.selected ? 'alba' : null,
+      selectedTtsVoice:
+        options.selectedVoice === undefined
+          ? options.selected
+            ? 'alba'
+            : null
+          : options.selectedVoice,
     }),
     isDictationBusy: () => true,
+    onModelMissing,
     onStateChange: vi.fn(),
     sidecarConnection: {
       cancelSynthesis,
@@ -120,7 +130,14 @@ function controllerHarness(options: {
     sidecarLifecycleGate: options.sidecarLifecycleGate ?? new SidecarLifecycleGate(),
     stopDictation,
   });
-  return { cancelSynthesis, controller, feedback, startSynthesis, stopDictation };
+  return {
+    cancelSynthesis,
+    controller,
+    feedback,
+    onModelMissing,
+    startSynthesis,
+    stopDictation,
+  };
 }
 
 beforeEach(() => {
@@ -238,14 +255,153 @@ describe('ReadAloudController', () => {
     );
   });
 
-  it('validates TTS configuration before stopping dictation', async () => {
-    const harness = controllerHarness({ selected: false });
+  it.each([
+    ['no selection', false, TTS_CATALOG],
+    [
+      'a selection missing from the catalog',
+      true,
+      { ...TTS_CATALOG, models: [] } as ModelCatalogRecord,
+    ],
+  ])('offers the same model setup action for %s', async (_scenario, selected, catalog) => {
+    const harness = controllerHarness({ catalog, selected });
 
     await harness.controller.read(editorFor('Speak this.', { ch: 0, line: 0 }));
 
     expect(harness.stopDictation).not.toHaveBeenCalled();
     expect(harness.startSynthesis).not.toHaveBeenCalled();
-    expect(harness.feedback.show).toHaveBeenCalledOnce();
+    expect(harness.onModelMissing).not.toHaveBeenCalled();
+    expect(harness.feedback.show).toHaveBeenCalledWith({
+      action: {
+        label: 'Choose model',
+        run: expect.any(Function),
+      },
+      intent: 'action-required',
+      key: 'read-aloud-model-required',
+      message: 'Install and select a read-aloud model first.',
+    });
+  });
+
+  it('opens model setup only when the user invokes the feedback action', async () => {
+    const harness = controllerHarness({ selected: false });
+
+    await harness.controller.read(editorFor('Speak this.', { ch: 0, line: 0 }));
+
+    expect(harness.onModelMissing).not.toHaveBeenCalled();
+    const request = harness.feedback.show.mock.calls[0]?.[0];
+    if (request?.action === undefined) throw new Error('model setup action was not offered');
+
+    request.action.run();
+
+    await vi.waitFor(() => expect(harness.onModelMissing).toHaveBeenCalledOnce());
+  });
+
+  it('restores the model setup action when opening recovery fails', async () => {
+    const onModelMissing = vi.fn(async () => {
+      throw new Error('model picker failed');
+    });
+    const harness = controllerHarness({ onModelMissing, selected: false });
+
+    await harness.controller.read(editorFor('Speak this.', { ch: 0, line: 0 }));
+    const request = harness.feedback.show.mock.calls[0]?.[0];
+    if (request?.action === undefined) throw new Error('model setup action was not offered');
+    request.action.run();
+
+    await vi.waitFor(() => expect(harness.feedback.show).toHaveBeenCalledTimes(2));
+    expect(harness.feedback.show).toHaveBeenLastCalledWith({
+      action: {
+        label: 'Choose model',
+        run: expect.any(Function),
+      },
+      cause: expect.any(Error),
+      intent: 'action-required',
+      key: 'read-aloud-model-required',
+      message: 'Install and select a read-aloud model first.',
+    });
+  });
+
+  it('restores the model setup action when recovery throws synchronously', async () => {
+    const onModelMissing = vi.fn(() => {
+      throw new Error('model picker threw');
+    });
+    const harness = controllerHarness({ onModelMissing, selected: false });
+
+    await harness.controller.read(editorFor('Speak this.', { ch: 0, line: 0 }));
+    const request = harness.feedback.show.mock.calls[0]?.[0];
+    if (request?.action === undefined) throw new Error('model setup action was not offered');
+    request.action.run();
+
+    await vi.waitFor(() => expect(harness.feedback.show).toHaveBeenCalledTimes(2));
+    expect(harness.feedback.show).toHaveBeenLastCalledWith({
+      action: {
+        label: 'Choose model',
+        run: expect.any(Function),
+      },
+      cause: expect.any(Error),
+      intent: 'action-required',
+      key: 'read-aloud-model-required',
+      message: 'Install and select a read-aloud model first.',
+    });
+  });
+
+  it('uses the stable model-required key across repeated invocations', async () => {
+    const harness = controllerHarness({ selected: false });
+    const editor = editorFor('Speak this.', { ch: 0, line: 0 });
+
+    await harness.controller.read(editor);
+    await harness.controller.read(editor);
+
+    expect(harness.feedback.show).toHaveBeenCalledTimes(2);
+    expect(harness.feedback.show.mock.calls.map(([request]) => request.key)).toEqual([
+      'read-aloud-model-required',
+      'read-aloud-model-required',
+    ]);
+    expect(harness.onModelMissing).not.toHaveBeenCalled();
+  });
+
+  it('prioritizes no-text feedback without offering model setup', async () => {
+    const harness = controllerHarness({ selected: false });
+
+    await harness.controller.read(editorFor('   ', { ch: 0, line: 0 }));
+
+    expect(harness.feedback.show).toHaveBeenCalledWith({
+      intent: 'warning',
+      message: 'There is no speakable text here.',
+    });
+    expect(harness.onModelMissing).not.toHaveBeenCalled();
+    expect(harness.stopDictation).not.toHaveBeenCalled();
+    expect(harness.startSynthesis).not.toHaveBeenCalled();
+  });
+
+  it('keeps missing-voice feedback distinct from model setup', async () => {
+    const harness = controllerHarness({
+      catalog: {
+        ...TTS_CATALOG,
+        models: TTS_CATALOG.models.map(({ defaultVoice: _defaultVoice, ...model }) => model),
+      },
+      selected: true,
+      selectedVoice: null,
+    });
+
+    await harness.controller.read(editorFor('Speak this.', { ch: 0, line: 0 }));
+
+    expect(harness.feedback.show).toHaveBeenCalledWith({
+      intent: 'warning',
+      message: 'Select an installed voice first.',
+    });
+    expect(harness.onModelMissing).not.toHaveBeenCalled();
+    expect(harness.stopDictation).not.toHaveBeenCalled();
+    expect(harness.startSynthesis).not.toHaveBeenCalled();
+  });
+
+  it('keeps the configured synthesis path free of setup feedback', async () => {
+    const harness = controllerHarness({ selected: true });
+
+    await harness.controller.read(editorFor('Speak this.', { ch: 0, line: 0 }));
+
+    expect(harness.stopDictation).toHaveBeenCalledOnce();
+    expect(harness.startSynthesis).toHaveBeenCalledOnce();
+    expect(harness.onModelMissing).not.toHaveBeenCalled();
+    expect(harness.feedback.show).not.toHaveBeenCalled();
   });
 
   it('does not let a stale start failure clear a newer reading', async () => {

@@ -8,6 +8,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { DEFAULT_PLUGIN_SETTINGS } from '../src/settings/plugin-settings';
 import { SidecarSettingsSection } from '../src/settings/sidecar-settings-section';
 import type { SidecarInstallManager } from '../src/sidecar/sidecar-install-manager';
+import { SidecarLifecycleGate } from '../src/sidecar/sidecar-lifecycle-gate';
 import { Setting, TestElement } from './__mocks__/obsidian';
 
 vi.mock('../src/sidecar/gpu-precheck', async (importOriginal) => {
@@ -67,7 +68,6 @@ describe('CUDA sidecar Settings actions', () => {
       },
       app: {} as ConstructorParameters<typeof SidecarSettingsSection>[1]['app'],
       feedback: { show: vi.fn() },
-      isDictationBusy: () => false,
       modelInstallManager: {
         init: vi.fn(async () => {}),
       } as unknown as ConstructorParameters<
@@ -79,6 +79,7 @@ describe('CUDA sidecar Settings actions', () => {
       restartSidecar: vi.fn(async () => {}),
       sidecarConnection: { shutdown: vi.fn(async () => {}) },
       sidecarInstallManager: manager,
+      sidecarLifecycleGate: new SidecarLifecycleGate(),
     });
 
     const dispose = section.init();
