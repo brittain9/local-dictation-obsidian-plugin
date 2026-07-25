@@ -1,6 +1,7 @@
 import { join } from 'node:path';
 
 import { assertAbsoluteExistingFilePath, getExistingPathKind } from '../filesystem/path-validation';
+import type { CudaSidecarLaunchPolicy } from './cuda-compatibility';
 import type { AccelerationPreference } from './protocol';
 import { variantDirectoryPath } from './sidecar-installer';
 
@@ -20,13 +21,8 @@ export interface ResolvedSidecarExecutable {
 
 export interface ResolveSidecarExecutablePathOptions {
   accelerationPreference: AccelerationPreference;
-  /**
-   * The CUDA probe confirmed this machine can run the CUDA build. Distinct from
-   * `supportsCuda`: a Windows box always has a CUDA artifact available and may
-   * still have no usable driver, in which case CUDA is a last resort rather
-   * than the preferred variant.
-   */
-  cudaCompatible: boolean;
+  /** Whether CUDA is preferred, an inconclusive last resort, or unavailable. */
+  cudaLaunchPolicy: CudaSidecarLaunchPolicy;
   executableName: string;
   pluginDirectory: string;
   sidecarPathOverride: string;
@@ -59,7 +55,7 @@ export async function resolveSidecarExecutablePath(
 
   const installed = await pickExistingVariant({
     accelerationPreference: options.accelerationPreference,
-    cudaCompatible: options.cudaCompatible,
+    cudaLaunchPolicy: options.cudaLaunchPolicy,
     supportsCuda: options.supportsCuda,
     cpuPath: installedCpuPath,
     cudaPath: installedCudaPath,
@@ -81,7 +77,7 @@ export async function resolveSidecarExecutablePath(
 
   const dev = await pickExistingVariant({
     accelerationPreference: options.accelerationPreference,
-    cudaCompatible: options.cudaCompatible,
+    cudaLaunchPolicy: options.cudaLaunchPolicy,
     supportsCuda: options.supportsCuda,
     cpuPath: devCpuPath,
     cudaPath: devCudaPath,
@@ -99,7 +95,7 @@ export async function resolveSidecarExecutablePath(
 
 interface PickExistingVariantOptions {
   accelerationPreference: AccelerationPreference;
-  cudaCompatible: boolean;
+  cudaLaunchPolicy: CudaSidecarLaunchPolicy;
   supportsCuda: boolean;
   cpuPath: string;
   cudaPath: string | null;
@@ -122,7 +118,7 @@ async function pickExistingVariant(
   }
 
   const cudaPath = options.supportsCuda && hasCuda ? options.cudaPath : null;
-  if (cudaPath !== null && options.cudaCompatible) {
+  if (cudaPath !== null && options.cudaLaunchPolicy === 'preferred') {
     return { path: cudaPath, variant: 'cuda' };
   }
 
@@ -134,7 +130,7 @@ async function pickExistingVariant(
   // a machine that only ever installed the CUDA sidecar would otherwise take a
   // working setup offline. It may fail on the driver, which is a legible error;
   // Settings separately offers CPU recovery when CUDA turns out to be unusable.
-  if (cudaPath !== null) {
+  if (cudaPath !== null && options.cudaLaunchPolicy === 'fallback') {
     return { path: cudaPath, variant: 'cuda' };
   }
 

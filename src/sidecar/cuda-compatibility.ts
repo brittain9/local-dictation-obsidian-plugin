@@ -1,6 +1,7 @@
 import { type CudaCompatibility, detectCudaCompatibility } from './gpu-precheck';
 
 export type GetCudaCompatibility = () => Promise<CudaCompatibility>;
+export type CudaSidecarLaunchPolicy = 'fallback' | 'preferred' | 'unavailable';
 
 /**
  * The single answer to "should this machine run the CUDA sidecar?".
@@ -15,6 +16,21 @@ export type GetCudaCompatibility = () => Promise<CudaCompatibility>;
  */
 export function isCudaSidecarUsable(compatibility: CudaCompatibility | null): boolean {
   return compatibility?.status === 'compatible';
+}
+
+/**
+ * Launch is intentionally more nuanced than recommendation surfaces:
+ *
+ * - confirmed compatibility prefers CUDA;
+ * - an inconclusive probe may retain CUDA only as a last resort;
+ * - known-incompatible, absent, and unsupported environments never launch it.
+ */
+export function resolveCudaSidecarLaunchPolicy(
+  compatibility: CudaCompatibility | null,
+): CudaSidecarLaunchPolicy {
+  if (compatibility?.status === 'compatible') return 'preferred';
+  if (compatibility?.status === 'unknown') return 'fallback';
+  return 'unavailable';
 }
 
 /**

@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 import {
   createCudaCompatibilityProvider,
   isCudaSidecarUsable,
+  resolveCudaSidecarLaunchPolicy,
 } from '../src/sidecar/cuda-compatibility';
 import type { CudaCompatibility } from '../src/sidecar/gpu-precheck';
 
@@ -26,6 +27,32 @@ describe('isCudaSidecarUsable', () => {
     { status: 'incompatible_gpu', driverVersion: '580', computeCapabilities: ['7.4'] },
   ] satisfies (CudaCompatibility | null)[])('rejects %o', (compatibility) => {
     expect(isCudaSidecarUsable(compatibility)).toBe(false);
+  });
+});
+
+describe('resolveCudaSidecarLaunchPolicy', () => {
+  it('prefers confirmed-compatible CUDA', () => {
+    expect(
+      resolveCudaSidecarLaunchPolicy({
+        computeCapabilities: ['8.9'],
+        driverVersion: '595.97',
+        status: 'compatible',
+      }),
+    ).toBe('preferred');
+  });
+
+  it('keeps an inconclusive probe as a launch-only fallback', () => {
+    expect(resolveCudaSidecarLaunchPolicy({ status: 'unknown' })).toBe('fallback');
+  });
+
+  it.each([
+    null,
+    { status: 'absent' },
+    { status: 'unsupported' },
+    { status: 'incompatible_driver', driverVersion: '579', computeCapabilities: ['8.9'] },
+    { status: 'incompatible_gpu', driverVersion: '595.97', computeCapabilities: ['7.4'] },
+  ] satisfies (CudaCompatibility | null)[])('excludes known-unusable CUDA for %o', (result) => {
+    expect(resolveCudaSidecarLaunchPolicy(result)).toBe('unavailable');
   });
 });
 

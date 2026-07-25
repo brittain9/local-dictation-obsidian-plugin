@@ -1033,6 +1033,27 @@ describe('ModelInstallManager', () => {
       expect(harness.sidecarConnection.removeModel).not.toHaveBeenCalled();
     });
 
+    it('refuses to remove a model after install starts but before its first progress event', async () => {
+      configureSidecarForInit(harness.sidecarConnection);
+      await harness.manager.init();
+      const installResult = deferred<ReturnType<typeof sampleInstallUpdate>>();
+      harness.sidecarConnection.installModel.mockReturnValueOnce(installResult.promise);
+
+      const installing = harness.manager.install(sampleSelection());
+      await vi.waitFor(() => {
+        expect(harness.sidecarConnection.installModel).toHaveBeenCalledOnce();
+      });
+      expect(harness.manager.getState().activeInstall).toBeNull();
+
+      await expect(harness.manager.remove(sampleSelection())).rejects.toThrow(
+        'This model is currently being installed and cannot be removed.',
+      );
+      expect(harness.sidecarConnection.removeModel).not.toHaveBeenCalled();
+
+      installResult.resolve(sampleInstallUpdate({ state: 'queued' }));
+      await installing;
+    });
+
     it('removes a non-selected, non-installing model and drops it from local state', async () => {
       harness = createManagerHarness({ selectedModel: sampleSelection('whisper_small_en_q5_1') });
       configureSidecarForInit(harness.sidecarConnection);

@@ -31,7 +31,7 @@ describe('resolveSidecarExecutablePath', () => {
     await expect(
       resolveSidecarExecutablePath({
         accelerationPreference: 'auto',
-        cudaCompatible: true,
+        cudaLaunchPolicy: 'preferred',
         executableName,
         pluginDirectory,
         sidecarPathOverride: overridePath,
@@ -46,7 +46,7 @@ describe('resolveSidecarExecutablePath', () => {
 
     const rejection = resolveSidecarExecutablePath({
       accelerationPreference: 'auto',
-      cudaCompatible: true,
+      cudaLaunchPolicy: 'preferred',
       executableName: 'local-dictation-sidecar',
       pluginDirectory,
       sidecarPathOverride: join(pluginDirectory, 'does-not-exist'),
@@ -67,7 +67,7 @@ describe('resolveSidecarExecutablePath', () => {
     await expect(
       resolveSidecarExecutablePath({
         accelerationPreference: 'auto',
-        cudaCompatible: true,
+        cudaLaunchPolicy: 'preferred',
         executableName,
         pluginDirectory,
         sidecarPathOverride: '',
@@ -90,7 +90,7 @@ describe('resolveSidecarExecutablePath', () => {
     await expect(
       resolveSidecarExecutablePath({
         accelerationPreference: 'cpu_only',
-        cudaCompatible: true,
+        cudaLaunchPolicy: 'preferred',
         executableName,
         pluginDirectory,
         sidecarPathOverride: '',
@@ -114,7 +114,7 @@ describe('resolveSidecarExecutablePath', () => {
     await expect(
       resolveSidecarExecutablePath({
         accelerationPreference: 'auto',
-        cudaCompatible: true,
+        cudaLaunchPolicy: 'preferred',
         executableName,
         pluginDirectory,
         sidecarPathOverride: '',
@@ -138,7 +138,7 @@ describe('resolveSidecarExecutablePath', () => {
     await expect(
       resolveSidecarExecutablePath({
         accelerationPreference: 'auto',
-        cudaCompatible: true,
+        cudaLaunchPolicy: 'preferred',
         executableName,
         pluginDirectory,
         sidecarPathOverride: '',
@@ -162,7 +162,7 @@ describe('resolveSidecarExecutablePath', () => {
     await expect(
       resolveSidecarExecutablePath({
         accelerationPreference: 'auto',
-        cudaCompatible: true,
+        cudaLaunchPolicy: 'preferred',
         executableName,
         pluginDirectory,
         sidecarPathOverride: '',
@@ -185,7 +185,7 @@ describe('resolveSidecarExecutablePath', () => {
     await expect(
       resolveSidecarExecutablePath({
         accelerationPreference: 'auto',
-        cudaCompatible: false,
+        cudaLaunchPolicy: 'unavailable',
         executableName,
         pluginDirectory,
         sidecarPathOverride: '',
@@ -199,7 +199,7 @@ describe('resolveSidecarExecutablePath', () => {
     });
   });
 
-  it('still launches an unverified CUDA binary when it is the only one installed', async () => {
+  it('still launches CUDA as a last resort when compatibility is unknown', async () => {
     const pluginDirectory = await createPluginFixture();
     const executableName = 'local-dictation-sidecar';
     await writeInstalledBinary(pluginDirectory, 'cuda', executableName);
@@ -207,7 +207,7 @@ describe('resolveSidecarExecutablePath', () => {
     await expect(
       resolveSidecarExecutablePath({
         accelerationPreference: 'auto',
-        cudaCompatible: false,
+        cudaLaunchPolicy: 'fallback',
         executableName,
         pluginDirectory,
         sidecarPathOverride: '',
@@ -221,13 +221,31 @@ describe('resolveSidecarExecutablePath', () => {
     });
   });
 
+  it('does not launch a CUDA-only binary when compatibility is known unusable', async () => {
+    const pluginDirectory = await createPluginFixture();
+    const executableName = 'local-dictation-sidecar';
+    await writeInstalledBinary(pluginDirectory, 'cuda', executableName);
+
+    await expect(
+      resolveSidecarExecutablePath({
+        accelerationPreference: 'auto',
+        cudaLaunchPolicy: 'unavailable',
+        executableName,
+        pluginDirectory,
+        sidecarPathOverride: '',
+        sidecarProjectDirectory: join(pluginDirectory, 'native'),
+        supportsCuda: true,
+      }),
+    ).rejects.toBeInstanceOf(SidecarNotInstalledError);
+  });
+
   it('throws a diagnostic error when nothing is found', async () => {
     const pluginDirectory = await createPluginFixture();
     const sidecarProjectDirectory = join(pluginDirectory, 'native');
 
     const rejection = resolveSidecarExecutablePath({
       accelerationPreference: 'auto',
-      cudaCompatible: true,
+      cudaLaunchPolicy: 'preferred',
       executableName: 'local-dictation-sidecar',
       pluginDirectory,
       sidecarPathOverride: '',
@@ -247,7 +265,7 @@ describe('resolveSidecarExecutablePath', () => {
 
     const rejection = resolveSidecarExecutablePath({
       accelerationPreference: 'cpu_only',
-      cudaCompatible: true,
+      cudaLaunchPolicy: 'preferred',
       executableName,
       pluginDirectory,
       sidecarPathOverride: '',

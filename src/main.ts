@@ -50,7 +50,12 @@ import { t } from './shared/i18n';
 import { createObsidianFeedbackPresenter } from './shared/obsidian-feedback-presenter';
 import { createPluginLogger, type PluginLogger } from './shared/plugin-logger';
 import { createUserFeedback, type UserFeedback } from './shared/user-feedback';
-import { createCudaCompatibilityProvider, isCudaSidecarUsable } from './sidecar/cuda-compatibility';
+import {
+  createCudaCompatibilityProvider,
+  isCudaSidecarUsable,
+  resolveCudaSidecarLaunchPolicy,
+} from './sidecar/cuda-compatibility';
+import { isCudaReleaseTarget } from './sidecar/gpu-precheck';
 import { assertSidecarExecutableIsFresh } from './sidecar/sidecar-build-state';
 import { SidecarConnection } from './sidecar/sidecar-connection';
 import { formatSidecarExecutableName } from './sidecar/sidecar-executable';
@@ -913,16 +918,16 @@ export default class LocalSttPlugin extends Plugin {
 
   private buildSidecarResolutionOptions(
     pluginDirectory: string,
-    cudaCompatible: boolean,
+    cudaLaunchPolicy: ResolveSidecarExecutablePathOptions['cudaLaunchPolicy'],
   ): ResolveSidecarExecutablePathOptions {
     return {
       accelerationPreference: this.settings.accelerationPreference,
-      cudaCompatible,
+      cudaLaunchPolicy,
       executableName: getSidecarExecutableName(),
       pluginDirectory,
       sidecarPathOverride: this.settings.sidecarPathOverride,
       sidecarProjectDirectory: join(pluginDirectory, 'native'),
-      supportsCuda: !Platform.isMacOS,
+      supportsCuda: isCudaReleaseTarget(process.platform, process.arch),
     };
   }
 
@@ -930,7 +935,7 @@ export default class LocalSttPlugin extends Plugin {
     const pluginDirectory = await this.resolvePluginDirectoryPath();
     const options = this.buildSidecarResolutionOptions(
       pluginDirectory,
-      isCudaSidecarUsable(await this.getCudaCompatibility()),
+      resolveCudaSidecarLaunchPolicy(await this.getCudaCompatibility()),
     );
     const resolved = await resolveSidecarExecutablePath(options);
 

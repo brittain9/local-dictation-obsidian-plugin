@@ -682,10 +682,12 @@ export class ModelInstallManager {
       throw new Error('Cannot remove the currently selected model. Clear the selection first.');
     }
 
+    const activeInstallSelection =
+      this.currentInstallRequest?.selection ?? this.activeInstall?.installUpdate ?? null;
     if (
-      this.activeInstall !== null &&
+      activeInstallSelection !== null &&
       matchesModelTriple(
-        this.activeInstall.installUpdate,
+        activeInstallSelection,
         selection.runtimeId,
         selection.familyId,
         selection.modelId,
