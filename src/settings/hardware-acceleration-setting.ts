@@ -20,12 +20,18 @@ export function renderHardwareAccelerationSetting(
     .setName(t('settings.hardwareAcceleration.name'))
     .setDesc(t('settings.hardwareAcceleration.desc'));
 
-  renderAccelerationStatus(setting, deps);
+  const status = setting.descEl.createDiv();
+  renderAccelerationStatus(status, deps);
 
   setting.addToggle((toggle) => {
     let pending = false;
+    // Redrawn on every settle, not just the initial build: flipping the toggle
+    // changes the answer immediately (`cpu_only` means CPU regardless of what
+    // the sidecar reported), and a stale line contradicting the switch beside
+    // it is worse than no line at all.
     const restoreToggleFromSettings = (): void => {
       toggle.setValue(deps.access.getSettings().accelerationPreference === 'auto');
+      renderAccelerationStatus(status, deps);
     };
     restoreToggleFromSettings();
 
@@ -56,7 +62,7 @@ export function renderHardwareAccelerationSetting(
  * the toggle stays on and nothing anywhere says the GPU was rejected.
  */
 function renderAccelerationStatus(
-  setting: Setting,
+  container: HTMLElement,
   deps: HardwareAccelerationSettingDependencies,
 ): void {
   const { label, fallbacks } = describeAcceleration(
@@ -64,7 +70,8 @@ function renderAccelerationStatus(
     deps.access.getSettings().accelerationPreference,
   );
 
-  setting.descEl.createDiv({
+  container.empty();
+  container.createDiv({
     cls: 'local-stt-acceleration-status',
     text: t('settings.acceleration.active', { accelerator: label }),
   });
@@ -72,6 +79,6 @@ function renderAccelerationStatus(
   // Every ONNX engine shares one runtime, so a single missing dependency
   // produces an identical reason per engine. Show it once.
   for (const reason of new Set(fallbacks.map((fallback) => fallback.reason))) {
-    setting.descEl.createDiv({ cls: 'local-stt-acceleration-fallback', text: reason });
+    container.createDiv({ cls: 'local-stt-acceleration-fallback', text: reason });
   }
 }
