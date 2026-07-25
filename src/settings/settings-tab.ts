@@ -784,7 +784,14 @@ export class LocalSttSettingTab extends PluginSettingTab {
     if (!Platform.isMacOS && hasNonCpuAccelerator) {
       renderHardwareAccelerationSetting(containerEl, {
         access: this.access,
-        acceleration: state,
+        // Scoped to the selected engine: this row sits under that engine's
+        // heading, so a summary across every compiled adapter reads as noise
+        // ("CUDA (Moonshine: CPU, Pocket TTS: CPU, …)") and buries the one
+        // backend the section is about.
+        acceleration: {
+          compiledAdapters: selectedAdapter === null ? [] : [selectedAdapter],
+          compiledRuntimes: state.compiledRuntimes,
+        },
         feedback: this.dependencies.feedback,
         restartSidecar: this.dependencies.restartSidecar,
         sidecarLifecycleGate: this.dependencies.sidecarLifecycleGate,
