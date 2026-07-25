@@ -417,6 +417,12 @@
   word-break: break-all;
 }
 
+/* Comma-separated value rows wrap between items, not through them —
+   `break-all` above exists for install paths and would split "F1, F2". */
+.local-stt-details-grid dd.local-stt-details-values {
+  word-break: normal;
+}
+
 .local-stt-mono {
   font-family: var(--font-monospace);
   font-size: var(--font-smallest);

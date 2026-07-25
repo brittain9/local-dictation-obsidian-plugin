@@ -233,15 +233,15 @@ export class ModelDetailsModal extends Modal {
     }
 
     if (presentation.tts !== null) {
-      appendDetailsList(dl, t('models.details.languages'), presentation.tts.languages);
-      appendDetailsList(
+      appendDetailsValues(dl, t('models.details.languages'), presentation.tts.languages);
+      appendDetailsValues(
         dl,
         t('models.details.availableVoices'),
         presentation.tts.availableVoices.map((voice) =>
           voice.isDefault ? t('models.details.defaultVoice', { voice: voice.label }) : voice.label,
         ),
       );
-      appendDetailsList(
+      appendDetailsValues(
         dl,
         t('models.details.installedVoices'),
         presentation.tts.installedVoices.map((voice) => voice.label),
@@ -311,13 +311,14 @@ export function openSelectedModelDetailsModal(
   openModelDetailsModal(app, state, selection);
 }
 
-function appendDetailsList(container: HTMLElement, label: string, values: readonly string[]): void {
+function appendDetailsValues(
+  container: HTMLElement,
+  label: string,
+  values: readonly string[],
+): void {
   if (values.length === 0) return;
   container.createEl('dt', { text: label });
-  const list = container.createEl('dd').createEl('ul');
-  for (const value of values) {
-    list.createEl('li', { text: value });
-  }
+  container.createEl('dd', { text: values.join(', '), cls: 'local-stt-details-values' });
 }
 
 function appendDetailsLink(
