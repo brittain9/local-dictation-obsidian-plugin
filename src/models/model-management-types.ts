@@ -39,6 +39,7 @@ export interface RuntimeCapabilitiesRecord {
 
 export interface ModelFamilyCapabilitiesRecord {
   task: ModelTask;
+  supportsHardwareAcceleration: boolean;
   availableVoices: string[];
   supportsSpeedControl: boolean;
   outputSampleRate: number | null;
@@ -271,6 +272,7 @@ function isModelFamilyCapabilitiesRecord(value: unknown): value is ModelFamilyCa
   return (
     isRecord(value) &&
     (value.task === 'stt' || value.task === 'tts') &&
+    typeof value.supportsHardwareAcceleration === 'boolean' &&
     Array.isArray(value.availableVoices) &&
     value.availableVoices.every((voice) => typeof voice === 'string') &&
     typeof value.supportsSpeedControl === 'boolean' &&

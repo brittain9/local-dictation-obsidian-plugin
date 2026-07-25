@@ -29,6 +29,7 @@ const GENERATION_PADDING_SECONDS: f32 = 2.0;
 static CAPABILITIES: LazyLock<ModelFamilyCapabilities> =
     LazyLock::new(|| ModelFamilyCapabilities {
         task: ModelTask::Tts,
+        supports_hardware_acceleration: false,
         available_voices: vec![
             "alba".to_string(),
             "cosette".to_string(),

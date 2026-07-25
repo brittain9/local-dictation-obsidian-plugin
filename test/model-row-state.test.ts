@@ -77,6 +77,7 @@ function compiledAdapter(
       maxAudioDurationSecs: null,
       outputSampleRate: null,
       producesPunctuation: true,
+      supportsHardwareAcceleration: familyId !== 'moonshine',
       supportedLanguages: { kind: 'english_only' },
       supportsInitialPrompt: false,
       supportsSpeedControl: false,

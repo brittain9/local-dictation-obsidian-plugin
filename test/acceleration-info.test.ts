@@ -19,6 +19,7 @@ const CUDNN_MISSING =
 function snapshot(
   details: Partial<Record<AcceleratorId, AcceleratorAvailability>>,
   engineNames: string[] = ['Moonshine'],
+  supportsHardwareAcceleration = true,
 ): AccelerationSnapshot {
   const runtimeCapabilities: RuntimeCapabilitiesRecord = {
     acceleratorDetails: details,
@@ -38,6 +39,9 @@ function snapshot(
     (displayName) =>
       ({
         displayName,
+        familyCapabilities: {
+          supportsHardwareAcceleration,
+        },
         familyId: 'moonshine',
         runtimeId: 'onnx_runtime',
       }) as CompiledAdapterInfo,
@@ -91,6 +95,23 @@ describe('describeAcceleration', () => {
     );
 
     expect(description.label).toBe('CUDA');
+    expect(description.fallbacks).toEqual([]);
+  });
+
+  it('reports CPU when the runtime has CUDA but the model family cannot use it', () => {
+    const description = describeAcceleration(
+      snapshot(
+        {
+          cpu: { available: true, unavailableReason: null },
+          cuda: { available: true, unavailableReason: null },
+        },
+        ['Moonshine'],
+        false,
+      ),
+      'auto',
+    );
+
+    expect(description.label).toBe('CPU');
     expect(description.fallbacks).toEqual([]);
   });
 

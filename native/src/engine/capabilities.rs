@@ -175,6 +175,10 @@ impl RuntimeCapabilities {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ModelFamilyCapabilities {
     pub task: ModelTask,
+    /// Whether this adapter can execute any model work on a non-CPU
+    /// accelerator exposed by its runtime.
+    #[serde(rename = "supportsHardwareAcceleration")]
+    pub supports_hardware_acceleration: bool,
     #[serde(rename = "availableVoices")]
     pub available_voices: Vec<String>,
     #[serde(rename = "supportsSpeedControl")]
@@ -208,6 +212,7 @@ impl ModelFamilyCapabilities {
     pub const fn unknown() -> Self {
         Self {
             task: ModelTask::Stt,
+            supports_hardware_acceleration: false,
             available_voices: Vec::new(),
             supports_speed_control: false,
             output_sample_rate: None,
@@ -233,6 +238,7 @@ mod tests {
         let unknown = ModelFamilyCapabilities::unknown();
 
         assert_eq!(unknown.task, ModelTask::Stt);
+        assert!(!unknown.supports_hardware_acceleration);
         assert!(unknown.available_voices.is_empty());
         assert!(!unknown.supports_speed_control);
         assert!(unknown.output_sample_rate.is_none());
@@ -268,13 +274,16 @@ mod tests {
         let json = serde_json::to_value(&unknown).expect("capabilities should serialize");
 
         assert_eq!(json["supportsStreaming"], false);
+        assert_eq!(json["supportsHardwareAcceleration"], false);
         assert!(json.get("supports_streaming").is_none());
+        assert!(json.get("supports_hardware_acceleration").is_none());
     }
 
     #[test]
     fn tts_family_capabilities_serialize_the_synthesis_contract() {
         let capabilities = ModelFamilyCapabilities {
             task: ModelTask::Tts,
+            supports_hardware_acceleration: false,
             available_voices: vec!["alba".to_string(), "marius".to_string()],
             supports_speed_control: true,
             output_sample_rate: Some(24_000),

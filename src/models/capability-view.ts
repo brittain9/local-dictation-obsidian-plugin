@@ -41,7 +41,7 @@ export function buildCapabilityLabels(
   const labels: string[] = [];
 
   const accelerators =
-    caps.runtime.availableAccelerators.length > 0
+    caps.family.supportsHardwareAcceleration && caps.runtime.availableAccelerators.length > 0
       ? caps.runtime.availableAccelerators
       : (['cpu'] as const);
   for (const id of accelerators) {

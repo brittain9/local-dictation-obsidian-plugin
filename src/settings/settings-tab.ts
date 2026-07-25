@@ -781,7 +781,11 @@ export class LocalSttSettingTab extends PluginSettingTab {
       selectedRuntime?.runtimeCapabilities.acceleratorDetails ?? {},
     ).some((id) => id !== 'cpu');
 
-    if (!Platform.isMacOS && hasNonCpuAccelerator) {
+    if (
+      !Platform.isMacOS &&
+      hasNonCpuAccelerator &&
+      selectedAdapter?.familyCapabilities.supportsHardwareAcceleration === true
+    ) {
       renderHardwareAccelerationSetting(containerEl, {
         access: this.access,
         // Scoped to the selected engine: this row sits under that engine's

@@ -109,7 +109,7 @@ function resolveEngineBackend(
   runtime: CompiledRuntimeInfo | undefined,
 ): EngineBackend {
   const engineName = adapter.displayName;
-  if (runtime === undefined) {
+  if (runtime === undefined || !adapter.familyCapabilities.supportsHardwareAcceleration) {
     return { engineName, effective: 'cpu', missingGpu: null };
   }
   const caps = runtime.runtimeCapabilities;

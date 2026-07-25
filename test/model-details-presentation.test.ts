@@ -63,6 +63,7 @@ function capabilities(overrides: Partial<EngineCapabilitiesRecord['family']> = {
       maxAudioDurationSecs: null,
       outputSampleRate: 44_100,
       producesPunctuation: false,
+      supportsHardwareAcceleration: false,
       supportedLanguages: { kind: 'list' as const, tags: ['en', 'es', 'de', 'fr'] },
       supportsAutomaticLanguageDetection: false,
       supportsInitialPrompt: false,

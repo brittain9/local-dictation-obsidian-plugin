@@ -47,6 +47,9 @@ const REQUIRED_SIBLINGS: &[&str] = &[
 
 static CAPABILITIES: ModelFamilyCapabilities = ModelFamilyCapabilities {
     task: ModelTask::Stt,
+    // ORT's CUDA EP segfaults in every Moonshine graph on CUDA 12 and 13.
+    // Keep the CUDA sidecar stable by routing this family to CPU.
+    supports_hardware_acceleration: false,
     available_voices: Vec::new(),
     supports_speed_control: false,
     output_sample_rate: None,
@@ -534,19 +537,8 @@ impl OrtMoonshineInference {
         let frontend = build_session(&paths.frontend, gpu)?;
         let encoder = build_session(&paths.encoder, gpu)?;
         let adapter = build_session(&paths.adapter, gpu)?;
-        // UNRESOLVED: Moonshine segfaults under the CUDA EP inside
-        // `onnxruntime::cuda::Slice<true>::FillInputVectors`, which dereferences a
-        // Slice node's runtime index tensors as host pointers while they are
-        // device-resident. Pinning `decoder_kv` to CPU below did NOT stop it — the
-        // fault frame is unchanged — so the offending Slice is in a graph that is
-        // still on the GPU here. `adapter` is the prime suspect: it is the only
-        // one taking a runtime-valued index (`pos_offset`), and it holds the most
-        // Slice op references of the five. Verify before pinning anything else;
-        // this pin is retained only because Cohere and Nemotron pin their decoders
-        // for their own ORT CUDA kernel gaps, not because it was shown to help.
-        // See PR #327 for the full trace and method.
         let cross_kv = build_session(&paths.cross_kv, gpu)?;
-        let decoder_kv = build_session(&paths.decoder_kv, GpuConfig { use_gpu: false })?;
+        let decoder_kv = build_session(&paths.decoder_kv, gpu)?;
         verify_session_io(&encoder, "encoder", &["features"], &["encoded"])?;
         verify_session_io(&adapter, "adapter", &["encoded", "pos_offset"], &["memory"])?;
         verify_session_io(&cross_kv, "cross_kv", &["memory"], &["k_cross", "v_cross"])?;
