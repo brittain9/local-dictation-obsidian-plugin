@@ -165,7 +165,6 @@ const SETTINGS_SEARCH_ALIAS_KEYS = [
   'settings.hardwareAcceleration.name',
   'settings.noteContext.name',
   'settings.groups.advanced',
-  'settings.attention.heading',
   'setup.sidecar.update.title_one',
   'setup.sidecar.update.title_other',
   'settings.attention.installCuda.name',
@@ -254,8 +253,6 @@ export class LocalSttSettingTab extends PluginSettingTab {
 
     containerEl.empty();
 
-    const attentionContainer = containerEl.createDiv();
-
     // --- Model ---
     const modelSection = createSettingGroup(containerEl, t('settings.groups.model'));
     const modelSummary = modelSection.createDiv();
@@ -336,6 +333,12 @@ export class LocalSttSettingTab extends PluginSettingTab {
         await this.access.persistOne('dictationLanguage', value);
       });
     });
+
+    // Sits below the Model group on purpose: the model is what people come to
+    // Settings for, and the attention callout is a transient prompt, not the
+    // headline. Read-aloud rows are appended into `modelSection` further down,
+    // so they still land above this sibling container.
+    const attentionContainer = containerEl.createDiv();
 
     // --- Capture ---
     const captureCard = createSettingGroup(containerEl, t('settings.groups.capture'));
@@ -462,7 +465,6 @@ export class LocalSttSettingTab extends PluginSettingTab {
         slider
           .setLimits(MIN_TTS_SPEED, MAX_TTS_SPEED, 0.05)
           .setValue(settings.ttsSpeed)
-          .setDynamicTooltip()
           .onChange(async (speed) => {
             await this.access.persistOne('ttsSpeed', speed);
           });

@@ -341,7 +341,7 @@ export const en = {
   'settings.install.installingSidecarMac': 'Installing sidecar',
   'settings.install.cancelling': 'Cancelling...',
   'settings.install.cancel': 'Cancel',
-  'settings.attention.heading': 'Needs attention',
+  'settings.attention.regionLabel': 'Needs attention',
   'settings.attention.installCuda.name': 'CUDA acceleration is available',
   'settings.attention.installCuda.desc':
     'A compatible NVIDIA GPU and driver were detected. Install the CUDA speech engine for faster transcription.',
@@ -678,15 +678,14 @@ export const en = {
   'models.manage.selected': 'Selected',
   'models.manage.cancelling': 'Cancelling…',
   'models.manage.details': 'Details',
-  'models.manage.installFailed': "Couldn't install {model}",
-  'models.manage.installFailedDesc':
-    'The install did not finish. Retry the same download, or dismiss this message.',
   'models.manage.retryInstall': 'Retry',
   'models.manage.dismissInstallFailure': 'Dismiss',
   'models.manage.installStartFailed': 'Could not start the model install. Try again.',
   'models.manage.selectFailed': 'Could not select the model. Check that its files are available.',
   'models.manage.selectedNotice': 'Model selected.',
   'models.manage.removeFailed': 'Could not remove the model. Close any process using its files.',
+  'models.manage.stopSpeechFirst':
+    'Stop dictation or Read aloud first — the speech engine is using model files right now.',
   'models.manage.removedNotice': 'Model removed.',
   'models.external.title': 'Use external file',
   'models.external.intro':

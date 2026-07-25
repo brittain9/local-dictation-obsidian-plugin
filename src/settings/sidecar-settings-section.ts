@@ -11,6 +11,7 @@ import { SidecarInstallModal } from '../setup/sidecar-install-modal';
 import { t } from '../shared/i18n';
 import type { PluginLogger } from '../shared/plugin-logger';
 import type { UserFeedback } from '../shared/user-feedback';
+import type { GetCudaCompatibility } from '../sidecar/cuda-compatibility';
 import { CUDA_COMPATIBILITY_REQUIREMENTS, type CudaCompatibility } from '../sidecar/gpu-precheck';
 import type { SidecarConnection } from '../sidecar/sidecar-connection';
 import type { SidecarInstallManager } from '../sidecar/sidecar-install-manager';
@@ -29,7 +30,6 @@ import {
 import { SidecarNotInstalledError } from '../sidecar/sidecar-paths';
 import { styleDestructiveButton } from '../ui/destructive-button';
 import { addPositiveIntSetting, addTextSetting, type SettingAccess } from './setting-helpers';
-import type { GetCudaCompatibility } from './settings-cuda-compatibility';
 
 export interface SidecarInstallActionDeps {
   app: App;

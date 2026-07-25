@@ -1936,6 +1936,43 @@ describe('DictationSessionController', () => {
     expect(sessions[0]?.dispose).toHaveBeenCalledTimes(1);
   });
 
+  it('frees the sidecar for maintenance while a slow batch cleanup is still running', async () => {
+    const sidecarLifecycleGate = new SidecarLifecycleGate();
+    const sidecarConnection = new FakeSidecarConnection();
+    let completeCleanup: ((result: LlmRouterCleanupResult) => void) | undefined;
+    const cleanup = vi.fn(
+      async () =>
+        new Promise<LlmRouterCleanupResult>((resolve) => {
+          completeCleanup = resolve;
+        }),
+    );
+    const controller = createController({
+      getSettings: () =>
+        createSettings({
+          llmFeaturesEnabled: true,
+          llmPostprocessMode: 'batch',
+          selectedModel: createExternalModelSelection(),
+        }),
+      llmRouter: createFakeLlmRouter({ cleanup }),
+      sidecarConnection,
+      sidecarLifecycleGate,
+    });
+
+    await controller.startDictation();
+    const sessionId = sidecarConnection.startSession.mock.calls[0]?.[0].sessionId ?? '';
+    sidecarConnection.emit(transcriptReady(sessionId, 'raw transcript'));
+    await controller.stopDictation();
+    sidecarConnection.emit({ reason: 'user_stop', sessionId, type: 'session_stopped' });
+    await vi.waitFor(() => expect(cleanup).toHaveBeenCalledOnce());
+
+    // The provider call is still outstanding, but the engine is idle: model
+    // removal and sidecar updates must not be told to stop dictation first.
+    const mutation = sidecarLifecycleGate.acquireMutation();
+    mutation.release();
+
+    completeCleanup?.({ model: 'llama3.2:latest', providerId: 'ollama', text: 'Clean batch.' });
+  });
+
   it('does not capture raw recovery when the batch replacement is denied', async () => {
     const sidecarConnection = new FakeSidecarConnection();
     const sessions: FakeSession[] = [];

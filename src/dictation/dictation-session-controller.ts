@@ -1148,6 +1148,15 @@ export class DictationSessionController {
       entry.phase = 'stopped';
     }
 
+    // The native session is over, so nothing after this point touches the
+    // sidecar: transcript work writes to the editor and batch cleanup calls the
+    // LLM provider. Holding the speech lease across a slow provider call would
+    // block sidecar maintenance — installs, updates, model removal — with
+    // "stop dictation first" while the engine sits idle. `release()` is
+    // idempotent, so the call in `disposeLocalSession` still covers the paths
+    // where `session_stopped` never arrives.
+    entry.speechLease.release();
+
     if (event.sessionId === this.activeSessionId) {
       this.activeSessionId = null;
       this.dependencies.audioLevelMeter.clearSession(event.sessionId);

@@ -3,6 +3,7 @@ import { Platform, Setting } from 'obsidian';
 import { getSidecarUpdateCopy } from '../setup/sidecar-install-copy';
 import { t } from '../shared/i18n';
 import type { PluginLogger } from '../shared/plugin-logger';
+import { type GetCudaCompatibility, isCudaSidecarUsable } from '../sidecar/cuda-compatibility';
 import type { CudaCompatibility } from '../sidecar/gpu-precheck';
 import {
   type ActiveSidecarInstall,
@@ -24,7 +25,6 @@ import {
   type SettingsAttentionSnapshot,
   type SidecarManifestState,
 } from './settings-attention';
-import type { GetCudaCompatibility } from './settings-cuda-compatibility';
 
 export interface SettingsAttentionActions {
   enableCuda(): Promise<void>;
@@ -54,7 +54,6 @@ interface RenderedAttention {
   updateProgress: ((activeInstall: ActiveSidecarInstall) => void) | null;
 }
 
-const ATTENTION_HEADING_ID = 'local-stt-settings-attention-heading';
 const UNKNOWN_MANIFESTS = {
   cpu: { status: 'unknown' },
   cuda: { status: 'unknown' },
@@ -221,7 +220,13 @@ export async function loadSettingsAttention(
   const [cpu, cuda, cudaCompatibility] = await Promise.all([cpuRead, cudaRead, compatibilityRead]);
   const settings = deps.getSettings();
   const manifests = { cpu, cuda };
-  const variants = resolveVariantOrder(settings.accelerationPreference, !Platform.isMacOS);
+  // Drift is only computed for variants this machine can run: an unusable CUDA
+  // install has nothing to gain from an update, and offering one instead of CPU
+  // recovery sends the user in the wrong direction.
+  const variants = resolveVariantOrder(
+    settings.accelerationPreference,
+    isCudaSidecarUsable(cudaCompatibility),
+  );
 
   return {
     pluginDirectory,
@@ -257,20 +262,12 @@ export function renderSettingsAttention(
   container.toggleClass('local-stt-hidden', isEmpty);
   if (isEmpty) return { progressEl: null, updateProgress: null };
 
+  // No visible heading: this region only ever holds a single row, whose own
+  // name already states what needs doing, so a heading above it just repeats
+  // itself. The accessible name lives on the region instead.
   container.setAttribute('role', 'region');
-  container.setAttribute('aria-labelledby', ATTENTION_HEADING_ID);
-  container.createEl('h3', {
-    attr: { id: ATTENTION_HEADING_ID },
-    cls: 'local-stt-settings-attention__heading',
-    text: t('settings.attention.heading'),
-  });
-  const items = container.createDiv({
-    attr: {
-      'aria-labelledby': ATTENTION_HEADING_ID,
-      role: 'group',
-    },
-    cls: 'setting-items',
-  });
+  container.setAttribute('aria-label', t('settings.attention.regionLabel'));
+  const items = container.createDiv({ cls: 'setting-items' });
 
   if (resolution.kind === 'progress') {
     const activeInstall = resolution.activeInstall;

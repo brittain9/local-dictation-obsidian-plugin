@@ -17,6 +17,10 @@ import type {
 } from '../src/models/model-management-types';
 import { DEFAULT_PLUGIN_SETTINGS, type PluginSettings } from '../src/settings/plugin-settings';
 import type { SidecarEvent, SystemInfoEvent } from '../src/sidecar/protocol';
+import {
+  SidecarLifecycleConflictError,
+  SidecarLifecycleGate,
+} from '../src/sidecar/sidecar-lifecycle-gate';
 import { sampleCatalog } from './fixtures/catalog';
 import {
   sampleInstalledModel,
@@ -286,10 +290,12 @@ describe('ModelInstallManager', () => {
         failedInstall: {
           artifactIds: ['voice-alba', 'voice-cosette'],
           failureId: request.installId,
+          // Kept verbatim: the row reports the reason in place, and "hash mismatch"
+          // is the only thing that tells the user a retry is worth attempting.
+          message: 'hash mismatch at https://download.example.com/model',
           selection: sampleSelection(),
         },
       });
-      expect(harness.manager.getState().failedInstall).not.toHaveProperty('message');
       expect(harness.manager.getState().failedInstall).not.toHaveProperty('details');
     });
 
@@ -300,7 +306,11 @@ describe('ModelInstallManager', () => {
       await harness.manager.install(sampleSelection(), ['voice-alba']);
       const request = harness.sidecarConnection.installModel.mock.calls[0]?.[0];
       if (request === undefined) throw new Error('Expected an install request');
-      emitInstallUpdate(harness, { installId: request.installId, state: 'failed' });
+      emitInstallUpdate(harness, {
+        installId: request.installId,
+        message: 'connection reset by peer',
+        state: 'failed',
+      });
 
       const exposed = harness.manager.getState().failedInstall;
       if (exposed === null) throw new Error('Expected a failed install');
@@ -310,6 +320,7 @@ describe('ModelInstallManager', () => {
       expect(harness.manager.getState().failedInstall).toEqual({
         artifactIds: ['voice-alba'],
         failureId: request.installId,
+        message: 'connection reset by peer',
         selection: sampleSelection(),
       });
     });
@@ -1022,6 +1033,27 @@ describe('ModelInstallManager', () => {
       expect(harness.sidecarConnection.removeModel).not.toHaveBeenCalled();
     });
 
+    it('refuses to remove a model after install starts but before its first progress event', async () => {
+      configureSidecarForInit(harness.sidecarConnection);
+      await harness.manager.init();
+      const installResult = deferred<ReturnType<typeof sampleInstallUpdate>>();
+      harness.sidecarConnection.installModel.mockReturnValueOnce(installResult.promise);
+
+      const installing = harness.manager.install(sampleSelection());
+      await vi.waitFor(() => {
+        expect(harness.sidecarConnection.installModel).toHaveBeenCalledOnce();
+      });
+      expect(harness.manager.getState().activeInstall).toBeNull();
+
+      await expect(harness.manager.remove(sampleSelection())).rejects.toThrow(
+        'This model is currently being installed and cannot be removed.',
+      );
+      expect(harness.sidecarConnection.removeModel).not.toHaveBeenCalled();
+
+      installResult.resolve(sampleInstallUpdate({ state: 'queued' }));
+      await installing;
+    });
+
     it('removes a non-selected, non-installing model and drops it from local state', async () => {
       harness = createManagerHarness({ selectedModel: sampleSelection('whisper_small_en_q5_1') });
       configureSidecarForInit(harness.sidecarConnection);
@@ -1049,6 +1081,40 @@ describe('ModelInstallManager', () => {
           .getState()
           .installedModels.find((m) => m.modelId === 'whisper_large_v3_turbo_q8_0'),
       ).toBeDefined();
+    });
+
+    it('refuses to delete model files while Read aloud is synthesizing', async () => {
+      configureSidecarForInit(harness.sidecarConnection);
+      await harness.manager.init();
+      const speech = harness.sidecarLifecycleGate.acquireSpeech();
+
+      await expect(harness.manager.remove(sampleSelection())).rejects.toBeInstanceOf(
+        SidecarLifecycleConflictError,
+      );
+
+      expect(harness.sidecarConnection.removeModel).not.toHaveBeenCalled();
+      expect(
+        harness.manager
+          .getState()
+          .installedModels.find((m) => m.modelId === 'whisper_large_v3_turbo_q8_0'),
+      ).toBeDefined();
+
+      speech.release();
+      harness.sidecarConnection.removeModel.mockResolvedValueOnce({ removed: true });
+      await harness.manager.remove(sampleSelection());
+
+      expect(harness.sidecarConnection.removeModel).toHaveBeenCalledOnce();
+    });
+
+    it('releases the mutation lease when the sidecar removal rejects', async () => {
+      configureSidecarForInit(harness.sidecarConnection);
+      await harness.manager.init();
+      harness.sidecarConnection.removeModel.mockRejectedValueOnce(new Error('file is locked'));
+
+      await expect(harness.manager.remove(sampleSelection())).rejects.toThrow('file is locked');
+
+      // A stuck mutation lease would block every later dictation session.
+      expect(() => harness.sidecarLifecycleGate.acquireSpeech().release()).not.toThrow();
     });
   });
 
@@ -1642,11 +1708,13 @@ interface ManagerHarness {
   };
   manager: ModelInstallManager;
   sidecarConnection: ReturnType<typeof createSidecarConnectionStub>;
+  sidecarLifecycleGate: SidecarLifecycleGate;
 }
 
 function createManagerHarness(settingsOverride?: Partial<PluginSettings>): ManagerHarness {
   const listeners = new Set<(event: SidecarEvent) => void>();
   const sidecarConnection = createSidecarConnectionStub(listeners);
+  const sidecarLifecycleGate = new SidecarLifecycleGate();
   let settings: PluginSettings = { ...DEFAULT_PLUGIN_SETTINGS, ...settingsOverride };
   const logger = {
     debug: vi.fn(),
@@ -1687,6 +1755,7 @@ function createManagerHarness(settingsOverride?: Partial<PluginSettings>): Manag
         settings = next;
       }),
     sidecarConnection,
+    sidecarLifecycleGate,
   });
 
   return {
@@ -1708,6 +1777,7 @@ function createManagerHarness(settingsOverride?: Partial<PluginSettings>): Manag
     logger,
     manager,
     sidecarConnection,
+    sidecarLifecycleGate,
   };
 }
 

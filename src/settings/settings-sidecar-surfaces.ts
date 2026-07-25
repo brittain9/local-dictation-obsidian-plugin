@@ -1,8 +1,8 @@
+import { createCudaCompatibilityProvider } from '../sidecar/cuda-compatibility';
 import {
   SettingsAttentionSection,
   type SettingsAttentionSectionDependencies,
 } from './settings-attention-section';
-import { createCudaCompatibilityProvider } from './settings-cuda-compatibility';
 import {
   SidecarSettingsSection,
   type SidecarSettingsSectionDependencies,

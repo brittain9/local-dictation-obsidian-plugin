@@ -1,7 +1,11 @@
 import { basename } from 'node:path';
 
 import { t } from '../shared/i18n';
-import type { ActiveInstallInfo, ModelManagerState } from './model-install-manager';
+import type {
+  ActiveInstallInfo,
+  FailedInstallInfo,
+  ModelManagerState,
+} from './model-install-manager';
 import {
   type CatalogModelRecord,
   getTotalModelSize,
@@ -18,7 +22,15 @@ import {
 // Public types
 // ---------------------------------------------------------------------------
 
-type ModelRowAction = 'install' | 'use' | 'selected' | 'cancel' | 'remove' | 'details';
+type ModelRowAction =
+  | 'install'
+  | 'use'
+  | 'selected'
+  | 'cancel'
+  | 'remove'
+  | 'retry'
+  | 'dismiss'
+  | 'details';
 
 export interface ModelRowState {
   model: CatalogModelRecord;
@@ -26,6 +38,8 @@ export interface ModelRowState {
   isSelected: boolean;
   isInstalling: boolean;
   isCanceling: boolean;
+  /** The failed install for *this* model, so the row can report it in place. */
+  failedInstall: FailedInstallInfo | null;
   allowedActions: ModelRowAction[];
 }
 
@@ -83,7 +97,7 @@ export function deriveModelFamilyTabs(
 // ---------------------------------------------------------------------------
 
 export function deriveModelRowStates(state: ModelManagerState): ModelRowState[] {
-  const { catalog, installedModels, selectedModel, activeInstall } = state;
+  const { catalog, installedModels, selectedModel, activeInstall, failedInstall } = state;
 
   return [...catalog.models].sort(compareCatalogModels).map((model) => {
     return deriveRowState(
@@ -91,6 +105,7 @@ export function deriveModelRowStates(state: ModelManagerState): ModelRowState[] 
       installedModels,
       model.task === 'tts' ? state.selectedTtsModel : selectedModel,
       activeInstall,
+      failedInstall,
     );
   });
 }
@@ -100,6 +115,7 @@ function deriveRowState(
   installedModels: InstalledModelRecord[],
   selectedModel: SelectedModel | null,
   activeInstall: ActiveInstallInfo | null,
+  failedInstall: FailedInstallInfo | null,
 ): ModelRowState {
   const installed =
     installedModels.find((m) =>
@@ -121,11 +137,18 @@ function deriveRowState(
 
   const hasOtherActiveInstall = activeInstall !== null && thisInstall === null;
 
+  const thisFailure =
+    failedInstall !== null &&
+    matchesModelTriple(failedInstall.selection, model.runtimeId, model.familyId, model.modelId)
+      ? failedInstall
+      : null;
+
   const allowedActions = deriveAllowedActions({
     installed,
     isSelected,
     isInstalling,
     isCanceling,
+    hasFailed: thisFailure !== null,
     hasOtherActiveInstall,
   });
 
@@ -135,6 +158,7 @@ function deriveRowState(
     isSelected,
     isInstalling,
     isCanceling,
+    failedInstall: thisFailure,
     allowedActions,
   };
 }
@@ -144,9 +168,11 @@ function deriveAllowedActions(flags: {
   isSelected: boolean;
   isInstalling: boolean;
   isCanceling: boolean;
+  hasFailed: boolean;
   hasOtherActiveInstall: boolean;
 }): ModelRowAction[] {
-  const { installed, isSelected, isInstalling, isCanceling, hasOtherActiveInstall } = flags;
+  const { installed, isSelected, isInstalling, isCanceling, hasFailed, hasOtherActiveInstall } =
+    flags;
 
   // Currently canceling or cancelStuck — only details allowed.
   if (isCanceling) {
@@ -156,6 +182,12 @@ function deriveAllowedActions(flags: {
   // Currently installing — cancel and details.
   if (isInstalling) {
     return ['cancel', 'details'];
+  }
+
+  // This model's last install failed. Recovery replaces the normal actions so
+  // the row itself is the failure report — there is no banner elsewhere.
+  if (hasFailed) {
+    return ['retry', 'dismiss', 'details'];
   }
 
   // Not installing this model, and it is not installed.

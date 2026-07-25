@@ -9,15 +9,11 @@ import {
 import { formatBytes, formatVoiceLabel } from '../shared/format-utils';
 import { t } from '../shared/i18n';
 import type { UserFeedback } from '../shared/user-feedback';
+import { SidecarLifecycleConflictError } from '../sidecar/sidecar-lifecycle-gate';
 import { ConfirmModal } from '../ui/confirm-modal';
 import { styleDestructiveButton } from '../ui/destructive-button';
 import { localizeFamilySummary } from './catalog-localization';
 import { formatModelTagLabel } from './model-guidance';
-import {
-  type ModelInstallFailurePanelHandle,
-  renderModelInstallFailurePanel,
-  resolveFailedInstallDisplayName,
-} from './model-install-failure-panel';
 import {
   isCancellingPhase,
   type ModelInstallManager,
@@ -173,8 +169,6 @@ export class ManageModelsModal extends Modal {
   private activeTask: ModelPickerTask;
   private activeLanguage: ModelLanguageFilter = ALL_MODEL_LANGUAGES;
   private browserEl: HTMLDivElement | null = null;
-  private failurePanelContainer: HTMLDivElement | null = null;
-  private failurePanelHandle: ModelInstallFailurePanelHandle | null = null;
   private navigationEl: HTMLDivElement | null = null;
   private navigationSignature = '';
   private listContainer: HTMLDivElement | null = null;
@@ -209,11 +203,8 @@ export class ManageModelsModal extends Modal {
     this.contentEl.empty();
     this.progressElements.clear();
     this.browserEl = null;
-    this.failurePanelContainer = null;
-    this.failurePanelHandle = null;
     this.navigationEl = null;
     this.navigationSignature = '';
-    this.renderedFailureId = null;
     this.tabBarEl = null;
     this.listContainer = null;
     this.searchInputEl = null;
@@ -221,10 +212,10 @@ export class ManageModelsModal extends Modal {
     this.taskButtons.clear();
 
     const state = this.deps.manager.getState();
-    this.failurePanelContainer = this.contentEl.createDiv({
-      cls: 'local-stt-install-failure-region',
-    });
-    this.renderFailurePanel(state);
+    this.renderedFailureId = state.failedInstall?.failureId ?? null;
+    // Reopening with a pending failure must land on the row that reports it,
+    // which overrides the caller's preferred initial task.
+    this.revealFailedModel(state);
 
     if (state.loadStatus === 'error' && this.deps.onRunSetup !== undefined) {
       this.renderLoadErrorPanel();
@@ -314,8 +305,6 @@ export class ManageModelsModal extends Modal {
     this.releaseSubscription = null;
     this.actionInProgress = false;
     this.browserEl = null;
-    this.failurePanelContainer = null;
-    this.failurePanelHandle = null;
     this.navigationEl = null;
     this.navigationSignature = '';
     this.listContainer = null;
@@ -334,6 +323,18 @@ export class ManageModelsModal extends Modal {
 
   private switchTask(task: ModelPickerTask): void {
     if (task === this.activeTask) return;
+    this.setActiveTask(task);
+    this.renderNavigation();
+    this.renderModelList();
+  }
+
+  /**
+   * Moves the browser to `task` without rendering, so callers that are about to
+   * build the toolbar from scratch and callers reacting to a state change can
+   * share one definition of what switching tasks means.
+   */
+  private setActiveTask(task: ModelPickerTask): void {
+    if (task === this.activeTask) return;
     this.searchQuery = searchQueryAfterTaskSwitch(this.activeTask, task, this.searchQuery);
     this.activeTask = task;
     if (this.searchInputEl !== null) {
@@ -348,8 +349,6 @@ export class ManageModelsModal extends Modal {
       button.toggleClass('is-active', candidate === task);
       button.setAttribute('aria-selected', String(candidate === task));
     }
-    this.renderNavigation();
-    this.renderModelList();
   }
 
   private renderNavigation(): void {
@@ -580,7 +579,9 @@ export class ManageModelsModal extends Modal {
     const supportsSelectedLanguage =
       row.model.task === 'tts' || catalogModelSupportsLanguage(row.model, selectedLanguage);
 
-    // Description: install progress when installing/canceling, tags + size otherwise.
+    // Description: install progress when installing/canceling, the same bar in
+    // its failed state when the last install for this model failed, tags + size
+    // otherwise.
     if (row.isInstalling || row.isCanceling) {
       const progressState = this.buildProgressState(row);
       if (progressState !== null) {
@@ -590,6 +591,21 @@ export class ManageModelsModal extends Modal {
         fragment.append(progressEl);
         setting.setDesc(fragment);
       }
+    } else if (row.failedInstall !== null) {
+      // Deliberately not registered in `progressElements`: a failure is a
+      // settled state with nothing left to tick.
+      const fragment = createFragment();
+      fragment.append(
+        createInstallProgressElement({
+          details: null,
+          downloadedBytes: null,
+          isCancelling: false,
+          message: row.failedInstall.message,
+          state: 'failed',
+          totalBytes: null,
+        }),
+      );
+      setting.setDesc(fragment);
     } else {
       const tags = this.buildTagsFragment(row.model);
       if (!supportsSelectedLanguage) {
@@ -689,6 +705,42 @@ export class ManageModelsModal extends Modal {
                     successMessage: t('models.manage.removedNotice'),
                   },
                 );
+              });
+          });
+          break;
+
+        case 'retry':
+          setting.addButton((button) => {
+            const failureId = row.failedInstall?.failureId ?? null;
+            button
+              .setCta()
+              .setButtonText(t('models.manage.retryInstall'))
+              .setDisabled(
+                this.actionInProgress ||
+                  failureId === null ||
+                  this.deps.manager.getState().activeInstall !== null,
+              )
+              .onClick(() => {
+                if (failureId === null) return;
+                void this.runAction(
+                  async () => {
+                    await this.deps.manager.retryFailedInstall(failureId);
+                  },
+                  { failureMessage: t('models.manage.installStartFailed') },
+                );
+              });
+          });
+          break;
+
+        case 'dismiss':
+          setting.addButton((button) => {
+            const failureId = row.failedInstall?.failureId ?? null;
+            button
+              .setButtonText(t('models.manage.dismissInstallFailure'))
+              .setDisabled(this.actionInProgress || failureId === null)
+              .onClick(() => {
+                if (failureId === null) return;
+                this.deps.manager.dismissFailedInstall(failureId);
               });
           });
           break;
@@ -845,14 +897,14 @@ export class ManageModelsModal extends Modal {
 
     const priorFailureId = this.renderedFailureId;
     const nextFailureId = state.failedInstall?.failureId ?? null;
-    const failureChanged = priorFailureId !== nextFailureId;
-    if (failureChanged) {
-      this.renderFailurePanel(state);
-    } else {
-      this.updateFailurePanelBusyState(state);
-    }
-
-    if (priorFailureId !== null && nextFailureId === null && state.activeInstall === null) {
+    if (priorFailureId !== nextFailureId) {
+      this.renderedFailureId = nextFailureId;
+      // The failure is reported on the model's own row, so that row has to be
+      // reachable — otherwise an active tab, language, or search filter would
+      // swallow the only report the user gets.
+      this.revealFailedModel(state);
+      this.renderNavigation();
+      this.renderModelList();
       return;
     }
 
@@ -916,7 +968,6 @@ export class ManageModelsModal extends Modal {
     }
 
     this.actionInProgress = true;
-    this.updateFailurePanelBusyState();
     this.renderModelList();
 
     try {
@@ -926,7 +977,18 @@ export class ManageModelsModal extends Modal {
       }
       this.deps.onChanged();
     } catch (error) {
-      if (messages.failureMessage !== undefined) {
+      // A busy engine is not a failed action: the model is untouched and the
+      // same click works once playback stops. Saying "could not remove" here
+      // would send the user looking for a problem with the model.
+      if (error instanceof SidecarLifecycleConflictError) {
+        this.deps.feedback.show({
+          intent: 'warning',
+          message:
+            error.activeKind === 'mutation'
+              ? t('settings.sidecar.operationInProgress')
+              : t('models.manage.stopSpeechFirst'),
+        });
+      } else if (messages.failureMessage !== undefined) {
         this.deps.feedback.show({
           cause: error,
           intent: 'error',
@@ -935,7 +997,6 @@ export class ManageModelsModal extends Modal {
       }
     } finally {
       this.actionInProgress = false;
-      this.updateFailurePanelBusyState();
       this.renderModelList();
     }
   }
@@ -944,42 +1005,35 @@ export class ManageModelsModal extends Modal {
   // Helpers
   // -------------------------------------------------------------------------
 
-  private renderFailurePanel(state: Readonly<ModelManagerState>): void {
-    if (this.failurePanelContainer === null) {
-      return;
-    }
+  /**
+   * Points the browser at the model whose install just failed. Silent when
+   * there is no failure or the model left the catalog.
+   */
+  private revealFailedModel(state: Readonly<ModelManagerState>): void {
+    const failure = state.failedInstall;
+    if (failure === null) return;
 
-    this.failurePanelContainer.empty();
-    this.failurePanelHandle = null;
-    this.renderedFailureId = state.failedInstall?.failureId ?? null;
-    if (state.failedInstall === null) {
-      return;
-    }
-
-    this.failurePanelHandle = renderModelInstallFailurePanel(this.failurePanelContainer, {
-      disabled: this.actionInProgress || state.activeInstall !== null,
-      failureId: state.failedInstall.failureId,
-      modelName: resolveFailedInstallDisplayName(state.failedInstall, state.catalog.models),
-      onDismiss: (failureId) => {
-        this.deps.manager.dismissFailedInstall(failureId);
-      },
-      onRetry: (failureId) => {
-        void this.runAction(
-          async () => {
-            await this.deps.manager.retryFailedInstall(failureId);
-          },
-          { failureMessage: t('models.manage.installStartFailed') },
-        );
-      },
-    });
-  }
-
-  private updateFailurePanelBusyState(
-    state: Readonly<ModelManagerState> = this.deps.manager.getState(),
-  ): void {
-    this.failurePanelHandle?.setRetryDisabled(
-      this.actionInProgress || state.activeInstall !== null,
+    const model = state.catalog.models.find((candidate) =>
+      matchesModelTriple(
+        candidate,
+        failure.selection.runtimeId,
+        failure.selection.familyId,
+        failure.selection.modelId,
+      ),
     );
+    if (model === undefined) return;
+
+    this.setActiveTask(model.task);
+    this.activeTabs.set(model.task, { familyId: model.familyId, runtimeId: model.runtimeId });
+    if (!modelMatchesLanguageFilter(model, this.activeLanguage)) {
+      this.activeLanguage = ALL_MODEL_LANGUAGES;
+    }
+    if (this.searchQuery.trim().length > 0) {
+      this.searchQuery = '';
+      if (this.searchInputEl !== null) {
+        this.searchInputEl.value = '';
+      }
+    }
   }
 
   private getActiveTab(): AdapterTabKey | null {

@@ -50,7 +50,12 @@ import { t } from './shared/i18n';
 import { createObsidianFeedbackPresenter } from './shared/obsidian-feedback-presenter';
 import { createPluginLogger, type PluginLogger } from './shared/plugin-logger';
 import { createUserFeedback, type UserFeedback } from './shared/user-feedback';
-import { detectCudaCompatibility } from './sidecar/gpu-precheck';
+import {
+  createCudaCompatibilityProvider,
+  isCudaSidecarUsable,
+  resolveCudaSidecarLaunchPolicy,
+} from './sidecar/cuda-compatibility';
+import { isCudaReleaseTarget } from './sidecar/gpu-precheck';
 import { assertSidecarExecutableIsFresh } from './sidecar/sidecar-build-state';
 import { SidecarConnection } from './sidecar/sidecar-connection';
 import { formatSidecarExecutableName } from './sidecar/sidecar-executable';
@@ -79,6 +84,12 @@ export default class LocalSttPlugin extends Plugin {
   private audioCaptureStream: AudioCaptureStream | null = null;
   private audioLevelMeter: SidecarAudioLevelMeter | null = null;
   private dictationController: DictationSessionController | null = null;
+  /**
+   * Session-scoped so sidecar selection and version-drift repair can never
+   * disagree about whether CUDA is usable here. Settings owns a separate
+   * per-display provider, which is what picks up a newly installed driver.
+   */
+  private readonly getCudaCompatibility = createCudaCompatibilityProvider();
   private readonly sidecarLifecycleGate = new SidecarLifecycleGate();
   private logger: PluginLogger = createPluginLogger(() => this.settings.developerMode);
   private readonly feedback: UserFeedback = createUserFeedback({
@@ -170,6 +181,7 @@ export default class LocalSttPlugin extends Plugin {
         await this.updateSettings(nextSettings);
       },
       sidecarConnection: this.sidecarConnection,
+      sidecarLifecycleGate: this.sidecarLifecycleGate,
     });
     this.sidecarInstallManager = new SidecarInstallManager({
       feedback: this.feedback,
@@ -906,20 +918,25 @@ export default class LocalSttPlugin extends Plugin {
 
   private buildSidecarResolutionOptions(
     pluginDirectory: string,
+    cudaLaunchPolicy: ResolveSidecarExecutablePathOptions['cudaLaunchPolicy'],
   ): ResolveSidecarExecutablePathOptions {
     return {
       accelerationPreference: this.settings.accelerationPreference,
+      cudaLaunchPolicy,
       executableName: getSidecarExecutableName(),
       pluginDirectory,
       sidecarPathOverride: this.settings.sidecarPathOverride,
       sidecarProjectDirectory: join(pluginDirectory, 'native'),
-      supportsCuda: !Platform.isMacOS,
+      supportsCuda: isCudaReleaseTarget(process.platform, process.arch),
     };
   }
 
   private async resolveSidecarExecutablePath(): Promise<string> {
     const pluginDirectory = await this.resolvePluginDirectoryPath();
-    const options = this.buildSidecarResolutionOptions(pluginDirectory);
+    const options = this.buildSidecarResolutionOptions(
+      pluginDirectory,
+      resolveCudaSidecarLaunchPolicy(await this.getCudaCompatibility()),
+    );
     const resolved = await resolveSidecarExecutablePath(options);
 
     if (resolved.source === 'installed' && resolved.variant !== null) {
@@ -968,12 +985,11 @@ export default class LocalSttPlugin extends Plugin {
 
     let drift: SidecarVersionDrift[];
     try {
-      const cudaCompatibility = await detectCudaCompatibility();
       drift = await detectSidecarVersionDrift({
         pluginDirectory,
         pluginVersion: this.manifest.version,
         preferredVariant: this.settings.accelerationPreference === 'cpu_only' ? 'cpu' : 'cuda',
-        supportsCuda: cudaCompatibility.status === 'compatible',
+        supportsCuda: isCudaSidecarUsable(await this.getCudaCompatibility()),
       });
     } catch (error) {
       this.logger.error('sidecar', 'version drift check failed', error);

@@ -185,13 +185,10 @@ describe('renderSettingsAttention', () => {
     );
 
     expect(asTestElement(container).attributes.get('role')).toBe('region');
-    expect(asTestElement(container).attributes.get('aria-labelledby')).toBe(
-      'local-stt-settings-attention-heading',
-    );
-    expect(asTestElement(container).children[0]?.attributes.get('id')).toBe(
-      'local-stt-settings-attention-heading',
-    );
-    expect(asTestElement(container).children[1]?.attributes.get('role')).toBe('group');
+    expect(asTestElement(container).attributes.get('aria-label')).toBe('Needs attention');
+    // The region names itself; no visible heading element is rendered above it.
+    expect(asTestElement(container).children).toHaveLength(1);
+    expect(asTestElement(container).children[0]?.className).toBe('setting-items');
     expect(TestSetting.named('Update speech engines').descEl.textContent).toContain(
       'CPU and CUDA speech engines',
     );
