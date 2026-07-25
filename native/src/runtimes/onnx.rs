@@ -4,10 +4,7 @@ use std::path::Path;
 use std::sync::OnceLock;
 
 #[cfg(feature = "gpu-ort-cuda")]
-use ort::ep::{
-    CUDA, ExecutionProvider,
-    cuda::{CUDA_DYLIBS, CUDNN_DYLIBS},
-};
+use ort::ep::{CUDA, ExecutionProvider, cuda::CUDNN_DYLIBS};
 use ort::session::Session;
 
 use crate::engine::capabilities::{
@@ -118,6 +115,38 @@ fn run_cuda_precheck() -> Result<(), String> {
         .map_err(|error| format!("CUDA execution provider registration failed: {error}"))
 }
 
+/// The CUDA runtime libraries staged next to the sidecar binary, read from the
+/// same manifest `scripts/build-cuda.sh` copies out of the toolkit and
+/// `scripts/package-sidecar-archive.mjs` ships. Embedding it keeps the preload
+/// list from drifting away from what actually lands in `bin/cuda/`.
+///
+/// `ort`'s own `CUDA_DYLIBS` is deliberately not used: it still names the CUDA
+/// 12 sonames even though the provider binary it downloads links CUDA 13, so
+/// preloading from it fails on every library. The manifest is derived from the
+/// provider's actual `DT_NEEDED` entries instead.
+///
+/// cuDNN is the opposite case and still comes from `CUDNN_DYLIBS`: we do not
+/// vendor it — it has to be installed on the machine already — so upstream's
+/// canonical names are the right ones to probe for. Do not "unify" these two.
+#[cfg(feature = "gpu-ort-cuda")]
+const CUDA_ARTIFACTS_MANIFEST: &str = include_str!("../../cuda-artifacts.json");
+
+#[cfg(feature = "gpu-ort-cuda")]
+#[derive(serde::Deserialize)]
+struct CudaArtifacts {
+    runtime: HashMap<String, Vec<String>>,
+}
+
+#[cfg(feature = "gpu-ort-cuda")]
+fn vendored_cuda_dylibs() -> Result<Vec<String>, String> {
+    let platform = if cfg!(windows) { "win32" } else { "linux" };
+    serde_json::from_str::<CudaArtifacts>(CUDA_ARTIFACTS_MANIFEST)
+        .map_err(|error| format!("bundled CUDA artifact manifest is malformed: {error}"))?
+        .runtime
+        .remove(platform)
+        .ok_or_else(|| format!("bundled CUDA artifact manifest has no {platform} runtime entry"))
+}
+
 #[cfg(feature = "gpu-ort-cuda")]
 fn preload_cuda_dependencies() -> Result<(), String> {
     // ORT can register the CUDA EP before delay-loaded CUDA/cuDNN DLLs are
@@ -127,22 +156,57 @@ fn preload_cuda_dependencies() -> Result<(), String> {
         .ok()
         .and_then(|path| path.parent().map(Path::to_path_buf));
 
-    for library_name in CUDA_DYLIBS {
-        preload_required_dylib(library_name, sidecar_dir.as_deref(), "CUDA runtime")?;
+    for library_name in vendored_cuda_dylibs()? {
+        preload_required_dylib(
+            &library_name,
+            sidecar_dir.as_deref(),
+            CudaDependency::Runtime,
+        )?;
     }
 
     for library_name in CUDNN_DYLIBS {
-        preload_required_dylib(library_name, sidecar_dir.as_deref(), "cuDNN runtime")?;
+        preload_required_dylib(library_name, sidecar_dir.as_deref(), CudaDependency::Cudnn)?;
     }
 
     Ok(())
+}
+
+/// Which dependency group a preload failure belongs to. The two produce very
+/// different messages because they mean different things to the user: a missing
+/// bundled CUDA library is a packaging bug worth diagnosing, while missing cuDNN
+/// is an expected state on a machine that simply has not installed it.
+#[cfg(feature = "gpu-ort-cuda")]
+#[derive(Clone, Copy)]
+enum CudaDependency {
+    Runtime,
+    Cudnn,
+}
+
+#[cfg(feature = "gpu-ort-cuda")]
+impl CudaDependency {
+    /// This string is surfaced verbatim in Settings, so the cuDNN case reads as
+    /// an instruction rather than a stack trace. The bundled-runtime case keeps
+    /// the loader error: it means the sidecar was packaged wrong, and the only
+    /// person who can act on it needs the detail.
+    fn not_found_reason(self, library_name: &str, loader_error: &str) -> String {
+        match self {
+            Self::Runtime => format!(
+                "Bundled CUDA library {library_name} is missing from the sidecar directory and \
+                 the system library search path: {loader_error}"
+            ),
+            Self::Cudnn => format!(
+                "cuDNN 9 is not installed ({library_name} was not found), so ONNX models run on \
+                 the CPU. Install NVIDIA cuDNN 9 to enable GPU acceleration for them."
+            ),
+        }
+    }
 }
 
 #[cfg(feature = "gpu-ort-cuda")]
 fn preload_required_dylib(
     library_name: &str,
     sidecar_dir: Option<&Path>,
-    dependency_group: &str,
+    dependency: CudaDependency,
 ) -> Result<(), String> {
     if let Some(candidate) = sidecar_dir
         .map(|dir| dir.join(library_name))
@@ -150,17 +214,29 @@ fn preload_required_dylib(
     {
         return ort::util::preload_dylib(&candidate).map_err(|error| {
             format!(
-                "{dependency_group} library {} failed to load from {}: {error}",
-                library_name,
+                "CUDA library {library_name} failed to load from {}: {error}",
                 candidate.display()
             )
         });
     }
 
-    ort::util::preload_dylib(Path::new(library_name)).map_err(|error| {
-        format!(
-            "{dependency_group} library {library_name} is not available from the sidecar \
-             directory or the system library search path: {error}"
-        )
-    })
+    ort::util::preload_dylib(Path::new(library_name))
+        .map_err(|error| dependency.not_found_reason(library_name, &error.to_string()))
+}
+
+#[cfg(all(test, feature = "gpu-ort-cuda"))]
+mod tests {
+    use super::vendored_cuda_dylibs;
+
+    /// A malformed or renamed manifest degrades to a blanket "CUDA unavailable"
+    /// at runtime — exactly the silent failure this module exists to avoid.
+    #[test]
+    fn embedded_manifest_lists_the_cuda_runtime_for_this_platform() {
+        let dylibs = vendored_cuda_dylibs().expect("embedded CUDA artifact manifest must parse");
+
+        assert!(
+            dylibs.iter().any(|name| name.contains("cudart")),
+            "manifest must list the CUDA runtime library, got {dylibs:?}"
+        );
+    }
 }

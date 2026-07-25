@@ -177,6 +177,15 @@
   font-size: var(--font-smallest);
 }
 
+.local-stt-acceleration-status {
+  margin-top: 6px;
+}
+
+.local-stt-acceleration-fallback {
+  margin-top: 2px;
+  color: var(--text-warning);
+}
+
 .local-stt-voice-management {
   margin: 0 0 6px 20px;
   padding-left: 12px;

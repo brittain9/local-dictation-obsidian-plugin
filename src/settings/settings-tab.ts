@@ -773,13 +773,18 @@ export class LocalSttSettingTab extends PluginSettingTab {
 
     let rendered = 0;
 
-    const hasNonCpuAccelerator =
-      selectedRuntime?.runtimeCapabilities.availableAccelerators.some((id) => id !== 'cpu') ??
-      false;
+    // `availableAccelerators` omits accelerators that failed to initialise, so
+    // gating on it hid this row exactly when it had a fallback to explain. The
+    // details map keeps the failures, and CPU-only sidecars have no GPU key in
+    // it at all, so they still see nothing.
+    const hasNonCpuAccelerator = Object.keys(
+      selectedRuntime?.runtimeCapabilities.acceleratorDetails ?? {},
+    ).some((id) => id !== 'cpu');
 
     if (!Platform.isMacOS && hasNonCpuAccelerator) {
       renderHardwareAccelerationSetting(containerEl, {
         access: this.access,
+        acceleration: state,
         feedback: this.dependencies.feedback,
         restartSidecar: this.dependencies.restartSidecar,
         sidecarLifecycleGate: this.dependencies.sidecarLifecycleGate,

@@ -6,6 +6,7 @@
   "cublas",
   "cublas_dev",
   "cufft",
+  "curand",
   "thrust",
   "visual_studio_integration"
 ]

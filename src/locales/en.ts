@@ -120,6 +120,7 @@ export const en = {
   'commands.pauseResumeReadAloud': 'Pause or resume reading',
   'commands.stopReadAloud': 'Stop reading',
   'common.reset': 'Reset',
+  'settings.acceleration.active': 'Running on: {accelerator}',
   'settings.acceleration.pending': 'pending (sidecar not ready)',
   'settings.acceleration.unavailable': 'CPU ({accelerator} unavailable)',
   'settings.acceleration.unknownReason': 'unknown reason',

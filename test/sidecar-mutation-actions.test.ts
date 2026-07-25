@@ -428,10 +428,10 @@ function renderHardwareToggle(deps: {
   sidecarLifecycleGate: SidecarLifecycleGate;
 }) {
   const harness = createHardwareActionHarness(deps);
-  renderHardwareAccelerationSetting(
-    new TestElement() as unknown as HTMLElement,
-    harness.actionDeps,
-  );
+  renderHardwareAccelerationSetting(new TestElement() as unknown as HTMLElement, {
+    ...harness.actionDeps,
+    acceleration: null,
+  });
   return {
     getSettings: harness.getSettings,
     toggle: Setting.named('Hardware acceleration').onlyToggle(),

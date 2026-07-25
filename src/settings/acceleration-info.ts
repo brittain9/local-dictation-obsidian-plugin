@@ -38,8 +38,15 @@ interface AccelerationDescription {
   fallbacks: AccelerationFallback[];
 }
 
+/**
+ * The subset of a `SystemInfoEvent` that acceleration reporting needs. Narrowed
+ * so the settings tab can pass the model install manager's cached state, which
+ * carries the same two lists without being a full event.
+ */
+export type AccelerationSnapshot = Pick<SystemInfoEvent, 'compiledAdapters' | 'compiledRuntimes'>;
+
 export function describeAcceleration(
-  systemInfo: SystemInfoEvent | null,
+  systemInfo: AccelerationSnapshot | null,
   accelerationPreference: AccelerationPreference,
 ): AccelerationDescription {
   if (systemInfo === null) {
@@ -112,14 +119,17 @@ function resolveEngineBackend(
       return { engineName, effective: id, missingGpu: null };
     }
   }
-  for (const id of nonCpu) {
-    const detail = caps.acceleratorDetails[id];
-    if (detail !== undefined && detail.available === false) {
+  // The sidecar derives `availableAccelerators` as only the accelerators that
+  // probed successfully, so a GPU that failed to initialise is by construction
+  // absent from it. The fallback search has to read `acceleratorDetails`, which
+  // is the only place the failure and its reason survive.
+  for (const [id, detail] of Object.entries(caps.acceleratorDetails)) {
+    if (id !== 'cpu' && detail?.available === false) {
       return {
         engineName,
         effective: 'cpu',
         missingGpu: {
-          accelerator: id,
+          accelerator: id as AcceleratorId,
           reason: formatReason(detail.unavailableReason),
         },
       };

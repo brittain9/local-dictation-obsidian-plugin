@@ -20,6 +20,7 @@ const LIBRARY_TO_SUBPACKAGE: Record<string, string> = {
   cublas: 'cublas',
   cublasLt: 'cublas',
   cufft: 'cufft',
+  curand: 'curand',
 };
 
 async function readJson(path: string): Promise<unknown> {
