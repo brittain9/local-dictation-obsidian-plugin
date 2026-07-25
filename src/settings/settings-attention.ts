@@ -1,3 +1,4 @@
+import { isCudaSidecarUsable } from '../sidecar/cuda-compatibility';
 import type { CudaCompatibility } from '../sidecar/gpu-precheck';
 import type { ActiveSidecarInstall } from '../sidecar/sidecar-install-manager';
 import type { InstallManifest, SidecarInstallVariant } from '../sidecar/sidecar-installer';
@@ -40,20 +41,31 @@ export function resolveSettingsAttention(
     return { activeInstall: snapshot.activeInstall, kind: 'progress' };
   }
 
-  const installedVariants = (['cpu', 'cuda'] as const).filter(
-    (variant) => snapshot.manifests[variant].status === 'installed',
-  );
-  const allManifestsKnownAbsent = (['cpu', 'cuda'] as const).every(
-    (variant) => snapshot.manifests[variant].status === 'absent',
+  // Only a variant this machine can actually run counts as an engine. A CUDA
+  // install on a box with no usable driver is not one, so its presence must not
+  // suppress the CPU setup prompt and its version drift must not be advertised
+  // as a fix.
+  const cudaUsable = isCudaSidecarUsable(snapshot.cudaCompatibility);
+  const usableVariants = (['cpu', 'cuda'] as const).filter(
+    (variant) =>
+      (variant === 'cpu' || cudaUsable) && snapshot.manifests[variant].status === 'installed',
   );
 
-  if (installedVariants.length === 0) {
-    return allManifestsKnownAbsent
-      ? { items: [{ action: 'setup', id: 'setup' }], kind: 'items' }
-      : { items: [], kind: 'items' };
+  if (usableVariants.length === 0) {
+    // An unread manifest may yet turn out to be a working engine; prompting for
+    // setup on top of one would be telling the user to reinstall what they have.
+    const mayStillHaveEngine = (['cpu', 'cuda'] as const).some(
+      (variant) =>
+        (variant === 'cpu' || cudaUsable) && snapshot.manifests[variant].status === 'unknown',
+    );
+    return mayStillHaveEngine
+      ? { items: [], kind: 'items' }
+      : { items: [{ action: 'setup', id: 'setup' }], kind: 'items' };
   }
 
-  const driftVariants = snapshot.drift.map((entry) => entry.variant);
+  const driftVariants = snapshot.drift
+    .map((entry) => entry.variant)
+    .filter((variant) => usableVariants.includes(variant));
   if (driftVariants.length > 0) {
     return {
       items: [
@@ -67,9 +79,7 @@ export function resolveSettingsAttention(
     };
   }
 
-  if (snapshot.cudaCompatibility?.status !== 'compatible') {
-    return { items: [], kind: 'items' };
-  }
+  if (!cudaUsable) return { items: [], kind: 'items' };
 
   const cudaManifest = snapshot.manifests.cuda;
   if (cudaManifest.status === 'absent') {

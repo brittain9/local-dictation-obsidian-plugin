@@ -1,7 +1,33 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import { createCudaCompatibilityProvider } from '../src/settings/settings-cuda-compatibility';
+import {
+  createCudaCompatibilityProvider,
+  isCudaSidecarUsable,
+} from '../src/sidecar/cuda-compatibility';
 import type { CudaCompatibility } from '../src/sidecar/gpu-precheck';
+
+describe('isCudaSidecarUsable', () => {
+  it('accepts only a confirmed-compatible probe', () => {
+    expect(
+      isCudaSidecarUsable({
+        computeCapabilities: ['8.9'],
+        driverVersion: '580.1',
+        status: 'compatible',
+      }),
+    ).toBe(true);
+  });
+
+  it.each([
+    null,
+    { status: 'absent' },
+    { status: 'unknown' },
+    { status: 'unsupported' },
+    { status: 'incompatible_driver', driverVersion: '579', computeCapabilities: ['8.9'] },
+    { status: 'incompatible_gpu', driverVersion: '580', computeCapabilities: ['7.4'] },
+  ] satisfies (CudaCompatibility | null)[])('rejects %o', (compatibility) => {
+    expect(isCudaSidecarUsable(compatibility)).toBe(false);
+  });
+});
 
 describe('createCudaCompatibilityProvider', () => {
   it('shares one probe promise between every consumer in a Settings display', async () => {

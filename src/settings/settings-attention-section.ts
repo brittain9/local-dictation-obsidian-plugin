@@ -3,6 +3,7 @@ import { Platform, Setting } from 'obsidian';
 import { getSidecarUpdateCopy } from '../setup/sidecar-install-copy';
 import { t } from '../shared/i18n';
 import type { PluginLogger } from '../shared/plugin-logger';
+import { type GetCudaCompatibility, isCudaSidecarUsable } from '../sidecar/cuda-compatibility';
 import type { CudaCompatibility } from '../sidecar/gpu-precheck';
 import {
   type ActiveSidecarInstall,
@@ -24,7 +25,6 @@ import {
   type SettingsAttentionSnapshot,
   type SidecarManifestState,
 } from './settings-attention';
-import type { GetCudaCompatibility } from './settings-cuda-compatibility';
 
 export interface SettingsAttentionActions {
   enableCuda(): Promise<void>;
@@ -220,7 +220,13 @@ export async function loadSettingsAttention(
   const [cpu, cuda, cudaCompatibility] = await Promise.all([cpuRead, cudaRead, compatibilityRead]);
   const settings = deps.getSettings();
   const manifests = { cpu, cuda };
-  const variants = resolveVariantOrder(settings.accelerationPreference, !Platform.isMacOS);
+  // Drift is only computed for variants this machine can run: an unusable CUDA
+  // install has nothing to gain from an update, and offering one instead of CPU
+  // recovery sends the user in the wrong direction.
+  const variants = resolveVariantOrder(
+    settings.accelerationPreference,
+    isCudaSidecarUsable(cudaCompatibility),
+  );
 
   return {
     pluginDirectory,

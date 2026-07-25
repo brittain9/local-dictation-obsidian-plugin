@@ -104,6 +104,7 @@ describe('resolveSettingsAttention', () => {
   it('consolidates stale variants in authoritative order', () => {
     const result = resolveSettingsAttention(
       snapshot({
+        cudaCompatibility: COMPATIBLE,
         drift: [drift('cuda'), drift('cpu')],
         manifests: { cpu: installed('cpu', '2026.7.10'), cuda: installed('cuda', '2026.7.10') },
       }),
@@ -251,6 +252,65 @@ describe('resolveSettingsAttention', () => {
       });
     },
   );
+
+  const UNUSABLE_CUDA = [
+    { status: 'absent' },
+    { status: 'unknown' },
+    { status: 'unsupported' },
+    { status: 'incompatible_driver', driverVersion: '579', computeCapabilities: ['8.9'] },
+    { status: 'incompatible_gpu', driverVersion: '580', computeCapabilities: ['7.4'] },
+  ] satisfies CudaCompatibility[];
+
+  it.each(UNUSABLE_CUDA)(
+    'offers CPU setup instead of a CUDA update for a stale CUDA-only install ($status)',
+    (cudaCompatibility) => {
+      expect(
+        resolveSettingsAttention(
+          snapshot({
+            cudaCompatibility,
+            drift: [drift('cuda')],
+            manifests: { cpu: { status: 'absent' }, cuda: installed('cuda', '2026.7.10') },
+          }),
+        ),
+      ).toEqual({ items: [{ action: 'setup', id: 'setup' }], kind: 'items' });
+    },
+  );
+
+  it.each(UNUSABLE_CUDA)(
+    'keeps the CPU update and drops the unusable CUDA one ($status)',
+    (cudaCompatibility) => {
+      expect(
+        resolveSettingsAttention(
+          snapshot({
+            cudaCompatibility,
+            drift: [drift('cuda'), drift('cpu')],
+            manifests: {
+              cpu: installed('cpu', '2026.7.10'),
+              cuda: installed('cuda', '2026.7.10'),
+            },
+          }),
+        ),
+      ).toEqual({
+        items: [{ action: 'update_sidecars', id: 'update_sidecars', variants: ['cpu'] }],
+        kind: 'items',
+      });
+    },
+  );
+
+  it('stays silent while an unusable CUDA install sits beside an unread CPU manifest', () => {
+    expect(
+      resolveSettingsAttention(
+        snapshot({
+          cudaCompatibility: {
+            computeCapabilities: ['8.9'],
+            driverVersion: '579',
+            status: 'incompatible_driver',
+          },
+          manifests: { cpu: { status: 'unknown' }, cuda: installed('cuda') },
+        }),
+      ),
+    ).toEqual({ items: [], kind: 'items' });
+  });
 });
 
 function activeInstall(variant: SidecarInstallVariant): ActiveSidecarInstall {
