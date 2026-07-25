@@ -17,6 +17,10 @@ import type {
 } from '../src/models/model-management-types';
 import { DEFAULT_PLUGIN_SETTINGS, type PluginSettings } from '../src/settings/plugin-settings';
 import type { SidecarEvent, SystemInfoEvent } from '../src/sidecar/protocol';
+import {
+  SidecarLifecycleConflictError,
+  SidecarLifecycleGate,
+} from '../src/sidecar/sidecar-lifecycle-gate';
 import { sampleCatalog } from './fixtures/catalog';
 import {
   sampleInstalledModel,
@@ -1057,6 +1061,40 @@ describe('ModelInstallManager', () => {
           .installedModels.find((m) => m.modelId === 'whisper_large_v3_turbo_q8_0'),
       ).toBeDefined();
     });
+
+    it('refuses to delete model files while Read aloud is synthesizing', async () => {
+      configureSidecarForInit(harness.sidecarConnection);
+      await harness.manager.init();
+      const speech = harness.sidecarLifecycleGate.acquireSpeech();
+
+      await expect(harness.manager.remove(sampleSelection())).rejects.toBeInstanceOf(
+        SidecarLifecycleConflictError,
+      );
+
+      expect(harness.sidecarConnection.removeModel).not.toHaveBeenCalled();
+      expect(
+        harness.manager
+          .getState()
+          .installedModels.find((m) => m.modelId === 'whisper_large_v3_turbo_q8_0'),
+      ).toBeDefined();
+
+      speech.release();
+      harness.sidecarConnection.removeModel.mockResolvedValueOnce({ removed: true });
+      await harness.manager.remove(sampleSelection());
+
+      expect(harness.sidecarConnection.removeModel).toHaveBeenCalledOnce();
+    });
+
+    it('releases the mutation lease when the sidecar removal rejects', async () => {
+      configureSidecarForInit(harness.sidecarConnection);
+      await harness.manager.init();
+      harness.sidecarConnection.removeModel.mockRejectedValueOnce(new Error('file is locked'));
+
+      await expect(harness.manager.remove(sampleSelection())).rejects.toThrow('file is locked');
+
+      // A stuck mutation lease would block every later dictation session.
+      expect(() => harness.sidecarLifecycleGate.acquireSpeech().release()).not.toThrow();
+    });
   });
 
   describe('select() / clearSelection()', () => {
@@ -1649,11 +1687,13 @@ interface ManagerHarness {
   };
   manager: ModelInstallManager;
   sidecarConnection: ReturnType<typeof createSidecarConnectionStub>;
+  sidecarLifecycleGate: SidecarLifecycleGate;
 }
 
 function createManagerHarness(settingsOverride?: Partial<PluginSettings>): ManagerHarness {
   const listeners = new Set<(event: SidecarEvent) => void>();
   const sidecarConnection = createSidecarConnectionStub(listeners);
+  const sidecarLifecycleGate = new SidecarLifecycleGate();
   let settings: PluginSettings = { ...DEFAULT_PLUGIN_SETTINGS, ...settingsOverride };
   const logger = {
     debug: vi.fn(),
@@ -1694,6 +1734,7 @@ function createManagerHarness(settingsOverride?: Partial<PluginSettings>): Manag
         settings = next;
       }),
     sidecarConnection,
+    sidecarLifecycleGate,
   });
 
   return {
@@ -1715,6 +1756,7 @@ function createManagerHarness(settingsOverride?: Partial<PluginSettings>): Manag
     logger,
     manager,
     sidecarConnection,
+    sidecarLifecycleGate,
   };
 }
 

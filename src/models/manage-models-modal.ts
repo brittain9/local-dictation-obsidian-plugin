@@ -9,6 +9,7 @@ import {
 import { formatBytes, formatVoiceLabel } from '../shared/format-utils';
 import { t } from '../shared/i18n';
 import type { UserFeedback } from '../shared/user-feedback';
+import { SidecarLifecycleConflictError } from '../sidecar/sidecar-lifecycle-gate';
 import { ConfirmModal } from '../ui/confirm-modal';
 import { styleDestructiveButton } from '../ui/destructive-button';
 import { localizeFamilySummary } from './catalog-localization';
@@ -976,7 +977,18 @@ export class ManageModelsModal extends Modal {
       }
       this.deps.onChanged();
     } catch (error) {
-      if (messages.failureMessage !== undefined) {
+      // A busy engine is not a failed action: the model is untouched and the
+      // same click works once playback stops. Saying "could not remove" here
+      // would send the user looking for a problem with the model.
+      if (error instanceof SidecarLifecycleConflictError) {
+        this.deps.feedback.show({
+          intent: 'warning',
+          message:
+            error.activeKind === 'mutation'
+              ? t('settings.sidecar.operationInProgress')
+              : t('models.manage.stopSpeechFirst'),
+        });
+      } else if (messages.failureMessage !== undefined) {
         this.deps.feedback.show({
           cause: error,
           intent: 'error',

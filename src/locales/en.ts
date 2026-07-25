@@ -684,6 +684,8 @@ export const en = {
   'models.manage.selectFailed': 'Could not select the model. Check that its files are available.',
   'models.manage.selectedNotice': 'Model selected.',
   'models.manage.removeFailed': 'Could not remove the model. Close any process using its files.',
+  'models.manage.stopSpeechFirst':
+    'Stop dictation or Read aloud first — the speech engine is using model files right now.',
   'models.manage.removedNotice': 'Model removed.',
   'models.external.title': 'Use external file',
   'models.external.intro':

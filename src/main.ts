@@ -176,6 +176,7 @@ export default class LocalSttPlugin extends Plugin {
         await this.updateSettings(nextSettings);
       },
       sidecarConnection: this.sidecarConnection,
+      sidecarLifecycleGate: this.sidecarLifecycleGate,
     });
     this.sidecarInstallManager = new SidecarInstallManager({
       feedback: this.feedback,

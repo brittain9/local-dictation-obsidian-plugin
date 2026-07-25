@@ -15,6 +15,7 @@ import type {
   SystemInfoEvent,
 } from '../sidecar/protocol';
 import type { SidecarConnection } from '../sidecar/sidecar-connection';
+import type { SidecarLifecycleGate } from '../sidecar/sidecar-lifecycle-gate';
 import { resolveEngineCapabilities } from './capability-view';
 import { validateExternalModelFilePath } from './external-model-file';
 import {
@@ -92,6 +93,7 @@ interface ModelInstallManagerDependencies {
     | 'removeModel'
     | 'subscribe'
   >;
+  sidecarLifecycleGate: Pick<SidecarLifecycleGate, 'runMutation'>;
 }
 
 // ---------------------------------------------------------------------------
@@ -696,12 +698,20 @@ export class ModelInstallManager {
       'model',
       `removing ${selection.runtimeId}:${selection.familyId}:${selection.modelId}`,
     );
-    const event = await this.deps.sidecarConnection.removeModel({
-      familyId: selection.familyId,
-      modelId: selection.modelId,
-      runtimeId: selection.runtimeId,
-      ...createModelStoreOverridePayload(this.deps.getSettings().modelStorePathOverride),
-    });
+    // Deleting model files out from under a running engine is a mutation like
+    // any other sidecar maintenance: native synthesis keeps ONNX sessions open
+    // and rereads voice artifacts between chunks, and on Windows an open handle
+    // can block the delete outright. The removal itself is fast, so holding the
+    // gate here costs a live session nothing — unlike an install, which would
+    // block dictation for the whole download and is left ungated on purpose.
+    const event = await this.deps.sidecarLifecycleGate.runMutation(async () =>
+      this.deps.sidecarConnection.removeModel({
+        familyId: selection.familyId,
+        modelId: selection.modelId,
+        runtimeId: selection.runtimeId,
+        ...createModelStoreOverridePayload(this.deps.getSettings().modelStorePathOverride),
+      }),
+    );
 
     if (event.removed) {
       this.installedModels = this.installedModels.filter(
