@@ -64,7 +64,7 @@ export const en = {
   'setup.sidecar.cpu.reinstall.success': 'CPU sidecar reinstalled and restarted.',
   'setup.sidecar.cpu.reinstall.title': 'Reinstall CPU sidecar',
   'setup.sidecar.cuda.install.body':
-    'Download the CUDA-accelerated sidecar for NVIDIA GPUs. This replaces the CPU sidecar while active. The CPU sidecar remains installed as a fallback.',
+    'Download the CUDA sidecar to accelerate Whisper models on a supported NVIDIA GPU. Other model families continue to run on CPU. This replaces the CPU sidecar while active; the CPU sidecar remains installed as a fallback.',
   'setup.sidecar.cuda.install.primaryButton': 'Download CUDA sidecar',
   'setup.sidecar.cuda.install.success': 'CUDA sidecar installed and started.',
   'setup.sidecar.cuda.install.title': 'Install CUDA acceleration',
@@ -120,7 +120,7 @@ export const en = {
   'commands.pauseResumeReadAloud': 'Pause or resume reading',
   'commands.stopReadAloud': 'Stop reading',
   'common.reset': 'Reset',
-  'settings.acceleration.active': 'Running on: {accelerator}',
+  'settings.acceleration.active': 'Configured acceleration: {accelerator}',
   'settings.acceleration.pending': 'pending (sidecar not ready)',
   'settings.acceleration.unavailable': 'CPU ({accelerator} unavailable)',
   'settings.acceleration.unknownReason': 'unknown reason',
@@ -345,7 +345,7 @@ export const en = {
   'settings.attention.regionLabel': 'Needs attention',
   'settings.attention.installCuda.name': 'CUDA acceleration is available',
   'settings.attention.installCuda.desc':
-    'A compatible NVIDIA GPU and driver were detected. Install the CUDA speech engine for faster transcription.',
+    'A compatible NVIDIA GPU and driver were detected. Install the CUDA speech engine to accelerate Whisper models.',
   'settings.attention.installCuda.action': 'Install CUDA acceleration',
   'settings.attention.enableCuda.name': 'Enable CUDA acceleration',
   'settings.attention.enableCuda.desc':
@@ -368,7 +368,7 @@ export const en = {
   'settings.sidecar.installUnverifiedTooltip':
     'Proceed with CUDA install even though compatibility could not be confirmed.',
   'settings.sidecar.cudaCompatibility.compatible':
-    'Compatible NVIDIA CUDA environment detected. The CUDA sidecar can accelerate transcription.',
+    'Compatible NVIDIA CUDA environment detected. The CUDA sidecar can accelerate Whisper models.',
   'settings.sidecar.cudaCompatibility.incompatibleDriver':
     'NVIDIA driver is too old. Update to R{minimumDriverMajor} or later to use the published CUDA sidecar.',
   'settings.sidecar.cudaCompatibility.incompatibleGpu':
@@ -623,7 +623,7 @@ export const en = {
   'setup.wizard.startTalking':
     'Then hit the mic in the ribbon (or your own hotkey) and start talking.',
   'setup.wizard.cpuBuildNote':
-    'Starts with the CPU build. NVIDIA GPU? You can install the CUDA-accelerated build later from Settings.',
+    'Starts with the CPU build. NVIDIA GPU? You can install the CUDA build later to accelerate Whisper models.',
   'setup.wizard.downloadEngine': 'Download engine',
   'setup.wizard.modelSelectedTitle': 'Model selected',
   'setup.wizard.pickModelTitle': 'Pick a transcription model',
@@ -634,7 +634,7 @@ export const en = {
   'setup.wizard.modelKinds':
     'Two kinds are available: streaming models show words live as you speak; standard models transcribe after each pause. For hands-free dictation, start with the recommended Moonshine Small model. Nemotron 3.5 ASR is an experimental, higher-resource streaming option.',
   'setup.wizard.gpuNote':
-    'Larger models run much faster with GPU acceleration. If you have an NVIDIA GPU, you can install the CUDA-accelerated build later from Settings.',
+    'Whisper models can run much faster with GPU acceleration. If you have an NVIDIA GPU, you can install the CUDA build later from Settings.',
   'setup.wizard.openModelPicker': 'Open model picker',
   'setup.wizard.readyTitle': "You're ready to dictate",
   'setup.wizard.readyDesc':

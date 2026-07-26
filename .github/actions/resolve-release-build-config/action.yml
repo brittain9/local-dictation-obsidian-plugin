@@ -11,9 +11,6 @@ outputs:
   ggml-native:
     description: Portable GGML native-build setting.
     value: ${{ steps.config.outputs.ggml-native }}
-  ort-cuda-version:
-    description: ONNX Runtime CUDA execution-provider major.
-    value: ${{ steps.config.outputs.ort-cuda-version }}
   cuda-toolkit-version:
     description: CUDA toolkit version used by release builds.
     value: ${{ steps.config.outputs.cuda-toolkit-version }}

@@ -60,8 +60,6 @@ export const fr = {
   'setup.sidecar.cpu.reinstall.primaryButton': 'Télécharger à nouveau CPU sidecar',
   'setup.sidecar.cpu.reinstall.success': 'CPU sidecar réinstallé et redémarré.',
   'setup.sidecar.cpu.reinstall.title': 'Réinstaller CPU sidecar',
-  'setup.sidecar.cuda.install.body':
-    "Téléchargez le sidecar accéléré par CUDA pour les GPU NVIDIA. Lorsqu'il est actif, il remplace le sidecar CPU. Le sidecar CPU reste installé comme solution de secours.",
   'setup.sidecar.cuda.install.primaryButton': 'Télécharger CUDA sidecar',
   'setup.sidecar.cuda.install.success': 'CUDA sidecar installé et démarré.',
   'setup.sidecar.cuda.install.title': "Installer l'accélération CUDA",
@@ -558,8 +556,6 @@ export const fr = {
   'setup.wizard.pickModelStep': 'Choisissez un modèle de transcription',
   'setup.wizard.startTalking':
     'Appuyez ensuite sur le micro dans le ruban (ou sur votre propre raccourci clavier) et commencez à parler.',
-  'setup.wizard.cpuBuildNote':
-    'Commence par la version CPU. NVIDIA GPU? Vous pouvez installer la version accélérée CUDA ultérieurement à partir des paramètres.',
   'setup.wizard.downloadEngine': 'Télécharger le moteur',
   'setup.wizard.modelSelectedTitle': 'Modèle sélectionné',
   'setup.wizard.pickModelTitle': 'Choisissez un modèle de transcription',
@@ -569,8 +565,6 @@ export const fr = {
     "Installez un modèle de transcription pour activer la dictée. Vous pourrez installer d'autres modèles plus tard : les petits modèles sont plus rapides et les grands modèles plus précis.",
   'setup.wizard.modelKinds':
     'Deux types sont disponibles : les modèles de streaming affichent les mots en direct pendant que vous parlez ; les modèles standards transcrivent après chaque pause. Pour une dictée mains libres, commencez par le modèle Moonshine Small recommandé. Nemotron 3.5 ASR est une option de streaming expérimentale avec des ressources plus élevées.',
-  'setup.wizard.gpuNote':
-    "Les modèles plus grands fonctionnent beaucoup plus rapidement grâce à l'accélération GPU. Si vous possédez un NVIDIA GPU, vous pouvez installer ultérieurement la version accélérée CUDA à partir des paramètres.",
   'setup.wizard.openModelPicker': 'Ouvrir le sélecteur de modèles',
   'setup.wizard.readyTitle': 'Vous êtes prêt à dicter',
   'setup.wizard.readyDesc':

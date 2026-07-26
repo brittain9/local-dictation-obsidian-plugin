@@ -43,7 +43,6 @@ engine-pocket-tts = ["dep:safetensors", "dep:sentencepiece-rs"]
 engine-supertonic = ["dep:regex", "dep:unicode-normalization"]
 gpu-metal = ["whisper-rs/metal"]
 gpu-cuda = ["whisper-rs/cuda"]
-gpu-ort-cuda = ["engine-cohere-transcribe", "engine-moonshine", "engine-nemotron-asr", "engine-pocket-tts", "engine-supertonic", "ort/cuda"]
 
 # Test/bench-only dependencies for the end-to-end quality suite under `tests/`
 # and `benches/`. Runtime `[dependencies]` above (serde, serde_json, sha2, uuid,

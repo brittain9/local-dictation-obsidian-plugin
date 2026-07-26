@@ -8,8 +8,7 @@ import type {
 import { type AccelerationSnapshot, describeAcceleration } from '../src/settings/acceleration-info';
 import type { CompiledAdapterInfo, CompiledRuntimeInfo } from '../src/sidecar/protocol';
 
-const CUDNN_MISSING =
-  'cuDNN 9 is not installed (libcudnn.so.9 was not found), so ONNX models run on the CPU.';
+const CUDA_UNAVAILABLE = 'The selected engine could not initialize CUDA, so it is running on CPU.';
 
 /**
  * Mirrors what the sidecar actually sends: `RuntimeCapabilities::from_details`
@@ -55,14 +54,14 @@ describe('describeAcceleration', () => {
     const description = describeAcceleration(
       snapshot({
         cpu: { available: true, unavailableReason: null },
-        cuda: { available: false, unavailableReason: CUDNN_MISSING },
+        cuda: { available: false, unavailableReason: CUDA_UNAVAILABLE },
       }),
       'auto',
     );
 
     expect(description.label).toBe('CPU (CUDA unavailable)');
     expect(description.fallbacks).toEqual([
-      { accelerator: 'cuda', engine: 'Moonshine', reason: CUDNN_MISSING },
+      { accelerator: 'cuda', engine: 'Moonshine', reason: CUDA_UNAVAILABLE },
     ]);
   });
 
@@ -71,7 +70,7 @@ describe('describeAcceleration', () => {
       snapshot(
         {
           cpu: { available: true, unavailableReason: null },
-          cuda: { available: false, unavailableReason: CUDNN_MISSING },
+          cuda: { available: false, unavailableReason: CUDA_UNAVAILABLE },
         },
         ['Moonshine', 'Nemotron'],
       ),
@@ -119,7 +118,7 @@ describe('describeAcceleration', () => {
     const description = describeAcceleration(
       snapshot({
         cpu: { available: true, unavailableReason: null },
-        cuda: { available: false, unavailableReason: CUDNN_MISSING },
+        cuda: { available: false, unavailableReason: CUDA_UNAVAILABLE },
       }),
       'cpu_only',
     );

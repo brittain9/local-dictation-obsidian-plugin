@@ -9,9 +9,9 @@ const SIDECAR_BINARY_SUFFIX = process.platform === 'win32' ? '.exe' : '';
 const MAIN_BUNDLE_PATH = 'main.js';
 const SIDECAR_BINARY_PATH = `native/target/${profile}/local-dictation-sidecar${SIDECAR_BINARY_SUFFIX}`;
 const CUDA_SIDECAR_BINARY_PATH = `native/target-cuda/${profile}/local-dictation-sidecar${SIDECAR_BINARY_SUFFIX}`;
-const CUDA_PROVIDER_PATHS =
+const CUDA_RUNTIME_PATHS =
   process.platform === 'linux' || process.platform === 'win32'
-    ? (await listCudaArtifacts('providers', process.platform)).map(
+    ? (await listCudaArtifacts(process.platform)).map(
         (name) => `native/target-cuda/${profile}/${name}`,
       )
     : [];
@@ -54,8 +54,8 @@ async function verifyOptionalCudaBuild() {
     return false;
   }
 
-  for (const providerPath of CUDA_PROVIDER_PATHS) {
-    await access(providerPath);
+  for (const runtimePath of CUDA_RUNTIME_PATHS) {
+    await access(runtimePath);
   }
 
   return true;

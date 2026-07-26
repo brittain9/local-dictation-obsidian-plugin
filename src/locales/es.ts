@@ -61,8 +61,6 @@ export const es = {
   'setup.sidecar.cpu.reinstall.primaryButton': 'Volver a descargar CPU sidecar',
   'setup.sidecar.cpu.reinstall.success': 'CPU sidecar reinstalado y reiniciado.',
   'setup.sidecar.cpu.reinstall.title': 'Reinstale CPU sidecar',
-  'setup.sidecar.cuda.install.body':
-    'Descargue el sidecar acelerado por CUDA para GPU NVIDIA. Este reemplaza al sidecar de CPU mientras está activo. El sidecar de CPU permanece instalado como alternativa.',
   'setup.sidecar.cuda.install.primaryButton': 'Descargar CUDA sidecar',
   'setup.sidecar.cuda.install.success': 'CUDA sidecar instalado e iniciado.',
   'setup.sidecar.cuda.install.title': 'Instalar aceleración CUDA',
@@ -561,8 +559,6 @@ export const es = {
   'setup.wizard.pickModelStep': 'Elija un modelo de transcripción',
   'setup.wizard.startTalking':
     'Luego presiona el micrófono en la cinta (o tu propia tecla de acceso rápido) y comienza a hablar.',
-  'setup.wizard.cpuBuildNote':
-    'Comience con la compilación para CPU. ¿Tiene una GPU NVIDIA? Puede instalar la compilación acelerada por CUDA más adelante desde Configuración.',
   'setup.wizard.downloadEngine': 'Descargar motor',
   'setup.wizard.modelSelectedTitle': 'Modelo seleccionado',
   'setup.wizard.pickModelTitle': 'Elija un modelo de transcripción',
@@ -572,8 +568,6 @@ export const es = {
     'Instale un modelo de transcripción para habilitar el dictado. Puede instalar más más adelante: los modelos más pequeños son más rápidos, los modelos más grandes son más precisos.',
   'setup.wizard.modelKinds':
     'Hay dos tipos disponibles: los modelos de transmisión muestran las palabras en directo mientras habla; los modelos estándar transcriben después de cada pausa. Para el dictado con manos libres, comience con el modelo Moonshine Small recomendado. Nemotron 3.5 ASR es una opción de transmisión experimental que consume más recursos.',
-  'setup.wizard.gpuNote':
-    'Los modelos más grandes funcionan mucho más rápido con la aceleración por GPU. Si tiene una GPU NVIDIA, puede instalar la compilación acelerada por CUDA más adelante desde Configuración.',
   'setup.wizard.openModelPicker': 'Abrir selector de modelo',
   'setup.wizard.readyTitle': 'Estás listo para dictar',
   'setup.wizard.readyDesc':

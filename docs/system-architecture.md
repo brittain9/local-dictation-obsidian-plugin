@@ -281,10 +281,13 @@ Pocket TTS and Supertonic use
 `adapter.load_synthesis → synthesis_model.synthesize` on a separate synthesis
 worker, so they do not enter the dictation session pipeline.
 Capabilities reach the plugin two ways: inventory (`system_info`) and
-per-selection merge (`model_probe_result.mergedCapabilities`). Each runtime probes
-its accelerators at startup — `whisper_cpp` checks for a usable Metal or CUDA
-device, `onnx_runtime` tries to register the ONNX Runtime CUDA provider — and
-reports what's actually available.
+per-selection merge (`model_probe_result.mergedCapabilities`). `whisper_cpp`
+advertises the Metal or CUDA backend compiled into the sidecar; this is a
+configured route, not observation of the backend after model load. The plugin
+separately checks NVIDIA compatibility before recommending the CUDA sidecar.
+The production `onnx_runtime` integration is CPU-only. The tested ONNX ASR
+exports were slower or unsafe with the generic CUDA execution provider; other
+families remain on CPU without an unverified acceleration claim.
 
 **Compiled runtimes and adapters:**
 
@@ -295,7 +298,7 @@ reports what's actually available.
 
 Cargo features: `engine-whisper`, `engine-cohere-transcribe`,
 `engine-moonshine`, `engine-nemotron-asr`, `engine-pocket-tts`,
-`engine-supertonic`, `gpu-metal`, `gpu-cuda`, `gpu-ort-cuda`. A missing
+`engine-supertonic`, `gpu-metal`, `gpu-cuda`. A missing
 `(runtimeId, familyId)` pair surfaces as an `unsupported_engine` error rather
 than a silent failure.
 

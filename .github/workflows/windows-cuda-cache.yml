@@ -74,7 +74,6 @@ jobs:
           node-version: ${{ steps.build-config.outputs.node-version }}
           rust-toolchain: ${{ steps.build-config.outputs.rust-toolchain }}
           ggml-native: ${{ steps.build-config.outputs.ggml-native }}
-          ort-cuda-version: ${{ steps.build-config.outputs.ort-cuda-version }}
           cuda-toolkit-version: ${{ steps.build-config.outputs.cuda-toolkit-version }}
           cuda-architectures: ${{ steps.build-config.outputs.cuda-architectures }}
           windows-cuda-subpackages-manifest: ${{ steps.build-config.outputs.windows-cuda-subpackages-manifest }}

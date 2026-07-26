@@ -57,9 +57,10 @@ export function renderHardwareAccelerationSetting(
 }
 
 /**
- * Reports what the engine actually ended up running on, and why it is not the
- * GPU when it is not. Without this the sidecar's fallback to CPU is invisible —
- * the toggle stays on and nothing anywhere says the GPU was rejected.
+ * Reports the route selected from the sidecar's advertised capabilities, and a
+ * probe failure when the runtime exposes one. This deliberately does not claim
+ * to observe the backend after model load; that requires a separate protocol
+ * signal from the inference engine.
  */
 function renderAccelerationStatus(
   container: HTMLElement,

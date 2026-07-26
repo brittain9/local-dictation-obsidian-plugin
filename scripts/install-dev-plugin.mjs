@@ -151,11 +151,7 @@ async function enablePlugin(obsidianDirectory) {
 async function getCudaArtifacts() {
   if (process.platform !== 'linux' && process.platform !== 'win32') return [];
 
-  const [providers, runtime] = await Promise.all([
-    listCudaArtifacts('providers', process.platform),
-    listCudaArtifacts('runtime', process.platform),
-  ]);
-  return [...providers, ...runtime];
+  return listCudaArtifacts(process.platform);
 }
 
 async function fileExists(path) {

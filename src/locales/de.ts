@@ -62,8 +62,6 @@ export const de = {
   'setup.sidecar.cpu.reinstall.primaryButton': 'CPU-Sidecar erneut herunterladen',
   'setup.sidecar.cpu.reinstall.success': 'CPU sidecar neu installiert und neu gestartet.',
   'setup.sidecar.cpu.reinstall.title': 'CPU-Sidecar neu installieren',
-  'setup.sidecar.cuda.install.body':
-    'Laden Sie den CUDA-beschleunigten Sidecar für NVIDIA-GPUs herunter. Dieser ersetzt den CPU-Sidecar, solange er aktiv ist. Der CPU-Sidecar bleibt als Ausweichlösung installiert.',
   'setup.sidecar.cuda.install.primaryButton': 'CUDA-Sidecar herunterladen',
   'setup.sidecar.cuda.install.success': 'CUDA sidecar installiert und gestartet.',
   'setup.sidecar.cuda.install.title': 'CUDA-Beschleunigung installieren',
@@ -564,8 +562,6 @@ export const de = {
   'setup.wizard.pickModelStep': 'Wählen Sie ein Transkriptionsmodell',
   'setup.wizard.startTalking':
     'Drücken Sie dann das Mikrofon im Menüband (oder Ihren eigenen Hotkey) und beginnen Sie zu sprechen.',
-  'setup.wizard.cpuBuildNote':
-    'Beginnt mit dem CPU-Build. NVIDIA GPU? Sie können den CUDA-beschleunigten Build später in den Einstellungen installieren.',
   'setup.wizard.downloadEngine': 'Engine herunterladen',
   'setup.wizard.modelSelectedTitle': 'Modell ausgewählt',
   'setup.wizard.pickModelTitle': 'Wählen Sie ein Transkriptionsmodell',
@@ -575,8 +571,6 @@ export const de = {
     'Installieren Sie ein Transkriptionsmodell, um das Diktat zu ermöglichen. Sie können später mehr installieren – kleinere Modelle sind schneller, größere Modelle sind genauer.',
   'setup.wizard.modelKinds':
     'Es stehen zwei Arten zur Verfügung: Streaming-Modelle zeigen Wörter live an, während Sie sprechen; Standardmodelle transkribieren nach jeder Pause. Beginnen Sie für freihändiges Diktieren mit dem empfohlenen Modell Moonshine Small. Nemotron 3.5 ASR ist eine experimentelle Streaming-Option mit höherem Ressourcenbedarf.',
-  'setup.wizard.gpuNote':
-    'Größere Modelle laufen mit der GPU-Beschleunigung viel schneller. Wenn Sie einen NVIDIA GPU haben, können Sie den CUDA-beschleunigten Build später in den Einstellungen installieren.',
   'setup.wizard.openModelPicker': 'Modellauswahl öffnen',
   'setup.wizard.readyTitle': 'Sie sind bereit zu diktieren',
   'setup.wizard.readyDesc':
