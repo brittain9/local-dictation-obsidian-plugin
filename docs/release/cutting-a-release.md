@@ -162,23 +162,21 @@ A release is one GitHub Release tagged `<version>`, carrying the plugin files an
 the sidecar archives:
 
 - `main.js`, `manifest.json`, `styles.css` — what Obsidian's updater fetches.
-- `sidecar-macos-arm64.tar.gz` — Whisper Metal + Cohere CPU.
+- `sidecar-macos-arm64.tar.gz` — Whisper Metal + ONNX model families on CPU.
 - `sidecar-linux-x86_64-cpu.tar.gz`, `sidecar-linux-x86_64-cuda.tar.gz`.
 - `sidecar-windows-x86_64-cpu.tar.gz`, `sidecar-windows-x86_64-cuda.tar.gz`.
 - `checksums.txt` — SHA-256 of every sidecar archive, exactly five lines, sorted.
 
-CUDA archives also bundle the ONNX Runtime provider libraries and the reviewed
-CUDA runtime libraries declared in `native/cuda-artifacts.json`. The macOS sidecar
-is ad-hoc signed before packaging.
+CUDA archives bundle the reviewed whisper.cpp CUDA runtime libraries declared in
+`native/cuda-artifacts.json`. Current ONNX model families run on CPU in every
+archive. The macOS sidecar is ad-hoc signed before packaging.
 
 Cross-platform release-build invariants live in
 `.github/release-build-config.json`; the metadata job resolves that file once
 and feeds every native release leg. Its CUDA architecture targets one
 forward-compatible Turing PTX variant, and its `GGML_NATIVE` setting prevents
-sidecars from inheriting runner-only CPU SIMD. On licensing: the ONNX Runtime
-provider libraries are MIT and safe to bundle; the bundled CUDA runtime
-libraries ship after CUDA EULA review; cuDNN is NVIDIA-licensed and is **not**
-bundled, so Cohere CUDA users supply it themselves.
+sidecars from inheriting runner-only CPU SIMD. The bundled CUDA runtime
+libraries ship after CUDA EULA review.
 
 Obsidian's updater only replaces `main.js`/`manifest.json`/`styles.css`, so the
 plugin installs the sidecar itself: it downloads the archive matching

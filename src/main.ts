@@ -65,6 +65,7 @@ import {
   SidecarLifecycleGate,
 } from './sidecar/sidecar-lifecycle-gate';
 import {
+  type ResolvedSidecarExecutable,
   type ResolveSidecarExecutablePathOptions,
   resolveSidecarExecutablePath,
   SidecarNotInstalledError,
@@ -515,7 +516,7 @@ export default class LocalSttPlugin extends Plugin {
 
   private async isSidecarInstalled(): Promise<boolean> {
     try {
-      await this.resolveSidecarExecutablePath();
+      await this.resolveSidecarExecutable();
       return true;
     } catch (error) {
       if (error instanceof SidecarNotInstalledError) {
@@ -899,7 +900,16 @@ export default class LocalSttPlugin extends Plugin {
   }
 
   private async resolveSidecarLaunchSpec(): Promise<SidecarLaunchSpec> {
-    const executablePath = await this.resolveSidecarExecutablePath();
+    const resolved = await this.resolveSidecarExecutable();
+    const executablePath = resolved.path;
+    if (resolved.source === 'installed' && resolved.variant !== null) {
+      this.logger.debug(
+        'sidecar',
+        `using installed ${resolved.variant.toUpperCase()} sidecar at ${resolved.path}`,
+      );
+    } else if (resolved.source === 'dev' && resolved.variant === 'cuda') {
+      this.logger.debug('sidecar', `using CUDA sidecar build at ${resolved.path}`);
+    }
     const env =
       Platform.isLinux && this.settings.cudaLibraryPath.length > 0
         ? {
@@ -931,7 +941,7 @@ export default class LocalSttPlugin extends Plugin {
     };
   }
 
-  private async resolveSidecarExecutablePath(): Promise<string> {
+  private async resolveSidecarExecutable(): Promise<ResolvedSidecarExecutable> {
     const pluginDirectory = await this.resolvePluginDirectoryPath();
     const options = this.buildSidecarResolutionOptions(
       pluginDirectory,
@@ -939,19 +949,11 @@ export default class LocalSttPlugin extends Plugin {
     );
     const resolved = await resolveSidecarExecutablePath(options);
 
-    if (resolved.source === 'installed' && resolved.variant !== null) {
-      this.logger.debug(
-        'sidecar',
-        `using installed ${resolved.variant.toUpperCase()} sidecar at ${resolved.path}`,
-      );
-    } else if (resolved.source === 'dev') {
-      if (resolved.variant === 'cuda') {
-        this.logger.debug('sidecar', `using CUDA sidecar build at ${resolved.path}`);
-      }
+    if (resolved.source === 'dev') {
       await assertSidecarExecutableIsFresh(resolved.path, options.sidecarProjectDirectory);
     }
 
-    return resolved.path;
+    return resolved;
   }
 
   /**

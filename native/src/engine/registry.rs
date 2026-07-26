@@ -261,6 +261,7 @@ mod tests {
     fn whisper_family_caps() -> ModelFamilyCapabilities {
         ModelFamilyCapabilities {
             task: ModelTask::Stt,
+            supports_hardware_acceleration: true,
             available_voices: Vec::new(),
             supports_speed_control: false,
             output_sample_rate: None,
@@ -393,6 +394,7 @@ mod tests {
     fn capabilities(supports_initial_prompt: bool) -> ModelFamilyCapabilities {
         ModelFamilyCapabilities {
             task: ModelTask::Stt,
+            supports_hardware_acceleration: true,
             available_voices: Vec::new(),
             supports_speed_control: false,
             output_sample_rate: None,

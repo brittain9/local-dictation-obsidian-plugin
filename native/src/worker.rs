@@ -102,6 +102,7 @@ pub enum WorkerEvent {
 pub struct TranscriptionWorker {
     command_tx: Sender<WorkerCommand>,
     event_rx: Receiver<WorkerEvent>,
+    handle: Option<thread::JoinHandle<()>>,
 }
 
 impl TranscriptionWorker {
@@ -109,11 +110,12 @@ impl TranscriptionWorker {
         let (command_tx, command_rx) = mpsc::channel();
         let (event_tx, event_rx) = mpsc::channel();
 
-        thread::spawn(move || worker_main(command_rx, event_tx, registry));
+        let handle = thread::spawn(move || worker_main(command_rx, event_tx, registry));
 
         Self {
             command_tx,
             event_rx,
+            handle: Some(handle),
         }
     }
 
@@ -128,6 +130,15 @@ impl TranscriptionWorker {
     #[allow(clippy::result_large_err)]
     pub fn send(&self, command: WorkerCommand) -> Result<(), mpsc::SendError<WorkerCommand>> {
         self.command_tx.send(command)
+    }
+}
+
+impl Drop for TranscriptionWorker {
+    fn drop(&mut self) {
+        let _ = self.command_tx.send(WorkerCommand::Shutdown);
+        if let Some(handle) = self.handle.take() {
+            let _ = handle.join();
+        }
     }
 }
 
@@ -1044,6 +1055,63 @@ mod tests {
     };
     use crate::stages::StageProcess;
 
+    struct DropSignalingAdapter {
+        capabilities: ModelFamilyCapabilities,
+        dropped_tx: Sender<()>,
+    }
+
+    impl Drop for DropSignalingAdapter {
+        fn drop(&mut self) {
+            thread::sleep(Duration::from_millis(50));
+            let _ = self.dropped_tx.send(());
+        }
+    }
+
+    impl ModelFamilyAdapter for DropSignalingAdapter {
+        fn runtime_id(&self) -> RuntimeId {
+            RuntimeId::OnnxRuntime
+        }
+
+        fn family_id(&self) -> ModelFamilyId {
+            ModelFamilyId::Moonshine
+        }
+
+        fn capabilities(&self) -> &ModelFamilyCapabilities {
+            &self.capabilities
+        }
+
+        fn probe_model(&self, _path: &Path) -> Result<(), TranscriptionError> {
+            Ok(())
+        }
+
+        fn load(
+            &self,
+            _path: &Path,
+            _gpu: GpuConfig,
+        ) -> Result<Box<dyn LoadedModel>, TranscriptionError> {
+            Err(TranscriptionError::unsupported_engine(
+                "drop test never loads a model".to_string(),
+            ))
+        }
+    }
+
+    #[test]
+    fn dropping_worker_waits_for_worker_resources_to_be_destroyed() {
+        let (dropped_tx, dropped_rx) = mpsc::channel();
+        let mut registry = EngineRegistry::default();
+        registry.register_adapter(Box::new(DropSignalingAdapter {
+            capabilities: streaming_caps(),
+            dropped_tx,
+        }));
+
+        let worker = TranscriptionWorker::spawn(Arc::new(registry));
+        drop(worker);
+
+        dropped_rx
+            .try_recv()
+            .expect("worker resources must be destroyed before drop returns");
+    }
+
     #[test]
     fn streaming_simulation_emits_monotonic_partials_and_batch_equivalent_final() {
         let fixture = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -1892,6 +1960,7 @@ mod tests {
     fn streaming_caps() -> ModelFamilyCapabilities {
         ModelFamilyCapabilities {
             task: ModelTask::Stt,
+            supports_hardware_acceleration: true,
             available_voices: Vec::new(),
             supports_speed_control: false,
             output_sample_rate: None,
@@ -2282,6 +2351,7 @@ mod tests {
     fn whisper_caps() -> ModelFamilyCapabilities {
         ModelFamilyCapabilities {
             task: ModelTask::Stt,
+            supports_hardware_acceleration: true,
             available_voices: Vec::new(),
             supports_speed_control: false,
             output_sample_rate: None,

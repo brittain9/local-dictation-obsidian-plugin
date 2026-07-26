@@ -242,8 +242,8 @@ On a mid-range 4-core CPU with `moonshine-streaming-tiny`:
   one-shot batch decode of the full utterance (exact match expected since the
   final decodes the full utterance buffer; assert equality, downgrade to
   bounded WER only if Phase 0 reveals nondeterminism).
-- CUDA via the existing ORT execution-provider path is a should-work,
-  not a gate.
+- Production Moonshine execution is CPU-only. A future accelerated backend
+  needs separate stability, quality, latency, memory, and package-size gates.
 
 ### D8 — Streaming-session feature interactions
 

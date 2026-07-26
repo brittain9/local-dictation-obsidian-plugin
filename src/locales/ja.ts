@@ -60,8 +60,6 @@ export const ja = {
   'setup.sidecar.cpu.reinstall.primaryButton': 'CPU sidecar を再ダウンロード',
   'setup.sidecar.cpu.reinstall.success': 'CPU sidecar を再インストールして再起動しました。',
   'setup.sidecar.cpu.reinstall.title': 'CPU sidecar を再インストールします',
-  'setup.sidecar.cuda.install.body':
-    'NVIDIA GPU 用の CUDA アクセラレーション済み sidecar をダウンロードします。これは、アクティブな CPU sidecar を置き換えます。 CPU sidecar はフォールバックとしてインストールされたままになります。',
   'setup.sidecar.cuda.install.primaryButton': 'CUDA sidecar をダウンロード',
   'setup.sidecar.cuda.install.success': 'CUDA sidecarをインストールして起動しました。',
   'setup.sidecar.cuda.install.title': 'CUDA アクセラレーションをインストールする',
@@ -552,8 +550,6 @@ export const ja = {
   'setup.wizard.pickModelStep': '文字起こしモデルを選択する',
   'setup.wizard.startTalking':
     '次に、リボンのマイク (または独自のホットキー) を押して、話し始めます。',
-  'setup.wizard.cpuBuildNote':
-    'CPU ビルドから始まります。 NVIDIA GPU? CUDA アクセラレーション ビルドは、後で [設定] からインストールできます。',
   'setup.wizard.downloadEngine': 'エンジンをダウンロード',
   'setup.wizard.modelSelectedTitle': 'モデルを選択しました',
   'setup.wizard.pickModelTitle': '文字起こしモデルを選択する',
@@ -563,8 +559,6 @@ export const ja = {
     '書き起こしモデルをインストールしてディクテーションを有効にします。後でさらにインストールすることもできます。モデルが小さいほど高速で、モデルが大きいほど正確です。',
   'setup.wizard.modelKinds':
     '2 種類が利用可能です。ストリーミング モデルは、話しているときに単語をライブで表示します。標準モデルは、一時停止するたびに転写します。ハンズフリーディクテーションの場合は、推奨される Moonshine Small モデルから始めてください。 Nemotron 3.5 ASR は、実験的な高リソース ストリーミング オプションです。',
-  'setup.wizard.gpuNote':
-    '大きいモデルは、GPU アクセラレーションによりはるかに高速に実行されます。 NVIDIA GPU をお持ちの場合は、後で [設定] から CUDA アクセラレーション ビルドをインストールできます。',
   'setup.wizard.openModelPicker': 'モデルピッカーを開く',
   'setup.wizard.readyTitle': '口述する準備ができました',
   'setup.wizard.readyDesc':

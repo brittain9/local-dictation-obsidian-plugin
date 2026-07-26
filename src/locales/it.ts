@@ -61,8 +61,6 @@ export const it = {
   'setup.sidecar.cpu.reinstall.primaryButton': 'Scarica di nuovo il sidecar CPU',
   'setup.sidecar.cpu.reinstall.success': 'Sidecar CPU reinstallato e riavviato.',
   'setup.sidecar.cpu.reinstall.title': 'Reinstalla il sidecar CPU',
-  'setup.sidecar.cuda.install.body':
-    'Scarica il sidecar con accelerazione CUDA per GPU NVIDIA. Quando è attivo, sostituisce il sidecar CPU, che rimane installato come opzione di riserva.',
   'setup.sidecar.cuda.install.primaryButton': 'Scarica il sidecar CUDA',
   'setup.sidecar.cuda.install.success': 'Sidecar CUDA installato e avviato.',
   'setup.sidecar.cuda.install.title': 'Installa l’accelerazione CUDA',
@@ -558,8 +556,6 @@ export const it = {
   'setup.wizard.pickModelStep': 'Scegli un modello di trascrizione',
   'setup.wizard.startTalking':
     'Poi premi il microfono nella barra multifunzione, oppure usa la tua scorciatoia da tastiera, e inizia a parlare.',
-  'setup.wizard.cpuBuildNote':
-    'Si inizia con la versione CPU. Hai una GPU NVIDIA? Potrai installare in seguito la versione con accelerazione CUDA dalle Impostazioni.',
   'setup.wizard.downloadEngine': 'Scarica il motore',
   'setup.wizard.modelSelectedTitle': 'Modello selezionato',
   'setup.wizard.pickModelTitle': 'Scegli un modello di trascrizione',
@@ -569,8 +565,6 @@ export const it = {
     'Installa un modello di trascrizione per abilitare la dettatura. Potrai installarne altri in seguito: i modelli più piccoli sono più veloci, quelli più grandi sono più accurati.',
   'setup.wizard.modelKinds':
     'Sono disponibili due tipi: i modelli streaming mostrano le parole in tempo reale mentre parli; i modelli standard trascrivono dopo ogni pausa. Per la dettatura senza usare le mani, inizia con il modello consigliato Moonshine Small. Nemotron 3.5 ASR è un’opzione streaming sperimentale che richiede più risorse.',
-  'setup.wizard.gpuNote':
-    'I modelli più grandi sono molto più veloci con l’accelerazione GPU. Se hai una GPU NVIDIA, potrai installare in seguito la versione con accelerazione CUDA dalle Impostazioni.',
   'setup.wizard.openModelPicker': 'Apri il selettore dei modelli',
   'setup.wizard.readyTitle': 'Tutto pronto per dettare',
   'setup.wizard.readyDesc':

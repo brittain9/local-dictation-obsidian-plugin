@@ -44,6 +44,10 @@ pub struct CohereTranscribeAdapter;
 
 static CAPABILITIES: ModelFamilyCapabilities = ModelFamilyCapabilities {
     task: ModelTask::Stt,
+    // The int8 encoder is split across CUDA and CPU with 96 inserted copies,
+    // making it about twice as slow as the CPU-only session in local release
+    // benchmarks. Keep Auto on the proven path.
+    supports_hardware_acceleration: false,
     available_voices: Vec::new(),
     supports_speed_control: false,
     output_sample_rate: None,

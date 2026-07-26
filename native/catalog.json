@@ -9,7 +9,7 @@
     {
       "runtimeId": "onnx_runtime",
       "displayName": "ONNX Runtime",
-      "summary": "Cross-platform ONNX execution with optional CUDA acceleration."
+      "summary": "Cross-platform CPU execution of ONNX models."
     }
   ],
   "families": [

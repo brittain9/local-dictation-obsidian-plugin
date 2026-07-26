@@ -43,8 +43,8 @@ Use a Moonshine model installed through Manage Models with CPU inference and a
   styling when finalized.
 - Finalized text uses the model's native sentence casing and punctuation.
 
-CUDA uses the existing ONNX Runtime execution-provider path but is not an
-acceptance gate for this change.
+Moonshine runs on CPU in the current production sidecars. Any future accelerated
+backend needs its own performance and correctness acceptance gates.
 
 ## Developer appendix: manual CDN assets
 

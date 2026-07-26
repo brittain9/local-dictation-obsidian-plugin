@@ -261,6 +261,7 @@ describe('model browser', () => {
             maxAudioDurationSecs: null,
             outputSampleRate: 24_000,
             producesPunctuation: false,
+            supportsHardwareAcceleration: false,
             supportedLanguages: { kind: 'all' as const },
             supportsAutomaticLanguageDetection: false,
             supportsInitialPrompt: false,

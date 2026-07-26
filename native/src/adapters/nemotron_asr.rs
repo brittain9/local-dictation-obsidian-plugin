@@ -118,6 +118,9 @@ const SUPPORTED_LANGUAGE_PROMPTS: &[LanguagePrompt] = &[
 static CAPABILITIES: LazyLock<ModelFamilyCapabilities> =
     LazyLock::new(|| ModelFamilyCapabilities {
         task: ModelTask::Stt,
+        // ORT partitions the int8 encoder across CUDA and CPU with hundreds of
+        // inserted copies; the resulting hybrid session is slower than CPU.
+        supports_hardware_acceleration: false,
         available_voices: Vec::new(),
         supports_speed_control: false,
         output_sample_rate: None,

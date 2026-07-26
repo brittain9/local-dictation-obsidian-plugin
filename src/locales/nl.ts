@@ -61,8 +61,6 @@ export const nl = {
   'setup.sidecar.cpu.reinstall.primaryButton': 'CPU sidecar opnieuw downloaden',
   'setup.sidecar.cpu.reinstall.success': 'CPU sidecar opnieuw geïnstalleerd en opnieuw opgestart.',
   'setup.sidecar.cpu.reinstall.title': 'Installeer CPU sidecar opnieuw',
-  'setup.sidecar.cuda.install.body':
-    "Download de CUDA-versnelde sidecar voor NVIDIA GPU's. Dit vervangt de CPU sidecar terwijl deze actief is. De CPU sidecar blijft als reserve geïnstalleerd.",
   'setup.sidecar.cuda.install.primaryButton': 'CUDA sidecar downloaden',
   'setup.sidecar.cuda.install.success': 'CUDA sidecar geïnstalleerd en gestart.',
   'setup.sidecar.cuda.install.title': 'Installeer CUDA-versnelling',
@@ -557,8 +555,6 @@ export const nl = {
   'setup.wizard.pickModelStep': 'Kies een transcriptiemodel',
   'setup.wizard.startTalking':
     'Druk vervolgens op de microfoon in het lint (of op uw eigen sneltoets) en begin te praten.',
-  'setup.wizard.cpuBuildNote':
-    'Begint met de CPU-build. NVIDIA GPU? U kunt de CUDA-versnelde build later installeren via Instellingen.',
   'setup.wizard.downloadEngine': 'Engine downloaden',
   'setup.wizard.modelSelectedTitle': 'Model geselecteerd',
   'setup.wizard.pickModelTitle': 'Kies een transcriptiemodel',
@@ -568,8 +564,6 @@ export const nl = {
     'Installeer een transcriptiemodel om dicteren mogelijk te maken. U kunt er later meer installeren: kleinere modellen zijn sneller, grotere modellen zijn nauwkeuriger.',
   'setup.wizard.modelKinds':
     'Er zijn twee soorten beschikbaar: streamingmodellen tonen woorden live terwijl u spreekt; standaardmodellen worden na elke pauze getranscribeerd. Voor handsfree dicteren begint u met het aanbevolen Moonshine Small-model. Nemotron 3.5 ASR is een experimentele streamingoptie met hogere bronnen.',
-  'setup.wizard.gpuNote':
-    'Grotere modellen werken veel sneller met GPU-versnelling. Als u een NVIDIA GPU hebt, kunt u de CUDA-versnelde build later installeren via Instellingen.',
   'setup.wizard.openModelPicker': 'Modelkiezer openen',
   'setup.wizard.readyTitle': 'U bent klaar om te dicteren',
   'setup.wizard.readyDesc':

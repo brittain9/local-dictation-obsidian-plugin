@@ -47,6 +47,9 @@ const REQUIRED_SIBLINGS: &[&str] = &[
 
 static CAPABILITIES: ModelFamilyCapabilities = ModelFamilyCapabilities {
     task: ModelTask::Stt,
+    // ORT's CUDA EP segfaults in every Moonshine graph on CUDA 12 and 13.
+    // Keep the CUDA sidecar stable by routing this family to CPU.
+    supports_hardware_acceleration: false,
     available_voices: Vec::new(),
     supports_speed_control: false,
     output_sample_rate: None,

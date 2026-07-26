@@ -249,6 +249,7 @@ describe('resolvePluginSettings', () => {
         maxAudioDurationSecs: null,
         outputSampleRate: null,
         producesPunctuation: true,
+        supportsHardwareAcceleration: true,
         supportedLanguages: { kind: 'all' as const },
         supportsInitialPrompt: true,
         supportsSpeedControl: false,

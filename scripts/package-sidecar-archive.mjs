@@ -4,7 +4,7 @@
 // per-OS jobs only differ in build setup, not in packaging logic.
 //
 // Required env: ARCHIVE_NAME, ASSET_NAME, BINARY_PATH
-// Optional env: CUDA=true to copy CUDA provider+runtime libs alongside
+// Optional env: CUDA=true to copy whisper.cpp CUDA runtime libraries alongside
 
 import { spawnSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
@@ -29,7 +29,6 @@ const platformKey = isWindows ? 'win32' : 'linux';
 const binaryName = isWindows ? 'local-dictation-sidecar.exe' : 'local-dictation-sidecar';
 const distDir = 'dist';
 const artifactDir = join(distDir, assetName);
-const buildDir = dirname(binaryPath);
 
 await stageSidecarBaseFiles({
   artifactDirectory: artifactDir,
@@ -38,24 +37,11 @@ await stageSidecarBaseFiles({
 });
 
 if (isCuda) {
-  // ORT provider .so/.dll files land next to the binary during the build.
-  const providers = await listCudaArtifacts('providers', platformKey);
-  for (const provider of providers) {
-    const dest = join(artifactDir, provider);
-    await copyFile(join(buildDir, provider), dest);
-    if (isLinux) {
-      // Strip unneeded ELF symbols from provider shared libs to trim the
-      // archive. --strip-unneeded keeps dynamic symbols that runtime
-      // dlopen/dlsym chains need.
-      runStrip(dest);
-    }
-  }
-
   // CUDA runtime libs aren't provided by the user's system in a
   // version-compatible form (cudart is major-versioned and not
   // forward-compatible), so ship them next to the binary. On Linux the lib
   // dir is derived from nvcc's location, on Windows it lives under CUDA_PATH.
-  const runtimeFiles = await listCudaArtifacts('runtime', platformKey);
+  const runtimeFiles = await listCudaArtifacts(platformKey);
   // CUDA 13 may relocate the Windows runtime DLLs from %CUDA_PATH%\bin to
   // %CUDA_PATH%\bin\x64 (unconfirmed in NVIDIA docs), so try x64 first and fall
   // back to the historical location. Linux derives its lib dir from nvcc.
@@ -82,7 +68,7 @@ if (isCuda) {
 if (isLinux) {
   // Linux-only: strip the sidecar ELF. The Rust release profile strips
   // Rust-owned symbols, but bundled C++/CUDA objects (ggml, whisper.cpp,
-  // ORT kernels) can still carry debug sections. macOS binaries are ad-hoc
+  // CUDA kernels) can still carry debug sections. macOS binaries are ad-hoc
   // codesigned earlier in the workflow; do not strip them (both signature
   // and `strip` semantics differ).
   runStrip(join(artifactDir, binaryName));

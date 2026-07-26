@@ -19,6 +19,7 @@ const FAMILY_CAPS_DEFAULT: ModelFamilyCapabilitiesRecord = {
   maxAudioDurationSecs: null,
   producesPunctuation: false,
   outputSampleRate: null,
+  supportsHardwareAcceleration: true,
   supportedLanguages: { kind: 'all' },
   supportsInitialPrompt: false,
   supportsStreaming: false,
@@ -96,6 +97,18 @@ describe('resolveEngineCapabilities', () => {
 });
 
 describe('buildCapabilityLabels', () => {
+  it('does not advertise a runtime accelerator that the model family cannot use', () => {
+    const labels = buildCapabilityLabels(
+      caps({
+        family: { supportsHardwareAcceleration: false },
+        runtime: { availableAccelerators: ['cpu', 'cuda'] },
+      }),
+    );
+
+    expect(labels[0]).toBe('CPU');
+    expect(labels).not.toContain('CUDA');
+  });
+
   it('always lists at least one accelerator and falls back to CPU when none are available', () => {
     // Empty availableAccelerators is a real wire-format possibility on CPU-only builds
     // where the runtime hasn't declared an explicit accelerator list.
