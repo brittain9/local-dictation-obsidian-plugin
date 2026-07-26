@@ -2,10 +2,8 @@
 
 CUDA accelerates Whisper models on supported NVIDIA GPUs. Published CUDA release
 archives bundle the runtime libraries Whisper needs, so most users only need a
-recent NVIDIA driver — no CUDA Toolkit. Current ONNX model families (Cohere
-Transcribe, Moonshine, Nemotron ASR, Pocket TTS, and Supertonic) run on CPU in
-both sidecar variants. macOS uses Metal for Whisper automatically and needs none
-of this.
+recent NVIDIA driver — no CUDA Toolkit. macOS uses Metal for Whisper
+automatically and needs none of this.
 
 This guide covers enabling CUDA on Windows and Linux, and building from source.
 
@@ -16,11 +14,10 @@ This guide covers enabling CUDA on Windows and Linux, and building from source.
 
 ## What CUDA accelerates
 
-Whisper uses whisper.cpp's CUDA backend. The production ONNX Runtime integration
-is deliberately CPU-only. In testing, the current ONNX ASR exports were slower
-or unsafe with the generic CUDA execution provider. GPU backends for an ONNX
-model family may return later only after model-specific benchmarks demonstrate
-a meaningful end-to-end gain.
+Local Dictation's CUDA sidecar uses whisper.cpp's mature CUDA backend for
+Whisper. Acceleration options are model-aware, so Settings shows GPU controls
+only when the selected model has a production-ready accelerated path. The CUDA
+download is streamlined around this route.
 
 ## Windows
 

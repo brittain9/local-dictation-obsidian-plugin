@@ -64,7 +64,7 @@ export const en = {
   'setup.sidecar.cpu.reinstall.success': 'CPU sidecar reinstalled and restarted.',
   'setup.sidecar.cpu.reinstall.title': 'Reinstall CPU sidecar',
   'setup.sidecar.cuda.install.body':
-    'Download the CUDA sidecar to accelerate Whisper models on a supported NVIDIA GPU. Other model families continue to run on CPU. This replaces the CPU sidecar while active; the CPU sidecar remains installed as a fallback.',
+    'Download the CUDA sidecar to accelerate Whisper models on a supported NVIDIA GPU. This replaces the CPU sidecar while active; the CPU sidecar remains installed as a fallback.',
   'setup.sidecar.cuda.install.primaryButton': 'Download CUDA sidecar',
   'setup.sidecar.cuda.install.success': 'CUDA sidecar installed and started.',
   'setup.sidecar.cuda.install.title': 'Install CUDA acceleration',
