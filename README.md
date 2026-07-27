@@ -1,10 +1,10 @@
 # Local Dictation
 
-**Obsidian handles the notes. Local Dictation handles the speech.**
+**Obsidian handles the notes. Local Dictation handles voice and language.**
 
 Your notes already have Markdown, links, properties, search, templates, and a place in your knowledge system. Local Dictation adds the missing spoken workflow directly to that foundation.
 
-Dictate live. Transcribe meetings. Shape the result. Listen to notes with local voices.
+Dictate live. Transcribe meetings. Translate text. Listen to notes with local voices.
 
 [Install Local Dictation from Obsidian Community Plugins](https://obsidian.md/plugins?id=local-dictation)
 
@@ -18,7 +18,7 @@ When the raw transcript needs work, transform it in context with local Ollama or
 
 The note remains the center of the workflow from capture through refinement.
 
-## One tool, three directions
+## One tool, four directions
 
 ### Dictate
 
@@ -36,6 +36,14 @@ when there is not. Pocket TTS and Supertonic playback stays local and provides a
 for language/model, speed, voice, pause/resume, and stop without adding another
 ribbon icon.
 
+### Translate
+
+Run **Translate selection** or **Translate note** to translate between English
+and Spanish, German, French, Portuguese, Italian, Dutch, or Japanese. Review the
+result before replacing the source, inserting it below, or copying it.
+Translation uses a local Firefox/Bergamot model pack and never sends note text
+to a translation service.
+
 ## Model choice without model management pain
 
 Choose the speech engine that fits the job, then install it from Settings.
@@ -46,6 +54,7 @@ Choose the speech engine that fits the job, then install it from Settings.
 | Multilingual live text | Experimental Nemotron 3.5 ASR |
 | Higher-accuracy notes | Whisper Large V3 Turbo, Cohere Transcribe, and other batch models |
 | Local read aloud | Pocket TTS in six languages; Supertonic 3 in all eight app languages with 10 voices |
+| Fast local translation | Firefox Translations for 14 English-anchored directions |
 | Local text cleanup | Ollama |
 | Selected remote text cleanup | OpenRouter |
 
@@ -65,7 +74,7 @@ The goal is dictation reliable enough to become muscle memory.
 
 The complete interface is available in English, Spanish, German, French, Portuguese, Italian, Dutch, and Japanese.
 
-Whisper Large V3 Turbo and Nemotron 3.5 ASR support the verified multilingual set. Moonshine, Cohere Transcribe, and `.en` Whisper models remain English-only.
+Whisper Large V3 Turbo and Nemotron 3.5 ASR support the verified multilingual set. Moonshine, Cohere Transcribe, and `.en` Whisper models remain English-only. Local translation supports English in either direction with each of the other seven languages.
 
 Automatic detection chooses one language per utterance. Manual selection produces the most predictable transcription and cleanup behavior.
 
@@ -91,8 +100,9 @@ macOS and Windows are the primary tested targets. Fedora native and Flatpak inst
 
 - Audio is processed locally for speech recognition.
 - Note text is synthesized locally for read aloud.
+- Note text is translated locally after the optional translation pack is installed.
 - Model downloads are visible and explicit.
-- Transcription remains available offline after setup.
+- Transcription, translation, and read aloud remain available offline after their models are installed.
 - Ollama transformations stay on your computer.
 - OpenRouter is optional and receives text, not audio, only when you select it.
 - Speaker embeddings and recovery records are short-lived rather than stored as profiles.

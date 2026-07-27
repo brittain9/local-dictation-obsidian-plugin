@@ -48,6 +48,7 @@ export const en = {
     'Dictation stopped because its target note was deleted. Restore or recreate the note, then start dictation again.',
   'notice.transcriptWriteFailed':
     'Dictation stopped because Local Dictation could not safely write to the note. Start dictation again to continue.',
+  'notice.translationTooLong': 'Translate up to {count} characters at a time.',
   'setup.sidecar.cpu.firstRun.body':
     'Local Dictation needs a one-time download of the CPU speech-to-text engine from GitHub releases. Transcription runs locally on your machine after this completes. You can install CUDA acceleration later from settings.',
   'setup.sidecar.cpu.firstRun.primaryButton': 'Download CPU sidecar',
@@ -119,6 +120,31 @@ export const en = {
   'commands.readAloud': 'Read aloud',
   'commands.pauseResumeReadAloud': 'Pause or resume reading',
   'commands.stopReadAloud': 'Stop reading',
+  'commands.translateNote': 'Translate note',
+  'commands.translateSelection': 'Translate selection',
+  'translation.modal.title': 'Translate locally',
+  'translation.modal.privacy': 'Translation runs entirely on this device.',
+  'translation.modal.from': 'From',
+  'translation.modal.to': 'To',
+  'translation.modal.swap': 'Swap',
+  'translation.modal.largeNote': 'Large note: translation may take a few seconds.',
+  'translation.modal.sourceSelection': 'Source selection',
+  'translation.modal.sourceNote': 'Source note',
+  'translation.modal.previewAria': 'Translation preview',
+  'translation.modal.preparing': 'Preparing local translation…',
+  'translation.modal.loading': 'Loading local model…',
+  'translation.modal.translating': 'Translating…',
+  'translation.modal.ready': 'Translation ready.',
+  'translation.modal.canceled': 'Translation canceled.',
+  'translation.modal.failed': 'Translation failed.',
+  'translation.modal.missingModel': 'Install the local translation pack to use this language pair.',
+  'translation.modal.installModel': 'Install translation model',
+  'translation.modal.translateAgain': 'Translate again',
+  'translation.modal.cancel': 'Cancel',
+  'translation.modal.replace': 'Replace',
+  'translation.modal.insertBelow': 'Insert below',
+  'translation.modal.copy': 'Copy',
+  'translation.modal.stale': 'The note changed. Copy or insert the translation instead.',
   'common.reset': 'Reset',
   'settings.acceleration.active': 'Configured acceleration: {accelerator}',
   'settings.acceleration.pending': 'pending (sidecar not ready)',
@@ -151,6 +177,7 @@ export const en = {
     'Changing speed while reading restarts from the current sentence.',
   'models.manage.dictationModels': 'Speech to text',
   'models.manage.readAloudModels': 'Text to speech',
+  'models.manage.translationModels': 'Translation',
   'models.manage.allLanguages': 'All languages',
   'models.manage.familiesLabel': 'Model families',
   'models.manage.noneForLanguage': 'No models are available for this task and language.',
@@ -870,6 +897,10 @@ export const en = {
     'Lightning-fast on-device multilingual TTS via ONNX Runtime.',
   'catalog.family.pocket_tts.summary':
     'Reads notes aloud locally in English, French, German, Spanish, Portuguese, and Italian with selectable voices and pitch-preserving speed control.',
+  'catalog.firefox_translations_release_2026_07.summary':
+    'Fast local translation between English and seven product languages using models released in Firefox.',
+  'catalog.family.firefox_translations.summary':
+    'Translates note text locally with the compact Bergamot engine and released Firefox models.',
   'setup.sidecar.modal.unsupportedPlatform':
     'This speech engine build is not available for your platform or architecture.',
   'setup.sidecar.modal.genericInstallError':

@@ -1434,6 +1434,41 @@ describe('ModelInstallManager', () => {
       expect(harness.getSettings().selectedModel).toEqual(existing);
       expect(harness.sidecarConnection.probeModelSelection).not.toHaveBeenCalled();
     });
+
+    it('does not replace the dictation selection after installing translation', async () => {
+      configureSidecarForInit(harness.sidecarConnection);
+      const catalog = sampleCatalog();
+      catalog.families.push({
+        displayName: 'Firefox Translations',
+        familyId: 'firefox_translations',
+        runtimeId: 'bergamot_wasm',
+        summary: 'Local translation',
+        task: 'translation',
+      });
+      catalog.models.push(sampleTranslationCatalogModel());
+      harness.sidecarConnection.listModelCatalog.mockResolvedValue(catalog);
+      await harness.manager.init();
+
+      emitInstallUpdate(harness, {
+        familyId: 'firefox_translations',
+        installId: 'install-translation',
+        modelId: 'firefox_translations_release',
+        runtimeId: 'bergamot_wasm',
+      });
+      emitInstallUpdate(harness, {
+        familyId: 'firefox_translations',
+        installId: 'install-translation',
+        modelId: 'firefox_translations_release',
+        runtimeId: 'bergamot_wasm',
+        state: 'completed',
+      });
+
+      await vi.waitFor(() => {
+        expect(harness.sidecarConnection.listInstalledModels).toHaveBeenCalledTimes(2);
+      });
+      expect(harness.getSettings().selectedModel).toBeNull();
+      expect(harness.sidecarConnection.probeModelSelection).not.toHaveBeenCalled();
+    });
   });
 
   describe('selectedModelCapabilities', () => {
@@ -1883,6 +1918,38 @@ function sampleTtsVoiceCatalogModel(): CatalogModelRecord {
     supportsAutomaticLanguageDetection: false,
     task: 'tts',
     uxTags: [],
+  };
+}
+
+function sampleTranslationCatalogModel(): CatalogModelRecord {
+  return {
+    artifacts: [
+      {
+        artifactId: 'en_es_model',
+        downloadUrl: 'https://example.com/model.bin',
+        filename: 'en-es/model.bin',
+        required: true,
+        role: 'translation_model',
+        sha256: '3'.repeat(64),
+        sizeBytes: 100,
+      },
+    ],
+    collectionId: 'translation',
+    displayName: 'Firefox Translations',
+    familyId: 'firefox_translations',
+    languageTags: ['en', 'es'],
+    licenseLabel: 'MPL-2.0',
+    licenseUrl: 'https://www.mozilla.org/MPL/2.0/',
+    modelCardUrl: null,
+    modelId: 'firefox_translations_release',
+    notes: [],
+    runtimeId: 'bergamot_wasm',
+    sourceUrl: 'https://example.com/source',
+    summary: 'Local translation',
+    supportsAutomaticLanguageDetection: false,
+    task: 'translation',
+    translationPairs: [{ source: 'en', target: 'es' }],
+    uxTags: ['fast'],
   };
 }
 

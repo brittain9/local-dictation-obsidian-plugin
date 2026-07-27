@@ -818,4 +818,37 @@ export const nl = {
     'Natuurlijk lokaal Engels voorlezen met een keuze uit samengestelde stemmen.',
   'catalog.family.pocket_tts.summary':
     'Leest notities lokaal voor in het Engels, Frans, Duits, Spaans, Portugees en Italiaans met selecteerbare stemmen en toonhoogtebehoudende snelheidsregeling.',
+  'notice.translationTooLong': 'Vertaal maximaal {count} tekens per keer.',
+  'commands.translateNote': 'Notitie vertalen',
+  'commands.translateSelection': 'Selectie vertalen',
+  'models.manage.translationModels': 'Vertaling',
+  'translation.modal.title': 'Lokaal vertalen',
+  'translation.modal.privacy': 'De vertaling wordt volledig op dit apparaat uitgevoerd.',
+  'translation.modal.from': 'Van',
+  'translation.modal.to': 'Naar',
+  'translation.modal.swap': 'Wisselen',
+  'translation.modal.largeNote': 'Grote notitie: vertalen kan enkele seconden duren.',
+  'translation.modal.sourceSelection': 'Bronselectie',
+  'translation.modal.sourceNote': 'Bronnotitie',
+  'translation.modal.previewAria': 'Vertaalvoorbeeld',
+  'translation.modal.preparing': 'Lokale vertaling voorbereiden…',
+  'translation.modal.loading': 'Lokaal model laden…',
+  'translation.modal.translating': 'Vertalen…',
+  'translation.modal.ready': 'Vertaling gereed.',
+  'translation.modal.canceled': 'Vertaling geannuleerd.',
+  'translation.modal.failed': 'Vertalen mislukt.',
+  'translation.modal.missingModel':
+    'Installeer het lokale vertaalpakket om dit talenpaar te gebruiken.',
+  'translation.modal.installModel': 'Vertaalmodel installeren',
+  'translation.modal.translateAgain': 'Opnieuw vertalen',
+  'translation.modal.cancel': 'Annuleren',
+  'translation.modal.replace': 'Vervangen',
+  'translation.modal.insertBelow': 'Hieronder invoegen',
+  'translation.modal.copy': 'Kopiëren',
+  'translation.modal.stale':
+    'De notitie is gewijzigd. Kopieer of voeg de vertaling in plaats daarvan in.',
+  'catalog.firefox_translations_release_2026_07.summary':
+    'Snelle lokale vertaling tussen Engels en zeven talen met modellen die in Firefox zijn uitgebracht.',
+  'catalog.family.firefox_translations.summary':
+    'Vertaalt notitietekst lokaal met de compacte Bergamot-engine en Firefox-modellen.',
 } as const satisfies TranslationCatalog;

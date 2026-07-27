@@ -1,15 +1,16 @@
 # System Architecture
 
-Local Dictation is an Obsidian plugin that handles speech in both directions
+Local Dictation is an Obsidian plugin that handles voice and language workflows
 entirely on-device. Dictation audio crosses a binary protocol into a native
 Rust sidecar and returns as text. Read-aloud text takes the inverse path and
-returns as audio for playback in Obsidian.
+returns as audio for playback in Obsidian. Text translation runs inside an
+isolated WebAssembly worker in the plugin process.
 
 The split is deliberate:
 
 - **The plugin (TypeScript, `src/`)** owns Obsidian UX — capture and playback,
-  settings, orchestration, Markdown extraction, the optional LLM transform,
-  rendering, and editor insertion.
+  settings, orchestration, Markdown extraction, local translation, the
+  optional LLM transform, rendering, and editor insertion.
 - **The sidecar (Rust, `native/`)** owns local speech inference — the complete
   audio-to-text pipeline plus text-to-audio synthesis and speed processing.
 
@@ -21,6 +22,7 @@ flowchart LR
         LLM["LLM transform<br/>(optional · Ollama / OpenRouter)"]
         REND["Render + insert<br/>(timestamps, formatting, speaker labels)"]
         TEXT["Markdown extraction<br/>+ sentence chunks"]
+        MT["Markdown segmentation<br/>+ Bergamot WASM worker"]
         PLAY["Web Audio playback"]
     end
 
@@ -38,6 +40,7 @@ flowchart LR
     DIA -->|"stdout: transcript_ready"| LLM --> REND
     TEXT -->|"stdin: start_synthesis"| SYNTH
     SYNTH -->|"stdout: model-native PCM"| PLAY
+    REND -->|"explicit translate command"| MT -->|"preview + atomic edit"| REND
 ```
 
 The plugin and sidecar talk over a single framed byte stream on the sidecar's
@@ -341,6 +344,7 @@ than a silent failure.
 | Moonshine Medium | `onnx_runtime` · `moonshine` | Quantized | 289 MB | Streaming (live), 245M params |
 | Nemotron 3.5 ASR 560 ms | `onnx_runtime` · `nemotron_asr` | INT8 | 651 MB | Experimental multilingual streaming |
 | Supertonic 3 | `onnx_runtime` · `supertonic` | ONNX | 398 MB | Read aloud in eight app languages, 10 voices |
+| Firefox Translations | `bergamot_wasm` · `firefox_translations` | Bergamot | 526 MB | 14 English-anchored local translation directions |
 
 Moonshine models are streaming (live-dictation) entries in the managed catalog,
 installed through Manage Models like any other model. Each is a multi-file ORT
@@ -472,6 +476,28 @@ The read-aloud path is independent from microphone capture and transcription:
 The model catalog and settings keep independent `stt` and `tts` selections.
 Pocket TTS and Supertonic models and optional voices are downloaded on demand
 and verified by their pinned size and SHA-256 before activation.
+
+---
+
+### Stage 9: Local Translation
+
+Translation is independent from the sidecar inference protocol:
+
+1. `TranslationController` captures a selection or whole-note snapshot.
+2. A pure TypeScript segmentation pass protects Markdown structure, code,
+   math, links, tags, frontmatter, and whitespace while extracting prose.
+3. The plugin resolves the exact installed Firefox Translations artifacts for
+   the explicit language pair and transfers their buffers to a Blob-backed Web
+   Worker.
+4. Bergamot WebAssembly translates all prose spans locally in one batch.
+5. The worker terminates after completion or immediately on cancellation.
+6. The modal previews the rebuilt Markdown. Replace is allowed only if the
+   original source is unchanged; insert and copy remain available otherwise.
+
+The sidecar catalog still owns SHA-256-pinned installation and removal. Its
+`bergamot_wasm` runtime and `firefox_translations` family describe capability
+and probe the managed install, but native inference is intentionally refused.
+No note text crosses the sidecar or network during translation.
 
 ---
 

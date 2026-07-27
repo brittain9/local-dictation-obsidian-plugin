@@ -33,6 +33,8 @@ describe('registerCommands', () => {
       startDictation: vi.fn(async () => {}),
       stopReadAloud: vi.fn(),
       stopDictation: vi.fn(async () => {}),
+      translateNote: vi.fn(),
+      translateSelection: vi.fn(),
       toggleDictation: vi.fn(async () => {}),
       toggleReadAloudPaused: vi.fn(async () => {}),
     });
@@ -93,6 +95,8 @@ describe('registerCommands', () => {
       startDictation: vi.fn(async () => {}),
       stopReadAloud: vi.fn(),
       stopDictation: vi.fn(async () => {}),
+      translateNote: vi.fn(),
+      translateSelection: vi.fn(),
       toggleDictation: vi.fn(async () => {}),
       toggleReadAloudPaused: vi.fn(async () => {}),
     });
@@ -149,6 +153,8 @@ describe('registerCommands', () => {
       startDictation: vi.fn(async () => {}),
       stopReadAloud: vi.fn(),
       stopDictation: vi.fn(async () => {}),
+      translateNote: vi.fn(),
+      translateSelection: vi.fn(),
       toggleDictation: vi.fn(async () => {}),
       toggleReadAloudPaused: vi.fn(async () => {}),
     });

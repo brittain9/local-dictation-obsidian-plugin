@@ -1,3 +1,5 @@
+pub mod firefox_translations;
+
 #[cfg(feature = "engine-cohere-transcribe")]
 pub mod cohere_transcribe;
 

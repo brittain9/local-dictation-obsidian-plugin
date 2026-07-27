@@ -27,7 +27,7 @@ const mainBuildOptions = {
   treeShaking: true,
   outfile: 'main.js',
   external: externalModules,
-  plugins: [buildModePlugin(), pcmRecorderWorkletSourcePlugin()],
+  plugins: [buildModePlugin(), pcmRecorderWorkletSourcePlugin(), bergamotWorkerSourcePlugin()],
 };
 
 async function buildAll() {
@@ -113,6 +113,51 @@ function pcmRecorderWorkletSourcePlugin() {
 
           return {
             contents: `export const PCM_RECORDER_WORKLET_SOURCE = ${JSON.stringify(workletSource)};`,
+            loader: 'js',
+          };
+        },
+      );
+    },
+  };
+}
+
+function bergamotWorkerSourcePlugin() {
+  const workerSourceId = 'virtual:bergamot-worker-source';
+
+  return {
+    name: 'bergamot-worker-source',
+    setup(buildContext) {
+      buildContext.onResolve({ filter: /^virtual:bergamot-worker-source$/ }, () => ({
+        namespace: 'bergamot-worker-source',
+        path: workerSourceId,
+      }));
+
+      buildContext.onLoad(
+        {
+          filter: /^virtual:bergamot-worker-source$/,
+          namespace: 'bergamot-worker-source',
+        },
+        async () => {
+          const bundledWorker = await build({
+            bundle: true,
+            entryPoints: ['src/translation/bergamot.worker.ts'],
+            format: 'iife',
+            logLevel: 'silent',
+            minify: isProduction,
+            platform: 'browser',
+            sourcemap: false,
+            target: 'es2022',
+            treeShaking: true,
+            write: false,
+          });
+          const workerSource = bundledWorker.outputFiles[0]?.text;
+
+          if (workerSource === undefined) {
+            throw new Error('Failed to bundle the Bergamot translation worker source.');
+          }
+
+          return {
+            contents: `export const BERGAMOT_WORKER_SOURCE = ${JSON.stringify(workerSource)};`,
             loader: 'js',
           };
         },

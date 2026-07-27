@@ -1,0 +1,160 @@
+import type { App, Editor, EditorPosition } from 'obsidian';
+
+import type { ModelInstallManager } from '../models/model-install-manager';
+import type { PluginSettings } from '../settings/plugin-settings';
+import { t } from '../shared/i18n';
+import type { PluginLogger } from '../shared/plugin-logger';
+import type { UserFeedback } from '../shared/user-feedback';
+import { TranslationCancelledError, translateWithBergamot } from './bergamot-client';
+import {
+  defaultTranslationLanguages,
+  findInstalledTranslationModel,
+  isSupportedTranslationPair,
+  type TranslationLanguage,
+} from './languages';
+import {
+  rebuildTranslatedMarkdown,
+  segmentMarkdownForTranslation,
+  translatableTexts,
+} from './markdown-segmentation';
+import { TranslationModal, type TranslationSnapshot } from './translation-modal';
+
+const MAX_TRANSLATION_CHARACTERS = 50_000;
+
+interface TranslationControllerDependencies {
+  app: App;
+  feedback: Pick<UserFeedback, 'show'>;
+  getSettings: () => PluginSettings;
+  logger: PluginLogger;
+  modelManager: ModelInstallManager;
+  openModelPicker: () => Promise<void>;
+  saveSettings: (settings: PluginSettings) => Promise<void>;
+}
+
+export class TranslationController {
+  private activeModal: TranslationModal | null = null;
+
+  constructor(private readonly dependencies: TranslationControllerDependencies) {}
+
+  translateSelection(editor: Editor): void {
+    if (!editor.somethingSelected()) return;
+    const from = editor.getCursor('from');
+    const to = editor.getCursor('to');
+    this.open(editor, {
+      from,
+      kind: 'selection',
+      source: editor.getRange(from, to),
+      to,
+    });
+  }
+
+  translateNote(editor: Editor): void {
+    const source = editor.getValue();
+    if (source.trim().length === 0) return;
+    this.open(editor, {
+      from: { line: 0, ch: 0 },
+      kind: 'note',
+      source,
+      to: endPosition(source),
+    });
+  }
+
+  dispose(): void {
+    this.activeModal?.close();
+    this.activeModal = null;
+  }
+
+  private open(editor: Editor, snapshot: TranslationSnapshot): void {
+    if (snapshot.source.length > MAX_TRANSLATION_CHARACTERS) {
+      this.dependencies.feedback.show({
+        intent: 'warning',
+        key: 'translation-too-long',
+        message: t('notice.translationTooLong', {
+          count: MAX_TRANSLATION_CHARACTERS.toLocaleString(),
+        }),
+      });
+      return;
+    }
+
+    this.activeModal?.close();
+    const defaults = defaultTranslationLanguages(this.dependencies.getSettings().dictationLanguage);
+    const settings = this.dependencies.getSettings();
+    const sourceLanguage = settings.translationSourceLanguage ?? defaults.sourceLanguage;
+    let targetLanguage = settings.translationTargetLanguage ?? defaults.targetLanguage;
+    if (!isSupportedTranslationPair(sourceLanguage, targetLanguage)) {
+      targetLanguage = sourceLanguage === 'en' ? 'es' : 'en';
+    }
+
+    const modal = new TranslationModal(this.dependencies.app, {
+      editor,
+      initialSourceLanguage: sourceLanguage,
+      initialTargetLanguage: targetLanguage,
+      onClosed: () => {
+        if (this.activeModal === modal) this.activeModal = null;
+      },
+      onInstallModel: async () => {
+        modal.close();
+        await this.dependencies.openModelPicker();
+      },
+      persistLanguages: async (nextSource, nextTarget) => {
+        const current = this.dependencies.getSettings();
+        await this.dependencies.saveSettings({
+          ...current,
+          translationSourceLanguage: nextSource,
+          translationTargetLanguage: nextTarget,
+        });
+      },
+      runTranslation: (options) => this.runTranslation(snapshot.source, options),
+      snapshot,
+    });
+    this.activeModal = modal;
+    modal.open();
+  }
+
+  private async runTranslation(
+    source: string,
+    options: {
+      onReady: () => void;
+      signal: AbortSignal;
+      sourceLanguage: TranslationLanguage;
+      targetLanguage: TranslationLanguage;
+    },
+  ): Promise<{ kind: 'missing_model' } | { kind: 'translated'; text: string }> {
+    const state = this.dependencies.modelManager.getState();
+    const installed = findInstalledTranslationModel(
+      { models: state.catalog.models, installedModels: state.installedModels },
+      options.sourceLanguage,
+      options.targetLanguage,
+    );
+    if (installed === null) return { kind: 'missing_model' };
+
+    const segments = segmentMarkdownForTranslation(source);
+    const texts = translatableTexts(segments);
+    if (texts.length === 0) return { kind: 'translated', text: source };
+
+    try {
+      const translations = await translateWithBergamot({
+        ...installed,
+        onReady: options.onReady,
+        signal: options.signal,
+        sourceLanguage: options.sourceLanguage,
+        targetLanguage: options.targetLanguage,
+        texts,
+      });
+      return { kind: 'translated', text: rebuildTranslatedMarkdown(segments, translations) };
+    } catch (error) {
+      if (!(error instanceof TranslationCancelledError)) {
+        this.dependencies.logger.error('translation', 'local translation failed', error);
+      }
+      throw error;
+    }
+  }
+}
+
+function endPosition(text: string): EditorPosition {
+  const lines = text.split('\n');
+  return {
+    line: lines.length - 1,
+    ch: lines.at(-1)?.length ?? 0,
+  };
+}

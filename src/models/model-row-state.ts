@@ -143,14 +143,26 @@ function deriveRowState(
       ? failedInstall
       : null;
 
-  const allowedActions = deriveAllowedActions({
-    installed,
-    isSelected,
-    isInstalling,
-    isCanceling,
-    hasFailed: thisFailure !== null,
-    hasOtherActiveInstall,
-  });
+  const allowedActions: ModelRowAction[] =
+    model.task === 'translation' && installed && !isInstalling && !isCanceling
+      ? thisFailure === null
+        ? ['remove', 'details']
+        : deriveAllowedActions({
+            installed,
+            isSelected,
+            isInstalling,
+            isCanceling,
+            hasFailed: true,
+            hasOtherActiveInstall,
+          })
+      : deriveAllowedActions({
+          installed,
+          isSelected,
+          isInstalling,
+          isCanceling,
+          hasFailed: thisFailure !== null,
+          hasOtherActiveInstall,
+        });
 
   return {
     model,
@@ -330,6 +342,8 @@ function resolveFamilyDisplayName(
   switch (familyId) {
     case 'cohere_transcribe':
       return 'Cohere Transcribe';
+    case 'firefox_translations':
+      return 'Firefox Translations';
     case 'moonshine':
       return 'Moonshine';
     case 'nemotron_asr':

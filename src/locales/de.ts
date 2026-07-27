@@ -832,4 +832,37 @@ export const de = {
     'Natürliches lokales Vorlesen auf Englisch mit auswählbaren Stimmen.',
   'catalog.family.pocket_tts.summary':
     'Liest Notizen lokal auf Englisch, Französisch, Deutsch, Spanisch, Portugiesisch und Italienisch mit auswählbaren Stimmen und tonhöhentreuer Geschwindigkeitssteuerung vor.',
+  'notice.translationTooLong': 'Übersetze höchstens {count} Zeichen auf einmal.',
+  'commands.translateNote': 'Notiz übersetzen',
+  'commands.translateSelection': 'Auswahl übersetzen',
+  'models.manage.translationModels': 'Übersetzung',
+  'translation.modal.title': 'Lokal übersetzen',
+  'translation.modal.privacy': 'Die Übersetzung wird vollständig auf diesem Gerät ausgeführt.',
+  'translation.modal.from': 'Von',
+  'translation.modal.to': 'Nach',
+  'translation.modal.swap': 'Tauschen',
+  'translation.modal.largeNote': 'Große Notiz: Die Übersetzung kann einige Sekunden dauern.',
+  'translation.modal.sourceSelection': 'Quellauswahl',
+  'translation.modal.sourceNote': 'Quellnotiz',
+  'translation.modal.previewAria': 'Übersetzungsvorschau',
+  'translation.modal.preparing': 'Lokale Übersetzung wird vorbereitet…',
+  'translation.modal.loading': 'Lokales Modell wird geladen…',
+  'translation.modal.translating': 'Wird übersetzt…',
+  'translation.modal.ready': 'Übersetzung ist fertig.',
+  'translation.modal.canceled': 'Übersetzung abgebrochen.',
+  'translation.modal.failed': 'Übersetzung fehlgeschlagen.',
+  'translation.modal.missingModel':
+    'Installiere das lokale Übersetzungspaket für dieses Sprachenpaar.',
+  'translation.modal.installModel': 'Übersetzungsmodell installieren',
+  'translation.modal.translateAgain': 'Erneut übersetzen',
+  'translation.modal.cancel': 'Abbrechen',
+  'translation.modal.replace': 'Ersetzen',
+  'translation.modal.insertBelow': 'Darunter einfügen',
+  'translation.modal.copy': 'Kopieren',
+  'translation.modal.stale':
+    'Die Notiz wurde geändert. Kopiere die Übersetzung oder füge sie stattdessen ein.',
+  'catalog.firefox_translations_release_2026_07.summary':
+    'Schnelle lokale Übersetzung zwischen Englisch und sieben Sprachen mit in Firefox veröffentlichten Modellen.',
+  'catalog.family.firefox_translations.summary':
+    'Übersetzt Notiztext lokal mit der kompakten Bergamot-Engine und Firefox-Modellen.',
 } as const satisfies TranslationCatalog;

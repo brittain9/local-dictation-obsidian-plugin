@@ -6,6 +6,7 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum RuntimeId {
+    BergamotWasm,
     OnnxRuntime,
     WhisperCpp,
 }
@@ -13,6 +14,7 @@ pub enum RuntimeId {
 impl RuntimeId {
     pub fn as_str(self) -> &'static str {
         match self {
+            Self::BergamotWasm => "bergamot_wasm",
             Self::OnnxRuntime => "onnx_runtime",
             Self::WhisperCpp => "whisper_cpp",
         }
@@ -20,6 +22,7 @@ impl RuntimeId {
 
     pub fn display_name(self) -> &'static str {
         match self {
+            Self::BergamotWasm => "Bergamot WebAssembly",
             Self::OnnxRuntime => "ONNX Runtime",
             Self::WhisperCpp => "whisper.cpp",
         }
@@ -30,6 +33,7 @@ impl RuntimeId {
 #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ModelFamilyId {
+    FirefoxTranslations,
     CohereTranscribe,
     Moonshine,
     NemotronAsr,
@@ -41,6 +45,7 @@ pub enum ModelFamilyId {
 impl ModelFamilyId {
     pub fn as_str(self) -> &'static str {
         match self {
+            Self::FirefoxTranslations => "firefox_translations",
             Self::CohereTranscribe => "cohere_transcribe",
             Self::Moonshine => "moonshine",
             Self::NemotronAsr => "nemotron_asr",
@@ -52,6 +57,7 @@ impl ModelFamilyId {
 
     pub fn display_name(self) -> &'static str {
         match self {
+            Self::FirefoxTranslations => "Firefox Translations",
             Self::CohereTranscribe => "Cohere Transcribe",
             Self::Moonshine => "Moonshine",
             Self::NemotronAsr => "NVIDIA Nemotron 3.5 ASR",
@@ -85,6 +91,7 @@ impl AcceleratorId {
 #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ModelFormat {
+    Bergamot,
     Ggml,
     Gguf,
     Onnx,
@@ -97,6 +104,7 @@ pub enum ModelFormat {
 #[serde(rename_all = "snake_case")]
 pub enum ModelTask {
     Stt,
+    Translation,
     Tts,
 }
 
@@ -104,6 +112,7 @@ impl ModelTask {
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Stt => "stt",
+            Self::Translation => "translation",
             Self::Tts => "tts",
         }
     }

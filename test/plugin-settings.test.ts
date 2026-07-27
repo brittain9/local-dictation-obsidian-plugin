@@ -45,6 +45,27 @@ describe('resolvePluginSettings', () => {
     expect(resolvePluginSettings({ dictationLanguage: 'xx' }).dictationLanguage).toBe('en');
   });
 
+  it('tolerantly reads supported translation language preferences', () => {
+    expect(
+      resolvePluginSettings({
+        translationSourceLanguage: ' FR ',
+        translationTargetLanguage: 'en',
+      }),
+    ).toMatchObject({
+      translationSourceLanguage: 'fr',
+      translationTargetLanguage: 'en',
+    });
+    expect(
+      resolvePluginSettings({
+        translationSourceLanguage: 'xx',
+        translationTargetLanguage: 42,
+      }),
+    ).toMatchObject({
+      translationSourceLanguage: null,
+      translationTargetLanguage: null,
+    });
+  });
+
   it('normalizes a remembered Obsidian language to its base tag', () => {
     expect(resolvePluginSettings({ lastObsidianLanguage: ' PT_br ' }).lastObsidianLanguage).toBe(
       'pt',

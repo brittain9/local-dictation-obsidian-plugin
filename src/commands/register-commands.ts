@@ -26,6 +26,8 @@ interface CommandDependencies {
   restartSidecar: () => Promise<void>;
   readAloud: (editor: Editor) => Promise<void>;
   stopReadAloud: () => void;
+  translateNote: (editor: Editor) => void;
+  translateSelection: (editor: Editor) => void;
   toggleReadAloudPaused: () => Promise<void>;
   startDictation: () => Promise<void>;
   stopDictation: () => Promise<void>;
@@ -33,6 +35,22 @@ interface CommandDependencies {
 }
 
 export function registerCommands(dependencies: CommandDependencies): void {
+  dependencies.plugin.addCommand({
+    id: 'translate-selection',
+    name: t('commands.translateSelection'),
+    editorCheckCallback: (checking, editor) => {
+      if (!editor.somethingSelected()) return false;
+      if (!checking) dependencies.translateSelection(editor);
+      return true;
+    },
+  });
+
+  dependencies.plugin.addCommand({
+    id: 'translate-note',
+    name: t('commands.translateNote'),
+    editorCallback: (editor) => dependencies.translateNote(editor),
+  });
+
   dependencies.plugin.addCommand({
     id: 'read-aloud',
     name: t('commands.readAloud'),

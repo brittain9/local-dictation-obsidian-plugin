@@ -25,6 +25,7 @@ import {
   type ModelCatalogRecord,
   type ModelInstallUpdateRecord,
   type ModelStoreRecord,
+  type ModelTask,
   matchesModelTriple,
   type SelectedModel,
   type SelectedModelCapabilities,
@@ -597,6 +598,11 @@ export class ModelInstallManager {
     canCommit: (settings: Readonly<PluginSettings>) => boolean,
   ): Promise<ModelProbeResultEvent> {
     const task = this.selectionTask(selection);
+    if (task === 'translation') {
+      throw new Error(
+        'Translation models are resolved by language pair and do not need selection.',
+      );
+    }
     const probeResult = await this.deps.sidecarConnection.probeModelSelection({
       modelSelection: selection,
       ...createModelStoreOverridePayload(this.deps.getSettings().modelStorePathOverride),
@@ -1020,6 +1026,12 @@ export class ModelInstallManager {
     if (refresh.completed !== null && canAutoSelectReconciledFailure) {
       const completed = refresh.completed;
       const completedTask = this.selectionTask(completed);
+      if (completedTask === 'translation') {
+        if (this.lifecycleGeneration === refresh.expectedLifecycleGeneration) {
+          this.notify();
+        }
+        return;
+      }
       const canCommitAutoSelection = (settings: Readonly<PluginSettings>): boolean => {
         const selectedForTask =
           completedTask === 'tts' ? settings.selectedTtsModel : settings.selectedModel;
@@ -1107,13 +1119,12 @@ export class ModelInstallManager {
     };
   }
 
-  private selectionTask(selection: SelectedModel): 'stt' | 'tts' {
+  private selectionTask(selection: SelectedModel): ModelTask {
     if (selection.kind === 'external_file') return 'stt';
-    return (
-      this.catalog.models.find((model) =>
-        matchesModelTriple(model, selection.runtimeId, selection.familyId, selection.modelId),
-      )?.task ?? 'stt'
-    );
+    const task = this.catalog.models.find((model) =>
+      matchesModelTriple(model, selection.runtimeId, selection.familyId, selection.modelId),
+    )?.task;
+    return task ?? 'stt';
   }
 
   private setCapabilities(task: 'stt' | 'tts', capabilities: SelectedModelCapabilities): void {

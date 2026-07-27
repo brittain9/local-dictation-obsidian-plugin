@@ -4,19 +4,19 @@ This document is the source of truth for Local Dictation's positioning and exter
 
 ## Messaging core
 
-- **Category:** Local speech for Obsidian.
-- **Brand line:** Obsidian handles the notes. Local Dictation handles the speech.
-- **Product arc:** Dictate. Transcribe. Listen.
-- **Product promise:** A complete spoken workflow built into your notes.
-- **Local advantage:** Download the models you want and use them without a transcription account, metered speech API, or ongoing connection.
+- **Category:** Local voice and language tools for Obsidian.
+- **Brand line:** Obsidian handles the notes. Local Dictation handles voice and language.
+- **Product arc:** Dictate. Transcribe. Translate. Listen.
+- **Product promise:** A complete private voice and language workflow built into your notes.
+- **Local advantage:** Download the models you want and use them without a transcription or translation account, metered speech API, or ongoing connection.
 
-Local and privacy are supporting proof. The headline is a unified speech experience that turns spoken input into useful notes and reads those notes aloud.
+Local and privacy are supporting proof. The headline is one note-centered
+workflow for spoken input, translation, and read aloud.
 
 ## Product status
 
-Public listing copy presents live dictation, meeting transcription, transcript transformation, and local read-aloud as available.
-
-The root [README](../../README.md) temporarily retains its current “coming next” qualifier for text-to-speech. Remove that qualifier when the read-aloud work is merged into the release branch.
+Public listing copy presents live dictation, meeting transcription, transcript
+transformation, local translation, and local read aloud as available.
 
 ## Repository-managed copy
 
@@ -24,14 +24,14 @@ The root [README](../../README.md) temporarily retains its current “coming nex
 
 The root [README](../../README.md) contains the complete product narrative. Its opening position is:
 
-> **Obsidian handles the notes. Local Dictation handles the speech.**
+> **Obsidian handles the notes. Local Dictation handles voice and language.**
 
 ### Manifest and package description
 
 `manifest.json` is the source for the plugin description. Keep `package.json.description` identical.
 
 ```text
-Local speech-to-text and text-to-speech for notes and meetings. Dictate live, transcribe microphone and system audio with Whisper and other models, add speaker labels and timestamps, shape transcripts, and read notes aloud.
+Private local voice and language tools for notes. Dictate, transcribe meetings, translate text, and read notes aloud with on-device models.
 ```
 
 This copy intentionally omits “Obsidian” because the Community Plugins validator rejects descriptions that repeat the host application's name.
@@ -43,7 +43,7 @@ Repository: [brittain9/local-dictation-obsidian-plugin](https://github.com/britt
 ### Description
 
 ```text
-Local speech for Obsidian. Dictate live into Markdown, transcribe meetings and system audio, shape transcripts, and read notes aloud with on-device speech models.
+Local voice and language tools for Obsidian. Dictate into Markdown, transcribe meetings, translate text, and read notes aloud with on-device models.
 ```
 
 ### Website
@@ -60,6 +60,7 @@ https://community.obsidian.md/plugins/local-dictation
 - `text-to-speech`
 - `speech-recognition`
 - `transcription`
+- `machine-translation`
 - `whisper`
 - `meeting-notes`
 - `read-aloud`
@@ -78,13 +79,13 @@ The Overview tab is populated from the root README. The short description and lo
 Use the same copy as `manifest.json.description`:
 
 ```text
-Local speech-to-text and text-to-speech for notes and meetings. Dictate live, transcribe microphone and system audio with Whisper and other models, add speaker labels and timestamps, shape transcripts, and read notes aloud.
+Private local voice and language tools for notes. Dictate, transcribe meetings, translate text, and read notes aloud with on-device models.
 ```
 
 ### Long description
 
 ```text
-Obsidian handles the notes. Local Dictation handles the speech.
+Obsidian handles the notes. Local Dictation handles voice and language.
 
 Local Dictation adds a complete spoken workflow to your vault. Dictate live into Markdown or switch to a higher-accuracy model when final wording matters.
 
@@ -95,6 +96,10 @@ Choose the speech engine that fits the job: streaming or batch, English or multi
 Shape raw transcripts into useful notes with optional cleanup, summaries, action items, and custom prompts through local Ollama or remote OpenRouter. Audio is never sent to a cleanup provider.
 
 Read any note aloud with natural on-device voices. Speech-to-text and text-to-speech belong in the same note-centered workflow.
+
+Translate selections or whole notes between English and seven other languages
+with a local model pack. Review the result before replacing, inserting, or
+copying it; note text is never sent to a translation service.
 ```
 
 ## Update checklist
