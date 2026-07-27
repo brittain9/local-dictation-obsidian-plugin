@@ -93,21 +93,26 @@ obligations. No Gemma terms apply to v1.
 
 ## User workflow
 
-1. The user selects text or invokes translation for the entire active note.
-2. A modal opens with source and target language controls.
-3. If the translation pack is missing, the modal links directly to Manage
+1. The Translation settings group shows the model's installed state, links to
+   Manage Models, and sets the default source and target languages.
+2. The user selects text or invokes translation for a non-empty active note.
+3. A modal opens with the active source and target languages in both its title
+   and controls.
+4. If the translation pack is missing, the modal links directly to Manage
    Models filtered to Translation.
-4. The plugin reads only the exact installed artifacts required for the
+5. The plugin reads only the exact installed artifacts required for the
    selected direction, transfers them to an isolated worker, and runs
    Bergamot locally.
-5. The user reviews the complete result.
-6. Replace is enabled only if the original source range is unchanged. Insert
+6. The user reviews the complete result.
+7. Replace is enabled only if the original source range is unchanged. Insert
    below and copy remain available when the note changed.
 
 The source and target preferences persist tolerantly without a settings-schema
 migration. If no preference exists, source defaults to the explicit dictation
 language when supported, otherwise English; the target defaults to English or
-Spanish as needed to form a supported pair.
+Spanish as needed to form a supported pair. Invoking Translate note on an empty
+note explains that there is no text to translate instead of silently doing
+nothing.
 
 ## Markdown preservation
 

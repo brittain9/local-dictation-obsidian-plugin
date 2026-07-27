@@ -49,6 +49,11 @@ export interface InstalledTranslationModel {
   installedModel: InstalledModelRecord;
 }
 
+export interface TranslationLanguagePair {
+  sourceLanguage: TranslationLanguage;
+  targetLanguage: TranslationLanguage;
+}
+
 export function findInstalledTranslationModel(
   state: Pick<ModelCatalogRecord, 'models'> & {
     installedModels: readonly InstalledModelRecord[];
@@ -82,4 +87,20 @@ export function defaultTranslationLanguages(dictationLanguage: string): {
   return sourceLanguage === 'en'
     ? { sourceLanguage, targetLanguage: 'es' }
     : { sourceLanguage, targetLanguage: 'en' };
+}
+
+export function resolveTranslationLanguages(
+  dictationLanguage: string,
+  preferredSource: TranslationLanguage | null,
+  preferredTarget: TranslationLanguage | null,
+): TranslationLanguagePair {
+  const defaults = defaultTranslationLanguages(dictationLanguage);
+  const sourceLanguage = preferredSource ?? defaults.sourceLanguage;
+  const targetLanguage =
+    preferredTarget !== null && isSupportedTranslationPair(sourceLanguage, preferredTarget)
+      ? preferredTarget
+      : sourceLanguage === 'en'
+        ? 'es'
+        : 'en';
+  return { sourceLanguage, targetLanguage };
 }

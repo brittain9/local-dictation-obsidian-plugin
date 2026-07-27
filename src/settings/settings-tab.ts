@@ -65,6 +65,7 @@ import {
 import { SmartParagraphSettingsModal } from './smart-paragraph-settings-modal';
 import { isSystemAudioSupportedOnCurrentPlatform } from './system-audio-support';
 import { TimestampSettingsModal } from './timestamp-settings-modal';
+import { renderTranslationSettings } from './translation-settings-section';
 
 interface SettingsTabDependencies {
   feedback: Pick<UserFeedback, 'show'>;
@@ -124,6 +125,12 @@ const SETTINGS_SEARCH_ALIAS_KEYS = [
   'settings.readAloud.hotkey',
   'settings.readAloud.voice',
   'settings.readAloud.speed',
+  'settings.groups.translation',
+  'settings.translation.model.name',
+  'settings.translation.model.manage',
+  'settings.translation.model.download',
+  'settings.translation.source.name',
+  'settings.translation.target.name',
   'settings.groups.capture',
   'settings.microphone.name',
   'settings.microphone.default',
@@ -196,6 +203,7 @@ export class LocalSttSettingTab extends PluginSettingTab {
   private disposeModelSection: (() => void) | null = null;
   private disposeReadAloudSection: (() => void) | null = null;
   private disposeSidecarSurfaces: (() => void) | null = null;
+  private disposeTranslationSection: (() => void) | null = null;
 
   constructor(
     app: App,
@@ -484,6 +492,21 @@ export class LocalSttSettingTab extends PluginSettingTab {
       },
     );
 
+    // --- Translation ---
+    const translationSection = createSettingGroup(containerEl, t('settings.groups.translation'));
+    this.disposeTranslationSection = renderTranslationSettings(translationSection, {
+      getSettings: () => this.dependencies.getSettings(),
+      manager,
+      openModelPicker: (options) => this.dependencies.openModelPicker(options),
+      persistLanguages: async (sourceLanguage, targetLanguage) => {
+        await this.dependencies.saveSettings({
+          ...this.dependencies.getSettings(),
+          translationSourceLanguage: sourceLanguage,
+          translationTargetLanguage: targetLanguage,
+        });
+      },
+    });
+
     const llmCard = createSettingGroup(containerEl, t('settings.groups.llmTransformation'));
     const enableLlmSetting = new Setting(llmCard)
       .setName(t('settings.llm.enableFeatures.name'))
@@ -632,6 +655,8 @@ export class LocalSttSettingTab extends PluginSettingTab {
     this.disposeModelSection = null;
     this.disposeReadAloudSection?.();
     this.disposeReadAloudSection = null;
+    this.disposeTranslationSection?.();
+    this.disposeTranslationSection = null;
     this.disposeDiarizationDesc?.();
     this.disposeDiarizationDesc = null;
     this.disposeEngineSection?.();

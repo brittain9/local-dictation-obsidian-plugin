@@ -7,9 +7,8 @@ import type { PluginLogger } from '../shared/plugin-logger';
 import type { UserFeedback } from '../shared/user-feedback';
 import { TranslationCancelledError, translateWithBergamot } from './bergamot-client';
 import {
-  defaultTranslationLanguages,
   findInstalledTranslationModel,
-  isSupportedTranslationPair,
+  resolveTranslationLanguages,
   type TranslationLanguage,
 } from './languages';
 import {
@@ -50,7 +49,14 @@ export class TranslationController {
 
   translateNote(editor: Editor): void {
     const source = editor.getValue();
-    if (source.trim().length === 0) return;
+    if (source.trim().length === 0) {
+      this.dependencies.feedback.show({
+        intent: 'warning',
+        key: 'translation-no-text',
+        message: t('translation.notice.noText'),
+      });
+      return;
+    }
     this.open(editor, {
       from: { line: 0, ch: 0 },
       kind: 'note',
@@ -77,13 +83,12 @@ export class TranslationController {
     }
 
     this.activeModal?.close();
-    const defaults = defaultTranslationLanguages(this.dependencies.getSettings().dictationLanguage);
     const settings = this.dependencies.getSettings();
-    const sourceLanguage = settings.translationSourceLanguage ?? defaults.sourceLanguage;
-    let targetLanguage = settings.translationTargetLanguage ?? defaults.targetLanguage;
-    if (!isSupportedTranslationPair(sourceLanguage, targetLanguage)) {
-      targetLanguage = sourceLanguage === 'en' ? 'es' : 'en';
-    }
+    const { sourceLanguage, targetLanguage } = resolveTranslationLanguages(
+      settings.dictationLanguage,
+      settings.translationSourceLanguage,
+      settings.translationTargetLanguage,
+    );
 
     const modal = new TranslationModal(this.dependencies.app, {
       editor,

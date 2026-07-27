@@ -66,7 +66,12 @@ export class TranslationModal extends Modal {
   private render(status = t('translation.modal.preparing')): void {
     const { contentEl } = this;
     contentEl.empty();
-    contentEl.createEl('h2', { text: t('translation.modal.title') });
+    contentEl.createEl('h2', {
+      text: t('translation.modal.titleWithPair', {
+        source: translationLanguageLabel(this.sourceLanguage),
+        target: translationLanguageLabel(this.targetLanguage),
+      }),
+    });
     contentEl.createEl('p', {
       cls: 'local-stt-translation-modal__privacy',
       text: t('translation.modal.privacy'),
