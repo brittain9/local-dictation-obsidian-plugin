@@ -8,6 +8,17 @@ on 2026-07-27 against the repository head at that date and the pinned upstream
 revisions recorded below. Any prior discussion of translation architecture is
 superseded by this document, which was verified against the current head.
 
+Owner decisions recorded 2026-07-27, after the first review of this document:
+
+- Gemma Terms of Use accepted, including the use-restriction passthrough and
+  the required notice. Documented obligations must ship with the feature.
+- A ~3 GB managed download is accepted for this feature.
+- UX specifics are delegated to the implementer's judgment, with the required
+  shape being commands that translate a selection and a whole note, and with
+  the text-preservation guarantees below treated as non-negotiable.
+- `Translate last utterance…` and dictate→translate chaining remain later
+  waves, not v1.
+
 Scope: general local text-to-text translation of note text — final dictation
 transcripts, selected note text, and (later) larger structures — for the eight
 product languages. Whisper's built-in speech-to-English translation mode is
@@ -36,8 +47,8 @@ User stories for v1:
 2. I select a paragraph a colleague wrote in German and read it in French,
    previewing the translation before deciding whether it replaces the source
    or lands below it.
-3. I dictate an utterance, run LLM cleanup as usual, then translate the final
-   utterance with one command.
+3. I translate a whole note into another language from one command, without
+   selecting anything.
 4. I translate a section to Japanese and then use Read aloud with a Japanese
    voice to hear it.
 5. If the translation model is not installed, the feature tells me exactly
@@ -51,8 +62,6 @@ User stories for v1:
   user command; no setting causes content to be translated as a side effect
   of dictation, cleanup, or read aloud in v1.
 - No whole-vault or multi-note translation.
-- No dedicated whole-note command in v1 (select-all within the size cap is the
-  escape hatch; see UX).
 - No automatic source-language detection in v1 (explicit decision below).
 - No translation glossary/do-not-translate term list in v1.
 - No new ribbon icon.
@@ -119,7 +128,7 @@ marked measured — no local feasibility probe has been run yet (see Blockers).
 
 | Candidate | Revision | Params / v1 artifact | License | 8 product languages | Runtime fit |
 | --- | --- | --- | --- | --- | --- |
-| **TranslateGemma 4B** (`google/translategemma-4b-it`, 2026-01-15) | `10042cb0e6e7fdce748996a71dc3dc432a4e0c89` | ~4B (Gemma 3); q4 ≈ 2.5 GB (Q4_K_M GGUF is 2.49 GB) | Gemma Terms of Use (commercial use and redistribution permitted with use-restriction passthrough) | Yes — evaluated on WMT24++, whose 55 configs include `de_DE es_MX fr_FR it_IT ja_JP nl_NL pt_BR pt_PT` | Decoder-only Gemma 3; ONNX export path proven by `onnx-community/gemma-3-4b-it-ONNX` (`944e625c`), but no TranslateGemma ONNX export exists today and the Google repo is gated |
+| **TranslateGemma 4B** (`google/translategemma-4b-it`, 2026-01-15) | `10042cb0e6e7fdce748996a71dc3dc432a4e0c89` | ~4B (Gemma 3); int4 ONNX 2.71 GB (`q4f16`) or 3.09 GB (`q4`), + 20 MB tokenizer | Gemma Terms of Use (commercial use and redistribution permitted with use-restriction passthrough) | Yes — evaluated on WMT24++, whose 55 configs include `de_DE es_MX fr_FR it_IT ja_JP nl_NL pt_BR pt_PT` | Decoder-only Gemma 3. A text-only ONNX export already exists and is **not** gated: `onnx-community/translategemma-text-4b-it-ONNX` @ `f7874a1ac60758872a4f78aac0df95b17b776994` (2026-02-14), the same publisher the shipped Cohere Transcribe entries already pin |
 | **Seed-X-PPO-7B** (ByteDance) | `6ef78fc034ec86c0036d7a7ca2bfc24607f48050` | 7B Mistral; int4 ≈ 4.5 GB | OpenMDW (same family as the shipped Nemotron license) | Yes — 28 languages including all eight | Official quants are GPTQ-Int8/AWQ-Int4 (GPU-oriented); upstream recommends vLLM + beam search and warns against unofficial quantizations; no ONNX export; 7B decode on CPU is roughly 2× the cost of 4B |
 | **Hunyuan-MT-7B** (Tencent, WMT25 winner in 30/31 pairs) | `9305c78383f0bcc94358e08667ee2c76107877e3` | 7B | Tencent Hunyuan community license — Territory **excludes the EU, UK, and South Korea** | Yes (33 languages) | Disqualified on license alone; the plugin is distributed worldwide |
 | **MADLAD-400-3B-MT** (Google, 2023) | `fa184c675da0b5c9e1c8694fccd4e12e2d422094` | 3B T5 encoder-decoder; int8 ≈ 3 GB | Apache-2.0 | Yes (400+ languages) | Community ONNX exports exist; quality is a 2023 baseline clearly below the 2025/26 systems above; known short-input hallucination reports; upstream effectively unmaintained |
@@ -137,11 +146,12 @@ path; not a managed first-class local feature).
 - **ONNX Runtime (existing native path, recommended).** Zero new native
   dependencies, existing accelerator probe/policy, existing install and
   verification machinery, existing adapter patterns for autoregressive
-  decoding. Cost: the project must produce and host its own pinned
-  TranslateGemma ONNX export (text-only graph + int4 `MatMulNBits` weights via
-  `optimum`, mirroring the `onnx-community` Gemma 3 recipe), because upstream
-  is gated and no community ONNX export exists. Decode throughput for a 4B
-  int4 decoder under `ort` on CPU is the main open measurement.
+  decoding. A published text-only int4 export already exists at
+  `onnx-community/translategemma-text-4b-it-ONNX`, so no in-house export and
+  no self-hosting is required; the catalog pins that repository at a fixed
+  revision with per-file SHA-256, exactly as the Cohere Transcribe entries
+  already do. Decode throughput for a 4B int4 decoder under `ort` on CPU is
+  the main open measurement.
 - **llama.cpp (GGUF).** Best-in-class CPU decode and ready-made community
   GGUFs, but a new C++ runtime dependency, a second copy of the ggml stack
   next to whisper.cpp, new packaging/CI surface on three platforms, and a new
@@ -170,11 +180,13 @@ ONNX Runtime path.**
   the product cannot absorb (Seed-X).
 - All eight product languages are inside its evaluated 55-language set, with
   per-language WMT24++ evidence rather than family marketing copy.
-- ~2.5 GB q4 artifact is in the same download class as the shipped Nemotron
-  ASR package (651 MiB) and Supertonic/Pocket TTS models — large but
-  consistent with the product's explicit, managed download UX.
-- Decoder-only Gemma 3 is ONNX-exportable via an established public recipe,
-  and the codebase already implements cached autoregressive ONNX decoding.
+- The download lands between the two largest models the catalog already
+  ships: 2.71 GB (`q4f16`) or 3.09 GB (`q4`) against `cohere_transcribe_q4`
+  at 2.13 GB and `cohere_transcribe_fp16` at 4.13 GB. Large, but the largest
+  managed download in the product is already in this class, and the owner has
+  accepted the size.
+- A text-only int4 ONNX export is already published, and the codebase already
+  implements cached autoregressive ONNX decoding.
 - The 2K-token input context matches the chunked design below; translation is
   a per-paragraph operation, not a long-context one.
 
@@ -189,9 +201,13 @@ fail the minimum envelope.
 x86-64 with AVX2 or Apple silicon; peak translation RSS target < 4.5 GiB;
 throughput floor ≥ 3 output tok/s. Recommended: 16 GiB, ≥ 8 performance
 cores, ≈ 8–20 tok/s expected on 2020+ x86 CPUs and ≈ 25–45 tok/s on Apple
-silicon. If measured throughput on representative x86 hardware falls below
-the floor, the llama.cpp contingency question goes to the owner before any
-implementation continues.
+silicon. If measured throughput on the development machine falls below the
+floor, the implementer does not switch runtimes unilaterally: record the
+measurement, ship the feature behind its existing opt-in install gate with
+honest progress and cancellation, and raise llama.cpp as a follow-up with the
+numbers attached. Quantization choice (`q4` vs `q4f16`) is a T0 measurement,
+not a preset — `q4f16` is 0.38 GB smaller but fp16 compute is frequently
+emulated and slower on CPU execution providers.
 
 ## Language and direction policy
 
@@ -201,9 +217,8 @@ implementation continues.
   for the seven non-English languages). Direct non-English pairs (`es→de`)
   are technically possible with this model but ship only in a later wave
   with their own fixture and review evidence. They are refused with a clear
-  message in v1, never silently pivoted through English. ⚠️ **Owner
-  decision:** this deliberately trades early breadth for honest claims;
-  approve or widen.
+  message in v1, never silently pivoted through English. This deliberately
+  trades early breadth for honest claims.
 - Each direction is individually declared in catalog metadata (below); the UI
   derives eligibility from the exact installed model, mirroring the
   model-level eligibility invariant of multilingual dictation.
@@ -224,12 +239,9 @@ Explicitness comes from the commands themselves — nothing translates unless
 the user invokes translation, so no arm/disarm setting is needed.
 
 - **Commands.** `Translate selection…` (editor command; also offered in the
-  selection context menu like Read aloud) and `Translate last utterance…`
-  (enabled while the last-utterance recovery range from the session journal
-  is valid; covers the "translate my final transcript" story after optional
-  LLM cleanup has settled). Both open the translation modal. Whole-note
-  translation is select-all within the cap; a dedicated command is future
-  work.
+  selection context menu like Read aloud) and `Translate note…` (whole active
+  note, subject to the same size cap). Both open the translation modal.
+  `Translate last utterance…` is a later wave, once the core is proven.
 - **Modal.** Header: source and target language dropdowns (source defaults
   as above; target persists as `translationTargetLanguage`), swap button.
   Body: source excerpt and a translation pane that fills chunk-by-chunk as
@@ -237,8 +249,8 @@ the user invokes translation, so no arm/disarm setting is needed.
   (enabled on completion): **Replace selection** (primary), **Insert below**,
   **Copy**. Esc or Cancel discards everything.
 - **Preview-first is the v1 decision**: translated text never touches the
-  note until the user accepts it in the preview. ⚠️ **Owner decision:** a
-  power-user "replace without preview" variant is deliberately deferred.
+  note until the user accepts it in the preview. A power-user "replace
+  without preview" variant is deliberately deferred.
 - **Atomic insertion.** Replace/insert happens as a single editor
   transaction. The controller captures the selection range and a hash of its
   text at start; if the note changed during translation, Replace is disabled
@@ -414,41 +426,47 @@ plain text. Requests validate language pairs against the resolved model's
   Policy) and the notice "Gemma is provided under and subject to the Gemma
   Terms of Use found at ai.google.dev/gemma/terms". The product already
   ships a use-restriction license (Supertonic, OpenRAIL-M) and shows model
-  licenses before download; TranslateGemma follows the same flow, plus a
-  THIRD_PARTY_NOTICES entry with the modified-files notice for the
-  re-exported graph.
-- **Provenance:** upstream `google/translategemma-4b-it` is a gated
-  repository, so catalog installs cannot pull it directly. The project must
-  publish its own non-gated artifact repository containing the text-only
-  int4 ONNX export, pinned at every boundary exactly like the Nemotron
-  Stage A record ([nemotron-asr-stage-a.md](nemotron-asr-stage-a.md)):
-  upstream revision `10042cb0e6e7fdce748996a71dc3dc432a4e0c89`, exact
-  exporter versions and command line, output revision, per-file sizes and
-  SHA-256, verified against the downloaded bytes. Bit-reproducibility of the
-  export is not claimed; pinned bytes are. ⚠️ **Owner decision:** where the
-  project-owned artifact repository lives and who maintains it.
+  licenses before download; TranslateGemma follows the same flow. The
+  obligations that must actually ship: the catalog entry carries the Gemma
+  Terms label and URL and a note that installing accepts them, a
+  THIRD_PARTY_NOTICES entry records the terms and the derivative status of
+  the ONNX export, and the notice "Gemma is provided under and subject to the
+  Gemma Terms of Use found at ai.google.dev/gemma/terms" appears in
+  THIRD_PARTY_NOTICES and in the README's model documentation.
+- **Provenance:** upstream `google/translategemma-4b-it`
+  (`10042cb0e6e7fdce748996a71dc3dc432a4e0c89`) is gated, but the text-only
+  int4 ONNX derivative is published ungated by the same organization the
+  catalog already trusts for Cohere Transcribe:
+  `onnx-community/translategemma-text-4b-it-ONNX` @
+  `f7874a1ac60758872a4f78aac0df95b17b776994`. Catalog artifacts pin that
+  revision in the download URL and carry per-file SHA-256 and sizes, matching
+  the existing entries. The repository also ships `chat_template.jinja`
+  (16,982 bytes) and `tokenizer.json` (20,323,013 bytes), which resolves the
+  prompt-contract question that could not be pinned before. No project-owned
+  artifact repository is needed.
 
 ## Staged delivery
 
-- **T0 — artifact and feasibility gate (blocks everything).** Produce the
-  text-only int4 ONNX export outside the production tree; record the
-  Stage-A-style artifact document; measure cold load, peak RSS, and decode
-  throughput CPU-only on macOS ARM64, Windows x86-64, and Linux x86-64
-  reference hardware; verify the rendered prompt contract against the gated
-  upstream chat template. Owner reviews the numbers against the envelope
-  before implementation starts. If gates fail: llama.cpp contingency
-  decision.
+- **T0 — feasibility spike (blocks everything).** Outside the production
+  tree: download the pinned `q4` and `q4f16` artifacts, verify SHA-256, load
+  each under `ort` on the CPU execution provider, render the prompt from
+  `chat_template.jinja`, and translate a fixed fixture set across several
+  directions. Measure cold load, peak RSS, and decode throughput; confirm
+  output is real translation and not degenerate repetition. Record which
+  quantization wins and the exact tensor I/O contract. Discard the spike code
+  once its findings are written down.
 - **T1 — core feature.** Protocol + worker + adapter + catalog entry +
   capability plumbing + Manage Models collection + `Translate selection…`
-  with the modal, segmentation, chunking, and atomic insertion. All 14
-  directions wired; each direction's *claim* gated by T3 evidence.
-- **T2 — transcript integration.** `Translate last utterance…`, context-menu
-  entry, docs, README language table row.
+  and `Translate note…` with the modal, segmentation, chunking, and atomic
+  insertion. All 14 directions wired; each direction's *claim* gated by T3
+  evidence.
+- **T2 — polish.** Context-menu entry, docs, README language table row,
+  settings surface.
 - **T3 — quality certification.** Fixtures, weekly real-model workflow runs,
   bilingual review, and only then per-direction claims in product copy.
-- **Future waves (explicitly not v1):** automatic source detection, direct
-  non-English pairs, whole-note command, glossary/do-not-translate,
-  dictate→translate chaining, GPU execution per #328.
+- **Future waves (explicitly not v1):** `Translate last utterance…` and
+  dictate→translate chaining, automatic source detection, direct non-English
+  pairs, glossary/do-not-translate, GPU execution per #328.
 
 ## Test and release-readiness gates
 
@@ -495,13 +513,16 @@ Risks:
 
 - **Unmeasured CPU throughput under `ort`** is the top technical risk; T0
   exists to retire it before any production code.
-- Self-hosted export adds a maintenance duty (re-export on upstream fixes,
-  notice obligations) that the current catalog (all third-party-hosted) has
-  not carried before.
-- A 2.5 GB download for an optional feature may skew install-funnel metrics;
+- The pinned export is community-published rather than first-party. It is the
+  same publisher the catalog already depends on for Cohere Transcribe, and
+  the bytes are hash-pinned, but an upstream re-export or deletion is a
+  supply risk that a project-owned mirror would remove. Not worth doing
+  pre-emptively; worth doing if the feature ships broadly.
+- A ~3 GB download for an optional feature may skew install-funnel metrics;
   the Manage Models size display and license gate already mitigate surprise.
+  Owner has accepted the size.
 - Gemma use restrictions are passthrough obligations on users; same class as
-  the shipped OpenRAIL-M model, but the owner should confirm comfort.
+  the shipped OpenRAIL-M model. Owner has accepted them.
 
 Rejected alternatives (strongest first):
 
@@ -522,13 +543,17 @@ Rejected alternatives (strongest first):
 - **Speech→English via Whisper's translate mode**: not general text
   translation.
 
-Blockers before implementation (owner input or evidence required):
+Remaining blockers, after the 2026-07-27 owner decisions:
 
-1. T0 feasibility measurements (throughput/RSS/cold load on x86 and Apple
-   silicon) — nothing here is measured yet.
-2. Artifact hosting: create and own the non-gated export repository.
-3. Sign-off on the 14-direction English-anchored v1 matrix.
-4. Sign-off on preview-first UX (no direct-replace fast path in v1).
-5. Confirm Gemma Terms acceptance and THIRD_PARTY_NOTICES obligations.
-6. Exact chat-template/prompt rendering verified against the gated upstream
-   files during T0 (cannot be pinned in this document).
+1. **T0 feasibility measurements** — throughput, peak RSS, and cold load
+   under `ort` on the CPU execution provider are still unmeasured, and the
+   `q4` vs `q4f16` choice depends on them. This is the only gate that can
+   still change the recommendation.
+2. **Per-direction quality evidence** (T3). No direction may be claimed in
+   the README, catalog copy, or settings UI until its fixtures and bilingual
+   review exist. Wiring a direction and claiming it are separate acts.
+
+Resolved: Gemma Terms acceptance, download size, artifact hosting (the pinned
+`onnx-community` export removes the self-hosting requirement), prompt-contract
+verification (`chat_template.jinja` ships in the pinned repository), and UX
+sign-off (delegated to the implementer within the constraints above).
