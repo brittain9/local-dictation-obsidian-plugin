@@ -1,10 +1,3 @@
-<p align="center">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="docs/media/hero-dark.png">
-    <img src="docs/media/hero.png" alt="Speech Kit" width="720">
-  </picture>
-</p>
-
 # Speech Kit
 
 **The speech and language toolkit for Obsidian.**
@@ -14,6 +7,15 @@ Dictate live. Transcribe meetings. Translate text. Listen to notes. One plugin i
 > **Local Dictation is now Speech Kit.** It is the same plugin with the same local-first foundation, now with a name that fits what it has become. Existing installs, settings, and hotkeys carry over automatically.
 
 [Install Speech Kit from Obsidian Community Plugins](https://obsidian.md/plugins?id=local-dictation)
+
+<br>
+
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/media/hero-dark.png">
+    <img src="docs/media/hero.png" alt="Speech Kit" width="720">
+  </picture>
+</p>
 
 ## What it does
 
