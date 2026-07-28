@@ -6,6 +6,8 @@ The README screenshots are captures of the real plugin in a disposable Obsidian 
 
 `hero.png` and `hero-dark.png` are the README banner (1200x520). The README selects between them with a `<picture>` element keyed on `prefers-color-scheme`, so the light asset is also the fallback wherever `<picture>` is unsupported.
 
+The source export set the wordmark as one word. It was respaced to "Speech Kit" by splitting the canvas at the midpoint of the `h`/`K` gap and moving each half 7px outward, which widens that gap to a word space of 29px while leaving the other letter gaps and the overall centering unchanged. Re-export the wordmark as two words if the logo is ever redrawn.
+
 The dark asset is derived from the light one rather than exported separately. Negating inverts lightness and hue together, so a 180 degree hue rotation restores the original hues, and lifting the black point keeps the background reading as a surface instead of a hole:
 
 ```sh

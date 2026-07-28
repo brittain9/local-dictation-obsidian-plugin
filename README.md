@@ -8,7 +8,7 @@ Dictate live. Transcribe meetings. Translate text. Listen to notes. One plugin i
 
 [Install Speech Kit from Obsidian Community Plugins](https://obsidian.md/plugins?id=local-dictation)
 
-<br>
+&nbsp;
 
 <p align="center">
   <picture>
