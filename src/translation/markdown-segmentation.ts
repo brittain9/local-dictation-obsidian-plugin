@@ -1,9 +1,23 @@
 export type TranslationSegment =
   | { kind: 'protected'; text: string }
-  | { kind: 'translatable'; text: string };
+  | { kind: 'translatable'; protectedSlots: ProtectedSlot[]; text: string };
 
+interface InlinePart {
+  kind: 'protected' | 'translatable';
+  text: string;
+}
+
+interface ProtectedSlot {
+  marker: string;
+  text: string;
+}
+
+const MAX_TRANSLATION_UNIT_CHARACTERS = 2_000;
+const MAX_PROTECTED_SLOTS_PER_UNIT = 512;
+const PRIVATE_USE_START = 0xe000;
+const PRIVATE_USE_END = 0xf8ff;
 const STRUCTURAL_PREFIX = /^(\s*(?:>\s*)*(?:(?:#{1,6}|[-*+]|\d+[.)])\s+)?(?:\[[ xX]\]\s+)?)/u;
-const FENCE = /^\s*(`{3,}|~{3,})/u;
+const FENCE = /^ {0,3}(`{3,}|~{3,})/u;
 const BLOCK_MATH = /^\s*\$\$\s*$/u;
 const FRONTMATTER_DELIMITER = /^---\s*$/u;
 const HORIZONTAL_RULE = /^\s{0,3}(?:(?:-\s*){3,}|(?:\*\s*){3,}|(?:_\s*){3,})$/u;
@@ -23,33 +37,32 @@ export function segmentMarkdownForTranslation(markdown: string): TranslationSegm
 
     if (index === 0 && FRONTMATTER_DELIMITER.test(line)) {
       inFrontmatter = true;
-      pushSegment(segments, 'protected', line);
+      pushProtected(segments, line);
     } else if (inFrontmatter) {
-      pushSegment(segments, 'protected', line);
+      pushProtected(segments, line);
       if (FRONTMATTER_DELIMITER.test(line)) inFrontmatter = false;
     } else if (blockFence !== null) {
-      pushSegment(segments, 'protected', line);
-      const closingFence = line.match(FENCE)?.[1];
-      if (closingFence?.startsWith(blockFence[0] ?? '') === true) blockFence = null;
+      pushProtected(segments, line);
+      if (isClosingFence(line, blockFence)) blockFence = null;
     } else if (inMathBlock) {
-      pushSegment(segments, 'protected', line);
+      pushProtected(segments, line);
       if (BLOCK_MATH.test(line)) inMathBlock = false;
     } else {
       const openingFence = line.match(FENCE)?.[1];
       if (openingFence !== undefined) {
         blockFence = openingFence;
-        pushSegment(segments, 'protected', line);
+        pushProtected(segments, line);
       } else if (BLOCK_MATH.test(line)) {
         inMathBlock = true;
-        pushSegment(segments, 'protected', line);
+        pushProtected(segments, line);
       } else if (line.trim().length === 0 || HORIZONTAL_RULE.test(line)) {
-        pushSegment(segments, 'protected', line);
+        pushProtected(segments, line);
       } else {
         segmentInlineMarkdown(line, segments);
       }
     }
 
-    if (hasNewline) pushSegment(segments, 'protected', '\n');
+    if (hasNewline) pushProtected(segments, '\n');
   }
   return segments;
 }
@@ -76,7 +89,7 @@ export function rebuildTranslatedMarkdown(
       if (translation === undefined) {
         throw new Error('The translation runtime returned too few translated sections.');
       }
-      return translation;
+      return restoreProtectedSlots(translation, segment.protectedSlots);
     })
     .join('');
   if (translationIndex !== translations.length) {
@@ -87,9 +100,21 @@ export function rebuildTranslatedMarkdown(
 
 function segmentInlineMarkdown(line: string, segments: TranslationSegment[]): void {
   const prefix = line.match(STRUCTURAL_PREFIX)?.[1] ?? '';
-  if (prefix.length > 0) pushSegment(segments, 'protected', prefix);
-  let remaining = line.slice(prefix.length);
+  if (prefix.length > 0) pushProtected(segments, prefix);
 
+  const remainder = line.slice(prefix.length);
+  const trailing = remainder.match(/\s+$/u)?.[0] ?? '';
+  const body = trailing.length === 0 ? remainder : remainder.slice(0, -trailing.length);
+  const parts = tokenizeInlineMarkdown(body);
+  for (const unit of chunkInlineParts(parts)) {
+    pushTranslationUnit(segments, unit);
+  }
+  pushProtected(segments, trailing);
+}
+
+function tokenizeInlineMarkdown(value: string): InlinePart[] {
+  const parts: InlinePart[] = [];
+  let remaining = value;
   while (remaining.length > 0) {
     const link = remaining.match(/^(!?)\[([^\]]*)\]\(([^)\n]*)\)/u);
     if (link !== null) {
@@ -97,29 +122,119 @@ function segmentInlineMarkdown(line: string, segments: TranslationSegment[]): vo
       const imageMarker = link[1] ?? '';
       const label = link[2] ?? '';
       const destination = link[3] ?? '';
-      pushSegment(segments, 'protected', `${imageMarker}[`);
-      if (imageMarker.length > 0) {
-        pushSegment(segments, 'protected', label);
-      } else {
-        pushTranslatable(segments, label);
-      }
-      pushSegment(segments, 'protected', `](${destination})`);
+      pushPart(parts, 'protected', `${imageMarker}[`);
+      pushPart(parts, imageMarker.length > 0 ? 'protected' : 'translatable', label);
+      pushPart(parts, 'protected', `](${destination})`);
       remaining = remaining.slice(whole.length);
       continue;
     }
 
     const protectedToken = matchProtectedToken(remaining);
     if (protectedToken !== null) {
-      pushSegment(segments, 'protected', protectedToken);
+      pushPart(parts, 'protected', protectedToken);
       remaining = remaining.slice(protectedToken.length);
       continue;
     }
 
     const nextProtectedIndex = findNextProtectedIndex(remaining);
     const length = nextProtectedIndex <= 0 ? 1 : nextProtectedIndex;
-    pushTranslatable(segments, remaining.slice(0, length));
+    pushPart(parts, 'translatable', remaining.slice(0, length));
     remaining = remaining.slice(length);
   }
+  return parts;
+}
+
+function chunkInlineParts(parts: readonly InlinePart[]): InlinePart[][] {
+  const chunks: InlinePart[][] = [];
+  let current: InlinePart[] = [];
+  let currentCharacters = 0;
+  let currentProtectedSlots = 0;
+
+  const flush = (): void => {
+    if (current.length > 0) chunks.push(current);
+    current = [];
+    currentCharacters = 0;
+    currentProtectedSlots = 0;
+  };
+
+  for (const part of parts) {
+    if (part.kind === 'protected') {
+      if (
+        currentProtectedSlots >= MAX_PROTECTED_SLOTS_PER_UNIT ||
+        currentCharacters >= MAX_TRANSLATION_UNIT_CHARACTERS
+      ) {
+        flush();
+      }
+      pushPart(current, part.kind, part.text);
+      currentProtectedSlots += 1;
+      currentCharacters += 1;
+      continue;
+    }
+
+    let remaining = part.text;
+    while (remaining.length > 0) {
+      const capacity = MAX_TRANSLATION_UNIT_CHARACTERS - currentCharacters;
+      if (capacity <= 0) {
+        flush();
+        continue;
+      }
+      if (remaining.length <= capacity) {
+        pushPart(current, part.kind, remaining);
+        currentCharacters += remaining.length;
+        break;
+      }
+      const splitAt = translationBreak(remaining, capacity);
+      pushPart(current, part.kind, remaining.slice(0, splitAt));
+      currentCharacters += splitAt;
+      remaining = remaining.slice(splitAt);
+      flush();
+    }
+  }
+  flush();
+  return chunks;
+}
+
+function pushTranslationUnit(segments: TranslationSegment[], parts: readonly InlinePart[]): void {
+  if (!parts.some((part) => part.kind === 'translatable' && /[\p{L}\p{N}]/u.test(part.text))) {
+    pushProtected(segments, parts.map((part) => part.text).join(''));
+    return;
+  }
+
+  const protectedSlots: ProtectedSlot[] = [];
+  const usedCharacters = new Set(
+    parts.filter((part) => part.kind === 'translatable').flatMap((part) => [...part.text]),
+  );
+  const text = parts
+    .map((part) => {
+      if (part.kind === 'translatable') return part.text;
+      const marker = nextPrivateUseMarker(usedCharacters);
+      usedCharacters.add(marker);
+      protectedSlots.push({ marker, text: part.text });
+      return marker;
+    })
+    .join('');
+  segments.push({ kind: 'translatable', protectedSlots, text });
+}
+
+function restoreProtectedSlots(
+  translation: string,
+  protectedSlots: readonly ProtectedSlot[],
+): string {
+  let previousMarkerIndex = -1;
+  for (const slot of protectedSlots) {
+    const markerIndex = translation.indexOf(slot.marker);
+    if (
+      markerIndex <= previousMarkerIndex ||
+      translation.indexOf(slot.marker, markerIndex + slot.marker.length) >= 0
+    ) {
+      throw new Error('The translation runtime changed protected Markdown slots.');
+    }
+    previousMarkerIndex = markerIndex;
+  }
+  return protectedSlots.reduce(
+    (restored, slot) => restored.replace(slot.marker, () => slot.text),
+    translation,
+  );
 }
 
 function matchProtectedToken(value: string): string | null {
@@ -127,6 +242,7 @@ function matchProtectedToken(value: string): string | null {
     /^\[![\p{L}\p{N}_-]+[+-]?\]/u,
     /^!?\[\[[^\]\n]+\]\]/u,
     /^(`+)[\s\S]*?\1/u,
+    /^\$\$[^$\n]+?\$\$/u,
     /^\$[^$\n]+\$/u,
     /^https?:\/\/[^\s<>()]+/u,
     /^<[^>\n]+>/u,
@@ -166,33 +282,50 @@ function findNextProtectedIndex(value: string): number {
   return index;
 }
 
-function pushTranslatable(segments: TranslationSegment[], text: string): void {
-  if (text.trim().length === 0) {
-    pushSegment(segments, 'protected', text);
-    return;
-  }
-  const leading = text.match(/^\s*/u)?.[0] ?? '';
-  const trailing = text.match(/\s*$/u)?.[0] ?? '';
-  const body = text.slice(leading.length, text.length - trailing.length);
-  pushSegment(segments, 'protected', leading);
-  if (/[\p{L}\p{N}]/u.test(body)) {
-    pushSegment(segments, 'translatable', body);
-  } else {
-    pushSegment(segments, 'protected', body);
-  }
-  pushSegment(segments, 'protected', trailing);
+function isClosingFence(line: string, openingFence: string): boolean {
+  const fenceCharacter = openingFence[0];
+  if (fenceCharacter !== '`' && fenceCharacter !== '~') return false;
+  return new RegExp(`^ {0,3}${fenceCharacter}{${openingFence.length},}\\s*$`, 'u').test(line);
 }
 
-function pushSegment(
-  segments: TranslationSegment[],
-  kind: TranslationSegment['kind'],
-  text: string,
-): void {
+function translationBreak(value: string, capacity: number): number {
+  if (capacity <= 0) return 1;
+  const candidate = value.slice(0, capacity);
+  const sentenceBreak = Math.max(
+    candidate.lastIndexOf('. '),
+    candidate.lastIndexOf('! '),
+    candidate.lastIndexOf('? '),
+    candidate.lastIndexOf('。'),
+  );
+  if (sentenceBreak >= Math.floor(capacity / 2)) return sentenceBreak + 1;
+  const whitespaceBreak = candidate.search(/\s+\S*$/u);
+  return whitespaceBreak > 0 ? whitespaceBreak : capacity;
+}
+
+function nextPrivateUseMarker(usedCharacters: ReadonlySet<string>): string {
+  for (let codePoint = PRIVATE_USE_START; codePoint <= PRIVATE_USE_END; codePoint += 1) {
+    const marker = String.fromCodePoint(codePoint);
+    if (!usedCharacters.has(marker)) return marker;
+  }
+  throw new Error('The source text uses every available protected Markdown marker.');
+}
+
+function pushPart(parts: InlinePart[], kind: InlinePart['kind'], text: string): void {
   if (text.length === 0) return;
-  const previous = segments.at(-1);
+  const previous = parts.at(-1);
   if (previous?.kind === kind) {
     previous.text += text;
-    return;
+  } else {
+    parts.push({ kind, text });
   }
-  segments.push({ kind, text });
+}
+
+function pushProtected(segments: TranslationSegment[], text: string): void {
+  if (text.length === 0) return;
+  const previous = segments.at(-1);
+  if (previous?.kind === 'protected') {
+    previous.text += text;
+  } else {
+    segments.push({ kind: 'protected', text });
+  }
 }

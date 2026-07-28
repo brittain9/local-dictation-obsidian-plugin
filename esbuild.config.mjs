@@ -2,6 +2,8 @@ import { builtinModules } from 'node:module';
 import process from 'node:process';
 import { build, context } from 'esbuild';
 
+import { bundleBergamotWorker } from './scripts/bundle-bergamot-worker.mjs';
+
 const args = new Set(process.argv.slice(2));
 const isWatch = args.has('watch');
 const isProduction = args.has('production');
@@ -138,26 +140,10 @@ function bergamotWorkerSourcePlugin() {
           namespace: 'bergamot-worker-source',
         },
         async () => {
-          const bundledWorker = await build({
-            bundle: true,
-            entryPoints: ['src/translation/bergamot.worker.ts'],
-            format: 'iife',
-            logLevel: 'silent',
-            minify: isProduction,
-            platform: 'browser',
-            sourcemap: false,
-            target: 'es2022',
-            treeShaking: true,
-            write: false,
-          });
-          const workerSource = bundledWorker.outputFiles[0]?.text;
-
-          if (workerSource === undefined) {
-            throw new Error('Failed to bundle the Bergamot translation worker source.');
-          }
-
           return {
-            contents: `export const BERGAMOT_WORKER_SOURCE = ${JSON.stringify(workerSource)};`,
+            contents: `export const BERGAMOT_WORKER_SOURCE = ${JSON.stringify(
+              await bundleBergamotWorker({ minify: isProduction }),
+            )};`,
             loader: 'js',
           };
         },

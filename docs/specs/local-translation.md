@@ -133,6 +133,15 @@ Markdown link labels and ordinary prose are translated. A failed, canceled, or
 partial operation never writes to the editor. V1 caps one operation at 50,000
 source characters and warns above 10,000.
 
+Each ordinary Markdown line remains one contextual translation unit whenever
+possible. Protected inline syntax is represented by unique Unicode private-use
+markers during inference and restored only when every marker returns exactly
+once and in order. This lets the model translate the surrounding sentence as a
+whole without exposing code, destinations, or Obsidian syntax. Missing,
+duplicated, or reordered markers fail the preview before any editor action is
+available. Very long lines split at sentence or whitespace boundaries into
+units of at most 2,000 characters.
+
 Proper nouns and terminology rely on model behavior in v1. The real-model
 smoke fixtures exposed occasional stylistic or terminology blemishes; the UI
 therefore describes the result as a preview, not guaranteed publication-ready
@@ -170,7 +179,7 @@ segmentation, cancellation, and modal lifecycle. `translateWithBergamot`:
 3. creates a Blob-backed classic Web Worker from the pinned MPL glue plus the
    separately bundled worker bootstrap;
 4. transfers ArrayBuffers rather than cloning them;
-5. batches all translatable spans into one Bergamot call;
+5. batches all bounded contextual translation units into one Bergamot call;
 6. terminates the worker on completion, error, or cancellation.
 
 Per-operation loading is intentional. Measured model initialization is tens of
@@ -231,6 +240,19 @@ Required before merge:
 - Command availability tests.
 - Model install/remove and missing-model recovery review.
 - Live Obsidian test-vault check on the built bundle.
+
+The real-model worker and Markdown smoke is deliberately excluded from default
+CI, like the repository's ignored native-model suites. Run it explicitly after
+installing the managed translation pack:
+
+```sh
+npm run test:translation:e2e
+```
+
+The script bundles the same worker and segmentation code used by production,
+loads the pinned managed installation, translates real Markdown, checks
+English-to-Spanish meaning, and verifies that code, wikilinks, tags, math, link
+destinations, and table structure survive byte-for-byte.
 
 Recommended follow-up evidence:
 

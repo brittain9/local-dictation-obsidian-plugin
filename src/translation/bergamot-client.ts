@@ -52,8 +52,12 @@ export async function translateWithBergamot(
   const workerUrl = URL.createObjectURL(
     new Blob([glueSource, '\n', BERGAMOT_WORKER_SOURCE], { type: 'text/javascript' }),
   );
-  const worker = new Worker(workerUrl);
-  URL.revokeObjectURL(workerUrl);
+  let worker: Worker;
+  try {
+    worker = new Worker(workerUrl);
+  } finally {
+    URL.revokeObjectURL(workerUrl);
+  }
 
   const request: BergamotTranslateRequest = {
     type: 'translate',
@@ -68,7 +72,10 @@ export async function translateWithBergamot(
   };
 
   return new Promise<string[]>((resolve, reject) => {
+    let settled = false;
     const finish = <T>(callback: (value: T) => void, value: T): void => {
+      if (settled) return;
+      settled = true;
       options.signal.removeEventListener('abort', onAbort);
       worker.terminate();
       callback(value);
@@ -106,7 +113,11 @@ export async function translateWithBergamot(
       request.lexicon,
       ...request.vocabularies,
     ];
-    worker.postMessage(request, transferable);
+    try {
+      worker.postMessage(request, transferable);
+    } catch (error) {
+      finish(reject, error instanceof Error ? error : new Error(String(error)));
+    }
   });
 }
 
