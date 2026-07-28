@@ -12,6 +12,7 @@ import {
   type TranslationLanguage,
 } from './languages';
 import {
+  protectedMarkerModeForLanguages,
   rebuildTranslatedMarkdown,
   segmentMarkdownForTranslation,
   translatableTexts,
@@ -133,7 +134,12 @@ export class TranslationController {
     );
     if (installed === null) return { kind: 'missing_model' };
 
-    const segments = segmentMarkdownForTranslation(source);
+    const segments = segmentMarkdownForTranslation(source, {
+      protectedMarkerMode: protectedMarkerModeForLanguages(
+        options.sourceLanguage,
+        options.targetLanguage,
+      ),
+    });
     const texts = translatableTexts(segments);
     if (texts.length === 0) return { kind: 'translated', text: source };
 

@@ -2,6 +2,12 @@ export type TranslationSegment =
   | { kind: 'protected'; text: string }
   | { kind: 'translatable'; protectedSlots: ProtectedSlot[]; text: string };
 
+type ProtectedMarkerMode = 'private-use' | 'synthetic-url';
+
+interface MarkdownTranslationOptions {
+  protectedMarkerMode?: ProtectedMarkerMode;
+}
+
 interface InlinePart {
   kind: 'protected' | 'translatable';
   text: string;
@@ -16,14 +22,19 @@ const MAX_TRANSLATION_UNIT_CHARACTERS = 2_000;
 const MAX_PROTECTED_SLOTS_PER_UNIT = 512;
 const PRIVATE_USE_START = 0xe000;
 const PRIVATE_USE_END = 0xf8ff;
+const SYNTHETIC_URL_MARKER_CHARACTER_BUDGET = 'https://511.invalid'.length;
 const STRUCTURAL_PREFIX = /^(\s*(?:>\s*)*(?:(?:#{1,6}|[-*+]|\d+[.)])\s+)?(?:\[[ xX]\]\s+)?)/u;
 const FENCE = /^ {0,3}(`{3,}|~{3,})/u;
 const BLOCK_MATH = /^\s*\$\$\s*$/u;
 const FRONTMATTER_DELIMITER = /^---\s*$/u;
 const HORIZONTAL_RULE = /^\s{0,3}(?:(?:-\s*){3,}|(?:\*\s*){3,}|(?:_\s*){3,})$/u;
 
-export function segmentMarkdownForTranslation(markdown: string): TranslationSegment[] {
+export function segmentMarkdownForTranslation(
+  markdown: string,
+  options: MarkdownTranslationOptions = {},
+): TranslationSegment[] {
   const segments: TranslationSegment[] = [];
+  const markerMode = options.protectedMarkerMode ?? 'private-use';
   const lines = markdown.match(/[^\n]*(?:\n|$)/gu) ?? [];
   let blockFence: string | null = null;
   let inFrontmatter = false;
@@ -58,7 +69,7 @@ export function segmentMarkdownForTranslation(markdown: string): TranslationSegm
       } else if (line.trim().length === 0 || HORIZONTAL_RULE.test(line)) {
         pushProtected(segments, line);
       } else {
-        segmentInlineMarkdown(line, segments);
+        segmentInlineMarkdown(line, segments, markerMode);
       }
     }
 
@@ -74,6 +85,13 @@ export function translatableTexts(segments: readonly TranslationSegment[]): stri
         segment.kind === 'translatable',
     )
     .map((segment) => segment.text);
+}
+
+export function protectedMarkerModeForLanguages(
+  sourceLanguage: string,
+  targetLanguage: string,
+): ProtectedMarkerMode {
+  return sourceLanguage === 'ja' || targetLanguage === 'ja' ? 'synthetic-url' : 'private-use';
 }
 
 export function rebuildTranslatedMarkdown(
@@ -98,7 +116,11 @@ export function rebuildTranslatedMarkdown(
   return output;
 }
 
-function segmentInlineMarkdown(line: string, segments: TranslationSegment[]): void {
+function segmentInlineMarkdown(
+  line: string,
+  segments: TranslationSegment[],
+  markerMode: ProtectedMarkerMode,
+): void {
   const prefix = line.match(STRUCTURAL_PREFIX)?.[1] ?? '';
   if (prefix.length > 0) pushProtected(segments, prefix);
 
@@ -106,8 +128,8 @@ function segmentInlineMarkdown(line: string, segments: TranslationSegment[]): vo
   const trailing = remainder.match(/\s+$/u)?.[0] ?? '';
   const body = trailing.length === 0 ? remainder : remainder.slice(0, -trailing.length);
   const parts = tokenizeInlineMarkdown(body);
-  for (const unit of chunkInlineParts(parts)) {
-    pushTranslationUnit(segments, unit);
+  for (const unit of chunkInlineParts(parts, markerMode)) {
+    pushTranslationUnit(segments, unit, markerMode);
   }
   pushProtected(segments, trailing);
 }
@@ -144,7 +166,10 @@ function tokenizeInlineMarkdown(value: string): InlinePart[] {
   return parts;
 }
 
-function chunkInlineParts(parts: readonly InlinePart[]): InlinePart[][] {
+function chunkInlineParts(
+  parts: readonly InlinePart[],
+  markerMode: ProtectedMarkerMode,
+): InlinePart[][] {
   const chunks: InlinePart[][] = [];
   let current: InlinePart[] = [];
   let currentCharacters = 0;
@@ -167,7 +192,8 @@ function chunkInlineParts(parts: readonly InlinePart[]): InlinePart[][] {
       }
       pushPart(current, part.kind, part.text);
       currentProtectedSlots += 1;
-      currentCharacters += 1;
+      currentCharacters +=
+        markerMode === 'synthetic-url' ? SYNTHETIC_URL_MARKER_CHARACTER_BUDGET : 1;
       continue;
     }
 
@@ -194,21 +220,24 @@ function chunkInlineParts(parts: readonly InlinePart[]): InlinePart[][] {
   return chunks;
 }
 
-function pushTranslationUnit(segments: TranslationSegment[], parts: readonly InlinePart[]): void {
+function pushTranslationUnit(
+  segments: TranslationSegment[],
+  parts: readonly InlinePart[],
+  markerMode: ProtectedMarkerMode,
+): void {
   if (!parts.some((part) => part.kind === 'translatable' && /[\p{L}\p{N}]/u.test(part.text))) {
     pushProtected(segments, parts.map((part) => part.text).join(''));
     return;
   }
 
   const protectedSlots: ProtectedSlot[] = [];
-  const usedCharacters = new Set(
-    parts.filter((part) => part.kind === 'translatable').flatMap((part) => [...part.text]),
-  );
+  const sourceText = parts.map((part) => part.text).join('');
+  const usedMarkers = new Set<string>();
   const text = parts
     .map((part) => {
       if (part.kind === 'translatable') return part.text;
-      const marker = nextPrivateUseMarker(usedCharacters);
-      usedCharacters.add(marker);
+      const marker = nextProtectedMarker(sourceText, usedMarkers, markerMode);
+      usedMarkers.add(marker);
       protectedSlots.push({ marker, text: part.text });
       return marker;
     })
@@ -302,10 +331,21 @@ function translationBreak(value: string, capacity: number): number {
   return whitespaceBreak > 0 ? whitespaceBreak : capacity;
 }
 
-function nextPrivateUseMarker(usedCharacters: ReadonlySet<string>): string {
-  for (let codePoint = PRIVATE_USE_START; codePoint <= PRIVATE_USE_END; codePoint += 1) {
-    const marker = String.fromCodePoint(codePoint);
-    if (!usedCharacters.has(marker)) return marker;
+function nextProtectedMarker(
+  sourceText: string,
+  usedMarkers: ReadonlySet<string>,
+  markerMode: ProtectedMarkerMode,
+): string {
+  if (markerMode === 'private-use') {
+    for (let codePoint = PRIVATE_USE_START; codePoint <= PRIVATE_USE_END; codePoint += 1) {
+      const marker = String.fromCodePoint(codePoint);
+      if (!sourceText.includes(marker) && !usedMarkers.has(marker)) return marker;
+    }
+    throw new Error('The source text uses every available protected Markdown marker.');
+  }
+  for (let index = 0; index < MAX_PROTECTED_SLOTS_PER_UNIT; index += 1) {
+    const marker = `https://${index}.invalid`;
+    if (!sourceText.includes(marker) && !usedMarkers.has(marker)) return marker;
   }
   throw new Error('The source text uses every available protected Markdown marker.');
 }

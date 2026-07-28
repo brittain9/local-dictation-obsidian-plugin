@@ -1,12 +1,19 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  protectedMarkerModeForLanguages,
   rebuildTranslatedMarkdown,
   segmentMarkdownForTranslation,
   translatableTexts,
 } from '../src/translation/markdown-segmentation';
 
 describe('Markdown translation segmentation', () => {
+  it('uses Japanese-safe markers only for Japanese pairs', () => {
+    expect(protectedMarkerModeForLanguages('en', 'ja')).toBe('synthetic-url');
+    expect(protectedMarkerModeForLanguages('ja', 'en')).toBe('synthetic-url');
+    expect(protectedMarkerModeForLanguages('en', 'es')).toBe('private-use');
+  });
+
   it('preserves note structure and protected content exactly', () => {
     const source = `---
 title: Daily note
@@ -100,6 +107,18 @@ The value $$x + y$$ stays literal.
     expect(() => rebuildTranslatedMarkdown(segments, [reordered as string])).toThrow(
       /changed protected Markdown slots/u,
     );
+  });
+
+  it('uses distinct Japanese-safe markers when source text contains a marker candidate', () => {
+    const source = 'Keep https://0.invalid and `code` unchanged.';
+    const segments = segmentMarkdownForTranslation(source, {
+      protectedMarkerMode: 'synthetic-url',
+    });
+    const texts = translatableTexts(segments);
+
+    expect(texts[0]).not.toContain('https://0.invalid');
+    expect(texts[0]).toContain('https://1.invalid');
+    expect(rebuildTranslatedMarkdown(segments, texts)).toBe(source);
   });
 
   it('rejects mismatched runtime output', () => {

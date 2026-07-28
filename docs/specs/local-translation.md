@@ -134,13 +134,15 @@ partial operation never writes to the editor. V1 caps one operation at 50,000
 source characters and warns above 10,000.
 
 Each ordinary Markdown line remains one contextual translation unit whenever
-possible. Protected inline syntax is represented by unique Unicode private-use
-markers during inference and restored only when every marker returns exactly
-once and in order. This lets the model translate the surrounding sentence as a
-whole without exposing code, destinations, or Obsidian syntax. Missing,
-duplicated, or reordered markers fail the preview before any editor action is
-available. Very long lines split at sentence or whitespace boundaries into
-units of at most 2,000 characters.
+possible. Protected inline syntax is represented by unique private-use markers
+during inference. Because the Japanese tokenizer drops private-use characters,
+Japanese pairs instead use synthetic URL markers that those pair vocabularies
+copy exactly. Markers are restored only when every marker returns exactly once
+and in order. This lets the model translate the surrounding sentence as a whole
+without exposing code, destinations, or Obsidian syntax. Missing, duplicated,
+or reordered markers fail the preview before any editor action is available.
+Very long lines split at sentence or whitespace boundaries into units of at
+most 2,000 characters.
 
 Proper nouns and terminology rely on model behavior in v1. The real-model
 smoke fixtures exposed occasional stylistic or terminology blemishes; the UI

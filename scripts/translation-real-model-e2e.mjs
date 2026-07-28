@@ -13,8 +13,9 @@ const MODEL_TRIPLE = {
   familyId: 'firefox_translations',
   modelId: 'firefox_translations_release_2026_07',
 };
-const SOURCE_LANGUAGE = 'en';
-const TARGET_LANGUAGE = 'es';
+const SOURCE_LANGUAGE = process.env.TRANSLATION_SOURCE_LANGUAGE?.trim() || 'en';
+const TARGET_LANGUAGE =
+  process.argv[2]?.trim() || process.env.TRANSLATION_TARGET_LANGUAGE?.trim() || 'es';
 const TEST_MARKDOWN = `The meeting starts at nine tomorrow morning.
 Keep \`npm run check\`, [[Local Dictation]], #release, and $x + y$ unchanged.
 Read [the specification](https://example.com/spec).
@@ -46,9 +47,15 @@ for (const [key, value] of Object.entries(MODEL_TRIPLE)) {
 }
 
 const pairPrefix = `${SOURCE_LANGUAGE}_${TARGET_LANGUAGE}`;
-const { rebuildTranslatedMarkdown, segmentMarkdownForTranslation, translatableTexts } =
-  await loadSegmentationModule();
-const segments = segmentMarkdownForTranslation(TEST_MARKDOWN);
+const {
+  protectedMarkerModeForLanguages,
+  rebuildTranslatedMarkdown,
+  segmentMarkdownForTranslation,
+  translatableTexts,
+} = await loadSegmentationModule();
+const segments = segmentMarkdownForTranslation(TEST_MARKDOWN, {
+  protectedMarkerMode: protectedMarkerModeForLanguages(SOURCE_LANGUAGE, TARGET_LANGUAGE),
+});
 const texts = translatableTexts(segments);
 const runtime = requireArtifact('runtime');
 const runtimeGlue = requireArtifact('runtime_glue');
@@ -106,11 +113,12 @@ try {
       { cause: error },
     );
   }
-  const combined = translatedMarkdown.toLocaleLowerCase('es');
+  const combined = translatedMarkdown.toLocaleLowerCase(TARGET_LANGUAGE);
+  const semanticChecks =
+    TARGET_LANGUAGE !== 'es' || (combined.includes('mañana') && combined.includes('nueve'));
   if (
     result.translations.length !== texts.length ||
-    !combined.includes('mañana') ||
-    !combined.includes('nueve') ||
+    !semanticChecks ||
     !translatedMarkdown.includes('`npm run check`') ||
     !translatedMarkdown.includes('[[Local Dictation]]') ||
     !translatedMarkdown.includes('#release') ||
