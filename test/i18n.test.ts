@@ -13,7 +13,7 @@ describe('i18n', () => {
         engineLabel: '2 speech engines',
       }),
     ).toBe(
-      'Download the current 2 speech engines to match this version of Local Dictation. Existing installs are replaced in place.',
+      'Download the current 2 speech engines to match this version of Speech Kit. Existing installs are replaced in place.',
     );
   });
 

@@ -40,18 +40,18 @@ export const de = {
   'notice.sidecarVersionDrift.cuda':
     'Auf {version} aktualisiert, aber die installierte Sprach-Engine CUDA ist veraltet. Aktualisieren Sie jetzt, um sie synchron zu halten.',
   'notice.surfaceDesynchronized':
-    'Das Diktat wurde gestoppt, weil sich die Notiz auf eine Weise geändert hat, die Local Dictation nicht sicher nachverfolgen konnte. Starten Sie das Diktat erneut, um fortzufahren.',
+    'Das Diktat wurde gestoppt, weil sich die Notiz auf eine Weise geändert hat, die Speech Kit nicht sicher nachverfolgen konnte. Starten Sie das Diktat erneut, um fortzufahren.',
   'notice.targetNoteClosed':
     'Das Diktat wurde angehalten, weil die Zielnotiz geschlossen oder ersetzt wurde. Starten Sie das Diktat erneut, um fortzufahren.',
   'notice.targetNoteDeleted':
     'Das Diktat wurde gestoppt, da die Zielnotiz gelöscht wurde. Stellen Sie die Notiz wieder her oder erstellen Sie sie neu und beginnen Sie dann erneut mit dem Diktat.',
   'notice.transcriptWriteFailed':
-    'Das Diktat wurde gestoppt, weil Local Dictation nicht sicher in die Notiz schreiben konnte. Starten Sie das Diktat erneut, um fortzufahren.',
+    'Das Diktat wurde gestoppt, weil Speech Kit nicht sicher in die Notiz schreiben konnte. Starten Sie das Diktat erneut, um fortzufahren.',
   'setup.sidecar.cpu.firstRun.body':
-    'Für Local Dictation ist ein einmaliger Download der Speech-to-Text-Engine CPU aus den GitHub-Versionen erforderlich. Nach Abschluss dieses Vorgangs wird die Transkription lokal auf Ihrem Computer ausgeführt. Sie können die CUDA-Beschleunigung später über die Einstellungen installieren.',
+    'Für Speech Kit ist ein einmaliger Download der Speech-to-Text-Engine CPU aus den GitHub-Versionen erforderlich. Nach Abschluss dieses Vorgangs wird die Transkription lokal auf Ihrem Computer ausgeführt. Sie können die CUDA-Beschleunigung später über die Einstellungen installieren.',
   'setup.sidecar.cpu.firstRun.primaryButton': 'CPU-Sidecar herunterladen',
-  'setup.sidecar.cpu.firstRun.success': 'Local Dictation sidecar installiert und gestartet.',
-  'setup.sidecar.cpu.firstRun.title': 'Beenden Sie die Einrichtung von Local Dictation',
+  'setup.sidecar.cpu.firstRun.success': 'Speech Kit sidecar installiert und gestartet.',
+  'setup.sidecar.cpu.firstRun.title': 'Beenden Sie die Einrichtung von Speech Kit',
   'setup.sidecar.cpu.install.body':
     'Laden Sie die CPU Speech-to-Text-Engine aus den GitHub-Versionen herunter. Nach Abschluss dieses Vorgangs wird die Transkription lokal auf Ihrem Computer ausgeführt.',
   'setup.sidecar.cpu.install.primaryButton': 'CPU-Sidecar herunterladen',
@@ -66,10 +66,10 @@ export const de = {
   'setup.sidecar.cuda.install.success': 'CUDA sidecar installiert und gestartet.',
   'setup.sidecar.cuda.install.title': 'CUDA-Beschleunigung installieren',
   'setup.sidecar.mac.firstRun.body':
-    'Local Dictation benötigt einen einmaligen Download seiner Speech-to-Text-Engine aus den GitHub-Versionen. Nach der Installation läuft die Transkription vollständig auf Ihrem Mac – Audio verlässt nie Ihren Computer.',
+    'Speech Kit benötigt einen einmaligen Download seiner Speech-to-Text-Engine aus den GitHub-Versionen. Nach der Installation läuft die Transkription vollständig auf Ihrem Mac – Audio verlässt nie Ihren Computer.',
   'setup.sidecar.mac.firstRun.primaryButton': 'Sidecar herunterladen',
-  'setup.sidecar.mac.firstRun.success': 'Local Dictation sidecar installiert und gestartet.',
-  'setup.sidecar.mac.firstRun.title': 'Beenden Sie die Einrichtung von Local Dictation',
+  'setup.sidecar.mac.firstRun.success': 'Speech Kit sidecar installiert und gestartet.',
+  'setup.sidecar.mac.firstRun.title': 'Beenden Sie die Einrichtung von Speech Kit',
   'setup.sidecar.mac.install.body':
     'Laden Sie die Speech-to-Text-Engine aus den GitHub-Versionen herunter. Nach Abschluss dieses Vorgangs wird die Transkription lokal auf Ihrem Mac ausgeführt.',
   'setup.sidecar.mac.install.primaryButton': 'Sidecar herunterladen',
@@ -81,16 +81,14 @@ export const de = {
   'setup.sidecar.mac.reinstall.success': 'Sidecar neu installiert und neu gestartet.',
   'setup.sidecar.mac.reinstall.title': 'Sidecar neu installieren',
   'setup.sidecar.update.body':
-    'Laden Sie das aktuelle {engineLabel} herunter, um dieser Version von Local Dictation zu entsprechen. Vorhandene Installationen werden vor Ort ersetzt.',
+    'Laden Sie das aktuelle {engineLabel} herunter, um dieser Version von Speech Kit zu entsprechen. Vorhandene Installationen werden vor Ort ersetzt.',
   'setup.sidecar.update.engine.cpuAndCuda': 'Sprach-Engines CPU und CUDA',
   'setup.sidecar.update.engine.cuda': 'CUDA Sprach-Engine',
   'setup.sidecar.update.engine.default': 'Sprach-Engine',
   'setup.sidecar.update.primaryButton_one': 'Sprach-Engine aktualisieren',
   'setup.sidecar.update.primaryButton_other': 'Sprach-Engines aktualisieren',
-  'setup.sidecar.update.success_one':
-    'Local Dictation-Sprach-Engine aktualisiert und neu gestartet.',
-  'setup.sidecar.update.success_other':
-    'Local Dictation-Sprach-Engines aktualisiert und neu gestartet.',
+  'setup.sidecar.update.success_one': 'Speech Kit-Sprach-Engine aktualisiert und neu gestartet.',
+  'setup.sidecar.update.success_other': 'Speech Kit-Sprach-Engines aktualisiert und neu gestartet.',
   'setup.sidecar.update.title_one': 'Sprach-Engine aktualisieren',
   'setup.sidecar.update.title_other': 'Sprach-Engines aktualisieren',
   'audio.microphone.permissionDeniedMac':
@@ -288,9 +286,9 @@ export const de = {
   'settings.install.installingSidecarMac': 'Installation von sidecar',
   'settings.install.cancelling': 'Wird abgebrochen...',
   'settings.install.cancel': 'Stornieren',
-  'settings.missingSidecar.name': 'Richten Sie Local Dictation ein',
+  'settings.missingSidecar.name': 'Richten Sie Speech Kit ein',
   'settings.missingSidecar.desc':
-    'Local Dictation ist noch nicht fertig. Führen Sie den Setup-Assistenten aus, um die Sprach-Engine und ein Modell zu installieren.',
+    'Speech Kit ist noch nicht fertig. Führen Sie den Setup-Assistenten aus, um die Sprach-Engine und ein Modell zu installieren.',
   'settings.sidecar.name': 'Sidecar',
   'settings.sidecar.genericName': 'sidecar',
   'settings.sidecar.variantName': '{variant} sidecar',
@@ -316,7 +314,7 @@ export const de = {
   'settings.sidecar.reinstall': 'Neu installieren',
   'settings.sidecar.uninstall': 'Deinstallieren',
   'settings.sidecar.install': 'Installieren',
-  'plugin.name': 'Local Dictation',
+  'plugin.name': 'Speech Kit',
   'common.cancel': 'Abbrechen',
   'common.delete': 'Löschen',
   'common.duplicate': 'Duplizieren',
@@ -326,11 +324,11 @@ export const de = {
   'common.on': 'An',
   'common.save': 'Speichern',
   'common.unavailable': 'Nicht verfügbar',
-  'ribbon.idle': 'Local Dictation – Diktat starten',
-  'ribbon.starting': 'Local Dictation – wird gestartet…',
-  'ribbon.listening': 'Local Dictation – hört zu',
-  'ribbon.speechDetected': 'Local Dictation – Sprache erkannt',
-  'ribbon.error': 'Local Dictation – Fehler',
+  'ribbon.idle': 'Speech Kit – Diktat starten',
+  'ribbon.starting': 'Speech Kit – wird gestartet…',
+  'ribbon.listening': 'Speech Kit – hört zu',
+  'ribbon.speechDetected': 'Speech Kit – Sprache erkannt',
+  'ribbon.error': 'Speech Kit – Fehler',
   'validation.wholeNumberRange': 'Geben Sie eine ganze Zahl von {min} bis {max} ein.',
   'validation.numberRange': 'Geben Sie eine Zahl von {min} bis {max} ein.',
   'llm.managedByPreset':
@@ -436,7 +434,7 @@ export const de = {
   'llm.sidebar.activePreset': 'Aktive Voreinstellung',
   'llm.sidebar.unavailable.title': 'LLM-Funktionen sind nicht verfügbar',
   'llm.sidebar.unavailable.description':
-    'Aktivieren Sie die LLM-Funktionen in den Local Dictation-Einstellungen, um Transformationen zu konfigurieren.',
+    'Aktivieren Sie die LLM-Funktionen in den Speech Kit-Einstellungen, um Transformationen zu konfigurieren.',
   'llm.sidebar.unavailable.summary': 'Aktivieren Sie die LLM-Funktionen in den Einstellungen',
   'llm.sidebar.off.title': 'RAW-Transkriptmodus',
   'llm.sidebar.off.description':
@@ -551,8 +549,8 @@ export const de = {
     'Öffnen Sie eine Markdown-Notiz im Bearbeitungsmodus und versuchen Sie es dann erneut mit dem Diktieren.',
   'setup.ready.completionFailed':
     'Setup konnte nicht abgeschlossen werden. Versuchen Sie es erneut.',
-  'setup.wizard.welcomeTitle': 'Willkommen bei Local Dictation',
-  'setup.wizard.title': 'Richten Sie Local Dictation ein',
+  'setup.wizard.welcomeTitle': 'Willkommen bei Speech Kit',
+  'setup.wizard.title': 'Richten Sie Speech Kit ein',
   'setup.wizard.engineReadyTitle': 'Sprachmodul bereit',
   'setup.wizard.engineReadyDesc': 'Die lokale Sprache-zu-Text-Engine ist installiert und bereit.',
   'setup.wizard.intro':
@@ -570,7 +568,7 @@ export const de = {
   'setup.wizard.modelIntro':
     'Installieren Sie ein Transkriptionsmodell, um das Diktat zu ermöglichen. Sie können später mehr installieren – kleinere Modelle sind schneller, größere Modelle sind genauer.',
   'setup.wizard.modelKinds':
-    'Es stehen zwei Arten zur Verfügung: Streaming-Modelle zeigen Wörter live an, während Sie sprechen; Standardmodelle transkribieren nach jeder Pause. Beginnen Sie für freihändiges Diktieren mit dem empfohlenen Modell Moonshine Small. Nemotron 3.5 ASR ist eine experimentelle Streaming-Option mit höherem Ressourcenbedarf.',
+    'Es stehen zwei Arten zur Verfügung: Streaming-Modelle zeigen Wörter live an, während Sie sprechen; Standardmodelle transkribieren nach jeder Pause. Beginnen Sie für freihändiges Diktieren mit dem empfohlenen Modell Moonshine Small. Nemotron 3.5 ASR ist eine Streaming-Option mit höherem Ressourcenbedarf.',
   'setup.wizard.openModelPicker': 'Modellauswahl öffnen',
   'setup.wizard.readyTitle': 'Sie sind bereit zu diktieren',
   'setup.wizard.readyDesc':
@@ -580,12 +578,12 @@ export const de = {
     'Suchen Sie nach diesem Symbol im Obsidian-Band. Klicken Sie darauf, um mit dem Diktieren zu beginnen; klicken Sie erneut, um zu stoppen.',
   'setup.wizard.hotkeyTitle': 'Oder binden Sie eine Kurztaste',
   'setup.wizard.hotkeyDescBefore': 'Binden Sie eine Verknüpfung an die',
-  'setup.wizard.toggleCommandName': 'Local Dictation: Diktat umschalten',
+  'setup.wizard.toggleCommandName': 'Speech Kit: Diktat umschalten',
   'setup.wizard.hotkeyDescAfter': 'Befehl zum Starten und Stoppen von überall in Obsidian.',
   'setup.wizard.openHotkeySettings': 'Öffnen Sie die Hotkey-Einstellungen',
   'setup.wizard.tryDictationNow': 'Jetzt Diktat ausprobieren',
   'setup.wizard.openHotkeySettingsFallback':
-    'Öffnen Sie Einstellungen → Hotkeys und suchen Sie nach „Local Dictation“.',
+    'Öffnen Sie Einstellungen → Hotkeys und suchen Sie nach „Speech Kit“.',
   'setup.sidecar.modal.download': 'Herunterladen',
   'setup.sidecar.modal.variantDownload': '{variant} herunterladen',
   'setup.sidecar.modal.version': 'Version',
@@ -625,7 +623,7 @@ export const de = {
   'models.manage.removedNotice': 'Modell entfernt.',
   'models.external.title': 'Externe Datei',
   'models.external.intro':
-    'Externe Modelle sind für den erweiterten Gebrauch bestimmt. Local Dictation lädt diese Dateien nicht herunter, aktualisiert sie nicht und überprüft sie nicht.',
+    'Externe Modelle sind für den erweiterten Gebrauch bestimmt. Speech Kit lädt diese Dateien nicht herunter, aktualisiert sie nicht und überprüft sie nicht.',
   'models.external.family.name': 'Modellfamilie',
   'models.external.family.desc':
     'Wählen Sie den Lader, der zum Modell passt. Die Familie wird nicht aus ihrem Dateinamen abgeleitet.',
@@ -732,7 +730,7 @@ export const de = {
   'sidecarError.no_active_session': 'Es gibt keine aktive Diktatsitzung.',
   'sidecarError.session_already_exists': 'Es existiert bereits eine Diktiersitzung mit dieser ID.',
   'sidecarError.session_capacity_exceeded':
-    'Local Dictation verfügt bereits über die maximale Anzahl aktiver Sitzungen.',
+    'Speech Kit verfügt bereits über die maximale Anzahl aktiver Sitzungen.',
   'sidecarError.system_audio_capture_failed': 'System-Audio-Capture konnte nicht gestartet werden.',
   'sidecarError.system_audio_permission_denied':
     'Die Berechtigung zur Systemaudioaufnahme ist für Obsidian deaktiviert. Öffnen Sie Systemeinstellungen → Datenschutz & Sicherheit → Bildschirm- und Systemaudioaufnahme, aktivieren Sie Obsidian und versuchen Sie es erneut.',
@@ -782,7 +780,7 @@ export const de = {
   'catalog.family.moonshine.summary':
     'Zeigt Wörter an, während du sprichst. Tiny begünstigt einen geringeren Ressourcenverbrauch, Small balanciert Geschwindigkeit und Qualität und Medium begünstigt Qualität.',
   'catalog.family.nemotron_asr.summary':
-    'Experimentelles hochpräzises mehrsprachiges Streaming mit größerem Download und höherer Ressourcennutzung. Moonshine Small bleibt der empfohlene englische Live-Diktat-Standard.',
+    'Hochpräzises mehrsprachiges Streaming mit größerem Download und höherer Ressourcennutzung. Moonshine Small bleibt der empfohlene englische Live-Diktat-Standard.',
   'setup.sidecar.modal.unsupportedPlatform':
     'Dieser Sprach-Engine-Build ist für Ihre Plattform oder Architektur nicht verfügbar.',
   'setup.sidecar.modal.genericInstallError':

@@ -5,7 +5,7 @@ Moonshine AI. Model binaries must not be added to this repository.
 
 ## Install through Manage Models
 
-In Obsidian, open **Local Dictation settings → Manage models → Moonshine**.
+In Obsidian, open **Speech Kit settings → Manage models → Moonshine**.
 Choose Moonshine Tiny, Small, or Medium and select **Install**. Small is the
 recommended starting point; Tiny favors low-end CPUs and Medium favors
 accuracy. A first install is selected automatically. Otherwise, select **Use**

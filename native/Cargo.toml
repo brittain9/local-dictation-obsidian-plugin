@@ -55,6 +55,14 @@ criterion = { version = "0.8", default-features = false, features = ["cargo_benc
 hound = "3.5"
 reqwest = { version = "0.12", default-features = false, features = ["blocking", "rustls-tls"] }
 
+[[test]]
+name = "nemotron_asr_e2e"
+required-features = ["engine-nemotron-asr"]
+
+[[test]]
+name = "nemotron_asr_tails"
+required-features = ["engine-nemotron-asr"]
+
 # End-to-end transcription benchmark (real-time factor). Uses the Criterion
 # harness rather than libtest, and is skipped automatically when no whisper
 # model is available (see benches/transcription.rs).

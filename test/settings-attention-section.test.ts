@@ -248,7 +248,7 @@ describe('SettingsAttentionSection', () => {
     await settle();
 
     expect(asTestElement(container).findByClass('mock-progress')).toBe(progress);
-    expect(TestSetting.instances.some((setting) => setting.name === 'Set up Local Dictation')).toBe(
+    expect(TestSetting.instances.some((setting) => setting.name === 'Set up Speech Kit')).toBe(
       false,
     );
   });
@@ -273,7 +273,7 @@ describe('SettingsAttentionSection', () => {
     await settle();
 
     expect(progressCardMock.render).not.toHaveBeenCalled();
-    expect(TestSetting.instances.some((setting) => setting.name === 'Set up Local Dictation')).toBe(
+    expect(TestSetting.instances.some((setting) => setting.name === 'Set up Speech Kit')).toBe(
       true,
     );
   });
@@ -302,7 +302,7 @@ describe('SettingsAttentionSection', () => {
     expect(
       TestSetting.instances.some((setting) => setting.name === 'Enable CUDA acceleration'),
     ).toBe(true);
-    expect(TestSetting.instances.some((setting) => setting.name === 'Set up Local Dictation')).toBe(
+    expect(TestSetting.instances.some((setting) => setting.name === 'Set up Speech Kit')).toBe(
       false,
     );
   });

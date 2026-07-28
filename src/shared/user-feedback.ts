@@ -114,9 +114,9 @@ export function createUserFeedback(dependencies: UserFeedbackDependencies): User
       handle = dependencies.presenter.present({
         ...(action === undefined ? {} : { action }),
         durationMs,
-        message: request.message.startsWith('Local Dictation')
+        message: request.message.startsWith('Speech Kit')
           ? request.message
-          : `Local Dictation: ${request.message}`,
+          : `Speech Kit: ${request.message}`,
       });
 
       if (request.key !== undefined) {

@@ -316,7 +316,7 @@ export class SetupWizardModal extends Modal {
   }
 
   private openHotkeySettings(): void {
-    openFilteredHotkeySettings(this.deps.app, 'Local Dictation', (error) => {
+    openFilteredHotkeySettings(this.deps.app, 'Speech Kit', (error) => {
       this.deps.feedback.show({
         cause: error,
         intent: 'warning',

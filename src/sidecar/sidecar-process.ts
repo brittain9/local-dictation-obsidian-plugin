@@ -138,7 +138,7 @@ export class SidecarProcess {
 
 function assertDesktopRuntime(): void {
   if (!Platform.isDesktopApp) {
-    throw new Error('Local Dictation sidecar support requires Obsidian desktop.');
+    throw new Error('Speech Kit sidecar support requires Obsidian desktop.');
   }
 }
 

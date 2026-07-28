@@ -21,7 +21,7 @@ tags: [work]
 ---
 # Project update
 
-- [x] Review [[Local Dictation]]
+- [x] Review [[Speech Kit]]
 - Read [the specification](https://example.com/spec?q=1)
 - Keep \`npm run check\`, #release, and $x + y$ unchanged.
 
@@ -38,7 +38,7 @@ const greeting = "Hello";
     expect(texts[3]).toContain('unchanged.');
 
     const { text: translated } = rebuildTranslatedMarkdown(segments, texts);
-    expect(translated).toContain('[[Local Dictation]]');
+    expect(translated).toContain('[[Speech Kit]]');
     expect(translated).toContain('(https://example.com/spec?q=1)');
     expect(translated).toContain('`npm run check`');
     expect(translated).toContain('#release');

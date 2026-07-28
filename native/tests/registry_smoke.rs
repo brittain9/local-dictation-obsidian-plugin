@@ -8,8 +8,10 @@
 
 use std::path::Path;
 
+#[cfg(any(feature = "engine-nemotron-asr", feature = "engine-supertonic"))]
+use local_dictation_sidecar::engine::LanguageSupport;
 use local_dictation_sidecar::engine::{
-    AcceleratorId, EngineRegistry, LanguageSupport, ModelFamilyId, RuntimeId, missing_adapter_error,
+    AcceleratorId, EngineRegistry, ModelFamilyId, RuntimeId, missing_adapter_error,
 };
 
 #[cfg(feature = "engine-whisper")]

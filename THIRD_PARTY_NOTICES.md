@@ -1,6 +1,6 @@
 # Third-Party Notices
 
-Local Dictation embeds or downloads the following model artifacts so speech
+Speech Kit embeds or downloads the following model artifacts so speech
 processing works offline. Downloaded catalog artifacts are verified against
 pinned sizes and SHA-256 hashes before activation.
 

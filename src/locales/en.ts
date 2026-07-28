@@ -41,18 +41,18 @@ export const en = {
   'notice.sidecarVersionDrift.cuda':
     'Updated to {version}, but the installed CUDA speech engine is out of date. Update now to keep them in sync.',
   'notice.surfaceDesynchronized':
-    'Dictation stopped because the note changed in a way Local Dictation could not safely track. Start dictation again to continue.',
+    'Dictation stopped because the note changed in a way Speech Kit could not safely track. Start dictation again to continue.',
   'notice.targetNoteClosed':
     'Dictation stopped because its target note was closed or replaced. Start dictation again to continue.',
   'notice.targetNoteDeleted':
     'Dictation stopped because its target note was deleted. Restore or recreate the note, then start dictation again.',
   'notice.transcriptWriteFailed':
-    'Dictation stopped because Local Dictation could not safely write to the note. Start dictation again to continue.',
+    'Dictation stopped because Speech Kit could not safely write to the note. Start dictation again to continue.',
   'setup.sidecar.cpu.firstRun.body':
-    'Local Dictation needs a one-time download of the CPU speech-to-text engine from GitHub releases. Transcription runs locally on your machine after this completes. You can install CUDA acceleration later from settings.',
+    'Speech Kit needs a one-time download of the CPU speech-to-text engine from GitHub releases. Transcription runs locally on your machine after this completes. You can install CUDA acceleration later from settings.',
   'setup.sidecar.cpu.firstRun.primaryButton': 'Download CPU sidecar',
-  'setup.sidecar.cpu.firstRun.success': 'Local Dictation sidecar installed and started.',
-  'setup.sidecar.cpu.firstRun.title': 'Finish setting up Local Dictation',
+  'setup.sidecar.cpu.firstRun.success': 'Speech Kit sidecar installed and started.',
+  'setup.sidecar.cpu.firstRun.title': 'Finish setting up Speech Kit',
   'setup.sidecar.cpu.install.body':
     'Download the CPU speech-to-text engine from GitHub releases. Transcription runs locally on your machine after this completes.',
   'setup.sidecar.cpu.install.primaryButton': 'Download CPU sidecar',
@@ -69,10 +69,10 @@ export const en = {
   'setup.sidecar.cuda.install.success': 'CUDA sidecar installed and started.',
   'setup.sidecar.cuda.install.title': 'Install CUDA acceleration',
   'setup.sidecar.mac.firstRun.body':
-    'Local Dictation needs a one-time download of its speech-to-text engine from GitHub releases. Once installed, transcription runs entirely on your Mac — audio never leaves your machine.',
+    'Speech Kit needs a one-time download of its speech-to-text engine from GitHub releases. Once installed, transcription runs entirely on your Mac — audio never leaves your machine.',
   'setup.sidecar.mac.firstRun.primaryButton': 'Download sidecar',
-  'setup.sidecar.mac.firstRun.success': 'Local Dictation sidecar installed and started.',
-  'setup.sidecar.mac.firstRun.title': 'Finish setting up Local Dictation',
+  'setup.sidecar.mac.firstRun.success': 'Speech Kit sidecar installed and started.',
+  'setup.sidecar.mac.firstRun.title': 'Finish setting up Speech Kit',
   'setup.sidecar.mac.install.body':
     'Download the speech-to-text engine from GitHub releases. Transcription runs locally on your Mac after this completes.',
   'setup.sidecar.mac.install.primaryButton': 'Download sidecar',
@@ -84,14 +84,14 @@ export const en = {
   'setup.sidecar.mac.reinstall.success': 'Sidecar reinstalled and restarted.',
   'setup.sidecar.mac.reinstall.title': 'Reinstall sidecar',
   'setup.sidecar.update.body':
-    'Download the current {engineLabel} to match this version of Local Dictation. Existing installs are replaced in place.',
+    'Download the current {engineLabel} to match this version of Speech Kit. Existing installs are replaced in place.',
   'setup.sidecar.update.engine.cpuAndCuda': 'CPU and CUDA speech engines',
   'setup.sidecar.update.engine.cuda': 'CUDA speech engine',
   'setup.sidecar.update.engine.default': 'speech engine',
   'setup.sidecar.update.primaryButton_one': 'Update speech engine',
   'setup.sidecar.update.primaryButton_other': 'Update speech engines',
-  'setup.sidecar.update.success_one': 'Local Dictation speech engine updated and restarted.',
-  'setup.sidecar.update.success_other': 'Local Dictation speech engines updated and restarted.',
+  'setup.sidecar.update.success_one': 'Speech Kit speech engine updated and restarted.',
+  'setup.sidecar.update.success_other': 'Speech Kit speech engines updated and restarted.',
   'setup.sidecar.update.title_one': 'Update speech engine',
   'setup.sidecar.update.title_other': 'Update speech engines',
   'audio.microphone.permissionDeniedMac':
@@ -180,7 +180,7 @@ export const en = {
   'settings.groups.advanced': 'Advanced',
   'settings.readAloud.hotkey': 'Recommended shortcut',
   'settings.readAloud.hotkeyDesc':
-    'Bind “Local Dictation: Read aloud” to a hotkey. It reads selected text, or the entire note when nothing is selected.',
+    'Bind “Speech Kit: Read aloud” to a hotkey. It reads selected text, or the entire note when nothing is selected.',
   'settings.readAloud.voice': 'Voice',
   'settings.readAloud.voiceDesc': 'Choose from voices installed for the selected model.',
   'settings.readAloud.noVoices': 'No installed voices',
@@ -198,7 +198,7 @@ export const en = {
     'Preselected when you translate a note or selection. You can change it before translating.',
   'settings.translation.target.name': 'Default target language',
   'settings.translation.target.desc':
-    'The language Local Dictation translates into by default. Every translation preview shows the active pair.',
+    'The language Speech Kit translates into by default. Every translation preview shows the active pair.',
   'models.manage.dictationModels': 'Speech to text',
   'models.manage.readAloudModels': 'Text to speech',
   'models.manage.translationModels': 'Translation',
@@ -402,9 +402,9 @@ export const en = {
   'settings.attention.enableCuda.desc':
     'The CUDA speech engine is installed and current, but hardware acceleration is turned off.',
   'settings.attention.enableCuda.action': 'Enable',
-  'settings.missingSidecar.name': 'Set up Local Dictation',
+  'settings.missingSidecar.name': 'Set up Speech Kit',
   'settings.missingSidecar.desc':
-    "Local Dictation isn't ready yet. Run the setup wizard to install the speech engine and a model.",
+    "Speech Kit isn't ready yet. Run the setup wizard to install the speech engine and a model.",
   'settings.sidecar.name': 'Sidecar',
   'settings.sidecar.genericName': 'sidecar',
   'settings.sidecar.variantName': '{variant} sidecar',
@@ -446,7 +446,7 @@ export const en = {
   'settings.sidecar.reinstall': 'Reinstall',
   'settings.sidecar.uninstall': 'Uninstall',
   'settings.sidecar.install': 'Install',
-  'plugin.name': 'Local Dictation',
+  'plugin.name': 'Speech Kit',
   'common.cancel': 'Cancel',
   'common.delete': 'Delete',
   'common.duplicate': 'Duplicate',
@@ -456,11 +456,11 @@ export const en = {
   'common.on': 'On',
   'common.save': 'Save',
   'common.unavailable': 'Unavailable',
-  'ribbon.idle': 'Local Dictation — start dictation',
-  'ribbon.starting': 'Local Dictation — starting…',
-  'ribbon.listening': 'Local Dictation — listening',
-  'ribbon.speechDetected': 'Local Dictation — hearing speech',
-  'ribbon.error': 'Local Dictation — error',
+  'ribbon.idle': 'Speech Kit — start dictation',
+  'ribbon.starting': 'Speech Kit — starting…',
+  'ribbon.listening': 'Speech Kit — listening',
+  'ribbon.speechDetected': 'Speech Kit — hearing speech',
+  'ribbon.error': 'Speech Kit — error',
   'validation.wholeNumberRange': 'Enter a whole number from {min} to {max}.',
   'validation.numberRange': 'Enter a number from {min} to {max}.',
   'llm.managedByPreset': 'Managed by “{preset}”. Edit that preset to change this value.',
@@ -556,7 +556,7 @@ export const en = {
   'llm.sidebar.activePreset': 'Active preset',
   'llm.sidebar.unavailable.title': 'LLM features are unavailable',
   'llm.sidebar.unavailable.description':
-    'Enable LLM features in Local Dictation settings to configure transforms.',
+    'Enable LLM features in Speech Kit settings to configure transforms.',
   'llm.sidebar.unavailable.summary': 'Enable LLM features in settings',
   'llm.sidebar.off.title': 'Raw transcript mode',
   'llm.sidebar.off.description':
@@ -662,8 +662,8 @@ export const en = {
   'setup.ready.waitForDictation': 'Wait for the current dictation to finish, then try again.',
   'setup.ready.openMarkdownNote': 'Open a Markdown note in editing mode, then try dictation again.',
   'setup.ready.completionFailed': "Couldn't finish setup. Try again.",
-  'setup.wizard.welcomeTitle': 'Welcome to Local Dictation',
-  'setup.wizard.title': 'Set up Local Dictation',
+  'setup.wizard.welcomeTitle': 'Welcome to Speech Kit',
+  'setup.wizard.title': 'Set up Speech Kit',
   'setup.wizard.engineReadyTitle': 'Speech engine ready',
   'setup.wizard.engineReadyDesc': 'The local speech-to-text engine is installed and ready.',
   'setup.wizard.intro':
@@ -683,7 +683,7 @@ export const en = {
   'setup.wizard.modelIntro':
     'Install a transcription model to enable dictation. You can install more later — smaller models are faster, larger models are more accurate.',
   'setup.wizard.modelKinds':
-    'Two kinds are available: streaming models show words live as you speak; standard models transcribe after each pause. For hands-free dictation, start with the recommended Moonshine Small model. Nemotron 3.5 ASR is an experimental, higher-resource streaming option.',
+    'Two kinds are available: streaming models show words live as you speak; standard models transcribe after each pause. For hands-free dictation, start with the recommended Moonshine Small model. Nemotron 3.5 ASR is a higher-resource streaming option.',
   'setup.wizard.gpuNote':
     'Whisper models can run much faster with GPU acceleration. If you have an NVIDIA GPU, you can install the CUDA build later from Settings.',
   'setup.wizard.openModelPicker': 'Open model picker',
@@ -695,12 +695,11 @@ export const en = {
     'Look for this icon in the Obsidian ribbon. Click it to start dictating; click again to stop.',
   'setup.wizard.hotkeyTitle': 'Or bind a hotkey',
   'setup.wizard.hotkeyDescBefore': 'Bind a shortcut to the ',
-  'setup.wizard.toggleCommandName': 'Local Dictation: Toggle dictation',
+  'setup.wizard.toggleCommandName': 'Speech Kit: Toggle dictation',
   'setup.wizard.hotkeyDescAfter': ' command to start and stop from anywhere in Obsidian.',
   'setup.wizard.openHotkeySettings': 'Open hotkey settings',
   'setup.wizard.tryDictationNow': 'Try dictation now',
-  'setup.wizard.openHotkeySettingsFallback':
-    'Open Settings → Hotkeys and search for "Local Dictation".',
+  'setup.wizard.openHotkeySettingsFallback': 'Open Settings → Hotkeys and search for "Speech Kit".',
   'setup.sidecar.modal.download': 'Download',
   'setup.sidecar.modal.variantDownload': '{variant} download',
   'setup.sidecar.modal.version': 'Version',
@@ -741,7 +740,7 @@ export const en = {
   'models.manage.removedNotice': 'Model removed.',
   'models.external.title': 'Use external file',
   'models.external.intro':
-    'External models are for advanced use. Local Dictation does not download, update, or checksum-verify these files.',
+    'External models are for advanced use. Speech Kit does not download, update, or checksum-verify these files.',
   'models.external.family.name': 'Model family',
   'models.external.family.desc':
     'Choose the loader that matches the model. The family is not inferred from its filename.',
@@ -850,7 +849,7 @@ export const en = {
   'sidecarError.no_active_session': 'There is no active dictation session.',
   'sidecarError.session_already_exists': 'A dictation session with this id already exists.',
   'sidecarError.session_capacity_exceeded':
-    'Local Dictation already has the maximum number of active sessions.',
+    'Speech Kit already has the maximum number of active sessions.',
   'sidecarError.sidecar_exited': 'The sidecar process exited unexpectedly.',
   'sidecarError.system_audio_capture_failed': 'Could not start system-audio capture.',
   'sidecarError.system_audio_permission_denied':
@@ -916,7 +915,7 @@ export const en = {
   'catalog.family.moonshine.summary':
     'Shows words while you speak. Tiny favors lower resource use, Small balances speed and quality, and Medium favors quality.',
   'catalog.family.nemotron_asr.summary':
-    'Experimental high-accuracy multilingual streaming with a larger download and higher resource use. Moonshine Small remains the recommended English live-dictation default.',
+    'High-accuracy multilingual streaming with a larger download and higher resource use. Moonshine Small remains the recommended English live-dictation default.',
   'catalog.family.supertonic.summary':
     'Lightning-fast on-device multilingual TTS via ONNX Runtime.',
   'catalog.family.pocket_tts.summary':

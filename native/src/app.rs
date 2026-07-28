@@ -685,9 +685,8 @@ impl AppState {
                     events.push(Event::Error {
                         code: "session_capacity_exceeded".to_string(),
                         details: Some(format!("maximum active sessions: {MAX_ACTIVE_SESSIONS}")),
-                        message:
-                            "Local Dictation already has the maximum number of active sessions."
-                                .to_string(),
+                        message: "Speech Kit already has the maximum number of active sessions."
+                            .to_string(),
                         session_id: Some(session_id),
                     });
                     return (ControlFlow::Continue, events);
@@ -1867,7 +1866,7 @@ fn enter_overload_drain_if_saturated(active_session: &mut ActiveSession, events:
         details: Some(format!(
             "queue depth reached saturation at {QUEUE_OVERLOAD_DEPTH}"
         )),
-        message: "Local Dictation stopped because the transcription backlog reached capacity. Already accepted utterances will finish processing.".to_string(),
+        message: "Speech Kit stopped because the transcription backlog reached capacity. Already accepted utterances will finish processing.".to_string(),
         session_id: Some(active_session.session.config().session_id.clone()),
     });
 }

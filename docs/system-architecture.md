@@ -1,6 +1,6 @@
 # System Architecture
 
-Local Dictation is an Obsidian plugin that handles voice and language workflows
+Speech Kit is an Obsidian plugin that handles voice and language workflows
 entirely on-device. Dictation audio crosses a binary protocol into a native
 Rust sidecar and returns as text. Read-aloud text takes the inverse path and
 returns as audio for playback in Obsidian. Text translation runs inside an
@@ -342,7 +342,7 @@ than a silent failure.
 | Moonshine Tiny | `onnx_runtime` · `moonshine` | Quantized | 49 MB | Streaming (live), 34M params |
 | Moonshine Small | `onnx_runtime` · `moonshine` | Quantized | 157 MB | Streaming (live), balanced, 123M params |
 | Moonshine Medium | `onnx_runtime` · `moonshine` | Quantized | 289 MB | Streaming (live), 245M params |
-| Nemotron 3.5 ASR 560 ms | `onnx_runtime` · `nemotron_asr` | INT8 | 651 MB | Experimental multilingual streaming |
+| Nemotron 3.5 ASR 560 ms | `onnx_runtime` · `nemotron_asr` | INT8 | 651 MB | Multilingual streaming |
 | Supertonic 3 | `onnx_runtime` · `supertonic` | ONNX | 398 MB | Read aloud in eight app languages, 10 voices |
 | Firefox Translations | `bergamot_wasm` · `firefox_translations` | Bergamot | 526 MB | 14 English-anchored local translation directions |
 
@@ -354,7 +354,7 @@ SHA-256 hashes. They are English-only and do not apply speaker labels. See
 [`docs/guides/moonshine-live-testing.md`](guides/moonshine-live-testing.md) for
 install and manual acceptance testing.
 
-Nemotron 3.5 ASR is a separate experimental managed entry; Moonshine Small
+Nemotron 3.5 ASR is a separate managed entry; Moonshine Small
 remains the recommended live-dictation default. Its encoder, decoder, joiner,
 and tokenizer are pinned by revision, size, and SHA-256. The adapter supports
 the 560 ms int8 export with verified manual and automatic language prompts. See

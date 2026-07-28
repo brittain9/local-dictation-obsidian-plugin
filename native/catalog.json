@@ -51,7 +51,7 @@
       "task": "stt",
       "runtimeId": "onnx_runtime",
       "displayName": "NVIDIA Nemotron 3.5 ASR",
-      "summary": "Experimental high-accuracy multilingual streaming with a larger download and higher resource use. Moonshine Small remains the recommended English live-dictation default."
+      "summary": "High-accuracy multilingual streaming with a larger download and higher resource use. Moonshine Small remains the recommended English live-dictation default."
     },
     {
       "familyId": "pocket_tts",
@@ -92,7 +92,7 @@
     {
       "collectionId": "nemotron_asr_streaming",
       "displayName": "NVIDIA Nemotron 3.5 ASR",
-      "summary": "Experimental multilingual streaming transcription using the pinned 560 ms int8 export."
+      "summary": "Multilingual streaming transcription using the pinned 560 ms int8 export."
     },
     {
       "collectionId": "supertonic_read_aloud",
@@ -733,7 +733,7 @@
       "summary": "NVIDIA's 0.6B multilingual RNNT, exported to int8 ONNX for cache-aware live transcription in eight verified languages.",
       "languageTags": ["en", "es", "de", "fr", "pt", "it", "nl", "ja"],
       "supportsAutomaticLanguageDetection": true,
-      "uxTags": ["streaming", "accuracy", "cpu", "experimental"],
+      "uxTags": ["streaming", "accuracy", "cpu"],
       "licenseLabel": "OpenMDW-1.1",
       "licenseUrl": "https://openmdw.ai/license/1-1/",
       "sourceUrl": "https://huggingface.co/csukuangfj2/sherpa-onnx-nemotron-3.5-asr-streaming-0.6b-560ms-int8-2026-06-11/tree/ab43d895f5985b1bbab8b6eac8607fcdc05343f3",
@@ -798,7 +798,7 @@
       "sourceUrl": "https://huggingface.co/Supertone/supertonic-3/tree/3cadd1ee6394adea1bd021217a0e650ede09a323",
       "modelCardUrl": "https://huggingface.co/Supertone/supertonic-3",
       "notes": [
-        "Supertonic 3 supports 31 languages upstream; this catalog entry exposes only the eight languages currently supported by Local Dictation.",
+        "Supertonic 3 supports 31 languages upstream; this catalog entry exposes only the eight languages currently supported by Speech Kit.",
         "The initial install includes the model and F1 voice; the remaining nine built-in voices are optional downloads.",
         "Synthesis runs locally on CPU with ONNX Runtime and produces 44.1 kHz mono audio.",
         "The model weights are licensed under OpenRAIL-M, not this project's MIT license."
