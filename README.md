@@ -1,8 +1,15 @@
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/media/hero-dark.png">
+    <img src="docs/media/hero.png" alt="Speech Kit" width="720">
+  </picture>
+</p>
+
 # Speech Kit
 
 **The speech and language toolkit for Obsidian.**
 
-Dictate live. Transcribe meetings. Translate text. Listen to notes with local voices. One plugin, built local-first, inside the editor where your notes already live.
+Dictate live. Transcribe meetings. Translate text. Listen to notes. One plugin inside the editor where your notes already live.
 
 > **Local Dictation is now Speech Kit.** It is the same plugin with the same local-first foundation, now with a name that fits what it has become. Existing installs, settings, and hotkeys carry over automatically.
 
@@ -11,7 +18,7 @@ Dictate live. Transcribe meetings. Translate text. Listen to notes with local vo
 ## What it does
 
 - 🎤 **Speech:** Dictate with live streaming text, or capture higher-accuracy transcripts from meetings, calls, and other audio.
-- 🔊 **Voice:** Listen to your notes with natural on-device voices.
+- 🔊 **Voice:** Listen to your notes with natural voices.
 - 🌍 **Language:** Translate notes locally across eight languages.
 - 🧠 **Models:** Choose from a managed catalog of speech, voice, and translation models, with optional LLM text tools.
 
@@ -21,7 +28,7 @@ Speech and language tools are usually fragmented. One tool handles dictation. An
 
 Speech Kit replaces that stack with one consistent workflow inside Obsidian: one model manager, one settings surface, and one set of commands.
 
-Dictate an idea. Capture a meeting. Translate a passage. Listen to a note. Refine the result. It all happens inside the editor where your notes already live, without routing your work through a collection of unrelated services.
+Dictate an idea. Capture a meeting. Translate a passage. Listen to a note. Refine the result. It all happens inside the editor where your notes already live.
 
 ## Choose the models that fit your workflow
 
@@ -47,7 +54,7 @@ The setup wizard installs the native engine and your first speech model. From th
 
 **Listen.** Read any note aloud with natural local voices. Control the voice, speed, and playback without leaving Obsidian.
 
-**Refine.** Optional LLM tools can clean up, summarize, restructure, or transform text with your own prompts. Use a local or remote provider only when you choose to configure one.
+**Refine.** Optional LLM tools can clean up, summarize, restructure, or transform text with your own prompts.
 
 ## One toolkit across platforms
 
@@ -60,8 +67,6 @@ Many speech apps are limited to one operating system, one model, or one part of 
 | Linux | x86-64 glibc | Optional NVIDIA CUDA | PulseAudio or PipeWire |
 
 Choose your platform. Choose your models. Keep one workflow inside Obsidian.
-
-macOS and Windows are the primary tested targets. Fedora native and Flatpak installations are used daily. See the [Linux support guide](docs/guides/linux-support.md) and [CUDA setup guide](docs/guides/cuda-setup.md).
 
 ## Getting started
 
@@ -81,18 +86,17 @@ Local translation supports English in either direction with each of the other se
 
 ## Local-first, private by default
 
-Local processing and user control are built into Speech Kit.
+Speech Kit works without accounts, subscriptions, or required cloud services.
 
-- **No telemetry:** Speech Kit does not collect usage data or require a Speech Kit account.
-- **No required cloud service:** Speech recognition, text-to-speech, and translation run on your device.
-- **Remote processing is optional:** Text leaves your computer only when you configure and select a remote LLM provider.
-- **Audio stays local:** Audio is never sent to an LLM provider.
-- **No permanent voice profiles:** Speaker embeddings and recovery data are temporary and are not stored as permanent profiles.
-- **Transparent downloads and licensing:** Models are installed explicitly, and third-party licenses are documented before download.
+* **Your work stays on your machine.** Dictation, transcription, read aloud, and translation run locally and continue working offline once their models are installed.
+* **No account, telemetry, or metered usage.** No API key, credit card, subscription, or usage credits to monitor.
+* **LLM tools are optional.** Add flexible language processing to your workflow using a local model or a remote provider you choose. Text leaves your device only when you explicitly use a remote provider, and audio is never uploaded.
+* **Choose what works for you.** Install high-quality models suited to your language, hardware, and workflow.
+* **Transparent and open.** Downloads are explicit, third-party licenses are documented, and Speech Kit is open source.
 
 ## Support development
 
-If Speech Kit is useful to you, you can support continued local-first development:
+If Speech Kit is useful to you, please support development:
 
 <a href="https://buymeacoffee.com/alexbrittaq"><img src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png" alt="Buy Me a Coffee" width="217"></a>
 
