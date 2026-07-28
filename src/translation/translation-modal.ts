@@ -3,10 +3,12 @@ import { type App, type Editor, type EditorPosition, Modal, Setting } from 'obsi
 import { t } from '../shared/i18n';
 import { TranslationCancelledError } from './bergamot-client';
 import {
-  isSupportedTranslationPair,
+  isTranslationLanguage,
+  resolveTranslationTarget,
   TRANSLATION_LANGUAGES,
   type TranslationLanguage,
   translationLanguageLabel,
+  translationTargetsFor,
 } from './languages';
 
 export interface TranslationSnapshot {
@@ -84,23 +86,20 @@ export class TranslationModal extends Modal {
       }
       dropdown.setValue(this.sourceLanguage);
       dropdown.onChange((value) => {
-        if (!isLanguage(value)) return;
+        if (!isTranslationLanguage(value)) return;
         this.sourceLanguage = value;
-        if (!isSupportedTranslationPair(this.sourceLanguage, this.targetLanguage)) {
-          this.targetLanguage = this.sourceLanguage === 'en' ? 'es' : 'en';
-        }
+        this.targetLanguage = resolveTranslationTarget(this.sourceLanguage, this.targetLanguage);
         this.restart();
       });
     });
     new Setting(languageRow).setName(t('translation.modal.to')).addDropdown((dropdown) => {
-      for (const language of TRANSLATION_LANGUAGES) {
-        if (isSupportedTranslationPair(this.sourceLanguage, language)) {
-          dropdown.addOption(language, translationLanguageLabel(language));
-        }
+      for (const language of translationTargetsFor(this.sourceLanguage)) {
+        dropdown.addOption(language, translationLanguageLabel(language));
       }
       dropdown.setValue(this.targetLanguage);
       dropdown.onChange((value) => {
-        if (!isLanguage(value)) return;
+        if (!isTranslationLanguage(value)) return;
+        if (!translationTargetsFor(this.sourceLanguage).includes(value)) return;
         this.targetLanguage = value;
         this.restart();
       });
@@ -153,7 +152,7 @@ export class TranslationModal extends Modal {
     if (this.abortController !== null) {
       actions.addButton((button) => {
         button.setButtonText(t('translation.modal.cancel')).onClick(() => {
-          this.abortController?.abort();
+          this.cancelTranslation();
         });
       });
     } else {
@@ -192,6 +191,12 @@ export class TranslationModal extends Modal {
     this.output = null;
     this.render();
     void this.translate();
+  }
+
+  private cancelTranslation(): void {
+    this.abortController?.abort();
+    this.abortController = null;
+    this.render(t('translation.modal.canceled'));
   }
 
   private async translate(): Promise<void> {
@@ -269,8 +274,4 @@ export class TranslationModal extends Modal {
     editor.replaceRange(`\n\n${this.output}`, insertionPoint);
     this.close();
   }
-}
-
-function isLanguage(value: string): value is TranslationLanguage {
-  return (TRANSLATION_LANGUAGES as readonly string[]).includes(value);
 }

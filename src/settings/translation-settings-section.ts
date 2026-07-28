@@ -9,9 +9,11 @@ import {
   isSupportedTranslationPair,
   isTranslationLanguage,
   resolveTranslationLanguages,
+  resolveTranslationTarget,
   TRANSLATION_LANGUAGES,
   type TranslationLanguage,
   translationLanguageLabel,
+  translationTargetsFor,
 } from '../translation/languages';
 import type { PluginSettings } from './plugin-settings';
 
@@ -106,11 +108,7 @@ export function renderTranslationSettings(
         dropdown.setValue(pair.sourceLanguage);
         dropdown.onChange(async (value) => {
           if (!isTranslationLanguage(value)) return;
-          const targetLanguage = isSupportedTranslationPair(value, pair.targetLanguage)
-            ? pair.targetLanguage
-            : value === 'en'
-              ? 'es'
-              : 'en';
+          const targetLanguage = resolveTranslationTarget(value, pair.targetLanguage);
           await dependencies.persistLanguages(value, targetLanguage);
           render();
         });
@@ -120,10 +118,8 @@ export function renderTranslationSettings(
       .setName(t('settings.translation.target.name'))
       .setDesc(t('settings.translation.target.desc'))
       .addDropdown((dropdown) => {
-        for (const language of TRANSLATION_LANGUAGES) {
-          if (isSupportedTranslationPair(pair.sourceLanguage, language)) {
-            dropdown.addOption(language, translationLanguageLabel(language));
-          }
+        for (const language of translationTargetsFor(pair.sourceLanguage)) {
+          dropdown.addOption(language, translationLanguageLabel(language));
         }
         dropdown.setValue(pair.targetLanguage);
         dropdown.onChange(async (value) => {

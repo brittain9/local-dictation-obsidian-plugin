@@ -44,6 +44,23 @@ export function isSupportedTranslationPair(
   return sourceLanguage !== targetLanguage && (sourceLanguage === 'en' || targetLanguage === 'en');
 }
 
+export function translationTargetsFor(sourceLanguage: TranslationLanguage): TranslationLanguage[] {
+  return TRANSLATION_LANGUAGES.filter((language) =>
+    isSupportedTranslationPair(sourceLanguage, language),
+  );
+}
+
+export function resolveTranslationTarget(
+  sourceLanguage: TranslationLanguage,
+  preferredTarget: TranslationLanguage | null,
+): TranslationLanguage {
+  return preferredTarget !== null && isSupportedTranslationPair(sourceLanguage, preferredTarget)
+    ? preferredTarget
+    : sourceLanguage === 'en'
+      ? 'es'
+      : 'en';
+}
+
 export interface InstalledTranslationModel {
   catalogModel: CatalogModelRecord;
   installedModel: InstalledModelRecord;
@@ -96,11 +113,6 @@ export function resolveTranslationLanguages(
 ): TranslationLanguagePair {
   const defaults = defaultTranslationLanguages(dictationLanguage);
   const sourceLanguage = preferredSource ?? defaults.sourceLanguage;
-  const targetLanguage =
-    preferredTarget !== null && isSupportedTranslationPair(sourceLanguage, preferredTarget)
-      ? preferredTarget
-      : sourceLanguage === 'en'
-        ? 'es'
-        : 'en';
+  const targetLanguage = resolveTranslationTarget(sourceLanguage, preferredTarget);
   return { sourceLanguage, targetLanguage };
 }
