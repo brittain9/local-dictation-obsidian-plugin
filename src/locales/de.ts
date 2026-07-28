@@ -832,11 +832,9 @@ export const de = {
     'Natürliches lokales Vorlesen auf Englisch mit auswählbaren Stimmen.',
   'catalog.family.pocket_tts.summary':
     'Liest Notizen lokal auf Englisch, Französisch, Deutsch, Spanisch, Portugiesisch und Italienisch mit auswählbaren Stimmen und tonhöhentreuer Geschwindigkeitssteuerung vor.',
-  'notice.translationTooLong': 'Übersetze höchstens {count} Zeichen auf einmal.',
   'commands.translateNote': 'Notiz übersetzen',
   'commands.translateSelection': 'Auswahl übersetzen',
   'models.manage.translationModels': 'Übersetzung',
-  'translation.modal.title': 'Lokal übersetzen',
   'translation.modal.privacy': 'Die Übersetzung wird vollständig auf diesem Gerät ausgeführt.',
   'translation.modal.from': 'Von',
   'translation.modal.to': 'Nach',
@@ -848,11 +846,18 @@ export const de = {
   'translation.modal.preparing': 'Lokale Übersetzung wird vorbereitet…',
   'translation.modal.loading': 'Lokales Modell wird geladen…',
   'translation.modal.translating': 'Wird übersetzt…',
+  'translation.modal.translatingProgress': 'Übersetzen… {completed}/{total}',
   'translation.modal.ready': 'Übersetzung ist fertig.',
+  'translation.modal.readyPartial_one':
+    'Übersetzung ist fertig. 1 Block blieb in der Ausgangssprache, weil seine Formatierung nicht erhalten werden konnte.',
+  'translation.modal.readyPartial_other':
+    'Übersetzung ist fertig. {count} Blöcke blieben in der Ausgangssprache, weil ihre Formatierung nicht erhalten werden konnte.',
   'translation.modal.canceled': 'Übersetzung abgebrochen.',
   'translation.modal.failed': 'Übersetzung fehlgeschlagen.',
   'translation.modal.missingModel':
     'Installiere das lokale Übersetzungspaket für dieses Sprachenpaar.',
+  'translation.modal.incompleteModel':
+    'Dem Übersetzungsmodell fehlen Dateien. Installiere es neu, um fortzufahren.',
   'translation.modal.installModel': 'Übersetzungsmodell installieren',
   'translation.modal.translateAgain': 'Erneut übersetzen',
   'translation.modal.cancel': 'Abbrechen',
@@ -860,7 +865,10 @@ export const de = {
   'translation.modal.insertBelow': 'Darunter einfügen',
   'translation.modal.copy': 'Kopieren',
   'translation.modal.stale':
-    'Die Notiz wurde geändert. Kopiere die Übersetzung oder füge sie stattdessen ein.',
+    'Die Notiz hat sich seit dem Start dieser Übersetzung geändert. Kopiere stattdessen die Übersetzung.',
+  'translation.notice.copied': 'Übersetzung kopiert.',
+  'translation.notice.copyFailed': 'Übersetzung konnte nicht kopiert werden.',
+  'translation.notice.tooLong': 'Übersetze höchstens {count} Zeichen auf einmal.',
   'catalog.firefox_translations_release_2026_07.summary':
     'Schnelle lokale Übersetzung zwischen Englisch und sieben Sprachen mit in Firefox veröffentlichten Modellen.',
   'catalog.family.firefox_translations.summary':

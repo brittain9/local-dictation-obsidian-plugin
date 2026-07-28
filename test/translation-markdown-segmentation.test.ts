@@ -37,7 +37,7 @@ const greeting = "Hello";
     expect(texts[3]).toContain('and');
     expect(texts[3]).toContain('unchanged.');
 
-    const translated = rebuildTranslatedMarkdown(segments, texts);
+    const { text: translated } = rebuildTranslatedMarkdown(segments, texts);
     expect(translated).toContain('[[Local Dictation]]');
     expect(translated).toContain('(https://example.com/spec?q=1)');
     expect(translated).toContain('`npm run check`');
@@ -73,7 +73,7 @@ The value $$x + y$$ stays literal.
     expect(translatableTexts(segments).join('\n')).not.toContain('do_not_translate');
     expect(translatableTexts(segments).join('\n')).not.toContain('still_code');
     expect(translatableTexts(segments).join('\n')).not.toContain('x + y');
-    expect(rebuildTranslatedMarkdown(segments, translatableTexts(segments))).toBe(source);
+    expect(rebuildTranslatedMarkdown(segments, translatableTexts(segments)).text).toBe(source);
   });
 
   it('round trips byte-for-byte when translations are unchanged', () => {
@@ -81,7 +81,7 @@ The value $$x + y$$ stays literal.
       '> [!NOTE] Important\n\n| Name | Value |\n| --- | --- |\n| Alex | 42 |\n\nPlain text.\n';
     const segments = segmentMarkdownForTranslation(source);
 
-    expect(rebuildTranslatedMarkdown(segments, translatableTexts(segments))).toBe(source);
+    expect(rebuildTranslatedMarkdown(segments, translatableTexts(segments)).text).toBe(source);
   });
 
   it('bounds long translation units without changing the source structure', () => {
@@ -91,10 +91,10 @@ The value $$x + y$$ stays literal.
 
     expect(texts.length).toBeGreaterThan(1);
     expect(texts.every((text) => text.length <= 2_000)).toBe(true);
-    expect(rebuildTranslatedMarkdown(segments, texts)).toBe(source);
+    expect(rebuildTranslatedMarkdown(segments, texts).text).toBe(source);
   });
 
-  it('rejects reordered protected slots instead of producing corrupt Markdown', () => {
+  it('keeps a unit in the source language when its protected slots come back changed', () => {
     const segments = segmentMarkdownForTranslation('Keep `code` and [[Note]] unchanged.');
     const texts = translatableTexts(segments);
     const markers = texts[0]?.match(/[\uE000-\uF8FF]/gu) ?? [];
@@ -104,9 +104,14 @@ The value $$x + y$$ stays literal.
       .replace(markers[1] as string, markers[0] as string)
       .replace('\uF8FF', markers[1] as string);
 
-    expect(() => rebuildTranslatedMarkdown(segments, [reordered as string])).toThrow(
-      /changed protected Markdown slots/u,
-    );
+    const reorderedResult = rebuildTranslatedMarkdown(segments, [reordered as string]);
+    expect(reorderedResult.sourceUnitsKept).toBe(1);
+    expect(reorderedResult.text).toBe('Keep `code` and [[Note]] unchanged.');
+
+    const dropped = texts[0]?.replace(markers[1] as string, '');
+    const droppedResult = rebuildTranslatedMarkdown(segments, [dropped as string]);
+    expect(droppedResult.sourceUnitsKept).toBe(1);
+    expect(droppedResult.text).toBe('Keep `code` and [[Note]] unchanged.');
   });
 
   it('uses distinct Japanese-safe markers when source text contains a marker candidate', () => {
@@ -118,7 +123,38 @@ The value $$x + y$$ stays literal.
 
     expect(texts[0]).not.toContain('https://0.invalid');
     expect(texts[0]).toContain('https://1.invalid');
-    expect(rebuildTranslatedMarkdown(segments, texts)).toBe(source);
+    expect(rebuildTranslatedMarkdown(segments, texts).text).toBe(source);
+  });
+
+  it('protects indented code blocks and fenced code inside blockquotes', () => {
+    const source = `Intro paragraph.
+
+    indented_code_block()
+    still_code()
+
+> Quoted intro.
+>
+> \`\`\`py
+> print("hi")
+> \`\`\`
+`;
+    const segments = segmentMarkdownForTranslation(source);
+    const translatable = translatableTexts(segments).join('\n');
+
+    expect(translatable).not.toContain('indented_code_block');
+    expect(translatable).not.toContain('still_code');
+    expect(translatable).not.toContain('print("hi")');
+    expect(translatable).toContain('Quoted intro.');
+    expect(rebuildTranslatedMarkdown(segments, translatableTexts(segments)).text).toBe(source);
+  });
+
+  it('still translates paragraphs that continue a list item', () => {
+    const source = '- A list item\n\n  A continuation paragraph.\n';
+    const segments = segmentMarkdownForTranslation(source);
+    const translatable = translatableTexts(segments).join('\n');
+
+    expect(translatable).toContain('A list item');
+    expect(translatable).toContain('A continuation paragraph.');
   });
 
   it('rejects mismatched runtime output', () => {

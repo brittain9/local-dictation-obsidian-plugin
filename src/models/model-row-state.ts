@@ -143,26 +143,22 @@ function deriveRowState(
       ? failedInstall
       : null;
 
-  const allowedActions: ModelRowAction[] =
-    model.task === 'translation' && installed && !isInstalling && !isCanceling
-      ? thisFailure === null
-        ? ['remove', 'details']
-        : deriveAllowedActions({
-            installed,
-            isSelected,
-            isInstalling,
-            isCanceling,
-            hasFailed: true,
-            hasOtherActiveInstall,
-          })
-      : deriveAllowedActions({
-          installed,
-          isSelected,
-          isInstalling,
-          isCanceling,
-          hasFailed: thisFailure !== null,
-          hasOtherActiveInstall,
-        });
+  const hasFailed = thisFailure !== null;
+  // A translation pack is never selected as the active engine, so an installed
+  // one that is sitting idle only offers remove and details.
+  const isIdleTranslationPack =
+    model.task === 'translation' && installed && !isInstalling && !isCanceling && !hasFailed;
+
+  const allowedActions: ModelRowAction[] = isIdleTranslationPack
+    ? ['remove', 'details']
+    : deriveAllowedActions({
+        installed,
+        isSelected,
+        isInstalling,
+        isCanceling,
+        hasFailed,
+        hasOtherActiveInstall,
+      });
 
   return {
     model,

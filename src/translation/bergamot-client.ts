@@ -2,13 +2,13 @@ import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { BERGAMOT_WORKER_SOURCE } from 'virtual:bergamot-worker-source';
 
-import type {
-  CatalogModelRecord,
-  InstalledModelRecord,
-  ModelArtifactRecord,
-} from '../models/model-management-types';
+import type { CatalogModelRecord, InstalledModelRecord } from '../models/model-management-types';
 import type { BergamotTranslateRequest, BergamotWorkerResponse } from './bergamot-messages';
 import type { TranslationLanguage } from './languages';
+import {
+  resolveTranslationPairArtifacts,
+  TranslationModelIncompleteError,
+} from './translation-artifacts';
 
 export class TranslationCancelledError extends Error {
   constructor() {
@@ -20,6 +20,7 @@ export class TranslationCancelledError extends Error {
 interface TranslateWithBergamotOptions {
   catalogModel: CatalogModelRecord;
   installedModel: InstalledModelRecord;
+  onProgress?: (completed: number, total: number) => void;
   onReady?: () => void;
   signal: AbortSignal;
   sourceLanguage: TranslationLanguage;
@@ -31,20 +32,21 @@ export async function translateWithBergamot(
   options: TranslateWithBergamotOptions,
 ): Promise<string[]> {
   throwIfAborted(options.signal);
-  const pairPrefix = `${options.sourceLanguage}_${options.targetLanguage}`;
-  const runtime = requireArtifact(options.catalogModel, 'runtime');
-  const runtimeGlue = requireArtifact(options.catalogModel, 'runtime_glue');
-  const model = requireArtifact(options.catalogModel, `${pairPrefix}_model`);
-  const lexicon = requireArtifact(options.catalogModel, `${pairPrefix}_lexicon`);
-  const vocabularyArtifacts = resolveVocabularyArtifacts(options.catalogModel, pairPrefix);
+  const artifacts = resolveTranslationPairArtifacts(
+    options.catalogModel,
+    options.sourceLanguage,
+    options.targetLanguage,
+  );
+  const artifactPath = (filename: string): string =>
+    join(options.installedModel.installPath, filename);
 
   const [glueSource, wasmBinary, modelBytes, lexiconBytes, ...vocabularies] = await Promise.all([
-    readFile(join(options.installedModel.installPath, runtimeGlue.filename), 'utf8'),
-    readBytes(join(options.installedModel.installPath, runtime.filename)),
-    readBytes(join(options.installedModel.installPath, model.filename)),
-    readBytes(join(options.installedModel.installPath, lexicon.filename)),
-    ...vocabularyArtifacts.map((artifact) =>
-      readBytes(join(options.installedModel.installPath, artifact.filename)),
+    readText(artifactPath(artifacts.runtimeGlue.filename), artifacts.runtimeGlue.artifactId),
+    readBytes(artifactPath(artifacts.runtime.filename), artifacts.runtime.artifactId),
+    readBytes(artifactPath(artifacts.model.filename), artifacts.model.artifactId),
+    readBytes(artifactPath(artifacts.lexicon.filename), artifacts.lexicon.artifactId),
+    ...artifacts.vocabularies.map((artifact) =>
+      readBytes(artifactPath(artifact.filename), artifact.artifactId),
     ),
   ]);
   throwIfAborted(options.signal);
@@ -99,6 +101,9 @@ export async function translateWithBergamot(
         case 'ready':
           options.onReady?.();
           return;
+        case 'progress':
+          options.onProgress?.(response.completed, response.total);
+          return;
         case 'complete':
           finish(resolve, response.translations);
           return;
@@ -121,31 +126,21 @@ export async function translateWithBergamot(
   });
 }
 
-function requireArtifact(model: CatalogModelRecord, artifactId: string): ModelArtifactRecord {
-  const artifact = model.artifacts.find((candidate) => candidate.artifactId === artifactId);
-  if (artifact === undefined) {
-    throw new Error(`The installed translation model is missing ${artifactId}.`);
+async function readText(path: string, artifactId: string): Promise<string> {
+  try {
+    return await readFile(path, 'utf8');
+  } catch {
+    throw new TranslationModelIncompleteError(artifactId);
   }
-  return artifact;
 }
 
-function resolveVocabularyArtifacts(
-  model: CatalogModelRecord,
-  pairPrefix: string,
-): ModelArtifactRecord[] {
-  const shared = model.artifacts.find(
-    (artifact) => artifact.artifactId === `${pairPrefix}_vocabulary`,
-  );
-  if (shared !== undefined) return [shared];
-  return [
-    requireArtifact(model, `${pairPrefix}_source_vocabulary`),
-    requireArtifact(model, `${pairPrefix}_target_vocabulary`),
-  ];
-}
-
-async function readBytes(path: string): Promise<ArrayBuffer> {
-  const bytes = await readFile(path);
-  return bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
+async function readBytes(path: string, artifactId: string): Promise<ArrayBuffer> {
+  try {
+    const bytes = await readFile(path);
+    return bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
+  } catch {
+    throw new TranslationModelIncompleteError(artifactId);
+  }
 }
 
 function throwIfAborted(signal: AbortSignal): void {

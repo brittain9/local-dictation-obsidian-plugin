@@ -815,11 +815,9 @@ export const ja = {
     '厳選された音声を選べる、自然なローカル英語読み上げです。',
   'catalog.family.pocket_tts.summary':
     '英語、フランス語、ドイツ語、スペイン語、ポルトガル語、イタリア語のノートを、選択可能な音声と音程を保つ速度調整でローカルに読み上げます。',
-  'notice.translationTooLong': '一度に翻訳できるのは最大 {count} 文字です。',
   'commands.translateNote': 'ノートを翻訳',
   'commands.translateSelection': '選択範囲を翻訳',
   'models.manage.translationModels': '翻訳',
-  'translation.modal.title': 'ローカルで翻訳',
   'translation.modal.privacy': '翻訳はすべてこのデバイス上で実行されます。',
   'translation.modal.from': '翻訳元',
   'translation.modal.to': '翻訳先',
@@ -831,18 +829,29 @@ export const ja = {
   'translation.modal.preparing': 'ローカル翻訳を準備しています…',
   'translation.modal.loading': 'ローカルモデルを読み込んでいます…',
   'translation.modal.translating': '翻訳しています…',
+  'translation.modal.translatingProgress': '翻訳中… {completed}/{total}',
   'translation.modal.ready': '翻訳が完了しました。',
+  'translation.modal.readyPartial_one':
+    '翻訳が完了しました。1 個のブロックは書式を保持できなかったため元の言語のままです。',
+  'translation.modal.readyPartial_other':
+    '翻訳が完了しました。{count} 個のブロックは書式を保持できなかったため元の言語のままです。',
   'translation.modal.canceled': '翻訳をキャンセルしました。',
   'translation.modal.failed': '翻訳に失敗しました。',
   'translation.modal.missingModel':
     'この言語ペアを使用するには、ローカル翻訳パックをインストールしてください。',
+  'translation.modal.incompleteModel':
+    '翻訳モデルのファイルが不足しています。続行するには再インストールしてください。',
   'translation.modal.installModel': '翻訳モデルをインストール',
   'translation.modal.translateAgain': 'もう一度翻訳',
   'translation.modal.cancel': 'キャンセル',
   'translation.modal.replace': '置き換え',
   'translation.modal.insertBelow': '下に挿入',
   'translation.modal.copy': 'コピー',
-  'translation.modal.stale': 'ノートが変更されました。代わりに翻訳をコピーするか挿入してください。',
+  'translation.modal.stale':
+    'この翻訳を開始してからノートが変更されました。代わりに翻訳をコピーしてください。',
+  'translation.notice.copied': '翻訳をコピーしました。',
+  'translation.notice.copyFailed': '翻訳をコピーできませんでした。',
+  'translation.notice.tooLong': '一度に翻訳できるのは最大 {count} 文字です。',
   'catalog.firefox_translations_release_2026_07.summary':
     'Firefox で公開されたモデルを使用した、英語と7言語間の高速なローカル翻訳です。',
   'catalog.family.firefox_translations.summary':

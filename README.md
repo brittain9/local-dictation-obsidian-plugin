@@ -42,7 +42,8 @@ Run **Translate selection** or **Translate note** to translate between English
 and Spanish, German, French, Portuguese, Italian, Dutch, or Japanese. Review the
 result before replacing the source, inserting it below, or copying it.
 Translation uses a local Firefox/Bergamot model pack and never sends note text
-to a translation service. The **Translation** group in Local Dictation settings
+to a translation service. The pack covers all 14 directions in one download of
+about 526 MB. The **Translation** group in Local Dictation settings
 shows whether the pack is installed, opens the translation model browser, and
 sets the default source and target languages. The preview always shows the
 active language pair before changing a note.

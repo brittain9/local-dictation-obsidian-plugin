@@ -824,11 +824,9 @@ export const fr = {
     'Lecture naturelle en anglais, locale, avec un choix de voix sélectionnées.',
   'catalog.family.pocket_tts.summary':
     'Lit les notes localement en anglais, français, allemand, espagnol, portugais et italien avec plusieurs voix et un réglage de vitesse qui préserve la hauteur.',
-  'notice.translationTooLong': 'Traduisez jusqu’à {count} caractères à la fois.',
   'commands.translateNote': 'Traduire la note',
   'commands.translateSelection': 'Traduire la sélection',
   'models.manage.translationModels': 'Traduction',
-  'translation.modal.title': 'Traduire localement',
   'translation.modal.privacy': 'La traduction s’exécute entièrement sur cet appareil.',
   'translation.modal.from': 'De',
   'translation.modal.to': 'Vers',
@@ -840,18 +838,29 @@ export const fr = {
   'translation.modal.preparing': 'Préparation de la traduction locale…',
   'translation.modal.loading': 'Chargement du modèle local…',
   'translation.modal.translating': 'Traduction en cours…',
+  'translation.modal.translatingProgress': 'Traduction… {completed}/{total}',
   'translation.modal.ready': 'Traduction prête.',
+  'translation.modal.readyPartial_one':
+    'Traduction prête. 1 bloc est resté dans la langue source car sa mise en forme n’a pas pu être conservée.',
+  'translation.modal.readyPartial_other':
+    'Traduction prête. {count} blocs sont restés dans la langue source car leur mise en forme n’a pas pu être conservée.',
   'translation.modal.canceled': 'Traduction annulée.',
   'translation.modal.failed': 'La traduction a échoué.',
   'translation.modal.missingModel':
     'Installez le pack de traduction locale pour utiliser cette paire de langues.',
+  'translation.modal.incompleteModel':
+    'Il manque des fichiers au modèle de traduction. Réinstallez-le pour continuer.',
   'translation.modal.installModel': 'Installer le modèle de traduction',
   'translation.modal.translateAgain': 'Traduire à nouveau',
   'translation.modal.cancel': 'Annuler',
   'translation.modal.replace': 'Remplacer',
   'translation.modal.insertBelow': 'Insérer en dessous',
   'translation.modal.copy': 'Copier',
-  'translation.modal.stale': 'La note a changé. Copiez ou insérez plutôt la traduction.',
+  'translation.modal.stale':
+    'La note a changé depuis le début de cette traduction. Copiez plutôt la traduction.',
+  'translation.notice.copied': 'Traduction copiée.',
+  'translation.notice.copyFailed': 'Impossible de copier la traduction.',
+  'translation.notice.tooLong': 'Traduisez jusqu’à {count} caractères à la fois.',
   'catalog.firefox_translations_release_2026_07.summary':
     'Traduction locale rapide entre l’anglais et sept langues avec les modèles publiés dans Firefox.',
   'catalog.family.firefox_translations.summary':

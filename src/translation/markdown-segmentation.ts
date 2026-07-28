@@ -2,6 +2,12 @@ export type TranslationSegment =
   | { kind: 'protected'; text: string }
   | { kind: 'translatable'; protectedSlots: ProtectedSlot[]; text: string };
 
+export interface TranslationRebuildResult {
+  /** Units left in the source language because their protected Markdown was lost. */
+  sourceUnitsKept: number;
+  text: string;
+}
+
 type ProtectedMarkerMode = 'private-use' | 'synthetic-url';
 
 interface MarkdownTranslationOptions {
@@ -23,7 +29,10 @@ const MAX_PROTECTED_SLOTS_PER_UNIT = 512;
 const PRIVATE_USE_START = 0xe000;
 const PRIVATE_USE_END = 0xf8ff;
 const SYNTHETIC_URL_MARKER_CHARACTER_BUDGET = 'https://511.invalid'.length;
+const INDENTED_CODE_INDENT = 4;
 const STRUCTURAL_PREFIX = /^(\s*(?:>\s*)*(?:(?:#{1,6}|[-*+]|\d+[.)])\s+)?(?:\[[ xX]\]\s+)?)/u;
+const BLOCKQUOTE_PREFIX = /^(?: {0,3}(?:> ?)+)*/u;
+const LIST_MARKER = /^([ \t]*)(?:[-*+]|\d+[.)])([ \t]+)/u;
 const FENCE = /^ {0,3}(`{3,}|~{3,})/u;
 const BLOCK_MATH = /^\s*\$\$\s*$/u;
 const FRONTMATTER_DELIMITER = /^---\s*$/u;
@@ -39,12 +48,19 @@ export function segmentMarkdownForTranslation(
   let blockFence: string | null = null;
   let inFrontmatter = false;
   let inMathBlock = false;
+  let inIndentedCode = false;
+  let listContentIndent = 0;
+  let previousLineIsBlank = true;
 
   for (let index = 0; index < lines.length; index += 1) {
     const completeLine = lines[index] ?? '';
     if (completeLine.length === 0) continue;
     const hasNewline = completeLine.endsWith('\n');
     const line = hasNewline ? completeLine.slice(0, -1) : completeLine;
+    // Fences, block math, and indented code stay recognizable inside a
+    // blockquote, so block scanning runs on the line without its quote markers.
+    const quoted = line.slice((line.match(BLOCKQUOTE_PREFIX)?.[0] ?? '').length);
+    const isBlank = line.trim().length === 0;
 
     if (index === 0 && FRONTMATTER_DELIMITER.test(line)) {
       inFrontmatter = true;
@@ -54,25 +70,34 @@ export function segmentMarkdownForTranslation(
       if (FRONTMATTER_DELIMITER.test(line)) inFrontmatter = false;
     } else if (blockFence !== null) {
       pushProtected(segments, line);
-      if (isClosingFence(line, blockFence)) blockFence = null;
+      if (isClosingFence(quoted, blockFence)) blockFence = null;
     } else if (inMathBlock) {
       pushProtected(segments, line);
-      if (BLOCK_MATH.test(line)) inMathBlock = false;
+      if (BLOCK_MATH.test(quoted)) inMathBlock = false;
     } else {
-      const openingFence = line.match(FENCE)?.[1];
+      const openingFence = quoted.match(FENCE)?.[1];
       if (openingFence !== undefined) {
         blockFence = openingFence;
         pushProtected(segments, line);
-      } else if (BLOCK_MATH.test(line)) {
+      } else if (BLOCK_MATH.test(quoted)) {
         inMathBlock = true;
         pushProtected(segments, line);
-      } else if (line.trim().length === 0 || HORIZONTAL_RULE.test(line)) {
+      } else if (isBlank || HORIZONTAL_RULE.test(line)) {
+        pushProtected(segments, line);
+      } else if (
+        indentWidth(quoted) >= listContentIndent + INDENTED_CODE_INDENT &&
+        (inIndentedCode || previousLineIsBlank)
+      ) {
+        inIndentedCode = true;
         pushProtected(segments, line);
       } else {
+        inIndentedCode = false;
+        listContentIndent = nextListContentIndent(quoted, listContentIndent);
         segmentInlineMarkdown(line, segments, markerMode);
       }
     }
 
+    previousLineIsBlank = isBlank;
     if (hasNewline) pushProtected(segments, '\n');
   }
   return segments;
@@ -97,9 +122,10 @@ export function protectedMarkerModeForLanguages(
 export function rebuildTranslatedMarkdown(
   segments: readonly TranslationSegment[],
   translations: readonly string[],
-): string {
+): TranslationRebuildResult {
   let translationIndex = 0;
-  const output = segments
+  let sourceUnitsKept = 0;
+  const text = segments
     .map((segment) => {
       if (segment.kind === 'protected') return segment.text;
       const translation = translations[translationIndex];
@@ -107,13 +133,20 @@ export function rebuildTranslatedMarkdown(
       if (translation === undefined) {
         throw new Error('The translation runtime returned too few translated sections.');
       }
+      // A unit whose protected Markdown came back missing, duplicated, or
+      // reordered cannot be rebuilt safely. Keeping that one unit in the source
+      // language preserves the note instead of discarding the whole translation.
+      if (!hasIntactProtectedSlots(translation, segment.protectedSlots)) {
+        sourceUnitsKept += 1;
+        return restoreProtectedSlots(segment.text, segment.protectedSlots);
+      }
       return restoreProtectedSlots(translation, segment.protectedSlots);
     })
     .join('');
   if (translationIndex !== translations.length) {
     throw new Error('The translation runtime returned too many translated sections.');
   }
-  return output;
+  return { sourceUnitsKept, text };
 }
 
 function segmentInlineMarkdown(
@@ -245,10 +278,10 @@ function pushTranslationUnit(
   segments.push({ kind: 'translatable', protectedSlots, text });
 }
 
-function restoreProtectedSlots(
+function hasIntactProtectedSlots(
   translation: string,
   protectedSlots: readonly ProtectedSlot[],
-): string {
+): boolean {
   let previousMarkerIndex = -1;
   for (const slot of protectedSlots) {
     const markerIndex = translation.indexOf(slot.marker);
@@ -256,10 +289,17 @@ function restoreProtectedSlots(
       markerIndex <= previousMarkerIndex ||
       translation.indexOf(slot.marker, markerIndex + slot.marker.length) >= 0
     ) {
-      throw new Error('The translation runtime changed protected Markdown slots.');
+      return false;
     }
     previousMarkerIndex = markerIndex;
   }
+  return true;
+}
+
+function restoreProtectedSlots(
+  translation: string,
+  protectedSlots: readonly ProtectedSlot[],
+): string {
   return protectedSlots.reduce(
     (restored, slot) => restored.replace(slot.marker, () => slot.text),
     translation,
@@ -309,6 +349,21 @@ function findNextProtectedIndex(value: string): number {
     if (candidateIndex >= 0 && candidateIndex < index) index = candidateIndex;
   }
   return index;
+}
+
+function indentWidth(line: string): number {
+  const indent = line.match(/^[ \t]*/u)?.[0] ?? '';
+  return [...indent].reduce((width, character) => width + (character === '\t' ? 4 : 1), 0);
+}
+
+// A list item shifts the column at which indented code starts, so continuation
+// lines inside a list stay prose instead of being mistaken for a code block.
+function nextListContentIndent(line: string, currentIndent: number): number {
+  const marker = line.match(LIST_MARKER);
+  if (marker !== null) {
+    return marker[0].length - (marker[1] ?? '').length + indentWidth(marker[1] ?? '');
+  }
+  return indentWidth(line) < currentIndent ? 0 : currentIndent;
 }
 
 function isClosingFence(line: string, openingFence: string): boolean {

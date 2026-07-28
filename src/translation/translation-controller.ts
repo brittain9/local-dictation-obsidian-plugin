@@ -8,6 +8,7 @@ import type { UserFeedback } from '../shared/user-feedback';
 import { TranslationCancelledError, translateWithBergamot } from './bergamot-client';
 import {
   findInstalledTranslationModel,
+  type InstalledTranslationModel,
   resolveTranslationLanguages,
   type TranslationLanguage,
 } from './languages';
@@ -20,6 +21,18 @@ import {
 import { TranslationModal, type TranslationSnapshot } from './translation-modal';
 
 const MAX_TRANSLATION_CHARACTERS = 50_000;
+
+export interface TranslationRunOptions {
+  onProgress: (completed: number, total: number) => void;
+  onReady: () => void;
+  signal: AbortSignal;
+  sourceLanguage: TranslationLanguage;
+  targetLanguage: TranslationLanguage;
+}
+
+export type TranslationRunResult =
+  | { kind: 'missing_model' }
+  | { kind: 'translated'; sourceUnitsKept: number; text: string };
 
 interface TranslationControllerDependencies {
   app: App;
@@ -76,7 +89,7 @@ export class TranslationController {
       this.dependencies.feedback.show({
         intent: 'warning',
         key: 'translation-too-long',
-        message: t('notice.translationTooLong', {
+        message: t('translation.notice.tooLong', {
           count: MAX_TRANSLATION_CHARACTERS.toLocaleString(),
         }),
       });
@@ -93,14 +106,21 @@ export class TranslationController {
 
     const modal = new TranslationModal(this.dependencies.app, {
       editor,
+      feedback: this.dependencies.feedback,
       initialSourceLanguage: sourceLanguage,
       initialTargetLanguage: targetLanguage,
       onClosed: () => {
         if (this.activeModal === modal) this.activeModal = null;
       },
+      // Closing the loop: once the pack is installed, come straight back to the
+      // preview instead of making the user re-run the command.
       onInstallModel: async () => {
+        const languages = modal.languages();
         modal.close();
         await this.dependencies.openModelPicker();
+        if (this.findInstalledModel(languages.sourceLanguage, languages.targetLanguage) !== null) {
+          this.open(editor, snapshot);
+        }
       },
       persistLanguages: async (nextSource, nextTarget) => {
         const current = this.dependencies.getSettings();
@@ -119,19 +139,9 @@ export class TranslationController {
 
   private async runTranslation(
     source: string,
-    options: {
-      onReady: () => void;
-      signal: AbortSignal;
-      sourceLanguage: TranslationLanguage;
-      targetLanguage: TranslationLanguage;
-    },
-  ): Promise<{ kind: 'missing_model' } | { kind: 'translated'; text: string }> {
-    const state = this.dependencies.modelManager.getState();
-    const installed = findInstalledTranslationModel(
-      { models: state.catalog.models, installedModels: state.installedModels },
-      options.sourceLanguage,
-      options.targetLanguage,
-    );
+    options: TranslationRunOptions,
+  ): Promise<TranslationRunResult> {
+    const installed = this.findInstalledModel(options.sourceLanguage, options.targetLanguage);
     if (installed === null) return { kind: 'missing_model' };
 
     const segments = segmentMarkdownForTranslation(source, {
@@ -141,24 +151,44 @@ export class TranslationController {
       ),
     });
     const texts = translatableTexts(segments);
-    if (texts.length === 0) return { kind: 'translated', text: source };
+    if (texts.length === 0) return { kind: 'translated', sourceUnitsKept: 0, text: source };
 
     try {
       const translations = await translateWithBergamot({
         ...installed,
+        onProgress: options.onProgress,
         onReady: options.onReady,
         signal: options.signal,
         sourceLanguage: options.sourceLanguage,
         targetLanguage: options.targetLanguage,
         texts,
       });
-      return { kind: 'translated', text: rebuildTranslatedMarkdown(segments, translations) };
+      const rebuilt = rebuildTranslatedMarkdown(segments, translations);
+      if (rebuilt.sourceUnitsKept > 0) {
+        this.dependencies.logger.warn(
+          'translation',
+          `kept ${rebuilt.sourceUnitsKept} unit(s) in the source language after marker loss`,
+        );
+      }
+      return { kind: 'translated', ...rebuilt };
     } catch (error) {
       if (!(error instanceof TranslationCancelledError)) {
         this.dependencies.logger.error('translation', 'local translation failed', error);
       }
       throw error;
     }
+  }
+
+  private findInstalledModel(
+    sourceLanguage: TranslationLanguage,
+    targetLanguage: TranslationLanguage,
+  ): InstalledTranslationModel | null {
+    const state = this.dependencies.modelManager.getState();
+    return findInstalledTranslationModel(
+      { models: state.catalog.models, installedModels: state.installedModels },
+      sourceLanguage,
+      targetLanguage,
+    );
   }
 }
 

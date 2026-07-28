@@ -42,7 +42,7 @@ describe('TranslationModal mutation safety', () => {
     expect(replaceRange).not.toHaveBeenCalled();
   });
 
-  it('disables replacement when the source changed during translation', async () => {
+  it('disables both note-writing actions when the source changed during translation', async () => {
     Setting.reset();
     const replaceRange = vi.fn();
     const modal = createModal({
@@ -52,6 +52,7 @@ describe('TranslationModal mutation safety', () => {
       },
       runTranslation: vi.fn(async () => ({
         kind: 'translated' as const,
+        sourceUnitsKept: 0,
         text: 'Traduzca esto.',
       })),
     });
@@ -60,8 +61,34 @@ describe('TranslationModal mutation safety', () => {
     await vi.waitFor(() => {
       expect(Setting.buttonNamed('Replace').disabled).toBe(true);
     });
+    expect(Setting.buttonNamed('Insert below').disabled).toBe(true);
     await Setting.buttonNamed('Replace').click();
+    await Setting.buttonNamed('Insert below').click();
     expect(replaceRange).not.toHaveBeenCalled();
+  });
+
+  it('reports how many blocks kept their original language', async () => {
+    Setting.reset();
+    const modal = createModal({
+      editor: {
+        getValue: () => SNAPSHOT.source,
+        replaceRange: vi.fn(),
+      },
+      runTranslation: vi.fn(async () => ({
+        kind: 'translated' as const,
+        sourceUnitsKept: 2,
+        text: 'Traduzca esto.',
+      })),
+    });
+
+    modal.open();
+    await vi.waitFor(() => {
+      expect(
+        (modal.contentEl as unknown as TestElement).findByText(
+          'Translation ready. 2 blocks kept their original language because their formatting could not be preserved.',
+        ),
+      ).toBeDefined();
+    });
   });
 });
 
@@ -77,6 +104,7 @@ function createModal({
 }): TranslationModal {
   return new TranslationModal({} as never, {
     editor: editor as never,
+    feedback: { show: vi.fn() },
     initialSourceLanguage: 'en',
     initialTargetLanguage: 'es',
     onClosed: vi.fn(),

@@ -16,6 +16,12 @@ export type BergamotWorkerResponse =
       requestId: string;
     }
   | {
+      type: 'progress';
+      requestId: string;
+      completed: number;
+      total: number;
+    }
+  | {
       type: 'complete';
       requestId: string;
       translations: string[];

@@ -48,7 +48,6 @@ export const en = {
     'Dictation stopped because its target note was deleted. Restore or recreate the note, then start dictation again.',
   'notice.transcriptWriteFailed':
     'Dictation stopped because Local Dictation could not safely write to the note. Start dictation again to continue.',
-  'notice.translationTooLong': 'Translate up to {count} characters at a time.',
   'setup.sidecar.cpu.firstRun.body':
     'Local Dictation needs a one-time download of the CPU speech-to-text engine from GitHub releases. Transcription runs locally on your machine after this completes. You can install CUDA acceleration later from settings.',
   'setup.sidecar.cpu.firstRun.primaryButton': 'Download CPU sidecar',
@@ -122,7 +121,6 @@ export const en = {
   'commands.stopReadAloud': 'Stop reading',
   'commands.translateNote': 'Translate note',
   'commands.translateSelection': 'Translate selection',
-  'translation.modal.title': 'Translate locally',
   'translation.modal.titleWithPair': 'Translate: {source} → {target}',
   'translation.modal.privacy': 'Translation runs entirely on this device.',
   'translation.modal.from': 'From',
@@ -135,17 +133,28 @@ export const en = {
   'translation.modal.preparing': 'Preparing local translation…',
   'translation.modal.loading': 'Loading local model…',
   'translation.modal.translating': 'Translating…',
+  'translation.modal.translatingProgress': 'Translating… {completed}/{total}',
   'translation.modal.ready': 'Translation ready.',
+  'translation.modal.readyPartial_one':
+    'Translation ready. 1 block kept its original language because its formatting could not be preserved.',
+  'translation.modal.readyPartial_other':
+    'Translation ready. {count} blocks kept their original language because their formatting could not be preserved.',
   'translation.modal.canceled': 'Translation canceled.',
   'translation.modal.failed': 'Translation failed.',
   'translation.modal.missingModel': 'Install the local translation pack to use this language pair.',
+  'translation.modal.incompleteModel':
+    'The translation model is missing files. Reinstall it to continue.',
   'translation.modal.installModel': 'Install translation model',
   'translation.modal.translateAgain': 'Translate again',
   'translation.modal.cancel': 'Cancel',
   'translation.modal.replace': 'Replace',
   'translation.modal.insertBelow': 'Insert below',
   'translation.modal.copy': 'Copy',
-  'translation.modal.stale': 'The note changed. Copy or insert the translation instead.',
+  'translation.modal.stale':
+    'The note changed since this translation started. Copy the translation instead.',
+  'translation.notice.copied': 'Copied the translation.',
+  'translation.notice.copyFailed': 'Could not copy the translation.',
+  'translation.notice.tooLong': 'Translate up to {count} characters at a time.',
   'translation.notice.noText': 'There is no text to translate in this note.',
   'common.reset': 'Reset',
   'settings.acceleration.active': 'Configured acceleration: {accelerator}',

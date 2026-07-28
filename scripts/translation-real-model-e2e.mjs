@@ -24,6 +24,15 @@ Read [the specification](https://example.com/spec).
 | --- | --- |
 | [[Nemotron]] | Ready |
 `;
+// Per-target proof that the output is really in the target language rather than
+// an echo of the English source.
+const SEMANTIC_CHECKS = {
+  es: (text) => {
+    const lowered = text.toLocaleLowerCase('es');
+    return lowered.includes('mañana') && lowered.includes('nueve');
+  },
+  ja: (text) => /[\u3040-\u30ff\u4e00-\u9fff]/u.test(text),
+};
 
 const catalog = JSON.parse(await readFile('native/catalog.json', 'utf8'));
 const catalogModel = catalog.models.find(
@@ -46,40 +55,44 @@ for (const [key, value] of Object.entries(MODEL_TRIPLE)) {
   }
 }
 
-const pairPrefix = `${SOURCE_LANGUAGE}_${TARGET_LANGUAGE}`;
-const {
-  protectedMarkerModeForLanguages,
-  rebuildTranslatedMarkdown,
-  segmentMarkdownForTranslation,
-  translatableTexts,
-} = await loadSegmentationModule();
+const [
+  {
+    protectedMarkerModeForLanguages,
+    rebuildTranslatedMarkdown,
+    segmentMarkdownForTranslation,
+    translatableTexts,
+  },
+  { resolveTranslationPairArtifacts },
+] = await Promise.all([
+  loadTypeScriptModule('src/translation/markdown-segmentation.ts'),
+  loadTypeScriptModule('src/translation/translation-artifacts.ts'),
+]);
 const segments = segmentMarkdownForTranslation(TEST_MARKDOWN, {
   protectedMarkerMode: protectedMarkerModeForLanguages(SOURCE_LANGUAGE, TARGET_LANGUAGE),
 });
 const texts = translatableTexts(segments);
-const runtime = requireArtifact('runtime');
-const runtimeGlue = requireArtifact('runtime_glue');
-const model = requireArtifact(`${pairPrefix}_model`);
-const lexicon = requireArtifact(`${pairPrefix}_lexicon`);
-const vocabularies = [
-  catalogModel.artifacts.find((artifact) => artifact.artifactId === `${pairPrefix}_vocabulary`),
-].filter(Boolean);
-if (vocabularies.length === 0) {
-  vocabularies.push(
-    requireArtifact(`${pairPrefix}_source_vocabulary`),
-    requireArtifact(`${pairPrefix}_target_vocabulary`),
-  );
+// The plugin resolves the same artifacts through this helper, so the smoke run
+// exercises the real selection logic rather than a copy of it.
+const artifacts = resolveTranslationPairArtifacts(catalogModel, SOURCE_LANGUAGE, TARGET_LANGUAGE);
+for (const artifact of [
+  artifacts.runtime,
+  artifacts.runtimeGlue,
+  artifacts.model,
+  artifacts.lexicon,
+  ...artifacts.vocabularies,
+]) {
+  requireInstalled(artifact);
 }
 
 const startedReading = performance.now();
 const [glueSource, workerSource, wasmBinary, modelBytes, lexiconBytes, ...vocabularyBytes] =
   await Promise.all([
-    readFile(join(installDir, runtimeGlue.filename), 'utf8'),
+    readFile(join(installDir, artifacts.runtimeGlue.filename), 'utf8'),
     bundleBergamotWorker({ minify: true }),
-    readBytes(join(installDir, runtime.filename)),
-    readBytes(join(installDir, model.filename)),
-    readBytes(join(installDir, lexicon.filename)),
-    ...vocabularies.map((artifact) => readBytes(join(installDir, artifact.filename))),
+    readBytes(join(installDir, artifacts.runtime.filename)),
+    readBytes(join(installDir, artifacts.model.filename)),
+    readBytes(join(installDir, artifacts.lexicon.filename)),
+    ...artifacts.vocabularies.map((artifact) => readBytes(join(installDir, artifact.filename))),
   ]);
 const readMs = performance.now() - startedReading;
 const request = {
@@ -104,21 +117,24 @@ const startedInference = performance.now();
 
 try {
   const result = await runTranslation(worker, request);
-  let translatedMarkdown;
+  let rebuilt;
   try {
-    translatedMarkdown = rebuildTranslatedMarkdown(segments, result.translations);
+    rebuilt = rebuildTranslatedMarkdown(segments, result.translations);
   } catch (error) {
     throw new Error(
       `Failed to rebuild translated Markdown from ${JSON.stringify(result.translations)}`,
       { cause: error },
     );
   }
-  const combined = translatedMarkdown.toLocaleLowerCase(TARGET_LANGUAGE);
-  const semanticChecks =
-    TARGET_LANGUAGE !== 'es' || (combined.includes('mañana') && combined.includes('nueve'));
+  if (rebuilt.sourceUnitsKept > 0) {
+    throw new Error(
+      `${rebuilt.sourceUnitsKept} unit(s) lost their protected Markdown and stayed in the source language.`,
+    );
+  }
+  const translatedMarkdown = rebuilt.text;
   if (
     result.translations.length !== texts.length ||
-    !semanticChecks ||
+    SEMANTIC_CHECKS[TARGET_LANGUAGE]?.(translatedMarkdown) === false ||
     !translatedMarkdown.includes('`npm run check`') ||
     !translatedMarkdown.includes('[[Local Dictation]]') ||
     !translatedMarkdown.includes('#release') ||
@@ -144,11 +160,7 @@ try {
   await worker.terminate();
 }
 
-function requireArtifact(artifactId) {
-  const artifact = catalogModel.artifacts.find((candidate) => candidate.artifactId === artifactId);
-  if (artifact === undefined) {
-    throw new Error(`The catalog model is missing ${artifactId}.`);
-  }
+function requireInstalled(artifact) {
   if (
     !metadata.artifacts.some(
       (installed) =>
@@ -157,9 +169,10 @@ function requireArtifact(artifactId) {
         installed.sha256 === artifact.sha256,
     )
   ) {
-    throw new Error(`The managed installation does not match catalog artifact ${artifactId}.`);
+    throw new Error(
+      `The managed installation does not match catalog artifact ${artifact.artifactId}.`,
+    );
   }
-  return artifact;
 }
 
 function runTranslation(worker, request) {
@@ -230,10 +243,10 @@ async function readBytes(path) {
   return bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
 }
 
-async function loadSegmentationModule() {
+async function loadTypeScriptModule(entryPoint) {
   const result = await build({
     bundle: true,
-    entryPoints: ['src/translation/markdown-segmentation.ts'],
+    entryPoints: [entryPoint],
     format: 'esm',
     logLevel: 'silent',
     minify: true,
@@ -244,7 +257,7 @@ async function loadSegmentationModule() {
   });
   const source = result.outputFiles[0]?.text;
   if (source === undefined) {
-    throw new Error('Failed to bundle Markdown translation segmentation.');
+    throw new Error(`Failed to bundle ${entryPoint}.`);
   }
   return import(`data:text/javascript;base64,${Buffer.from(source).toString('base64')}`);
 }

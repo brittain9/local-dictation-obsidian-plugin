@@ -830,11 +830,9 @@ export const it = {
     'Lettura naturale locale in inglese con una selezione di voci curate.',
   'catalog.family.pocket_tts.summary':
     'Legge localmente le note in inglese, francese, tedesco, spagnolo, portoghese e italiano con voci selezionabili e controllo della velocità che preserva il tono.',
-  'notice.translationTooLong': 'Traduci fino a {count} caratteri alla volta.',
   'commands.translateNote': 'Traduci nota',
   'commands.translateSelection': 'Traduci selezione',
   'models.manage.translationModels': 'Traduzione',
-  'translation.modal.title': 'Traduci localmente',
   'translation.modal.privacy': 'La traduzione viene eseguita interamente su questo dispositivo.',
   'translation.modal.from': 'Da',
   'translation.modal.to': 'A',
@@ -846,11 +844,18 @@ export const it = {
   'translation.modal.preparing': 'Preparazione della traduzione locale…',
   'translation.modal.loading': 'Caricamento del modello locale…',
   'translation.modal.translating': 'Traduzione in corso…',
+  'translation.modal.translatingProgress': 'Traduzione… {completed}/{total}',
   'translation.modal.ready': 'Traduzione pronta.',
+  'translation.modal.readyPartial_one':
+    'Traduzione pronta. 1 blocco è rimasto nella lingua di partenza perché non è stato possibile conservarne la formattazione.',
+  'translation.modal.readyPartial_other':
+    'Traduzione pronta. {count} blocchi sono rimasti nella lingua di partenza perché non è stato possibile conservarne la formattazione.',
   'translation.modal.canceled': 'Traduzione annullata.',
   'translation.modal.failed': 'Traduzione non riuscita.',
   'translation.modal.missingModel':
     'Installa il pacchetto di traduzione locale per usare questa coppia di lingue.',
+  'translation.modal.incompleteModel':
+    'Al modello di traduzione mancano dei file. Reinstallalo per continuare.',
   'translation.modal.installModel': 'Installa modello di traduzione',
   'translation.modal.translateAgain': 'Traduci di nuovo',
   'translation.modal.cancel': 'Annulla',
@@ -858,7 +863,10 @@ export const it = {
   'translation.modal.insertBelow': 'Inserisci sotto',
   'translation.modal.copy': 'Copia',
   'translation.modal.stale':
-    'La nota è cambiata. Copia o inserisci la traduzione invece di sostituire.',
+    'La nota è cambiata da quando è iniziata questa traduzione. Copia invece la traduzione.',
+  'translation.notice.copied': 'Traduzione copiata.',
+  'translation.notice.copyFailed': 'Impossibile copiare la traduzione.',
+  'translation.notice.tooLong': 'Traduci fino a {count} caratteri alla volta.',
   'catalog.firefox_translations_release_2026_07.summary':
     'Traduzione locale rapida tra inglese e sette lingue con modelli pubblicati in Firefox.',
   'catalog.family.firefox_translations.summary':

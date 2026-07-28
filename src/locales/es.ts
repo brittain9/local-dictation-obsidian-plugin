@@ -823,11 +823,9 @@ export const es = {
     'Lectura local natural en inglés con voces seleccionables.',
   'catalog.family.pocket_tts.summary':
     'Lee notas localmente en inglés, francés, alemán, español, portugués e italiano con voces seleccionables y control de velocidad sin alterar el tono.',
-  'notice.translationTooLong': 'Traduce hasta {count} caracteres a la vez.',
   'commands.translateNote': 'Traducir nota',
   'commands.translateSelection': 'Traducir selección',
   'models.manage.translationModels': 'Traducción',
-  'translation.modal.title': 'Traducir localmente',
   'translation.modal.privacy': 'La traducción se ejecuta completamente en este dispositivo.',
   'translation.modal.from': 'Origen',
   'translation.modal.to': 'Destino',
@@ -839,18 +837,29 @@ export const es = {
   'translation.modal.preparing': 'Preparando la traducción local…',
   'translation.modal.loading': 'Cargando el modelo local…',
   'translation.modal.translating': 'Traduciendo…',
+  'translation.modal.translatingProgress': 'Traduciendo… {completed}/{total}',
   'translation.modal.ready': 'Traducción lista.',
+  'translation.modal.readyPartial_one':
+    'Traducción lista. 1 bloque conservó su idioma original porque no se pudo preservar su formato.',
+  'translation.modal.readyPartial_other':
+    'Traducción lista. {count} bloques conservaron su idioma original porque no se pudo preservar su formato.',
   'translation.modal.canceled': 'Traducción cancelada.',
   'translation.modal.failed': 'La traducción falló.',
   'translation.modal.missingModel':
     'Instala el paquete de traducción local para usar este par de idiomas.',
+  'translation.modal.incompleteModel':
+    'Al modelo de traducción le faltan archivos. Vuelve a instalarlo para continuar.',
   'translation.modal.installModel': 'Instalar modelo de traducción',
   'translation.modal.translateAgain': 'Traducir de nuevo',
   'translation.modal.cancel': 'Cancelar',
   'translation.modal.replace': 'Reemplazar',
   'translation.modal.insertBelow': 'Insertar debajo',
   'translation.modal.copy': 'Copiar',
-  'translation.modal.stale': 'La nota cambió. Copia o inserta la traducción en su lugar.',
+  'translation.modal.stale':
+    'La nota cambió desde que empezó esta traducción. Copia la traducción en su lugar.',
+  'translation.notice.copied': 'Se copió la traducción.',
+  'translation.notice.copyFailed': 'No se pudo copiar la traducción.',
+  'translation.notice.tooLong': 'Traduce hasta {count} caracteres a la vez.',
   'catalog.firefox_translations_release_2026_07.summary':
     'Traducción local rápida entre inglés y siete idiomas mediante modelos publicados en Firefox.',
   'catalog.family.firefox_translations.summary':

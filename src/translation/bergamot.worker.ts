@@ -66,6 +66,8 @@ interface TranslationWorkerScope {
 
 const workerScope = self as unknown as TranslationWorkerScope;
 
+const TRANSLATION_BATCH_SIZE = 8;
+
 const BERGAMOT_CONFIG = `
 beam-size: 1
 normalize: 1.0
@@ -115,17 +117,37 @@ async function translate(request: BergamotTranslateRequest): Promise<void> {
     const service = new bergamot.BlockingService({ cacheSize: 0 });
     resources.push(model, service);
 
-    const messages = new bergamot.VectorString();
-    const options = new bergamot.VectorResponseOptions();
-    resources.push(messages, options);
-    for (const text of request.texts) {
-      messages.push_back(text);
-      options.push_back({ qualityScores: false, alignment: true, html: false });
+    // Translating in batches bounds the WebAssembly workspace a single call has
+    // to hold, and lets a long note report progress instead of going quiet.
+    const translations: string[] = [];
+    for (let offset = 0; offset < request.texts.length; offset += TRANSLATION_BATCH_SIZE) {
+      const batch = request.texts.slice(offset, offset + TRANSLATION_BATCH_SIZE);
+      const batchResources: Deletable[] = [];
+      try {
+        const messages = new bergamot.VectorString();
+        const options = new bergamot.VectorResponseOptions();
+        batchResources.push(messages, options);
+        for (const text of batch) {
+          messages.push_back(text);
+          options.push_back({ qualityScores: false, alignment: true, html: false });
+        }
+        const responses = service.translate(model, messages, options);
+        batchResources.push(responses);
+        for (let index = 0; index < batch.length; index += 1) {
+          translations.push(responses.get(index).getTranslatedText());
+        }
+      } finally {
+        for (const resource of batchResources.reverse()) {
+          resource.delete();
+        }
+      }
+      workerScope.postMessage({
+        type: 'progress',
+        requestId: request.requestId,
+        completed: translations.length,
+        total: request.texts.length,
+      });
     }
-
-    const responses = service.translate(model, messages, options);
-    resources.push(responses);
-    const translations = request.texts.map((_, index) => responses.get(index).getTranslatedText());
     workerScope.postMessage({
       type: 'complete',
       requestId: request.requestId,
