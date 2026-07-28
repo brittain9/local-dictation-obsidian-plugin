@@ -39,7 +39,7 @@ import { deriveModelFamilyTabs, deriveModelRowStates, type ModelRowState } from 
 // Dependencies
 // ---------------------------------------------------------------------------
 
-export type ModelPickerTask = 'stt' | 'tts';
+export type ModelPickerTask = 'stt' | 'translation' | 'tts';
 
 export interface ModelPickerOptions {
   initialTask?: ModelPickerTask;
@@ -56,6 +56,17 @@ export function searchQueryAfterTaskSwitch(
   currentQuery: string,
 ): string {
   return currentTask === nextTask ? currentQuery : '';
+}
+
+function taskLabel(task: ModelPickerTask): string {
+  switch (task) {
+    case 'stt':
+      return t('models.manage.dictationModels');
+    case 'translation':
+      return t('models.manage.translationModels');
+    case 'tts':
+      return t('models.manage.readAloudModels');
+  }
 }
 
 export type ModelLanguageFilter = { kind: 'all' } | { kind: 'language'; tag: string };
@@ -227,7 +238,7 @@ export class ManageModelsModal extends Modal {
       attr: { 'aria-label': t('models.manage.taskLabel'), role: 'tablist' },
       cls: 'local-stt-task-switcher',
     });
-    for (const task of ['stt', 'tts'] as const) {
+    for (const task of ['stt', 'tts', 'translation'] as const) {
       const button = taskSwitcher.createEl('button', {
         attr: {
           'aria-selected': String(task === this.activeTask),
@@ -235,8 +246,7 @@ export class ManageModelsModal extends Modal {
           type: 'button',
         },
         cls: 'local-stt-task-switcher__button',
-        text:
-          task === 'tts' ? t('models.manage.readAloudModels') : t('models.manage.dictationModels'),
+        text: taskLabel(task),
       });
       button.toggleClass('is-active', task === this.activeTask);
       button.addEventListener('click', () => this.switchTask(task));
@@ -245,16 +255,10 @@ export class ManageModelsModal extends Modal {
     this.searchInputEl = toolbar.createEl('input', {
       attr: {
         'aria-label': t('models.manage.searchPlaceholder', {
-          task:
-            this.activeTask === 'tts'
-              ? t('models.manage.readAloudModels')
-              : t('models.manage.dictationModels'),
+          task: taskLabel(this.activeTask),
         }),
         placeholder: t('models.manage.searchPlaceholder', {
-          task:
-            this.activeTask === 'tts'
-              ? t('models.manage.readAloudModels')
-              : t('models.manage.dictationModels'),
+          task: taskLabel(this.activeTask),
         }),
         type: 'search',
       },
@@ -339,9 +343,7 @@ export class ManageModelsModal extends Modal {
     this.activeTask = task;
     if (this.searchInputEl !== null) {
       this.searchInputEl.value = '';
-      const taskLabel =
-        task === 'tts' ? t('models.manage.readAloudModels') : t('models.manage.dictationModels');
-      const placeholder = t('models.manage.searchPlaceholder', { task: taskLabel });
+      const placeholder = t('models.manage.searchPlaceholder', { task: taskLabel(task) });
       this.searchInputEl.placeholder = placeholder;
       this.searchInputEl.setAttribute('aria-label', placeholder);
     }
@@ -577,7 +579,7 @@ export class ManageModelsModal extends Modal {
     setting.setName(row.model.displayName);
     const selectedLanguage = this.deps.manager.getDictationLanguage();
     const supportsSelectedLanguage =
-      row.model.task === 'tts' || catalogModelSupportsLanguage(row.model, selectedLanguage);
+      row.model.task !== 'stt' || catalogModelSupportsLanguage(row.model, selectedLanguage);
 
     // Description: install progress when installing/canceling, the same bar in
     // its failed state when the last install for this model failed, tags + size

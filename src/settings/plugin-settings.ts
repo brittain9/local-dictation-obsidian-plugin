@@ -35,6 +35,7 @@ import {
   type ListeningMode,
   type SpeakingStyle,
 } from '../sidecar/protocol';
+import { normalizeTranslationLanguage, type TranslationLanguage } from '../translation/languages';
 
 export const DICTATION_ANCHORS = ['at_cursor', 'end_of_note'] as const;
 
@@ -197,6 +198,8 @@ export interface PluginSettings {
   timestampsEnabled: boolean;
   timestampSessionHeader: boolean;
   timestampSparseIntervalMs: number;
+  translationSourceLanguage: TranslationLanguage | null;
+  translationTargetLanguage: TranslationLanguage | null;
   transcriptFormatting: TranscriptFormattingMode;
   ttsSpeed: number;
   useLlmNoteContext: boolean;
@@ -256,6 +259,8 @@ export const DEFAULT_PLUGIN_SETTINGS: PluginSettings = {
   timestampsEnabled: false,
   timestampSessionHeader: true,
   timestampSparseIntervalMs: DEFAULT_TIMESTAMP_SPARSE_INTERVAL_MS,
+  translationSourceLanguage: null,
+  translationTargetLanguage: null,
   transcriptFormatting: 'smart',
   ttsSpeed: 1,
   useLlmNoteContext: false,
@@ -432,6 +437,8 @@ export function resolvePluginSettings(data: unknown): PluginSettings {
       MIN_TIMESTAMP_SPARSE_INTERVAL_MS,
       MAX_TIMESTAMP_SPARSE_INTERVAL_MS,
     ),
+    translationSourceLanguage: normalizeTranslationLanguage(raw.translationSourceLanguage),
+    translationTargetLanguage: normalizeTranslationLanguage(raw.translationTargetLanguage),
     transcriptFormatting: isTranscriptFormattingMode(raw.transcriptFormatting)
       ? raw.transcriptFormatting
       : DEFAULT_PLUGIN_SETTINGS.transcriptFormatting,

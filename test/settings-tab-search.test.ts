@@ -17,6 +17,8 @@ describe('LocalSttSettingTab settings search', () => {
         'Manage models',
         'Speech-to-text model',
         'Text-to-speech model',
+        'Translation model',
+        'Default target language',
         'Microphone',
         'Transcript formatting',
         'Use timestamps',

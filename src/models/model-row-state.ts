@@ -143,14 +143,22 @@ function deriveRowState(
       ? failedInstall
       : null;
 
-  const allowedActions = deriveAllowedActions({
-    installed,
-    isSelected,
-    isInstalling,
-    isCanceling,
-    hasFailed: thisFailure !== null,
-    hasOtherActiveInstall,
-  });
+  const hasFailed = thisFailure !== null;
+  // A translation pack is never selected as the active engine, so an installed
+  // one that is sitting idle only offers remove and details.
+  const isIdleTranslationPack =
+    model.task === 'translation' && installed && !isInstalling && !isCanceling && !hasFailed;
+
+  const allowedActions: ModelRowAction[] = isIdleTranslationPack
+    ? ['remove', 'details']
+    : deriveAllowedActions({
+        installed,
+        isSelected,
+        isInstalling,
+        isCanceling,
+        hasFailed,
+        hasOtherActiveInstall,
+      });
 
   return {
     model,
@@ -330,6 +338,8 @@ function resolveFamilyDisplayName(
   switch (familyId) {
     case 'cohere_transcribe':
       return 'Cohere Transcribe';
+    case 'firefox_translations':
+      return 'Firefox Translations';
     case 'moonshine':
       return 'Moonshine';
     case 'nemotron_asr':

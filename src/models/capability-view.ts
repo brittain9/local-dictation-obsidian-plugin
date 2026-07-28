@@ -10,6 +10,7 @@ import type {
 } from './model-management-types';
 
 const MODEL_FORMAT_LABELS: Record<ModelFormat, string> = {
+  bergamot: 'Bergamot',
   ggml: 'GGML',
   gguf: 'GGUF',
   onnx: 'ONNX',

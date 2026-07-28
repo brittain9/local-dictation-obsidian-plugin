@@ -1346,3 +1346,58 @@
 .local-stt-hidden {
   display: none;
 }
+
+/* --- Local translation -------------------------------------------- */
+
+.local-stt-translation-modal {
+  width: min(760px, 94vw);
+}
+
+.local-stt-translation-modal__privacy,
+.local-stt-translation-modal__status {
+  color: var(--text-muted);
+}
+
+.local-stt-translation-modal__languages {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
+  gap: var(--size-4-2);
+  align-items: end;
+}
+
+.local-stt-translation-modal__languages .setting-item {
+  border: 0;
+  display: block;
+  padding: var(--size-4-2) 0;
+}
+
+.local-stt-translation-modal__languages .setting-item-control {
+  justify-content: flex-start;
+}
+
+.local-stt-translation-modal__warning {
+  color: var(--text-warning);
+}
+
+.local-stt-translation-modal__preview {
+  max-height: 140px;
+  overflow: auto;
+  white-space: pre-wrap;
+}
+
+.local-stt-translation-modal__output {
+  box-sizing: border-box;
+  min-height: 220px;
+  resize: vertical;
+  width: 100%;
+}
+
+.local-stt-translation-modal__actions {
+  border: 0;
+}
+
+@media (max-width: 600px) {
+  .local-stt-translation-modal__languages {
+    grid-template-columns: 1fr;
+  }
+}

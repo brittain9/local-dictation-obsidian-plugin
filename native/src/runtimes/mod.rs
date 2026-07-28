@@ -1,3 +1,5 @@
+pub mod bergamot_wasm;
+
 #[cfg(any(
     feature = "engine-cohere-transcribe",
     feature = "engine-moonshine",

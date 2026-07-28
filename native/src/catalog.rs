@@ -64,6 +64,8 @@ pub struct CatalogModel {
     pub task: ModelTask,
     #[serde(rename = "languageTags")]
     pub language_tags: Vec<String>,
+    #[serde(default, rename = "translationPairs")]
+    pub translation_pairs: Vec<TranslationPair>,
     #[serde(default, rename = "supportsAutomaticLanguageDetection")]
     pub supports_automatic_language_detection: bool,
     #[serde(default, rename = "defaultVoice")]
@@ -105,8 +107,15 @@ pub struct ModelArtifact {
 pub enum ArtifactRole {
     SupportingFile,
     SynthesisModel,
+    TranslationModel,
     TranscriptionModel,
     Voice,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TranslationPair {
+    pub source: String,
+    pub target: String,
 }
 
 impl ModelCatalog {
@@ -240,6 +249,7 @@ impl ModelCatalog {
             let mut artifact_ids = HashSet::new();
             let primary_role = match model.task {
                 ModelTask::Stt => ArtifactRole::TranscriptionModel,
+                ModelTask::Translation => ArtifactRole::TranslationModel,
                 ModelTask::Tts => ArtifactRole::SynthesisModel,
             };
             let mut has_primary_artifact = false;
@@ -328,6 +338,57 @@ impl ModelCatalog {
                         "STT model {} must not declare a default voice",
                         model.model_id
                     );
+                    ensure!(
+                        model.translation_pairs.is_empty(),
+                        "STT model {} must not declare translationPairs",
+                        model.model_id
+                    );
+                }
+                ModelTask::Translation => {
+                    ensure!(
+                        has_primary_artifact,
+                        "model {} must declare a required translation artifact",
+                        model.model_id
+                    );
+                    ensure!(
+                        model.default_voice.is_none(),
+                        "translation model {} must not declare a default voice",
+                        model.model_id
+                    );
+                    ensure!(
+                        !model.translation_pairs.is_empty(),
+                        "translation model {} must declare translationPairs",
+                        model.model_id
+                    );
+                    let mut pairs = HashSet::new();
+                    for pair in &model.translation_pairs {
+                        ensure!(
+                            pair.source != pair.target,
+                            "translation model {} must use different source and target languages",
+                            model.model_id
+                        );
+                        ensure!(
+                            pairs.insert((&pair.source, &pair.target)),
+                            "translation model {} declares duplicate translation pair {} -> {}",
+                            model.model_id,
+                            pair.source,
+                            pair.target
+                        );
+                        for tag in [&pair.source, &pair.target] {
+                            ensure!(
+                                VERIFIED_MULTILINGUAL_LANGUAGE_TAGS.contains(&tag.as_str()),
+                                "model {} declares unsupported translationPair language {}",
+                                model.model_id,
+                                tag
+                            );
+                            ensure!(
+                                model.language_tags.contains(tag),
+                                "model {} translationPair language {} must appear in languageTags",
+                                model.model_id,
+                                tag
+                            );
+                        }
+                    }
                 }
                 ModelTask::Tts => {
                     ensure!(
@@ -343,6 +404,11 @@ impl ModelCatalog {
                         "model {} default voice {} does not reference a voice artifact",
                         model.model_id,
                         default_voice
+                    );
+                    ensure!(
+                        model.translation_pairs.is_empty(),
+                        "TTS model {} must not declare translationPairs",
+                        model.model_id
                     );
                 }
             }
@@ -364,6 +430,7 @@ impl CatalogModel {
     pub fn primary_artifact(&self) -> Option<&ModelArtifact> {
         let primary_role = match self.task {
             ModelTask::Stt => ArtifactRole::TranscriptionModel,
+            ModelTask::Translation => ArtifactRole::TranslationModel,
             ModelTask::Tts => ArtifactRole::SynthesisModel,
         };
         self.artifacts
@@ -407,6 +474,47 @@ mod tests {
     #[test]
     fn bundled_catalog_is_valid() {
         ModelCatalog::load_bundled().expect("bundled catalog should parse and validate");
+    }
+
+    #[test]
+    fn bundled_firefox_translation_pack_is_pinned_and_license_clean() {
+        let catalog = ModelCatalog::load_bundled().expect("bundled catalog should load");
+        let model = catalog
+            .find_model(
+                RuntimeId::BergamotWasm,
+                ModelFamilyId::FirefoxTranslations,
+                "firefox_translations_release_2026_07",
+            )
+            .expect("Firefox translation pack should be cataloged");
+
+        assert_eq!(model.task, ModelTask::Translation);
+        assert_eq!(model.license_label, "MPL-2.0");
+        assert_eq!(model.translation_pairs.len(), 14);
+        assert_eq!(
+            model
+                .artifacts
+                .iter()
+                .filter(|artifact| artifact.role == ArtifactRole::TranslationModel)
+                .count(),
+            14
+        );
+        assert_eq!(
+            model
+                .artifacts
+                .iter()
+                .find(|artifact| artifact.artifact_id == "runtime")
+                .map(|artifact| artifact.sha256.as_str()),
+            Some("a3a89d9ad0a4ed8f27bf3e403701b23f5709816f6376438503f2fa5b0182c2dc")
+        );
+        assert_eq!(
+            model
+                .artifacts
+                .iter()
+                .find(|artifact| artifact.artifact_id == "runtime_glue")
+                .map(|artifact| artifact.sha256.as_str()),
+            Some("faff1ef6285b0d26f01787776fd49299dfb756ecb9688aa990c250e66797b47d")
+        );
+        assert!(model.required_download_bytes() < 560 * 1024 * 1024);
     }
 
     #[test]
@@ -716,6 +824,7 @@ mod tests {
             family_id: ModelFamilyId::Whisper,
             task: ModelTask::Stt,
             language_tags: vec!["en".to_string()],
+            translation_pairs: Vec::new(),
             supports_automatic_language_detection: false,
             default_voice: None,
             license_label: "MIT".to_string(),

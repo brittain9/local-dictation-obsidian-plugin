@@ -75,6 +75,7 @@ import {
   detectSidecarVersionDrift,
   type SidecarVersionDrift,
 } from './sidecar/sidecar-version-drift';
+import { TranslationController } from './translation/translation-controller';
 import { READ_ALOUD_SPEED_PRESETS, readAloudControlLabels } from './tts/read-aloud-control-labels';
 import { ReadAloudController, type ReadAloudState } from './tts/read-aloud-controller';
 import { didReadAloudSettingsChange, resolveReadAloudVoiceId } from './tts/read-aloud-selection';
@@ -115,6 +116,7 @@ export default class LocalSttPlugin extends Plugin {
   private sidecarConnection: SidecarConnection | null = null;
   private sidecarInstallManager: SidecarInstallManager | null = null;
   private readonly temporaryLeafPinLeaseManager = new TemporaryLeafPinLeaseManager();
+  private translationController: TranslationController | null = null;
 
   override async onload(): Promise<void> {
     const persistedData: unknown = await this.loadData();
@@ -296,6 +298,15 @@ export default class LocalSttPlugin extends Plugin {
     this.releaseReadAloudModelSubscription = this.requireModelInstallManager().subscribe(() => {
       this.renderReadAloudStatus(this.readAloudController?.getState() ?? 'idle');
     });
+    this.translationController = new TranslationController({
+      app: this.app,
+      feedback: this.feedback,
+      getSettings: () => this.settings,
+      logger: this.logger,
+      modelManager: this.requireModelInstallManager(),
+      openModelPicker: () => this.openModelPicker({ initialTask: 'translation' }),
+      saveSettings: (nextSettings) => this.updateSettings(nextSettings),
+    });
 
     this.addSettingTab(
       new LocalSttSettingTab(this.app, this, {
@@ -356,6 +367,9 @@ export default class LocalSttPlugin extends Plugin {
       startDictation: async () => this.requireDictationController().startDictation(),
       stopReadAloud: () => this.requireReadAloudController().stop(),
       stopDictation: async () => this.requireDictationController().stopDictation(),
+      translateNote: (editor) => this.requireTranslationController().translateNote(editor),
+      translateSelection: (editor) =>
+        this.requireTranslationController().translateSelection(editor),
       toggleDictation: async () => this.requireDictationController().toggleDictation(),
       toggleReadAloudPaused: () => this.requireReadAloudController().togglePaused(),
     });
@@ -363,6 +377,14 @@ export default class LocalSttPlugin extends Plugin {
     this.registerEvent(
       this.app.workspace.on('editor-menu', (menu, editor) => {
         if (!editor.somethingSelected()) return;
+        menu.addItem((item) => {
+          item
+            .setTitle(t('commands.translateSelection'))
+            .setIcon('languages')
+            .onClick(() => {
+              this.requireTranslationController().translateSelection(editor);
+            });
+        });
         menu.addItem((item) => {
           item
             .setTitle(t('commands.readAloud'))
@@ -555,6 +577,12 @@ export default class LocalSttPlugin extends Plugin {
     }
 
     try {
+      this.translationController?.dispose();
+    } catch (error) {
+      this.logger.error('translation', 'failed to dispose translation controller cleanly', error);
+    }
+
+    try {
       await this.dictationController?.dispose();
     } catch (error) {
       this.logger.error('session', 'failed to dispose dictation controller cleanly', error);
@@ -709,6 +737,13 @@ export default class LocalSttPlugin extends Plugin {
       throw new Error('Read-aloud controller has not been initialized.');
     }
     return this.readAloudController;
+  }
+
+  private requireTranslationController(): TranslationController {
+    if (this.translationController === null) {
+      throw new Error('Translation controller has not been initialized.');
+    }
+    return this.translationController;
   }
 
   private renderReadAloudStatus(state: ReadAloudState): void {

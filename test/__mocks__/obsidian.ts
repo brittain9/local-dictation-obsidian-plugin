@@ -247,6 +247,7 @@ export class TextComponent {
 export class ButtonComponent {
   readonly buttonEl = new TestElement();
   disabled = false;
+  icon = '';
   text = '';
   private clickHandler: () => unknown = () => {};
 
@@ -277,6 +278,11 @@ export class ButtonComponent {
     return this;
   }
 
+  setIcon(icon: string): this {
+    this.icon = icon;
+    return this;
+  }
+
   setWarning(): this {
     return this;
   }
@@ -284,13 +290,7 @@ export class ButtonComponent {
 
 export class ExtraButtonComponent extends ButtonComponent {
   readonly extraSettingsEl = new TestElement();
-  icon = '';
   tooltip = '';
-
-  setIcon(icon: string): this {
-    this.icon = icon;
-    return this;
-  }
 
   setTooltip(tooltip: string): this {
     this.tooltip = tooltip;
@@ -467,6 +467,11 @@ export class Setting {
     } else {
       this.descEl.setText(description);
     }
+    return this;
+  }
+
+  setClass(className: string): this {
+    this.settingEl.addClass(className);
     return this;
   }
 

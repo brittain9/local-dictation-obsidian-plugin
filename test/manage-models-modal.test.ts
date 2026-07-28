@@ -99,6 +99,7 @@ function row(model: CatalogModelRecord): ModelRowState {
 describe('model browser', () => {
   it('deep-links to the requested task and defaults setup entry points to dictation', () => {
     expect(resolveInitialModelPickerTask({ initialTask: 'tts' })).toBe('tts');
+    expect(resolveInitialModelPickerTask({ initialTask: 'translation' })).toBe('translation');
     expect(resolveInitialModelPickerTask({})).toBe('stt');
   });
 

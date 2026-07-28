@@ -8,3 +8,7 @@ declare module 'virtual:pcm-recorder-worklet-source' {
 declare module 'virtual:build-mode' {
   export const IS_PRODUCTION_BUILD: boolean;
 }
+
+declare module 'virtual:bergamot-worker-source' {
+  export const BERGAMOT_WORKER_SOURCE: string;
+}
