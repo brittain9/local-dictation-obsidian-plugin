@@ -10,7 +10,7 @@ import {
 import { StateBackedEditorView } from './fixtures/state-backed-editor-view';
 
 describe('RawTranscriptRecovery', () => {
-  it('announces enabled recovery with a transient keyed restore action without exposing content', () => {
+  it('records enabled recovery without presenting feedback', () => {
     const rawText = 'private raw transcript';
     const transformedText = 'private transformed transcript';
     const harness = createHarness(transformedText, {
@@ -21,39 +21,13 @@ describe('RawTranscriptRecovery', () => {
 
     harness.recovery.record(harness.receipt());
 
-    expect(harness.feedback.show).toHaveBeenCalledExactlyOnceWith({
-      action: expect.objectContaining({
-        label: 'Restore original',
-        run: expect.any(Function),
-      }),
-      intent: 'warning',
-      key: 'raw-transcript-recovery-available',
-      message: 'Cleanup replaced the original transcript. You can restore it.',
-    });
-    expect(JSON.stringify(harness.feedback.show.mock.calls)).not.toContain(rawText);
-    expect(JSON.stringify(harness.feedback.show.mock.calls)).not.toContain(transformedText);
+    expect(harness.recovery.hasRecovery()).toBe(true);
+    expect(harness.feedback.show).not.toHaveBeenCalled();
   });
 
-  it('restores the current receipt through the recovery notice action', () => {
-    const harness = createHarness('clean');
-    harness.recovery.record(harness.receipt({ rawText: 'raw' }));
-
-    recoveryAction(harness).run();
-
-    expect(harness.view.state.doc.toString()).toBe('raw');
-    expect(harness.recovery.hasRecovery()).toBe(false);
-    expect(harness.feedback.dismiss).toHaveBeenCalledWith('raw-transcript-recovery-available');
-    expect(harness.feedback.show).toHaveBeenLastCalledWith({
-      intent: 'success',
-      key: 'raw-transcript-restored',
-      message: 'Restored the raw transcript.',
-    });
-  });
-
-  it('overwrites the prior record and replaces its notice with an action for the latest receipt', () => {
+  it('overwrites the prior record and restores the latest receipt', () => {
     const harness = createHarness('clean one');
     harness.recovery.record(harness.receipt({ rawText: 'raw one' }));
-    const firstAction = recoveryAction(harness);
     harness.view.state = EditorState.create({ doc: 'clean two' });
     harness.recovery.record(
       harness.receipt({
@@ -64,13 +38,7 @@ describe('RawTranscriptRecovery', () => {
       }),
     );
 
-    expect(harness.feedback.show).toHaveBeenCalledTimes(2);
-    expect(harness.feedback.show.mock.calls.map(([request]) => request.key)).toEqual([
-      'raw-transcript-recovery-available',
-      'raw-transcript-recovery-available',
-    ]);
-
-    firstAction.run();
+    expect(harness.recovery.restoreRawTranscript()).toBe(true);
     expect(harness.view.state.doc.toString()).toBe('raw two');
   });
 
@@ -100,7 +68,6 @@ describe('RawTranscriptRecovery', () => {
     harness.recovery.record(harness.receipt({ rawText: 'must not persist' }));
 
     expect(harness.recovery.hasRecovery()).toBe(false);
-    expect(harness.feedback.dismiss).toHaveBeenCalledWith('raw-transcript-recovery-available');
     expect(harness.feedback.show).not.toHaveBeenCalled();
 
     harness.recovery.setEnabled(true);
@@ -131,7 +98,6 @@ describe('RawTranscriptRecovery', () => {
     });
     expect(harness.view.state.doc.toString()).toBe('before raw words after');
     expect(harness.recovery.hasRecovery()).toBe(false);
-    expect(harness.feedback.dismiss).toHaveBeenCalledWith('raw-transcript-recovery-available');
   });
 
   it('refuses restore after any document change without editing the note', () => {
@@ -154,32 +120,6 @@ describe('RawTranscriptRecovery', () => {
       key: 'raw-transcript-restore-stale',
       message: 'Could not restore the raw transcript because the note changed after cleanup.',
     });
-  });
-
-  it('keeps recovery available and reports stale restore when its notice action is used after a change', () => {
-    const rawText = 'private raw transcript';
-    const transformedText = 'private transformed transcript';
-    const harness = createHarness(transformedText, {
-      rawText,
-      to: transformedText.length,
-      transformedText,
-    });
-    harness.recovery.record(harness.receipt());
-    harness.view.state = harness.view.state.update({
-      changes: { from: 0, insert: 'changed ' },
-    }).state;
-
-    recoveryAction(harness).run();
-
-    expect(harness.recovery.hasRecovery()).toBe(true);
-    expect(harness.view.dispatch).not.toHaveBeenCalled();
-    expect(harness.feedback.show).toHaveBeenLastCalledWith({
-      intent: 'warning',
-      key: 'raw-transcript-restore-stale',
-      message: 'Could not restore the raw transcript because the note changed after cleanup.',
-    });
-    expect(JSON.stringify(harness.feedback.show.mock.calls)).not.toContain(rawText);
-    expect(JSON.stringify(harness.feedback.show.mock.calls)).not.toContain(transformedText);
   });
 
   it('keeps recovery available when the editor filters out the restore edit', () => {
@@ -248,7 +188,6 @@ describe('RawTranscriptRecovery', () => {
     expect(harness.recovery.clearWithFeedback()).toBe(true);
 
     expect(harness.recovery.hasRecovery()).toBe(false);
-    expect(harness.feedback.dismiss).toHaveBeenCalledWith('raw-transcript-recovery-available');
     expect(harness.feedback.show).toHaveBeenLastCalledWith({
       intent: 'success',
       key: 'raw-transcript-recovery-cleared',
@@ -299,14 +238,6 @@ describe('RawTranscriptRecovery', () => {
   });
 });
 
-function recoveryAction(harness: ReturnType<typeof createHarness>): { run: () => void } {
-  const [request] = harness.feedback.show.mock.calls.at(-1) ?? [];
-  if (request?.action === undefined) {
-    throw new Error('Expected a recovery notice action.');
-  }
-  return request.action;
-}
-
 function createHarness(
   documentText: string,
   options: {
@@ -327,7 +258,7 @@ function createHarness(
       },
     },
   ];
-  const feedback = { dismiss: vi.fn(), show: vi.fn() };
+  const feedback = { show: vi.fn() };
   const writeText = options.writeText ?? vi.fn(async (_text: string) => {});
   const recovery = new RawTranscriptRecovery({
     feedback,
