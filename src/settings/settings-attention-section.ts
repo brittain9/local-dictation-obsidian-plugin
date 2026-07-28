@@ -257,6 +257,9 @@ export function renderSettingsAttention(
   onActionSettled: () => void,
 ): RenderedAttention {
   container.empty();
+  // Participate in Obsidian's native settings-group rhythm so the following
+  // section heading keeps the same separation as every other group boundary.
+  container.addClass('setting-group');
   container.addClass('local-stt-settings-attention');
   const isEmpty = resolution.kind === 'items' && resolution.items.length === 0;
   container.toggleClass('local-stt-hidden', isEmpty);

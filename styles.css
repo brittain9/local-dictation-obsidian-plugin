@@ -1210,12 +1210,12 @@
 
 /* --- Settings attention ------------------------------------------ */
 
-/* Bordered in the theme accent rather than a muted grey: this callout is the
-   one thing in Settings that is asking to be acted on, and the previous
-   border/background pair made it read as inert chrome. The fill stays
-   `--background-secondary` so the row text keeps full contrast in every theme. */
+/* This is also a native `setting-group`, which owns the vertical rhythm before
+   the following section heading. Bordered in the theme accent rather than a
+   muted grey: this callout is the one thing in Settings that is asking to be
+   acted on. The fill stays `--background-secondary` so the row text keeps full
+   contrast in every theme. */
 .local-stt-settings-attention {
-  margin: 0 0 var(--size-4-6);
   overflow: hidden;
   border: 1px solid var(--interactive-accent, #7c3aed);
   border-left-width: 3px;
