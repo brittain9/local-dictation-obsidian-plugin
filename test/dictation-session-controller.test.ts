@@ -1351,7 +1351,7 @@ describe('DictationSessionController', () => {
       intent: 'error',
       key: 'dictation-surface-desynchronized',
       message:
-        'Dictation stopped because the note changed in a way Local Dictation could not safely track. Start dictation again to continue.',
+        'Dictation stopped because the note changed in a way Speech Kit could not safely track. Start dictation again to continue.',
     });
     await vi.waitFor(() => {
       expect(sessions[0]?.acceptTranscript).not.toHaveBeenCalled();
@@ -1789,7 +1789,7 @@ describe('DictationSessionController', () => {
       intent: 'error',
       key: 'transcript-write-failed',
       message:
-        'Dictation stopped because Local Dictation could not safely write to the note. Start dictation again to continue.',
+        'Dictation stopped because Speech Kit could not safely write to the note. Start dictation again to continue.',
     });
     expect(sessions[0]?.acceptTranscript).toHaveBeenCalledOnce();
   });
@@ -2689,7 +2689,7 @@ describe('DictationSessionController', () => {
       code: 'utterance_queue_overload',
       details: 'queue depth reached saturation at 32',
       message:
-        'Local Dictation stopped because the transcription backlog reached capacity. Already accepted utterances will finish processing.',
+        'Speech Kit stopped because the transcription backlog reached capacity. Already accepted utterances will finish processing.',
       sessionId,
       type: 'error',
     });

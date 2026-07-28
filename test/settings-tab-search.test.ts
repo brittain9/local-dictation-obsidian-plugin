@@ -11,7 +11,7 @@ describe('LocalSttSettingTab settings search', () => {
 
     expect(definitions).toHaveLength(1);
     const definition = definitions[0] as SettingDefinition;
-    expect(definition.name).toBe('Local Dictation');
+    expect(definition.name).toBe('Speech Kit');
     expect(definition.aliases).toEqual(
       expect.arrayContaining([
         'Manage models',

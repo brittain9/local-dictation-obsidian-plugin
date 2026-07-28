@@ -1089,7 +1089,7 @@ export default class LocalSttPlugin extends Plugin {
 
   private async resolvePluginDirectoryPath(): Promise<string> {
     if (!Platform.isDesktopApp) {
-      throw new Error('Local Dictation requires Obsidian desktop.');
+      throw new Error('Speech Kit requires Obsidian desktop.');
     }
 
     const vaultAdapter = this.app.vault.adapter;

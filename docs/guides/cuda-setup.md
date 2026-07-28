@@ -14,7 +14,7 @@ This guide covers enabling CUDA on Windows and Linux, and building from source.
 
 ## What CUDA accelerates
 
-Local Dictation's CUDA sidecar uses whisper.cpp's mature CUDA backend for
+Speech Kit's CUDA sidecar uses whisper.cpp's mature CUDA backend for
 Whisper. Acceleration options are model-aware, so Settings shows GPU controls
 only when the selected model has a production-ready accelerated path. The CUDA
 download is streamlined around this route.
@@ -23,13 +23,13 @@ download is streamlined around this route.
 
 No sandbox, so this is straightforward.
 
-1. Install the CUDA sidecar variant from **Settings → Local Dictation** (sidecar section), or build from source (below).
+1. Install the CUDA sidecar variant from **Settings → Speech Kit** (sidecar section), or build from source (below).
 2. Confirm the driver:
    ```powershell
    nvidia-smi
    ```
 3. Under **Engine options**, leave **GPU acceleration** on **Use when available**.
-4. Run **Local Dictation: Check sidecar health**, then confirm the Whisper
+4. Run **Speech Kit: Check sidecar health**, then confirm the Whisper
    hardware-acceleration row says `Configured acceleration: CUDA`.
 
 ## Linux (native)
@@ -45,12 +45,12 @@ Flatpak hides the host `/usr`, and a global `LD_LIBRARY_PATH` breaks Electron's 
    flatpak override --user --filesystem=host-os md.obsidian.Obsidian
    flatpak override --user --device=all md.obsidian.Obsidian
    ```
-2. In **Settings → Local Dictation → Advanced: Sidecar**, set **CUDA library path** to the colon-separated host library directories. Use resolved real paths (from `readlink -f /usr/local/cuda`), not the `/usr/local/cuda` symlink — symlinks break across the sandbox boundary. This scopes `LD_LIBRARY_PATH` to the sidecar child process only. For example:
+2. In **Settings → Speech Kit → Advanced: Sidecar**, set **CUDA library path** to the colon-separated host library directories. Use resolved real paths (from `readlink -f /usr/local/cuda`), not the `/usr/local/cuda` symlink — symlinks break across the sandbox boundary. This scopes `LD_LIBRARY_PATH` to the sidecar child process only. For example:
    ```text
    /run/host/usr/local/cuda-13.2/targets/x86_64-linux/lib:/run/host/usr/local/cuda-13.2/lib64:/run/host/usr/lib64
    ```
 3. If the sidecar isn't auto-discovered inside the sandbox, set **Sidecar path override** to the CUDA binary.
-4. Run **Local Dictation: Check sidecar health** and confirm the Whisper
+4. Run **Speech Kit: Check sidecar health** and confirm the Whisper
    hardware-acceleration row says `Configured acceleration: CUDA`.
 
 Don't set `LD_LIBRARY_PATH` as a global Flatpak override — it makes Electron load host audio libraries and breaks the microphone (`NotReadableError: Could not start audio source`). Use the plugin's `CUDA library path` setting instead.

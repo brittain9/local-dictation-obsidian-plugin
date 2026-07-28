@@ -6,7 +6,7 @@ selected model, voice, and any buffering.
 
 ## Model and voice management
 
-1. Open **Settings → Local Dictation → Read aloud → Manage models**. Confirm the
+1. Open **Settings → Speech Kit → Read aloud → Manage models**. Confirm the
    picker opens on Read-aloud models and remains separate from Dictation models.
 2. Install one Pocket TTS language. Confirm the warning and required download
    size are clear before installing a high-CPU model.

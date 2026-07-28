@@ -102,10 +102,10 @@ Do not merge with failing CI.
 English is the source of truth for user-visible plugin copy. Translation catalogs live in
 `src/locales/`, with one TypeScript module per Obsidian locale code. To add a language, copy an
 existing non-English catalog, translate its values, and register it in `src/locales/index.ts`.
-The locale does not need to be one of Local Dictation's supported dictation languages.
+The locale does not need to be one of Speech Kit's supported dictation languages.
 
 Keep catalog keys identical to `src/locales/en.ts`, preserve placeholders such as `{provider}`
-and `{max}` exactly, and leave product names such as Local Dictation, Obsidian, Ollama,
+and `{max}` exactly, and leave product names such as Speech Kit, Obsidian, Ollama,
 OpenRouter, CUDA, and model names untranslated. Use the language's natural punctuation and UI
 wording rather than translating English syntax literally. If an English key has not been
 translated yet, omit it: the UI falls back to English for that key.

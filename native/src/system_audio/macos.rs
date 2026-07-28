@@ -105,7 +105,7 @@ fn parse_tap_format(
 // (kAudioHardwareIllegalOperationError).
 fn aggregate_device_description(uid: String, tap_uid: String) -> AggregateDeviceDescription {
     AggregateDeviceDescription {
-        name: "Local Dictation System Audio",
+        name: "Speech Kit System Audio",
         uid,
         is_private: true,
         tap_auto_start: false,
@@ -569,7 +569,7 @@ mod platform {
             SystemAudioError::Capture("CATapDescription initialization returned null".into())
         })?;
 
-        let name = NSString::from_str("Local Dictation System Audio");
+        let name = NSString::from_str("Speech Kit System Audio");
         unsafe {
             let _: () = msg_send![&*tap_description, setName: &*name];
             let _: () = msg_send![&*tap_description, setPrivate: true];
@@ -863,7 +863,7 @@ mod tests {
         assert_eq!(
             description,
             AggregateDeviceDescription {
-                name: "Local Dictation System Audio",
+                name: "Speech Kit System Audio",
                 uid: "device-uid".to_string(),
                 is_private: true,
                 tap_auto_start: false,

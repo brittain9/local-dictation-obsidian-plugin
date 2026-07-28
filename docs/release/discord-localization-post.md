@@ -16,4 +16,4 @@ Local Dictation for Obsidian is now localized for 8 languages: English, Spanish,
 Next up: text-to-speech and deeper speech workflows built for Obsidian.
 
 Install: [Obsidian Community Plugin](https://obsidian.md/plugins?id=local-dictation)
-Release: [GitHub release](https://github.com/brittain9/local-dictation-obsidian-plugin/releases/latest)
+Release: [GitHub release](https://github.com/brittain9/speech-kit-obsidian-plugin/releases/latest)

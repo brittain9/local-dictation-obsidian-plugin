@@ -48,7 +48,7 @@ export interface InstallSidecarResult {
 }
 
 export const DEFAULT_RELEASE_BASE_URL =
-  'https://github.com/brittain9/local-dictation-obsidian-plugin/releases/download';
+  'https://github.com/brittain9/speech-kit-obsidian-plugin/releases/download';
 
 const INSTALL_MANIFEST_FILENAME = 'install.json';
 
@@ -64,7 +64,7 @@ export function detectPlatformAsset(
 
     if (arch !== 'arm64') {
       throw new Error(
-        'Local Dictation requires an Apple Silicon Mac (M1 or newer). Intel Macs are not supported.',
+        'Speech Kit requires an Apple Silicon Mac (M1 or newer). Intel Macs are not supported.',
       );
     }
 

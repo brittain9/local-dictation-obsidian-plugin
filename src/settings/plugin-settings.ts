@@ -652,7 +652,7 @@ function migrateLlmPresetState(args: {
   }
   if (args.userPresets.length >= LLM_USER_PRESET_MAX_COUNT) {
     console.warn(
-      '[Local Dictation] Custom LLM prompt could not be migrated into a preset: the preset limit is reached. The prompt was dropped.',
+      '[Speech Kit] Custom LLM prompt could not be migrated into a preset: the preset limit is reached. The prompt was dropped.',
     );
     return { activeRef: resolvedRef ?? fallbackRef, userPresets: args.userPresets };
   }

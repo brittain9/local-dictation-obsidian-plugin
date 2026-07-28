@@ -38,18 +38,18 @@ export const ja = {
   'notice.sidecarVersionDrift.cuda':
     '{version}に更新されましたが、インストールされたCUDA音声エンジンは古くなっています。今すぐ更新して、同期を維持しましょう。',
   'notice.surfaceDesynchronized':
-    'Local Dictationが安全に追跡できなかった方法でメモが変更されたため、ディクテーションが停止しました。続行するには、再度ディクテーションを開始してください。',
+    'Speech Kit が安全に追跡できなかった方法でメモが変更されたため、ディクテーションが停止しました。続行するには、再度ディクテーションを開始してください。',
   'notice.targetNoteClosed':
     'ターゲットノートが閉じられたか置き換えられたため、ディクテーションが停止しました。続行するには、再度ディクテーションを開始してください。',
   'notice.targetNoteDeleted':
     'ターゲットノートが削除されたため、ディクテーションが停止しました。メモを復元または再作成してから、再度ディクテーションを開始します。',
   'notice.transcriptWriteFailed':
-    'Local Dictationが安全にメモに書き込めなかったため、ディクテーションが停止しました。続行するには、再度ディクテーションを開始してください。',
+    'Speech Kit が安全にメモに書き込めなかったため、ディクテーションが停止しました。続行するには、再度ディクテーションを開始してください。',
   'setup.sidecar.cpu.firstRun.body':
-    'Local Dictationは、GitHubリリースからCPU音声テキスト変換エンジンを1回限りダウンロードする必要があります。これが完了すると、マシン上でローカルにトランスクリプションが実行されます。CUDAアクセラレーションは、後で設定からインストールできます。',
+    'Speech Kit は、GitHubリリースからCPU音声テキスト変換エンジンを1回限りダウンロードする必要があります。これが完了すると、マシン上でローカルにトランスクリプションが実行されます。CUDAアクセラレーションは、後で設定からインストールできます。',
   'setup.sidecar.cpu.firstRun.primaryButton': 'CPU sidecarをダウンロード',
-  'setup.sidecar.cpu.firstRun.success': 'Local Dictation sidecar をインストールして起動しました。',
-  'setup.sidecar.cpu.firstRun.title': 'Local Dictation のセットアップを完了する',
+  'setup.sidecar.cpu.firstRun.success': 'Speech Kit sidecar をインストールして起動しました。',
+  'setup.sidecar.cpu.firstRun.title': 'Speech Kit のセットアップを完了する',
   'setup.sidecar.cpu.install.body':
     'GitHub リリースから CPU 音声テキスト変換エンジンをダウンロードします。これが完了すると、転写がマシン上でローカルに実行されます。',
   'setup.sidecar.cpu.install.primaryButton': 'CPU sidecar をダウンロード',
@@ -64,10 +64,10 @@ export const ja = {
   'setup.sidecar.cuda.install.success': 'CUDA sidecarをインストールして起動しました。',
   'setup.sidecar.cuda.install.title': 'CUDA アクセラレーションをインストールする',
   'setup.sidecar.mac.firstRun.body':
-    'Local Dictation では、GitHub リリースから音声テキスト変換エンジンを 1 回だけダウンロードする必要があります。インストールすると、文字起こしは完全に Mac 上で実行されます。オーディオがマシンから離れることはありません。',
+    'Speech Kit では、GitHub リリースから音声テキスト変換エンジンを 1 回だけダウンロードする必要があります。インストールすると、文字起こしは完全に Mac 上で実行されます。オーディオがマシンから離れることはありません。',
   'setup.sidecar.mac.firstRun.primaryButton': 'sidecar をダウンロード',
-  'setup.sidecar.mac.firstRun.success': 'Local Dictation sidecar をインストールして起動しました。',
-  'setup.sidecar.mac.firstRun.title': 'Local Dictation のセットアップを完了する',
+  'setup.sidecar.mac.firstRun.success': 'Speech Kit sidecar をインストールして起動しました。',
+  'setup.sidecar.mac.firstRun.title': 'Speech Kit のセットアップを完了する',
   'setup.sidecar.mac.install.body':
     'GitHub リリースから音声テキスト変換エンジンをダウンロードします。これが完了すると、文字起こしが Mac 上でローカルに実行されます。',
   'setup.sidecar.mac.install.primaryButton': 'sidecar をダウンロード',
@@ -79,15 +79,14 @@ export const ja = {
   'setup.sidecar.mac.reinstall.success': 'Sidecarを再インストールして再起動しました。',
   'setup.sidecar.mac.reinstall.title': 'sidecarを再インストールする',
   'setup.sidecar.update.body':
-    'このバージョンの Local Dictation と一致するように、現在の {engineLabel} をダウンロードします。既存のインストールは置き換えられます。',
+    'このバージョンの Speech Kit と一致するように、現在の {engineLabel} をダウンロードします。既存のインストールは置き換えられます。',
   'setup.sidecar.update.engine.cpuAndCuda': 'CPU および CUDA 音声エンジン',
   'setup.sidecar.update.engine.cuda': 'CUDA 音声エンジン',
   'setup.sidecar.update.engine.default': '音声エンジン',
   'setup.sidecar.update.primaryButton_one': '音声エンジンを更新する',
   'setup.sidecar.update.primaryButton_other': '音声エンジンを更新する',
-  'setup.sidecar.update.success_one': 'Local Dictation 音声エンジンが更新され、再起動されました。',
-  'setup.sidecar.update.success_other':
-    'Local Dictation 音声エンジンが更新され、再起動されました。',
+  'setup.sidecar.update.success_one': 'Speech Kit 音声エンジンが更新され、再起動されました。',
+  'setup.sidecar.update.success_other': 'Speech Kit 音声エンジンが更新され、再起動されました。',
   'setup.sidecar.update.title_one': '音声エンジンを更新する',
   'setup.sidecar.update.title_other': '音声エンジンを更新する',
   'audio.microphone.permissionDeniedMac':
@@ -281,9 +280,9 @@ export const ja = {
   'settings.install.installingSidecarMac': 'sidecarのインストール',
   'settings.install.cancelling': 'キャンセル中...',
   'settings.install.cancel': 'キャンセル',
-  'settings.missingSidecar.name': 'Local Dictation のセットアップ',
+  'settings.missingSidecar.name': 'Speech Kit のセットアップ',
   'settings.missingSidecar.desc':
-    'Local Dictation はまだ準備ができていません。セットアップ ウィザードを実行して、音声エンジンとモデルをインストールします。',
+    'Speech Kit はまだ準備ができていません。セットアップ ウィザードを実行して、音声エンジンとモデルをインストールします。',
   'settings.sidecar.name': 'Sidecar',
   'settings.sidecar.genericName': 'sidecar',
   'settings.sidecar.variantName': '{variant} sidecar',
@@ -310,7 +309,7 @@ export const ja = {
   'settings.sidecar.reinstall': '再インストール',
   'settings.sidecar.uninstall': 'アンインストール',
   'settings.sidecar.install': 'インストール',
-  'plugin.name': 'Local Dictation',
+  'plugin.name': 'Speech Kit',
   'common.cancel': 'キャンセル',
   'common.delete': '削除',
   'common.duplicate': '複製',
@@ -320,11 +319,11 @@ export const ja = {
   'common.on': 'オン',
   'common.save': '保存',
   'common.unavailable': '利用不可',
-  'ribbon.idle': 'Local Dictation — ディクテーションの開始',
-  'ribbon.starting': 'Local Dictation — 開始中…',
-  'ribbon.listening': 'Local Dictation — 聞き取り中',
-  'ribbon.speechDetected': 'Local Dictation — 音声を検出',
-  'ribbon.error': 'Local Dictation — エラー',
+  'ribbon.idle': 'Speech Kit — ディクテーションの開始',
+  'ribbon.starting': 'Speech Kit — 開始中…',
+  'ribbon.listening': 'Speech Kit — 聞き取り中',
+  'ribbon.speechDetected': 'Speech Kit — 音声を検出',
+  'ribbon.error': 'Speech Kit — エラー',
   'validation.wholeNumberRange': '{min} から {max} までの整数を入力します。',
   'validation.numberRange': '{min} から {max} までの数値を入力します。',
   'llm.managedByPreset':
@@ -423,7 +422,7 @@ export const ja = {
   'llm.sidebar.activePreset': 'アクティブなプリセット',
   'llm.sidebar.unavailable.title': 'LLM 機能は使用できません',
   'llm.sidebar.unavailable.description':
-    'Local Dictation 設定で LLM 機能を有効にして、変換を構成します。',
+    'Speech Kit 設定で LLM 機能を有効にして、変換を構成します。',
   'llm.sidebar.unavailable.summary': '設定で LLM 機能を有効にする',
   'llm.sidebar.off.title': '生のトランスクリプトモード',
   'llm.sidebar.off.description':
@@ -538,8 +537,8 @@ export const ja = {
     'Markdown ノートを編集モードで開き、ディクテーションを再試行してください。',
   'setup.ready.completionFailed':
     'セットアップを完了できませんでした。もう一度やり直してください。',
-  'setup.wizard.welcomeTitle': 'Local Dictationへようこそ',
-  'setup.wizard.title': 'Local Dictation のセットアップ',
+  'setup.wizard.welcomeTitle': 'Speech Kit へようこそ',
+  'setup.wizard.title': 'Speech Kit のセットアップ',
   'setup.wizard.engineReadyTitle': '音声エンジンの準備完了',
   'setup.wizard.engineReadyDesc':
     'ローカルの音声テキスト変換エンジンがインストールされ、準備が整いました。',
@@ -558,7 +557,7 @@ export const ja = {
   'setup.wizard.modelIntro':
     '書き起こしモデルをインストールしてディクテーションを有効にします。後でさらにインストールすることもできます。モデルが小さいほど高速で、モデルが大きいほど正確です。',
   'setup.wizard.modelKinds':
-    '2 種類が利用可能です。ストリーミング モデルは、話しているときに単語をライブで表示します。標準モデルは、一時停止するたびに転写します。ハンズフリーディクテーションの場合は、推奨される Moonshine Small モデルから始めてください。 Nemotron 3.5 ASR は、実験的な高リソース ストリーミング オプションです。',
+    '2 種類が利用可能です。ストリーミング モデルは、話しているときに単語をライブで表示します。標準モデルは、一時停止するたびに転写します。ハンズフリーディクテーションの場合は、推奨される Moonshine Small モデルから始めてください。Nemotron 3.5 ASR は、多くのリソースを必要とするストリーミング オプションです。',
   'setup.wizard.openModelPicker': 'モデルピッカーを開く',
   'setup.wizard.readyTitle': '口述する準備ができました',
   'setup.wizard.readyDesc':
@@ -568,12 +567,12 @@ export const ja = {
     'Obsidian リボンでこのアイコンを探します。クリックしてディクテーションを開始します。もう一度クリックすると停止します。',
   'setup.wizard.hotkeyTitle': 'またはホットキーをバインドします',
   'setup.wizard.hotkeyDescBefore': 'ショートカットをバインドします',
-  'setup.wizard.toggleCommandName': 'Local Dictation: ディクテーションの切り替え',
+  'setup.wizard.toggleCommandName': 'Speech Kit: ディクテーションの切り替え',
   'setup.wizard.hotkeyDescAfter': 'Obsidian のどこからでも開始および停止できるコマンド。',
   'setup.wizard.openHotkeySettings': 'ホットキー設定を開く',
   'setup.wizard.tryDictationNow': '今すぐディクテーションを試してください',
   'setup.wizard.openHotkeySettingsFallback':
-    '「設定」→「ホットキー」を開き、「Local Dictation」を検索します。',
+    '「設定」→「ホットキー」を開き、「Speech Kit」を検索します。',
   'setup.sidecar.modal.download': 'ダウンロード',
   'setup.sidecar.modal.variantDownload': '{variant} ダウンロード',
   'setup.sidecar.modal.version': 'バージョン',
@@ -613,7 +612,7 @@ export const ja = {
   'models.manage.removedNotice': 'モデルが削除されました。',
   'models.external.title': '外部ファイルを使用する',
   'models.external.intro':
-    '外部モデルは高度な用途向けです。 Local Dictation は、これらのファイルのダウンロード、更新、チェックサム検証を行いません。',
+    '外部モデルは高度な用途向けです。 Speech Kit は、これらのファイルのダウンロード、更新、チェックサム検証を行いません。',
   'models.external.family.name': 'モデルファミリー',
   'models.external.family.desc':
     'モデルに合ったローダーを選択してください。ファミリーはファイル名から推測されません。',
@@ -720,7 +719,7 @@ export const ja = {
   'sidecarError.session_already_exists':
     'この ID のディクテーション セッションはすでに存在します。',
   'sidecarError.session_capacity_exceeded':
-    'Local Dictation にはすでにアクティブなセッションの最大数があります。',
+    'Speech Kit にはすでにアクティブなセッションの最大数があります。',
   'sidecarError.system_audio_capture_failed':
     'システムオーディオキャプチャを開始できませんでした。',
   'sidecarError.system_audio_permission_denied':
@@ -768,7 +767,7 @@ export const ja = {
   'catalog.family.moonshine.summary':
     '話しているときに単語を表示します。 Tiny はリソース使用量の削減を優先し、Small は速度と品質のバランスをとり、Medium は品質を優先します。',
   'catalog.family.nemotron_asr.summary':
-    '実験的な高精度多言語ストリーミング。ダウンロード量とリソース使用量が増加します。 Moonshine Small は、推奨される英語のライブ ディクテーションのデフォルトのままです。',
+    '高精度多言語ストリーミング。ダウンロード量とリソース使用量が増加します。Moonshine Small は、推奨される英語のライブ ディクテーションのデフォルトのままです。',
   'setup.sidecar.modal.unsupportedPlatform':
     'この音声エンジン ビルドは、お使いのプラットフォームまたはアーキテクチャでは利用できません。',
   'setup.sidecar.modal.genericInstallError':

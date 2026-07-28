@@ -1,11 +1,26 @@
 # Product media
 
-The README images are captures of the real plugin in a disposable Obsidian vault. Their note text and audio are synthetic; they do not come from a maintainer's working vault.
+The README screenshots are captures of the real plugin in a disposable Obsidian vault. Their note text and audio are synthetic; they do not come from a maintainer's working vault.
+
+## Brand assets
+
+`hero.png` and `hero-dark.png` are the README banner (1200x520). The README selects between them with a `<picture>` element keyed on `prefers-color-scheme`, so the light asset is also the fallback wherever `<picture>` is unsupported.
+
+The source export set the wordmark as one word. It was respaced to "Speech Kit" by splitting the canvas at the midpoint of the `h`/`K` gap and moving each half 7px outward, which widens that gap to a word space of 29px while leaving the other letter gaps and the overall centering unchanged. Re-export the wordmark as two words if the logo is ever redrawn.
+
+The dark asset is derived from the light one rather than exported separately. Negating inverts lightness and hue together, so a 180 degree hue rotation restores the original hues, and lifting the black point keeps the background reading as a surface instead of a hole:
+
+```sh
+magick hero.png -negate -modulate 100,100,200 +level 8%,100% -strip hero-dark.png
+pngquant --quality 80-98 --speed 1 --strip --force --output hero-dark.png -- hero-dark.png
+```
+
+Replace both assets together whenever the logo changes. If a designed dark export exists, prefer it over the derived one.
 
 ## Capture environment
 
 - Obsidian 1.12.7 with an isolated Electron user-data directory.
-- The published Local Dictation 2026.7.3 plugin bundle and Linux CPU sidecar, enabled as the only community plugin.
+- The published 2026.7.3 plugin bundle and Linux CPU sidecar, enabled as the only community plugin. The plugin was still named Local Dictation at that release.
 - Locally installed catalog models, with Moonshine Medium selected for the live capture.
 - A disposable vault containing only `Live dictation demo.md` and `Meeting notes.md`.
 - Chromium DevTools Protocol `Page.captureScreenshot`, which captures the Obsidian app surface rather than the desktop.
