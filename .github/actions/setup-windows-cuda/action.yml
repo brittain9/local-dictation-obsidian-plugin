@@ -93,3 +93,39 @@ runs:
         if (-not (Test-Path -LiteralPath $nvcc)) {
           throw "CUDA setup completed without nvcc at $nvcc"
         }
+
+    # The toolkit cache covers only the CUDA install directory, but the
+    # visual_studio_integration sub-package also writes MSBuild customizations
+    # into the Visual Studio tree. On a cache hit the installer never runs, so
+    # those files are absent and cmake's enable_language(CUDA) fails with
+    # "No CUDA toolset found" as soon as anything actually rebuilds
+    # whisper-rs-sys. Re-copy them from the cached toolkit on every path.
+    - name: Install CUDA Visual Studio integration
+      shell: pwsh
+      env:
+        CUDA_INSTALL_DIR_INPUT: ${{ steps.config.outputs.install-dir }}
+      run: |
+        $extensions = Join-Path $env:CUDA_INSTALL_DIR_INPUT 'extras\visual_studio_integration\MSBuildExtensions'
+        if (-not (Test-Path -LiteralPath $extensions)) {
+          throw "CUDA toolkit is missing MSBuild integration at $extensions"
+        }
+
+        $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'
+        $vsRoot = & $vswhere -latest -property installationPath
+        if (-not $vsRoot) {
+          throw 'vswhere did not report a Visual Studio installation.'
+        }
+
+        $targets = @(
+          Get-ChildItem -LiteralPath (Join-Path $vsRoot 'MSBuild\Microsoft\VC') -Directory |
+            ForEach-Object { Join-Path $_.FullName 'BuildCustomizations' } |
+            Where-Object { Test-Path -LiteralPath $_ }
+        )
+        if ($targets.Count -eq 0) {
+          throw "No MSBuild BuildCustomizations directory found under $vsRoot"
+        }
+
+        foreach ($target in $targets) {
+          Copy-Item -Path (Join-Path $extensions '*') -Destination $target -Force
+          Write-Host "Installed CUDA build customizations into $target"
+        }
