@@ -14,12 +14,10 @@ interface MarkdownTranslationOptions {
   protectedMarkerMode?: ProtectedMarkerMode;
 }
 
-interface ContextualInlinePart {
+interface InlinePart {
   kind: 'protected' | 'translatable';
   text: string;
 }
-
-type InlinePart = ContextualInlinePart | { kind: 'boundary'; text: string };
 
 interface ProtectedSlot {
   marker: string;
@@ -30,7 +28,7 @@ const MAX_TRANSLATION_UNIT_CHARACTERS = 2_000;
 const MAX_PROTECTED_SLOTS_PER_UNIT = 512;
 const PRIVATE_USE_START = 0xe000;
 const PRIVATE_USE_END = 0xf8ff;
-const SYNTHETIC_URL_MARKER_CHARACTER_BUDGET = '<https://511.invalid>'.length;
+const SYNTHETIC_URL_MARKER_CHARACTER_BUDGET = 'https://511.invalid'.length;
 const INDENTED_CODE_INDENT = 4;
 const STRUCTURAL_PREFIX = /^(\s*(?:>\s*)*(?:(?:#{1,6}|[-*+]|\d+[.)])\s+)?(?:\[[ xX]\]\s+)?)/u;
 const BLOCKQUOTE_PREFIX = /^(?: {0,3}(?:> ?)+)*/u;
@@ -163,32 +161,9 @@ function segmentInlineMarkdown(
   const trailing = remainder.match(/\s+$/u)?.[0] ?? '';
   const body = trailing.length === 0 ? remainder : remainder.slice(0, -trailing.length);
   const parts = tokenizeInlineMarkdown(body);
-  let contextualParts: ContextualInlinePart[] = [];
-  let followsBoundary = false;
-  const flushContextualParts = (): void => {
-    for (const unit of chunkInlineParts(contextualParts, markerMode)) {
-      pushTranslationUnit(segments, unit, markerMode);
-    }
-    contextualParts = [];
-  };
-  for (const part of parts) {
-    if (part.kind === 'boundary') {
-      flushContextualParts();
-      pushProtected(segments, part.text);
-      followsBoundary = true;
-    } else {
-      if (followsBoundary && part.kind === 'translatable') {
-        const separator = part.text.match(/^[^\p{L}\p{N}]*/u)?.[0] ?? '';
-        pushProtected(segments, separator);
-        const prose = part.text.slice(separator.length);
-        if (prose.length > 0) contextualParts.push({ kind: 'translatable', text: prose });
-      } else {
-        contextualParts.push(part);
-      }
-      followsBoundary = false;
-    }
+  for (const unit of chunkInlineParts(parts, markerMode)) {
+    pushTranslationUnit(segments, unit, markerMode);
   }
-  flushContextualParts();
   pushProtected(segments, trailing);
 }
 
@@ -202,17 +177,10 @@ function tokenizeInlineMarkdown(value: string): InlinePart[] {
       const imageMarker = link[1] ?? '';
       const label = link[2] ?? '';
       const destination = link[3] ?? '';
-      pushPart(parts, imageMarker.length > 0 ? 'protected' : 'boundary', `${imageMarker}[`);
+      pushPart(parts, 'protected', `${imageMarker}[`);
       pushPart(parts, imageMarker.length > 0 ? 'protected' : 'translatable', label);
-      pushPart(parts, imageMarker.length > 0 ? 'protected' : 'boundary', `](${destination})`);
+      pushPart(parts, 'protected', `](${destination})`);
       remaining = remaining.slice(whole.length);
-      continue;
-    }
-
-    const boundaryToken = remaining.match(/^(?:\*\*|__|~~|==|\*|_|\|)/u)?.[0];
-    if (boundaryToken !== undefined) {
-      pushPart(parts, 'boundary', boundaryToken);
-      remaining = remaining.slice(boundaryToken.length);
       continue;
     }
 
@@ -232,11 +200,11 @@ function tokenizeInlineMarkdown(value: string): InlinePart[] {
 }
 
 function chunkInlineParts(
-  parts: readonly ContextualInlinePart[],
+  parts: readonly InlinePart[],
   markerMode: ProtectedMarkerMode,
-): ContextualInlinePart[][] {
-  const chunks: ContextualInlinePart[][] = [];
-  let current: ContextualInlinePart[] = [];
+): InlinePart[][] {
+  const chunks: InlinePart[][] = [];
+  let current: InlinePart[] = [];
   let currentCharacters = 0;
   let currentProtectedSlots = 0;
 
@@ -287,7 +255,7 @@ function chunkInlineParts(
 
 function pushTranslationUnit(
   segments: TranslationSegment[],
-  parts: readonly ContextualInlinePart[],
+  parts: readonly InlinePart[],
   markerMode: ProtectedMarkerMode,
 ): void {
   if (!parts.some((part) => part.kind === 'translatable' && /[\p{L}\p{N}]/u.test(part.text))) {
@@ -348,7 +316,7 @@ function matchProtectedToken(value: string): string | null {
     /^https?:\/\/[^\s<>()]+/u,
     /^<[^>\n]+>/u,
     /^#[\p{L}\p{N}_/-]+/u,
-    /^(?:\\[\\`*_[\]{}()#+\-.!>])/u,
+    /^(?:\*\*|__|~~|==|\*|_|\||\\[\\`*_[\]{}()#+\-.!>])/u,
   ];
   for (const pattern of patterns) {
     const match = value.match(pattern)?.[0];
@@ -431,7 +399,7 @@ function nextProtectedMarker(
     throw new Error('The source text uses every available protected Markdown marker.');
   }
   for (let index = 0; index < MAX_PROTECTED_SLOTS_PER_UNIT; index += 1) {
-    const marker = `<https://${index}.invalid>`;
+    const marker = `https://${index}.invalid`;
     if (!sourceText.includes(marker) && !usedMarkers.has(marker)) return marker;
   }
   throw new Error('The source text uses every available protected Markdown marker.');
