@@ -25,7 +25,7 @@ stats/
 .DS_Store
 .idea/
 .vscode/
-.worktrees/
+.worktree/
 .claude/
 .superpowers/
 AGENTS.md

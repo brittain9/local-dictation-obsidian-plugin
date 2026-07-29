@@ -130,15 +130,14 @@ When the product positioning or feature status changes:
 5. Manually update the Obsidian long About description.
 6. Verify the rendered GitHub repository and Obsidian listing.
 
-## Deferred visual work
+## Future visual work
 
-Screenshots, GIFs, and other visual proof are intentionally deferred so they never block a copy update — but they are the README's biggest gap and the highest-leverage next marketing task. Target shot list, in README order:
+The README has matching light and dark hero banners. Functional screenshots, GIFs, and other visual proof remain deferred so they never block a copy update. Target shot list:
 
-1. Hero image directly under the tagline
-2. GIF: live dictation with streaming text revising in place
-3. GIF: translate selection with the review preview
-4. GIF: read aloud with playback controls
-5. Screenshot: model browser / catalog
-6. Screenshot: settings surface
+1. GIF: live dictation with streaming text revising in place
+2. GIF: translate selection with the review preview
+3. GIF: read aloud with playback controls
+4. Screenshot: model browser / catalog
+5. Screenshot: settings surface
 
-A logo/icon pass for the Speech Kit identity is likewise deferred; the ribbon microphone iconography is unchanged by the rename.
+An icon pass for the Speech Kit identity is likewise deferred; the ribbon microphone iconography is unchanged by the rename.

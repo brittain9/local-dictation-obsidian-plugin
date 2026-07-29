@@ -1,0 +1,37 @@
+============================================================
+FILE 1 of 2 — PASTE THIS INTO CHATGPT
+(Attach your two screenshots first: the LLM transformation
+sidebar, and the LLM presets picker. Then paste the text below.)
+============================================================
+
+Create a polished release-announcement graphic for an Obsidian plugin called "Local Dictation." I've attached two real screenshots of the app — (1) the LLM transformation sidebar and (2) the LLM preset picker. Treat these screenshots as the hero product UI in the graphic; keep them sharp and legible, don't redraw or distort the text inside them.
+
+OUTPUT
+- One 16:9 landscape graphic (1920x1080), high resolution. If possible, also give me a 1:1 square (1080x1080) version of the same design.
+
+LOOK & FEEL
+- Sleek, premium developer-tool aesthetic — think a clean SaaS launch banner.
+- Dark theme to match Obsidian: deep charcoal / near-black background.
+- Obsidian's signature purple/violet (around #7C3AED) as the accent: soft gradient glow, thin accent lines, subtle highlights. Keep it tasteful, not neon.
+- Plenty of negative space. Modern, confident, minimal. No clutter, no stock-photo people, no fake UI.
+
+COMPOSITION
+- Float the two attached screenshots as clean UI panels with rounded corners and soft drop shadows, slightly angled in 3D space as if hovering, one overlapping just in front of the other so both stay readable.
+- Add a subtle soft glow / light reflection behind the panels.
+- A small microphone glyph and a small "waveform turning into clean text" motif somewhere subtle to signal voice-to-text.
+- A small lock / shield badge near the panels reading "100% on-device".
+
+TEXT ON THE GRAPHIC (use exactly these words, clean modern sans-serif)
+- Wordmark (top-left or top-center): "Local Dictation"  with a smaller tagline under it: "for Obsidian"
+- Headline (large, the focal point): "Speak it. A local LLM cleans it up. Nothing leaves your machine."
+- Three short feature chips/pills along the bottom:
+   • "Whisper + Cohere Transcribe"
+   • "Local LLM cleanup (Ollama)"
+   • "Private & offline — no cloud, no account"
+- Call-to-action button graphic (bottom-right, in the purple accent): "Get it in Obsidian Community Plugins"
+
+TYPOGRAPHY
+- Headline bold and high-contrast (near-white) so it's instantly readable on the dark background.
+- Keep all text crisp and correctly spelled. Don't add any words I didn't ask for.
+
+Make it feel like a real product launch banner I'd be proud to post on Reddit and the Obsidian forum.
