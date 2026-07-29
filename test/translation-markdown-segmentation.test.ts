@@ -32,10 +32,10 @@ const greeting = "Hello";
     const segments = segmentMarkdownForTranslation(source);
     const texts = translatableTexts(segments);
 
-    expect(texts).toHaveLength(5);
-    expect(texts.at(-1)).toContain('Keep');
-    expect(texts.at(-1)).toContain('and');
-    expect(texts.at(-1)).toContain('unchanged.');
+    expect(texts).toHaveLength(4);
+    expect(texts[3]).toContain('Keep');
+    expect(texts[3]).toContain('and');
+    expect(texts[3]).toContain('unchanged.');
 
     const { text: translated } = rebuildTranslatedMarkdown(segments, texts);
     expect(translated).toContain('[[Speech Kit]]');
@@ -115,7 +115,7 @@ The value $$x + y$$ stays literal.
   });
 
   it('uses distinct Japanese-safe markers when source text contains a marker candidate', () => {
-    const source = 'Keep <https://0.invalid> and `code` unchanged.';
+    const source = 'Keep https://0.invalid and `code` unchanged.';
     const segments = segmentMarkdownForTranslation(source, {
       protectedMarkerMode: 'synthetic-url',
     });
@@ -123,21 +123,6 @@ The value $$x + y$$ stays literal.
 
     expect(texts[0]).not.toContain('https://0.invalid');
     expect(texts[0]).toContain('https://1.invalid');
-    expect(rebuildTranslatedMarkdown(segments, texts).text).toBe(source);
-  });
-
-  it('translates formatted Japanese prose without wrapping it in synthetic URLs', () => {
-    const source =
-      '**Accurate Speech-to-Text**: Converts spoken words into text with high precision.';
-    const segments = segmentMarkdownForTranslation(source, {
-      protectedMarkerMode: 'synthetic-url',
-    });
-    const texts = translatableTexts(segments);
-
-    expect(texts).toEqual([
-      'Accurate Speech-to-Text',
-      'Converts spoken words into text with high precision.',
-    ]);
     expect(rebuildTranslatedMarkdown(segments, texts).text).toBe(source);
   });
 

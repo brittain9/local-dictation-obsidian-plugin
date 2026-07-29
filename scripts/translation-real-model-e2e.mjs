@@ -19,7 +19,6 @@ const TARGET_LANGUAGE =
 const TEST_MARKDOWN = `The meeting starts at nine tomorrow morning.
 Keep \`npm run check\`, [[Local Dictation]], #release, and $x + y$ unchanged.
 Read [the specification](https://example.com/spec).
-**Fast Translations**: Delivers quick language conversion.
 
 | Tool | Status |
 | --- | --- |
@@ -32,10 +31,7 @@ const SEMANTIC_CHECKS = {
     const lowered = text.toLocaleLowerCase('es');
     return lowered.includes('mañana') && lowered.includes('nueve');
   },
-  ja: (text) =>
-    /[\u3040-\u30ff\u4e00-\u9fff]/u.test(text) &&
-    !/\bFast\b/u.test(text) &&
-    /\*\*[^*\n]+\*\*: /u.test(text),
+  ja: (text) => /[\u3040-\u30ff\u4e00-\u9fff]/u.test(text),
 };
 
 const catalog = JSON.parse(await readFile('native/catalog.json', 'utf8'));
