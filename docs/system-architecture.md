@@ -484,12 +484,14 @@ and verified by their pinned size and SHA-256 before activation.
 Translation is independent from the sidecar inference protocol:
 
 1. `TranslationController` captures a selection or whole-note snapshot.
-2. A pure TypeScript segmentation pass protects Markdown structure, code,
-   math, links, tags, frontmatter, and whitespace while extracting prose.
+2. A pure TypeScript pass maps inline Markdown to HTML, keeps exact original
+   syntax in a restoration table, and protects block structure, code, math,
+   links, tags, frontmatter, and whitespace.
 3. The plugin resolves the exact installed Firefox Translations artifacts for
    the explicit language pair and transfers their buffers to a Blob-backed Web
    Worker.
-4. Bergamot WebAssembly translates all prose spans locally in one batch.
+4. Bergamot's native HTML mode translates contextual prose locally in one
+   batch and repositions inline elements from model word alignment.
 5. The worker terminates after completion or immediately on cancellation.
 6. The modal previews the rebuilt Markdown. Replace is allowed only if the
    original source is unchanged; insert and copy remain available otherwise.

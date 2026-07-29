@@ -52,7 +52,7 @@ describe('TranslationModal mutation safety', () => {
       },
       runTranslation: vi.fn(async () => ({
         kind: 'translated' as const,
-        sourceUnitsKept: 0,
+        sourceUnitsKept: 0 as const,
         text: 'Traduzca esto.',
       })),
     });
@@ -65,30 +65,6 @@ describe('TranslationModal mutation safety', () => {
     await Setting.buttonNamed('Replace').click();
     await Setting.buttonNamed('Insert below').click();
     expect(replaceRange).not.toHaveBeenCalled();
-  });
-
-  it('reports how many blocks kept their original language', async () => {
-    Setting.reset();
-    const modal = createModal({
-      editor: {
-        getValue: () => SNAPSHOT.source,
-        replaceRange: vi.fn(),
-      },
-      runTranslation: vi.fn(async () => ({
-        kind: 'translated' as const,
-        sourceUnitsKept: 2,
-        text: 'Traduzca esto.',
-      })),
-    });
-
-    modal.open();
-    await vi.waitFor(() => {
-      expect(
-        (modal.contentEl as unknown as TestElement).findByText(
-          'Translation ready. 2 blocks kept their original language because their formatting could not be preserved.',
-        ),
-      ).toBeDefined();
-    });
   });
 });
 

@@ -830,10 +830,6 @@ export const ja = {
   'translation.modal.translating': '翻訳しています…',
   'translation.modal.translatingProgress': '翻訳中… {completed}/{total}',
   'translation.modal.ready': '翻訳が完了しました。',
-  'translation.modal.readyPartial_one':
-    '翻訳が完了しました。1 個のブロックは書式を保持できなかったため元の言語のままです。',
-  'translation.modal.readyPartial_other':
-    '翻訳が完了しました。{count} 個のブロックは書式を保持できなかったため元の言語のままです。',
   'translation.modal.canceled': '翻訳をキャンセルしました。',
   'translation.modal.failed': '翻訳に失敗しました。',
   'translation.modal.missingModel':

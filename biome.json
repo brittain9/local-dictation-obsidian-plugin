@@ -1,5 +1,5 @@
 {
-  "$schema": "https://biomejs.dev/schemas/2.5.0/schema.json",
+  "$schema": "https://biomejs.dev/schemas/2.5.5/schema.json",
   "files": {
     "includes": [
       "**",
@@ -10,6 +10,7 @@
       "!main.js",
       "!main.js.map",
       "!node_modules",
+      "!native/bergamot/bergamot-translator-v0.6.0-cjk-html.js",
       "!package-lock.json",
       "!native/**/target",
       "!native/**/target-cuda",

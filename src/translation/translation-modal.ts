@@ -1,6 +1,6 @@
 import { type App, type Editor, type EditorPosition, Modal, Setting } from 'obsidian';
 
-import { t, tPlural } from '../shared/i18n';
+import { t } from '../shared/i18n';
 import type { UserFeedback } from '../shared/user-feedback';
 import { TranslationCancelledError } from './bergamot-client';
 import {
@@ -40,7 +40,7 @@ interface TranslationModalDependencies {
     sourceLanguage: TranslationLanguage;
     targetLanguage: TranslationLanguage;
   }) => Promise<
-    { kind: 'missing_model' } | { kind: 'translated'; sourceUnitsKept: number; text: string }
+    { kind: 'missing_model' } | { kind: 'translated'; sourceUnitsKept: 0; text: string }
   >;
   snapshot: TranslationSnapshot;
 }
@@ -307,18 +307,7 @@ export class TranslationModal extends Modal {
         return;
       }
       this.setOutput(result.text);
-      this.setStatus(
-        result.sourceUnitsKept > 0
-          ? tPlural(
-              result.sourceUnitsKept,
-              {
-                one: 'translation.modal.readyPartial_one',
-                other: 'translation.modal.readyPartial_other',
-              },
-              { count: result.sourceUnitsKept },
-            )
-          : t('translation.modal.ready'),
-      );
+      this.setStatus(t('translation.modal.ready'));
       this.renderActions();
     } catch (error) {
       if (this.abortController !== abortController) return;

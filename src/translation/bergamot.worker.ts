@@ -129,7 +129,7 @@ async function translate(request: BergamotTranslateRequest): Promise<void> {
         batchResources.push(messages, options);
         for (const text of batch) {
           messages.push_back(text);
-          options.push_back({ qualityScores: false, alignment: true, html: false });
+          options.push_back({ qualityScores: false, alignment: true, html: true });
         }
         const responses = service.translate(model, messages, options);
         batchResources.push(responses);

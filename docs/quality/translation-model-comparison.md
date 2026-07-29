@@ -139,10 +139,15 @@ speed claims are made.
 
 ## FLORES-200 results
 
+> Historical benchmark record: the measurements and committed note outputs in
+> this section were captured before the native-HTML Markdown migration. References
+> below to the “current” worker, PR, or pipeline describe that benchmark run, not
+> the implementation shipped by later changes.
+
 Each cell contains the mean over 200 devtest sentences. HY-MT uses the official
 sampling recipe above. Bergamot outputs were regenerated through the actual
-installed Firefox Translations pack and current PR-head worker; they were not
-reimplemented. The current worker translates in batches of eight, so these
+installed Firefox Translations pack and the benchmark-branch worker; they were not
+reimplemented. That worker translated in batches of eight, so these
 numbers differ slightly from the pre-review baseline supplied with the task.
 
 | Direction | Bergamot COMET | HY-MT COMET | HY delta | Bergamot chrF++ | HY-MT chrF++ | HY delta |
@@ -206,7 +211,7 @@ content inside tables, or changed cell semantics. The synthetic-URL marker mode
 successfully protected links, code, math, and other slots, but it does not stop
 a generative model from rewriting unprotected pipe/newline syntax.
 
-The current PR's partial-failure recovery kept invalid units in the source
+The benchmark branch's partial-failure recovery kept invalid units in the source
 language instead of discarding the whole note. That explains the source-unit
 counts and is safer than silent corruption. It does not detect HY-MT's table
 rewrites when all protected markers remain present.
@@ -215,7 +220,7 @@ rewrites when all protected markers remain present.
 
 The Mac was on AC power, charging from 42% to 44%, with 80.7% CPU idle
 immediately before the timed HY-MT runs. The 507-word note was segmented by
-the current plugin pipeline into 31 translation units. Each engine was run
+the benchmark pipeline into 31 translation units. Each engine was run
 three times.
 
 | Engine | 500-word runs | Median | Range | Relative |

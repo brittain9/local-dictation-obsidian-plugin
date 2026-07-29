@@ -64,13 +64,7 @@ if (!['jsonl', 'markdown'].includes(inputFormat)) {
   throw new Error(`Unsupported --format ${inputFormat}; expected jsonl or markdown.`);
 }
 
-const input = await loadInput(
-  inputPath,
-  inputFormat,
-  sourceLanguage,
-  targetLanguage,
-  args['marker-mode'],
-);
+const input = await loadInput(inputPath, inputFormat);
 const started = performance.now();
 const result =
   model === 'bergamot'
@@ -135,7 +129,7 @@ process.stdout.write(
   })}\n`,
 );
 
-async function loadInput(path, format, source, target, markerMode) {
+async function loadInput(path, format) {
   const raw = await readFile(path, 'utf8');
   if (format === 'jsonl') {
     const rows = raw
@@ -151,14 +145,7 @@ async function loadInput(path, format, source, target, markerMode) {
   }
 
   const segmentation = await loadSegmentationModule();
-  if (markerMode !== undefined && !['private-use', 'synthetic-url'].includes(markerMode)) {
-    throw new Error(
-      `Unsupported --marker-mode ${markerMode}; expected private-use or synthetic-url.`,
-    );
-  }
-  const segments = segmentation.segmentMarkdownForTranslation(raw, {
-    protectedMarkerMode: markerMode ?? segmentation.protectedMarkerModeForLanguages(source, target),
-  });
+  const segments = segmentation.segmentMarkdownForTranslation(raw);
   return {
     sourceMarkdown: raw,
     segmentation,

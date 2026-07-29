@@ -1,5 +1,5 @@
 {
-  "catalogVersion": 6,
+  "catalogVersion": 7,
   "runtimes": [
     {
       "runtimeId": "bergamot_wasm",
@@ -1857,6 +1857,7 @@
       "notes": [
         "Includes the current Firefox release model for each of the 14 English-anchored directions.",
         "The models, vocabularies, lexicons, and Bergamot runtime are SHA-256 pinned.",
+        "The Bergamot runtime carries the source-pinned CJK HTML alignment fix documented under native/bergamot.",
         "Inference runs locally in an isolated WebAssembly worker. Network access is used only for explicit installation."
       ],
       "artifacts": [
@@ -2252,18 +2253,18 @@
           "role": "supporting_file",
           "required": true,
           "filename": "bergamot-translator.wasm",
-          "downloadUrl": "https://firefox-settings-attachments.cdn.mozilla.net/main-workspace/translations-wasm/05082c31-aee8-4249-9e01-c1865afd7520.wasm",
-          "sha256": "a3a89d9ad0a4ed8f27bf3e403701b23f5709816f6376438503f2fa5b0182c2dc",
-          "sizeBytes": 4960506
+          "downloadUrl": "https://raw.githubusercontent.com/brittain9/speech-kit-obsidian-plugin/main/native/bergamot/bergamot-translator-v0.6.0-cjk-html.wasm",
+          "sha256": "37f17e9c2d16c2f81b42d5f0aac9f5b34c071ad8dcdb6b737a2a94fc937243a5",
+          "sizeBytes": 4965936
         },
         {
           "artifactId": "runtime_glue",
           "role": "supporting_file",
           "required": true,
           "filename": "bergamot-translator.js",
-          "downloadUrl": "https://raw.githubusercontent.com/mozilla-firefox/firefox/0e9cfbb4fca901314b1b18f871ae23d5adb16c0f/toolkit/components/translations/bergamot-translator/bergamot-translator.js",
-          "sha256": "faff1ef6285b0d26f01787776fd49299dfb756ecb9688aa990c250e66797b47d",
-          "sizeBytes": 100187
+          "downloadUrl": "https://raw.githubusercontent.com/brittain9/speech-kit-obsidian-plugin/main/native/bergamot/bergamot-translator-v0.6.0-cjk-html.js",
+          "sha256": "2816751cf574004384e2af1ad04b8fe389f3518cb2094988aed05ffb5abbbd2e",
+          "sizeBytes": 91412
         }
       ]
     }

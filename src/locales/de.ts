@@ -846,10 +846,6 @@ export const de = {
   'translation.modal.translating': 'Wird übersetzt…',
   'translation.modal.translatingProgress': 'Übersetzen… {completed}/{total}',
   'translation.modal.ready': 'Übersetzung ist fertig.',
-  'translation.modal.readyPartial_one':
-    'Übersetzung ist fertig. 1 Block blieb in der Ausgangssprache, weil seine Formatierung nicht erhalten werden konnte.',
-  'translation.modal.readyPartial_other':
-    'Übersetzung ist fertig. {count} Blöcke blieben in der Ausgangssprache, weil ihre Formatierung nicht erhalten werden konnte.',
   'translation.modal.canceled': 'Übersetzung abgebrochen.',
   'translation.modal.failed': 'Übersetzung fehlgeschlagen.',
   'translation.modal.missingModel':

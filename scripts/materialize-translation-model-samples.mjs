@@ -37,7 +37,8 @@ These are complete English-to-Dutch outputs from the current PR-head Markdown
 pipeline. Bergamot uses the actual installed Firefox Translations pack.
 HY-MT uses the official Tencent prompt and recommended decoding
 (\`temperature=0.7\`, \`top_k=20\`, \`top_p=0.6\`,
-\`repeat_penalty=1.05\`), fixed seed 42, and synthetic-URL protected markers.
+\`repeat_penalty=1.05\`), fixed seed 42, and the same HTML-preserving Markdown
+pipeline.
 “Topology changed” means that heading levels, list shape, blockquotes, fenced
 blocks, task items, or table row/column shape differ from the source. It does
 not judge translation quality. Trailing whitespace is normalized in the

@@ -504,7 +504,7 @@ mod tests {
                 .iter()
                 .find(|artifact| artifact.artifact_id == "runtime")
                 .map(|artifact| artifact.sha256.as_str()),
-            Some("a3a89d9ad0a4ed8f27bf3e403701b23f5709816f6376438503f2fa5b0182c2dc")
+            Some("37f17e9c2d16c2f81b42d5f0aac9f5b34c071ad8dcdb6b737a2a94fc937243a5")
         );
         assert_eq!(
             model
@@ -512,7 +512,7 @@ mod tests {
                 .iter()
                 .find(|artifact| artifact.artifact_id == "runtime_glue")
                 .map(|artifact| artifact.sha256.as_str()),
-            Some("faff1ef6285b0d26f01787776fd49299dfb756ecb9688aa990c250e66797b47d")
+            Some("2816751cf574004384e2af1ad04b8fe389f3518cb2094988aed05ffb5abbbd2e")
         );
         assert!(model.required_download_bytes() < 560 * 1024 * 1024);
     }

@@ -833,10 +833,6 @@ export const nl = {
   'translation.modal.translating': 'Vertalen…',
   'translation.modal.translatingProgress': 'Vertalen… {completed}/{total}',
   'translation.modal.ready': 'Vertaling gereed.',
-  'translation.modal.readyPartial_one':
-    'Vertaling gereed. 1 blok is in de brontaal gebleven omdat de opmaak niet behouden kon blijven.',
-  'translation.modal.readyPartial_other':
-    'Vertaling gereed. {count} blokken zijn in de brontaal gebleven omdat de opmaak niet behouden kon blijven.',
   'translation.modal.canceled': 'Vertaling geannuleerd.',
   'translation.modal.failed': 'Vertalen mislukt.',
   'translation.modal.missingModel':

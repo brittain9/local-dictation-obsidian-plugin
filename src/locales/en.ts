@@ -132,10 +132,6 @@ export const en = {
   'translation.modal.translating': 'Translating…',
   'translation.modal.translatingProgress': 'Translating… {completed}/{total}',
   'translation.modal.ready': 'Translation ready.',
-  'translation.modal.readyPartial_one':
-    'Translation ready. 1 block kept its original language because its formatting could not be preserved.',
-  'translation.modal.readyPartial_other':
-    'Translation ready. {count} blocks kept their original language because their formatting could not be preserved.',
   'translation.modal.canceled': 'Translation canceled.',
   'translation.modal.failed': 'Translation failed.',
   'translation.modal.missingModel': 'Install the local translation pack to use this language pair.',

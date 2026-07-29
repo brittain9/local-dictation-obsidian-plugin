@@ -54,10 +54,13 @@ pins every downloaded file by URL, byte size, and SHA-256.
 - Current training/runtime repository: <https://github.com/mozilla/translations>
 - Bergamot integration documentation:
   <https://firefox-source-docs.mozilla.org/toolkit/components/translations/resources/03_bergamot.html>
-- JavaScript glue pinned from Firefox revision
-  `0e9cfbb4fca901314b1b18f871ae23d5adb16c0f`
-- WebAssembly runtime revision reports
-  `v0.6.0+1de4a085d3a7afb625c51a60aabb5ad298e4059f`
+- JavaScript glue and WebAssembly are a matching generated pair built from
+  `mozilla/translations` revision
+  `eea6e5a80aa4ddd86d9cc35ce9a65b79aa3ab96d`
+  (`v0.6.0+eea6e5a8`).
+- The runtime carries the source-published CJK HTML alignment correction under
+  `native/bergamot/`, including its exact patch, build record, hashes, and
+  MPL-2.0 text.
 
 `THIRD_PARTY_NOTICES.md` records the downloaded components and MPL-2.0
 obligations. No Gemma terms apply to v1.
@@ -133,16 +136,20 @@ Markdown link labels and ordinary prose are translated. A failed, canceled, or
 partial operation never writes to the editor. V1 caps one operation at 50,000
 source characters and warns above 10,000.
 
-Each ordinary Markdown line remains one contextual translation unit whenever
-possible. Protected inline syntax is represented by unique private-use markers
-during inference. Because the Japanese tokenizer drops private-use characters,
-Japanese pairs instead use synthetic URL markers that those pair vocabularies
-copy exactly. Markers are restored only when every marker returns exactly once
-and in order. This lets the model translate the surrounding sentence as a whole
-without exposing code, destinations, or Obsidian syntax. Missing, duplicated,
-or reordered markers fail the preview before any editor action is available.
-Very long lines split at sentence or whitespace boundaries into units of at
-most 2,000 characters.
+Each ordinary Markdown line remains one contextual native-HTML translation
+unit whenever possible. Emphasis and link labels become real HTML elements, so
+Bergamot translates the complete sentence and uses model alignment to move the
+elements with their translated words. Code, math, wikilinks, tags, link
+destinations, and other opaque syntax are replaced by ordinary semantic words
+inside aligned HTML spans; the original syntax never enters the model.
+
+Every generated element has an identifier into an in-memory side table holding
+the exact original Markdown. Rebuilding restores bytes from that table rather
+than serializing HTML, preserving choices such as `**` versus `__`, code-fence
+lengths, destinations, and Obsidian syntax. Missing, duplicated, unknown, or
+malformed elements fail the preview before any editor action is available.
+Table rows use one contextual HTML unit with aligned cell wrappers, then restore
+the original pipes and spacing.
 
 Proper nouns and terminology rely on model behavior in v1. The real-model
 smoke fixtures exposed occasional stylistic or terminology blemishes; the UI
@@ -181,7 +188,7 @@ segmentation, cancellation, and modal lifecycle. `translateWithBergamot`:
 3. creates a Blob-backed classic Web Worker from the pinned MPL glue plus the
    separately bundled worker bootstrap;
 4. transfers ArrayBuffers rather than cloning them;
-5. batches all bounded contextual translation units into one Bergamot call;
+5. batches the contextual HTML translation units into one Bergamot call;
 6. terminates the worker on completion, error, or cancellation.
 
 Per-operation loading is intentional. Measured model initialization is tens of
@@ -238,6 +245,8 @@ Required before merge:
   direction.
 - Unit fixtures proving Markdown structure round-trips unchanged when output
   text is unchanged.
+- Real-model English→Japanese and English→Spanish Markdown fixtures proving
+  mid-sentence emphasis remains contextual and protected syntax is byte-exact.
 - Settings normalization tests.
 - Command availability tests.
 - Model install/remove and missing-model recovery review.

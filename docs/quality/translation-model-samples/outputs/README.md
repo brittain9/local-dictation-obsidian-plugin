@@ -1,7 +1,9 @@
 # Translation model note outputs
 
-These are complete English-to-Dutch outputs from the current PR-head Markdown
-pipeline. Bergamot uses the actual installed Firefox Translations pack.
+These are historical English-to-Dutch outputs captured before the native-HTML
+Markdown migration. They are retained as the evidence behind
+`translation-model-comparison.md`; they are not representative of the current
+translation pipeline. Bergamot used the actual installed Firefox Translations pack.
 HY-MT uses the official Tencent prompt and recommended decoding
 (`temperature=0.7`, `top_k=20`, `top_p=0.6`,
 `repeat_penalty=1.05`), fixed seed 42, and synthetic-URL protected markers.

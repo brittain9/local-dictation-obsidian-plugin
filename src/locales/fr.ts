@@ -840,10 +840,6 @@ export const fr = {
   'translation.modal.translating': 'Traduction en cours…',
   'translation.modal.translatingProgress': 'Traduction… {completed}/{total}',
   'translation.modal.ready': 'Traduction prête.',
-  'translation.modal.readyPartial_one':
-    'Traduction prête. 1 bloc est resté dans la langue source car sa mise en forme n’a pas pu être conservée.',
-  'translation.modal.readyPartial_other':
-    'Traduction prête. {count} blocs sont restés dans la langue source car leur mise en forme n’a pas pu être conservée.',
   'translation.modal.canceled': 'Traduction annulée.',
   'translation.modal.failed': 'La traduction a échoué.',
   'translation.modal.missingModel':

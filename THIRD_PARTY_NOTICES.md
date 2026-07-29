@@ -162,15 +162,18 @@ No endorsement by Supertone is implied.
 - Creators: Mozilla, the Bergamot project, and contributors
 - Model source: https://mozilla.github.io/translations/firefox-models/
 - Runtime source:
-  https://github.com/mozilla-firefox/firefox/tree/0e9cfbb4fca901314b1b18f871ae23d5adb16c0f/toolkit/components/translations/bergamot-translator
+  https://github.com/mozilla/translations/tree/eea6e5a80aa4ddd86d9cc35ce9a65b79aa3ab96d
+- Modified runtime source and build record: `native/bergamot/`
 - License: Mozilla Public License 2.0 (MPL-2.0)
   https://www.mozilla.org/MPL/2.0/
 
 The model catalog downloads SHA-256-pinned translation models, vocabularies,
-lexicons, JavaScript glue, and the WebAssembly Bergamot runtime on demand.
-Translation then runs locally in an isolated worker. These files are not
-covered by this project's MIT license. The plugin does not modify the
-downloaded source-form JavaScript glue.
+lexicons, generated JavaScript glue, and the WebAssembly Bergamot runtime on
+demand. The runtime carries a source-published correction to CJK HTML
+word-alignment smoothing; the exact upstream revision, patch, matching
+JavaScript/WebAssembly artifacts, reproduction instructions, and MPL-2.0 text
+are distributed under `native/bergamot/`. Translation then runs locally in an
+isolated worker. These files are not covered by this project's MIT license.
 
 ## FLEURS multilingual speech fixtures
 

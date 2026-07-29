@@ -5,7 +5,7 @@ use anyhow::{Context, Result, anyhow, ensure};
 use directories::ProjectDirs;
 use serde::{Deserialize, Serialize};
 
-use crate::catalog::{ModelArtifact, ModelCatalog};
+use crate::catalog::{CatalogModel, ModelArtifact, ModelCatalog};
 use crate::engine::capabilities::{ModelFamilyId, RuntimeId};
 
 const INSTALL_METADATA_FILENAME: &str = "install.json";
@@ -170,15 +170,6 @@ pub fn resolve_catalog_model_runtime_path(
         family_id.as_str()
     );
 
-    for artifact in &metadata.artifacts {
-        let artifact_path = install_dir.join(&artifact.filename);
-        ensure!(
-            artifact_path.is_file(),
-            "required installed artifact is missing: {}",
-            artifact_path.display()
-        );
-    }
-
     let model = catalog
         .find_model(runtime_id, family_id, model_id)
         .ok_or_else(|| {
@@ -188,6 +179,20 @@ pub fn resolve_catalog_model_runtime_path(
                 family_id.as_str()
             )
         })?;
+    ensure!(
+        install_metadata_matches_catalog(&metadata, model),
+        "installed artifacts do not match the current catalog; reinstall {model_id}"
+    );
+
+    for artifact in &metadata.artifacts {
+        let artifact_path = install_dir.join(&artifact.filename);
+        ensure!(
+            artifact_path.is_file(),
+            "required installed artifact is missing: {}",
+            artifact_path.display()
+        );
+    }
+
     let primary_artifact = model.primary_artifact().ok_or_else(|| {
         anyhow!(
             "model {}:{}:{model_id} is missing a transcription artifact",
@@ -327,6 +332,15 @@ pub fn scan_installed_models(
                     continue;
                 }
 
+                let Some(model) =
+                    catalog.find_model(metadata.runtime_id, metadata.family_id, &metadata.model_id)
+                else {
+                    continue;
+                };
+                if !install_metadata_matches_catalog(&metadata, model) {
+                    continue;
+                }
+
                 if metadata
                     .artifacts
                     .iter()
@@ -335,9 +349,8 @@ pub fn scan_installed_models(
                     continue;
                 }
 
-                let runtime_path = catalog
-                    .find_model(metadata.runtime_id, metadata.family_id, &metadata.model_id)
-                    .and_then(|model| model.primary_artifact())
+                let runtime_path = model
+                    .primary_artifact()
                     .map(|artifact| install_dir.join(&artifact.filename))
                     .filter(|path| path.is_file());
 
@@ -366,6 +379,43 @@ pub fn scan_installed_models(
 
     installed_models.sort_by(|left, right| left.model_id.cmp(&right.model_id));
     Ok(installed_models)
+}
+
+fn install_metadata_matches_catalog(metadata: &InstallMetadata, model: &CatalogModel) -> bool {
+    let matches = |installed: &InstalledArtifact, catalog: &ModelArtifact| {
+        installed.artifact_id == catalog.artifact_id
+            && installed.filename == catalog.filename
+            && installed.sha256 == catalog.sha256
+            && installed.size_bytes == catalog.size_bytes
+            && installed.voice_id == catalog.voice_id
+    };
+
+    let required_artifacts_present = model
+        .artifacts
+        .iter()
+        .filter(|artifact| artifact.required)
+        .all(|catalog| {
+            metadata
+                .artifacts
+                .iter()
+                .any(|installed| matches(installed, catalog))
+        });
+    let installed_artifacts_current =
+        metadata
+            .artifacts
+            .iter()
+            .enumerate()
+            .all(|(index, installed)| {
+                !metadata.artifacts[..index]
+                    .iter()
+                    .any(|previous| previous.artifact_id == installed.artifact_id)
+                    && model
+                        .artifacts
+                        .iter()
+                        .any(|catalog| matches(installed, catalog))
+            });
+
+    required_artifacts_present && installed_artifacts_current
 }
 
 pub fn write_install_metadata(install_dir: &Path, metadata: &InstallMetadata) -> Result<()> {
@@ -445,13 +495,46 @@ mod tests {
             &install_dir,
             &InstallMetadata {
                 artifacts: vec![InstalledArtifact {
-                    artifact_id: "model".to_string(),
-                    filename: "missing.bin".to_string(),
-                    sha256: "abc".to_string(),
+                    artifact_id: "transcription".to_string(),
+                    filename: "model.bin".to_string(),
+                    sha256: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+                        .to_string(),
                     size_bytes: 10,
                     voice_id: None,
                 }],
                 catalog_version: 2,
+                runtime_id: RuntimeId::WhisperCpp,
+                family_id: ModelFamilyId::Whisper,
+                installed_at_unix_ms: 10,
+                model_id: "small".to_string(),
+            },
+        )
+        .expect("metadata should write");
+
+        let installed =
+            scan_installed_models(&sample_catalog(), &temp_dir).expect("scan should succeed");
+
+        assert!(installed.is_empty());
+    }
+
+    #[test]
+    fn scan_installed_models_ignores_artifacts_from_an_older_catalog_entry() {
+        let temp_dir = tempfile_dir("scan-stale-catalog");
+        let install_dir = temp_dir.join("whisper_cpp").join("whisper").join("small");
+        create_dir_all(&install_dir).expect("install dir should create");
+        write(install_dir.join("model.bin"), b"old model").expect("artifact should write");
+        write_install_metadata(
+            &install_dir,
+            &InstallMetadata {
+                artifacts: vec![InstalledArtifact {
+                    artifact_id: "transcription".to_string(),
+                    filename: "model.bin".to_string(),
+                    sha256: "1111111111111111111111111111111111111111111111111111111111111111"
+                        .to_string(),
+                    size_bytes: 10,
+                    voice_id: None,
+                }],
+                catalog_version: 1,
                 runtime_id: RuntimeId::WhisperCpp,
                 family_id: ModelFamilyId::Whisper,
                 installed_at_unix_ms: 10,
@@ -473,9 +556,10 @@ mod tests {
         let backup_dir = install_dir.with_extension("backup-stale");
         let metadata = InstallMetadata {
             artifacts: vec![InstalledArtifact {
-                artifact_id: "model".to_string(),
+                artifact_id: "transcription".to_string(),
                 filename: "model.bin".to_string(),
-                sha256: "abc".to_string(),
+                sha256: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+                    .to_string(),
                 size_bytes: 10,
                 voice_id: None,
             }],

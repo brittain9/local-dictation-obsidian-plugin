@@ -1,6 +1,7 @@
 import { defineConfig } from 'vitest/config';
 
 export default defineConfig({
+  envDir: false,
   resolve: {
     alias: {
       obsidian: new URL('test/__mocks__/obsidian.ts', import.meta.url).pathname,

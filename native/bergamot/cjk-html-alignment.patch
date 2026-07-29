@@ -1,0 +1,308 @@
+diff --git a/inference/src/tests/units/html_tests.cpp b/inference/src/tests/units/html_tests.cpp
+index f4b634ad..573e04e8 100644
+--- a/inference/src/tests/units/html_tests.cpp
++++ b/inference/src/tests/units/html_tests.cpp
+@@ -310,6 +310,104 @@ TEST_CASE("Test inline tags should not break words") {
+   CHECK(response.target.text == "<u></u>subrayar");   // TODO not spread <u> to the whole word?
+ }
+
++TEST_CASE("Do not smooth HTML alignments across Japanese tokens") {
++  std::string input("<b>Fast</b> translation");
++  HTML html(std::move(input), true);
++  CHECK(input == "Fast translation");
++
++  Response response;
++  std::string source_str("Fast translation");
++  std::vector<string_view> source_tokens{
++      string_view(source_str.data() + 0, 4),   // Fast
++      string_view(source_str.data() + 4, 12),  // _translation
++      string_view(source_str.data() + 16, 0),  // [EOS]
++  };
++  response.source.appendSentence("", source_tokens.begin(), source_tokens.end());
++
++  std::string target_str("高速翻訳");
++  std::vector<string_view> target_tokens{
++      string_view(target_str.data() + 0, 6),   // 高速
++      string_view(target_str.data() + 6, 6),   // 翻訳
++      string_view(target_str.data() + 12, 0),  // [EOS]
++  };
++  response.target.registerTargetLanguage("ja");
++  response.target.appendSentence("", target_tokens.begin(), target_tokens.end());
++
++  response.alignments = {{{1.0, 0.0, 0.0}, {0.0, 1.0, 0.0}, {0.0, 0.0, 1.0}}};
++
++  html.restore(response);
++  CHECK(response.source.text == "<b>Fast</b> translation");
++  CHECK(response.target.text == "<b>高速</b>翻訳");
++}
++
++TEST_CASE("Keep smoothing ASCII words in Japanese translations") {
++  std::string input("<b>Shortcut</b> translation");
++  HTML html(std::move(input), true);
++
++  Response response;
++  std::string source_str("Shortcut translation");
++  std::vector<string_view> source_tokens{
++      string_view(source_str.data() + 0, 8),   // Shortcut
++      string_view(source_str.data() + 8, 12),  // _translation
++      string_view(source_str.data() + 20, 0),  // [EOS]
++  };
++  response.source.appendSentence("", source_tokens.begin(), source_tokens.end());
++
++  std::string target_str("Ctrl+S翻訳");
++  std::vector<string_view> target_tokens{
++      string_view(target_str.data() + 0, 4),   // Ctrl
++      string_view(target_str.data() + 4, 2),   // +S
++      string_view(target_str.data() + 6, 6),   // 翻訳
++      string_view(target_str.data() + 12, 0),  // [EOS]
++  };
++  response.target.registerTargetLanguage("ja");
++  response.target.appendSentence("", target_tokens.begin(), target_tokens.end());
++
++  response.alignments = {
++      {{1.0, 0.0, 0.0}, {0.1, 0.9, 0.0}, {0.0, 1.0, 0.0}, {0.0, 0.0, 1.0}}};
++
++  html.restore(response);
++  CHECK(response.target.text == "<b>Ctrl+S</b>翻訳");
++}
++
++TEST_CASE("Do not move Japanese punctuation into inline markup") {
++  std::string input("save <b>Ctrl+S</b>");
++  HTML html(std::move(input), true);
++
++  Response response;
++  std::string source_str("save Ctrl+S");
++  std::vector<string_view> source_tokens{
++      string_view(source_str.data() + 0, 4),   // save
++      string_view(source_str.data() + 4, 5),   // _Ctrl
++      string_view(source_str.data() + 9, 1),   // +
++      string_view(source_str.data() + 10, 1),  // S
++      string_view(source_str.data() + 11, 0),  // [EOS]
++  };
++  response.source.appendSentence("", source_tokens.begin(), source_tokens.end());
++
++  std::string target_str("保存、Ctrl+S");
++  std::vector<string_view> target_tokens{
++      string_view(target_str.data() + 0, 6),    // 保存
++      string_view(target_str.data() + 6, 3),    // 、
++      string_view(target_str.data() + 9, 4),    // Ctrl
++      string_view(target_str.data() + 13, 1),   // +
++      string_view(target_str.data() + 14, 1),   // S
++      string_view(target_str.data() + 15, 0),   // [EOS]
++  };
++  response.target.registerTargetLanguage("ja");
++  response.target.appendSentence("", target_tokens.begin(), target_tokens.end());
++
++  response.alignments = {{{1.0, 0.0, 0.0, 0.0, 0.0},
++                          {0.0, 0.0, 1.0, 0.0, 0.0},
++                          {0.0, 1.0, 0.0, 0.0, 0.0},
++                          {0.0, 0.0, 1.0, 0.0, 0.0},
++                          {0.0, 0.0, 0.0, 1.0, 0.0},
++                          {0.0, 0.0, 0.0, 0.0, 1.0}}};
++
++  html.restore(response);
++  CHECK(response.target.text == "保存、<b>Ctrl+S</b>");
++}
++
+ TEST_CASE("Test reconstruction of target sentence") {
+   std::string input("<p>hello <b>world</b></p>\n");
+   HTML html(std::move(input), true);
+@@ -877,4 +975,4 @@ TEST_CASE("End-to-end translation when no words with markup align", "[!mayfail]"
+   }
+ }
+
+-// TEST_CASE("")
+\ No newline at end of file
++// TEST_CASE("")
+diff --git a/inference/src/translator/annotation.h b/inference/src/translator/annotation.h
+index 96aa42a2..56b4b117 100644
+--- a/inference/src/translator/annotation.h
++++ b/inference/src/translator/annotation.h
+@@ -193,6 +193,10 @@ struct AnnotatedText {
+     targetLanguage_ = language;
+   }
+
++  const std::string& targetLanguage() const {
++    return targetLanguage_;
++  }
++
+   /// Utility function to call `fun` on each word (subword token effectively) in
+   /// an `AnnotatedText`. `fun` is called with the `ByteRange`, the `string_view`
+   /// with the word, and a `bool` to indicate whether it is the last word in the
+diff --git a/inference/src/translator/html.cpp b/inference/src/translator/html.cpp
+index 421074aa..55135cdb 100644
+--- a/inference/src/translator/html.cpp
++++ b/inference/src/translator/html.cpp
+@@ -1,6 +1,8 @@
+ #include "html.h"
+
+ #include <algorithm>
++#include <cctype>
++#include <limits>
+
+ #include "response.h"
+ #include "translator/definitions.h"
+@@ -59,6 +61,82 @@ std::string toLowerCase(std::string_view const &input) {
+   return out;
+ }
+
++bool hasPrimaryLanguage(std::string_view language, std::string_view primaryLanguage) {
++  return language == primaryLanguage ||
++         (language.size() > primaryLanguage.size() &&
++          language.compare(0, primaryLanguage.size(), primaryLanguage) == 0 &&
++          language[primaryLanguage.size()] == '-');
++}
++
++bool omitsSpacesBetweenWords(std::string_view language) {
++  return hasPrimaryLanguage(language, "ja") || hasPrimaryLanguage(language, "zh");
++}
++
++bool isAscii(marian::string_view value) {
++  return std::all_of(value.begin(), value.end(), [](unsigned char character) { return character < 0x80; });
++}
++
++bool isUnicodePunctuation(char32_t codePoint) {
++  return (codePoint >= 0x2000 && codePoint <= 0x206F) ||
++         (codePoint >= 0x2E00 && codePoint <= 0x2E7F) ||
++         (codePoint >= 0x3000 && codePoint <= 0x303F) ||
++         (codePoint >= 0xFE10 && codePoint <= 0xFE1F) ||
++         (codePoint >= 0xFE30 && codePoint <= 0xFE4F) ||
++         (codePoint >= 0xFF01 && codePoint <= 0xFF0F) ||
++         (codePoint >= 0xFF1A && codePoint <= 0xFF20) ||
++         (codePoint >= 0xFF3B && codePoint <= 0xFF40) ||
++         (codePoint >= 0xFF5B && codePoint <= 0xFF65);
++}
++
++bool nextCodePoint(marian::string_view value, size_t &offset, char32_t &codePoint) {
++  auto const lead = static_cast<unsigned char>(value[offset++]);
++  if (lead < 0x80) {
++    codePoint = lead;
++    return true;
++  }
++
++  size_t continuationCount;
++  if ((lead & 0xE0) == 0xC0) {
++    codePoint = lead & 0x1F;
++    continuationCount = 1;
++  } else if ((lead & 0xF0) == 0xE0) {
++    codePoint = lead & 0x0F;
++    continuationCount = 2;
++  } else if ((lead & 0xF8) == 0xF0) {
++    codePoint = lead & 0x07;
++    continuationCount = 3;
++  } else {
++    return false;
++  }
++
++  if (continuationCount > value.size() - offset) return false;
++  for (size_t index = 0; index < continuationCount; ++index) {
++    auto const continuation = static_cast<unsigned char>(value[offset++]);
++    if ((continuation & 0xC0) != 0x80) return false;
++    codePoint = (codePoint << 6) | (continuation & 0x3F);
++  }
++  return true;
++}
++
++bool isNonAsciiPunctuation(marian::string_view value) {
++  bool foundNonAscii = false;
++  bool foundPunctuation = false;
++  for (size_t offset = 0; offset < value.size();) {
++    char32_t codePoint;
++    if (!nextCodePoint(value, offset, codePoint)) return false;
++    if (codePoint < 0x80) {
++      auto const character = static_cast<unsigned char>(codePoint);
++      if (std::isspace(character)) continue;
++      if (!std::ispunct(character)) return false;
++    } else {
++      foundNonAscii = true;
++      if (!isUnicodePunctuation(codePoint)) return false;
++    }
++    foundPunctuation = true;
++  }
++  return foundNonAscii && foundPunctuation;
++}
++
+ /// Very simple replacement for std::format introduced in C++20. Only supports
+ /// replacing `{}` in the template string with whatever `operator<<` for that
+ /// type turns it into.
+@@ -745,6 +823,16 @@ bool HTML::isContinuation(marian::string_view prev, marian::string_view str) con
+   return isContinuation(std::string_view(prev.data(), prev.size()), std::string_view(str.data(), str.size()));
+ }
+
++bool HTML::isTargetContinuation(AnnotatedText const &target, marian::string_view prev, marian::string_view str) const {
++  // Japanese and Chinese do not expose word boundaries with spaces. Treating
++  // every target subword as one continuation causes the smoothing below to
++  // collapse an entire sentence onto one source span, moving all inline HTML
++  // to the start of the translation. Still smooth adjacent ASCII tokens so
++  // mixed-script terms such as "Ctrl+S" remain a single formatted word.
++  if (omitsSpacesBetweenWords(target.targetLanguage()) && (!isAscii(prev) || !isAscii(str))) return false;
++  return isContinuation(prev, str);
++}
++
+ /// Selects for each token in `response.target` a best source token from
+ /// `response.source` and writes this selection to `alignments`. The source
+ /// token spans are used to also look at the markup applied to each token to
+@@ -761,16 +849,36 @@ void HTML::hardAlignments(Response const &response, std::vector<std::vector<size
+     // Note: only search from 0 to N-1 because token N is end-of-sentence token
+     // that can only align with the end-of-sentence token of the target
+     for (size_t t = 0; t + 1 < response.target.numWords(sentenceIdx); ++t) {
+-      alignments.back().push_back(
+-          std::max_element(response.alignments[sentenceIdx][t].begin(), response.alignments[sentenceIdx][t].end()) -
+-          response.alignments[sentenceIdx][t].begin());
++      auto const &scores = response.alignments[sentenceIdx][t];
++      size_t source = std::max_element(scores.begin(), scores.end()) - scores.begin();
++
++      // Decoder attention can align punctuation inserted by a CJK translation
++      // to punctuation inside an inline element (for example Japanese `、` to
++      // the `+` in <b>Ctrl+S</b>). Punctuation carries no lexical markup, so
++      // retain only the shallowest source tag stack instead of pulling it into
++      // an unrelated inline element.
++      if (omitsSpacesBetweenWords(response.target.targetLanguage()) &&
++          isNonAsciiPunctuation(response.target.word(sentenceIdx, t))) {
++        size_t shallowestDepth = std::numeric_limits<size_t>::max();
++        float bestScore = -1.0F;
++        for (size_t s = 0; s + 1 < response.source.numWords(sentenceIdx); ++s) {
++          size_t const depth = sourceTokenSpans[offset + 1 + s]->tags.size();
++          if (depth < shallowestDepth || (depth == shallowestDepth && scores[s] > bestScore)) {
++            shallowestDepth = depth;
++            bestScore = scores[s];
++            source = s;
++          }
++        }
++      }
++      alignments.back().push_back(source);
+     }
+
+     // Next, we try to smooth out these selected alignments with a few heuristics
+     for (size_t t = 1; t + 1 < response.target.numWords(sentenceIdx); ++t) {
+       // If this token is a continuation of a previous token, pick the tags from the most
+       // prevalent token for the whole word.
+-      if (isContinuation(response.target.word(sentenceIdx, t - 1), response.target.word(sentenceIdx, t))) {
++      if (isTargetContinuation(response.target, response.target.word(sentenceIdx, t - 1),
++                               response.target.word(sentenceIdx, t))) {
+         // Note: only looking at the previous token since that will already
+         // have this treatment applied to it.
+         size_t currSentenceIdx = alignments.back()[t];
+@@ -791,8 +899,8 @@ void HTML::hardAlignments(Response const &response, std::vector<std::vector<size
+             alignments.back()[i] = currSentenceIdx;
+
+             // Stop if this was the first token or the beginning of the word
+-            if (i == 0 ||
+-                !isContinuation(response.target.word(sentenceIdx, i - 1), response.target.word(sentenceIdx, i)))
++            if (i == 0 || !isTargetContinuation(response.target, response.target.word(sentenceIdx, i - 1),
++                                                response.target.word(sentenceIdx, i)))
+               break;
+           }
+         } else {
+diff --git a/inference/src/translator/html.h b/inference/src/translator/html.h
+index f3c6dad1..d41b989a 100644
+--- a/inference/src/translator/html.h
++++ b/inference/src/translator/html.h
+@@ -183,6 +183,7 @@ class HTML {
+   /// a space, but bit more complex to deal with punctuation.
+   bool isContinuation(marian::string_view prev, marian::string_view str) const;
+   bool isContinuation(std::string_view prev, std::string_view str) const;
++  bool isTargetContinuation(AnnotatedText const &target, marian::string_view prev, marian::string_view str) const;
+
+   /// Copies span pointers from the subwords/tokens from the source text to the
+   /// subwords of the target text in `targetTokenSpans` using alignment

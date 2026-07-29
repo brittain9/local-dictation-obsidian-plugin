@@ -13,7 +13,6 @@ import {
   type TranslationLanguage,
 } from './languages';
 import {
-  protectedMarkerModeForLanguages,
   rebuildTranslatedMarkdown,
   segmentMarkdownForTranslation,
   translatableTexts,
@@ -32,7 +31,7 @@ export interface TranslationRunOptions {
 
 export type TranslationRunResult =
   | { kind: 'missing_model' }
-  | { kind: 'translated'; sourceUnitsKept: number; text: string };
+  | { kind: 'translated'; sourceUnitsKept: 0; text: string };
 
 interface TranslationControllerDependencies {
   app: App;
@@ -144,12 +143,7 @@ export class TranslationController {
     const installed = this.findInstalledModel(options.sourceLanguage, options.targetLanguage);
     if (installed === null) return { kind: 'missing_model' };
 
-    const segments = segmentMarkdownForTranslation(source, {
-      protectedMarkerMode: protectedMarkerModeForLanguages(
-        options.sourceLanguage,
-        options.targetLanguage,
-      ),
-    });
+    const segments = segmentMarkdownForTranslation(source);
     const texts = translatableTexts(segments);
     if (texts.length === 0) return { kind: 'translated', sourceUnitsKept: 0, text: source };
 
@@ -164,12 +158,6 @@ export class TranslationController {
         texts,
       });
       const rebuilt = rebuildTranslatedMarkdown(segments, translations);
-      if (rebuilt.sourceUnitsKept > 0) {
-        this.dependencies.logger.warn(
-          'translation',
-          `kept ${rebuilt.sourceUnitsKept} unit(s) in the source language after marker loss`,
-        );
-      }
       return { kind: 'translated', ...rebuilt };
     } catch (error) {
       if (!(error instanceof TranslationCancelledError)) {

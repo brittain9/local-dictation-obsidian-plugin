@@ -16,15 +16,37 @@ const MODEL_TRIPLE = {
 const SOURCE_LANGUAGE = process.env.TRANSLATION_SOURCE_LANGUAGE?.trim() || 'en';
 const TARGET_LANGUAGE =
   process.argv[2]?.trim() || process.env.TRANSLATION_TARGET_LANGUAGE?.trim() || 'es';
-const TEST_MARKDOWN = `The meeting starts at nine tomorrow morning.
+const TEST_MARKDOWN = `**Fast Translations**: Delivers quick language conversion.
+Please press **Ctrl+S** to save your work before closing.
+A sentence with **bold text** in the middle of the clause continues here.
+The meeting starts at nine tomorrow morning.
 Keep \`npm run check\`, [[Local Dictation]], #release, and $x + y$ unchanged.
 Read [the specification](https://example.com/spec).
-**Fast Translations**: Delivers quick language conversion.
+<mark data-kind='result'>Hello world</mark> continues with <kbd>Ctrl+S</kbd>.
 
 | Tool | Status |
 | --- | --- |
 | [[Nemotron]] | Ready |
 `;
+const SOURCE_PROSE = [
+  'Fast Translations',
+  'Delivers quick language conversion',
+  'Please press',
+  'to save your work before closing',
+  'A sentence with',
+  'bold text',
+  'in the middle of the clause continues here',
+  'The meeting starts at nine tomorrow morning',
+  'Keep ',
+  ' unchanged',
+  'Read ',
+  'the specification',
+  'Hello world',
+  'continues with',
+  'Tool',
+  'Status',
+  'Ready',
+];
 // Per-target proof that the output is really in the target language rather than
 // an echo of the English source.
 const SEMANTIC_CHECKS = {
@@ -32,10 +54,7 @@ const SEMANTIC_CHECKS = {
     const lowered = text.toLocaleLowerCase('es');
     return lowered.includes('mañana') && lowered.includes('nueve');
   },
-  ja: (text) =>
-    /[\u3040-\u30ff\u4e00-\u9fff]/u.test(text) &&
-    !/\bFast\b/u.test(text) &&
-    /\*\*[^*\n]+\*\*: /u.test(text),
+  ja: (text) => /[\u3040-\u30ff\u4e00-\u9fff]/u.test(text),
 };
 
 const catalog = JSON.parse(await readFile('native/catalog.json', 'utf8'));
@@ -60,20 +79,15 @@ for (const [key, value] of Object.entries(MODEL_TRIPLE)) {
 }
 
 const [
-  {
-    protectedMarkerModeForLanguages,
-    rebuildTranslatedMarkdown,
-    segmentMarkdownForTranslation,
-    translatableTexts,
-  },
+  { rebuildTranslatedMarkdown, segmentMarkdownForTranslation, translatableTexts },
   { resolveTranslationPairArtifacts },
+  { translationRegressionFailures },
 ] = await Promise.all([
   loadTypeScriptModule('src/translation/markdown-segmentation.ts'),
   loadTypeScriptModule('src/translation/translation-artifacts.ts'),
+  loadTypeScriptModule('scripts/translation-e2e-validation.ts'),
 ]);
-const segments = segmentMarkdownForTranslation(TEST_MARKDOWN, {
-  protectedMarkerMode: protectedMarkerModeForLanguages(SOURCE_LANGUAGE, TARGET_LANGUAGE),
-});
+const segments = segmentMarkdownForTranslation(TEST_MARKDOWN);
 const texts = translatableTexts(segments);
 // The plugin resolves the same artifacts through this helper, so the smoke run
 // exercises the real selection logic rather than a copy of it.
@@ -136,19 +150,39 @@ try {
     );
   }
   const translatedMarkdown = rebuilt.text;
+  const lines = translatedMarkdown.split('\n');
+  const regressionFailures = translationRegressionFailures(TARGET_LANGUAGE, translatedMarkdown);
+  const sourceResidue = SOURCE_PROSE.filter((phrase) =>
+    translatedMarkdown.toLocaleLowerCase('en').includes(phrase.toLocaleLowerCase('en')),
+  );
   if (
     result.translations.length !== texts.length ||
     SEMANTIC_CHECKS[TARGET_LANGUAGE]?.(translatedMarkdown) === false ||
+    regressionFailures.length > 0 ||
+    rebuilt.sourceUnitsKept !== 0 ||
+    sourceResidue.length > 0 ||
+    /[\uE000-\uF8FF]|https:\/\/\d+\.invalid/u.test(translatedMarkdown) ||
+    !/^\*\*[^*\n]+\*\*/u.test(lines[0] ?? '') ||
+    !/\*\*Ctrl\s*\+\s*S\*\*/u.test(lines[1] ?? '') ||
+    !/\*\*[^*\n]+\*\*/u.test(lines[2] ?? '') ||
     !translatedMarkdown.includes('`npm run check`') ||
     !translatedMarkdown.includes('[[Local Dictation]]') ||
     !translatedMarkdown.includes('#release') ||
     !translatedMarkdown.includes('$x + y$') ||
     !translatedMarkdown.includes('(https://example.com/spec)') ||
-    !translatedMarkdown.includes('| --- | --- |') ||
-    !translatedMarkdown.includes('[[Nemotron]]')
+    !translatedMarkdown.includes("<mark data-kind='result'>") ||
+    !translatedMarkdown.includes('</mark>') ||
+    !translatedMarkdown.includes('<kbd>Ctrl+S</kbd>') ||
+    !lines.some((line) => /^\| [^|]+ \| [^|]+ \|$/u.test(line)) ||
+    !lines.includes('| --- | --- |') ||
+    !lines.some((line) => /^\| \[\[Nemotron\]\] \| [^|]+ \|$/u.test(line))
   ) {
     throw new Error(
-      `Translation smoke output failed semantic checks: ${JSON.stringify(translatedMarkdown)}`,
+      `Translation smoke output failed semantic checks: ${JSON.stringify({
+        sourceResidue,
+        regressionFailures,
+        translatedMarkdown,
+      })}`,
     );
   }
   process.stdout.write(
@@ -157,6 +191,7 @@ try {
       readMs: Math.round(readMs),
       readyMs: Math.round(result.readyMs),
       inferenceMs: Math.round(performance.now() - startedInference),
+      sourceUnitsKept: rebuilt.sourceUnitsKept,
       translatedMarkdown,
     })}\n`,
   );
