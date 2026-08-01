@@ -1,33 +1,44 @@
-import type { SettingDefinition } from 'obsidian';
-import { describe, expect, it } from 'vitest';
+import { Setting, type SettingDefinitionRender, type SettingGroup } from 'obsidian';
+import { describe, expect, it, vi } from 'vitest';
 
 import { LocalSttSettingTab } from '../src/settings/settings-tab';
+import { TestElement } from './__mocks__/obsidian';
 
-describe('LocalSttSettingTab settings search', () => {
-  it('publishes localized search metadata for the composite settings UI', () => {
+describe('LocalSttSettingTab Obsidian 1.13 compatibility', () => {
+  it('opts the composite settings UI out of declarative row rendering', () => {
     const tab = Object.create(LocalSttSettingTab.prototype) as LocalSttSettingTab;
 
-    const definitions = tab.getSettingDefinitions();
+    expect(tab.getSettingDefinitions()).toEqual([]);
+  });
 
-    expect(definitions).toHaveLength(1);
-    const definition = definitions[0] as SettingDefinition;
-    expect(definition.name).toBe('Speech Kit');
-    expect(definition.aliases).toEqual(
-      expect.arrayContaining([
-        'Manage models',
-        'Speech-to-text model',
-        'Text-to-speech model',
-        'Translation model',
-        'Default target language',
-        'Microphone',
-        'Transcript formatting',
-        'Use timestamps',
-        'Enable LLM features',
-        'Hardware acceleration',
-        'CPU sidecar',
-        'Developer mode',
-      ]),
-    );
-    expect(definition.render).toBeTypeOf('function');
+  it('keeps the composite settings visible after Obsidian reconciles declarative rows', () => {
+    const tab = Object.create(LocalSttSettingTab.prototype) as LocalSttSettingTab;
+    const container = new TestElement();
+    const renderSettings = vi.fn((host: TestElement) => {
+      host.createDiv({ text: 'Microphone' });
+    });
+    Object.defineProperty(tab, 'renderSettings', { value: renderSettings });
+    Object.defineProperty(tab, 'display', {
+      value: () => renderSettings(container),
+    });
+
+    const definitions = tab.getSettingDefinitions();
+    if (definitions.length === 0) {
+      tab.display();
+    } else {
+      const rows = definitions.map((definition) => {
+        const setting = new Setting(container as unknown as HTMLElement);
+        const rendered = definition as SettingDefinitionRender;
+        setting.setName(rendered.name);
+        rendered.render(setting, {} as SettingGroup);
+        return setting.settingEl as unknown as TestElement;
+      });
+
+      // Obsidian 1.13.4 reasserts ownership of each framework-created row
+      // after custom render callbacks complete.
+      container.setChildrenInPlace(rows);
+    }
+
+    expect(container.findByText('Microphone')).toBeDefined();
   });
 });

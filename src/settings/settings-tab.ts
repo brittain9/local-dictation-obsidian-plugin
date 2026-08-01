@@ -108,91 +108,6 @@ const SPEAKING_STYLE_OPTIONS: ReadonlyArray<DropdownOption<SpeakingStyle>> = [
   { label: t('settings.phraseFinalization.patientOption'), value: 'patient' },
 ];
 
-// The settings tab is highly dynamic: model/install state, platform capabilities,
-// microphone enumeration, and several controls with side effects all affect its
-// contents. Obsidian's declarative `render` escape hatch lets 1.13+ index that UI
-// without duplicating it. Keep every user-facing setting name here so global
-// settings search can match the single composite definition in the active locale.
-const SETTINGS_SEARCH_ALIAS_KEYS = [
-  'settings.groups.model',
-  'settings.model.speechToText',
-  'settings.model.textToSpeech',
-  'settings.model.manageModels',
-  'settings.model.useExternalFile',
-  'settings.model.details',
-  'settings.dictationLanguage.name',
-  'settings.groups.readAloud',
-  'settings.readAloud.hotkey',
-  'settings.readAloud.voice',
-  'settings.readAloud.speed',
-  'settings.groups.translation',
-  'settings.translation.model.name',
-  'settings.translation.model.manage',
-  'settings.translation.model.download',
-  'settings.translation.source.name',
-  'settings.translation.target.name',
-  'settings.groups.capture',
-  'settings.microphone.name',
-  'settings.microphone.default',
-  'settings.systemAudio.name',
-  'settings.listeningMode.name',
-  'settings.listeningMode.alwaysOn',
-  'settings.listeningMode.oneSentence',
-  'settings.phraseFinalization.name',
-  'settings.phraseFinalization.responsiveOption',
-  'settings.phraseFinalization.balancedOption',
-  'settings.phraseFinalization.patientOption',
-  'settings.groups.transcriptOutput',
-  'settings.insertText.name',
-  'settings.insertText.atCursor',
-  'settings.insertText.endOfNote',
-  'settings.transcriptFormatting.name',
-  'settings.transcriptFormatting.smartParagraphs',
-  'settings.transcriptFormatting.space',
-  'settings.transcriptFormatting.newLine',
-  'settings.transcriptFormatting.newParagraph',
-  'settings.smartParagraph.modal.title',
-  'settings.smartParagraph.lineBreakPause.name',
-  'settings.smartParagraph.paragraphPause.name',
-  'settings.speakerLabels.name',
-  'settings.speakerLabels.modal.title',
-  'settings.speakerLabels.maximumSpeakers.name',
-  'settings.groups.timestamps',
-  'settings.timestamps.enable.name',
-  'settings.timestamps.modal.title',
-  'settings.timestamps.sessionHeader.name',
-  'settings.timestamps.referenceClock.name',
-  'settings.timestamps.frequency.name',
-  'settings.timestamps.interval.name',
-  'settings.groups.llmTransformation',
-  'settings.llm.enableFeatures.name',
-  'settings.llm.enableRemote.name',
-  'settings.llm.restoreDefaults.name',
-  'settings.groups.engine',
-  'settings.hardwareAcceleration.name',
-  'settings.noteContext.name',
-  'settings.groups.advanced',
-  'setup.sidecar.update.title_one',
-  'setup.sidecar.update.title_other',
-  'settings.attention.installCuda.name',
-  'settings.attention.enableCuda.name',
-  'settings.missingSidecar.name',
-  'settings.sidecar.name',
-  'settings.sidecar.cpuName',
-  'settings.sidecar.gpuName',
-  'settings.sidecar.cudaLibraryPath.name',
-  'settings.recoveryMemory.name',
-  'settings.modelStoreOverride.name',
-  'settings.runSetup.name',
-] as const;
-
-const SETTINGS_SEARCH_LITERAL_ALIASES = [
-  'Developer mode',
-  'Sidecar path override',
-  'Startup timeout',
-  'Request timeout',
-] as const;
-
 export class LocalSttSettingTab extends PluginSettingTab {
   override readonly icon = 'audio-lines';
 
@@ -223,31 +138,10 @@ export class LocalSttSettingTab extends PluginSettingTab {
   }
 
   override getSettingDefinitions(): SettingDefinitionItem[] {
-    return [
-      {
-        aliases: [
-          ...new Set([
-            ...SETTINGS_SEARCH_ALIAS_KEYS.map((key) => t(key)),
-            ...SETTINGS_SEARCH_LITERAL_ALIASES,
-          ]),
-        ],
-        name: t('plugin.name'),
-        render: (setting) => {
-          // Replace the declarative row instead of nesting the existing setting
-          // groups inside `.setting-item`, which would change Obsidian's layout.
-          const parent = setting.settingEl.parentElement;
-          if (parent === null) return;
-          const host = parent.createDiv();
-          setting.settingEl.replaceWith(host);
-          this.renderSettings(host);
-
-          return () => {
-            this.tearDown();
-            host.remove();
-          };
-        },
-      },
-    ];
+    // The page is a composite imperative UI. Returning any definitions makes
+    // Obsidian 1.13+ skip display(), and its row reconciliation removes a
+    // custom host that replaces the framework-owned setting row.
+    return [];
   }
 
   override display(): void {

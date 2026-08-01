@@ -27,6 +27,10 @@ export class TestElement {
   textContent = '';
   private readonly listeners = new Map<string, Array<() => unknown>>();
 
+  get parentElement(): TestElement | null {
+    return elementParents.get(this) ?? null;
+  }
+
   readonly classList = {
     add: (className: string): void => {
       this.setClass(className, true);
@@ -112,6 +116,17 @@ export class TestElement {
     parent.removeChild(this);
   }
 
+  replaceWith(replacement: TestElement): void {
+    const parent = elementParents.get(this);
+    if (parent === undefined) return;
+    replacement.remove();
+    const index = parent.children.indexOf(this);
+    if (index < 0) return;
+    parent.children.splice(index, 1, replacement);
+    elementParents.delete(this);
+    elementParents.set(replacement, parent);
+  }
+
   removeAttribute(name: string): void {
     this.attributes.delete(name);
   }
@@ -169,6 +184,11 @@ export class TestElement {
 
   setText(text: string): void {
     this.textContent = text;
+  }
+
+  setChildrenInPlace(children: TestElement[]): void {
+    this.empty();
+    this.append(...children);
   }
 
   toggleAttribute(name: string, force?: boolean): void {
@@ -380,7 +400,7 @@ export class Setting {
   name = '';
 
   constructor(parent?: TestElement) {
-    parent?.children.push(this.settingEl);
+    parent?.append(this.settingEl);
     Setting.instances.push(this);
   }
 
