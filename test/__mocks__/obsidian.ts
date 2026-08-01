@@ -87,16 +87,15 @@ export class TestElement {
     return element === this || this.children.some((child) => child.contains(element));
   }
 
-  createDiv(options: TestElementOptions | string = {}): TestElement {
+  createDiv(options: TestElementOptions = {}): TestElement {
     return this.createEl('div', options);
   }
 
-  createEl(tag: string, options: TestElementOptions | string = {}): TestElement {
-    const normalized = typeof options === 'string' ? { cls: options } : options;
+  createEl(tag: string, options: TestElementOptions = {}): TestElement {
     const element = new TestElement(this.ownerDocument, tag);
-    element.className = normalized.cls ?? '';
-    element.textContent = normalized.text ?? '';
-    for (const [name, value] of Object.entries(normalized.attr ?? {})) {
+    element.className = options.cls ?? '';
+    element.textContent = options.text ?? '';
+    for (const [name, value] of Object.entries(options.attr ?? {})) {
       element.setAttribute(name, value);
     }
     this.append(element);
@@ -128,12 +127,8 @@ export class TestElement {
     this.ownerDocument.activeElement = this;
   }
 
-  append(...children: Array<TestElement | string>): void {
+  append(...children: TestElement[]): void {
     for (const child of children) {
-      if (typeof child === 'string') {
-        this.textContent += child;
-        continue;
-      }
       child.remove();
       elementParents.set(child, this);
       this.children.push(child);
@@ -334,23 +329,22 @@ export class TextComponent {
     return this;
   }
 
-  setPlaceholder(_placeholder: string): this {
-    return this;
-  }
-
   setValue(value: string): this {
     this.inputEl.value = value;
     return this;
   }
 }
 
-export class SearchComponent extends TextComponent {
-  constructor(parent?: TestElement) {
-    super();
-    parent?.append(this.inputEl);
+export class SearchComponent {
+  onChange(_callback: (value: string) => unknown): this {
+    return this;
   }
 
-  override setPlaceholder(_placeholder: string): this {
+  setPlaceholder(_placeholder: string): this {
+    return this;
+  }
+
+  setValue(_value: string): this {
     return this;
   }
 }
@@ -406,10 +400,6 @@ export class ButtonComponent {
     return this;
   }
 
-  setTooltip(_tooltip: string): this {
-    return this;
-  }
-
   setWarning(): this {
     return this;
   }
@@ -419,7 +409,7 @@ export class ExtraButtonComponent extends ButtonComponent {
   readonly extraSettingsEl = new TestElement();
   tooltip = '';
 
-  override setTooltip(tooltip: string): this {
+  setTooltip(tooltip: string): this {
     this.tooltip = tooltip;
     return this;
   }
@@ -593,13 +583,6 @@ export class Setting {
   }
 
   addText(callback: (text: TextComponent) => void): this {
-    const text = new TextComponent();
-    this.textComponents.push(text);
-    callback(text);
-    return this;
-  }
-
-  addTextArea(callback: (text: TextComponent) => void): this {
     const text = new TextComponent();
     this.textComponents.push(text);
     callback(text);

@@ -18,8 +18,8 @@ describe('openFilteredHotkeySettings', () => {
     const dispatchEvent = vi.fn();
     const searchInputEl = {
       dispatchEvent,
+      ownerDocument: { defaultView: { Event: OwnerWindowEvent } },
       value: '',
-      win: { Event: OwnerWindowEvent },
     } as unknown as HTMLInputElement;
     const open = vi.fn();
     const openTabById = vi.fn(() => ({ searchInputEl }));
@@ -56,5 +56,22 @@ describe('openFilteredHotkeySettings', () => {
 
     expect(openFilteredHotkeySettings({} as App, 'Read aloud', onFailure)).toBe(false);
     expect(onFailure).toHaveBeenCalledOnce();
+  });
+
+  it('reports failure when the hotkey input has no owner window', () => {
+    const onFailure = vi.fn();
+    const app = {
+      setting: {
+        open: vi.fn(),
+        openTabById: () => ({
+          searchInputEl: { ownerDocument: { defaultView: null }, value: '' },
+        }),
+      },
+    } as unknown as App;
+
+    expect(openFilteredHotkeySettings(app, 'Read aloud', onFailure)).toBe(false);
+    expect(onFailure).toHaveBeenCalledWith(
+      expect.objectContaining({ message: 'Obsidian hotkey search window is unavailable.' }),
+    );
   });
 });

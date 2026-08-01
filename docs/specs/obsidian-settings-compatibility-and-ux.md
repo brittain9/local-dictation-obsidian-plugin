@@ -177,7 +177,7 @@ Add:
 
 - `obsidian-floor` as an npm alias for `obsidian@1.11.4`;
 - `tsconfig.obsidian-floor.json`;
-- `src/obsidian-floor-compat.d.ts`, included only by the floor configuration;
+- `compat/obsidian-floor.d.ts`, included only by the floor configuration;
 - `typecheck:obsidian-floor` in `package.json` and `check:frontend`.
 
 The normal typecheck continues using the latest published Obsidian definitions.

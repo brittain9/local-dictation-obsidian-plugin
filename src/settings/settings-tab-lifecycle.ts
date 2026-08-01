@@ -45,7 +45,7 @@ export class SettingsTabLifecycle {
   }
 }
 
-export function captureSettingsFocus(containerEl: HTMLElement): SettingsFocus | null {
+function captureSettingsFocus(containerEl: HTMLElement): SettingsFocus | null {
   const activeElement = containerEl.ownerDocument.activeElement;
   if (activeElement === null || !containerEl.contains(activeElement)) {
     return null;
@@ -66,7 +66,7 @@ export function captureSettingsFocus(containerEl: HTMLElement): SettingsFocus | 
   return controlIndex < 0 ? null : { controlIndex, settingName };
 }
 
-export function restoreSettingsFocus(containerEl: HTMLElement, focus: SettingsFocus | null): void {
+function restoreSettingsFocus(containerEl: HTMLElement, focus: SettingsFocus | null): void {
   if (focus === null) {
     return;
   }

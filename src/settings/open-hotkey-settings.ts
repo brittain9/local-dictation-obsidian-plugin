@@ -8,6 +8,8 @@ type HotkeysTab = {
   searchInputEl?: HTMLInputElement;
 };
 
+type InputEventWindow = Window & { Event: typeof Event };
+
 export function openFilteredHotkeySettings(
   app: App,
   query: string,
@@ -23,16 +25,12 @@ export function openFilteredHotkeySettings(
     if (tab?.searchInputEl === undefined) {
       throw new Error('Obsidian hotkey search is unavailable.');
     }
-    const inputWindow = (tab.searchInputEl as HTMLInputElement & { win?: Window }).win;
-    if (inputWindow === undefined) {
+    const inputWindow = tab.searchInputEl.ownerDocument.defaultView as InputEventWindow | null;
+    if (inputWindow === null) {
       throw new Error('Obsidian hotkey search window is unavailable.');
     }
-    const EventConstructor = (inputWindow as Window & { Event?: typeof Event }).Event;
-    if (EventConstructor === undefined) {
-      throw new Error('Obsidian hotkey search events are unavailable.');
-    }
     tab.searchInputEl.value = query;
-    tab.searchInputEl.dispatchEvent(new EventConstructor('input', { bubbles: true }));
+    tab.searchInputEl.dispatchEvent(new inputWindow.Event('input', { bubbles: true }));
     return true;
   } catch (error) {
     onFailure?.(error);

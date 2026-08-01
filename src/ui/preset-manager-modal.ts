@@ -180,12 +180,12 @@ export class PresetManagerModal extends Modal {
       renderMatches(description, hit.description, hit.descriptionMatches);
       const setting = new Setting(listEl).setName(name).setDesc(description);
       setting.settingEl.addClass('local-stt-preset-row');
+      const openLabel = entry.isBuiltin
+        ? t('llm.preset.manager.viewTooltip')
+        : t('llm.preset.manager.editTooltip');
       setting.infoEl.tabIndex = 0;
       setting.infoEl.setAttribute('role', 'button');
-      setting.infoEl.setAttribute(
-        'aria-label',
-        entry.isBuiltin ? t('llm.preset.manager.viewTooltip') : t('llm.preset.manager.editTooltip'),
-      );
+      setting.infoEl.setAttribute('aria-label', `${openLabel}: ${preset.label}`);
       setting.infoEl.addEventListener('click', () => {
         this.openEntry(entry);
       });
@@ -200,11 +200,7 @@ export class PresetManagerModal extends Modal {
       setting.addExtraButton((button) => {
         button
           .setIcon(entry.isBuiltin ? 'eye' : 'pencil')
-          .setTooltip(
-            entry.isBuiltin
-              ? t('llm.preset.manager.viewTooltip')
-              : t('llm.preset.manager.editTooltip'),
-          )
+          .setTooltip(openLabel)
           .onClick(() => {
             this.openEntry(entry);
           });
