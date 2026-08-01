@@ -25,7 +25,7 @@ export function configureReadAloudSpeedSlider(
   slider.setLimits(MIN_TTS_SPEED, MAX_TTS_SPEED, 0.05).setValue(speed);
 
   // Obsidian 1.13 shows values inline, but supported 1.11/1.12 hosts need this tooltip.
-  const legacyTooltipSlider = slider as { setDynamicTooltip(): SliderComponent };
+  const legacyTooltipSlider: { setDynamicTooltip(): SliderComponent } = slider;
   legacyTooltipSlider.setDynamicTooltip().onChange(persistSpeed);
 }
 
