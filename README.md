@@ -16,6 +16,10 @@ Dictate live. Transcribe meetings. Translate text. Listen to notes. One plugin i
 - 🌍 **Language:** Translate notes locally across eight languages.
 - 🧠 **Models:** Choose from a managed catalog of speech, voice, and translation models, with optional LLM text tools.
 
+<p align="center">
+  <img src="https://raw.githubusercontent.com/brittain9/speech-kit-obsidian-plugin/main/docs/media/speech-kit-translation-demo.gif" alt="Speech Kit translating an Obsidian note from English to Spanish and replacing the original text" width="720">
+</p>
+
 ## Why Speech Kit?
 
 Speech and language tools are usually fragmented. One tool handles dictation. Another transcribes meetings. Another reads text aloud. Another translates. Each brings its own settings, models, and hotkeys, and often its own cloud account, subscription, and privacy policy.
