@@ -2,10 +2,11 @@ import { describe, expect, it, vi } from 'vitest';
 import type { ModelInstallManager, ModelManagerState } from '../src/models/model-install-manager';
 import { DEFAULT_PLUGIN_SETTINGS } from '../src/settings/plugin-settings';
 import {
+  configureReadAloudSpeedSlider,
   readAloudControlsFingerprint,
   renderTextToSpeechSettings,
 } from '../src/settings/read-aloud-settings-section';
-import { Setting, TestElement } from './__mocks__/obsidian';
+import { Setting, SliderComponent, TestElement } from './__mocks__/obsidian';
 
 function state(
   voices: string[],
@@ -92,6 +93,23 @@ function state(
 }
 
 describe('Read Aloud settings incremental refresh', () => {
+  it('shows the speed value dynamically and persists changes', () => {
+    const slider = new SliderComponent();
+    const persistSpeed = vi.fn(async () => {});
+
+    configureReadAloudSpeedSlider(
+      slider as unknown as import('obsidian').SliderComponent,
+      1.25,
+      persistSpeed,
+    );
+
+    expect(slider.dynamicTooltip).toBe(true);
+    expect(slider.value).toBe(1.25);
+    expect(slider.sliderEl).toMatchObject({ max: '2', min: '0.75', step: '0.05' });
+    slider.change(1.5);
+    expect(persistSpeed).toHaveBeenCalledWith(1.5);
+  });
+
   it('ignores progress ticks but changes when same-model voice metadata refreshes', () => {
     const before = readAloudControlsFingerprint(state(['alba'], 10));
     expect(readAloudControlsFingerprint(state(['alba'], 90))).toBe(before);

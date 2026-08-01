@@ -20,7 +20,7 @@ import {
   SidecarLifecycleConflictError,
   SidecarLifecycleGate,
 } from '../src/sidecar/sidecar-lifecycle-gate';
-import { Setting, TestElement } from './__mocks__/obsidian';
+import { Setting, TestDocument, TestElement } from './__mocks__/obsidian';
 
 const { uninstallSidecarVariantMock } = vi.hoisted(() => ({
   uninstallSidecarVariantMock: vi.fn(),
@@ -390,17 +390,33 @@ describe('microphone detection', () => {
     const getUserMedia = vi.fn(async () => ({
       getTracks: () => [{ stop: vi.fn() }],
     }));
-    vi.stubGlobal('navigator', {
-      mediaDevices: {
-        addEventListener: vi.fn(),
-        enumerateDevices: vi.fn(async () => []),
-        getUserMedia,
-        removeEventListener: vi.fn(),
-      },
+    let deviceChange = () => {};
+    const addEventListener = vi.fn((event: string, listener: () => void) => {
+      if (event === 'devicechange') deviceChange = listener;
     });
+    const removeEventListener = vi.fn();
+    const ownerClearTimeout = vi.fn();
+    const ownerSetTimeout = vi.fn(() => 42);
+    const ownerWindow = {
+      clearTimeout: ownerClearTimeout,
+      navigator: {
+        mediaDevices: {
+          addEventListener,
+          enumerateDevices: vi.fn(async () => []),
+          getUserMedia,
+          removeEventListener,
+        },
+      },
+      setTimeout: ownerSetTimeout,
+    };
+    const globalGetUserMedia = vi.fn(async () => {
+      throw new Error('global mediaDevices must not be used');
+    });
+    vi.stubGlobal('navigator', { mediaDevices: { getUserMedia: globalGetUserMedia } });
     const isDictationBusy = vi.fn(() => false);
     const feedbackShow = vi.fn();
-    const dispose = renderMicrophonePicker(new TestElement() as unknown as HTMLElement, {
+    const parent = new TestElement(new TestDocument(ownerWindow as unknown as Window));
+    const dispose = renderMicrophonePicker(parent as unknown as HTMLElement, {
       access: {
         getSettings: () => DEFAULT_PLUGIN_SETTINGS,
         persistOne: vi.fn(async () => {}),
@@ -413,11 +429,18 @@ describe('microphone detection', () => {
 
     expect(isDictationBusy).toHaveBeenCalled();
     expect(getUserMedia).toHaveBeenCalledWith({ audio: true });
+    expect(globalGetUserMedia).not.toHaveBeenCalled();
     expect(feedbackShow).not.toHaveBeenCalledWith({
       intent: 'warning',
       message: 'Stop dictation to detect microphones.',
     });
+
+    deviceChange();
+    expect(ownerSetTimeout).toHaveBeenCalledWith(expect.any(Function), 300);
     dispose();
+    expect(ownerClearTimeout).toHaveBeenCalledWith(42);
+    expect(removeEventListener).toHaveBeenCalledWith('devicechange', deviceChange);
+    vi.unstubAllGlobals();
   });
 });
 

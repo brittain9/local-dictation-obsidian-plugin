@@ -1,4 +1,4 @@
-import type { App, Plugin, SettingDefinitionItem } from 'obsidian';
+import type { App, Plugin } from 'obsidian';
 import { Platform, PluginSettingTab, Setting } from 'obsidian';
 
 import { formatSystemAudioProbeResultMessage } from '../audio/system-audio-permission-message';
@@ -41,12 +41,13 @@ import {
   isRemoteLlmEffectivelyEnabled,
   isSpeakingStyle,
   isTranscriptFormattingMode,
-  MAX_TTS_SPEED,
-  MIN_TTS_SPEED,
   type PluginSettings,
   type TranscriptFormattingMode,
 } from './plugin-settings';
-import { renderTextToSpeechSettings } from './read-aloud-settings-section';
+import {
+  configureReadAloudSpeedSlider,
+  renderTextToSpeechSettings,
+} from './read-aloud-settings-section';
 import {
   addEnumSetting,
   addTextSetting,
@@ -57,6 +58,7 @@ import {
   type SettingAccess,
 } from './setting-helpers';
 import { mountSettingsSidecarSurfaces } from './settings-sidecar-surfaces';
+import { SettingsTabLifecycle } from './settings-tab-lifecycle';
 import {
   openCudaInstallModal,
   openSidecarUpdateModal,
@@ -119,6 +121,7 @@ export class LocalSttSettingTab extends PluginSettingTab {
   private disposeReadAloudSection: (() => void) | null = null;
   private disposeSidecarSurfaces: (() => void) | null = null;
   private disposeTranslationSection: (() => void) | null = null;
+  private readonly lifecycle: SettingsTabLifecycle;
 
   constructor(
     app: App,
@@ -126,6 +129,7 @@ export class LocalSttSettingTab extends PluginSettingTab {
     private readonly dependencies: SettingsTabDependencies,
   ) {
     super(app, plugin);
+    this.lifecycle = new SettingsTabLifecycle(this);
     this.access = {
       getSettings: () => this.dependencies.getSettings(),
       persistOne: async (key, value) => {
@@ -137,7 +141,7 @@ export class LocalSttSettingTab extends PluginSettingTab {
     };
   }
 
-  override getSettingDefinitions(): SettingDefinitionItem[] {
+  override getSettingDefinitions(): never[] {
     // The page is a composite imperative UI. Returning any definitions makes
     // Obsidian 1.13+ skip display(), and its row reconciliation removes a
     // custom host that replaces the framework-owned setting row.
@@ -145,6 +149,7 @@ export class LocalSttSettingTab extends PluginSettingTab {
   }
 
   override display(): void {
+    this.lifecycle.markVisible();
     this.renderSettings(this.containerEl);
   }
 
@@ -329,9 +334,6 @@ export class LocalSttSettingTab extends PluginSettingTab {
         .onClick(() => {
           new DiarizationSettingsModal(this.app, {
             getSettings: () => this.dependencies.getSettings(),
-            onSave: () => {
-              this.refreshSettingsTab();
-            },
             saveSettings: async (nextSettings) => {
               await this.dependencies.saveSettings(nextSettings);
             },
@@ -364,12 +366,9 @@ export class LocalSttSettingTab extends PluginSettingTab {
       .setName(t('settings.readAloud.speed'))
       .setDesc(t('settings.readAloud.speedDesc'))
       .addSlider((slider) => {
-        slider
-          .setLimits(MIN_TTS_SPEED, MAX_TTS_SPEED, 0.05)
-          .setValue(settings.ttsSpeed)
-          .onChange(async (speed) => {
-            await this.access.persistOne('ttsSpeed', speed);
-          });
+        configureReadAloudSpeedSlider(slider, settings.ttsSpeed, (speed) =>
+          this.access.persistOne('ttsSpeed', speed),
+        );
       });
 
     this.disposeReadAloudSection = renderTextToSpeechSettings(
@@ -541,6 +540,7 @@ export class LocalSttSettingTab extends PluginSettingTab {
   }
 
   override hide(): void {
+    this.lifecycle.markHidden();
     this.tearDown();
   }
 
@@ -562,15 +562,7 @@ export class LocalSttSettingTab extends PluginSettingTab {
   }
 
   private refreshSettingsTab(): void {
-    // `update()` was added in Obsidian 1.13. Keep the runtime feature check so
-    // the legacy display path continues to work at the manifest's 1.11.5 floor.
-    const update = (this as { update?: () => void }).update;
-    if (typeof update === 'function') {
-      update.call(this);
-      return;
-    }
-    const display = (this as { display: () => void }).display;
-    display.call(this);
+    this.lifecycle.refresh();
   }
 
   /** Returns whether the probe confirmed capture is usable. */
@@ -616,9 +608,6 @@ export class LocalSttSettingTab extends PluginSettingTab {
         .onClick(() => {
           new SmartParagraphSettingsModal(this.app, {
             getSettings: () => this.dependencies.getSettings(),
-            onSave: () => {
-              this.refreshSettingsTab();
-            },
             saveSettings: async (settings) => {
               await this.dependencies.saveSettings(settings);
             },
@@ -646,9 +635,6 @@ export class LocalSttSettingTab extends PluginSettingTab {
         .onClick(() => {
           new TimestampSettingsModal(this.app, {
             getSettings: () => this.dependencies.getSettings(),
-            onSave: () => {
-              this.refreshSettingsTab();
-            },
             saveSettings: async (nextSettings) => {
               await this.dependencies.saveSettings(nextSettings);
             },

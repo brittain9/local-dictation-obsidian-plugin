@@ -4,6 +4,12 @@ export const getLanguage = vi.fn(() => 'en');
 
 const elementParents = new WeakMap<TestElement, TestElement>();
 
+export class TestDocument {
+  activeElement: TestElement | null = null;
+
+  constructor(readonly defaultView: Window = window) {}
+}
+
 export abstract class AbstractInputSuggest<T> {
   abstract getSuggestions(query: string): T[] | Promise<T[]>;
   abstract renderSuggestion(value: T, el: HTMLElement): void;
@@ -23,9 +29,19 @@ export class TestElement {
   disabled = false;
   id = '';
   innerHTML = '';
+  readonly ownerDocument: TestDocument;
   readonly style: Record<string, string> = { width: '' };
+  tabIndex = -1;
+  readonly tagName: string;
   textContent = '';
-  private readonly listeners = new Map<string, Array<() => unknown>>();
+  readonly win: Window;
+  private readonly listeners = new Map<string, Array<(event: TestEvent) => unknown>>();
+
+  constructor(ownerDocument = new TestDocument(), tagName = 'div') {
+    this.ownerDocument = ownerDocument;
+    this.tagName = tagName.toUpperCase();
+    this.win = ownerDocument.defaultView;
+  }
 
   get parentElement(): TestElement | null {
     return elementParents.get(this) ?? null;
@@ -47,28 +63,40 @@ export class TestElement {
     this.className = [this.className, className].filter(Boolean).join(' ');
   }
 
-  addEventListener(event: string, listener: () => unknown): void {
+  addEventListener(event: string, listener: (event: TestEvent) => unknown): void {
     const listeners = this.listeners.get(event) ?? [];
     listeners.push(listener);
     this.listeners.set(event, listeners);
   }
 
   async click(): Promise<void> {
-    for (const listener of this.listeners.get('click') ?? []) {
-      await listener();
-    }
+    this.dispatchEvent({ type: 'click' });
     await Promise.resolve();
   }
 
-  createDiv(options: TestElementOptions = {}): TestElement {
+  closest(selector: string): TestElement | null {
+    let current: TestElement | null = this;
+    while (current !== null) {
+      if (current.matches(selector)) return current;
+      current = current.parentElement;
+    }
+    return null;
+  }
+
+  contains(element: TestElement): boolean {
+    return element === this || this.children.some((child) => child.contains(element));
+  }
+
+  createDiv(options: TestElementOptions | string = {}): TestElement {
     return this.createEl('div', options);
   }
 
-  createEl(_tag: string, options: TestElementOptions = {}): TestElement {
-    const element = new TestElement();
-    element.className = options.cls ?? '';
-    element.textContent = options.text ?? '';
-    for (const [name, value] of Object.entries(options.attr ?? {})) {
+  createEl(tag: string, options: TestElementOptions | string = {}): TestElement {
+    const normalized = typeof options === 'string' ? { cls: options } : options;
+    const element = new TestElement(this.ownerDocument, tag);
+    element.className = normalized.cls ?? '';
+    element.textContent = normalized.text ?? '';
+    for (const [name, value] of Object.entries(normalized.attr ?? {})) {
       element.setAttribute(name, value);
     }
     this.append(element);
@@ -88,8 +116,24 @@ export class TestElement {
     this.textContent = '';
   }
 
-  append(...children: TestElement[]): void {
+  dispatchEvent(event: TestEvent): boolean {
+    event.target ??= this;
+    for (const listener of this.listeners.get(event.type) ?? []) {
+      void listener(event);
+    }
+    return true;
+  }
+
+  focus(): void {
+    this.ownerDocument.activeElement = this;
+  }
+
+  append(...children: Array<TestElement | string>): void {
     for (const child of children) {
+      if (typeof child === 'string') {
+        this.textContent += child;
+        continue;
+      }
       child.remove();
       elementParents.set(child, this);
       this.children.push(child);
@@ -101,13 +145,16 @@ export class TestElement {
   }
 
   querySelector(selector: string): TestElement | null {
-    const className = selector.startsWith('.') ? selector.slice(1) : selector;
+    return this.querySelectorAll(selector)[0] ?? null;
+  }
+
+  querySelectorAll(selector: string): TestElement[] {
+    const matches: TestElement[] = [];
     for (const child of this.children) {
-      if (child.classList.contains(className)) return child;
-      const match = child.querySelector(selector);
-      if (match !== null) return match;
+      if (child.matches(selector)) matches.push(child);
+      matches.push(...child.querySelectorAll(selector));
     }
-    return null;
+    return matches;
   }
 
   remove(): void {
@@ -204,6 +251,24 @@ export class TestElement {
     this.classList.toggle(className, force);
   }
 
+  private matches(selector: string): boolean {
+    return selector.split(',').some((part) => {
+      const candidate = part.trim();
+      if (candidate.startsWith('.')) {
+        return this.classList.contains(candidate.slice(1));
+      }
+      if (candidate === '[tabindex]:not([tabindex="-1"])') {
+        return this.tabIndex >= 0;
+      }
+
+      const tag = candidate.split(':', 1)[0]?.toUpperCase();
+      if (tag !== this.tagName) {
+        return false;
+      }
+      return !candidate.includes(':not([disabled])') || !this.disabled;
+    });
+  }
+
   private classes(): Set<string> {
     return new Set(this.className.split(/\s+/u).filter(Boolean));
   }
@@ -225,6 +290,13 @@ interface TestElementOptions {
   text?: string;
 }
 
+interface TestEvent {
+  key?: string;
+  preventDefault?: () => void;
+  target?: TestElement;
+  type: string;
+}
+
 export class TestInputElement extends TestElement {
   inputMode = '';
   max = '';
@@ -233,6 +305,10 @@ export class TestInputElement extends TestElement {
   type = 'text';
   validationMessage = '';
   value = '';
+
+  constructor(ownerDocument = new TestDocument()) {
+    super(ownerDocument, 'input');
+  }
 
   setCustomValidity(message: string): void {
     this.validationMessage = message;
@@ -258,10 +334,37 @@ export class TextComponent {
     return this;
   }
 
+  setPlaceholder(_placeholder: string): this {
+    return this;
+  }
+
   setValue(value: string): this {
     this.inputEl.value = value;
     return this;
   }
+}
+
+export class SearchComponent extends TextComponent {
+  constructor(parent?: TestElement) {
+    super();
+    parent?.append(this.inputEl);
+  }
+
+  override setPlaceholder(_placeholder: string): this {
+    return this;
+  }
+}
+
+export function prepareSimpleSearch(query: string) {
+  const normalized = query.toLocaleLowerCase();
+  return (text: string) => {
+    const index = text.toLocaleLowerCase().indexOf(normalized);
+    return index < 0 ? null : { matches: [[index, index + query.length]], score: 0 };
+  };
+}
+
+export function renderMatches(parent: TestElement, text: string): void {
+  parent.setText(text);
 }
 
 export class ButtonComponent {
@@ -303,6 +406,10 @@ export class ButtonComponent {
     return this;
   }
 
+  setTooltip(_tooltip: string): this {
+    return this;
+  }
+
   setWarning(): this {
     return this;
   }
@@ -312,7 +419,7 @@ export class ExtraButtonComponent extends ButtonComponent {
   readonly extraSettingsEl = new TestElement();
   tooltip = '';
 
-  setTooltip(tooltip: string): this {
+  override setTooltip(tooltip: string): this {
     this.tooltip = tooltip;
     return this;
   }
@@ -385,6 +492,40 @@ export class ToggleComponent {
   }
 }
 
+export class SliderComponent {
+  dynamicTooltip = false;
+  readonly sliderEl = new TestInputElement();
+  value = 0;
+  private changeHandler: (value: number) => unknown = () => {};
+
+  change(value: number): void {
+    this.value = value;
+    this.changeHandler(value);
+  }
+
+  onChange(callback: (value: number) => unknown): this {
+    this.changeHandler = callback;
+    return this;
+  }
+
+  setDynamicTooltip(): this {
+    this.dynamicTooltip = true;
+    return this;
+  }
+
+  setLimits(min: number, max: number, step: number): this {
+    this.sliderEl.min = String(min);
+    this.sliderEl.max = String(max);
+    this.sliderEl.step = String(step);
+    return this;
+  }
+
+  setValue(value: number): this {
+    this.value = value;
+    return this;
+  }
+}
+
 export class Setting {
   static readonly instances: Setting[] = [];
 
@@ -393,13 +534,21 @@ export class Setting {
   readonly descEl = new TestElement();
   readonly dropdownComponents: DropdownComponent[] = [];
   readonly extraButtonComponents: ExtraButtonComponent[] = [];
+  readonly infoEl = new TestElement();
   readonly nameEl = new TestElement();
   readonly settingEl = new TestElement();
+  readonly sliderComponents: SliderComponent[] = [];
   readonly textComponents: TextComponent[] = [];
   readonly toggleComponents: ToggleComponent[] = [];
   name = '';
 
   constructor(parent?: TestElement) {
+    this.settingEl.addClass('setting-item');
+    this.infoEl.addClass('setting-item-info');
+    this.nameEl.addClass('setting-item-name');
+    this.controlEl.addClass('setting-item-control');
+    this.infoEl.append(this.nameEl, this.descEl);
+    this.settingEl.append(this.infoEl, this.controlEl);
     parent?.append(this.settingEl);
     Setting.instances.push(this);
   }
@@ -447,6 +596,20 @@ export class Setting {
     const text = new TextComponent();
     this.textComponents.push(text);
     callback(text);
+    return this;
+  }
+
+  addTextArea(callback: (text: TextComponent) => void): this {
+    const text = new TextComponent();
+    this.textComponents.push(text);
+    callback(text);
+    return this;
+  }
+
+  addSlider(callback: (slider: SliderComponent) => void): this {
+    const slider = new SliderComponent();
+    this.sliderComponents.push(slider);
+    callback(slider);
     return this;
   }
 
@@ -499,9 +662,14 @@ export class Setting {
     return this;
   }
 
-  setName(name: string): this {
-    this.name = name;
-    this.nameEl.setText(name);
+  setName(name: string | TestElement): this {
+    if (name instanceof TestElement) {
+      this.name = name.textContent;
+      this.nameEl.append(name);
+    } else {
+      this.name = name;
+      this.nameEl.setText(name);
+    }
     return this;
   }
 }

@@ -752,8 +752,13 @@
 
 /* --- Preset manager modal ------------------------------------------ */
 
-.local-stt-preset-manager .local-stt-preset-row {
+.local-stt-preset-manager .local-stt-preset-row .setting-item-info {
   cursor: pointer;
+}
+
+.local-stt-preset-manager .local-stt-preset-row .setting-item-info:focus-visible {
+  outline: 2px solid var(--interactive-accent);
+  outline-offset: 2px;
 }
 
 .local-stt-preset-manager .local-stt-preset-back {

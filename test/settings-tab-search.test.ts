@@ -11,6 +11,34 @@ describe('LocalSttSettingTab Obsidian 1.13 compatibility', () => {
     expect(tab.getSettingDefinitions()).toEqual([]);
   });
 
+  it('models Obsidian suppressing display when a declarative definition is returned', () => {
+    const container = new TestElement();
+    const display = vi.fn();
+    const definitions: SettingDefinitionRender[] = [
+      {
+        name: 'Speech Kit',
+        render: (setting) => {
+          setting.setName('Speech Kit');
+        },
+      },
+    ];
+
+    if (definitions.length === 0) {
+      display();
+    } else {
+      const rows = definitions.map((definition) => {
+        const setting = new Setting(container as unknown as HTMLElement);
+        setting.setName(definition.name);
+        definition.render(setting, {} as SettingGroup);
+        return setting.settingEl as unknown as TestElement;
+      });
+      container.setChildrenInPlace(rows);
+    }
+
+    expect(display).not.toHaveBeenCalled();
+    expect(container.findByText('Speech Kit')).toBeDefined();
+  });
+
   it('keeps the composite settings visible after Obsidian reconciles declarative rows', () => {
     const tab = Object.create(LocalSttSettingTab.prototype) as LocalSttSettingTab;
     const container = new TestElement();

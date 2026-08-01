@@ -34,6 +34,8 @@ export function renderMicrophonePicker(
   parent: HTMLElement,
   deps: MicrophonePickerDependencies,
 ): () => void {
+  const hostWindow = parent.win;
+  const mediaDevices = hostWindow.navigator?.mediaDevices;
   const setting = new Setting(parent)
     .setName(t('settings.microphone.name'))
     .setDesc(t('settings.microphone.desc'));
@@ -101,7 +103,6 @@ export function renderMicrophonePicker(
     if (detectButtonEl === null) {
       return;
     }
-    const mediaDevices = window.navigator?.mediaDevices;
     if (mediaDevices?.getUserMedia === undefined) {
       detectButtonEl.addClass('local-stt-hidden');
       return;
@@ -116,7 +117,6 @@ export function renderMicrophonePicker(
 
   async function enumerate(): Promise<void> {
     const version = ++enumerateVersion;
-    const mediaDevices = window.navigator?.mediaDevices;
     if (mediaDevices?.enumerateDevices === undefined) {
       devices = [];
       repopulate();
@@ -210,7 +210,6 @@ export function renderMicrophonePicker(
       return;
     }
 
-    const mediaDevices = window.navigator?.mediaDevices;
     if (mediaDevices?.getUserMedia === undefined) {
       deps.feedback.show({
         intent: 'error',
@@ -239,15 +238,14 @@ export function renderMicrophonePicker(
   let debounceHandle: number | null = null;
   const onDeviceChange = (): void => {
     if (debounceHandle !== null) {
-      window.clearTimeout(debounceHandle);
+      hostWindow.clearTimeout(debounceHandle);
     }
-    debounceHandle = window.setTimeout(() => {
+    debounceHandle = hostWindow.setTimeout(() => {
       debounceHandle = null;
       void enumerate();
     }, DEVICE_CHANGE_DEBOUNCE_MS);
   };
 
-  const mediaDevices = window.navigator?.mediaDevices;
   mediaDevices?.addEventListener?.('devicechange', onDeviceChange);
 
   void enumerate();
@@ -255,7 +253,7 @@ export function renderMicrophonePicker(
   return () => {
     disposed = true;
     if (debounceHandle !== null) {
-      window.clearTimeout(debounceHandle);
+      hostWindow.clearTimeout(debounceHandle);
       debounceHandle = null;
     }
     mediaDevices?.removeEventListener?.('devicechange', onDeviceChange);

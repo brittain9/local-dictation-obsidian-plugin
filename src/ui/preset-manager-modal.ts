@@ -180,6 +180,22 @@ export class PresetManagerModal extends Modal {
       renderMatches(description, hit.description, hit.descriptionMatches);
       const setting = new Setting(listEl).setName(name).setDesc(description);
       setting.settingEl.addClass('local-stt-preset-row');
+      setting.infoEl.tabIndex = 0;
+      setting.infoEl.setAttribute('role', 'button');
+      setting.infoEl.setAttribute(
+        'aria-label',
+        entry.isBuiltin ? t('llm.preset.manager.viewTooltip') : t('llm.preset.manager.editTooltip'),
+      );
+      setting.infoEl.addEventListener('click', () => {
+        this.openEntry(entry);
+      });
+      setting.infoEl.addEventListener('keydown', (event) => {
+        if (event.key !== 'Enter' && event.key !== ' ') {
+          return;
+        }
+        event.preventDefault();
+        this.openEntry(entry);
+      });
 
       setting.addExtraButton((button) => {
         button
@@ -213,19 +229,6 @@ export class PresetManagerModal extends Modal {
             });
         });
       }
-
-      setting.settingEl.addEventListener('click', (event) => {
-        // Ignore clicks on the action icons (Obsidian extra buttons are
-        // divs, not <button>s) so edit/duplicate/delete don't also open
-        // the row.
-        if (
-          event.target instanceof HTMLElement &&
-          event.target.closest('.setting-item-control') !== null
-        ) {
-          return;
-        }
-        this.openEntry(entry);
-      });
     }
   }
 
