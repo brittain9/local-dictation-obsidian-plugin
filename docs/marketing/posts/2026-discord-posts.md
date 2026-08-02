@@ -1,7 +1,5 @@
 # Discord posts: May-July 2026
 
-The timestamps below are copied from Discord's local display. The pasted history did not include a timezone, reactions, replies, channel details, message links, or the original attachments.
-
 ## May 20, 2026 at 7:13 PM
 
 **Reactions:** 9 bookmarks, 2 stars.

@@ -2,7 +2,6 @@
 
 - **Posted:** July 31, 2026 at 6:07 PM ET
 - **Community:** r/ObsidianMD
-- **Format:** Showcase post with GIF
 - **Post:** [I couldn't find a local speech workflow I liked across my computers, so I built it into Obsidian](https://www.reddit.com/r/ObsidianMD/comments/1vc4vwg/i_couldnt_find_a_local_speech_workflow_i_liked/)
 
 ## Post
