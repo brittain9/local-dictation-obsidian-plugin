@@ -4,6 +4,8 @@ The timestamps below are copied from Discord's local display. The pasted history
 
 ## May 20, 2026 at 7:13 PM
 
+**Reactions:** 9 bookmarks, 2 stars.
+
 **Attachment:** Short product demo video (not archived here).
 
 ### Local Dictation v2026.5.20
@@ -28,6 +30,8 @@ Demo (video below)
 Short clip shows the LLM processing in action. ✨ Ships with some built-in presets: Clean up, Professional writing, TLDR, Markdown formatting, and a Voice commands mode. You can also save your own custom presets for LLM post-processing from the settings.
 
 ## May 24, 2026 at 11:51 AM
+
+**Reactions:** None.
 
 ### Local Dictation 2026.5.24
 
@@ -60,6 +64,8 @@ Source: https://github.com/brittain9/local-dictation-obsidian-plugin
 
 ## June 11, 2026 at 5:32 PM
 
+**Reactions:** 5 bookmarks, 2 fires.
+
 **Attachment:** ChatGPT-generated promotional image (not archived here).
 
 ### Local Dictation 2026.6.10
@@ -90,6 +96,8 @@ Feedback and feature requests welcome — I read everything. 🙏
 
 ## June 23, 2026 at 11:23 PM
 
+**Reactions:** 3 stars, 2 bookmarks.
+
 **Attachment:** ChatGPT-generated promotional image (not archived here).
 
 ### Local Dictation 2026.6.23
@@ -105,6 +113,8 @@ Try it: search "Local Dictation" in Community Plugins, or:
 🔗 https://github.com/brittain9/local-dictation-obsidian-plugin
 
 ## July 5, 2026 at 4:09 PM
+
+**Reactions:** 4 bookmarks.
 
 ### Local Dictation — live dictation is here
 
@@ -122,6 +132,10 @@ Plus on-device speaker labels, system-audio capture, and optional local LLM clea
 Get it: Obsidian → Settings → Community Plugins → search "Local Dictation". https://community.obsidian.md/plugins/local-dictation https://github.com/brittain9/local-dictation-obsidian-plugin
 
 ## July 10, 2026 at 7:31 PM
+
+**Reactions:** None.
+
+**Thread reply:** “What’s with your version number? Is that a date? That isn’t how software versioning works?”
 
 ### Local Dictation 2026.7.4 is out — private, offline speech-to-text for Obsidian
 
@@ -143,6 +157,8 @@ Feedback and feature requests welcome: https://github.com/brittain9/local-dictat
 
 ## July 14, 2026 at 6:19 PM
 
+**Reactions:** 3 bookmarks.
+
 ### Local Dictation 2026.7.6 is out
 
 Speech-to-text that runs 100% on your device — no cloud, no API keys, nothing leaves your vault.
@@ -163,6 +179,8 @@ New in this release:
 Grab it from Community Plugins → "Local Dictation" or see the full notes: https://github.com/brittain9/local-dictation-obsidian-plugin/releases/tag/2026.7.6
 
 ## July 18, 2026 at 12:43 PM
+
+**Reactions:** 2 thumbs up, 1 sparkles.
 
 ### Local Dictation is now multilingual 🌍
 
@@ -188,6 +206,8 @@ Next up: localizing the plugin's UI itself into all eight languages.
 ☕ If it saves you time: https://buymeacoffee.com/alexbrittaq
 
 ## July 20, 2026 at 8:27 PM
+
+**Reactions:** None.
 
 ### Local Dictation now speaks your language!
 
@@ -220,6 +240,8 @@ https://obsidian.md/plugins?id=local-dictation
 https://github.com/brittain9/local-dictation-obsidian-plugin
 
 ## July 23, 2026 at 6:58 PM
+
+**Reactions:** 2 “Nice” reactions.
 
 ### Local Dictation: natural, private text-to-speech is here
 
@@ -255,6 +277,8 @@ Try it and let me know what would make local read-aloud more helpful for accessi
 
 ## July 26, 2026 at 3:28 PM
 
+**Reactions:** 3 bookmarks.
+
 ### Local Dictation 2026.7.12
 
 Speak into your notes, and have your notes speak back to you — all locally on your device and 100% free.
@@ -270,6 +294,8 @@ This release also includes general stability fixes, performance improvements, sm
 [GitHub](https://github.com/brittain9/local-dictation-obsidian-plugin) | [Changelog](https://github.com/brittain9/local-dictation-obsidian-plugin/releases/latest) | [Obsidian](https://obsidian.md/plugins?id=local-dictation) | [Buy me a](https://buymeacoffee.com/alexbrittaq) ☕
 
 ## July 29, 2026 at 10:33 PM
+
+**Reactions:** 3 bookmarks.
 
 ### Local Dictation is now Speech Kit
 
