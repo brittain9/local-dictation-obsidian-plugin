@@ -10,8 +10,9 @@ counter (the 11th release cut in June 2026), **not** the day of the month.
 Format rules enforced by `scripts/read-release-version.mjs`:
 
 - **Month** is `1`–`12` with **no leading zero** → `2026.6.11`, never `2026.06.11`.
-- **MICRO** is any positive integer with no leading zero. It is not capped at
-  31 because it counts releases, not calendar days.
+- **MICRO** is any non-negative integer with no leading zero. Start each month
+  at `0`, then increment it for additional releases that month. It is not capped
+  at 31 because it counts releases, not calendar days.
 - The git tag is **bare, no `v` prefix**, and must equal `manifest.json` exactly.
 
 ## Files that carry the version
