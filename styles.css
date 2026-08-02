@@ -223,10 +223,6 @@
   gap: 4px;
 }
 
-.local-stt-read-aloud-status.is-hidden {
-  display: none;
-}
-
 .local-stt-read-aloud-status button {
   border: 0;
   background: transparent;
@@ -752,8 +748,13 @@
 
 /* --- Preset manager modal ------------------------------------------ */
 
-.local-stt-preset-manager .local-stt-preset-row {
+.local-stt-preset-manager .local-stt-preset-row .setting-item-info {
   cursor: pointer;
+}
+
+.local-stt-preset-manager .local-stt-preset-row .setting-item-info:focus-visible {
+  outline: 2px solid var(--interactive-accent);
+  outline-offset: 2px;
 }
 
 .local-stt-preset-manager .local-stt-preset-back {
@@ -1339,12 +1340,6 @@
   gap: 8px;
   justify-content: flex-end;
   margin-top: 18px;
-}
-
-/* Visibility utility toggled in place of inline `style.display`, so show/hide
-   state lives in CSS (themeable, overridable) instead of element styles. */
-.local-stt-hidden {
-  display: none;
 }
 
 /* --- Local translation -------------------------------------------- */

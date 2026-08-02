@@ -47,7 +47,7 @@ export class SidecarInstallModal extends Modal {
   override onOpen(): void {
     this.inlineFailureVisible = true;
     this.modalEl.addClass('local-stt-sidecar-install');
-    this.titleEl.setText(this.options.copy.title);
+    this.setTitle(this.options.copy.title);
     this.unsubscribe = this.options.manager.subscribe(() => {
       this.handleManagerChange();
     });

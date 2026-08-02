@@ -111,6 +111,11 @@ npm run check
 mapping, and curated notes. Normal PR CI and the tag workflow run the same gate.
 The explicit tag check must print `<version>` with no error.
 
+When a release changes settings behavior or its Obsidian API usage, also
+complete the [Obsidian settings compatibility matrix](../guides/obsidian-settings-compatibility-testing.md).
+Its exact 1.11.5 runtime row remains required while `manifest.json` declares
+1.11.5, even when the supported-floor typecheck passes.
+
 ## Cut it
 
 ```bash

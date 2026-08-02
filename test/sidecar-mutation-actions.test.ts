@@ -20,7 +20,7 @@ import {
   SidecarLifecycleConflictError,
   SidecarLifecycleGate,
 } from '../src/sidecar/sidecar-lifecycle-gate';
-import { Setting, TestElement } from './__mocks__/obsidian';
+import { Setting, TestDocument, TestElement } from './__mocks__/obsidian';
 
 const { uninstallSidecarVariantMock } = vi.hoisted(() => ({
   uninstallSidecarVariantMock: vi.fn(),
@@ -386,21 +386,83 @@ describe('hardware acceleration mutation', () => {
 });
 
 describe('microphone detection', () => {
+  it('refits the initial selection after microphones arrive asynchronously', async () => {
+    let resolveDevices: (devices: MediaDeviceInfo[]) => void = () => {};
+    const enumerateDevices = vi.fn(
+      () =>
+        new Promise<MediaDeviceInfo[]>((resolve) => {
+          resolveDevices = resolve;
+        }),
+    );
+    const ownerWindow = {
+      clearTimeout,
+      navigator: { mediaDevices: { enumerateDevices } },
+      setTimeout,
+    };
+    const parent = new TestElement(new TestDocument(ownerWindow as unknown as Window));
+
+    renderMicrophonePicker(parent as unknown as HTMLElement, {
+      access: {
+        getSettings: () => DEFAULT_PLUGIN_SETTINGS,
+        persistOne: vi.fn(async () => {}),
+      },
+      feedback: { show: vi.fn() },
+      isDictationBusy: () => false,
+    });
+
+    const dropdown = Setting.named('Microphone').onlyDropdown();
+    expect(dropdown.fittedLabel).toBe('');
+
+    resolveDevices([
+      {
+        deviceId: 'built-in',
+        groupId: 'built-in-group',
+        kind: 'audioinput',
+        label: 'MacBook Pro Microphone (Built-in)',
+        toJSON: () => ({}),
+      },
+    ]);
+
+    await vi.waitFor(() => {
+      expect(dropdown.selectEl.options.map(({ label }) => label)).toEqual([
+        'Default microphone',
+        'MacBook Pro Microphone (Built-in)',
+      ]);
+    });
+    expect(dropdown.fittedLabel).toBe('Default microphone');
+  });
+
   it('remains available when only Read aloud is active', async () => {
     const getUserMedia = vi.fn(async () => ({
       getTracks: () => [{ stop: vi.fn() }],
     }));
-    vi.stubGlobal('navigator', {
-      mediaDevices: {
-        addEventListener: vi.fn(),
-        enumerateDevices: vi.fn(async () => []),
-        getUserMedia,
-        removeEventListener: vi.fn(),
-      },
+    let deviceChange = () => {};
+    const addEventListener = vi.fn((event: string, listener: () => void) => {
+      if (event === 'devicechange') deviceChange = listener;
     });
+    const removeEventListener = vi.fn();
+    const ownerClearTimeout = vi.fn();
+    const ownerSetTimeout = vi.fn(() => 42);
+    const ownerWindow = {
+      clearTimeout: ownerClearTimeout,
+      navigator: {
+        mediaDevices: {
+          addEventListener,
+          enumerateDevices: vi.fn(async () => []),
+          getUserMedia,
+          removeEventListener,
+        },
+      },
+      setTimeout: ownerSetTimeout,
+    };
+    const globalGetUserMedia = vi.fn(async () => {
+      throw new Error('global mediaDevices must not be used');
+    });
+    vi.stubGlobal('navigator', { mediaDevices: { getUserMedia: globalGetUserMedia } });
     const isDictationBusy = vi.fn(() => false);
     const feedbackShow = vi.fn();
-    const dispose = renderMicrophonePicker(new TestElement() as unknown as HTMLElement, {
+    const parent = new TestElement(new TestDocument(ownerWindow as unknown as Window));
+    const dispose = renderMicrophonePicker(parent as unknown as HTMLElement, {
       access: {
         getSettings: () => DEFAULT_PLUGIN_SETTINGS,
         persistOne: vi.fn(async () => {}),
@@ -413,11 +475,18 @@ describe('microphone detection', () => {
 
     expect(isDictationBusy).toHaveBeenCalled();
     expect(getUserMedia).toHaveBeenCalledWith({ audio: true });
+    expect(globalGetUserMedia).not.toHaveBeenCalled();
     expect(feedbackShow).not.toHaveBeenCalledWith({
       intent: 'warning',
       message: 'Stop dictation to detect microphones.',
     });
+
+    deviceChange();
+    expect(ownerSetTimeout).toHaveBeenCalledWith(expect.any(Function), 300);
     dispose();
+    expect(ownerClearTimeout).toHaveBeenCalledWith(42);
+    expect(removeEventListener).toHaveBeenCalledWith('devicechange', deviceChange);
+    vi.unstubAllGlobals();
   });
 });
 

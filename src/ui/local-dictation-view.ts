@@ -1,4 +1,4 @@
-import { ItemView, Setting, setIcon, type WorkspaceLeaf } from 'obsidian';
+import { ItemView, Setting, setIcon, setTooltip, type WorkspaceLeaf } from 'obsidian';
 
 import {
   describePresetBehavior,
@@ -335,7 +335,7 @@ export class LocalDictationView extends ItemView {
           dropdown.addOption(entry.ref, formatPresetOptionLabel(entry.preset));
         }
         dropdown.setValue(active.ref);
-        dropdown.selectEl.setAttribute('title', activeLabel);
+        setTooltip(dropdown.selectEl, activeLabel);
         dropdown.onChange(async (value) => {
           await this.mutatePresetState((state) => ({
             ...state,
@@ -343,7 +343,7 @@ export class LocalDictationView extends ItemView {
           }));
         });
       });
-    setting.settingEl.addClass('local-dictation-preset-setting');
+    setting.setClass('local-dictation-preset-setting');
 
     setting.addExtraButton((button) => {
       button

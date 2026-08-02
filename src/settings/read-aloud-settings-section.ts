@@ -1,3 +1,4 @@
+import type { SliderComponent } from 'obsidian';
 import { Setting } from 'obsidian';
 
 import type { ModelPickerOptions } from '../models/manage-models-modal';
@@ -6,7 +7,7 @@ import { matchesModelTriple } from '../models/model-management-types';
 import { formatVoiceLabel } from '../shared/format-utils';
 import { t } from '../shared/i18n';
 import { resolveReadAloudVoiceId } from '../tts/read-aloud-selection';
-import type { PluginSettings } from './plugin-settings';
+import { MAX_TTS_SPEED, MIN_TTS_SPEED, type PluginSettings } from './plugin-settings';
 
 interface ReadAloudSettingsSectionDependencies {
   getSettings: () => PluginSettings;
@@ -14,6 +15,18 @@ interface ReadAloudSettingsSectionDependencies {
   openSelectedModelDetails: () => void;
   openModelPicker: (options?: ModelPickerOptions) => Promise<void>;
   persistVoice: (voice: string | null) => Promise<void>;
+}
+
+export function configureReadAloudSpeedSlider(
+  slider: SliderComponent,
+  speed: number,
+  persistSpeed: (speed: number) => Promise<void>,
+): void {
+  slider.setLimits(MIN_TTS_SPEED, MAX_TTS_SPEED, 0.05).setValue(speed);
+
+  // Obsidian 1.13 shows values inline, but supported 1.11/1.12 hosts need this tooltip.
+  const legacyTooltipSlider: { setDynamicTooltip(): SliderComponent } = slider;
+  legacyTooltipSlider.setDynamicTooltip().onChange(persistSpeed);
 }
 
 export function readAloudControlsFingerprint(

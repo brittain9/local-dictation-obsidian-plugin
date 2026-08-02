@@ -28,7 +28,7 @@ export class SmartParagraphSettingsModal extends Modal {
   }
 
   override onOpen(): void {
-    this.titleEl.setText(t('settings.smartParagraph.modal.title'));
+    this.setTitle(t('settings.smartParagraph.modal.title'));
     this.render();
   }
 

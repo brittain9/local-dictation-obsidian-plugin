@@ -1,5 +1,5 @@
 import type { App } from 'obsidian';
-import { Modal, Setting, setIcon } from 'obsidian';
+import { Modal, SearchComponent, Setting, setIcon } from 'obsidian';
 
 import {
   catalogModelSupportsLanguage,
@@ -187,7 +187,7 @@ export class ManageModelsModal extends Modal {
   private releaseSubscription: (() => void) | null = null;
   private tabButtons = new Map<string, HTMLButtonElement>();
   private tabBarEl: HTMLDivElement | null = null;
-  private searchInputEl: HTMLInputElement | null = null;
+  private search: SearchComponent | null = null;
   private searchQuery = '';
   private taskButtons = new Map<ModelPickerTask, HTMLButtonElement>();
   private renderedFailureId: string | null = null;
@@ -202,7 +202,7 @@ export class ManageModelsModal extends Modal {
 
   override onOpen(): void {
     this.modalEl.addClass('local-stt-manage-models');
-    this.titleEl.setText(t('models.manage.title'));
+    this.setTitle(t('models.manage.title'));
     this.renderContent();
 
     this.releaseSubscription = this.deps.manager.subscribe(() => {
@@ -218,7 +218,7 @@ export class ManageModelsModal extends Modal {
     this.navigationSignature = '';
     this.tabBarEl = null;
     this.listContainer = null;
-    this.searchInputEl = null;
+    this.search = null;
     this.tabButtons.clear();
     this.taskButtons.clear();
 
@@ -252,23 +252,18 @@ export class ManageModelsModal extends Modal {
       button.addEventListener('click', () => this.switchTask(task));
       this.taskButtons.set(task, button);
     }
-    this.searchInputEl = toolbar.createEl('input', {
-      attr: {
-        'aria-label': t('models.manage.searchPlaceholder', {
-          task: taskLabel(this.activeTask),
-        }),
-        placeholder: t('models.manage.searchPlaceholder', {
-          task: taskLabel(this.activeTask),
-        }),
-        type: 'search',
-      },
-      cls: 'local-stt-model-search',
+    const searchLabel = t('models.manage.searchPlaceholder', {
+      task: taskLabel(this.activeTask),
     });
-    this.searchInputEl.value = this.searchQuery;
-    this.searchInputEl.addEventListener('input', () => {
-      this.searchQuery = this.searchInputEl?.value ?? '';
-      this.renderModelList();
-    });
+    const searchHost = toolbar.createDiv({ cls: 'local-stt-model-search' });
+    this.search = new SearchComponent(searchHost)
+      .setPlaceholder(searchLabel)
+      .setValue(this.searchQuery)
+      .onChange((value) => {
+        this.searchQuery = value;
+        this.renderModelList();
+      });
+    this.search.inputEl.setAttribute('aria-label', searchLabel);
 
     this.browserEl = this.contentEl.createDiv({ cls: 'local-stt-model-browser' });
     this.navigationEl = this.browserEl.createDiv({
@@ -313,7 +308,7 @@ export class ManageModelsModal extends Modal {
     this.navigationSignature = '';
     this.listContainer = null;
     this.tabBarEl = null;
-    this.searchInputEl = null;
+    this.search = null;
     this.tabButtons.clear();
     this.taskButtons.clear();
     this.progressElements.clear();
@@ -341,11 +336,11 @@ export class ManageModelsModal extends Modal {
     if (task === this.activeTask) return;
     this.searchQuery = searchQueryAfterTaskSwitch(this.activeTask, task, this.searchQuery);
     this.activeTask = task;
-    if (this.searchInputEl !== null) {
-      this.searchInputEl.value = '';
+    if (this.search !== null) {
+      this.search.setValue('');
       const placeholder = t('models.manage.searchPlaceholder', { task: taskLabel(task) });
-      this.searchInputEl.placeholder = placeholder;
-      this.searchInputEl.setAttribute('aria-label', placeholder);
+      this.search.setPlaceholder(placeholder);
+      this.search.inputEl.setAttribute('aria-label', placeholder);
     }
     for (const [candidate, button] of this.taskButtons) {
       button.toggleClass('is-active', candidate === task);
@@ -575,7 +570,7 @@ export class ManageModelsModal extends Modal {
     container.empty();
 
     const setting = new Setting(container);
-    setting.settingEl.addClass('local-stt-model-row');
+    setting.setClass('local-stt-model-row');
     setting.setName(row.model.displayName);
     const selectedLanguage = this.deps.manager.getDictationLanguage();
     const supportsSelectedLanguage =
@@ -821,7 +816,7 @@ export class ManageModelsModal extends Modal {
       const voiceSetting = new Setting(details)
         .setName(formatVoiceLabel(voiceId))
         .setDesc(t('models.manage.optionalVoice'));
-      voiceSetting.settingEl.addClass('local-stt-voice-row');
+      voiceSetting.setClass('local-stt-voice-row');
       if (installed?.installedVoiceIds.includes(voiceId) ?? false) {
         voiceSetting.addButton((button) => {
           button.setButtonText(t('models.manage.voiceInstalled')).setDisabled(true);
@@ -1032,9 +1027,7 @@ export class ManageModelsModal extends Modal {
     }
     if (this.searchQuery.trim().length > 0) {
       this.searchQuery = '';
-      if (this.searchInputEl !== null) {
-        this.searchInputEl.value = '';
-      }
+      this.search?.setValue('');
     }
   }
 

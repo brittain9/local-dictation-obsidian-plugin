@@ -12,7 +12,7 @@ import {
   searchQueryAfterTaskSwitch,
 } from '../src/models/manage-models-modal';
 import type { ModelInstallManager, ModelManagerState } from '../src/models/model-install-manager';
-import { ModelDetailsModal } from '../src/models/model-management-modals';
+import { ExternalModelFileModal, ModelDetailsModal } from '../src/models/model-management-modals';
 import type {
   CatalogModelRecord,
   ModelFamilyId,
@@ -95,6 +95,41 @@ function row(model: CatalogModelRecord): ModelRowState {
     model,
   };
 }
+
+describe('external model file modal', () => {
+  it('keeps external-model input updates on Obsidian components', async () => {
+    Setting.reset();
+    const validateAndSelectExternalFile = vi.fn(async () => {});
+    const onChanged = vi.fn(async () => {});
+    const modal = new ExternalModelFileModal({} as never, '/models/old.gguf', {
+      feedback: { show: vi.fn() },
+      manager: {
+        getState: () => ({ selectedModel: null }),
+        validateAndSelectExternalFile,
+      } as unknown as ModelInstallManager,
+      onChanged,
+    });
+
+    modal.onOpen();
+    const family = Setting.instances.find((setting) => setting.dropdownComponents.length === 1);
+    const path = Setting.instances.find((setting) => setting.textComponents.length === 1);
+    const pathInput = path?.onlyText();
+    expect(pathInput?.getValue()).toBe('/models/old.gguf');
+
+    family?.onlyDropdown().change('onnx_runtime:moonshine');
+    expect(pathInput?.inputEl.placeholder).toContain('frontend.ort');
+    pathInput?.change('  /models/frontend.ort  ');
+
+    const action = Setting.instances.flatMap((setting) => setting.buttonComponents).at(-1);
+    await action?.click();
+
+    expect(validateAndSelectExternalFile).toHaveBeenCalledExactlyOnceWith('/models/frontend.ort', {
+      familyId: 'moonshine',
+      runtimeId: 'onnx_runtime',
+    });
+    expect(onChanged).toHaveBeenCalledOnce();
+  });
+});
 
 describe('model browser', () => {
   it('deep-links to the requested task and defaults setup entry points to dictation', () => {
@@ -338,6 +373,9 @@ describe('model browser', () => {
         onChanged: vi.fn(),
       });
       modal.open();
+      expect(
+        (modal.contentEl as unknown as TestElement).findByClass('search-input-clear-button'),
+      ).toBeDefined();
       const row = Setting.named('Pocket TTS en');
       expect(row.extraButtonComponents).toHaveLength(1);
       expect(row.extraButtonComponents[0]?.tooltip).toBe('Details');

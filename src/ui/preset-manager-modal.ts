@@ -74,11 +74,11 @@ export class PresetManagerModal extends Modal {
     }
     this.contentEl.empty();
     if (this.editor === null) {
-      this.titleEl.setText(t('llm.preset.manager.title'));
+      this.setTitle(t('llm.preset.manager.title'));
       this.renderList();
       return;
     }
-    this.titleEl.setText(
+    this.setTitle(
       this.editor.kind === 'create'
         ? t('llm.preset.manager.newTitle')
         : this.editor.kind === 'edit'
@@ -179,16 +179,28 @@ export class PresetManagerModal extends Modal {
       const description = createFragment();
       renderMatches(description, hit.description, hit.descriptionMatches);
       const setting = new Setting(listEl).setName(name).setDesc(description);
-      setting.settingEl.addClass('local-stt-preset-row');
+      setting.setClass('local-stt-preset-row');
+      const openLabel = entry.isBuiltin
+        ? t('llm.preset.manager.viewTooltip')
+        : t('llm.preset.manager.editTooltip');
+      setting.infoEl.tabIndex = 0;
+      setting.infoEl.setAttribute('role', 'button');
+      setting.infoEl.setAttribute('aria-label', `${openLabel}: ${preset.label}`);
+      setting.infoEl.addEventListener('click', () => {
+        this.openEntry(entry);
+      });
+      setting.infoEl.addEventListener('keydown', (event) => {
+        if (event.key !== 'Enter' && event.key !== ' ') {
+          return;
+        }
+        event.preventDefault();
+        this.openEntry(entry);
+      });
 
       setting.addExtraButton((button) => {
         button
           .setIcon(entry.isBuiltin ? 'eye' : 'pencil')
-          .setTooltip(
-            entry.isBuiltin
-              ? t('llm.preset.manager.viewTooltip')
-              : t('llm.preset.manager.editTooltip'),
-          )
+          .setTooltip(openLabel)
           .onClick(() => {
             this.openEntry(entry);
           });
@@ -213,19 +225,6 @@ export class PresetManagerModal extends Modal {
             });
         });
       }
-
-      setting.settingEl.addEventListener('click', (event) => {
-        // Ignore clicks on the action icons (Obsidian extra buttons are
-        // divs, not <button>s) so edit/duplicate/delete don't also open
-        // the row.
-        if (
-          event.target instanceof HTMLElement &&
-          event.target.closest('.setting-item-control') !== null
-        ) {
-          return;
-        }
-        this.openEntry(entry);
-      });
     }
   }
 
@@ -285,7 +284,7 @@ export class PresetManagerModal extends Modal {
     const promptSetting = new Setting(this.contentEl)
       .setName(t('llm.preset.editor.prompt'))
       .setDesc(t('llm.preset.editor.promptDescription'));
-    promptSetting.settingEl.addClass('local-stt-preset-editor__prompt');
+    promptSetting.setClass('local-stt-preset-editor__prompt');
     const updatePromptSize = (value: string) => {
       promptSizeEl.setText(
         t('llm.preset.editor.promptSize', {
@@ -388,10 +387,11 @@ export class PresetManagerModal extends Modal {
       });
 
     const errorEl = this.contentEl.createEl('p', {
-      cls: 'local-stt-preset-editor__error local-stt-hidden',
+      cls: 'local-stt-preset-editor__error',
     });
     errorEl.setAttribute('role', 'alert');
     errorEl.setAttribute('aria-live', 'polite');
+    errorEl.hide();
 
     const buttons = new Setting(this.contentEl);
     if (editor.kind === 'view') {
@@ -443,7 +443,7 @@ export class PresetManagerModal extends Modal {
     });
     if (validationError !== null) {
       errorEl.setText(validationError);
-      errorEl.removeClass('local-stt-hidden');
+      errorEl.show();
       return;
     }
 

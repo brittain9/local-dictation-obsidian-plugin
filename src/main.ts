@@ -750,7 +750,7 @@ export default class LocalSttPlugin extends Plugin {
     const status = this.readAloudStatus;
     if (status === null) return;
     status.empty();
-    status.toggleClass('is-hidden', state === 'idle');
+    status.toggle(state !== 'idle');
     status.setAttribute('aria-live', 'polite');
     status.setAttribute('role', 'status');
     if (state === 'idle') return;
