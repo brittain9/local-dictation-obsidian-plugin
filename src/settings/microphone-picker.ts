@@ -1,4 +1,4 @@
-import { Setting } from 'obsidian';
+import { type DropdownComponent, Setting } from 'obsidian';
 
 import { formatMicrophoneCaptureErrorMessage } from '../audio/microphone-permission-message';
 import { t } from '../shared/i18n';
@@ -41,7 +41,7 @@ export function renderMicrophonePicker(
     .setDesc(t('settings.microphone.desc'));
 
   let devices: MediaDeviceInfo[] = [];
-  let selectEl: HTMLSelectElement | null = null;
+  let microphoneDropdown: DropdownComponent | null = null;
   let detectButtonEl: HTMLElement | null = null;
   let disposed = false;
   // Bumped on every enumerate() call. Out-of-order resolutions (initial
@@ -55,14 +55,15 @@ export function renderMicrophonePicker(
   }
 
   function repopulate(): void {
-    if (selectEl === null) {
+    if (microphoneDropdown === null) {
       return;
     }
 
     const saved = getSaved();
+    const { selectEl } = microphoneDropdown;
     selectEl.empty();
 
-    appendOption(selectEl, DEFAULT_OPTION_VALUE, t('settings.microphone.default'));
+    microphoneDropdown.addOption(DEFAULT_OPTION_VALUE, t('settings.microphone.default'));
 
     let savedIsPresent = false;
     for (const device of devices) {
@@ -80,21 +81,24 @@ export function renderMicrophonePicker(
           : isSaved
             ? saved.label
             : t('settings.microphone.labelUnavailable');
-      appendOption(selectEl, device.deviceId, display);
+      microphoneDropdown.addOption(device.deviceId, display);
     }
 
+    let selectedValue = DEFAULT_OPTION_VALUE;
     if (saved !== null && !savedIsPresent) {
-      appendOption(
-        selectEl,
+      microphoneDropdown.addOption(
         MISSING_OPTION_VALUE,
         t('settings.microphone.notConnected', { microphone: saved.label }),
       );
-      selectEl.value = MISSING_OPTION_VALUE;
+      selectedValue = MISSING_OPTION_VALUE;
     } else if (saved !== null) {
-      selectEl.value = saved.deviceId;
-    } else {
-      selectEl.value = DEFAULT_OPTION_VALUE;
+      selectedValue = saved.deviceId;
     }
+    // Obsidian 1.13 measures the selected option through DropdownComponent and
+    // stores its fitted width in CSS. Updating selectEl.value directly skips
+    // that initial measurement, leaving the control as wide as its longest
+    // option until the user changes it once.
+    microphoneDropdown.setValue(selectedValue);
 
     refreshDetectButton();
   }
@@ -104,7 +108,7 @@ export function renderMicrophonePicker(
       return;
     }
     if (mediaDevices?.getUserMedia === undefined) {
-      detectButtonEl.addClass('local-stt-hidden');
+      detectButtonEl.hide();
       return;
     }
     // Show the button whenever no enumerated device has a usable label. That
@@ -112,7 +116,7 @@ export function renderMicrophonePicker(
     // the labels-look-empty cases (permission not yet granted, or label is
     // only a VID:PID suffix that formatDeviceLabel strips to '').
     const hasLabeledDevice = devices.some((device) => formatDeviceLabel(device.label).length > 0);
-    detectButtonEl.toggleClass('local-stt-hidden', hasLabeledDevice);
+    detectButtonEl.toggle(!hasLabeledDevice);
   }
 
   async function enumerate(): Promise<void> {
@@ -143,7 +147,7 @@ export function renderMicrophonePicker(
   }
 
   setting.addDropdown((dropdown) => {
-    selectEl = dropdown.selectEl;
+    microphoneDropdown = dropdown;
     dropdown.onChange((value) => {
       void handleChange(value);
     });
@@ -191,9 +195,7 @@ export function renderMicrophonePicker(
         message: t('settings.microphone.allowAccessFirst'),
       });
       const saved = getSaved();
-      if (selectEl !== null) {
-        selectEl.value = saved?.deviceId ?? DEFAULT_OPTION_VALUE;
-      }
+      microphoneDropdown?.setValue(saved?.deviceId ?? DEFAULT_OPTION_VALUE);
       return;
     }
 
@@ -258,11 +260,6 @@ export function renderMicrophonePicker(
     }
     mediaDevices?.removeEventListener?.('devicechange', onDeviceChange);
   };
-}
-
-function appendOption(selectEl: HTMLSelectElement, value: string, text: string): void {
-  const option = selectEl.createEl('option', { text });
-  option.value = value;
 }
 
 function formatDeviceLabel(raw: string): string {

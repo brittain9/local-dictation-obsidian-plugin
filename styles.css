@@ -223,10 +223,6 @@
   gap: 4px;
 }
 
-.local-stt-read-aloud-status.is-hidden {
-  display: none;
-}
-
 .local-stt-read-aloud-status button {
   border: 0;
   background: transparent;
@@ -1344,12 +1340,6 @@
   gap: 8px;
   justify-content: flex-end;
   margin-top: 18px;
-}
-
-/* Visibility utility toggled in place of inline `style.display`, so show/hide
-   state lives in CSS (themeable, overridable) instead of element styles. */
-.local-stt-hidden {
-  display: none;
 }
 
 /* --- Local translation -------------------------------------------- */

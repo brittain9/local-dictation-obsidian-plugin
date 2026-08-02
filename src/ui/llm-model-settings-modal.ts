@@ -41,7 +41,7 @@ export class LlmModelSettingsModal extends Modal {
   }
 
   override onOpen(): void {
-    this.titleEl.setText(t('llm.model.title'));
+    this.setTitle(t('llm.model.title'));
     this.render();
   }
 

@@ -149,7 +149,7 @@ export class SidecarSettingsSection {
     // Sentinel keeps Obsidian's `.setting-item:last-child` padding-stripping
     // rule from matching the last sidecar row, so its spacing stays consistent
     // with the rows that follow this wrapper in the Advanced section.
-    this.container.createSpan({ attr: { 'aria-hidden': 'true', style: 'display: none;' } });
+    this.container.createSpan({ attr: { 'aria-hidden': 'true' } }).hide();
   }
 
   private handleStateChange(): void {

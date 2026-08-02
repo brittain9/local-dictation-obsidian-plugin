@@ -386,6 +386,52 @@ describe('hardware acceleration mutation', () => {
 });
 
 describe('microphone detection', () => {
+  it('refits the initial selection after microphones arrive asynchronously', async () => {
+    let resolveDevices: (devices: MediaDeviceInfo[]) => void = () => {};
+    const enumerateDevices = vi.fn(
+      () =>
+        new Promise<MediaDeviceInfo[]>((resolve) => {
+          resolveDevices = resolve;
+        }),
+    );
+    const ownerWindow = {
+      clearTimeout,
+      navigator: { mediaDevices: { enumerateDevices } },
+      setTimeout,
+    };
+    const parent = new TestElement(new TestDocument(ownerWindow as unknown as Window));
+
+    renderMicrophonePicker(parent as unknown as HTMLElement, {
+      access: {
+        getSettings: () => DEFAULT_PLUGIN_SETTINGS,
+        persistOne: vi.fn(async () => {}),
+      },
+      feedback: { show: vi.fn() },
+      isDictationBusy: () => false,
+    });
+
+    const dropdown = Setting.named('Microphone').onlyDropdown();
+    expect(dropdown.fittedLabel).toBe('');
+
+    resolveDevices([
+      {
+        deviceId: 'built-in',
+        groupId: 'built-in-group',
+        kind: 'audioinput',
+        label: 'MacBook Pro Microphone (Built-in)',
+        toJSON: () => ({}),
+      },
+    ]);
+
+    await vi.waitFor(() => {
+      expect(dropdown.selectEl.options.map(({ label }) => label)).toEqual([
+        'Default microphone',
+        'MacBook Pro Microphone (Built-in)',
+      ]);
+    });
+    expect(dropdown.fittedLabel).toBe('Default microphone');
+  });
+
   it('remains available when only Read aloud is active', async () => {
     const getUserMedia = vi.fn(async () => ({
       getTracks: () => [{ stop: vi.fn() }],

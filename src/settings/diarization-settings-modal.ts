@@ -24,7 +24,7 @@ export class DiarizationSettingsModal extends Modal {
   }
 
   override onOpen(): void {
-    this.titleEl.setText(t('settings.speakerLabels.modal.title'));
+    this.setTitle(t('settings.speakerLabels.modal.title'));
     this.render();
   }
 

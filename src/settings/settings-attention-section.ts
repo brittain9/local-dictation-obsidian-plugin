@@ -262,7 +262,7 @@ export function renderSettingsAttention(
   container.addClass('setting-group');
   container.addClass('local-stt-settings-attention');
   const isEmpty = resolution.kind === 'items' && resolution.items.length === 0;
-  container.toggleClass('local-stt-hidden', isEmpty);
+  container.toggle(!isEmpty);
   if (isEmpty) return { progressEl: null, updateProgress: null };
 
   // No visible heading: this region only ever holds a single row, whose own
@@ -312,7 +312,7 @@ function renderAttentionItem(
 ): void {
   const copy = getAttentionItemCopy(item);
   const setting = new Setting(container).setName(copy.name).setDesc(copy.description);
-  setting.settingEl.addClass('local-stt-settings-attention__item');
+  setting.setClass('local-stt-settings-attention__item');
   setting.addButton((button) => {
     button
       .setButtonText(copy.action)

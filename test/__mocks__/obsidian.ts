@@ -127,6 +127,10 @@ export class TestElement {
     this.ownerDocument.activeElement = this;
   }
 
+  hide(): void {
+    this.style.display = 'none';
+  }
+
   append(...children: TestElement[]): void {
     for (const child of children) {
       child.remove();
@@ -228,6 +232,10 @@ export class TestElement {
     this.textContent = text;
   }
 
+  show(): void {
+    this.style.display = '';
+  }
+
   setChildrenInPlace(children: TestElement[]): void {
     this.empty();
     this.append(...children);
@@ -239,6 +247,14 @@ export class TestElement {
       this.attributes.set(name, '');
     } else {
       this.attributes.delete(name);
+    }
+  }
+
+  toggle(show: boolean): void {
+    if (show) {
+      this.show();
+    } else {
+      this.hide();
     }
   }
 
@@ -296,6 +312,7 @@ export class TestInputElement extends TestElement {
   inputMode = '';
   max = '';
   min = '';
+  placeholder = '';
   step = '';
   type = 'text';
   validationMessage = '';
@@ -319,6 +336,10 @@ export class TextComponent {
     this.changeHandler(value);
   }
 
+  getValue(): string {
+    return this.inputEl.value;
+  }
+
   onChange(callback: (value: string) => unknown): this {
     this.changeHandler = callback;
     return this;
@@ -329,23 +350,25 @@ export class TextComponent {
     return this;
   }
 
+  setPlaceholder(placeholder: string): this {
+    this.inputEl.placeholder = placeholder;
+    return this;
+  }
+
   setValue(value: string): this {
     this.inputEl.value = value;
     return this;
   }
 }
 
-export class SearchComponent {
-  onChange(_callback: (value: string) => unknown): this {
-    return this;
-  }
+export class SearchComponent extends TextComponent {
+  readonly clearButtonEl: TestElement;
 
-  setPlaceholder(_placeholder: string): this {
-    return this;
-  }
-
-  setValue(_value: string): this {
-    return this;
+  constructor(container = new TestElement()) {
+    super();
+    const searchContainer = container.createDiv({ cls: 'search-input-container' });
+    searchContainer.append(this.inputEl);
+    this.clearButtonEl = searchContainer.createDiv({ cls: 'search-input-clear-button' });
   }
 }
 
@@ -424,9 +447,18 @@ interface TestSelectOption {
 class TestSelectElement extends TestElement {
   readonly options: TestSelectOption[] = [];
   value = '';
+
+  override empty(): void {
+    super.empty();
+    this.options.length = 0;
+  }
 }
 
 export class DropdownComponent {
+  // Obsidian 1.13 fits the closed dropdown to the selected label whenever the
+  // component API updates its value. Direct selectEl mutations bypass that
+  // measurement, so expose the last fitted label to regression tests.
+  fittedLabel = '';
   readonly selectEl = new TestSelectElement();
   private changeHandler: (value: string) => unknown = () => {};
 
@@ -452,6 +484,7 @@ export class DropdownComponent {
 
   setValue(value: string): this {
     this.selectEl.value = value;
+    this.fittedLabel = this.selectEl.options.find((option) => option.value === value)?.label ?? '';
     return this;
   }
 }
@@ -678,6 +711,11 @@ export class Modal {
   open(): void {
     this.onOpen();
   }
+
+  setTitle(title: string): this {
+    this.titleEl.setText(title);
+    return this;
+  }
 }
 
 export class PluginSettingTab {
@@ -741,5 +779,14 @@ export class Notice {
 export const setIcon = vi.fn((parent: unknown, iconId: string): void => {
   if (parent && typeof parent === 'object' && 'innerHTML' in parent) {
     (parent as { innerHTML: string }).innerHTML = `<svg data-icon="${iconId}"></svg>`;
+  }
+});
+
+export const setTooltip = vi.fn((target: unknown, tooltip: string): void => {
+  if (target && typeof target === 'object' && 'setAttribute' in target) {
+    (target as { setAttribute(name: string, value: string): void }).setAttribute(
+      'data-tooltip',
+      tooltip,
+    );
   }
 });

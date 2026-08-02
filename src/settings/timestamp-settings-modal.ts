@@ -62,7 +62,7 @@ export class TimestampSettingsModal extends Modal {
   }
 
   override onOpen(): void {
-    this.titleEl.setText(t('settings.timestamps.modal.title'));
+    this.setTitle(t('settings.timestamps.modal.title'));
     this.render();
   }
 

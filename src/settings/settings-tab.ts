@@ -719,7 +719,7 @@ export class LocalSttSettingTab extends PluginSettingTab {
       rendered += 1;
     }
 
-    group.toggleClass('local-stt-hidden', rendered === 0);
+    group.toggle(rendered > 0);
   }
 
   private buildSidecarInstallActionDeps(): SidecarInstallActionDeps {

@@ -27,7 +27,7 @@ export class LlmTimingSettingsModal extends Modal {
   }
 
   override onOpen(): void {
-    this.titleEl.setText(t('llm.timing.title'));
+    this.setTitle(t('llm.timing.title'));
     this.render();
   }
 

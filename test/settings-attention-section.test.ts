@@ -365,7 +365,7 @@ describe('SettingsAttentionSection', () => {
     section.init();
 
     expect(progressCardMock.render).not.toHaveBeenCalled();
-    expect(asTestElement(container).className).toContain('local-stt-hidden');
+    expect(asTestElement(container).style.display).toBe('none');
   });
 
   it('rechecks a custom sidecar override before committing a completed load', async () => {
@@ -385,7 +385,7 @@ describe('SettingsAttentionSection', () => {
     await settle();
 
     expect(progressCardMock.render).not.toHaveBeenCalled();
-    expect(asTestElement(container).className).toContain('local-stt-hidden');
+    expect(asTestElement(container).style.display).toBe('none');
   });
 });
 
