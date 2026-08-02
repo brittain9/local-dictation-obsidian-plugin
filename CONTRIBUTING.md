@@ -7,7 +7,9 @@ aloud, the plugin extracts text from Markdown, the sidecar synthesizes it, and
 model-native mono PCM (24 or 44.1 kHz) returns over stdout for Web Audio
 playback in the plugin.
 
-See [docs/system-architecture.md](docs/system-architecture.md) for the pipeline stages, the engine registry, and the wire protocol.
+See [docs/system-architecture.md](docs/system-architecture.md) for the pipeline stages, the engine registry, and the wire protocol. Accepted architectural constraints and their rationale live in [docs/adr/](docs/adr/).
+
+Before changing an ownership boundary, compatibility contract, core product constraint, or foundational technology choice, read the existing ADRs. If a decision needs to change, add an ADR that supersedes the old one rather than rewriting the original decision.
 
 ## Prerequisites
 
