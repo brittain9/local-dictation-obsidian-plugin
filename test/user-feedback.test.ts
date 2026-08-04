@@ -51,22 +51,25 @@ describe('user feedback', () => {
     ['warning', 8_000, 'warn'],
     ['error', 10_000, 'error'],
     ['action-required', 0, 'warn'],
-  ] as const)('maps %s feedback to its presentation and log policy', (intent, durationMs, level) => {
-    const { feedback, logger, presentations } = createHarness();
+  ] as const)(
+    'maps %s feedback to its presentation and log policy',
+    (intent, durationMs, level) => {
+      const { feedback, logger, presentations } = createHarness();
 
-    feedback.show({ intent, message: 'Speech engine needs attention.' });
+      feedback.show({ intent, message: 'Speech engine needs attention.' });
 
-    expect(presentations).toEqual([
-      expect.objectContaining({
-        durationMs,
-        message: 'Local Dictation: Speech engine needs attention.',
-      }),
-    ]);
-    expect(logger[level]).toHaveBeenCalledWith(
-      'feedback',
-      `${intent}: Speech engine needs attention.`,
-    );
-  });
+      expect(presentations).toEqual([
+        expect.objectContaining({
+          durationMs,
+          message: 'Speech Kit: Speech engine needs attention.',
+        }),
+      ]);
+      expect(logger[level]).toHaveBeenCalledWith(
+        'feedback',
+        `${intent}: Speech engine needs attention.`,
+      );
+    },
+  );
 
   it('keeps a technical cause out of user copy while retaining it in the durable log', () => {
     const { feedback, logger, presentations } = createHarness();
@@ -74,7 +77,7 @@ describe('user feedback', () => {
 
     feedback.show({ cause, intent: 'error', message: 'The speech engine stopped.' });
 
-    expect(presentations[0]?.message).toBe('Local Dictation: The speech engine stopped.');
+    expect(presentations[0]?.message).toBe('Speech Kit: The speech engine stopped.');
     expect(logger.error).toHaveBeenCalledWith(
       'feedback',
       'error: The speech engine stopped.',
@@ -85,9 +88,9 @@ describe('user feedback', () => {
   it('does not add a second product prefix to already branded copy', () => {
     const { feedback, presentations } = createHarness();
 
-    feedback.show({ intent: 'warning', message: 'Local Dictation is unavailable.' });
+    feedback.show({ intent: 'warning', message: 'Speech Kit is unavailable.' });
 
-    expect(presentations[0]?.message).toBe('Local Dictation is unavailable.');
+    expect(presentations[0]?.message).toBe('Speech Kit is unavailable.');
   });
 
   it('replaces an active keyed notice instead of stacking it', () => {
@@ -128,5 +131,19 @@ describe('user feedback', () => {
     expect(dismissals[0]?.mock.invocationCallOrder[0]).toBeLessThan(
       run.mock.invocationCallOrder[0] ?? Number.POSITIVE_INFINITY,
     );
+  });
+
+  it('dismisses keyed feedback without presenting a replacement', () => {
+    const { dismissals, feedback, presentations } = createHarness();
+    feedback.show({
+      intent: 'warning',
+      key: 'recoverable-action',
+      message: 'Recovery is available.',
+    });
+
+    feedback.dismiss('recoverable-action');
+
+    expect(dismissals[0]).toHaveBeenCalledOnce();
+    expect(presentations).toHaveLength(1);
   });
 });

@@ -47,7 +47,9 @@ const ORACLE_DRIFT_MAX_WER: f64 = 0.15;
 // decoder or 0.15 oracle-drift gates.
 const WORKER_MAX_WER: f64 = 0.12;
 const WORKER_MAX_REAL_TIME_FACTOR: f64 = 1.0;
-const WORKER_MAX_FIRST_PARTIAL_AUDIO_MS: u64 = 1_900;
+// Driver-reported utterance duration includes the bounded 300 ms VAD pre-roll.
+// Preserve the 2 s useful-speech budget while accounting for retained context.
+const WORKER_MAX_FIRST_PARTIAL_AUDIO_MS: u64 = 2_300;
 
 fn pinned_oracle_text() -> String {
     let path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -73,8 +75,9 @@ fn nemotron_runs_through_vad_worker_and_revision_protocol() {
     );
     assert!(
         outcome.partials[0].utterance_duration_ms <= WORKER_MAX_FIRST_PARTIAL_AUDIO_MS,
-        "first useful partial arrived after {} ms of audio; the pinned fixture should emit before the 2 s boundary that the default 500 ms polling cadence can cross",
-        outcome.partials[0].utterance_duration_ms
+        "first useful partial arrived after {} ms of audio, exceeding the {} ms budget (2 s speech + 300 ms onset pre-roll)",
+        outcome.partials[0].utterance_duration_ms,
+        WORKER_MAX_FIRST_PARTIAL_AUDIO_MS
     );
     assert!(
         outcome
@@ -112,6 +115,11 @@ fn nemotron_runs_through_vad_worker_and_revision_protocol() {
     eprintln!(
         "Nemotron worker final: {}\nWER: {wer:.3}",
         outcome.final_text
+    );
+    assert!(
+        outcome.final_text.starts_with("To such persons"),
+        "Nemotron worker path clipped the fixture's opening words: {}",
+        outcome.final_text,
     );
     assert!(
         wer <= WORKER_MAX_WER,

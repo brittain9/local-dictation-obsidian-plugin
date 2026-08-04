@@ -1,4 +1,4 @@
-import { ItemView, Setting, setIcon, type WorkspaceLeaf } from 'obsidian';
+import { ItemView, Setting, setIcon, setTooltip, type WorkspaceLeaf } from 'obsidian';
 
 import {
   describePresetBehavior,
@@ -13,6 +13,7 @@ import type { LlmCleanupFailure } from '../llm/provider';
 import type { LlmPresetStateMutation } from '../settings/llm-preset-state';
 import type { PluginSettings } from '../settings/plugin-settings';
 import { createSettingGroup } from '../settings/setting-helpers';
+import { t } from '../shared/i18n';
 import type { PluginLogger } from '../shared/plugin-logger';
 import type { UserFeedback } from '../shared/user-feedback';
 import { FocusRefreshController } from './focus-refresh-controller';
@@ -30,13 +31,12 @@ import { LlmTimingSettingsModal } from './llm-timing-settings-modal';
 import { PresetManagerModal } from './preset-manager-modal';
 
 export const LOCAL_DICTATION_VIEW_TYPE = 'local-dictation-sidebar';
-const LOCAL_DICTATION_VIEW_TITLE = 'Local Dictation';
 const LOCAL_DICTATION_VIEW_ICON = 'audio-lines';
 const NARROW_SIDEBAR_WIDTH_PX = 420;
 
 const CLEANUP_MODE_OPTIONS: ReadonlyArray<{ label: string; value: LlmPresetTiming }> = [
-  { label: 'After each phrase', value: 'per_utterance' },
-  { label: 'All at once on stop', value: 'batch' },
+  { label: t('llm.timing.option.perUtterance'), value: 'per_utterance' },
+  { label: t('llm.timing.option.batch'), value: 'batch' },
 ];
 
 interface LocalDictationViewDependencies {
@@ -93,7 +93,7 @@ export class LocalDictationView extends ItemView {
   }
 
   override getDisplayText(): string {
-    return LOCAL_DICTATION_VIEW_TITLE;
+    return t('plugin.name');
   }
 
   override getIcon(): string {
@@ -179,15 +179,15 @@ export class LocalDictationView extends ItemView {
 
     this.renderRuntimeFailureBanner(transformItems);
 
-    const styleGroup = createSettingGroup(contentEl, 'Preset');
+    const styleGroup = createSettingGroup(contentEl, t('llm.sidebar.group.preset'));
     this.renderPresetPicker(styleGroup, settings);
     this.renderCleanupMode(styleGroup, settings);
     this.renderOriginalTranscriptToggle(styleGroup, settings);
 
-    const whereGroup = createSettingGroup(contentEl, 'Model');
+    const whereGroup = createSettingGroup(contentEl, t('llm.sidebar.group.model'));
     this.routingControls.render(whereGroup, settings);
 
-    const contextGroup = createSettingGroup(contentEl, 'Context');
+    const contextGroup = createSettingGroup(contentEl, t('llm.sidebar.group.context'));
     this.renderUseNoteContextToggle(contextGroup, settings);
   }
 
@@ -197,14 +197,17 @@ export class LocalDictationView extends ItemView {
 
   private renderOverview(parent: HTMLElement, presentation: LlmSidebarPresentation): void {
     const header = parent.createEl('header', { cls: 'local-dictation-sidebar__header' });
-    header.createDiv({ cls: 'local-dictation-sidebar__eyebrow', text: 'Transcript workflow' });
+    header.createDiv({
+      cls: 'local-dictation-sidebar__eyebrow',
+      text: t('llm.sidebar.eyebrow'),
+    });
     header.createEl('h2', {
       cls: 'local-dictation-sidebar__title',
-      text: 'Transform dictation',
+      text: t('llm.sidebar.title'),
     });
     header.createEl('p', {
       cls: 'local-dictation-sidebar__description',
-      text: 'Choose how spoken text is shaped before it reaches your note.',
+      text: t('llm.sidebar.description'),
     });
 
     const status = header.createDiv({ cls: 'local-dictation-sidebar__summary' });
@@ -238,8 +241,8 @@ export class LocalDictationView extends ItemView {
   private renderCleanupToggle(parent: HTMLElement, settings: PluginSettings): void {
     const enabled = settings.llmPostprocessMode !== 'off';
     new Setting(parent)
-      .setName('Enabled')
-      .setDesc('Apply the active preset to new dictated text.')
+      .setName(t('llm.sidebar.enabled.name'))
+      .setDesc(t('llm.sidebar.enabled.description'))
       .addToggle((toggle) => {
         toggle.setValue(enabled);
         toggle.onChange(async (value) => {
@@ -257,8 +260,8 @@ export class LocalDictationView extends ItemView {
 
   private renderOriginalTranscriptToggle(parent: HTMLElement, settings: PluginSettings): void {
     new Setting(parent)
-      .setName('Show original transcript')
-      .setDesc('Keep it in a collapsible callout below each transformed result.')
+      .setName(t('llm.sidebar.showOriginal.name'))
+      .setDesc(t('llm.sidebar.showOriginal.description'))
       .addToggle((toggle) => {
         toggle.setValue(settings.llmPostprocessShowRawBelow);
         toggle.onChange(async (value) => {
@@ -278,11 +281,14 @@ export class LocalDictationView extends ItemView {
     const pinned = preset.timing;
 
     const setting = new Setting(parent)
-      .setName('Run transform')
+      .setName(t('llm.sidebar.runTransform.name'))
       .setDesc(
         pinned !== undefined
-          ? `Set by ${preset.label} — ${describePresetTiming(pinned).toLowerCase()}.`
-          : 'Run after each phrase, or all at once when you stop.',
+          ? t('llm.sidebar.runTransform.setByPreset', {
+              preset: preset.label,
+              timing: describePresetTiming(pinned),
+            })
+          : t('llm.sidebar.runTransform.description'),
       )
       .addDropdown((dropdown) => {
         for (const option of CLEANUP_MODE_OPTIONS) {
@@ -304,11 +310,11 @@ export class LocalDictationView extends ItemView {
     setting.addExtraButton((button) => {
       button
         .setIcon('sliders-horizontal')
-        .setTooltip('Timing settings')
+        .setTooltip(t('llm.timing.settingsTooltip'))
         .onClick(() => {
           this.openTimingSettings();
         });
-      button.extraSettingsEl.setAttribute('aria-label', 'Timing settings');
+      button.extraSettingsEl.setAttribute('aria-label', t('llm.timing.settingsTooltip'));
     });
   }
 
@@ -322,14 +328,14 @@ export class LocalDictationView extends ItemView {
     const description = active.preset.description ?? describePresetBehavior(active.preset);
     const activeLabel = formatPresetOptionLabel(active.preset);
     const setting = new Setting(parent)
-      .setName('Active preset')
+      .setName(t('llm.sidebar.activePreset'))
       .setDesc(description)
       .addDropdown((dropdown) => {
         for (const entry of entries) {
           dropdown.addOption(entry.ref, formatPresetOptionLabel(entry.preset));
         }
         dropdown.setValue(active.ref);
-        dropdown.selectEl.setAttribute('title', activeLabel);
+        setTooltip(dropdown.selectEl, activeLabel);
         dropdown.onChange(async (value) => {
           await this.mutatePresetState((state) => ({
             ...state,
@@ -337,16 +343,16 @@ export class LocalDictationView extends ItemView {
           }));
         });
       });
-    setting.settingEl.addClass('local-dictation-preset-setting');
+    setting.setClass('local-dictation-preset-setting');
 
     setting.addExtraButton((button) => {
       button
         .setIcon('sliders-horizontal')
-        .setTooltip('Manage presets')
+        .setTooltip(t('llm.preset.manager.title'))
         .onClick(() => {
           void this.openPresetManager();
         });
-      button.extraSettingsEl.setAttribute('aria-label', 'Manage presets');
+      button.extraSettingsEl.setAttribute('aria-label', t('llm.preset.manager.title'));
     });
   }
 
@@ -420,11 +426,11 @@ export class LocalDictationView extends ItemView {
   private renderUseNoteContextToggle(parent: HTMLElement, settings: PluginSettings): void {
     const override = activePresetOverride(settings, 'useNoteContext');
     const setting = new Setting(parent)
-      .setName('Use current note as context')
+      .setName(t('llm.context.useCurrentNote.name'))
       .setDesc(
         override !== null
-          ? `Managed by “${override.label}”. Edit that preset to change this value.`
-          : 'Include text above the cursor in each prompt.',
+          ? t('llm.managedByPreset', { preset: override.label })
+          : t('llm.context.useCurrentNote.description'),
       )
       .addToggle((toggle) => {
         toggle.setValue(override !== null ? override.value === true : settings.useLlmNoteContext);
@@ -436,11 +442,11 @@ export class LocalDictationView extends ItemView {
     setting.addExtraButton((button) => {
       button
         .setIcon('sliders-horizontal')
-        .setTooltip('Context settings')
+        .setTooltip(t('llm.context.settingsTooltip'))
         .onClick(() => {
           this.openContextSettings();
         });
-      button.extraSettingsEl.setAttribute('aria-label', 'Context settings');
+      button.extraSettingsEl.setAttribute('aria-label', t('llm.context.settingsTooltip'));
     });
   }
 
@@ -519,10 +525,10 @@ export class LocalDictationView extends ItemView {
 
 function formatPresetOptionLabel(preset: LlmPreset): string {
   if (preset.timing === 'per_utterance') {
-    return `${preset.label} (after each phrase)`;
+    return t('llm.preset.option.perUtterance', { preset: preset.label });
   }
   if (preset.timing === 'batch') {
-    return `${preset.label} (on stop)`;
+    return t('llm.preset.option.batch', { preset: preset.label });
   }
   return preset.label;
 }

@@ -1,13 +1,16 @@
 import { isRecord } from '../shared/type-guards';
 
-export const RUNTIME_IDS = ['onnx_runtime', 'whisper_cpp'] as const;
+export const RUNTIME_IDS = ['bergamot_wasm', 'onnx_runtime', 'whisper_cpp'] as const;
 
 export type RuntimeId = (typeof RUNTIME_IDS)[number];
 
 export const MODEL_FAMILY_IDS = [
+  'firefox_translations',
   'cohere_transcribe',
   'moonshine',
   'nemotron_asr',
+  'pocket_tts',
+  'supertonic',
   'whisper',
 ] as const;
 
@@ -15,7 +18,8 @@ export type ModelFamilyId = (typeof MODEL_FAMILY_IDS)[number];
 
 export type AcceleratorId = 'cpu' | 'cuda' | 'direct_ml' | 'metal';
 
-export type ModelFormat = 'ggml' | 'gguf' | 'onnx';
+export type ModelFormat = 'bergamot' | 'ggml' | 'gguf' | 'onnx';
+export type ModelTask = 'stt' | 'translation' | 'tts';
 
 export type LanguageSupport =
   | { kind: 'all' }
@@ -35,6 +39,11 @@ export interface RuntimeCapabilitiesRecord {
 }
 
 export interface ModelFamilyCapabilitiesRecord {
+  task: ModelTask;
+  supportsHardwareAcceleration: boolean;
+  availableVoices: string[];
+  supportsSpeedControl: boolean;
+  outputSampleRate: number | null;
   supportsSegmentTimestamps: boolean;
   supportsWordTimestamps: boolean;
   supportsInitialPrompt: boolean;
@@ -74,7 +83,12 @@ export interface ExternalFileModelSelection {
 
 export type SelectedModel = CatalogModelSelection | ExternalFileModelSelection;
 
-type ModelArtifactRole = 'supporting_file' | 'transcription_model';
+type ModelArtifactRole =
+  | 'supporting_file'
+  | 'synthesis_model'
+  | 'translation_model'
+  | 'transcription_model'
+  | 'voice';
 
 export interface ModelArtifactRecord {
   artifactId: string;
@@ -82,6 +96,7 @@ export interface ModelArtifactRecord {
   filename: string;
   required: boolean;
   role: ModelArtifactRole;
+  voiceId?: string;
   sha256: string;
   sizeBytes: number;
 }
@@ -91,6 +106,7 @@ export interface ModelFamilyRecord {
   familyId: ModelFamilyId;
   runtimeId: RuntimeId;
   summary: string;
+  task: ModelTask;
 }
 
 export interface ModelCollectionRecord {
@@ -102,6 +118,7 @@ export interface ModelCollectionRecord {
 export interface CatalogModelRecord {
   artifacts: ModelArtifactRecord[];
   collectionId: string;
+  defaultVoice?: string;
   displayName: string;
   familyId: ModelFamilyId;
   languageTags: string[];
@@ -112,6 +129,11 @@ export interface CatalogModelRecord {
   modelId: string;
   notes: string[];
   runtimeId: RuntimeId;
+  task: ModelTask;
+  translationPairs?: {
+    source: string;
+    target: string;
+  }[];
   sourceUrl: string;
   summary: string;
   uxTags: string[];
@@ -133,6 +155,7 @@ export interface InstalledModelRecord {
   runtimeId: RuntimeId;
   runtimePath: string | null;
   totalSizeBytes: number;
+  installedVoiceIds: string[];
 }
 
 export interface ModelStoreRecord {
@@ -258,6 +281,12 @@ function isLanguageSupport(value: unknown): value is LanguageSupport {
 function isModelFamilyCapabilitiesRecord(value: unknown): value is ModelFamilyCapabilitiesRecord {
   return (
     isRecord(value) &&
+    (value.task === 'stt' || value.task === 'translation' || value.task === 'tts') &&
+    typeof value.supportsHardwareAcceleration === 'boolean' &&
+    Array.isArray(value.availableVoices) &&
+    value.availableVoices.every((voice) => typeof voice === 'string') &&
+    typeof value.supportsSpeedControl === 'boolean' &&
+    (value.outputSampleRate === null || typeof value.outputSampleRate === 'number') &&
     typeof value.supportsSegmentTimestamps === 'boolean' &&
     typeof value.supportsWordTimestamps === 'boolean' &&
     typeof value.supportsInitialPrompt === 'boolean' &&
@@ -275,7 +304,7 @@ function isAcceleratorId(value: unknown): value is AcceleratorId {
 }
 
 function isModelFormat(value: unknown): value is ModelFormat {
-  return value === 'ggml' || value === 'gguf' || value === 'onnx';
+  return value === 'bergamot' || value === 'ggml' || value === 'gguf' || value === 'onnx';
 }
 
 function isRuntimeCapabilitiesRecord(value: unknown): value is RuntimeCapabilitiesRecord {
@@ -328,7 +357,9 @@ export function normalizeSelectedModel(value: SelectedModel): SelectedModel {
 }
 
 export function getTotalModelSize(model: CatalogModelRecord): number {
-  return model.artifacts.reduce((sum, a) => sum + a.sizeBytes, 0);
+  return model.artifacts
+    .filter((artifact) => artifact.required)
+    .reduce((sum, artifact) => sum + artifact.sizeBytes, 0);
 }
 
 export function matchesModelTriple(
@@ -363,9 +394,11 @@ export function selectedModelEquals(left: SelectedModel, right: SelectedModel): 
 }
 
 export function getPrimaryArtifact(model: CatalogModelRecord): ModelArtifactRecord | null {
-  return (
-    model.artifacts.find(
-      (artifact) => artifact.required && artifact.role === 'transcription_model',
-    ) ?? null
-  );
+  const role =
+    model.task === 'tts'
+      ? 'synthesis_model'
+      : model.task === 'translation'
+        ? 'translation_model'
+        : 'transcription_model';
+  return model.artifacts.find((artifact) => artifact.required && artifact.role === role) ?? null;
 }

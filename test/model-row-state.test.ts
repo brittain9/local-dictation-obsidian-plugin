@@ -34,12 +34,15 @@ function buildState(overrides?: Partial<ModelManagerState>): ModelManagerState {
     catalog: sampleCatalog(),
     compiledAdapters: [],
     compiledRuntimes: [],
+    failedInstall: null,
     installedModels: [],
     loadError: null,
     loadStatus: 'ready',
     modelStore: { overridePath: null, path: '/models', usingDefaultPath: true },
     selectedModel: null,
     selectedModelCapabilities: { status: 'none' },
+    selectedTtsModel: null,
+    selectedTtsModelCapabilities: { status: 'none' },
     ...overrides,
   };
 }
@@ -70,15 +73,20 @@ function compiledAdapter(
   return {
     displayName: familyId,
     familyCapabilities: {
+      availableVoices: [],
       maxAudioDurationSecs: null,
+      outputSampleRate: null,
       producesPunctuation: true,
+      supportsHardwareAcceleration: familyId !== 'moonshine',
       supportedLanguages: { kind: 'english_only' },
       supportsInitialPrompt: false,
+      supportsSpeedControl: false,
       supportsLanguageSelection: false,
       supportsAutomaticLanguageDetection: false,
       supportsSegmentTimestamps: false,
       supportsStreaming: familyId === 'moonshine',
       supportsWordTimestamps: false,
+      task: 'stt',
     },
     familyId,
     runtimeId,
@@ -169,16 +177,18 @@ describe('deriveModelRowStates', () => {
       expect(row.allowedActions).toEqual(['cancel', 'details']);
     });
 
-    it.each([
-      'canceling',
-      'cancelStuck',
-    ] as const)('this row in phase %s → [details] only', (phase) => {
-      const rows = deriveModelRowStates(buildState({ activeInstall: sampleActiveInstall(phase) }));
-      const row = getRow(rows, 'whisper_large_v3_turbo_q8_0');
+    it.each(['canceling', 'cancelStuck'] as const)(
+      'this row in phase %s → [details] only',
+      (phase) => {
+        const rows = deriveModelRowStates(
+          buildState({ activeInstall: sampleActiveInstall(phase) }),
+        );
+        const row = getRow(rows, 'whisper_large_v3_turbo_q8_0');
 
-      expect(row).toMatchObject({ isInstalling: false, isCanceling: true });
-      expect(row.allowedActions).toEqual(['details']);
-    });
+        expect(row).toMatchObject({ isInstalling: false, isCanceling: true });
+        expect(row.allowedActions).toEqual(['details']);
+      },
+    );
 
     it('installed, not selected → [use, remove, details]', () => {
       const rows = deriveModelRowStates(buildState({ installedModels: [sampleInstalledModel()] }));
@@ -279,7 +289,7 @@ describe('deriveCurrentModelDisplay', () => {
       displayName: 'No model selected',
       engineLabel: '',
       installLocation: null,
-      installedLabel: 'Not selected',
+      status: 'not_selected',
       resolvedPath: null,
       sizeBytes: null,
       sourceLabel: '',
@@ -300,7 +310,7 @@ describe('deriveCurrentModelDisplay', () => {
       displayName: 'Whisper Large V3 Turbo',
       engineLabel: 'Whisper',
       installLocation: '/models/whisper_cpp/whisper_large_v3_turbo_q8_0',
-      installedLabel: 'Installed',
+      status: 'installed',
       resolvedPath: '/models/whisper_cpp/whisper_large_v3_turbo_q8_0/model.bin',
       sizeBytes: 900,
       sourceLabel: 'Managed download',
@@ -317,7 +327,7 @@ describe('deriveCurrentModelDisplay', () => {
     expect(display).toMatchObject({
       displayName: 'Whisper Small',
       installLocation: null,
-      installedLabel: 'Not installed',
+      status: 'not_installed',
       resolvedPath: null,
       sizeBytes: 100,
     });
@@ -334,7 +344,7 @@ describe('deriveCurrentModelDisplay', () => {
     expect(display).toMatchObject({
       displayName: 'Moonshine Small',
       engineLabel: 'Moonshine',
-      installedLabel: 'Installed',
+      status: 'installed',
       resolvedPath: `/models/onnx_runtime/${MOONSHINE_MODEL_ID}/frontend.ort`,
       sizeBytes: 700,
       sourceLabel: 'Managed download',
@@ -368,7 +378,7 @@ describe('deriveCurrentModelDisplay', () => {
       displayName: 'custom-model.bin',
       engineLabel: 'Whisper',
       installLocation: null,
-      installedLabel: 'External file',
+      status: 'external_file',
       resolvedPath: '/tmp/models/custom-model.bin',
       sizeBytes: null,
       sourceLabel: 'External file',
@@ -419,11 +429,11 @@ describe('deriveCurrentModelDisplay', () => {
 
     expect(deriveCurrentModelDisplay(state)).toMatchObject({
       detail: '',
-      installedLabel: 'External validated',
+      status: 'external_validated',
     });
   });
 
-  it('surfaces the external probe failure details in the current-model status', () => {
+  it('keeps external probe diagnostics out of the current-model status', () => {
     const selection = {
       familyId: 'moonshine' as const,
       filePath: '/models/moonshine/frontend.ort',
@@ -441,8 +451,8 @@ describe('deriveCurrentModelDisplay', () => {
     });
 
     expect(deriveCurrentModelDisplay(state)).toMatchObject({
-      detail: 'required Moonshine asset missing: encoder.ort',
-      installedLabel: 'Unavailable',
+      detail: 'The external model is unavailable. Validate the file again to see details.',
+      status: 'unavailable',
     });
   });
 });

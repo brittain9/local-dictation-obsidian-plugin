@@ -1,11 +1,17 @@
 import { basename } from 'node:path';
 
-import { assertAbsoluteExistingFilePath } from '../filesystem/path-validation';
+import {
+  checkAbsoluteExistingFilePath,
+  type ExistingFilePathValidationCode,
+} from '../filesystem/path-validation';
+import { t } from '../shared/i18n';
 import type { ExternalFileModelSelection } from './model-management-types';
 
 export interface ExternalFileEngineOption {
   entryFilename?: string;
-  entryFilenameError?: string;
+  entryFilenameErrorKey?:
+    | 'models.external.validation.nemotronEntryFile'
+    | 'models.external.validation.moonshineEntryFile';
   label: string;
   placeholder: string;
   requirements: string[];
@@ -20,27 +26,25 @@ export const DEFAULT_EXTERNAL_FILE_ENGINE_SELECTION = {
 export const EXTERNAL_FILE_ENGINES: readonly ExternalFileEngineOption[] = [
   {
     entryFilename: 'encoder.int8.onnx',
-    entryFilenameError:
-      'Nemotron 3.5 ASR requires its encoder.int8.onnx artifact. Select encoder.int8.onnx from the pinned 560 ms model directory.',
+    entryFilenameErrorKey: 'models.external.validation.nemotronEntryFile',
     label: 'NVIDIA Nemotron 3.5 ASR (ONNX Runtime)',
     placeholder: '/absolute/path/to/nemotron/encoder.int8.onnx',
     requirements: [
-      'Select encoder.int8.onnx from the pinned Nemotron 3.5 ASR 560 ms int8 export.',
-      'The same directory must contain decoder.int8.onnx, joiner.int8.onnx, and tokens.txt.',
-      'Other chunk sizes and ORT GenAI exports are not compatible with this adapter.',
+      t('models.external.requirements.nemotron.entry'),
+      t('models.external.requirements.nemotron.siblings'),
+      t('models.external.requirements.nemotron.compatibility'),
     ],
     selection: { familyId: 'nemotron_asr', runtimeId: 'onnx_runtime' },
   },
   {
     entryFilename: 'frontend.ort',
-    entryFilenameError:
-      'Moonshine requires its primary frontend.ort artifact. Select frontend.ort from the streaming model directory.',
+    entryFilenameErrorKey: 'models.external.validation.moonshineEntryFile',
     label: 'Moonshine (ONNX Runtime)',
     placeholder: '/absolute/path/to/moonshine/frontend.ort',
     requirements: [
-      'Select frontend.ort from a Moonshine v2 streaming ORT model directory.',
-      'The same directory must contain encoder.ort, adapter.ort, cross_kv.ort, decoder_kv.ort, streaming_config.json, and tokenizer.bin.',
-      'Non-streaming Moonshine ONNX exports are not compatible.',
+      t('models.external.requirements.moonshine.entry'),
+      t('models.external.requirements.moonshine.siblings'),
+      t('models.external.requirements.moonshine.compatibility'),
     ],
     selection: { familyId: 'moonshine', runtimeId: 'onnx_runtime' },
   },
@@ -48,9 +52,9 @@ export const EXTERNAL_FILE_ENGINES: readonly ExternalFileEngineOption[] = [
     label: 'Whisper (whisper.cpp)',
     placeholder: '/absolute/path/to/ggml-small.en-q5_1.bin',
     requirements: [
-      'Select one whisper.cpp-compatible GGML or GGUF model file.',
-      'The loader validates the file contents; a filename extension alone does not establish compatibility.',
-      'Whisper files with .en weights are English-only; multilingual weights expose the verified language selector and automatic detection.',
+      t('models.external.requirements.whisper.entry'),
+      t('models.external.requirements.whisper.validation'),
+      t('models.external.requirements.whisper.language'),
     ],
     selection: DEFAULT_EXTERNAL_FILE_ENGINE_SELECTION,
   },
@@ -72,23 +76,62 @@ export async function validateExternalModelFilePath(
   filePath: string,
   engine: Pick<ExternalFileModelSelection, 'familyId' | 'runtimeId'>,
 ): Promise<string> {
-  const normalizedPath = await assertAbsoluteExistingFilePath(filePath, 'Model file path');
+  const pathResult = await checkAbsoluteExistingFilePath(filePath);
+  if (!pathResult.valid) {
+    throw new ExternalModelFileValidationError(pathResult.code, pathResult.path);
+  }
+  const normalizedPath = pathResult.path;
 
   const option = getExternalFileEngineOption(engine);
   if (option?.entryFilename && basename(normalizedPath) !== option.entryFilename) {
-    throw new Error(option.entryFilenameError ?? `Select ${option.entryFilename}.`);
+    throw new ExternalModelFileValidationError(
+      'wrong_entry_file',
+      option.entryFilename,
+      option.entryFilenameErrorKey,
+    );
   }
 
   return normalizedPath;
 }
 
 export function formatExternalModelValidationError(error: unknown): string {
-  if (error instanceof Error) {
-    const message = error.message.trim();
-    if (message.length > 0) {
-      return message;
-    }
+  if (error instanceof ExternalModelFileValidationError) {
+    return error.message;
   }
 
-  return 'The speech engine could not validate this model.';
+  return t('models.external.validation.generic');
+}
+
+type ExternalModelFileValidationCode = ExistingFilePathValidationCode | 'wrong_entry_file';
+
+class ExternalModelFileValidationError extends Error {
+  constructor(
+    readonly code: ExternalModelFileValidationCode,
+    readonly detail?: string,
+    readonly messageKey?: ExternalFileEngineOption['entryFilenameErrorKey'],
+  ) {
+    super(formatTypedValidationError(code, detail, messageKey));
+    this.name = 'ExternalModelFileValidationError';
+  }
+}
+
+function formatTypedValidationError(
+  code: ExternalModelFileValidationCode,
+  detail?: string,
+  messageKey?: ExternalFileEngineOption['entryFilenameErrorKey'],
+): string {
+  switch (code) {
+    case 'not_configured':
+      return t('models.external.validation.notConfigured');
+    case 'not_absolute':
+      return t('models.external.validation.notAbsolute');
+    case 'missing':
+      return t('models.external.validation.missing', { path: detail ?? '' });
+    case 'not_file':
+      return t('models.external.validation.notFile', { path: detail ?? '' });
+    case 'wrong_entry_file':
+      return messageKey !== undefined
+        ? t(messageKey)
+        : t('models.external.validation.selectEntryFile', { filename: detail ?? '' });
+  }
 }

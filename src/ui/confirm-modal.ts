@@ -1,6 +1,9 @@
 import type { App } from 'obsidian';
 import { Modal, Setting } from 'obsidian';
 
+import { t } from '../shared/i18n';
+import { styleDestructiveButton } from './destructive-button';
+
 export interface ConfirmModalOptions {
   cancelLabel?: string;
   confirmLabel: string;
@@ -19,20 +22,20 @@ export class ConfirmModal extends Modal {
   }
 
   override onOpen(): void {
-    this.titleEl.setText(this.options.title);
+    this.setTitle(this.options.title);
     this.contentEl.empty();
     this.contentEl.createEl('p', { text: this.options.message });
 
     new Setting(this.contentEl)
       .addButton((button) => {
-        button.setButtonText(this.options.cancelLabel ?? 'Cancel').onClick(() => {
+        button.setButtonText(this.options.cancelLabel ?? t('common.cancel')).onClick(() => {
           this.close();
         });
       })
       .addButton((button) => {
         button.setButtonText(this.options.confirmLabel);
         if (this.options.destructive === true) {
-          button.setWarning();
+          styleDestructiveButton(button, { primary: true });
         } else {
           button.setCta();
         }

@@ -7,26 +7,29 @@ import {
   isDictationLanguage,
   supportedDictationLanguageOptions,
 } from '../language/dictation-language';
-import { resolveEngineCapabilities } from '../models/capability-view';
+import type { ModelPickerOptions } from '../models/manage-models-modal';
 import type { ModelInstallManager } from '../models/model-install-manager';
-import { updateInstallProgressElement } from '../models/model-install-progress';
-import { ExternalModelFileModal, ModelDetailsModal } from '../models/model-management-modals';
-import { matchesModelTriple } from '../models/model-management-types';
+import {
+  ExternalModelFileModal,
+  openSelectedModelDetailsModal,
+} from '../models/model-management-modals';
+import { deriveCurrentModelDisplay } from '../models/model-row-state';
+import { t } from '../shared/i18n';
 import type { PluginLogger } from '../shared/plugin-logger';
 import type { UserFeedback } from '../shared/user-feedback';
 import type { SpeakingStyle } from '../sidecar/protocol';
 import type { SidecarConnection } from '../sidecar/sidecar-connection';
-import {
-  buildSidecarProgressState,
-  type SidecarInstallManager,
-} from '../sidecar/sidecar-install-manager';
-import { readInstallManifest, variantDirectoryPath } from '../sidecar/sidecar-installer';
+import type { SidecarInstallManager } from '../sidecar/sidecar-install-manager';
+import type { SidecarLifecycleGate } from '../sidecar/sidecar-lifecycle-gate';
 import { ConfirmModal } from '../ui/confirm-modal';
+import { styleDestructiveButton } from '../ui/destructive-button';
 import { diarizationSettingDescription } from './diarization-setting';
 import { DiarizationSettingsModal } from './diarization-settings-modal';
-import { renderActiveInstallCard } from './install-progress-row';
+import { changeHardwareAcceleration } from './hardware-acceleration-action';
+import { renderHardwareAccelerationSetting } from './hardware-acceleration-setting';
 import { renderMicrophonePicker } from './microphone-picker';
 import { renderModelSection } from './model-settings-section';
+import { openFilteredHotkeySettings } from './open-hotkey-settings';
 import {
   PHRASE_FINALIZATION_TOOLTIP,
   phraseFinalizationDescription,
@@ -42,6 +45,10 @@ import {
   type TranscriptFormattingMode,
 } from './plugin-settings';
 import {
+  configureReadAloudSpeedSlider,
+  renderTextToSpeechSettings,
+} from './read-aloud-settings-section';
+import {
   addEnumSetting,
   addTextSetting,
   addToggleSetting,
@@ -50,14 +57,17 @@ import {
   type DropdownOption,
   type SettingAccess,
 } from './setting-helpers';
+import { mountSettingsSidecarSurfaces } from './settings-sidecar-surfaces';
+import { SettingsTabLifecycle } from './settings-tab-lifecycle';
 import {
-  resolvePluginDirectorySafe,
+  openCudaInstallModal,
+  openSidecarUpdateModal,
   type SidecarInstallActionDeps,
-  SidecarSettingsSection,
 } from './sidecar-settings-section';
 import { SmartParagraphSettingsModal } from './smart-paragraph-settings-modal';
 import { isSystemAudioSupportedOnCurrentPlatform } from './system-audio-support';
 import { TimestampSettingsModal } from './timestamp-settings-modal';
+import { renderTranslationSettings } from './translation-settings-section';
 
 interface SettingsTabDependencies {
   feedback: Pick<UserFeedback, 'show'>;
@@ -65,7 +75,7 @@ interface SettingsTabDependencies {
   isDictationBusy: () => boolean;
   logger?: PluginLogger | undefined;
   modelInstallManager: ModelInstallManager;
-  openModelPicker: (options?: { onChanged?: () => void }) => Promise<void>;
+  openModelPicker: (options?: ModelPickerOptions) => Promise<void>;
   openSetupWizard: () => Promise<void>;
   pluginVersion: string;
   resolvePluginDirectory: () => Promise<string>;
@@ -74,29 +84,30 @@ interface SettingsTabDependencies {
   saveSettings: (settings: PluginSettings) => Promise<void>;
   sidecarConnection: Pick<SidecarConnection, 'probeSystemAudio' | 'shutdown'>;
   sidecarInstallManager: SidecarInstallManager;
+  sidecarLifecycleGate: SidecarLifecycleGate;
 }
 
 const LISTENING_MODE_OPTIONS: ReadonlyArray<DropdownOption<'always_on' | 'one_sentence'>> = [
-  { label: 'Always on', value: 'always_on' },
-  { label: 'One sentence', value: 'one_sentence' },
+  { label: t('settings.listeningMode.alwaysOn'), value: 'always_on' },
+  { label: t('settings.listeningMode.oneSentence'), value: 'one_sentence' },
 ];
 
 const DICTATION_ANCHOR_OPTIONS: ReadonlyArray<DropdownOption<DictationAnchor>> = [
-  { label: 'At cursor', value: 'at_cursor' },
-  { label: 'End of note', value: 'end_of_note' },
+  { label: t('settings.insertText.atCursor'), value: 'at_cursor' },
+  { label: t('settings.insertText.endOfNote'), value: 'end_of_note' },
 ];
 
 const TRANSCRIPT_FORMATTING_OPTIONS: ReadonlyArray<DropdownOption<TranscriptFormattingMode>> = [
-  { label: 'Smart paragraphs', value: 'smart' },
-  { label: 'Space', value: 'space' },
-  { label: 'New line', value: 'new_line' },
-  { label: 'New paragraph', value: 'new_paragraph' },
+  { label: t('settings.transcriptFormatting.smartParagraphs'), value: 'smart' },
+  { label: t('settings.transcriptFormatting.space'), value: 'space' },
+  { label: t('settings.transcriptFormatting.newLine'), value: 'new_line' },
+  { label: t('settings.transcriptFormatting.newParagraph'), value: 'new_paragraph' },
 ];
 
 const SPEAKING_STYLE_OPTIONS: ReadonlyArray<DropdownOption<SpeakingStyle>> = [
-  { label: 'Responsive — short pauses', value: 'responsive' },
-  { label: 'Balanced — standard', value: 'balanced' },
-  { label: 'Patient — long pauses', value: 'patient' },
+  { label: t('settings.phraseFinalization.responsiveOption'), value: 'responsive' },
+  { label: t('settings.phraseFinalization.balancedOption'), value: 'balanced' },
+  { label: t('settings.phraseFinalization.patientOption'), value: 'patient' },
 ];
 
 export class LocalSttSettingTab extends PluginSettingTab {
@@ -106,10 +117,11 @@ export class LocalSttSettingTab extends PluginSettingTab {
   private disposeDiarizationDesc: (() => void) | null = null;
   private disposeEngineSection: (() => void) | null = null;
   private disposeMicrophoneSection: (() => void) | null = null;
-  private disposeMissingSidecarBanner: (() => void) | null = null;
   private disposeModelSection: (() => void) | null = null;
-  private disposeSidecarSection: (() => void) | null = null;
-  private missingSidecarProgressEl: HTMLDivElement | null = null;
+  private disposeReadAloudSection: (() => void) | null = null;
+  private disposeSidecarSurfaces: (() => void) | null = null;
+  private disposeTranslationSection: (() => void) | null = null;
+  private readonly lifecycle: SettingsTabLifecycle;
 
   constructor(
     app: App,
@@ -117,6 +129,7 @@ export class LocalSttSettingTab extends PluginSettingTab {
     private readonly dependencies: SettingsTabDependencies,
   ) {
     super(app, plugin);
+    this.lifecycle = new SettingsTabLifecycle(this);
     this.access = {
       getSettings: () => this.dependencies.getSettings(),
       persistOne: async (key, value) => {
@@ -128,26 +141,35 @@ export class LocalSttSettingTab extends PluginSettingTab {
     };
   }
 
-  override display(): void {
-    this.tearDown();
+  override getSettingDefinitions(): never[] {
+    // The page is a composite imperative UI. Returning any definitions makes
+    // Obsidian 1.13+ skip display(), and its row reconciliation removes a
+    // custom host that replaces the framework-owned setting row.
+    return [];
+  }
 
-    const { containerEl } = this;
+  override display(): void {
+    this.lifecycle.markVisible();
+    this.renderSettings(this.containerEl);
+  }
+
+  private renderSettings(containerEl: HTMLElement): void {
+    this.tearDown();
     const settings = this.dependencies.getSettings();
+    const sidecarActionDeps = this.buildSidecarInstallActionDeps();
 
     containerEl.empty();
 
-    const missingSidecarGroup = containerEl.createDiv({ cls: 'setting-group' });
-    this.disposeMissingSidecarBanner = this.renderMissingSidecarBanner(missingSidecarGroup);
-
     // --- Model ---
-    const modelSection = createSettingGroup(containerEl, 'Model');
+    const modelSection = createSettingGroup(containerEl, t('settings.groups.model'));
     const modelSummary = modelSection.createDiv();
     const manager = this.dependencies.modelInstallManager;
     this.disposeModelSection = renderModelSection(modelSummary, manager, {
       onManageModels: () => {
         void this.dependencies.openModelPicker({
+          initialTask: 'stt',
           onChanged: () => {
-            this.display();
+            this.refreshSettingsTab();
           },
         });
       },
@@ -160,19 +182,25 @@ export class LocalSttSettingTab extends PluginSettingTab {
             feedback: this.dependencies.feedback,
             manager,
             onChanged: async () => {
-              this.display();
+              this.refreshSettingsTab();
             },
           },
         ).open();
       },
-      onModelInfo: this.buildModelInfoCallback(manager, settings),
+      onModelInfo:
+        settings.selectedModel?.kind === 'catalog_model'
+          ? this.buildModelInfoCallback(manager, 'stt')
+          : null,
     });
 
-    const selectedCapabilities = manager.getState().selectedModelCapabilities;
+    const modelState = manager.getState();
+    const selectedCapabilities = modelState.selectedModelCapabilities;
     const languageSupport =
       selectedCapabilities.status === 'ready'
         ? selectedCapabilities.capabilities.family.supportedLanguages
         : ({ kind: 'english_only' } as const);
+    const isSelectedModelEnglishOnly =
+      selectedCapabilities.status === 'ready' && languageSupport.kind === 'english_only';
     const supportsAutomaticLanguageDetection =
       selectedCapabilities.status === 'ready' &&
       selectedCapabilities.capabilities.family.supportsAutomaticLanguageDetection;
@@ -182,11 +210,13 @@ export class LocalSttSettingTab extends PluginSettingTab {
     );
     const selectedLanguage = settings.dictationLanguage;
     const languageSetting = new Setting(modelSection)
-      .setName('Dictation language')
+      .setName(t('settings.dictationLanguage.name'))
       .setDesc(
-        languageOptions.length === 1
-          ? 'The selected model supports English only.'
-          : 'Choose the language you will speak. Manual selection gives the most predictable cleanup. Auto detect may start more slowly and chooses one language per utterance.',
+        isSelectedModelEnglishOnly
+          ? t('settings.dictationLanguage.englishOnlyDesc', {
+              model: deriveCurrentModelDisplay(modelState).displayName,
+            })
+          : t('settings.dictationLanguage.desc'),
       );
     languageSetting.addDropdown((dropdown) => {
       for (const option of languageOptions) {
@@ -195,7 +225,9 @@ export class LocalSttSettingTab extends PluginSettingTab {
       if (!languageOptions.some((option) => option.value === selectedLanguage)) {
         dropdown.addOption(
           selectedLanguage,
-          `${dictationLanguageLabel(selectedLanguage)} (unsupported)`,
+          t('settings.dictationLanguage.unsupported', {
+            language: dictationLanguageLabel(selectedLanguage),
+          }),
         );
       }
       dropdown.setValue(selectedLanguage);
@@ -209,8 +241,14 @@ export class LocalSttSettingTab extends PluginSettingTab {
       });
     });
 
+    // Sits below the Model group on purpose: the model is what people come to
+    // Settings for, and the attention callout is a transient prompt, not the
+    // headline. Read-aloud rows are appended into `modelSection` further down,
+    // so they still land above this sibling container.
+    const attentionContainer = containerEl.createDiv();
+
     // --- Capture ---
-    const captureCard = createSettingGroup(containerEl, 'Capture');
+    const captureCard = createSettingGroup(containerEl, t('settings.groups.capture'));
 
     const systemAudioSupported = isSystemAudioSupportedOnCurrentPlatform();
 
@@ -223,8 +261,8 @@ export class LocalSttSettingTab extends PluginSettingTab {
 
     if (systemAudioSupported) {
       addToggleSetting(captureCard, this.access, {
-        name: 'Include system audio',
-        desc: "Also capture this computer's default audio output for meetings, calls, and videos.",
+        name: t('settings.systemAudio.name'),
+        desc: t('settings.systemAudio.desc'),
         key: 'includeSystemAudio',
         onChange: async (value) => {
           // First-ever probe is the designed moment for the macOS TCC prompt.
@@ -232,22 +270,22 @@ export class LocalSttSettingTab extends PluginSettingTab {
             // Capture cannot work; leaving the toggle on would just fail
             // every session start with the same error.
             await this.access.persistOne('includeSystemAudio', false);
-            this.display();
+            this.refreshSettingsTab();
           }
         },
       });
     }
 
     addEnumSetting(captureCard, this.access, {
-      name: 'Listening mode',
-      desc: 'Continuous, or stop after one sentence.',
+      name: t('settings.listeningMode.name'),
+      desc: t('settings.listeningMode.desc'),
       key: 'listeningMode',
       options: LISTENING_MODE_OPTIONS,
       isValid: isListeningMode,
     });
 
     const phraseFinalizationSetting = new Setting(captureCard)
-      .setName('Phrase finalization')
+      .setName(t('settings.phraseFinalization.name'))
       .setDesc(phraseFinalizationDescription(settings.speakingStyle));
     phraseFinalizationSetting.addDropdown((dropdown) => {
       for (const option of SPEAKING_STYLE_OPTIONS) {
@@ -262,11 +300,11 @@ export class LocalSttSettingTab extends PluginSettingTab {
     });
     appendInfoTooltip(phraseFinalizationSetting, PHRASE_FINALIZATION_TOOLTIP);
 
-    const outputCard = createSettingGroup(containerEl, 'Transcript output');
+    const outputCard = createSettingGroup(containerEl, t('settings.groups.transcriptOutput'));
 
     addEnumSetting(outputCard, this.access, {
-      name: 'Insert text',
-      desc: 'Where dictated text appears.',
+      name: t('settings.insertText.name'),
+      desc: t('settings.insertText.desc'),
       key: 'dictationAnchor',
       options: DICTATION_ANCHOR_OPTIONS,
       isValid: isDictationAnchor,
@@ -275,7 +313,7 @@ export class LocalSttSettingTab extends PluginSettingTab {
     this.renderTranscriptFormattingSetting(outputCard);
 
     const diarizationSetting = addToggleSetting(outputCard, this.access, {
-      name: 'Speaker labels',
+      name: t('settings.speakerLabels.name'),
       desc: '',
       key: 'diarizationEnabled',
     });
@@ -292,41 +330,91 @@ export class LocalSttSettingTab extends PluginSettingTab {
     diarizationSetting.addExtraButton((button) => {
       button
         .setIcon('sliders-horizontal')
-        .setTooltip('Speaker label settings')
+        .setTooltip(t('settings.speakerLabels.modal.title'))
         .onClick(() => {
           new DiarizationSettingsModal(this.app, {
             getSettings: () => this.dependencies.getSettings(),
-            onSave: () => {
-              this.display();
-            },
             saveSettings: async (nextSettings) => {
               await this.dependencies.saveSettings(nextSettings);
             },
           }).open();
         });
-      button.extraSettingsEl.setAttribute('aria-label', 'Speaker label settings');
+      button.extraSettingsEl.setAttribute('aria-label', t('settings.speakerLabels.modal.title'));
     });
 
-    const timestampsCard = createSettingGroup(containerEl, 'Timestamps');
+    const timestampsCard = createSettingGroup(containerEl, t('settings.groups.timestamps'));
     this.renderTimestampSettings(timestampsCard, settings);
 
-    const llmCard = createSettingGroup(containerEl, 'LLM transformation');
+    // --- Read aloud ---
+    const readAloudSection = createSettingGroup(containerEl, t('settings.groups.readAloud'));
+    const hotkeySetting = new Setting(readAloudSection)
+      .setName(t('settings.readAloud.hotkey'))
+      .setDesc(t('settings.readAloud.hotkeyDesc'))
+      .addButton((button) => {
+        button.setButtonText(t('setup.wizard.openHotkeySettings')).onClick(() => {
+          openFilteredHotkeySettings(this.app, t('commands.readAloud'), (error) => {
+            this.dependencies.feedback.show({
+              cause: error,
+              intent: 'warning',
+              message: t('setup.wizard.openHotkeySettingsFallback'),
+            });
+          });
+        });
+      });
+
+    new Setting(readAloudSection)
+      .setName(t('settings.readAloud.speed'))
+      .setDesc(t('settings.readAloud.speedDesc'))
+      .addSlider((slider) => {
+        configureReadAloudSpeedSlider(slider, settings.ttsSpeed, (speed) =>
+          this.access.persistOne('ttsSpeed', speed),
+        );
+      });
+
+    this.disposeReadAloudSection = renderTextToSpeechSettings(
+      modelSection,
+      languageSetting.settingEl,
+      readAloudSection,
+      hotkeySetting.settingEl,
+      {
+        getSettings: () => this.dependencies.getSettings(),
+        manager,
+        openSelectedModelDetails: this.buildModelInfoCallback(manager, 'tts'),
+        openModelPicker: (options) => this.dependencies.openModelPicker(options),
+        persistVoice: (voice) => this.access.persistOne('selectedTtsVoice', voice),
+      },
+    );
+
+    // --- Translation ---
+    const translationSection = createSettingGroup(containerEl, t('settings.groups.translation'));
+    this.disposeTranslationSection = renderTranslationSettings(translationSection, {
+      getSettings: () => this.dependencies.getSettings(),
+      manager,
+      openModelPicker: (options) => this.dependencies.openModelPicker(options),
+      persistLanguages: async (sourceLanguage, targetLanguage) => {
+        await this.dependencies.saveSettings({
+          ...this.dependencies.getSettings(),
+          translationSourceLanguage: sourceLanguage,
+          translationTargetLanguage: targetLanguage,
+        });
+      },
+    });
+
+    const llmCard = createSettingGroup(containerEl, t('settings.groups.llmTransformation'));
     const enableLlmSetting = new Setting(llmCard)
-      .setName('Enable LLM features')
-      .setDesc('Make LLM transformations available. Turn transformation on or off in the sidebar.');
+      .setName(t('settings.llm.enableFeatures.name'))
+      .setDesc(t('settings.llm.enableFeatures.desc'));
     enableLlmSetting.addToggle((toggle) => {
       toggle.setValue(settings.llmFeaturesEnabled);
       toggle.onChange(async (value) => {
         await this.access.persistOne('llmFeaturesEnabled', value);
-        this.display();
+        this.refreshSettingsTab();
       });
     });
 
     const remoteLlmSetting = new Setting(llmCard)
-      .setName('Enable remote LLM')
-      .setDesc(
-        'Allow transcript text and included note context to be sent to OpenRouter. Audio is never sent.',
-      );
+      .setName(t('settings.llm.enableRemote.name'))
+      .setDesc(t('settings.llm.enableRemote.desc'));
     remoteLlmSetting.addToggle((toggle) => {
       toggle.setValue(isRemoteLlmEffectivelyEnabled(settings));
       toggle.setDisabled(!settings.llmFeaturesEnabled);
@@ -337,27 +425,23 @@ export class LocalSttSettingTab extends PluginSettingTab {
     });
 
     new Setting(llmCard)
-      .setName('Restore transform defaults')
-      .setDesc(
-        'Reset preset, timing, context, minimum words, and temperature. Saved presets and models are kept.',
-      )
+      .setName(t('settings.llm.restoreDefaults.name'))
+      .setDesc(t('settings.llm.restoreDefaults.desc'))
       .addButton((button) => {
-        button
-          .setButtonText('Restore')
-          .setWarning()
-          .onClick(() => {
-            new ConfirmModal(this.app, {
-              confirmLabel: 'Restore',
-              destructive: true,
-              message:
-                'Restore the default preset, timing, context, minimum words, and temperature? Saved presets and models are kept.',
-              onConfirm: async () => {
-                await this.dependencies.resetLlmTransformation();
-                this.display();
-              },
-              title: 'Restore transform defaults',
-            }).open();
-          });
+        styleDestructiveButton(
+          button.setButtonText(t('settings.llm.restoreDefaults.button')),
+        ).onClick(() => {
+          new ConfirmModal(this.app, {
+            confirmLabel: t('settings.llm.restoreDefaults.button'),
+            destructive: true,
+            message: t('settings.llm.restoreDefaults.confirmMessage'),
+            onConfirm: async () => {
+              await this.dependencies.resetLlmTransformation();
+              this.refreshSettingsTab();
+            },
+            title: t('settings.llm.restoreDefaults.name'),
+          }).open();
+        });
       });
 
     // --- Engine options ---
@@ -365,7 +449,9 @@ export class LocalSttSettingTab extends PluginSettingTab {
     // can hide the whole card when no rows apply (e.g. macOS + a model with
     // no initial-prompt support).
     const engineGroup = containerEl.createDiv({ cls: 'setting-group' });
-    const engineHeading = new Setting(engineGroup).setName('Engine').setHeading();
+    const engineHeading = new Setting(engineGroup)
+      .setName(t('settings.groups.engine'))
+      .setHeading();
     const engineSection = engineGroup.createDiv({ cls: 'setting-items' });
     const renderEngine = (): void => {
       this.renderEngineOptions(engineGroup, engineHeading, engineSection);
@@ -374,36 +460,69 @@ export class LocalSttSettingTab extends PluginSettingTab {
     this.disposeEngineSection = manager.subscribe(renderEngine);
 
     // --- Advanced (includes sidecar install/uninstall) ---
-    const advancedSection = createSettingGroup(containerEl, 'Advanced');
+    const advancedSection = createSettingGroup(containerEl, t('settings.groups.advanced'));
 
     // Sidecar rows live in their own owned container so re-renders can simply
     // empty + rebuild without disturbing the rest of the Advanced section.
     const sidecarContainer = advancedSection.createDiv();
-    const sidecarSection = new SidecarSettingsSection(sidecarContainer, {
-      ...this.buildSidecarInstallActionDeps(),
-      access: this.access,
-      resolvePluginDirectory: this.dependencies.resolvePluginDirectory,
-    });
-    this.disposeSidecarSection = sidecarSection.init();
+    this.disposeSidecarSurfaces = mountSettingsSidecarSurfaces(
+      attentionContainer,
+      sidecarContainer,
+      {
+        advanced: {
+          ...sidecarActionDeps,
+          access: this.access,
+          resolvePluginDirectory: this.dependencies.resolvePluginDirectory,
+        },
+        attention: {
+          actions: {
+            enableCuda: async () => {
+              await changeHardwareAcceleration(
+                {
+                  access: this.access,
+                  feedback: this.dependencies.feedback,
+                  restartSidecar: this.dependencies.restartSidecar,
+                  sidecarLifecycleGate: this.dependencies.sidecarLifecycleGate,
+                },
+                true,
+              );
+              this.refreshSettingsTab();
+            },
+            installCuda: (pluginDirectory) => {
+              openCudaInstallModal(sidecarActionDeps, this.access, pluginDirectory);
+            },
+            openSetup: this.dependencies.openSetupWizard,
+            updateSidecars: (pluginDirectory, variants) => {
+              openSidecarUpdateModal(sidecarActionDeps, { pluginDirectory, variants });
+            },
+          },
+          getSettings: this.dependencies.getSettings,
+          logger: this.dependencies.logger,
+          pluginVersion: this.dependencies.pluginVersion,
+          resolvePluginDirectory: this.dependencies.resolvePluginDirectory,
+          sidecarInstallManager: this.dependencies.sidecarInstallManager,
+        },
+      },
+    );
 
     addToggleSetting(advancedSection, this.access, {
-      name: 'Keep recovery text in memory',
-      desc: 'Keep the latest recoverable text and note snapshot in memory. Nothing is written to disk.',
+      name: t('settings.recoveryMemory.name'),
+      desc: t('settings.recoveryMemory.desc'),
       key: 'retainLastUtterance',
     });
 
     addTextSetting(advancedSection, this.access, {
-      name: 'Model store folder override',
-      desc: 'Custom folder for managed model downloads.',
+      name: t('settings.modelStoreOverride.name'),
+      desc: t('settings.modelStoreOverride.desc'),
       key: 'modelStorePathOverride',
-      placeholder: 'Use the shared default model store',
+      placeholder: t('settings.modelStoreOverride.placeholder'),
     });
 
     new Setting(advancedSection)
-      .setName('Run setup')
-      .setDesc('Re-run the first-time setup wizard.')
+      .setName(t('settings.runSetup.name'))
+      .setDesc(t('settings.runSetup.desc'))
       .addButton((button) => {
-        button.setButtonText('Run setup').onClick(() => {
+        button.setButtonText(t('settings.runSetup.name')).onClick(() => {
           void this.dependencies.openSetupWizard();
         });
       });
@@ -415,29 +534,35 @@ export class LocalSttSettingTab extends PluginSettingTab {
       toggle.setValue(this.dependencies.getSettings().developerMode);
       toggle.onChange(async (value) => {
         await this.access.persistOne('developerMode', value);
-        this.display();
+        this.refreshSettingsTab();
       });
     });
   }
 
   override hide(): void {
+    this.lifecycle.markHidden();
     this.tearDown();
   }
 
   private tearDown(): void {
     this.disposeModelSection?.();
     this.disposeModelSection = null;
+    this.disposeReadAloudSection?.();
+    this.disposeReadAloudSection = null;
+    this.disposeTranslationSection?.();
+    this.disposeTranslationSection = null;
     this.disposeDiarizationDesc?.();
     this.disposeDiarizationDesc = null;
     this.disposeEngineSection?.();
     this.disposeEngineSection = null;
     this.disposeMicrophoneSection?.();
     this.disposeMicrophoneSection = null;
-    this.disposeSidecarSection?.();
-    this.disposeSidecarSection = null;
-    this.disposeMissingSidecarBanner?.();
-    this.disposeMissingSidecarBanner = null;
-    this.missingSidecarProgressEl = null;
+    this.disposeSidecarSurfaces?.();
+    this.disposeSidecarSurfaces = null;
+  }
+
+  private refreshSettingsTab(): void {
+    this.lifecycle.refresh();
   }
 
   /** Returns whether the probe confirmed capture is usable. */
@@ -445,7 +570,10 @@ export class LocalSttSettingTab extends PluginSettingTab {
     try {
       const result = await this.dependencies.sidecarConnection.probeSystemAudio();
       if (result.ok) {
-        this.dependencies.feedback.show({ intent: 'success', message: 'System audio is ready.' });
+        this.dependencies.feedback.show({
+          intent: 'success',
+          message: t('settings.systemAudio.ready'),
+        });
         return true;
       }
 
@@ -458,8 +586,7 @@ export class LocalSttSettingTab extends PluginSettingTab {
       this.dependencies.feedback.show({
         cause: error,
         intent: 'error',
-        message:
-          'Could not test system audio. Check that the speech engine is installed and try again.',
+        message: t('settings.systemAudio.testFailed'),
       });
     }
     return false;
@@ -467,8 +594,8 @@ export class LocalSttSettingTab extends PluginSettingTab {
 
   private renderTranscriptFormattingSetting(parent: HTMLElement): void {
     const setting = addEnumSetting(parent, this.access, {
-      name: 'Transcript formatting',
-      desc: 'How phrases are joined together.',
+      name: t('settings.transcriptFormatting.name'),
+      desc: t('settings.transcriptFormatting.desc'),
       key: 'transcriptFormatting',
       options: TRANSCRIPT_FORMATTING_OPTIONS,
       isValid: isTranscriptFormattingMode,
@@ -477,26 +604,23 @@ export class LocalSttSettingTab extends PluginSettingTab {
     setting.addExtraButton((button) => {
       button
         .setIcon('sliders-horizontal')
-        .setTooltip('Smart paragraph settings')
+        .setTooltip(t('settings.smartParagraph.modal.title'))
         .onClick(() => {
           new SmartParagraphSettingsModal(this.app, {
             getSettings: () => this.dependencies.getSettings(),
-            onSave: () => {
-              this.display();
-            },
             saveSettings: async (settings) => {
               await this.dependencies.saveSettings(settings);
             },
           }).open();
         });
-      button.extraSettingsEl.setAttribute('aria-label', 'Smart paragraph settings');
+      button.extraSettingsEl.setAttribute('aria-label', t('settings.smartParagraph.modal.title'));
     });
   }
 
   private renderTimestampSettings(parent: HTMLElement, settings: PluginSettings): void {
     const setting = new Setting(parent)
-      .setName('Use timestamps')
-      .setDesc('Add timestamp landmarks to dictated transcripts.')
+      .setName(t('settings.timestamps.enable.name'))
+      .setDesc(t('settings.timestamps.enable.desc'))
       .addToggle((toggle) => {
         toggle.setValue(settings.timestampsEnabled);
         toggle.onChange(async (value) => {
@@ -507,55 +631,22 @@ export class LocalSttSettingTab extends PluginSettingTab {
     setting.addExtraButton((button) => {
       button
         .setIcon('sliders-horizontal')
-        .setTooltip('Timestamp settings')
+        .setTooltip(t('settings.timestamps.modal.title'))
         .onClick(() => {
           new TimestampSettingsModal(this.app, {
             getSettings: () => this.dependencies.getSettings(),
-            onSave: () => {
-              this.display();
-            },
             saveSettings: async (nextSettings) => {
               await this.dependencies.saveSettings(nextSettings);
             },
           }).open();
         });
-      button.extraSettingsEl.setAttribute('aria-label', 'Timestamp settings');
+      button.extraSettingsEl.setAttribute('aria-label', t('settings.timestamps.modal.title'));
     });
   }
 
-  private buildModelInfoCallback(
-    manager: ModelInstallManager,
-    settings: PluginSettings,
-  ): (() => void) | null {
-    const sel = settings.selectedModel;
-
-    if (sel === null || sel.kind !== 'catalog_model') {
-      return null;
-    }
-
-    const { runtimeId, familyId, modelId } = sel;
-
+  private buildModelInfoCallback(manager: ModelInstallManager, task: 'stt' | 'tts'): () => void {
     return () => {
-      const state = manager.getState();
-      const catalogModel = state.catalog.models.find((m) =>
-        matchesModelTriple(m, runtimeId, familyId, modelId),
-      );
-      if (catalogModel === undefined) return;
-      const installedModel = state.installedModels.find((m) =>
-        matchesModelTriple(m, runtimeId, familyId, modelId),
-      );
-      const capabilities = resolveEngineCapabilities(
-        state.compiledRuntimes,
-        state.compiledAdapters,
-        catalogModel.runtimeId,
-        catalogModel.familyId,
-      );
-      new ModelDetailsModal(
-        this.app,
-        catalogModel,
-        installedModel?.installPath ?? null,
-        capabilities,
-      ).open();
+      openSelectedModelDetailsModal(this.app, manager, task);
     };
   }
 
@@ -579,163 +670,72 @@ export class LocalSttSettingTab extends PluginSettingTab {
         : (state.compiledRuntimes.find((r) => r.runtimeId === sel.runtimeId) ?? null);
 
     containerEl.empty();
-    heading.setName(selectedAdapter === null ? 'Engine' : `${selectedAdapter.displayName} engine`);
+    heading.setName(
+      selectedAdapter === null
+        ? t('settings.groups.engine')
+        : t('settings.engine.named', { engine: selectedAdapter.displayName }),
+    );
 
     let rendered = 0;
 
-    const hasNonCpuAccelerator =
-      selectedRuntime?.runtimeCapabilities.availableAccelerators.some((id) => id !== 'cpu') ??
-      false;
+    // `availableAccelerators` omits accelerators that failed to initialise, so
+    // gating on it hid this row exactly when it had a fallback to explain. The
+    // details map keeps the failures, and CPU-only sidecars have no GPU key in
+    // it at all, so they still see nothing.
+    const hasNonCpuAccelerator = Object.keys(
+      selectedRuntime?.runtimeCapabilities.acceleratorDetails ?? {},
+    ).some((id) => id !== 'cpu');
 
-    if (!Platform.isMacOS && hasNonCpuAccelerator) {
-      // accelerationPreference is a string enum mapped onto a boolean toggle, so
-      // the addEnumSetting / addToggleSetting helpers don't fit.
-      new Setting(containerEl)
-        .setName('Hardware acceleration')
-        .setDesc('Run inference on the GPU when available.')
-        .addToggle((toggle) => {
-          toggle.setValue(settings.accelerationPreference === 'auto');
-          toggle.onChange(async (value) => {
-            if (this.dependencies.isDictationBusy()) {
-              this.dependencies.feedback.show({
-                intent: 'warning',
-                message: 'Cannot change hardware acceleration while dictating.',
-              });
-              toggle.setValue(!value);
-              return;
-            }
-            await this.access.persistOne('accelerationPreference', value ? 'auto' : 'cpu_only');
-            try {
-              await this.dependencies.restartSidecar();
-              this.dependencies.feedback.show({
-                intent: 'success',
-                message: value ? 'Hardware acceleration on.' : 'Hardware acceleration off.',
-              });
-            } catch (error) {
-              this.dependencies.feedback.show({
-                cause: error,
-                intent: 'error',
-                message:
-                  'Hardware acceleration was saved, but the speech engine could not restart. Restart Obsidian to apply it.',
-              });
-            }
-          });
-        });
+    if (
+      !Platform.isMacOS &&
+      hasNonCpuAccelerator &&
+      selectedAdapter?.familyCapabilities.supportsHardwareAcceleration === true
+    ) {
+      renderHardwareAccelerationSetting(containerEl, {
+        access: this.access,
+        // Scoped to the selected engine: this row sits under that engine's
+        // heading, so a summary across every compiled adapter reads as noise
+        // ("CUDA (Moonshine: CPU, Pocket TTS: CPU, …)") and buries the one
+        // backend the section is about.
+        acceleration: {
+          compiledAdapters: selectedAdapter === null ? [] : [selectedAdapter],
+          compiledRuntimes: state.compiledRuntimes,
+        },
+        feedback: this.dependencies.feedback,
+        restartSidecar: this.dependencies.restartSidecar,
+        sidecarLifecycleGate: this.dependencies.sidecarLifecycleGate,
+      });
       rendered += 1;
     }
 
     const caps = state.selectedModelCapabilities;
     if (caps.status === 'ready' && caps.capabilities.family.supportsInitialPrompt) {
       addToggleSetting(containerEl, this.access, {
-        name: 'Use note as context',
-        desc: 'Send distinctive terms from the open note to help spelling.',
-        tooltip:
-          'Sends a glossary of proper nouns and technical terms as the engine’s initial prompt. Only used by engines that support initial prompts.',
+        name: t('settings.noteContext.name'),
+        desc: t('settings.noteContext.desc'),
+        tooltip: t('settings.noteContext.tooltip'),
         key: 'useNoteAsContext',
       });
       rendered += 1;
     }
 
-    group.toggleClass('local-stt-hidden', rendered === 0);
-  }
-
-  private renderMissingSidecarBanner(group: HTMLDivElement): () => void {
-    let disposed = false;
-
-    const render = async (): Promise<void> => {
-      this.missingSidecarProgressEl = null;
-      group.empty();
-
-      const pluginDirectory = await this.resolvePluginDirectorySafe();
-      if (disposed || pluginDirectory === null || !group.isConnected) return;
-
-      const [cpuManifest, cudaManifest] = await Promise.all([
-        readInstallManifest(variantDirectoryPath(pluginDirectory, 'cpu')),
-        readInstallManifest(variantDirectoryPath(pluginDirectory, 'cuda')),
-      ]);
-      if (disposed || !group.isConnected) return;
-
-      const activeInstall = this.dependencies.sidecarInstallManager.getState().activeInstall;
-      const sidecarInstalled = cpuManifest !== null || cudaManifest !== null;
-      group.toggleClass('local-stt-hidden', sidecarInstalled);
-      if (sidecarInstalled) {
-        return;
-      }
-
-      const items = group.createDiv({ cls: 'setting-items' });
-
-      if (activeInstall !== null) {
-        const { progressEl } = renderActiveInstallCard(items, {
-          isCancelling: activeInstall.phase === 'canceling',
-          name: `Installing: ${activeInstall.variant.toUpperCase()} sidecar`,
-          onCancel: () => {
-            this.dependencies.sidecarInstallManager.cancel();
-          },
-          progressState: buildSidecarProgressState(activeInstall),
-        });
-        this.missingSidecarProgressEl = progressEl;
-        return;
-      }
-
-      const setting = new Setting(items)
-        .setName('Set up Local Dictation')
-        .setDesc(
-          "Local Dictation isn't ready yet. Run the setup wizard to install the speech engine and a model.",
-        );
-      setting.addButton((button) => {
-        button
-          .setCta()
-          .setButtonText('Run setup')
-          .onClick(() => {
-            void this.dependencies.openSetupWizard();
-          });
-      });
-    };
-
-    const handleChange = (): void => {
-      const activeInstall = this.dependencies.sidecarInstallManager.getState().activeInstall;
-
-      if (activeInstall !== null && this.missingSidecarProgressEl !== null) {
-        updateInstallProgressElement(
-          this.missingSidecarProgressEl,
-          buildSidecarProgressState(activeInstall),
-        );
-        return;
-      }
-
-      void render();
-    };
-
-    void render();
-    const unsubscribe = this.dependencies.sidecarInstallManager.subscribe(handleChange);
-
-    return () => {
-      disposed = true;
-      unsubscribe();
-    };
-  }
-
-  private resolvePluginDirectorySafe(): Promise<string | null> {
-    return resolvePluginDirectorySafe(
-      this.dependencies.resolvePluginDirectory,
-      this.dependencies.logger,
-    );
+    group.toggle(rendered > 0);
   }
 
   private buildSidecarInstallActionDeps(): SidecarInstallActionDeps {
     return {
       app: this.app,
       feedback: this.dependencies.feedback,
-      isDictationBusy: this.dependencies.isDictationBusy,
       logger: this.dependencies.logger,
       modelInstallManager: this.dependencies.modelInstallManager,
       pluginVersion: this.dependencies.pluginVersion,
       refreshSettingsTab: () => {
-        this.display();
+        this.refreshSettingsTab();
       },
       restartSidecar: this.dependencies.restartSidecar,
       sidecarConnection: this.dependencies.sidecarConnection,
       sidecarInstallManager: this.dependencies.sidecarInstallManager,
+      sidecarLifecycleGate: this.dependencies.sidecarLifecycleGate,
     };
   }
 }

@@ -7,7 +7,8 @@ usage() {
   cat <<'EOF'
 Usage: bash scripts/build-cuda.sh [OPTIONS]
 
-Build the CUDA-enabled native sidecar (Whisper, Cohere, Moonshine, and Nemotron).
+Build all speech families with CUDA acceleration for whisper.cpp.
+ONNX Runtime families remain on their proven CPU execution path.
 Output: native/target-cuda/{debug|release}/local-dictation-sidecar
 
 Options:
@@ -37,11 +38,6 @@ require_cmd() {
   else
     command -v "$cmd" >/dev/null 2>&1 || die "required command not found: $cmd"
   fi
-}
-
-require_glob_match() {
-  local pattern=$1
-  compgen -G "$pattern" >/dev/null || die "required runtime artifact missing after build: $pattern"
 }
 
 compiler_major() {
@@ -77,18 +73,6 @@ require_cuda_supported_compiler() {
 
   if (( major > 15 )); then
     die "CUDA 13.2 does not support $label $compiler (GCC $major). Install gcc-15/g++-15 or set CC/CXX/CUDAHOSTCXX to a GCC <= 15 toolchain."
-  fi
-}
-
-stage_runtime_artifact() {
-  local artifact_path=$1
-  local resolved_path
-  resolved_path=$(readlink -f "$artifact_path")
-  [[ -f "$resolved_path" ]] || die "runtime artifact does not resolve to a file: $artifact_path"
-
-  if [[ "$resolved_path" != "$artifact_path" ]]; then
-    rm -f "$artifact_path"
-    cp "$resolved_path" "$artifact_path"
   fi
 }
 
@@ -142,17 +126,9 @@ export WHISPER_DONT_GENERATE_BINDINGS=1
 export WHISPER_CCACHE=OFF
 export GGML_CCACHE=OFF
 export CMAKE_ARGS="${CMAKE_ARGS:+$CMAKE_ARGS }-DWHISPER_CCACHE=OFF -DGGML_CCACHE=OFF"
-# Pin the ONNX Runtime CUDA execution-provider major so local and CI builds
-# resolve the same pyke binaries instead of auto-detecting from whatever CUDA
-# toolkit happens to be on PATH. The release config is authoritative; callers
-# may still override it explicitly for local compatibility testing.
-if [[ -z "${ORT_CUDA_VERSION:-}" ]]; then
-  require_cmd node
-  ORT_CUDA_VERSION=$(node scripts/read-release-build-config.mjs --field ortCudaVersion)
-fi
-export ORT_CUDA_VERSION
 
 require_cmd cargo
+require_cmd node
 require_cmd rustc
 require_cmd "$CC"
 require_cmd "$CXX"
@@ -215,7 +191,7 @@ args=(
   --locked
   --manifest-path "$MANIFEST"
   --target-dir "$target_dir"
-  --features gpu-cuda,gpu-ort-cuda
+  --features engine-whisper,engine-cohere-transcribe,engine-moonshine,engine-nemotron-asr,engine-pocket-tts,engine-supertonic,gpu-cuda
   -j "$jobs"
   --config "host.linker=\"${CC}\""
   --config "host.rustflags=[\"-C\",\"link-arg=-fuse-ld=bfd\"]"
@@ -234,12 +210,7 @@ cargo "${args[@]}"
 binary="$target_dir/$profile/local-dictation-sidecar"
 [[ -f "$binary" ]] || die "build completed but binary not found at $binary"
 
-while IFS= read -r provider; do
-  require_glob_match "$target_dir/$profile/${provider}*"
-  stage_runtime_artifact "$target_dir/$profile/$provider"
-done < <(node "$REPO_ROOT/scripts/list-cuda-artifacts.mjs" providers linux)
-
 while IFS= read -r runtime; do
   copy_resolved_artifact "$cuda_lib/$runtime" "$target_dir/$profile/$runtime"
-done < <(node "$REPO_ROOT/scripts/list-cuda-artifacts.mjs" runtime linux)
+done < <(node "$REPO_ROOT/scripts/list-cuda-artifacts.mjs" linux)
 printf 'Done: %s\n' "$binary"

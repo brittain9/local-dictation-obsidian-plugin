@@ -15,6 +15,7 @@ import {
   LLM_USER_PRESET_MAX_DESCRIPTION_CHARS,
   LLM_USER_PRESET_MAX_LABEL_CHARS,
 } from '../settings/plugin-settings';
+import { t } from '../shared/i18n';
 import { type BoundedNumberOptions, validateBoundedNumber } from './validated-number-setting';
 
 export interface LlmPresetDraft {
@@ -28,6 +29,11 @@ export interface LlmPresetDraft {
   temperature: string;
   timing: 'either' | LlmPresetTiming;
   useNoteContext: 'inherit' | 'on' | 'off';
+}
+
+export interface DuplicateLabelCopy {
+  readonly copy: string;
+  readonly numberedCopy: (number: number) => string;
 }
 
 export type PresetDraftResult =
@@ -51,16 +57,44 @@ export function emptyPresetDraft(): LlmPresetDraft {
 // copy numbers up from its base instead of stacking suffixes. The base label
 // is truncated first so the suffix survives the length cap; slicing
 // afterwards would silently reproduce an existing name.
-export function duplicateLabel(label: string, existingLabels: readonly string[]): string {
+export function duplicateLabel(
+  label: string,
+  existingLabels: readonly string[],
+  copy: DuplicateLabelCopy = localizedDuplicateLabelCopy(),
+): string {
   const taken = new Set(existingLabels.map((existing) => existing.trim().toLowerCase()));
-  const base = label.replace(/ \(copy(?: \d+)?\)$/, '');
+  const base = label.replace(duplicateSuffixPattern(copy), '');
   for (let attempt = 1; ; attempt += 1) {
-    const suffix = attempt === 1 ? ' (copy)' : ` (copy ${attempt})`;
+    const suffix = attempt === 1 ? copy.copy : copy.numberedCopy(attempt);
     const candidate = `${base.slice(0, LLM_USER_PRESET_MAX_LABEL_CHARS - suffix.length)}${suffix}`;
     if (!taken.has(candidate.toLowerCase())) {
       return candidate;
     }
   }
+}
+
+function localizedDuplicateLabelCopy(): DuplicateLabelCopy {
+  return {
+    copy: t('llm.preset.copySuffix'),
+    numberedCopy: (number) => t('llm.preset.copySuffixNumbered', { number }),
+  };
+}
+
+function duplicateSuffixPattern(copy: DuplicateLabelCopy): RegExp {
+  const sentinel = 987654321;
+  const numberedPattern = escapeRegExp(copy.numberedCopy(sentinel)).replace(
+    String(sentinel),
+    '\\d+',
+  );
+  // Preset labels persist when Obsidian's UI locale changes. Keep recognizing
+  // the English source suffix as well as the active locale so an existing
+  // "(copy)" label does not start stacking translated suffixes.
+  const englishPattern = String.raw` \(copy(?: \d+)?\)`;
+  return new RegExp(`(?:${escapeRegExp(copy.copy)}|${numberedPattern}|${englishPattern})$`, 'iu');
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&');
 }
 
 export function draftFromPreset(preset: LlmPreset): LlmPresetDraft {
@@ -89,13 +123,13 @@ export function validatePresetDraft(
 ): PresetDraftResult {
   const label = draft.label.trim().slice(0, LLM_USER_PRESET_MAX_LABEL_CHARS);
   if (label.length === 0) {
-    return { kind: 'error', message: 'Enter a name for this preset.' };
+    return { kind: 'error', message: t('llm.preset.validation.nameRequired') };
   }
   if (existingLabels.some((existing) => existing.toLowerCase() === label.toLowerCase())) {
-    return { kind: 'error', message: 'A preset with that name already exists.' };
+    return { kind: 'error', message: t('llm.preset.validation.nameExists') };
   }
   if (draft.prompt.trim().length === 0) {
-    return { kind: 'error', message: 'Enter a prompt for this preset.' };
+    return { kind: 'error', message: t('llm.preset.validation.promptRequired') };
   }
 
   const minWords = parseOptionalBoundedNumber(draft.minWords, {
@@ -106,7 +140,7 @@ export function validatePresetDraft(
   if (minWords === 'invalid') {
     return {
       kind: 'error',
-      message: `Min words must be a whole number between 0 and ${LLM_MIN_WORDS_MAX}.`,
+      message: t('llm.preset.validation.minimumWords', { max: LLM_MIN_WORDS_MAX }),
     };
   }
   const temperature = parseOptionalBoundedNumber(draft.temperature, {
@@ -116,7 +150,7 @@ export function validatePresetDraft(
   if (temperature === 'invalid') {
     return {
       kind: 'error',
-      message: `Temperature must be a number between 0 and ${LLM_TEMPERATURE_MAX}.`,
+      message: t('llm.preset.validation.temperature', { max: LLM_TEMPERATURE_MAX }),
     };
   }
 
@@ -144,7 +178,9 @@ export function validatePresetDraft(
   };
 }
 
-export const MAX_PRESETS_MESSAGE = `You can save up to ${LLM_USER_PRESET_MAX_COUNT} presets. Delete one first.`;
+export const MAX_PRESETS_MESSAGE = t('llm.preset.validation.maximumCount', {
+  max: LLM_USER_PRESET_MAX_COUNT,
+});
 
 export interface PresetSaveOutcome {
   error: string | null;
@@ -163,7 +199,7 @@ export function applyPresetDraftSave(
   const label = draft.label.trim().toLowerCase();
   if (LLM_BUILTIN_PRESETS.some((preset) => preset.label.toLowerCase() === label)) {
     return {
-      error: 'That name is used by a built-in preset — choose a different name.',
+      error: t('llm.preset.validation.builtinName'),
       state,
     };
   }

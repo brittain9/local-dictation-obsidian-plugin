@@ -14,6 +14,7 @@ import {
   MIN_LLM_REMOTE_TIMEOUT_SEC,
   type PluginSettings,
 } from '../settings/plugin-settings';
+import { t } from '../shared/i18n';
 import { resolveModelSettingsPresentation } from './llm-model-settings-presentation';
 import { addValidatedNumberSetting } from './validated-number-setting';
 
@@ -40,7 +41,7 @@ export class LlmModelSettingsModal extends Modal {
   }
 
   override onOpen(): void {
-    this.titleEl.setText('Model settings');
+    this.setTitle(t('llm.model.title'));
     this.render();
   }
 
@@ -56,12 +57,12 @@ export class LlmModelSettingsModal extends Modal {
     this.addNumberField('llmPostprocessTemperature', {
       desc:
         presentation.temperature.presetLabel === null
-          ? 'Sampling variation. 0 is deterministic; higher values are more varied.'
-          : `Managed by “${presentation.temperature.presetLabel}”. Edit that preset to change this value.`,
+          ? t('llm.model.temperature.description')
+          : t('llm.managedByPreset', { preset: presentation.temperature.presetLabel }),
       disabled: presentation.temperature.presetLabel !== null,
       max: LLM_TEMPERATURE_MAX,
       min: 0,
-      name: 'Temperature',
+      name: t('llm.model.temperature.name'),
       step: 0.1,
       value:
         presentation.temperature.presetLabel !== null
@@ -71,26 +72,26 @@ export class LlmModelSettingsModal extends Modal {
 
     if (presentation.remoteThresholdChars !== null) {
       this.addNumberField('llmRemoteThresholdChars', {
-        desc: 'Transcript length that sends Auto transforms to OpenRouter (characters).',
+        desc: t('llm.model.remoteThreshold.description'),
         integer: true,
         max: MAX_LLM_REMOTE_THRESHOLD_CHARS,
         min: MIN_LLM_REMOTE_THRESHOLD_CHARS,
-        name: 'Remote routing threshold',
+        name: t('llm.model.remoteThreshold.name'),
       });
     }
 
     if (presentation.remoteTimeoutSec !== null) {
       this.addNumberField('llmRemoteTimeoutSec', {
-        desc: 'Stop waiting for OpenRouter after this many seconds. The original transcript is kept.',
+        desc: t('llm.model.remoteTimeout.description'),
         integer: true,
         max: MAX_LLM_REMOTE_TIMEOUT_SEC,
         min: MIN_LLM_REMOTE_TIMEOUT_SEC,
-        name: 'Remote timeout',
+        name: t('llm.model.remoteTimeout.name'),
       });
     }
 
     new Setting(this.contentEl).addButton((button) => {
-      button.setButtonText('Reset').onClick(async () => {
+      button.setButtonText(t('common.reset')).onClick(async () => {
         this.draft = draftFromSettings(DEFAULT_PLUGIN_SETTINGS);
         this.render();
         await this.autoSaver.persist(this.draft);

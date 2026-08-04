@@ -1,17 +1,18 @@
 # System Architecture
 
-Local Dictation is an Obsidian plugin that turns speech into text entirely
-on-device. Audio flows from a capture source through a browser audio layer,
-across a binary protocol into a native Rust sidecar, and back as a transcript
-that the plugin renders into the active editor.
+Speech Kit is an Obsidian plugin that handles voice and language workflows
+entirely on-device. Dictation audio crosses a binary protocol into a native
+Rust sidecar and returns as text. Read-aloud text takes the inverse path and
+returns as audio for playback in Obsidian. Text translation runs inside an
+isolated WebAssembly worker in the plugin process.
 
 The split is deliberate:
 
-- **The plugin (TypeScript, `src/`)** owns Obsidian UX — capture, settings,
-  orchestration, the optional LLM transform, rendering, and editor insertion.
-- **The sidecar (Rust, `native/`)** owns everything between "audio in" and
-  "transcript out" — voice-activity detection, inference, the post-engine stage
-  chain, and optional speaker diarization.
+- **The plugin (TypeScript, `src/`)** owns Obsidian UX — capture and playback,
+  settings, orchestration, Markdown extraction, local translation, the
+  optional LLM transform, rendering, and editor insertion.
+- **The sidecar (Rust, `native/`)** owns local speech inference — the complete
+  audio-to-text pipeline plus text-to-audio synthesis and speed processing.
 
 ```mermaid
 flowchart LR
@@ -20,6 +21,9 @@ flowchart LR
         CFG["Session config + commands"]
         LLM["LLM transform<br/>(optional · Ollama / OpenRouter)"]
         REND["Render + insert<br/>(timestamps, formatting, speaker labels)"]
+        TEXT["Markdown extraction<br/>+ sentence chunks"]
+        MT["Markdown segmentation<br/>+ Bergamot WASM worker"]
+        PLAY["Web Audio playback"]
     end
 
     subgraph Sidecar ["Native sidecar (Rust)"]
@@ -27,17 +31,21 @@ flowchart LR
         INF["Inference · engine registry"]
         STAGE["Post-engine stages<br/>(hallucination filter)"]
         DIA["Diarization<br/>(optional)"]
+        SYNTH["Pocket TTS / Supertonic synthesis<br/>+ time stretch"]
         VAD --> INF --> STAGE --> DIA
     end
 
     CAP -->|"stdin: audio frames"| VAD
     CFG -->|"stdin: JSON commands"| VAD
     DIA -->|"stdout: transcript_ready"| LLM --> REND
+    TEXT -->|"stdin: start_synthesis"| SYNTH
+    SYNTH -->|"stdout: model-native PCM"| PLAY
+    REND -->|"explicit translate command"| MT -->|"preview + atomic edit"| REND
 ```
 
 The plugin and sidecar talk over a single framed byte stream on the sidecar's
-stdin/stdout. Audio frames and JSON commands share stdin; JSON events come back
-on stdout. `transcript_ready` carries revisioned text. Batch families emit one
+stdin/stdout. Dictation audio frames and JSON commands share stdin; JSON events
+and read-aloud PCM frames come back on stdout. `transcript_ready` carries revisioned text. Batch families emit one
 final revision per utterance; streaming families can emit changed partial
 revisions before the final. LLM transforms and editor rendering remain plugin
 concerns.
@@ -92,7 +100,7 @@ sequenceDiagram
     participant S as Sidecar
 
     Note over P,S: stdin — audio frames + JSON commands
-    Note over P,S: stdout — JSON events only
+    Note over P,S: stdout — JSON events + synthesis PCM
 
     P->>S: audio frame
     P->>S: start_session
@@ -100,6 +108,9 @@ sequenceDiagram
     S->>P: session_state_changed
     P->>S: audio frame
     S->>P: transcript_ready
+    P->>S: start_synthesis
+    S->>P: synthesis_started
+    S->>P: synthesis_chunk_meta + PCM frame
 ```
 
 The sidecar is spawned as a subprocess of Obsidian (`child_process.spawn`,
@@ -109,7 +120,9 @@ no WebSocket, no IPC library. `FramedMessageParser` (TS) and `read_frame` (Rust)
 reassemble frames across chunk boundaries.
 
 - `stdin` (TS → Rust): audio frames (`0x02`) and JSON command frames (`0x01`).
-- `stdout` (Rust → TS): JSON event frames (`0x01`) only.
+- `stdout` (Rust → TS): JSON event frames (`0x01`) and read-aloud PCM16LE
+  frames (`0x03`). A synthesis frame starts with little-endian
+  `u32 synthesisId` + `u32 seq`, followed by mono PCM.
 
 **Commands (TS → Rust):**
 
@@ -129,6 +142,9 @@ reassemble frames across chunk boundaries.
 | `install_model` | Start a model download + install |
 | `cancel_model_install` | Cancel a pending install |
 | `remove_model` | Delete an installed model |
+| `start_synthesis` | Start read aloud for ordered text chunks, model, voice, language, and speed |
+| `cancel_synthesis` | Cancel the matching synthesis session immediately |
+| `synthesis_playback_position` | Acknowledge the last played chunk for audio-ahead flow control |
 
 **Events (Rust → TS):**
 
@@ -151,6 +167,10 @@ reassemble frames across chunk boundaries.
 | `model_probe_result` | Availability check + merged capabilities for the selection |
 | `model_install_update` | Install progress |
 | `model_removed` | Deletion confirmation |
+| `synthesis_started` | Synthesis accepted, including the output sample rate |
+| `synthesis_chunk_meta` | Sequence, source range, and duration for the following PCM frame |
+| `synthesis_complete` | All synthesis audio has been produced |
+| `synthesis_error` | Typed failure for one synthesis session |
 
 Transport latency is sub-millisecond per frame; the main loop polls at 10 ms.
 
@@ -254,27 +274,34 @@ the model, and produces timestamped text segments.
 | Family adapter | `ModelFamilyAdapter` | Model shape: graph I/O, tokenizer, prompt tokens, audio limits, probe rules |
 | Loaded batch model | `LoadedModel` | Per-session batch inference state; `transcribe(&TranscriptionRequest)` |
 | Loaded streaming model | `StreamingModel` | Per-utterance PCM acceptance, partial decode, final decode, reset |
+| Loaded synthesis model | `SynthesisModel` | Text + voice to mono PCM for read aloud |
 
 `EngineRegistry::build()` is the single registration site. Worker dispatch uses
 `adapter.load → loaded.transcribe` for batch families and
 `adapter.load_streaming → accept_audio / partial / finalize_utterance` for a
 streaming family.
+Pocket TTS and Supertonic use
+`adapter.load_synthesis → synthesis_model.synthesize` on a separate synthesis
+worker, so they do not enter the dictation session pipeline.
 Capabilities reach the plugin two ways: inventory (`system_info`) and
-per-selection merge (`model_probe_result.mergedCapabilities`). Each runtime probes
-its accelerators at startup — `whisper_cpp` checks for a usable Metal or CUDA
-device, `onnx_runtime` tries to register the ONNX Runtime CUDA provider — and
-reports what's actually available.
+per-selection merge (`model_probe_result.mergedCapabilities`). `whisper_cpp`
+advertises the Metal or CUDA backend compiled into the sidecar; this is a
+configured route, not observation of the backend after model load. The plugin
+separately checks NVIDIA compatibility before recommending the CUDA sidecar.
+The production `onnx_runtime` integration is CPU-only. The tested ONNX ASR
+exports were slower or unsafe with the generic CUDA execution provider; other
+families remain on CPU without an unverified acceleration claim.
 
 **Compiled runtimes and adapters:**
 
 | Runtime | Crate | Model format | Adapter |
 |---|---|---|---|
 | `whisper_cpp` | whisper-rs (whisper.cpp) | GGML `.bin` | `whisper` |
-| `onnx_runtime` | ort (ONNX Runtime) | ONNX / ORT | `cohere_transcribe`, `moonshine`, `nemotron_asr` |
+| `onnx_runtime` | ort (ONNX Runtime) | ONNX / ORT | `cohere_transcribe`, `moonshine`, `nemotron_asr`, `pocket_tts`, `supertonic` |
 
 Cargo features: `engine-whisper`, `engine-cohere-transcribe`,
-`engine-moonshine`, `engine-nemotron-asr`, `gpu-metal`, `gpu-cuda`,
-`gpu-ort-cuda`. A missing
+`engine-moonshine`, `engine-nemotron-asr`, `engine-pocket-tts`,
+`engine-supertonic`, `gpu-metal`, `gpu-cuda`. A missing
 `(runtimeId, familyId)` pair surfaces as an `unsupported_engine` error rather
 than a silent failure.
 
@@ -315,7 +342,9 @@ than a silent failure.
 | Moonshine Tiny | `onnx_runtime` · `moonshine` | Quantized | 49 MB | Streaming (live), 34M params |
 | Moonshine Small | `onnx_runtime` · `moonshine` | Quantized | 157 MB | Streaming (live), balanced, 123M params |
 | Moonshine Medium | `onnx_runtime` · `moonshine` | Quantized | 289 MB | Streaming (live), 245M params |
-| Nemotron 3.5 ASR 560 ms | `onnx_runtime` · `nemotron_asr` | INT8 | 651 MB | Experimental multilingual streaming |
+| Nemotron 3.5 ASR 560 ms | `onnx_runtime` · `nemotron_asr` | INT8 | 651 MB | Multilingual streaming |
+| Supertonic 3 | `onnx_runtime` · `supertonic` | ONNX | 398 MB | Read aloud in eight app languages, 10 voices |
+| Firefox Translations | `bergamot_wasm` · `firefox_translations` | Bergamot | 526 MB | 14 English-anchored local translation directions |
 
 Moonshine models are streaming (live-dictation) entries in the managed catalog,
 installed through Manage Models like any other model. Each is a multi-file ORT
@@ -325,7 +354,7 @@ SHA-256 hashes. They are English-only and do not apply speaker labels. See
 [`docs/guides/moonshine-live-testing.md`](guides/moonshine-live-testing.md) for
 install and manual acceptance testing.
 
-Nemotron 3.5 ASR is a separate experimental managed entry; Moonshine Small
+Nemotron 3.5 ASR is a separate managed entry; Moonshine Small
 remains the recommended live-dictation default. Its encoder, decoder, joiner,
 and tokenizer are pinned by revision, size, and SHA-256. The adapter supports
 the 560 ms int8 export with verified manual and automatic language prompts. See
@@ -415,15 +444,60 @@ The plugin consumes every accepted `transcript_ready` revision:
    to. Lives in `src/llm/`.
 2. **Render.** The transcript renderer (`src/transcript/renderer.ts`) applies the
    user's formatting (`smart` / `space` / `new_line` / `new_paragraph`), optional
-   elapsed- or wall-clock timestamps, and speaker labels. Detailed timestamp
-   mode uses engine word alignments when available (Whisper), then engine
-   segments, then falls back to the VAD phrase boundary without dropping text.
+   elapsed- or wall-clock timestamps, and speaker labels. Timestamp frequency can
+   use fixed intervals, every engine segment or VAD phrase, or Smart paragraph
+   breaks.
 3. **Insert or revise.** The first revision lands at the dictation anchor;
    later revisions compare-and-swap the tracked utterance span. Non-final text
    has a theme-neutral provisional opacity decoration. A user edit latches the
    span, clears the decoration, and prevents all later model revisions from
    overwriting it. Final, latch, and session teardown all clear provisional
    state.
+
+---
+
+### Stage 8: Read Aloud
+
+The read-aloud path is independent from microphone capture and transcription:
+
+1. The plugin selects the active text scope, removes Markdown syntax, skips
+   frontmatter/code/math, and sends ordered sentence chunks with source ranges.
+2. The sidecar resolves a catalog model whose task is `tts`, loads its selected
+   voice, passes the selected dictation language, synthesizes model-native mono
+   audio (Pocket TTS at 24 kHz or Supertonic at 44.1 kHz), and applies
+   pitch-preserving speed adjustment for the supported 0.75–2.0× range.
+3. Chunk metadata and binary PCM frames share stdout. The plugin schedules them
+   through Web Audio and reports each played sequence to bound synthesis to
+   roughly 30 seconds of audio ahead.
+4. Pause suspends the playback context; Stop cancels native synthesis and clears
+   queued audio. Read aloud and dictation are mutually exclusive so playback
+   cannot feed an active capture session.
+
+The model catalog and settings keep independent `stt` and `tts` selections.
+Pocket TTS and Supertonic models and optional voices are downloaded on demand
+and verified by their pinned size and SHA-256 before activation.
+
+---
+
+### Stage 9: Local Translation
+
+Translation is independent from the sidecar inference protocol:
+
+1. `TranslationController` captures a selection or whole-note snapshot.
+2. A pure TypeScript segmentation pass protects Markdown structure, code,
+   math, links, tags, frontmatter, and whitespace while extracting prose.
+3. The plugin resolves the exact installed Firefox Translations artifacts for
+   the explicit language pair and transfers their buffers to a Blob-backed Web
+   Worker.
+4. Bergamot WebAssembly translates all prose spans locally in one batch.
+5. The worker terminates after completion or immediately on cancellation.
+6. The modal previews the rebuilt Markdown. Replace is allowed only if the
+   original source is unchanged; insert and copy remain available otherwise.
+
+The sidecar catalog still owns SHA-256-pinned installation and removal. Its
+`bergamot_wasm` runtime and `firefox_translations` family describe capability
+and probe the managed install, but native inference is intentionally refused.
+No note text crosses the sidecar or network during translation.
 
 ---
 
@@ -476,7 +550,7 @@ A representative slice of user-facing settings (full list and defaults in
 | `transcriptFormatting` | `smart` | How utterance boundaries render |
 | `timestampsEnabled` | `false` | Render timestamps in the note |
 | `timestampClock` | `elapsed` | `elapsed` session time vs `wallclock` |
-| `timestampDensity` | `sparse` | `sparse` (interval), `every_utterance`, or model-aware `detailed` |
+| `timestampDensity` | `sparse` | `sparse` (interval), `every_utterance`, or `paragraph` |
 | `llmPostprocessMode` | `off` | LLM transform: `off` / `per_utterance` / `batch` |
 | `llmRouting` | `local` | `local` (Ollama) vs `remote` (OpenRouter) |
 | `llmRemoteThresholdChars` | `6000` | Size above which jobs auto-route to OpenRouter |

@@ -18,7 +18,7 @@ use realfft::num_complex::Complex;
 use realfft::{RealFftPlanner, RealToComplex};
 
 use crate::engine::capabilities::{
-    LanguageSupport, ModelFamilyCapabilities, ModelFamilyId, RuntimeId,
+    LanguageSupport, ModelFamilyCapabilities, ModelFamilyId, ModelTask, RuntimeId,
 };
 use crate::engine::traits::{
     LoadedModel, ModelFamilyAdapter, StreamingModel, StreamingPartialCadence,
@@ -117,6 +117,13 @@ const SUPPORTED_LANGUAGE_PROMPTS: &[LanguagePrompt] = &[
 
 static CAPABILITIES: LazyLock<ModelFamilyCapabilities> =
     LazyLock::new(|| ModelFamilyCapabilities {
+        task: ModelTask::Stt,
+        // ORT partitions the int8 encoder across CUDA and CPU with hundreds of
+        // inserted copies; the resulting hybrid session is slower than CPU.
+        supports_hardware_acceleration: false,
+        available_voices: Vec::new(),
+        supports_speed_control: false,
+        output_sample_rate: None,
         supports_segment_timestamps: false,
         supports_word_timestamps: false,
         supports_initial_prompt: false,
@@ -1136,6 +1143,7 @@ impl LoadedNemotronModel {
             }]
         };
         Ok(EngineTranscriptOutput {
+            detected_language: None,
             segments,
             diagnostics: Vec::new(),
         })

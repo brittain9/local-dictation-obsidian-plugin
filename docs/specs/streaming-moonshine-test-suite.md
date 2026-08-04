@@ -3,7 +3,6 @@
 Status: implemented — with two design assumptions falsified during implementation
 (see **Implementation outcome** below). The suite's guards caught both.
 Branch: `test/streaming-moonshine-tests`
-Companion plan: `docs/specs/streaming-moonshine-test-suite-plan.md`
 
 ## Summary
 

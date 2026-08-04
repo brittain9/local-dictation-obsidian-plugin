@@ -19,6 +19,7 @@ import { isRecord } from '../shared/type-guards';
 
 export const JSON_FRAME_KIND = 0x01;
 export const AUDIO_FRAME_KIND = 0x02;
+export const SYNTHESIS_AUDIO_FRAME_KIND = 0x03;
 export const FRAME_HEADER_LENGTH = 5;
 export const SESSION_ID_BYTES = 16;
 // Must match `MAX_FRAME_PAYLOAD` in native/src/protocol.rs. Symmetric caps stop a
@@ -163,11 +164,44 @@ export interface RemoveModelCommand extends EnvelopeBase<'remove_model'> {
 }
 
 export interface InstallModelCommand extends EnvelopeBase<'install_model'> {
+  artifactIds?: string[];
   familyId: ModelFamilyId;
   installId: string;
   modelId: string;
   modelStorePathOverride?: string;
   runtimeId: RuntimeId;
+}
+
+export interface SourceRange {
+  from: number;
+  to: number;
+}
+
+export interface SynthesisTextChunk {
+  sourceRange: SourceRange;
+  text: string;
+}
+
+export type SynthesisLanguage = 'de' | 'en' | 'es' | 'fr' | 'it' | 'ja' | 'na' | 'nl' | 'pt';
+
+export interface StartSynthesisCommand extends EnvelopeBase<'start_synthesis'> {
+  chunks: SynthesisTextChunk[];
+  language: SynthesisLanguage;
+  modelSelection: SelectedModel;
+  modelStorePathOverride?: string;
+  speed: number;
+  synthesisId: number;
+  voiceId: string;
+}
+
+export interface CancelSynthesisCommand extends EnvelopeBase<'cancel_synthesis'> {
+  synthesisId: number;
+}
+
+export interface SynthesisPlaybackPositionCommand
+  extends EnvelopeBase<'synthesis_playback_position'> {
+  playedThroughSeq: number;
+  synthesisId: number;
 }
 
 export interface CancelModelInstallCommand extends EnvelopeBase<'cancel_model_install'> {
@@ -188,6 +222,7 @@ export type GetSystemInfoCommand = EnvelopeBase<'get_system_info'>;
 
 export type SidecarCommand =
   | CancelModelInstallCommand
+  | CancelSynthesisCommand
   | CancelSessionCommand
   | ContextResponseCommand
   | GetModelStoreCommand
@@ -201,6 +236,8 @@ export type SidecarCommand =
   | RemoveModelCommand
   | ShutdownCommand
   | StartSessionCommand
+  | StartSynthesisCommand
+  | SynthesisPlaybackPositionCommand
   | StopSessionCommand;
 
 export interface HealthOkEvent extends EnvelopeBase<'health_ok'> {
@@ -238,6 +275,29 @@ export interface ModelRemovedEvent extends EnvelopeBase<'model_removed'>, ModelR
 export interface ModelInstallUpdateEvent
   extends EnvelopeBase<'model_install_update'>,
     ModelInstallUpdateRecord {}
+
+export interface SynthesisStartedEvent extends EnvelopeBase<'synthesis_started'> {
+  sampleRate: number;
+  synthesisId: number;
+}
+
+export interface SynthesisChunkMetaEvent extends EnvelopeBase<'synthesis_chunk_meta'> {
+  durationMs: number;
+  seq: number;
+  sourceRange: SourceRange;
+  synthesisId: number;
+}
+
+export interface SynthesisCompleteEvent extends EnvelopeBase<'synthesis_complete'> {
+  synthesisId: number;
+}
+
+export interface SynthesisErrorEvent extends EnvelopeBase<'synthesis_error'> {
+  code: string;
+  details?: string;
+  message: string;
+  synthesisId: number;
+}
 
 export interface SessionStartedEvent extends EnvelopeBase<'session_started'> {
   mode: ListeningMode;
@@ -321,6 +381,10 @@ export type SidecarEvent =
   | SessionStoppedEvent
   | SystemAudioProbeResultEvent
   | SystemInfoEvent
+  | SynthesisChunkMetaEvent
+  | SynthesisCompleteEvent
+  | SynthesisErrorEvent
+  | SynthesisStartedEvent
   | TranscriptionQueueChangedEvent
   | TranscriptReadyEvent
   | WarningEvent;
@@ -397,6 +461,27 @@ export function createCancelModelInstallCommand(installId: string): CancelModelI
   return {
     ...createEnvelope('cancel_model_install'),
     installId,
+  };
+}
+
+export function createStartSynthesisCommand(
+  payload: Omit<StartSynthesisCommand, 'type'>,
+): StartSynthesisCommand {
+  return { ...createEnvelope('start_synthesis'), ...payload };
+}
+
+export function createCancelSynthesisCommand(synthesisId: number): CancelSynthesisCommand {
+  return { ...createEnvelope('cancel_synthesis'), synthesisId };
+}
+
+export function createSynthesisPlaybackPositionCommand(
+  synthesisId: number,
+  playedThroughSeq: number,
+): SynthesisPlaybackPositionCommand {
+  return {
+    ...createEnvelope('synthesis_playback_position'),
+    playedThroughSeq,
+    synthesisId,
   };
 }
 
@@ -487,7 +572,14 @@ export interface AudioFrame {
   sessionId: string;
 }
 
-export type ParsedFrame<TEnvelope> = AudioFrame | JsonFrame<TEnvelope>;
+export interface SynthesisAudioFrame {
+  kind: typeof SYNTHESIS_AUDIO_FRAME_KIND;
+  pcm16le: Uint8Array;
+  seq: number;
+  synthesisId: number;
+}
+
+export type ParsedFrame<TEnvelope> = AudioFrame | JsonFrame<TEnvelope> | SynthesisAudioFrame;
 
 const SIDECAR_EVENT_TYPE_FLAGS = {
   audio_level: 1,
@@ -505,6 +597,10 @@ const SIDECAR_EVENT_TYPE_FLAGS = {
   session_stopped: 1,
   system_audio_probe_result: 1,
   system_info: 1,
+  synthesis_chunk_meta: 1,
+  synthesis_complete: 1,
+  synthesis_error: 1,
+  synthesis_started: 1,
   transcript_ready: 1,
   transcription_queue_changed: 1,
   warning: 1,
@@ -578,6 +674,16 @@ export class FramedMessageParser<TEnvelope> {
             frameBytes,
             kind,
             sessionId,
+          });
+        } else if (kind === SYNTHESIS_AUDIO_FRAME_KIND) {
+          if (payload.byteLength < 8 || (payload.byteLength - 8) % 2 !== 0) {
+            throw new Error(`Invalid synthesis audio payload length: ${payload.byteLength}`);
+          }
+          frames.push({
+            kind,
+            pcm16le: payload.slice(8),
+            seq: readUint32LE(payload, 4),
+            synthesisId: readUint32LE(payload, 0),
           });
         } else {
           throw new Error(`Unsupported sidecar frame kind: ${kind}`);

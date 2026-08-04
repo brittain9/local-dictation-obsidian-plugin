@@ -23,6 +23,7 @@ import type { Session, SessionAcceptResult } from '../session/session';
 import type { StageId, StageOutcome, TranscriptRevision } from '../session/session-journal';
 import type { PluginSettings, SmartParagraphPauseSettings } from '../settings/plugin-settings';
 import { formatErrorMessage } from '../shared/format-utils';
+import { t } from '../shared/i18n';
 import type { PluginLogger } from '../shared/plugin-logger';
 import { truncateLeadingText } from '../shared/text-truncation';
 import type { FeedbackRequest, UserFeedback } from '../shared/user-feedback';
@@ -36,6 +37,12 @@ import type {
   TranscriptReadyEvent,
 } from '../sidecar/protocol';
 import { type SidecarConnection, SidecarError } from '../sidecar/sidecar-connection';
+import { localizeSidecarEvent, rawSidecarEventDetail } from '../sidecar/sidecar-event-localization';
+import {
+  SidecarLifecycleConflictError,
+  type SidecarLifecycleGate,
+  type SidecarLifecycleLease,
+} from '../sidecar/sidecar-lifecycle-gate';
 import { SidecarNotInstalledError } from '../sidecar/sidecar-paths';
 import { buildTranscriptSpans, type TranscriptRenderOptions } from '../transcript/renderer';
 
@@ -112,6 +119,7 @@ interface ManagedSession {
   pendingTranscriptWork: Set<Promise<void>>;
   phase: SessionPhase;
   session: ControllerSession;
+  speechLease: SidecarLifecycleLease;
   snapshot: ActiveSessionSnapshot;
   terminalArbitration: TerminalArbitrationState;
 }
@@ -136,6 +144,7 @@ interface DictationSessionControllerDependencies {
   createLlmRouter: (settings: PluginSettings) => LlmRouter;
   feedback: Pick<UserFeedback, 'show'>;
   getSettings: () => PluginSettings;
+  hasDictationTarget: () => boolean;
   logger?: PluginLogger;
   onLlmCleanupFailure?: (failure: LlmCleanupFailure) => void;
   onLlmCleanupSuccess?: () => void;
@@ -156,6 +165,8 @@ interface DictationSessionControllerDependencies {
     | 'startSession'
     | 'subscribe'
   >;
+  sidecarLifecycleGate: SidecarLifecycleGate;
+  stopConflictingSpeech: () => void;
 }
 
 const ANCHOR_VISIBLE_DELAY_MS = 2500;
@@ -168,52 +179,49 @@ interface FeedbackFailure {
 const FEEDBACK_FAILURES = {
   recordTranscript: {
     key: 'transcript-record-failed',
-    message: 'Could not record the transcript.',
+    message: t('notice.transcriptRecordFailed'),
   },
   microphoneDisconnected: {
     key: 'microphone-capture-ended',
-    message:
-      'Microphone disconnected. Dictation stopped and will finish processing audio already captured. Reconnect the microphone, then start dictation again.',
+    message: t('notice.microphoneDisconnected'),
   },
   sidecar: {
     key: 'sidecar-session-error',
-    message: 'The speech engine reported an error.',
+    message: t('notice.sidecarSessionError'),
   },
   surfaceDesynchronized: {
     key: 'dictation-surface-desynchronized',
-    message:
-      'Dictation stopped because the note changed in a way Local Dictation could not safely track. Start dictation again to continue.',
+    message: t('notice.surfaceDesynchronized'),
   },
   startDictation: {
     key: 'dictation-start-failed',
-    message: 'Could not start dictation.',
+    message: t('notice.dictationStartFailed'),
   },
   stopDictation: {
     key: 'dictation-stop-failed',
-    message: 'Could not stop dictation.',
+    message: t('notice.dictationStopFailed'),
   },
   targetNoteClosed: {
     key: 'dictation-target-closed',
-    message:
-      'Dictation stopped because its target note was closed or replaced. Start dictation again to continue.',
+    message: t('notice.targetNoteClosed'),
   },
   targetNoteDeleted: {
     key: 'dictation-target-deleted',
-    message:
-      'Dictation stopped because its target note was deleted. Restore or recreate the note, then start dictation again.',
+    message: t('notice.targetNoteDeleted'),
   },
   transcriptWrite: {
     key: 'transcript-write-failed',
-    message:
-      'Dictation stopped because Local Dictation could not safely write to the note. Start dictation again to continue.',
+    message: t('notice.transcriptWriteFailed'),
   },
 } as const satisfies Record<string, FeedbackFailure>;
 
 export class DictationSessionController {
   private activeSessionId: string | null = null;
   private readonly cancellationPromises = new Map<string, Promise<void>>();
+  private pendingSpeechLease: SidecarLifecycleLease | null = null;
   private readonly releaseSidecarSubscription: () => void;
   private readonly sessions = new Map<string, ManagedSession>();
+  private startRevision = 0;
   private state: DictationControllerState = 'idle';
 
   constructor(private readonly dependencies: DictationSessionControllerDependencies) {
@@ -231,14 +239,20 @@ export class DictationSessionController {
     return this.activeSessionId !== null || this.sessions.size > 0 || this.state === 'starting';
   }
 
+  isCaptureActive(): boolean {
+    return this.activeSessionId !== null || this.state === 'starting';
+  }
+
   async cancelDictation(): Promise<void> {
+    const pendingStartCancelled = this.cancelPendingStart();
+    if (pendingStartCancelled) return;
     const sessionId = this.activeSessionId ?? this.latestSessionId();
 
     if (sessionId === null) {
       this.dependencies.feedback.show({
         intent: 'information',
         key: 'dictation-not-active',
-        message: 'Dictation is not currently active.',
+        message: t('notice.dictationNotActive'),
       });
       return;
     }
@@ -247,6 +261,7 @@ export class DictationSessionController {
   }
 
   async dispose(): Promise<void> {
+    this.cancelPendingStart();
     if (this.activeSessionId !== null) {
       await this.clearActiveSession(this.activeSessionId);
     } else {
@@ -270,7 +285,7 @@ export class DictationSessionController {
       return;
     }
 
-    if (this.activeSessionId !== null) {
+    if (this.isCaptureActive()) {
       await this.stopDictation();
       return;
     }
@@ -283,10 +298,38 @@ export class DictationSessionController {
   }
 
   async startDictation(): Promise<void> {
-    if (this.activeSessionId !== null || this.sessions.size >= MAX_CONTROLLER_SESSIONS) {
+    if (this.isCaptureActive() || this.sessions.size >= MAX_CONTROLLER_SESSIONS) {
       return;
     }
 
+    let speechLease: SidecarLifecycleLease;
+    try {
+      speechLease = this.dependencies.sidecarLifecycleGate.acquireSpeech();
+    } catch (error) {
+      if (!(error instanceof SidecarLifecycleConflictError)) throw error;
+      this.dependencies.feedback.show({
+        intent: 'warning',
+        key: 'sidecar-maintenance',
+        message: t('notice.sidecarMaintenanceInProgress'),
+      });
+      return;
+    }
+
+    const releaseStartOperation = speechLease.retain();
+    this.pendingSpeechLease = speechLease;
+    try {
+      await this.startDictationWithLease(speechLease);
+    } finally {
+      if (this.pendingSpeechLease === speechLease) {
+        this.pendingSpeechLease = null;
+        speechLease.release();
+      }
+      releaseStartOperation();
+    }
+  }
+
+  private async startDictationWithLease(speechLease: SidecarLifecycleLease): Promise<void> {
+    const startRevision = ++this.startRevision;
     this.applyUiState('starting');
 
     const settings = this.dependencies.getSettings();
@@ -297,16 +340,37 @@ export class DictationSessionController {
       return;
     }
 
+    if (!this.dependencies.hasDictationTarget()) {
+      this.dependencies.feedback.show({
+        intent: 'warning',
+        key: 'dictation-target-unavailable',
+        message: t('setup.ready.openMarkdownNote'),
+      });
+      this.applyUiState('idle');
+      return;
+    }
+
     try {
-      await this.assertMicrophoneInputAvailable();
+      this.dependencies.stopConflictingSpeech();
     } catch (error) {
+      if (startRevision !== this.startRevision) return;
       this.handleError(FEEDBACK_FAILURES.startDictation, error);
       return;
     }
 
     try {
+      await this.assertMicrophoneInputAvailable();
+    } catch (error) {
+      if (startRevision !== this.startRevision) return;
+      this.handleError(FEEDBACK_FAILURES.startDictation, error);
+      return;
+    }
+    if (startRevision !== this.startRevision) return;
+
+    try {
       await this.dependencies.sidecarConnection.ensureStarted();
     } catch (error) {
+      if (startRevision !== this.startRevision) return;
       if (error instanceof SidecarNotInstalledError) {
         this.dependencies.logger?.debug('sidecar', 'sidecar not installed; prompting install');
         this.applyUiState('idle');
@@ -316,6 +380,7 @@ export class DictationSessionController {
       this.handleError(FEEDBACK_FAILURES.startDictation, error);
       return;
     }
+    if (startRevision !== this.startRevision) return;
 
     const sessionId = createSessionId();
     const snapshot = createSessionSnapshot(
@@ -364,10 +429,14 @@ export class DictationSessionController {
       pendingTranscriptWork: new Set(),
       phase: 'starting',
       session,
+      speechLease,
       snapshot,
       terminalArbitration: 'open',
     };
     this.sessions.set(sessionId, entry);
+    if (this.pendingSpeechLease === speechLease) {
+      this.pendingSpeechLease = null;
+    }
     this.activeSessionId = sessionId;
     this.dependencies.audioLevelMeter.bindSession(sessionId);
     this.dependencies.logger?.debug('session', `starting dictation session ${sessionId}`);
@@ -438,13 +507,15 @@ export class DictationSessionController {
   }
 
   async stopDictation(): Promise<void> {
+    const pendingStartCancelled = this.cancelPendingStart();
     const sessionId = this.activeSessionId;
 
     if (sessionId === null) {
+      if (pendingStartCancelled) return;
       this.dependencies.feedback.show({
         intent: 'information',
         key: 'dictation-not-active',
-        message: 'Dictation is not currently active.',
+        message: t('notice.dictationNotActive'),
       });
       return;
     }
@@ -465,6 +536,15 @@ export class DictationSessionController {
       this.disposeLocalSession(sessionId);
       this.handleError(FEEDBACK_FAILURES.stopDictation, error, entry);
     }
+  }
+
+  private cancelPendingStart(): boolean {
+    this.startRevision += 1;
+    if (this.activeSessionId !== null || this.state !== 'starting') return false;
+    this.pendingSpeechLease?.release();
+    this.pendingSpeechLease = null;
+    this.applyUiState('idle');
+    return true;
   }
 
   async handleAudioCaptureEnded(sessionId: string): Promise<void> {
@@ -622,6 +702,7 @@ export class DictationSessionController {
     entry.session.clearSessionProcessingMark();
     entry.session.dispose();
     this.sessions.delete(sessionId);
+    entry.speechLease.release();
 
     if (this.activeSessionId === sessionId) {
       this.activeSessionId = null;
@@ -779,7 +860,7 @@ export class DictationSessionController {
       return null;
     }
 
-    const glossary = entry.session.readNoteGlossary(Math.min(384, budgetChars));
+    const glossary = entry.session.readNoteGlossary(budgetChars);
     if (glossary === null) {
       return null;
     }
@@ -1067,6 +1148,15 @@ export class DictationSessionController {
       entry.phase = 'stopped';
     }
 
+    // The native session is over, so nothing after this point touches the
+    // sidecar: transcript work writes to the editor and batch cleanup calls the
+    // LLM provider. Holding the speech lease across a slow provider call would
+    // block sidecar maintenance — installs, updates, model removal — with
+    // "stop dictation first" while the engine sits idle. `release()` is
+    // idempotent, so the call in `disposeLocalSession` still covers the paths
+    // where `session_stopped` never arrives.
+    entry.speechLease.release();
+
     if (event.sessionId === this.activeSessionId) {
       this.activeSessionId = null;
       this.dependencies.audioLevelMeter.clearSession(event.sessionId);
@@ -1255,7 +1345,7 @@ export class DictationSessionController {
       // like success.
       this.dependencies.feedback.show({
         intent: 'information',
-        message: 'LLM transform returned nothing to add.',
+        message: t('notice.llmTransformEmpty'),
       });
       return;
     }
@@ -1304,8 +1394,9 @@ export class DictationSessionController {
       return;
     }
 
-    const rawDetail = event.details ? `${event.message} (${event.details})` : event.message;
-    const detail = formatSystemAudioErrorMessage(rawDetail, event.code);
+    const rawDetail = rawSidecarEventDetail(event);
+    const detail = formatSystemAudioErrorMessage(localizeSidecarEvent(event), event.code);
+    this.dependencies.logger?.warn('sidecar', rawDetail, event.code);
 
     if (event.sessionId === undefined) {
       this.handleError(FEEDBACK_FAILURES.sidecar, detail);
@@ -1328,7 +1419,7 @@ export class DictationSessionController {
         this.applyUiState('error');
       }
     } else {
-      this.dependencies.logger?.warn('session', detail);
+      this.dependencies.logger?.warn('session', rawDetail);
     }
 
     await this.cancelSession(event.sessionId);
@@ -1356,7 +1447,9 @@ export class DictationSessionController {
       return;
     }
 
-    const detail = event.details ? `${event.message} (${event.details})` : event.message;
+    const rawDetail = rawSidecarEventDetail(event);
+    const detail = localizeSidecarEvent(event);
+    this.dependencies.logger?.warn('sidecar', rawDetail, event.code);
     if (sessionId === this.activeSessionId) {
       // Queue overload is a graceful stop, not a cancellation cause. Keep its
       // warning outside terminal arbitration so a later target loss can explain
@@ -1368,7 +1461,7 @@ export class DictationSessionController {
         message: detail,
       });
     } else {
-      this.dependencies.logger?.warn('session', detail);
+      this.dependencies.logger?.warn('session', rawDetail);
     }
 
     entry.phase = 'stopping';

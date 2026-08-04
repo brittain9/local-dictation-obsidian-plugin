@@ -1,7 +1,8 @@
 # Third-Party Notices
 
-The local-dictation sidecar embeds the following model artifacts so speech
-processing works offline.
+Speech Kit embeds or downloads the following model artifacts so speech
+processing works offline. Downloaded catalog artifacts are verified against
+pinned sizes and SHA-256 hashes before activation.
 
 ## Silero voice-activity-detection model
 
@@ -122,6 +123,54 @@ USE THEREOF OR OTHER DEALINGS THEREIN.
 The Nemotron adapter's native Rust graph orchestration and feature frontend
 follow these reference implementations' published behavior. No NeMo,
 sherpa-onnx, or kaldi-native-fbank binary is linked or bundled.
+
+## Pocket TTS read-aloud models
+
+- Work: Pocket TTS
+- Creator: Kyutai
+- Model and voice-state source:
+  https://huggingface.co/kyutai/pocket-tts-without-voice-cloning/tree/e041936c75475d350b405bc870bcf7c22da4e9e6
+- Derived INT8 ONNX export:
+  https://huggingface.co/KevinAHM/pocket-tts-onnx/tree/58a6d00cf13d239b6748cb0769f35c580a8f606c
+- License: Creative Commons Attribution 4.0 International (CC BY 4.0)
+  https://creativecommons.org/licenses/by/4.0/
+
+The model catalog downloads selected Pocket TTS graphs and voice embeddings on
+demand for English, French, German, Spanish, Portuguese, and Italian read
+aloud. The derived artifacts convert and quantize the original weights to INT8
+ONNX, changing their packaging and numerical representation. They are not
+covered by this project's MIT license. No endorsement by Kyutai or the ONNX
+export author is implied.
+
+## Supertonic 3 read-aloud model
+
+- Work: Supertonic 3
+- Creator: Supertone
+- Model, ONNX graph, and voice-style source:
+  https://huggingface.co/Supertone/supertonic-3/tree/3cadd1ee6394adea1bd021217a0e650ede09a323
+- License: OpenRAIL-M
+  https://huggingface.co/Supertone/supertonic-3/blob/3cadd1ee6394adea1bd021217a0e650ede09a323/LICENSE
+
+The model catalog downloads the pinned Supertonic graphs and selected voice
+styles on demand for local read aloud. These artifacts are not covered by this
+project's MIT license; the catalog shows the model license before installation.
+No endorsement by Supertone is implied.
+
+## Firefox Translations models and Bergamot WebAssembly runtime
+
+- Work: Firefox Translations release models and Bergamot translator
+- Creators: Mozilla, the Bergamot project, and contributors
+- Model source: https://mozilla.github.io/translations/firefox-models/
+- Runtime source:
+  https://github.com/mozilla-firefox/firefox/tree/0e9cfbb4fca901314b1b18f871ae23d5adb16c0f/toolkit/components/translations/bergamot-translator
+- License: Mozilla Public License 2.0 (MPL-2.0)
+  https://www.mozilla.org/MPL/2.0/
+
+The model catalog downloads SHA-256-pinned translation models, vocabularies,
+lexicons, JavaScript glue, and the WebAssembly Bergamot runtime on demand.
+Translation then runs locally in an isolated worker. These files are not
+covered by this project's MIT license. The plugin does not modify the
+downloaded source-form JavaScript glue.
 
 ## FLEURS multilingual speech fixtures
 

@@ -11,9 +11,6 @@ inputs:
   ggml-native:
     description: Portable GGML native-build setting.
     required: true
-  ort-cuda-version:
-    description: ONNX Runtime CUDA execution-provider major.
-    required: true
   cuda-toolkit-version:
     description: CUDA toolkit version used by release builds.
     required: true
@@ -42,11 +39,9 @@ runs:
       env:
         CMAKE_CUDA_ARCHITECTURES_INPUT: ${{ inputs.cuda-architectures }}
         GGML_NATIVE_INPUT: ${{ inputs.ggml-native }}
-        ORT_CUDA_VERSION_INPUT: ${{ inputs.ort-cuda-version }}
         RUST_TOOLCHAIN_INPUT: ${{ inputs.rust-toolchain }}
       run: |
         "GGML_NATIVE=$env:GGML_NATIVE_INPUT" | Out-File -FilePath $env:GITHUB_ENV -Append
-        "ORT_CUDA_VERSION=$env:ORT_CUDA_VERSION_INPUT" | Out-File -FilePath $env:GITHUB_ENV -Append
         "CMAKE_CUDA_ARCHITECTURES=$env:CMAKE_CUDA_ARCHITECTURES_INPUT" | Out-File -FilePath $env:GITHUB_ENV -Append
         "RUST_TOOLCHAIN=$env:RUST_TOOLCHAIN_INPUT" | Out-File -FilePath $env:GITHUB_ENV -Append
 

@@ -18,6 +18,10 @@ import type {
   SidecarEvent,
   StartSessionCommand,
 } from '../src/sidecar/protocol';
+import {
+  SidecarLifecycleConflictError,
+  SidecarLifecycleGate,
+} from '../src/sidecar/sidecar-lifecycle-gate';
 import type { TranscriptRenderOptions } from '../src/transcript/renderer';
 import { createFakeLlmRouter, createUserPreset } from './fixtures/llm';
 
@@ -157,6 +161,225 @@ class FakeAudioLevelMeter {
 }
 
 describe('DictationSessionController', () => {
+  it('refuses a start synchronously while sidecar maintenance is active', async () => {
+    const sidecarLifecycleGate = new SidecarLifecycleGate();
+    const mutation = sidecarLifecycleGate.acquireMutation();
+    const feedback = { show: vi.fn() };
+    const sidecarConnection = new FakeSidecarConnection();
+    const controller = createController({
+      feedback,
+      sidecarConnection,
+      sidecarLifecycleGate,
+    });
+
+    await controller.startDictation();
+
+    expect(sidecarConnection.ensureStarted).not.toHaveBeenCalled();
+    expect(feedback.show).toHaveBeenCalledWith({
+      intent: 'warning',
+      key: 'sidecar-maintenance',
+      message:
+        'The speech engine is being installed or restarted. Wait for it to finish, then try again.',
+    });
+    mutation.release();
+  });
+
+  it('holds its speech lease until a cancelled asynchronous start has unwound', async () => {
+    const sidecarLifecycleGate = new SidecarLifecycleGate();
+    const sidecarConnection = new FakeSidecarConnection();
+    let completeEnsureStarted: (() => void) | undefined;
+    sidecarConnection.ensureStarted.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          completeEnsureStarted = resolve;
+        }),
+    );
+    const controller = createController({ sidecarConnection, sidecarLifecycleGate });
+
+    const starting = controller.startDictation();
+    await vi.waitFor(() => expect(sidecarConnection.ensureStarted).toHaveBeenCalledOnce());
+    expect(() => sidecarLifecycleGate.acquireMutation()).toThrow(SidecarLifecycleConflictError);
+
+    await controller.cancelDictation();
+    expect(() => sidecarLifecycleGate.acquireMutation()).toThrow(SidecarLifecycleConflictError);
+
+    completeEnsureStarted?.();
+    await starting;
+    const mutation = sidecarLifecycleGate.acquireMutation();
+    mutation.release();
+  });
+
+  it('holds speech through dictation drain and releases it on terminal cleanup', async () => {
+    const sidecarLifecycleGate = new SidecarLifecycleGate();
+    const sidecarConnection = new FakeSidecarConnection();
+    const controller = createController({ sidecarConnection, sidecarLifecycleGate });
+
+    await controller.startDictation();
+    const sessionId = sidecarConnection.startSession.mock.calls[0]?.[0].sessionId ?? '';
+    expect(() => sidecarLifecycleGate.acquireMutation()).toThrow(SidecarLifecycleConflictError);
+
+    await controller.stopDictation();
+    expect(() => sidecarLifecycleGate.acquireMutation()).toThrow(SidecarLifecycleConflictError);
+
+    sidecarConnection.emit({ reason: 'user_stop', sessionId, type: 'session_stopped' });
+    await vi.waitFor(() => {
+      const mutation = sidecarLifecycleGate.acquireMutation();
+      mutation.release();
+    });
+  });
+
+  it('warns and stays idle before touching microphone or sidecar prerequisites without a target', async () => {
+    const captureStream = new FakeCaptureStream();
+    const countAudioInputDevices = vi.fn(async () => 1);
+    const createSession = vi.fn();
+    const feedback = { show: vi.fn() };
+    const sidecarConnection = new FakeSidecarConnection();
+    const stopConflictingSpeech = vi.fn();
+    const controller = createController({
+      captureStream,
+      countAudioInputDevices,
+      createSession,
+      feedback,
+      hasDictationTarget: () => false,
+      sidecarConnection,
+      stopConflictingSpeech,
+    });
+
+    await controller.startDictation();
+
+    expect(feedback.show).toHaveBeenCalledOnce();
+    expect(feedback.show).toHaveBeenCalledWith({
+      intent: 'warning',
+      key: 'dictation-target-unavailable',
+      message: 'Open a Markdown note in editing mode, then try dictation again.',
+    });
+    expect(countAudioInputDevices).not.toHaveBeenCalled();
+    expect(captureStream.start).not.toHaveBeenCalled();
+    expect(sidecarConnection.ensureStarted).not.toHaveBeenCalled();
+    expect(sidecarConnection.startSession).not.toHaveBeenCalled();
+    expect(createSession).not.toHaveBeenCalled();
+    expect(stopConflictingSpeech).not.toHaveBeenCalled();
+    expect(controller.getState()).toBe('idle');
+  });
+
+  it('opens the model picker before checking the target when no model is selected', async () => {
+    const feedback = { show: vi.fn() };
+    const hasDictationTarget = vi.fn(() => false);
+    const onModelMissing = vi.fn();
+    const sidecarConnection = new FakeSidecarConnection();
+    const stopConflictingSpeech = vi.fn();
+    const controller = createController({
+      feedback,
+      getSettings: () => createSettings({ selectedModel: null }),
+      hasDictationTarget,
+      onModelMissing,
+      sidecarConnection,
+      stopConflictingSpeech,
+    });
+
+    await controller.startDictation();
+
+    expect(onModelMissing).toHaveBeenCalledOnce();
+    expect(hasDictationTarget).not.toHaveBeenCalled();
+    expect(feedback.show).not.toHaveBeenCalled();
+    expect(sidecarConnection.ensureStarted).not.toHaveBeenCalled();
+    expect(stopConflictingSpeech).not.toHaveBeenCalled();
+    expect(controller.getState()).toBe('idle');
+  });
+
+  it('stops conflicting speech once after preflight and before downstream prerequisites', async () => {
+    const captureStream = new FakeCaptureStream();
+    const countAudioInputDevices = vi.fn(async () => 1);
+    const createSession = vi.fn();
+    const hasDictationTarget = vi.fn(() => true);
+    const sidecarConnection = new FakeSidecarConnection();
+    const stopConflictingSpeech = vi.fn();
+    const controller = createController({
+      captureStream,
+      countAudioInputDevices,
+      createSession,
+      hasDictationTarget,
+      sidecarConnection,
+      stopConflictingSpeech,
+    });
+
+    await controller.startDictation();
+
+    expect(hasDictationTarget).toHaveBeenCalledOnce();
+    expect(stopConflictingSpeech).toHaveBeenCalledOnce();
+    const targetCallOrder = hasDictationTarget.mock.invocationCallOrder[0] ?? 0;
+    const stopCallOrder = stopConflictingSpeech.mock.invocationCallOrder[0] ?? 0;
+    expect(targetCallOrder).toBeLessThan(stopCallOrder);
+    for (const downstream of [
+      countAudioInputDevices,
+      sidecarConnection.ensureStarted,
+      createSession,
+      sidecarConnection.startSession,
+      captureStream.start,
+    ]) {
+      expect(stopCallOrder).toBeLessThan(downstream.mock.invocationCallOrder[0] ?? 0);
+    }
+    expect(sidecarConnection.ensureStarted).toHaveBeenCalledOnce();
+    expect(createSession).toHaveBeenCalledOnce();
+    expect(sidecarConnection.startSession).toHaveBeenCalledOnce();
+    expect(captureStream.start).toHaveBeenCalledOnce();
+    expect(controller.getState()).toBe('listening');
+  });
+
+  it('reports a start failure and stops when conflicting speech cannot be stopped', async () => {
+    const captureStream = new FakeCaptureStream();
+    const countAudioInputDevices = vi.fn(async () => 1);
+    const createSession = vi.fn();
+    const feedback = { show: vi.fn() };
+    const sidecarConnection = new FakeSidecarConnection();
+    const stopError = new Error('read aloud stop failed');
+    const controller = createController({
+      captureStream,
+      countAudioInputDevices,
+      createSession,
+      feedback,
+      sidecarConnection,
+      stopConflictingSpeech: vi.fn(() => {
+        throw stopError;
+      }),
+    });
+
+    await controller.startDictation();
+
+    expect(feedback.show).toHaveBeenCalledOnce();
+    expect(feedback.show).toHaveBeenCalledWith({
+      cause: stopError,
+      intent: 'error',
+      key: 'dictation-start-failed',
+      message: 'Could not start dictation.',
+    });
+    expect(countAudioInputDevices).not.toHaveBeenCalled();
+    expect(sidecarConnection.ensureStarted).not.toHaveBeenCalled();
+    expect(createSession).not.toHaveBeenCalled();
+    expect(captureStream.start).not.toHaveBeenCalled();
+    expect(controller.getState()).toBe('error');
+  });
+
+  it('rechecks target availability on a later retry', async () => {
+    let hasTarget = false;
+    const feedback = { show: vi.fn() };
+    const sidecarConnection = new FakeSidecarConnection();
+    const controller = createController({
+      feedback,
+      hasDictationTarget: () => hasTarget,
+      sidecarConnection,
+    });
+
+    await controller.startDictation();
+    hasTarget = true;
+    await controller.startDictation();
+
+    expect(feedback.show).toHaveBeenCalledOnce();
+    expect(sidecarConnection.ensureStarted).toHaveBeenCalledOnce();
+    expect(sidecarConnection.startSession).toHaveBeenCalledOnce();
+    expect(controller.getState()).toBe('listening');
+  });
+
   it('starts a bare-UUID session and tags audio frames with that session id', async () => {
     const captureStream = new FakeCaptureStream();
     const sidecarConnection = new FakeSidecarConnection();
@@ -176,6 +399,53 @@ describe('DictationSessionController', () => {
 
     expect(sidecarConnection.sendAudioFrame).toHaveBeenCalledWith(startPayload?.sessionId, frame);
     expect(controller.getState()).toBe('listening');
+  });
+
+  it('cancels a start while the sidecar is still launching', async () => {
+    const feedback = { show: vi.fn() };
+    const sidecarConnection = new FakeSidecarConnection();
+    let finishSidecarLaunch: (() => void) | undefined;
+    sidecarConnection.ensureStarted.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          finishSidecarLaunch = resolve;
+        }),
+    );
+    const controller = createController({ feedback, sidecarConnection });
+
+    const start = controller.startDictation();
+    await vi.waitFor(() => expect(sidecarConnection.ensureStarted).toHaveBeenCalledOnce());
+    expect(controller.isCaptureActive()).toBe(true);
+
+    await controller.stopDictation();
+    finishSidecarLaunch?.();
+    await start;
+
+    expect(controller.getState()).toBe('idle');
+    expect(controller.isCaptureActive()).toBe(false);
+    expect(sidecarConnection.startSession).not.toHaveBeenCalled();
+    expect(feedback.show).not.toHaveBeenCalled();
+  });
+
+  it('does not launch overlapping starts while prerequisites are pending', async () => {
+    const sidecarConnection = new FakeSidecarConnection();
+    let finishSidecarLaunch: (() => void) | undefined;
+    sidecarConnection.ensureStarted.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          finishSidecarLaunch = resolve;
+        }),
+    );
+    const controller = createController({ sidecarConnection });
+
+    const firstStart = controller.startDictation();
+    await vi.waitFor(() => expect(sidecarConnection.ensureStarted).toHaveBeenCalledOnce());
+    await controller.startDictation();
+    finishSidecarLaunch?.();
+    await firstStart;
+
+    expect(sidecarConnection.ensureStarted).toHaveBeenCalledOnce();
+    expect(sidecarConnection.startSession).toHaveBeenCalledOnce();
   });
 
   it('passes smart paragraph thresholds to renderer options', async () => {
@@ -246,24 +516,27 @@ describe('DictationSessionController', () => {
     [false, 'every_utterance', false],
     [false, 'sparse', true],
     [false, 'paragraph', true],
-  ] as const)('does not request word timing when density=%s and timestampsEnabled=%s', async (expected, timestampDensity, timestampsEnabled) => {
-    const sidecarConnection = new FakeSidecarConnection();
-    const controller = createController({
-      sidecarConnection,
-      getSettings: () =>
-        createSettings({
-          selectedModel: createExternalModelSelection(),
-          timestampDensity,
-          timestampsEnabled,
-        }),
-    });
+  ] as const)(
+    'does not request word timing when density=%s and timestampsEnabled=%s',
+    async (expected, timestampDensity, timestampsEnabled) => {
+      const sidecarConnection = new FakeSidecarConnection();
+      const controller = createController({
+        sidecarConnection,
+        getSettings: () =>
+          createSettings({
+            selectedModel: createExternalModelSelection(),
+            timestampDensity,
+            timestampsEnabled,
+          }),
+      });
 
-    await controller.startDictation();
+      await controller.startDictation();
 
-    expect(sidecarConnection.startSession).toHaveBeenCalledWith(
-      expect.objectContaining({ detailedTimestampsEnabled: expected }),
-    );
-  });
+      expect(sidecarConnection.startSession).toHaveBeenCalledWith(
+        expect.objectContaining({ detailedTimestampsEnabled: expected }),
+      );
+    },
+  );
 
   it('includes system audio without skipping microphone capture', async () => {
     const captureStream = new FakeCaptureStream();
@@ -1078,7 +1351,7 @@ describe('DictationSessionController', () => {
       intent: 'error',
       key: 'dictation-surface-desynchronized',
       message:
-        'Dictation stopped because the note changed in a way Local Dictation could not safely track. Start dictation again to continue.',
+        'Dictation stopped because the note changed in a way Speech Kit could not safely track. Start dictation again to continue.',
     });
     await vi.waitFor(() => {
       expect(sessions[0]?.acceptTranscript).not.toHaveBeenCalled();
@@ -1204,6 +1477,51 @@ describe('DictationSessionController', () => {
     expect(controller.getState()).toBe('idle');
     expect(show).toHaveBeenCalledOnce();
     expect(show).toHaveBeenCalledWith(expect.objectContaining({ key: 'dictation-target-closed' }));
+  });
+
+  it('adds fresh-installer recovery to system-audio permission errors on older Electron', async () => {
+    const electronVersionDescriptor = Object.getOwnPropertyDescriptor(process.versions, 'electron');
+    Object.defineProperty(process.versions, 'electron', {
+      configurable: true,
+      value: '39.5.9',
+    });
+
+    try {
+      const show = vi.fn();
+      const sidecarConnection = new FakeSidecarConnection();
+      const controller = createController({ feedback: { show }, sidecarConnection });
+
+      await controller.startDictation();
+      const sessionId = sidecarConnection.startSession.mock.calls[0]?.[0].sessionId ?? '';
+      sidecarConnection.emit({
+        code: 'system_audio_permission_denied',
+        message: 'raw sidecar permission message',
+        sessionId,
+        type: 'error',
+      });
+
+      await vi.waitFor(() => {
+        expect(show).toHaveBeenCalledWith(
+          expect.objectContaining({
+            key: 'sidecar-session-error',
+            message: expect.stringContaining('Download a fresh installer from obsidian.md'),
+          }),
+        );
+      });
+      expect(show).toHaveBeenCalledWith(
+        expect.objectContaining({
+          message: expect.stringContaining(
+            'System-audio recording permission is off for Obsidian.',
+          ),
+        }),
+      );
+    } finally {
+      if (electronVersionDescriptor === undefined) {
+        delete process.versions.electron;
+      } else {
+        Object.defineProperty(process.versions, 'electron', electronVersionDescriptor);
+      }
+    }
   });
 
   it.each([
@@ -1471,7 +1789,7 @@ describe('DictationSessionController', () => {
       intent: 'error',
       key: 'transcript-write-failed',
       message:
-        'Dictation stopped because Local Dictation could not safely write to the note. Start dictation again to continue.',
+        'Dictation stopped because Speech Kit could not safely write to the note. Start dictation again to continue.',
     });
     expect(sessions[0]?.acceptTranscript).toHaveBeenCalledOnce();
   });
@@ -1616,6 +1934,43 @@ describe('DictationSessionController', () => {
     expect(serializedLogs).not.toContain('raw transcript');
     expect(serializedLogs).not.toContain('Clean batch.');
     expect(sessions[0]?.dispose).toHaveBeenCalledTimes(1);
+  });
+
+  it('frees the sidecar for maintenance while a slow batch cleanup is still running', async () => {
+    const sidecarLifecycleGate = new SidecarLifecycleGate();
+    const sidecarConnection = new FakeSidecarConnection();
+    let completeCleanup: ((result: LlmRouterCleanupResult) => void) | undefined;
+    const cleanup = vi.fn(
+      async () =>
+        new Promise<LlmRouterCleanupResult>((resolve) => {
+          completeCleanup = resolve;
+        }),
+    );
+    const controller = createController({
+      getSettings: () =>
+        createSettings({
+          llmFeaturesEnabled: true,
+          llmPostprocessMode: 'batch',
+          selectedModel: createExternalModelSelection(),
+        }),
+      llmRouter: createFakeLlmRouter({ cleanup }),
+      sidecarConnection,
+      sidecarLifecycleGate,
+    });
+
+    await controller.startDictation();
+    const sessionId = sidecarConnection.startSession.mock.calls[0]?.[0].sessionId ?? '';
+    sidecarConnection.emit(transcriptReady(sessionId, 'raw transcript'));
+    await controller.stopDictation();
+    sidecarConnection.emit({ reason: 'user_stop', sessionId, type: 'session_stopped' });
+    await vi.waitFor(() => expect(cleanup).toHaveBeenCalledOnce());
+
+    // The provider call is still outstanding, but the engine is idle: model
+    // removal and sidecar updates must not be told to stop dictation first.
+    const mutation = sidecarLifecycleGate.acquireMutation();
+    mutation.release();
+
+    completeCleanup?.({ model: 'llama3.2:latest', providerId: 'ollama', text: 'Clean batch.' });
   });
 
   it('does not capture raw recovery when the batch replacement is denied', async () => {
@@ -1959,73 +2314,76 @@ describe('DictationSessionController', () => {
   it.each([
     ['hiding the anchor', 'anchor'],
     ['marking the range', 'processing'],
-  ] as const)('does not start batch provider work after a fatal failure while %s', async (_description, mutation) => {
-    const logger = new FakeLogger();
-    const sidecarConnection = new FakeSidecarConnection();
-    const sessions: FakeSession[] = [];
-    const cleanup = vi.fn(
-      async (): Promise<LlmRouterCleanupResult> => ({
-        model: 'm',
-        providerId: 'ollama',
-        text: 'must not run',
-      }),
-    );
-    let onSurfaceDesynchronized: ((failure: SurfaceDesynchronization) => void) | undefined;
-    const controller = createController({
-      createSession: (session, options) => {
-        sessions.push(session);
-        onSurfaceDesynchronized = options.callbacks.onSurfaceDesynchronized;
-      },
-      getSettings: () =>
-        createSettings({
-          llmFeaturesEnabled: true,
-          llmPostprocessMode: 'batch',
-          selectedModel: createExternalModelSelection(),
+  ] as const)(
+    'does not start batch provider work after a fatal failure while %s',
+    async (_description, mutation) => {
+      const logger = new FakeLogger();
+      const sidecarConnection = new FakeSidecarConnection();
+      const sessions: FakeSession[] = [];
+      const cleanup = vi.fn(
+        async (): Promise<LlmRouterCleanupResult> => ({
+          model: 'm',
+          providerId: 'ollama',
+          text: 'must not run',
         }),
-      llmRouter: createFakeLlmRouter({ cleanup }),
-      logger,
-      sidecarConnection,
-    });
-
-    await controller.startDictation();
-    const sessionId = sidecarConnection.startSession.mock.calls[0]?.[0].sessionId ?? '';
-    sidecarConnection.emit(transcriptReady(sessionId, 'raw transcript'));
-    await vi.waitFor(() => {
-      expect(sessions[0]?.acceptTranscript).toHaveBeenCalledOnce();
-    });
-    await controller.stopDictation();
-
-    const session = sessions[0];
-    if (session === undefined) {
-      throw new Error('expected session fixture');
-    }
-    const reportFatalFailure = () => {
-      onSurfaceDesynchronized?.({
-        documentLength: 4280,
-        kind: 'surface_desynchronized',
-        trackedPosition: 4314,
+      );
+      let onSurfaceDesynchronized: ((failure: SurfaceDesynchronization) => void) | undefined;
+      const controller = createController({
+        createSession: (session, options) => {
+          sessions.push(session);
+          onSurfaceDesynchronized = options.callbacks.onSurfaceDesynchronized;
+        },
+        getSettings: () =>
+          createSettings({
+            llmFeaturesEnabled: true,
+            llmPostprocessMode: 'batch',
+            selectedModel: createExternalModelSelection(),
+          }),
+        llmRouter: createFakeLlmRouter({ cleanup }),
+        logger,
+        sidecarConnection,
       });
-    };
-    if (mutation === 'anchor') {
-      session.setAnchorMode.mockImplementationOnce(reportFatalFailure);
-    } else {
-      session.markSessionRangeAsProcessing.mockImplementationOnce(() => {
-        reportFatalFailure();
-        return false;
+
+      await controller.startDictation();
+      const sessionId = sidecarConnection.startSession.mock.calls[0]?.[0].sessionId ?? '';
+      sidecarConnection.emit(transcriptReady(sessionId, 'raw transcript'));
+      await vi.waitFor(() => {
+        expect(sessions[0]?.acceptTranscript).toHaveBeenCalledOnce();
       });
-    }
+      await controller.stopDictation();
 
-    sidecarConnection.emit({ reason: 'user_stop', sessionId, type: 'session_stopped' });
+      const session = sessions[0];
+      if (session === undefined) {
+        throw new Error('expected session fixture');
+      }
+      const reportFatalFailure = () => {
+        onSurfaceDesynchronized?.({
+          documentLength: 4280,
+          kind: 'surface_desynchronized',
+          trackedPosition: 4314,
+        });
+      };
+      if (mutation === 'anchor') {
+        session.setAnchorMode.mockImplementationOnce(reportFatalFailure);
+      } else {
+        session.markSessionRangeAsProcessing.mockImplementationOnce(() => {
+          reportFatalFailure();
+          return false;
+        });
+      }
 
-    await vi.waitFor(() => {
-      expect(session.dispose).toHaveBeenCalledOnce();
-    });
-    expect(cleanup).not.toHaveBeenCalled();
-    expect(logger.warn).not.toHaveBeenCalledWith(
-      'llm',
-      expect.stringContaining('session range no longer available'),
-    );
-  });
+      sidecarConnection.emit({ reason: 'user_stop', sessionId, type: 'session_stopped' });
+
+      await vi.waitFor(() => {
+        expect(session.dispose).toHaveBeenCalledOnce();
+      });
+      expect(cleanup).not.toHaveBeenCalled();
+      expect(logger.warn).not.toHaveBeenCalledWith(
+        'llm',
+        expect.stringContaining('session range no longer available'),
+      );
+    },
+  );
 
   it('does not apply a batch result after clearing its processing mark reports a fatal failure', async () => {
     const sidecarConnection = new FakeSidecarConnection();
@@ -2095,81 +2453,84 @@ describe('DictationSessionController', () => {
       'builtin:tldr',
       'additive batch insert skipped; session range no longer available',
     ],
-  ] as const)('suppresses misleading %s batch logs and success after result application reports fatal', async (_description, activePresetRef, misleadingWarning) => {
-    const logger = new FakeLogger();
-    const show = vi.fn();
-    const onLlmCleanupSuccess = vi.fn();
-    const sidecarConnection = new FakeSidecarConnection();
-    const sessions: FakeSession[] = [];
-    let onSurfaceDesynchronized: ((failure: SurfaceDesynchronization) => void) | undefined;
-    const controller = createController({
-      createSession: (session, options) => {
-        sessions.push(session);
-        onSurfaceDesynchronized = options.callbacks.onSurfaceDesynchronized;
-      },
-      getSettings: () =>
-        createSettings({
-          llmFeaturesEnabled: true,
-          ...(activePresetRef === undefined
-            ? {}
-            : { llmPostprocessActivePresetRef: activePresetRef }),
-          llmPostprocessMode: 'batch',
-          selectedModel: createExternalModelSelection(),
-        }),
-      llmRouter: createFakeLlmRouter({
-        cleanup: vi.fn(
-          async (): Promise<LlmRouterCleanupResult> => ({
-            model: 'm',
-            providerId: 'ollama',
-            text: 'Clean batch.',
+  ] as const)(
+    'suppresses misleading %s batch logs and success after result application reports fatal',
+    async (_description, activePresetRef, misleadingWarning) => {
+      const logger = new FakeLogger();
+      const show = vi.fn();
+      const onLlmCleanupSuccess = vi.fn();
+      const sidecarConnection = new FakeSidecarConnection();
+      const sessions: FakeSession[] = [];
+      let onSurfaceDesynchronized: ((failure: SurfaceDesynchronization) => void) | undefined;
+      const controller = createController({
+        createSession: (session, options) => {
+          sessions.push(session);
+          onSurfaceDesynchronized = options.callbacks.onSurfaceDesynchronized;
+        },
+        getSettings: () =>
+          createSettings({
+            llmFeaturesEnabled: true,
+            ...(activePresetRef === undefined
+              ? {}
+              : { llmPostprocessActivePresetRef: activePresetRef }),
+            llmPostprocessMode: 'batch',
+            selectedModel: createExternalModelSelection(),
           }),
-        ),
-      }),
-      feedback: { show },
-      logger,
-      onLlmCleanupSuccess,
-      sidecarConnection,
-    });
-
-    await controller.startDictation();
-    const sessionId = sidecarConnection.startSession.mock.calls[0]?.[0].sessionId ?? '';
-    sidecarConnection.emit(transcriptReady(sessionId, 'raw transcript'));
-    await vi.waitFor(() => {
-      expect(sessions[0]?.acceptTranscript).toHaveBeenCalledOnce();
-    });
-    await controller.stopDictation();
-
-    const session = sessions[0];
-    if (session === undefined) {
-      throw new Error('expected session fixture');
-    }
-    const reportFatalFailure = () => {
-      onSurfaceDesynchronized?.({
-        documentLength: 4280,
-        kind: 'surface_desynchronized',
-        trackedPosition: 4314,
+        llmRouter: createFakeLlmRouter({
+          cleanup: vi.fn(
+            async (): Promise<LlmRouterCleanupResult> => ({
+              model: 'm',
+              providerId: 'ollama',
+              text: 'Clean batch.',
+            }),
+          ),
+        }),
+        feedback: { show },
+        logger,
+        onLlmCleanupSuccess,
+        sidecarConnection,
       });
-    };
-    if (activePresetRef === undefined) {
-      session.replaceSessionRangeWithCleaned.mockImplementationOnce(() => {
-        reportFatalFailure();
-        return { kind: 'denied' };
-      });
-    } else {
-      session.insertAdjacentToSessionRange.mockImplementationOnce(() => {
-        reportFatalFailure();
-        return false;
-      });
-    }
-    sidecarConnection.emit({ reason: 'user_stop', sessionId, type: 'session_stopped' });
 
-    await vi.waitFor(() => {
-      expect(session.dispose).toHaveBeenCalledOnce();
-    });
-    expect(logger.warn).not.toHaveBeenCalledWith('llm', misleadingWarning);
-    expect(onLlmCleanupSuccess).not.toHaveBeenCalled();
-    expect(show).toHaveBeenCalledOnce();
-  });
+      await controller.startDictation();
+      const sessionId = sidecarConnection.startSession.mock.calls[0]?.[0].sessionId ?? '';
+      sidecarConnection.emit(transcriptReady(sessionId, 'raw transcript'));
+      await vi.waitFor(() => {
+        expect(sessions[0]?.acceptTranscript).toHaveBeenCalledOnce();
+      });
+      await controller.stopDictation();
+
+      const session = sessions[0];
+      if (session === undefined) {
+        throw new Error('expected session fixture');
+      }
+      const reportFatalFailure = () => {
+        onSurfaceDesynchronized?.({
+          documentLength: 4280,
+          kind: 'surface_desynchronized',
+          trackedPosition: 4314,
+        });
+      };
+      if (activePresetRef === undefined) {
+        session.replaceSessionRangeWithCleaned.mockImplementationOnce(() => {
+          reportFatalFailure();
+          return { kind: 'denied' };
+        });
+      } else {
+        session.insertAdjacentToSessionRange.mockImplementationOnce(() => {
+          reportFatalFailure();
+          return false;
+        });
+      }
+      sidecarConnection.emit({ reason: 'user_stop', sessionId, type: 'session_stopped' });
+
+      await vi.waitFor(() => {
+        expect(session.dispose).toHaveBeenCalledOnce();
+      });
+      expect(logger.warn).not.toHaveBeenCalledWith('llm', misleadingWarning);
+      expect(onLlmCleanupSuccess).not.toHaveBeenCalled();
+      expect(show).toHaveBeenCalledOnce();
+    },
+  );
 
   it('keeps raw transcript when a batch cleanup fails and reports it', async () => {
     const sidecarConnection = new FakeSidecarConnection();
@@ -2328,7 +2689,7 @@ describe('DictationSessionController', () => {
       code: 'utterance_queue_overload',
       details: 'queue depth reached saturation at 32',
       message:
-        'Local Dictation stopped because the transcription backlog reached capacity. Already accepted utterances will finish processing.',
+        'Speech Kit stopped because the transcription backlog reached capacity. Already accepted utterances will finish processing.',
       sessionId,
       type: 'error',
     });
@@ -2342,7 +2703,9 @@ describe('DictationSessionController', () => {
     expect(sidecarConnection.cancelSession).not.toHaveBeenCalled();
     expect(session.dispose).not.toHaveBeenCalled();
     expect(show).toHaveBeenCalledWith(
-      expect.objectContaining({ message: expect.stringContaining('backlog reached capacity') }),
+      expect.objectContaining({
+        message: expect.stringContaining('transcription queue is overloaded'),
+      }),
     );
     expect(controller.getState()).toBe('idle');
 
@@ -2645,27 +3008,35 @@ function createController({
   createSession,
   llmRouter = createFakeLlmRouter(),
   getSettings = () => createSettings({ selectedModel: createExternalModelSelection() }),
+  hasDictationTarget = () => true,
   logger = new FakeLogger(),
   feedback = { show: vi.fn() },
   sidecarConnection = new FakeSidecarConnection(),
+  sidecarLifecycleGate = new SidecarLifecycleGate(),
   onLlmCleanupFailure,
   onLlmCleanupSuccess,
   onFinalizedUtteranceAccepted,
+  onModelMissing,
   onRawTranscriptRecoveryAvailable,
+  stopConflictingSpeech = vi.fn(),
 }: {
   audioLevelMeter?: FakeAudioLevelMeter;
   captureStream?: FakeCaptureStream;
   countAudioInputDevices?: () => Promise<number | null>;
   createSession?: (session: FakeSession, options: CreateSessionOptions) => void;
   getSettings?: () => PluginSettings;
+  hasDictationTarget?: () => boolean;
   llmRouter?: LlmRouter;
   logger?: FakeLogger;
   feedback?: Pick<UserFeedback, 'show'>;
   onLlmCleanupFailure?: (failure: LlmCleanupFailure) => void;
   onLlmCleanupSuccess?: () => void;
   onFinalizedUtteranceAccepted?: (text: string) => void;
+  onModelMissing?: () => void;
   onRawTranscriptRecoveryAvailable?: (receipt: RawTranscriptRecoveryReceipt) => void;
   sidecarConnection?: FakeSidecarConnection;
+  sidecarLifecycleGate?: SidecarLifecycleGate;
+  stopConflictingSpeech?: () => void;
 } = {}): DictationSessionController {
   return new DictationSessionController({
     captureStream,
@@ -2679,16 +3050,19 @@ function createController({
     createLlmRouter: () => llmRouter,
     feedback,
     getSettings,
+    hasDictationTarget,
     logger,
     ...(onLlmCleanupFailure !== undefined ? { onLlmCleanupFailure } : {}),
     ...(onLlmCleanupSuccess !== undefined ? { onLlmCleanupSuccess } : {}),
     ...(onFinalizedUtteranceAccepted !== undefined ? { onFinalizedUtteranceAccepted } : {}),
     ...(onRawTranscriptRecoveryAvailable !== undefined ? { onRawTranscriptRecoveryAvailable } : {}),
-    onModelMissing: vi.fn(),
+    onModelMissing: onModelMissing ?? vi.fn(),
     onSidecarMissing: vi.fn(),
     setRibbonQueueTier: vi.fn((_tier: QueueBackpressureTier) => {}),
     setRibbonState: vi.fn((_state: DictationControllerState) => {}),
     sidecarConnection,
+    sidecarLifecycleGate,
+    stopConflictingSpeech,
   });
 }
 

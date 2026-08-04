@@ -1,5 +1,6 @@
 import type { InstallProgressState } from '../models/model-install-progress';
 import { formatErrorMessage } from '../shared/format-utils';
+import { t } from '../shared/i18n';
 import type { PluginLogger } from '../shared/plugin-logger';
 import type { UserFeedback } from '../shared/user-feedback';
 import {
@@ -7,6 +8,11 @@ import {
   installSidecar,
   type SidecarInstallVariant,
 } from './sidecar-installer';
+import {
+  SidecarLifecycleConflictError,
+  type SidecarLifecycleGate,
+  type SidecarLifecycleLease,
+} from './sidecar-lifecycle-gate';
 
 export type SidecarInstallPhase = 'canceling' | 'installing';
 
@@ -44,6 +50,7 @@ export interface SidecarInstallBatchOptions extends Omit<SidecarInstallOptions, 
 interface SidecarInstallManagerDependencies {
   feedback: Pick<UserFeedback, 'show'>;
   logger?: PluginLogger | undefined;
+  sidecarLifecycleGate: SidecarLifecycleGate;
 }
 
 const INITIAL_PROGRESS: InstallProgress = {
@@ -123,6 +130,7 @@ export class SidecarInstallManager {
     options: SidecarInstallBatchOptions,
     signal: AbortSignal,
   ): Promise<void> {
+    const mutation = { lease: null as SidecarLifecycleLease | null };
     try {
       for (const [index, variant] of options.variants.entries()) {
         this.activeInstall = {
@@ -135,7 +143,10 @@ export class SidecarInstallManager {
         this.notify();
 
         await installSidecar({
-          beforeReplace: options.beforeReplace,
+          beforeReplace: async () => {
+            mutation.lease ??= this.deps.sidecarLifecycleGate.acquireMutation();
+            await options.beforeReplace?.();
+          },
           logger: this.deps.logger,
           onProgress: (progress) => {
             this.updateProgress(progress);
@@ -167,11 +178,24 @@ export class SidecarInstallManager {
       this.lastError = null;
     } catch (error) {
       if (isAbortError(error)) {
-        this.deps.feedback.show({ intent: 'information', message: 'Sidecar install cancelled.' });
+        this.deps.feedback.show({
+          intent: 'information',
+          message: t('setup.sidecar.installCancelled'),
+        });
+        this.lastError = null;
+      } else if (error instanceof SidecarLifecycleConflictError) {
+        this.deps.feedback.show({
+          intent: 'warning',
+          message:
+            error.activeKind === 'speech'
+              ? t('settings.sidecar.stopBeforeInstall')
+              : t('settings.sidecar.operationInProgress'),
+        });
         this.lastError = null;
       } else {
         const message = formatErrorMessage(error);
         this.lastError = message;
+        this.deps.logger?.error('installer', message, error);
         if (options.failureFeedback.isInlineVisible()) {
           this.deps.logger?.error('installer', 'sidecar install failed', error);
         } else {
@@ -184,6 +208,7 @@ export class SidecarInstallManager {
         }
       }
     } finally {
+      mutation.lease?.release();
       if (this.abortController?.signal === signal) {
         this.abortController = null;
       }
@@ -212,7 +237,11 @@ export class SidecarInstallManager {
 export function buildSidecarProgressState(active: ActiveSidecarInstall): InstallProgressState {
   const variantProgress =
     active.totalVariants > 1
-      ? ` ${active.variant.toUpperCase()} sidecar (${String(active.currentVariantNumber)} of ${String(active.totalVariants)})`
+      ? t('setup.sidecar.progress.variant', {
+          current: active.currentVariantNumber,
+          total: active.totalVariants,
+          variant: active.variant.toUpperCase(),
+        })
       : '';
 
   return {
@@ -228,11 +257,11 @@ export function buildSidecarProgressState(active: ActiveSidecarInstall): Install
 function formatProgressMessage(phase: InstallProgress['phase']): string {
   switch (phase) {
     case 'download':
-      return 'Downloading';
+      return t('setup.sidecar.progress.downloading');
     case 'verify':
-      return 'Verifying checksum...';
+      return t('setup.sidecar.progress.verifying');
     case 'extract':
-      return 'Extracting archive...';
+      return t('setup.sidecar.progress.extracting');
   }
 }
 

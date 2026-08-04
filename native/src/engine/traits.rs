@@ -4,6 +4,7 @@ use std::time::Duration;
 use crate::engine::capabilities::{
     LanguageSupport, ModelFamilyCapabilities, ModelFamilyId, RuntimeCapabilities, RuntimeId,
 };
+use crate::synthesis::{SynthesisError, SynthesisModel};
 use crate::transcription::{
     EngineTranscriptOutput, GpuConfig, TranscriptionError, TranscriptionRequest, validate_language,
 };
@@ -41,6 +42,14 @@ pub trait ModelFamilyAdapter: Send + Sync {
         let _ = (path, gpu);
         Err(TranscriptionError::unsupported_engine(format!(
             "{} does not support streaming",
+            self.family_id().as_str()
+        )))
+    }
+
+    fn load_synthesis(&self, path: &Path) -> Result<Box<dyn SynthesisModel>, SynthesisError> {
+        let _ = path;
+        Err(SynthesisError::unsupported(format!(
+            "{} is not a speech-synthesis model",
             self.family_id().as_str()
         )))
     }

@@ -3,11 +3,9 @@ import { describe, expect, it } from 'vitest';
 
 // The Windows release job installs only the CUDA sub-packages listed in
 // .github/cuda-windows-subpackages.json (full-toolkit installs are slow), so
-// every runtime DLL we redistribute (native/cuda-artifacts.json) must have its
-// providing sub-package in that list — otherwise the installer never drops the
-// DLL and the packager's copyFile fails the release. Guards the regression
-// where `cufft` was trimmed as a non-build dependency while cufft64_*.dll was
-// still bundled for onnxruntime_providers_cuda.dll.
+// every whisper.cpp runtime DLL we redistribute (native/cuda-artifacts.json)
+// must have its providing sub-package in that list — otherwise the installer
+// never drops the DLL and the packager's copyFile fails the release.
 const SUBPACKAGES_PATH = '.github/cuda-windows-subpackages.json';
 const ARTIFACTS_PATH = 'native/cuda-artifacts.json';
 
@@ -19,7 +17,6 @@ const LIBRARY_TO_SUBPACKAGE: Record<string, string> = {
   cudart: 'cudart',
   cublas: 'cublas',
   cublasLt: 'cublas',
-  cufft: 'cufft',
 };
 
 async function readJson(path: string): Promise<unknown> {
@@ -29,9 +26,9 @@ async function readJson(path: string): Promise<unknown> {
 describe('Windows CUDA sub-packages', () => {
   it('installs a sub-package for every redistributed runtime DLL', async () => {
     const subPackages = (await readJson(SUBPACKAGES_PATH)) as string[];
-    const { runtime } = (await readJson(ARTIFACTS_PATH)) as { runtime: { win32: string[] } };
+    const { win32 } = (await readJson(ARTIFACTS_PATH)) as { win32: string[] };
 
-    for (const dll of runtime.win32) {
+    for (const dll of win32) {
       const stem = dll.match(/^(.+?)64_\d+\.dll$/)?.[1];
       if (stem === undefined) {
         throw new Error(`unrecognized Windows CUDA DLL name: ${dll}`);
@@ -44,5 +41,12 @@ describe('Windows CUDA sub-packages', () => {
         subPackage,
       );
     }
+  });
+
+  it('ships only the CUDA libraries used by whisper.cpp', async () => {
+    const artifacts = (await readJson(ARTIFACTS_PATH)) as Record<string, string[]>;
+    const redistributed = Object.values(artifacts).flat();
+
+    expect(redistributed.every((name) => !/onnxruntime|cudnn|cufft|curand/i.test(name))).toBe(true);
   });
 });

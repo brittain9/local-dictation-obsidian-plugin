@@ -6,6 +6,7 @@ import {
   type ModalSettingsPersistence,
 } from '../settings/modal-settings-auto-saver';
 import { DEFAULT_PLUGIN_SETTINGS, LLM_MIN_WORDS_MAX } from '../settings/plugin-settings';
+import { t } from '../shared/i18n';
 import { activePresetOverride } from './llm-preset-overrides';
 import { describeTimestampTransformInteraction } from './llm-timing-settings-presentation';
 import { addValidatedNumberSetting } from './validated-number-setting';
@@ -26,7 +27,7 @@ export class LlmTimingSettingsModal extends Modal {
   }
 
   override onOpen(): void {
-    this.titleEl.setText('Timing settings');
+    this.setTitle(t('llm.timing.title'));
     this.render();
   }
 
@@ -50,13 +51,13 @@ export class LlmTimingSettingsModal extends Modal {
     addValidatedNumberSetting(this.contentEl, {
       desc:
         override === null
-          ? 'Skip the transform when the transcript has fewer words than this.'
-          : `Managed by “${override.label}”. Edit that preset to change this value.`,
+          ? t('llm.timing.minimumWords.description')
+          : t('llm.managedByPreset', { preset: override.label }),
       disabled: override !== null,
       integer: true,
       max: LLM_MIN_WORDS_MAX,
       min: 0,
-      name: 'Minimum words',
+      name: t('llm.timing.minimumWords.name'),
       onChange: (value) => {
         this.minimumWords = value;
         void this.autoSaver.persist({ llmPostprocessSkipMinWords: value });
@@ -65,7 +66,7 @@ export class LlmTimingSettingsModal extends Modal {
     });
 
     new Setting(this.contentEl).addButton((button) => {
-      button.setButtonText('Reset').onClick(async () => {
+      button.setButtonText(t('common.reset')).onClick(async () => {
         this.minimumWords = DEFAULT_PLUGIN_SETTINGS.llmPostprocessSkipMinWords;
         this.render();
         await this.autoSaver.persist({

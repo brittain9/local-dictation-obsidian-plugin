@@ -149,7 +149,7 @@ fn capture_thread(
     let simple = unsafe {
         pa_simple_new(
             ptr::null(),
-            c"local-dictation".as_ptr(),
+            c"Speech Kit".as_ptr(),
             PA_STREAM_RECORD,
             c"@DEFAULT_MONITOR@".as_ptr(),
             c"system audio".as_ptr(),

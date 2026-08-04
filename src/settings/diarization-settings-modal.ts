@@ -1,5 +1,6 @@
 import type { App } from 'obsidian';
 import { Modal, Setting } from 'obsidian';
+import { t } from '../shared/i18n';
 import { ModalSettingsAutoSaver, type ModalSettingsPersistence } from './modal-settings-auto-saver';
 import {
   DEFAULT_PLUGIN_SETTINGS,
@@ -23,7 +24,7 @@ export class DiarizationSettingsModal extends Modal {
   }
 
   override onOpen(): void {
-    this.titleEl.setText('Speaker label settings');
+    this.setTitle(t('settings.speakerLabels.modal.title'));
     this.render();
   }
 
@@ -37,18 +38,18 @@ export class DiarizationSettingsModal extends Modal {
 
     this.contentEl.createEl('p', {
       cls: 'setting-item-description',
-      text: 'Speaker labels run on-device after each voice-detected phrase. They require a batch transcription model.',
+      text: t('settings.speakerLabels.modal.intro'),
     });
 
     new Setting(this.contentEl)
-      .setName('Maximum speakers')
+      .setName(t('settings.speakerLabels.maximumSpeakers.name'))
       .setDesc(
         diarizationEnabled
-          ? 'Automatic determines the speaker count. Set a limit only if extra speaker labels appear.'
-          : 'Enable speaker labels before configuring a speaker limit.',
+          ? t('settings.speakerLabels.maximumSpeakers.desc')
+          : t('settings.speakerLabels.maximumSpeakers.disabledDesc'),
       )
       .addDropdown((dropdown) => {
-        dropdown.addOption('auto', 'Automatic');
+        dropdown.addOption('auto', t('settings.speakerLabels.automatic'));
         for (
           let count = MIN_DIARIZATION_MAX_SPEAKERS;
           count <= MAX_DIARIZATION_MAX_SPEAKERS;
@@ -78,7 +79,7 @@ export class DiarizationSettingsModal extends Modal {
       });
 
     new Setting(this.contentEl).addButton((button) => {
-      button.setButtonText('Reset').onClick(async () => {
+      button.setButtonText(t('common.reset')).onClick(async () => {
         this.maxSpeakers = DEFAULT_PLUGIN_SETTINGS.diarizationMaxSpeakers;
         this.render();
         await this.autoSaver.persist({

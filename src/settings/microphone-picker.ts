@@ -1,6 +1,7 @@
-import { Setting } from 'obsidian';
+import { type DropdownComponent, Setting } from 'obsidian';
 
 import { formatMicrophoneCaptureErrorMessage } from '../audio/microphone-permission-message';
+import { t } from '../shared/i18n';
 import type { PluginLogger } from '../shared/plugin-logger';
 import type { UserFeedback } from '../shared/user-feedback';
 import type { AudioInputDevice } from './plugin-settings';
@@ -8,7 +9,6 @@ import type { SettingAccess } from './setting-helpers';
 
 const DEFAULT_OPTION_VALUE = '__default__';
 const MISSING_OPTION_VALUE = '__missing__';
-const UNLABELED_OPTION_TEXT = 'Microphone (label unavailable)';
 // Chromium on Windows suffixes USB device labels with a `(VID:PID)` tuple
 // (e.g. " (03f0:098d)"). It's stable but noise in a settings UI — strip it
 // for display and persistence so the dropdown matches what the user sees in
@@ -34,12 +34,14 @@ export function renderMicrophonePicker(
   parent: HTMLElement,
   deps: MicrophonePickerDependencies,
 ): () => void {
+  const hostWindow = parent.win;
+  const mediaDevices = hostWindow.navigator?.mediaDevices;
   const setting = new Setting(parent)
-    .setName('Microphone')
-    .setDesc('Which microphone to use for dictation. Changes apply on the next dictation session.');
+    .setName(t('settings.microphone.name'))
+    .setDesc(t('settings.microphone.desc'));
 
   let devices: MediaDeviceInfo[] = [];
-  let selectEl: HTMLSelectElement | null = null;
+  let microphoneDropdown: DropdownComponent | null = null;
   let detectButtonEl: HTMLElement | null = null;
   let disposed = false;
   // Bumped on every enumerate() call. Out-of-order resolutions (initial
@@ -53,14 +55,15 @@ export function renderMicrophonePicker(
   }
 
   function repopulate(): void {
-    if (selectEl === null) {
+    if (microphoneDropdown === null) {
       return;
     }
 
     const saved = getSaved();
+    const { selectEl } = microphoneDropdown;
     selectEl.empty();
 
-    appendOption(selectEl, DEFAULT_OPTION_VALUE, 'Default microphone');
+    microphoneDropdown.addOption(DEFAULT_OPTION_VALUE, t('settings.microphone.default'));
 
     let savedIsPresent = false;
     for (const device of devices) {
@@ -77,18 +80,25 @@ export function renderMicrophonePicker(
           ? enumeratedLabel
           : isSaved
             ? saved.label
-            : UNLABELED_OPTION_TEXT;
-      appendOption(selectEl, device.deviceId, display);
+            : t('settings.microphone.labelUnavailable');
+      microphoneDropdown.addOption(device.deviceId, display);
     }
 
+    let selectedValue = DEFAULT_OPTION_VALUE;
     if (saved !== null && !savedIsPresent) {
-      appendOption(selectEl, MISSING_OPTION_VALUE, `${saved.label} (not connected)`);
-      selectEl.value = MISSING_OPTION_VALUE;
+      microphoneDropdown.addOption(
+        MISSING_OPTION_VALUE,
+        t('settings.microphone.notConnected', { microphone: saved.label }),
+      );
+      selectedValue = MISSING_OPTION_VALUE;
     } else if (saved !== null) {
-      selectEl.value = saved.deviceId;
-    } else {
-      selectEl.value = DEFAULT_OPTION_VALUE;
+      selectedValue = saved.deviceId;
     }
+    // Obsidian 1.13 measures the selected option through DropdownComponent and
+    // stores its fitted width in CSS. Updating selectEl.value directly skips
+    // that initial measurement, leaving the control as wide as its longest
+    // option until the user changes it once.
+    microphoneDropdown.setValue(selectedValue);
 
     refreshDetectButton();
   }
@@ -97,9 +107,8 @@ export function renderMicrophonePicker(
     if (detectButtonEl === null) {
       return;
     }
-    const mediaDevices = window.navigator?.mediaDevices;
     if (mediaDevices?.getUserMedia === undefined) {
-      detectButtonEl.addClass('local-stt-hidden');
+      detectButtonEl.hide();
       return;
     }
     // Show the button whenever no enumerated device has a usable label. That
@@ -107,12 +116,11 @@ export function renderMicrophonePicker(
     // the labels-look-empty cases (permission not yet granted, or label is
     // only a VID:PID suffix that formatDeviceLabel strips to '').
     const hasLabeledDevice = devices.some((device) => formatDeviceLabel(device.label).length > 0);
-    detectButtonEl.toggleClass('local-stt-hidden', hasLabeledDevice);
+    detectButtonEl.toggle(!hasLabeledDevice);
   }
 
   async function enumerate(): Promise<void> {
     const version = ++enumerateVersion;
-    const mediaDevices = window.navigator?.mediaDevices;
     if (mediaDevices?.enumerateDevices === undefined) {
       devices = [];
       repopulate();
@@ -139,7 +147,7 @@ export function renderMicrophonePicker(
   }
 
   setting.addDropdown((dropdown) => {
-    selectEl = dropdown.selectEl;
+    microphoneDropdown = dropdown;
     dropdown.onChange((value) => {
       void handleChange(value);
     });
@@ -148,7 +156,7 @@ export function renderMicrophonePicker(
   setting.addExtraButton((button) => {
     button
       .setIcon('refresh-cw')
-      .setTooltip('Detect microphones (asks for permission)')
+      .setTooltip(t('settings.microphone.detectTooltip'))
       .onClick(() => {
         void primePermission();
       });
@@ -184,12 +192,10 @@ export function renderMicrophonePicker(
       deps.feedback.show({
         intent: 'action-required',
         key: 'microphone-permission',
-        message: 'Allow microphone access first to save this device.',
+        message: t('settings.microphone.allowAccessFirst'),
       });
       const saved = getSaved();
-      if (selectEl !== null) {
-        selectEl.value = saved?.deviceId ?? DEFAULT_OPTION_VALUE;
-      }
+      microphoneDropdown?.setValue(saved?.deviceId ?? DEFAULT_OPTION_VALUE);
       return;
     }
 
@@ -199,15 +205,17 @@ export function renderMicrophonePicker(
 
   async function primePermission(): Promise<void> {
     if (deps.isDictationBusy()) {
-      deps.feedback.show({ intent: 'warning', message: 'Stop dictation to detect microphones.' });
+      deps.feedback.show({
+        intent: 'warning',
+        message: t('settings.microphone.stopDictationToDetect'),
+      });
       return;
     }
 
-    const mediaDevices = window.navigator?.mediaDevices;
     if (mediaDevices?.getUserMedia === undefined) {
       deps.feedback.show({
         intent: 'error',
-        message: 'Microphone access is not available in this runtime.',
+        message: t('settings.microphone.unavailableRuntime'),
       });
       return;
     }
@@ -224,8 +232,7 @@ export function renderMicrophonePicker(
         intent: 'action-required',
         key: 'microphone-permission',
         message:
-          formatMicrophoneCaptureErrorMessage(error) ??
-          'Could not detect microphones. Check your system audio settings.',
+          formatMicrophoneCaptureErrorMessage(error) ?? t('settings.microphone.detectFailed'),
       });
     }
   }
@@ -233,15 +240,14 @@ export function renderMicrophonePicker(
   let debounceHandle: number | null = null;
   const onDeviceChange = (): void => {
     if (debounceHandle !== null) {
-      window.clearTimeout(debounceHandle);
+      hostWindow.clearTimeout(debounceHandle);
     }
-    debounceHandle = window.setTimeout(() => {
+    debounceHandle = hostWindow.setTimeout(() => {
       debounceHandle = null;
       void enumerate();
     }, DEVICE_CHANGE_DEBOUNCE_MS);
   };
 
-  const mediaDevices = window.navigator?.mediaDevices;
   mediaDevices?.addEventListener?.('devicechange', onDeviceChange);
 
   void enumerate();
@@ -249,16 +255,11 @@ export function renderMicrophonePicker(
   return () => {
     disposed = true;
     if (debounceHandle !== null) {
-      window.clearTimeout(debounceHandle);
+      hostWindow.clearTimeout(debounceHandle);
       debounceHandle = null;
     }
     mediaDevices?.removeEventListener?.('devicechange', onDeviceChange);
   };
-}
-
-function appendOption(selectEl: HTMLSelectElement, value: string, text: string): void {
-  const option = selectEl.createEl('option', { text });
-  option.value = value;
 }
 
 function formatDeviceLabel(raw: string): string {

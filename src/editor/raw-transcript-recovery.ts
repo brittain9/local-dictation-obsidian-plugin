@@ -1,6 +1,7 @@
 import type { EditorView } from '@codemirror/view';
 import type { App, TFile } from 'obsidian';
 
+import { t } from '../shared/i18n';
 import type { UserFeedback } from '../shared/user-feedback';
 
 interface ClipboardWriter {
@@ -70,7 +71,7 @@ export class RawTranscriptRecovery {
     this.dependencies.feedback.show({
       intent: 'success',
       key: 'raw-transcript-recovery-cleared',
-      message: 'Cleared the raw transcript recovery.',
+      message: t('notice.rawTranscriptCleared'),
     });
     return true;
   }
@@ -94,7 +95,7 @@ export class RawTranscriptRecovery {
       this.dependencies.feedback.show({
         intent: 'error',
         key: 'raw-transcript-copy-failed',
-        message: 'Could not copy the raw transcript.',
+        message: t('notice.rawTranscriptCopyFailed'),
       });
       return false;
     }
@@ -102,7 +103,7 @@ export class RawTranscriptRecovery {
     this.dependencies.feedback.show({
       intent: 'success',
       key: 'raw-transcript-copied',
-      message: 'Copied the raw transcript.',
+      message: t('notice.rawTranscriptCopied'),
     });
     return true;
   }
@@ -118,8 +119,7 @@ export class RawTranscriptRecovery {
       this.dependencies.feedback.show({
         intent: 'warning',
         key: 'raw-transcript-target-unavailable',
-        message:
-          'Could not restore the raw transcript because its original note is no longer open in the same editor.',
+        message: t('notice.rawTranscriptTargetUnavailable'),
       });
       return false;
     }
@@ -131,7 +131,7 @@ export class RawTranscriptRecovery {
       this.dependencies.feedback.show({
         intent: 'error',
         key: 'raw-transcript-restore-failed',
-        message: 'Could not restore the raw transcript.',
+        message: t('notice.rawTranscriptRestoreFailed'),
       });
       return false;
     }
@@ -143,7 +143,7 @@ export class RawTranscriptRecovery {
       this.dependencies.feedback.show({
         intent: 'warning',
         key: 'raw-transcript-restore-stale',
-        message: 'Could not restore the raw transcript because the note changed after cleanup.',
+        message: t('notice.rawTranscriptChanged'),
       });
       return false;
     }
@@ -164,7 +164,7 @@ export class RawTranscriptRecovery {
       this.dependencies.feedback.show({
         intent: 'error',
         key: 'raw-transcript-restore-failed',
-        message: 'Could not restore the raw transcript.',
+        message: t('notice.rawTranscriptRestoreFailed'),
       });
       return false;
     }
@@ -174,7 +174,7 @@ export class RawTranscriptRecovery {
       this.dependencies.feedback.show({
         intent: 'error',
         key: 'raw-transcript-restore-failed',
-        message: 'Could not restore the raw transcript.',
+        message: t('notice.rawTranscriptRestoreFailed'),
       });
       return false;
     }
@@ -185,7 +185,7 @@ export class RawTranscriptRecovery {
     this.dependencies.feedback.show({
       intent: 'success',
       key: 'raw-transcript-restored',
-      message: 'Restored the raw transcript.',
+      message: t('notice.rawTranscriptRestored'),
     });
     return true;
   }
@@ -212,7 +212,7 @@ export class RawTranscriptRecovery {
     this.dependencies.feedback.show({
       intent: 'information',
       key: 'raw-transcript-recovery-unavailable',
-      message: 'No raw transcript recovery is available.',
+      message: t('notice.rawTranscriptUnavailable'),
     });
   }
 }

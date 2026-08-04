@@ -5,6 +5,7 @@ import {
   ProviderError,
   type ProviderHealth,
 } from '../llm/provider';
+import { t } from '../shared/i18n';
 
 export type PriceTier = 'free' | '$' | '$$' | '$$$' | '$$$$';
 
@@ -49,17 +50,17 @@ export function formatCleanupFailureBanner(failure: LlmCleanupFailure): string {
 
   switch (failure.code) {
     case 'auth_invalid':
-      return `${providerName} API key rejected. Check settings.`;
+      return t('llm.failure.authInvalid', { provider: providerName });
     case 'rate_limited':
-      return `${providerName} rate limit hit. Falling back to raw text.`;
+      return t('llm.failure.rateLimited', { provider: providerName });
     case 'connection_failed':
     case 'timeout':
-      return `Network error reaching ${providerName}.`;
+      return t('llm.failure.network', { provider: providerName });
     case 'model_not_configured':
-      return `${providerName} model is not configured. Choose one under Model.`;
+      return t('llm.failure.modelNotConfigured', { provider: providerName });
     case 'unknown_model':
-      return `${providerName} model not found. Choose another under Model.`;
+      return t('llm.failure.unknownModel', { provider: providerName });
     default:
-      return 'LLM transform failed. See console.';
+      return t('llm.failure.unknown');
   }
 }

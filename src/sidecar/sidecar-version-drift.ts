@@ -1,4 +1,5 @@
 import {
+  type InstallManifest,
   readInstallManifest,
   type SidecarInstallVariant,
   variantDirectoryPath,
@@ -31,6 +32,32 @@ export function isDevelopmentSidecarVersion(version: string): boolean {
 }
 
 /**
+ * Applies the authoritative drift rules to manifests that have already been
+ * read. Callers choose the variant order so both startup and Settings can put
+ * the preferred runtime first without reading install.json twice.
+ */
+export function resolveSidecarVersionDrift(params: {
+  manifests: Readonly<Partial<Record<SidecarInstallVariant, InstallManifest | null>>>;
+  pluginVersion: string;
+  variants: readonly SidecarInstallVariant[];
+}): SidecarVersionDrift[] {
+  return params.variants.flatMap((variant) => {
+    const manifest = params.manifests[variant];
+    if (manifest === undefined || manifest === null) return [];
+    if (isDevelopmentSidecarVersion(manifest.version)) return [];
+    if (!isSidecarVersionDrifted(manifest.version, params.pluginVersion)) return [];
+
+    return [
+      {
+        installedVersion: manifest.version,
+        pluginVersion: params.pluginVersion,
+        variant,
+      },
+    ];
+  });
+}
+
+/**
  * Reads every supported install manifest and reports release-installed
  * variants that do not match `pluginVersion`. Development sidecars are copied
  * into the same directories with `dev-*` manifest versions, so they are
@@ -58,17 +85,11 @@ export async function detectSidecarVersionDrift(params: {
     })),
   );
 
-  return manifests.flatMap(({ manifest, variant }) => {
-    if (manifest === null) return [];
-    if (isDevelopmentSidecarVersion(manifest.version)) return [];
-    if (!isSidecarVersionDrifted(manifest.version, params.pluginVersion)) return [];
-
-    return [
-      {
-        installedVersion: manifest.version,
-        pluginVersion: params.pluginVersion,
-        variant,
-      },
-    ];
+  return resolveSidecarVersionDrift({
+    manifests: Object.fromEntries(
+      manifests.map(({ manifest, variant }) => [variant, manifest] as const),
+    ),
+    pluginVersion: params.pluginVersion,
+    variants: variants,
   });
 }

@@ -10,8 +10,9 @@ counter (the 11th release cut in June 2026), **not** the day of the month.
 Format rules enforced by `scripts/read-release-version.mjs`:
 
 - **Month** is `1`–`12` with **no leading zero** → `2026.6.11`, never `2026.06.11`.
-- **MICRO** is any positive integer with no leading zero. It is not capped at
-  31 because it counts releases, not calendar days.
+- **MICRO** is any non-negative integer with no leading zero. Start each month
+  at `0`, then increment it for additional releases that month. It is not capped
+  at 31 because it counts releases, not calendar days.
 - The git tag is **bare, no `v` prefix**, and must equal `manifest.json` exactly.
 
 ## Files that carry the version
@@ -111,6 +112,11 @@ npm run check
 mapping, and curated notes. Normal PR CI and the tag workflow run the same gate.
 The explicit tag check must print `<version>` with no error.
 
+When a release changes settings behavior or its Obsidian API usage, also
+complete the [Obsidian settings compatibility matrix](../guides/obsidian-settings-compatibility-testing.md).
+Its exact 1.11.5 runtime row remains required while `manifest.json` declares
+1.11.5, even when the supported-floor typecheck passes.
+
 ## Cut it
 
 ```bash
@@ -162,23 +168,21 @@ A release is one GitHub Release tagged `<version>`, carrying the plugin files an
 the sidecar archives:
 
 - `main.js`, `manifest.json`, `styles.css` — what Obsidian's updater fetches.
-- `sidecar-macos-arm64.tar.gz` — Whisper Metal + Cohere CPU.
+- `sidecar-macos-arm64.tar.gz` — Whisper Metal + ONNX model families on CPU.
 - `sidecar-linux-x86_64-cpu.tar.gz`, `sidecar-linux-x86_64-cuda.tar.gz`.
 - `sidecar-windows-x86_64-cpu.tar.gz`, `sidecar-windows-x86_64-cuda.tar.gz`.
 - `checksums.txt` — SHA-256 of every sidecar archive, exactly five lines, sorted.
 
-CUDA archives also bundle the ONNX Runtime provider libraries and the reviewed
-CUDA runtime libraries declared in `native/cuda-artifacts.json`. The macOS sidecar
-is ad-hoc signed before packaging.
+CUDA archives bundle the reviewed whisper.cpp CUDA runtime libraries declared in
+`native/cuda-artifacts.json`. Current ONNX model families run on CPU in every
+archive. The macOS sidecar is ad-hoc signed before packaging.
 
 Cross-platform release-build invariants live in
 `.github/release-build-config.json`; the metadata job resolves that file once
 and feeds every native release leg. Its CUDA architecture targets one
 forward-compatible Turing PTX variant, and its `GGML_NATIVE` setting prevents
-sidecars from inheriting runner-only CPU SIMD. On licensing: the ONNX Runtime
-provider libraries are MIT and safe to bundle; the bundled CUDA runtime
-libraries ship after CUDA EULA review; cuDNN is NVIDIA-licensed and is **not**
-bundled, so Cohere CUDA users supply it themselves.
+sidecars from inheriting runner-only CPU SIMD. The bundled CUDA runtime
+libraries ship after CUDA EULA review.
 
 Obsidian's updater only replaces `main.js`/`manifest.json`/`styles.css`, so the
 plugin installs the sidecar itself: it downloads the archive matching

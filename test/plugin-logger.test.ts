@@ -20,12 +20,12 @@ describe('plugin logger', () => {
     logger.error('installer', 'download failed', cause);
 
     expect(debug).not.toHaveBeenCalled();
-    expect(warn).toHaveBeenCalledWith('[Local Dictation] [installer]', 'download is slow');
-    expect(error).toHaveBeenCalledWith('[Local Dictation] [installer]', 'download failed', cause);
+    expect(warn).toHaveBeenCalledWith('[Speech Kit] [installer]', 'download is slow');
+    expect(error).toHaveBeenCalledWith('[Speech Kit] [installer]', 'download failed', cause);
 
     developerMode = true;
     logger.debug('installer', 'retry started');
 
-    expect(debug).toHaveBeenCalledWith('[Local Dictation] [installer]', 'retry started');
+    expect(debug).toHaveBeenCalledWith('[Speech Kit] [installer]', 'retry started');
   });
 });

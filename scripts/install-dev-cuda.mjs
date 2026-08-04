@@ -360,7 +360,7 @@ async function fileSnapshot(path, info) {
 }
 
 function printHeader(options, pluginDirectory) {
-  console.log('Local Dictation dev CUDA install');
+  console.log('Speech Kit dev CUDA install');
   console.log(`  vault:    ${options.vault}`);
   console.log(`  plugin:   ${pluginDirectory}`);
   console.log(`  profile:  ${options.release ? 'release' : 'debug'}`);

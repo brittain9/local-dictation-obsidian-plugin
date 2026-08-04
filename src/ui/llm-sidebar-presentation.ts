@@ -1,5 +1,6 @@
 import { describePresetTiming, resolveActivePresetEntry } from '../llm/presets';
 import type { PluginSettings } from '../settings/plugin-settings';
+import { t } from '../shared/i18n';
 
 type LlmSidebarSettings = Pick<
   PluginSettings,
@@ -12,7 +13,7 @@ type LlmSidebarSettings = Pick<
 interface ActiveLlmSidebarPresentation {
   emptyState: null;
   state: 'active';
-  statusLabel: 'On';
+  statusLabel: string;
   summary: string;
 }
 
@@ -23,7 +24,7 @@ interface InactiveLlmSidebarPresentation {
     title: string;
   };
   state: 'off' | 'unavailable';
-  statusLabel: 'Off' | 'Unavailable';
+  statusLabel: string;
   summary: string;
 }
 
@@ -35,27 +36,26 @@ export function resolveLlmSidebarPresentation(
   if (!settings.llmFeaturesEnabled) {
     return {
       emptyState: {
-        description: 'Enable LLM features in Local Dictation settings to configure transforms.',
+        description: t('llm.sidebar.unavailable.description'),
         icon: 'settings-2',
-        title: 'LLM features are unavailable',
+        title: t('llm.sidebar.unavailable.title'),
       },
       state: 'unavailable',
-      statusLabel: 'Unavailable',
-      summary: 'Enable LLM features in settings',
+      statusLabel: t('common.unavailable'),
+      summary: t('llm.sidebar.unavailable.summary'),
     };
   }
 
   if (settings.llmPostprocessMode === 'off') {
     return {
       emptyState: {
-        description:
-          'Dictation inserts the raw local transcript. Turn on Transform when you want cleanup, rewriting, or summaries.',
+        description: t('llm.sidebar.off.description'),
         icon: 'file-text',
-        title: 'Raw transcript mode',
+        title: t('llm.sidebar.off.title'),
       },
       state: 'off',
-      statusLabel: 'Off',
-      summary: 'Raw transcript',
+      statusLabel: t('common.off'),
+      summary: t('llm.sidebar.off.summary'),
     };
   }
 
@@ -68,7 +68,10 @@ export function resolveLlmSidebarPresentation(
   return {
     emptyState: null,
     state: 'active',
-    statusLabel: 'On',
-    summary: `${preset.label} · ${describePresetTiming(timing)}`,
+    statusLabel: t('common.on'),
+    summary: t('llm.sidebar.active.summary', {
+      preset: preset.label,
+      timing: describePresetTiming(timing),
+    }),
   };
 }

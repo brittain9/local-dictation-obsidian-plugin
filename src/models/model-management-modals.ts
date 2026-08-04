@@ -1,21 +1,28 @@
-import type { App } from 'obsidian';
+import type { App, TextComponent } from 'obsidian';
 import { Modal, Setting } from 'obsidian';
 
 import { formatBytes } from '../shared/format-utils';
+import { t } from '../shared/i18n';
 import type { UserFeedback } from '../shared/user-feedback';
-import { buildCapabilityLabels } from './capability-view';
+import { resolveEngineCapabilities } from './capability-view';
 import {
   DEFAULT_EXTERNAL_FILE_ENGINE_SELECTION,
   EXTERNAL_FILE_ENGINES,
   formatExternalModelValidationError,
   getExternalFileEngineOption,
 } from './external-model-file';
-import type { ModelInstallManager } from './model-install-manager';
+import {
+  buildModelDetailsPresentation,
+  type ModelDetailsPresentation,
+} from './model-details-presentation';
+import type { ModelInstallManager, ModelManagerState } from './model-install-manager';
 import {
   type CatalogModelRecord,
+  type CatalogModelSelection,
   type EngineCapabilitiesRecord,
   type ExternalFileModelSelection,
-  getTotalModelSize,
+  type InstalledModelRecord,
+  matchesModelTriple,
 } from './model-management-types';
 
 interface ExternalModelFileModalDependencies {
@@ -28,7 +35,7 @@ export class ExternalModelFileModal extends Modal {
   private engine: Pick<ExternalFileModelSelection, 'familyId' | 'runtimeId'>;
   private errorEl: HTMLParagraphElement | null = null;
   private guidanceEl: HTMLDivElement | null = null;
-  private inputEl: HTMLInputElement | null = null;
+  private input: TextComponent | null = null;
 
   constructor(
     app: App,
@@ -40,17 +47,15 @@ export class ExternalModelFileModal extends Modal {
   }
 
   override onOpen(): void {
-    this.titleEl.setText('Use external file');
+    this.setTitle(t('models.external.title'));
     this.contentEl.empty();
     this.contentEl.createEl('p', {
-      text: 'External models are for advanced use. Local Dictation does not download, update, or checksum-verify these files.',
+      text: t('models.external.intro'),
     });
 
     new Setting(this.contentEl)
-      .setName('Model family')
-      .setDesc(
-        'Choose the loader that matches the model. The family is not inferred from its filename.',
-      )
+      .setName(t('models.external.family.name'))
+      .setDesc(t('models.external.family.desc'))
       .addDropdown((dropdown) => {
         for (const option of EXTERNAL_FILE_ENGINES) {
           dropdown.addOption(engineKey(option.selection), option.label);
@@ -63,7 +68,7 @@ export class ExternalModelFileModal extends Modal {
           if (option !== undefined) {
             this.engine = option.selection;
             this.renderGuidance();
-            this.inputEl?.setAttr('placeholder', option.placeholder);
+            this.input?.setPlaceholder(option.placeholder);
             this.setValidationError(null);
           }
         });
@@ -73,48 +78,47 @@ export class ExternalModelFileModal extends Modal {
     this.renderGuidance();
 
     new Setting(this.contentEl)
-      .setName('Model file path')
-      .setDesc(
-        'Enter the absolute path to the primary model artifact. It is validated before this selection is saved.',
-      )
+      .setName(t('models.external.path.name'))
+      .setDesc(t('models.external.path.desc'))
       .addText((text) => {
         const option = getExternalFileEngineOption(this.engine);
         text.setPlaceholder(option?.placeholder ?? '/absolute/path/to/model');
         text.setValue(this.currentPath);
-        this.inputEl = text.inputEl;
-        this.inputEl.addEventListener('input', () => {
+        this.input = text;
+        text.onChange(() => {
           this.setValidationError(null);
         });
       });
 
-    this.inputEl?.focus();
+    this.input?.inputEl.focus();
 
     this.errorEl = this.contentEl.createEl('p', {
       attr: { 'aria-live': 'polite' },
-      cls: 'local-stt-external-model-error local-stt-hidden',
+      cls: 'local-stt-external-model-error',
     });
+    this.errorEl.hide();
 
     let validating = false;
     new Setting(this.contentEl).addButton((button) => {
       button
         .setCta()
-        .setButtonText('Validate and use')
+        .setButtonText(t('models.external.validateAndUse'))
         .onClick(async () => {
           if (validating) {
             return;
           }
 
           validating = true;
-          button.setDisabled(true).setButtonText('Validating…');
+          button.setDisabled(true).setButtonText(t('models.external.validating'));
           this.setValidationError(null);
-          const nextPath = this.inputEl?.value.trim() ?? '';
+          const nextPath = this.input?.getValue().trim() ?? '';
 
           try {
             await this.dependencies.manager.validateAndSelectExternalFile(nextPath, this.engine);
             await this.dependencies.onChanged();
             this.dependencies.feedback.show({
               intent: 'success',
-              message: 'External model file validated and selected.',
+              message: t('models.external.selectedNotice'),
             });
             this.close();
           } catch (error) {
@@ -127,7 +131,7 @@ export class ExternalModelFileModal extends Modal {
             });
           } finally {
             validating = false;
-            button.setDisabled(false).setButtonText('Validate and use');
+            button.setDisabled(false).setButtonText(t('models.external.validateAndUse'));
           }
         });
     });
@@ -144,7 +148,7 @@ export class ExternalModelFileModal extends Modal {
       return;
     }
 
-    this.guidanceEl.createEl('strong', { text: 'File requirements' });
+    this.guidanceEl.createEl('strong', { text: t('models.external.requirementsTitle') });
     const requirements = this.guidanceEl.createEl('ul');
     for (const requirement of option.requirements) {
       requirements.createEl('li', { text: requirement });
@@ -157,7 +161,7 @@ export class ExternalModelFileModal extends Modal {
     }
 
     this.errorEl.setText(message ?? '');
-    this.errorEl.toggleClass('local-stt-hidden', message === null);
+    this.errorEl.toggle(message !== null);
   }
 
   private initialEngine(): Pick<ExternalFileModelSelection, 'familyId' | 'runtimeId'> {
@@ -177,59 +181,145 @@ function engineKey(selection: Pick<ExternalFileModelSelection, 'familyId' | 'run
 }
 
 export class ModelDetailsModal extends Modal {
+  private readonly presentation: ModelDetailsPresentation;
+
   constructor(
     app: App,
-    private readonly model: CatalogModelRecord,
-    private readonly installPath: string | null,
-    private readonly capabilities: EngineCapabilitiesRecord | null,
+    model: CatalogModelRecord,
+    installedModel: InstalledModelRecord | null,
+    capabilities: EngineCapabilitiesRecord | null,
   ) {
     super(app);
+    this.presentation = buildModelDetailsPresentation(model, installedModel, capabilities);
   }
 
   override onOpen(): void {
-    this.titleEl.setText(this.model.displayName);
+    const presentation = this.presentation;
+    this.setTitle(presentation.displayName);
     this.contentEl.empty();
-    this.contentEl.createEl('p', { text: this.model.summary });
+    this.contentEl.createEl('p', {
+      text: presentation.summary,
+    });
 
     const dl = this.contentEl.createEl('dl', { cls: 'local-stt-details-grid' });
 
-    const totalSize = getTotalModelSize(this.model);
-    if (totalSize > 0) {
-      dl.createEl('dt', { text: 'Total size' });
-      dl.createEl('dd', { text: formatBytes(totalSize) });
+    if (presentation.totalSizeBytes > 0) {
+      dl.createEl('dt', { text: t('models.details.totalSize') });
+      dl.createEl('dd', { text: formatBytes(presentation.totalSizeBytes) });
     }
 
-    dl.createEl('dt', { text: 'Source' });
-    appendDetailsLink(dl.createEl('dd'), this.model.sourceUrl, this.model.sourceUrl, true);
+    dl.createEl('dt', { text: t('models.details.source') });
+    appendDetailsLink(dl.createEl('dd'), presentation.sourceUrl, presentation.sourceUrl, true);
 
-    dl.createEl('dt', { text: 'License' });
-    appendDetailsLink(dl.createEl('dd'), this.model.licenseLabel, this.model.licenseUrl);
+    dl.createEl('dt', { text: t('models.details.license') });
+    appendDetailsLink(dl.createEl('dd'), presentation.licenseLabel, presentation.licenseUrl);
 
-    if (this.capabilities !== null) {
-      dl.createEl('dt', { text: 'Capabilities' });
-      dl.createEl('dd', { text: buildCapabilityLabels(this.capabilities).join(', ') });
+    if (presentation.modelCardUrl !== null) {
+      dl.createEl('dt', { text: t('models.details.modelCard') });
+      appendDetailsLink(
+        dl.createEl('dd'),
+        t('models.details.modelCard'),
+        presentation.modelCardUrl,
+      );
     }
 
-    if (this.installPath !== null) {
-      dl.createEl('dt', { text: 'Install path' });
-      dl.createEl('dd', { text: this.installPath, cls: 'local-stt-mono' });
+    if (presentation.capabilityLabels !== null) {
+      dl.createEl('dt', { text: t('models.details.capabilities') });
+      dl.createEl('dd', { text: presentation.capabilityLabels.join(', ') });
     }
 
-    if (this.model.artifacts.length > 0) {
+    if (presentation.installPath !== null) {
+      dl.createEl('dt', { text: t('models.details.installPath') });
+      dl.createEl('dd', { text: presentation.installPath, cls: 'local-stt-mono' });
+    }
+
+    if (presentation.tts !== null) {
+      appendDetailsValues(dl, t('models.details.languages'), presentation.tts.languages);
+      appendDetailsValues(
+        dl,
+        t('models.details.availableVoices'),
+        presentation.tts.availableVoices.map((voice) =>
+          voice.isDefault ? t('models.details.defaultVoice', { voice: voice.label }) : voice.label,
+        ),
+      );
+      appendDetailsValues(
+        dl,
+        t('models.details.installedVoices'),
+        presentation.tts.installedVoices.map((voice) => voice.label),
+      );
+      if (presentation.tts.supportsSpeedControl) {
+        dl.createEl('dt', { text: t('models.details.speedControl') });
+        dl.createEl('dd', { text: t('models.details.supported') });
+      }
+      if (presentation.tts.outputSampleRate !== null) {
+        dl.createEl('dt', { text: t('models.details.outputSampleRate') });
+        dl.createEl('dd', { text: presentation.tts.outputSampleRate });
+      }
+    }
+
+    if (presentation.artifacts.length > 0) {
       const table = this.contentEl.createEl('table', { cls: 'local-stt-artifact-table' });
       const thead = table.createEl('thead');
       const headerRow = thead.createEl('tr');
-      headerRow.createEl('th', { text: `Files (${this.model.artifacts.length})` });
-      headerRow.createEl('th', { text: 'Size' });
+      headerRow.createEl('th', {
+        text: t('models.details.files', { count: presentation.artifacts.length }),
+      });
+      headerRow.createEl('th', { text: t('models.details.size') });
 
       const tbody = table.createEl('tbody');
-      for (const artifact of this.model.artifacts) {
+      for (const artifact of presentation.artifacts) {
         const tr = tbody.createEl('tr');
         tr.createEl('td', { text: artifact.filename, cls: 'local-stt-mono' });
         tr.createEl('td', { text: formatBytes(artifact.sizeBytes) });
       }
     }
   }
+}
+
+export function openModelDetailsModal(
+  app: App,
+  state: Pick<
+    ModelManagerState,
+    'catalog' | 'compiledAdapters' | 'compiledRuntimes' | 'installedModels'
+  >,
+  selection: CatalogModelSelection,
+): void {
+  const model = state.catalog.models.find((candidate) =>
+    matchesModelTriple(candidate, selection.runtimeId, selection.familyId, selection.modelId),
+  );
+  if (model === undefined) return;
+
+  const installedModel = state.installedModels.find((candidate) =>
+    matchesModelTriple(candidate, selection.runtimeId, selection.familyId, selection.modelId),
+  );
+  const capabilities = resolveEngineCapabilities(
+    state.compiledRuntimes,
+    state.compiledAdapters,
+    selection.runtimeId,
+    selection.familyId,
+  );
+  new ModelDetailsModal(app, model, installedModel ?? null, capabilities).open();
+}
+
+export function openSelectedModelDetailsModal(
+  app: App,
+  manager: Pick<ModelInstallManager, 'getState'>,
+  task: 'stt' | 'tts',
+): void {
+  const state = manager.getState();
+  const selection = task === 'stt' ? state.selectedModel : state.selectedTtsModel;
+  if (selection?.kind !== 'catalog_model') return;
+  openModelDetailsModal(app, state, selection);
+}
+
+function appendDetailsValues(
+  container: HTMLElement,
+  label: string,
+  values: readonly string[],
+): void {
+  if (values.length === 0) return;
+  container.createEl('dt', { text: label });
+  container.createEl('dd', { text: values.join(', '), cls: 'local-stt-details-values' });
 }
 
 function appendDetailsLink(

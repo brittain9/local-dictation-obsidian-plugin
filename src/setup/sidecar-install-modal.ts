@@ -5,7 +5,7 @@ import {
   createInstallProgressElement,
   updateInstallProgressElement,
 } from '../models/model-install-progress';
-import { formatErrorMessage } from '../shared/format-utils';
+import { t } from '../shared/i18n';
 import type { UserFeedback } from '../shared/user-feedback';
 import {
   type ActiveSidecarInstall,
@@ -47,7 +47,7 @@ export class SidecarInstallModal extends Modal {
   override onOpen(): void {
     this.inlineFailureVisible = true;
     this.modalEl.addClass('local-stt-sidecar-install');
-    this.titleEl.setText(this.options.copy.title);
+    this.setTitle(this.options.copy.title);
     this.unsubscribe = this.options.manager.subscribe(() => {
       this.handleManagerChange();
     });
@@ -101,7 +101,7 @@ export class SidecarInstallModal extends Modal {
     }
 
     if (state.lastError !== null) {
-      this.renderFailure(state.lastError);
+      this.renderFailure();
       return;
     }
 
@@ -115,12 +115,12 @@ export class SidecarInstallModal extends Modal {
         asset: detectPlatformAssetForCurrentEnv(variant),
         variant,
       }));
-    } catch (error) {
+    } catch {
       // Currently the only path here is Intel Mac (CUDA-on-macOS is unreachable
       // because callers gate the variant on platform). The unsupported view
       // gives the user a clear answer instead of a render-time crash that
       // bubbles to a generic Notice.
-      this.renderUnsupported(formatErrorMessage(error));
+      this.renderUnsupported();
       return;
     }
 
@@ -134,7 +134,12 @@ export class SidecarInstallModal extends Modal {
     const releaseTagUrl = `${DEFAULT_RELEASE_BASE_URL.replace(/\/download$/, '/tag')}/${this.options.version}`;
     for (const download of downloads) {
       details.createEl('dt', {
-        text: downloads.length === 1 ? 'Download' : `${download.variant.toUpperCase()} download`,
+        text:
+          downloads.length === 1
+            ? t('setup.sidecar.modal.download')
+            : t('setup.sidecar.modal.variantDownload', {
+                variant: download.variant.toUpperCase(),
+              }),
       });
       const downloadDd = details.createEl('dd');
       downloadDd.createEl('a', {
@@ -143,10 +148,10 @@ export class SidecarInstallModal extends Modal {
         attr: { rel: 'noopener noreferrer', target: '_blank' },
       });
     }
-    appendRow('Version', this.options.version);
+    appendRow(t('setup.sidecar.modal.version'), this.options.version);
 
     const buttons = this.contentEl.createDiv({ cls: 'local-stt-sidecar-install__buttons' });
-    buttons.createEl('button', { text: 'Later' }).addEventListener('click', () => {
+    buttons.createEl('button', { text: t('common.later') }).addEventListener('click', () => {
       this.close();
     });
     buttons
@@ -169,41 +174,46 @@ export class SidecarInstallModal extends Modal {
     const buttons = this.contentEl.createDiv({ cls: 'local-stt-sidecar-install__buttons' });
     buttons.createEl('button', {
       cls: 'mod-cta',
-      text: active.phase === 'canceling' ? 'Cancelling...' : 'Downloading...',
+      text:
+        active.phase === 'canceling'
+          ? t('setup.sidecar.modal.cancelling')
+          : t('setup.sidecar.modal.downloading'),
     }).disabled = true;
-    buttons.createEl('button', { text: 'Close' }).addEventListener('click', () => {
+    buttons.createEl('button', { text: t('common.close') }).addEventListener('click', () => {
       this.close();
     });
   }
 
-  private renderUnsupported(message: string): void {
+  private renderUnsupported(): void {
     this.contentEl.createEl('p', {
       cls: 'local-stt-sidecar-install__status local-stt-sidecar-install__status--error',
-      text: message,
+      text: t('setup.sidecar.modal.unsupportedPlatform'),
     });
 
     const buttons = this.contentEl.createDiv({ cls: 'local-stt-sidecar-install__buttons' });
-    buttons.createEl('button', { cls: 'mod-cta', text: 'Close' }).addEventListener('click', () => {
-      this.close();
-    });
+    buttons
+      .createEl('button', { cls: 'mod-cta', text: t('common.close') })
+      .addEventListener('click', () => {
+        this.close();
+      });
   }
 
-  private renderFailure(errorMessage: string): void {
+  private renderFailure(): void {
     this.contentEl.createEl('p', {
       cls: 'local-stt-sidecar-install__status local-stt-sidecar-install__status--error',
-      text: `Install failed: ${errorMessage}`,
+      text: t('setup.sidecar.modal.genericInstallError'),
     });
 
     const buttons = this.contentEl.createDiv({ cls: 'local-stt-sidecar-install__buttons' });
     buttons
       .createEl('button', {
         cls: 'mod-cta',
-        text: 'Retry download',
+        text: t('setup.sidecar.modal.retryDownload'),
       })
       .addEventListener('click', () => {
         this.startInstall();
       });
-    buttons.createEl('button', { text: 'Close' }).addEventListener('click', () => {
+    buttons.createEl('button', { text: t('common.close') }).addEventListener('click', () => {
       this.close();
     });
   }
@@ -214,8 +224,7 @@ export class SidecarInstallModal extends Modal {
         beforeReplace: this.options.beforeReplace,
         failureFeedback: {
           isInlineVisible: () => this.inlineFailureVisible,
-          message:
-            'The speech engine install failed. Reopen setup or Settings to review the error and retry.',
+          message: t('setup.sidecar.modal.installFailureNotice'),
         },
         onInstalled: this.options.onInstalled,
         onVariantInstalled: this.options.onVariantInstalled,
@@ -228,7 +237,7 @@ export class SidecarInstallModal extends Modal {
       this.options.feedback.show({
         cause: error,
         intent: 'error',
-        message: 'Could not start the sidecar install. Close other setup windows and try again.',
+        message: t('setup.sidecar.modal.startFailed'),
       });
     }
   }

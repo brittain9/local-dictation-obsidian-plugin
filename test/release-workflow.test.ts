@@ -96,6 +96,17 @@ describe('release workflow', () => {
     expect(notes).toContain('Replace this comment with curated release notes');
   });
 
+  it('allows zero micro for the first release of a later month', async () => {
+    const rootDir = await createReleaseFixture();
+
+    await prepareRelease({ rootDir, version: '2026.8.0' });
+
+    const manifest = JSON.parse(await readFile(join(rootDir, 'manifest.json'), 'utf8'));
+    const versions = JSON.parse(await readFile(join(rootDir, 'versions.json'), 'utf8'));
+    expect(manifest.version).toBe('2026.8.0');
+    expect(versions['2026.8.0']).toBe('1.11.5');
+  });
+
   it('validates prepared metadata, curated notes, and the exact bare tag', async () => {
     const rootDir = await createReleaseFixture();
     await prepareRelease({ rootDir, version: '2026.7.4' });
@@ -156,19 +167,17 @@ describe('release workflow', () => {
     expect(result.stderr).toContain('contains no curated content');
   });
 
-  it.each([
-    '2026.7.3',
-    '2026.7.2',
-    '2026.07.4',
-    '2026.7.0',
-  ])('rejects invalid or non-monotonic target version %s', async (version) => {
-    const rootDir = await createReleaseFixture();
+  it.each(['2026.7.3', '2026.7.2', '2026.07.4', '2026.7.0', '2026.8.00'])(
+    'rejects invalid or non-monotonic target version %s',
+    async (version) => {
+      const rootDir = await createReleaseFixture();
 
-    await expect(prepareRelease({ rootDir, version })).rejects.toThrow();
+      await expect(prepareRelease({ rootDir, version })).rejects.toThrow();
 
-    const manifest = JSON.parse(await readFile(join(rootDir, 'manifest.json'), 'utf8'));
-    expect(manifest.version).toBe('2026.7.3');
-  });
+      const manifest = JSON.parse(await readFile(join(rootDir, 'manifest.json'), 'utf8'));
+      expect(manifest.version).toBe('2026.7.3');
+    },
+  );
 
   it('updates the minimum app version only when explicitly requested', async () => {
     const rootDir = await createReleaseFixture();

@@ -262,13 +262,18 @@ fn validate_stage_segments(
 mod tests {
     use super::*;
     use crate::audio_metadata::VoiceActivityEvidence;
-    use crate::engine::capabilities::{LanguageSupport, ModelFamilyCapabilities};
+    use crate::engine::capabilities::{LanguageSupport, ModelFamilyCapabilities, ModelTask};
     use crate::protocol::{TimestampGranularity, TimestampSource, TranscriptSegment};
     use serde_json::json;
     use uuid::Uuid;
 
     fn whisper_caps() -> ModelFamilyCapabilities {
         ModelFamilyCapabilities {
+            task: ModelTask::Stt,
+            supports_hardware_acceleration: true,
+            available_voices: Vec::new(),
+            supports_speed_control: false,
+            output_sample_rate: None,
             supports_segment_timestamps: true,
             supports_word_timestamps: false,
             supports_initial_prompt: true,

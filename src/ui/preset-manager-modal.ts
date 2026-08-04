@@ -18,6 +18,7 @@ import {
   LLM_USER_PRESET_MAX_LABEL_CHARS,
   type PluginSettings,
 } from '../settings/plugin-settings';
+import { t } from '../shared/i18n';
 import type { UserFeedback } from '../shared/user-feedback';
 import { ConfirmModal } from './confirm-modal';
 import {
@@ -73,15 +74,15 @@ export class PresetManagerModal extends Modal {
     }
     this.contentEl.empty();
     if (this.editor === null) {
-      this.titleEl.setText('Manage presets');
+      this.setTitle(t('llm.preset.manager.title'));
       this.renderList();
       return;
     }
-    this.titleEl.setText(
+    this.setTitle(
       this.editor.kind === 'create'
-        ? 'New preset'
+        ? t('llm.preset.manager.newTitle')
         : this.editor.kind === 'edit'
-          ? 'Edit preset'
+          ? t('llm.preset.manager.editTitle')
           : this.editor.preset.label,
     );
     this.renderEditor(this.editor);
@@ -97,12 +98,10 @@ export class PresetManagerModal extends Modal {
     const reachedMaxCount = this.reachedMaxCount();
 
     new Setting(this.contentEl)
-      .setName('Presets')
-      .setDesc(
-        'The active preset is marked. Built-in presets are read-only — duplicate one to customize it.',
-      )
+      .setName(t('llm.preset.manager.presets.name'))
+      .setDesc(t('llm.preset.manager.presets.description'))
       .addButton((button) => {
-        button.setCta().setButtonText('New preset');
+        button.setCta().setButtonText(t('llm.preset.manager.new'));
         if (reachedMaxCount) {
           button.setDisabled(true);
           button.setTooltip(MAX_PRESETS_MESSAGE);
@@ -117,7 +116,7 @@ export class PresetManagerModal extends Modal {
     const searchEl = this.contentEl.createDiv('search-input-container local-stt-preset-search');
     const listEl = this.contentEl.createDiv();
     new SearchComponent(searchEl)
-      .setPlaceholder('Search presets...')
+      .setPlaceholder(t('llm.preset.manager.searchPlaceholder'))
       .setValue(this.searchQuery)
       .onChange((value) => {
         // Re-render only the list so the search input keeps focus.
@@ -142,17 +141,22 @@ export class PresetManagerModal extends Modal {
     if (hits.length === 0) {
       listEl.createEl('p', {
         cls: 'local-stt-preset-empty',
-        text: 'No presets match your search.',
+        text: t('llm.preset.manager.noMatches'),
       });
       return;
     }
     const builtinHits = hits.filter((hit) => hit.entry.isBuiltin);
     if (builtinHits.length > 0) {
-      this.renderListSection(listEl, 'Built-in', builtinHits, activeRef);
+      this.renderListSection(
+        listEl,
+        t('llm.preset.manager.builtinHeading'),
+        builtinHits,
+        activeRef,
+      );
     }
     const userHits = hits.filter((hit) => !hit.entry.isBuiltin);
     if (userHits.length > 0) {
-      this.renderListSection(listEl, 'Your presets', userHits, activeRef);
+      this.renderListSection(listEl, t('llm.preset.manager.yoursHeading'), userHits, activeRef);
     }
   }
 
@@ -175,18 +179,34 @@ export class PresetManagerModal extends Modal {
       const description = createFragment();
       renderMatches(description, hit.description, hit.descriptionMatches);
       const setting = new Setting(listEl).setName(name).setDesc(description);
-      setting.settingEl.addClass('local-stt-preset-row');
+      setting.setClass('local-stt-preset-row');
+      const openLabel = entry.isBuiltin
+        ? t('llm.preset.manager.viewTooltip')
+        : t('llm.preset.manager.editTooltip');
+      setting.infoEl.tabIndex = 0;
+      setting.infoEl.setAttribute('role', 'button');
+      setting.infoEl.setAttribute('aria-label', `${openLabel}: ${preset.label}`);
+      setting.infoEl.addEventListener('click', () => {
+        this.openEntry(entry);
+      });
+      setting.infoEl.addEventListener('keydown', (event) => {
+        if (event.key !== 'Enter' && event.key !== ' ') {
+          return;
+        }
+        event.preventDefault();
+        this.openEntry(entry);
+      });
 
       setting.addExtraButton((button) => {
         button
           .setIcon(entry.isBuiltin ? 'eye' : 'pencil')
-          .setTooltip(entry.isBuiltin ? 'View preset' : 'Edit preset')
+          .setTooltip(openLabel)
           .onClick(() => {
             this.openEntry(entry);
           });
       });
       setting.addExtraButton((button) => {
-        button.setIcon('copy').setTooltip('Duplicate preset');
+        button.setIcon('copy').setTooltip(t('llm.preset.manager.duplicateTooltip'));
         if (reachedMaxCount) {
           button.setDisabled(true);
           return;
@@ -199,25 +219,12 @@ export class PresetManagerModal extends Modal {
         setting.addExtraButton((button) => {
           button
             .setIcon('trash-2')
-            .setTooltip(`Delete preset "${preset.label}"`)
+            .setTooltip(t('llm.preset.manager.deleteTooltip', { preset: preset.label }))
             .onClick(() => {
               this.confirmDelete(preset);
             });
         });
       }
-
-      setting.settingEl.addEventListener('click', (event) => {
-        // Ignore clicks on the action icons (Obsidian extra buttons are
-        // divs, not <button>s) so edit/duplicate/delete don't also open
-        // the row.
-        if (
-          event.target instanceof HTMLElement &&
-          event.target.closest('.setting-item-control') !== null
-        ) {
-          return;
-        }
-        this.openEntry(entry);
-      });
     }
   }
 
@@ -246,15 +253,15 @@ export class PresetManagerModal extends Modal {
 
     const backButton = this.contentEl.createEl('button', {
       cls: 'local-stt-preset-back',
-      text: '← All presets',
+      text: t('llm.preset.manager.back'),
     });
     backButton.addEventListener('click', () => {
       this.editor = null;
       this.render();
     });
 
-    new Setting(this.contentEl).setName('Name').addText((text) => {
-      text.setPlaceholder('e.g. Meeting notes');
+    new Setting(this.contentEl).setName(t('llm.preset.editor.name')).addText((text) => {
+      text.setPlaceholder(t('llm.preset.editor.namePlaceholder'));
       text.setValue(draft.label);
       text.setDisabled(isBuiltinView);
       text.inputEl.maxLength = LLM_USER_PRESET_MAX_LABEL_CHARS;
@@ -263,8 +270,8 @@ export class PresetManagerModal extends Modal {
       });
     });
 
-    new Setting(this.contentEl).setName('Description (optional)').addTextArea((text) => {
-      text.setPlaceholder('When to use this preset');
+    new Setting(this.contentEl).setName(t('llm.preset.editor.description')).addTextArea((text) => {
+      text.setPlaceholder(t('llm.preset.editor.descriptionPlaceholder'));
       text.setValue(draft.description);
       text.setDisabled(isBuiltinView);
       text.inputEl.rows = 2;
@@ -275,12 +282,15 @@ export class PresetManagerModal extends Modal {
     });
 
     const promptSetting = new Setting(this.contentEl)
-      .setName('Prompt')
-      .setDesc('Sent to the model as the system prompt.');
-    promptSetting.settingEl.addClass('local-stt-preset-editor__prompt');
+      .setName(t('llm.preset.editor.prompt'))
+      .setDesc(t('llm.preset.editor.promptDescription'));
+    promptSetting.setClass('local-stt-preset-editor__prompt');
     const updatePromptSize = (value: string) => {
       promptSizeEl.setText(
-        `~${Math.ceil(value.length / 4)} tokens (${value.length} chars) — sent with every request`,
+        t('llm.preset.editor.promptSize', {
+          characters: value.length,
+          tokens: Math.ceil(value.length / 4),
+        }),
       );
     };
     promptSetting.addTextArea((text) => {
@@ -299,12 +309,12 @@ export class PresetManagerModal extends Modal {
 
     let timingDropdown: DropdownComponent | null = null;
     new Setting(this.contentEl)
-      .setName('Timing')
-      .setDesc('When the transform runs. “Either” follows the sidebar timing.')
+      .setName(t('llm.preset.editor.timing'))
+      .setDesc(t('llm.preset.editor.timingDescription'))
       .addDropdown((dropdown) => {
-        dropdown.addOption('either', 'Either (follow sidebar)');
-        dropdown.addOption('per_utterance', 'After each phrase');
-        dropdown.addOption('batch', 'Once on stop');
+        dropdown.addOption('either', t('llm.preset.editor.timingEither'));
+        dropdown.addOption('per_utterance', t('llm.preset.editor.timingPerUtterance'));
+        dropdown.addOption('batch', t('llm.preset.editor.timingBatch'));
         dropdown.setValue(draft.timing);
         dropdown.setDisabled(isBuiltinView || draft.output !== 'replace');
         dropdown.onChange((value) => {
@@ -314,14 +324,12 @@ export class PresetManagerModal extends Modal {
       });
 
     new Setting(this.contentEl)
-      .setName('Output')
-      .setDesc(
-        'Replace rewrites your dictated text. Add keeps it untouched and inserts new content.',
-      )
+      .setName(t('llm.preset.editor.output'))
+      .setDesc(t('llm.preset.editor.outputDescription'))
       .addDropdown((dropdown) => {
-        dropdown.addOption('replace', 'Replace text');
-        dropdown.addOption('add_above', 'Add above transcript');
-        dropdown.addOption('add_below', 'Add below transcript');
+        dropdown.addOption('replace', t('llm.preset.editor.outputReplace'));
+        dropdown.addOption('add_above', t('llm.preset.editor.outputAddAbove'));
+        dropdown.addOption('add_below', t('llm.preset.editor.outputAddBelow'));
         dropdown.setValue(draft.output);
         dropdown.setDisabled(isBuiltinView);
         dropdown.onChange((value) => {
@@ -336,15 +344,15 @@ export class PresetManagerModal extends Modal {
       });
 
     new Setting(this.contentEl)
-      .setName('Overrides')
+      .setName(t('llm.preset.editor.overrides'))
       .setHeading()
-      .setDesc('Leave a field blank to use the global setting.');
+      .setDesc(t('llm.preset.editor.overridesDescription'));
 
-    new Setting(this.contentEl).setName('Min words').addText((text) => {
+    new Setting(this.contentEl).setName(t('llm.preset.editor.minimumWords')).addText((text) => {
       text.inputEl.type = 'number';
       text.inputEl.min = '0';
       text.inputEl.max = String(LLM_MIN_WORDS_MAX);
-      text.setPlaceholder('Inherit');
+      text.setPlaceholder(t('common.inherit'));
       text.setValue(draft.minWords);
       text.setDisabled(isBuiltinView);
       text.onChange((value) => {
@@ -352,12 +360,12 @@ export class PresetManagerModal extends Modal {
       });
     });
 
-    new Setting(this.contentEl).setName('Temperature').addText((text) => {
+    new Setting(this.contentEl).setName(t('llm.model.temperature.name')).addText((text) => {
       text.inputEl.type = 'number';
       text.inputEl.min = '0';
       text.inputEl.max = String(LLM_TEMPERATURE_MAX);
       text.inputEl.step = '0.05';
-      text.setPlaceholder('Inherit');
+      text.setPlaceholder(t('common.inherit'));
       text.setValue(draft.temperature);
       text.setDisabled(isBuiltinView);
       text.onChange((value) => {
@@ -365,27 +373,30 @@ export class PresetManagerModal extends Modal {
       });
     });
 
-    new Setting(this.contentEl).setName('Use current note as context').addDropdown((dropdown) => {
-      dropdown.addOption('inherit', 'Inherit');
-      dropdown.addOption('on', 'On');
-      dropdown.addOption('off', 'Off');
-      dropdown.setValue(draft.useNoteContext);
-      dropdown.setDisabled(isBuiltinView);
-      dropdown.onChange((value) => {
-        draft.useNoteContext = value === 'on' || value === 'off' ? value : 'inherit';
+    new Setting(this.contentEl)
+      .setName(t('llm.context.useCurrentNote.name'))
+      .addDropdown((dropdown) => {
+        dropdown.addOption('inherit', t('common.inherit'));
+        dropdown.addOption('on', t('common.on'));
+        dropdown.addOption('off', t('common.off'));
+        dropdown.setValue(draft.useNoteContext);
+        dropdown.setDisabled(isBuiltinView);
+        dropdown.onChange((value) => {
+          draft.useNoteContext = value === 'on' || value === 'off' ? value : 'inherit';
+        });
       });
-    });
 
     const errorEl = this.contentEl.createEl('p', {
-      cls: 'local-stt-preset-editor__error local-stt-hidden',
+      cls: 'local-stt-preset-editor__error',
     });
     errorEl.setAttribute('role', 'alert');
     errorEl.setAttribute('aria-live', 'polite');
+    errorEl.hide();
 
     const buttons = new Setting(this.contentEl);
     if (editor.kind === 'view') {
       buttons.addButton((button) => {
-        button.setCta().setButtonText('Duplicate');
+        button.setCta().setButtonText(t('common.duplicate'));
         if (this.reachedMaxCount()) {
           button.setDisabled(true);
           button.setTooltip(MAX_PRESETS_MESSAGE);
@@ -400,7 +411,7 @@ export class PresetManagerModal extends Modal {
 
     buttons
       .addButton((button) => {
-        button.setButtonText('Cancel').onClick(() => {
+        button.setButtonText(t('common.cancel')).onClick(() => {
           this.editor = null;
           this.render();
         });
@@ -408,7 +419,7 @@ export class PresetManagerModal extends Modal {
       .addButton((button) => {
         button
           .setCta()
-          .setButtonText('Save')
+          .setButtonText(t('common.save'))
           .onClick(() => {
             void this.handleSave(editor, errorEl);
           });
@@ -432,7 +443,7 @@ export class PresetManagerModal extends Modal {
     });
     if (validationError !== null) {
       errorEl.setText(validationError);
-      errorEl.removeClass('local-stt-hidden');
+      errorEl.show();
       return;
     }
 
@@ -442,9 +453,9 @@ export class PresetManagerModal extends Modal {
 
   private confirmDelete(preset: LlmPreset): void {
     new ConfirmModal(this.app, {
-      title: 'Delete preset',
-      message: `Delete preset "${preset.label}"? This cannot be undone.`,
-      confirmLabel: 'Delete',
+      title: t('llm.preset.delete.title'),
+      message: t('llm.preset.delete.message', { preset: preset.label }),
+      confirmLabel: t('common.delete'),
       destructive: true,
       onConfirm: async () => {
         const ref = formatStyleRef({ kind: 'user', id: preset.id });
@@ -461,7 +472,7 @@ export class PresetManagerModal extends Modal {
         if (wasActive) {
           this.deps.feedback.show({
             intent: 'information',
-            message: `"${preset.label}" was active — switched to Clean up.`,
+            message: t('llm.preset.delete.activeFallback', { preset: preset.label }),
           });
         }
         this.render();

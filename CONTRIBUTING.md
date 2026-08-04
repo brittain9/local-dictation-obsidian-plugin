@@ -1,8 +1,15 @@
 # Contributing
 
-A TypeScript Obsidian plugin (`src/`) paired with a native Rust sidecar (`native/`) that handles inference. Audio crosses the boundary as 16 kHz mono PCM over stdin in a framed binary protocol; transcripts come back on stdout as JSON events. The sidecar owns everything between "audio in" and "transcript out"; the plugin renders and inserts that transcript.
+A TypeScript Obsidian plugin (`src/`) paired with a native Rust sidecar (`native/`)
+that handles local speech inference. Dictation audio crosses the boundary as
+16 kHz mono PCM over stdin and transcripts return as JSON events. For read
+aloud, the plugin extracts text from Markdown, the sidecar synthesizes it, and
+model-native mono PCM (24 or 44.1 kHz) returns over stdout for Web Audio
+playback in the plugin.
 
-See [docs/system-architecture.md](docs/system-architecture.md) for the pipeline stages, the engine registry, and the wire protocol.
+See [docs/system-architecture.md](docs/system-architecture.md) for the pipeline stages, the engine registry, and the wire protocol. Accepted architectural constraints and their rationale live in [docs/adr/](docs/adr/).
+
+Before changing an ownership boundary, compatibility contract, core product constraint, or foundational technology choice, read the existing ADRs. If a decision needs to change, add an ADR that supersedes the old one rather than rewriting the original decision.
 
 ## Prerequisites
 
@@ -11,11 +18,10 @@ See [docs/system-architecture.md](docs/system-architecture.md) for the pipeline 
 - Rust `1.94.1`
 - CMake and a platform C/C++ toolchain for native sidecar builds
 - CUDA Toolkit `13.2` with `nvcc` for Linux/Windows CUDA sidecar builds only
-- cuDNN `9.x` runtime libraries for local Cohere CUDA verification only
 
 The recommended Node version is pinned in `package.json` `engines` (a compatibility floor, not an exact pin) and the Rust toolchain in `rust-toolchain.toml`. If you use [mise](https://mise.jdx.dev), `mise install` sets up the Node and Rust toolchains automatically.
 
-The CUDA Toolkit is a build-from-source dependency. Published Linux/Windows CUDA sidecar archives bundle the CUDA runtime libraries needed by Whisper CUDA; release users need only a Turing-or-newer NVIDIA GPU and a driver compatible with CUDA 13.x (R580 or newer). Cohere CUDA additionally needs cuDNN `9.x` runtime libraries built for CUDA 13 (9.20 or newer) installed until cuDNN redistribution is reviewed.
+The CUDA Toolkit is a build-from-source dependency. Published Linux/Windows CUDA sidecar archives bundle the CUDA runtime libraries needed to accelerate Whisper through whisper.cpp; release users need only a Turing-or-newer NVIDIA GPU and an R595 or newer driver. The archives use CUDA 13.2 with a PTX-only compute 7.5 target, so they require CUDA 13.2's native driver branch rather than CUDA minor-version compatibility.
 
 ## Getting it running
 
@@ -92,6 +98,23 @@ npm run format           # auto-format with Biome
 - **Rust:** `cargo build`, `cargo fmt --check`, `cargo clippy`, `cargo test`
 
 Do not merge with failing CI.
+
+## Translating the plugin
+
+English is the source of truth for user-visible plugin copy. Translation catalogs live in
+`src/locales/`, with one TypeScript module per Obsidian locale code. To add a language, copy an
+existing non-English catalog, translate its values, and register it in `src/locales/index.ts`.
+The locale does not need to be one of Speech Kit's supported dictation languages.
+
+Keep catalog keys identical to `src/locales/en.ts`, preserve placeholders such as `{provider}`
+and `{max}` exactly, and leave product names such as Speech Kit, Obsidian, Ollama,
+OpenRouter, CUDA, and model names untranslated. Use the language's natural punctuation and UI
+wording rather than translating English syntax literally. If an English key has not been
+translated yet, omit it: the UI falls back to English for that key.
+
+Run `npm run test -- test/locales-parity.test.ts` before opening a translation PR. The parity
+test rejects unknown keys and changed placeholders, and reports catalog coverage. Also run
+`npm run typecheck` to verify that the catalog is registered correctly.
 
 ## Workflow
 

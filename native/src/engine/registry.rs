@@ -22,6 +22,13 @@ impl EngineRegistry {
         #[allow(unused_mut)]
         let mut registry = Self::default();
 
+        registry.register_runtime(Box::new(
+            crate::runtimes::bergamot_wasm::BergamotWasmRuntime::probe(),
+        ));
+        registry.register_adapter(Box::new(
+            crate::adapters::firefox_translations::FirefoxTranslationsAdapter,
+        ));
+
         #[cfg(feature = "engine-whisper")]
         {
             registry.register_runtime(Box::new(
@@ -33,7 +40,9 @@ impl EngineRegistry {
         #[cfg(any(
             feature = "engine-cohere-transcribe",
             feature = "engine-moonshine",
-            feature = "engine-nemotron-asr"
+            feature = "engine-nemotron-asr",
+            feature = "engine-pocket-tts",
+            feature = "engine-supertonic"
         ))]
         registry.register_runtime(Box::new(crate::runtimes::onnx::OnnxRuntime::probe()));
 
@@ -49,6 +58,11 @@ impl EngineRegistry {
 
         #[cfg(feature = "engine-nemotron-asr")]
         registry.register_adapter(Box::new(crate::adapters::nemotron_asr::NemotronAsrAdapter));
+
+        #[cfg(feature = "engine-pocket-tts")]
+        registry.register_adapter(Box::new(crate::adapters::pocket_tts::PocketTtsAdapter));
+        #[cfg(feature = "engine-supertonic")]
+        registry.register_adapter(Box::new(crate::adapters::supertonic::SupertonicAdapter));
 
         registry
     }
@@ -180,7 +194,7 @@ mod tests {
     use super::{EngineRegistry, RequestWarning, apply_capability_gates, missing_adapter_error};
     use crate::engine::capabilities::{
         AcceleratorAvailability, AcceleratorId, LanguageSupport, ModelFamilyCapabilities,
-        ModelFamilyId, ModelFormat, RuntimeCapabilities, RuntimeId,
+        ModelFamilyId, ModelFormat, ModelTask, RuntimeCapabilities, RuntimeId,
     };
     use crate::engine::traits::{LoadedModel, ModelFamilyAdapter, Runtime};
     use crate::protocol::ContextWindow;
@@ -253,6 +267,11 @@ mod tests {
 
     fn whisper_family_caps() -> ModelFamilyCapabilities {
         ModelFamilyCapabilities {
+            task: ModelTask::Stt,
+            supports_hardware_acceleration: true,
+            available_voices: Vec::new(),
+            supports_speed_control: false,
+            output_sample_rate: None,
             supports_segment_timestamps: true,
             supports_word_timestamps: false,
             supports_initial_prompt: true,
@@ -381,6 +400,11 @@ mod tests {
 
     fn capabilities(supports_initial_prompt: bool) -> ModelFamilyCapabilities {
         ModelFamilyCapabilities {
+            task: ModelTask::Stt,
+            supports_hardware_acceleration: true,
+            available_voices: Vec::new(),
+            supports_speed_control: false,
+            output_sample_rate: None,
             supports_segment_timestamps: true,
             supports_word_timestamps: false,
             supports_initial_prompt,

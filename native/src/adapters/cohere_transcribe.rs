@@ -6,7 +6,7 @@ use ort::session::{Session, SessionInputValue};
 use ort::value::{DynValue, TensorElementType, Value, ValueType};
 
 use crate::engine::capabilities::{
-    LanguageSupport, ModelFamilyCapabilities, ModelFamilyId, RuntimeId,
+    LanguageSupport, ModelFamilyCapabilities, ModelFamilyId, ModelTask, RuntimeId,
 };
 use crate::engine::traits::{LoadedModel, ModelFamilyAdapter};
 use crate::protocol::{TimestampGranularity, TimestampSource, TranscriptSegment};
@@ -42,7 +42,15 @@ const TOKENIZER_FILENAME: &str = "tokenizer.json";
 #[derive(Default)]
 pub struct CohereTranscribeAdapter;
 
-const CAPABILITIES: ModelFamilyCapabilities = ModelFamilyCapabilities {
+static CAPABILITIES: ModelFamilyCapabilities = ModelFamilyCapabilities {
+    task: ModelTask::Stt,
+    // The int8 encoder is split across CUDA and CPU with 96 inserted copies,
+    // making it about twice as slow as the CPU-only session in local release
+    // benchmarks. Keep Auto on the proven path.
+    supports_hardware_acceleration: false,
+    available_voices: Vec::new(),
+    supports_speed_control: false,
+    output_sample_rate: None,
     supports_segment_timestamps: false,
     supports_word_timestamps: false,
     supports_initial_prompt: false,
@@ -177,6 +185,7 @@ impl LoadedModel for LoadedCohereModel {
         };
 
         Ok(EngineTranscriptOutput {
+            detected_language: None,
             segments,
             diagnostics,
         })

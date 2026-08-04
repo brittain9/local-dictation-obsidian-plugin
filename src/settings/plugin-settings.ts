@@ -27,6 +27,7 @@ import {
   type SelectedModel,
   type SelectedModelCapabilitiesSnapshot,
 } from '../models/model-management-types';
+import { resolveBaseLanguageTag, t } from '../shared/i18n';
 import { isRecord } from '../shared/type-guards';
 import {
   type AccelerationPreference,
@@ -34,6 +35,7 @@ import {
   type ListeningMode,
   type SpeakingStyle,
 } from '../sidecar/protocol';
+import { normalizeTranslationLanguage, type TranslationLanguage } from '../translation/languages';
 
 export const DICTATION_ANCHORS = ['at_cursor', 'end_of_note'] as const;
 
@@ -72,7 +74,10 @@ export function validateTimestampIntervalSeconds(value: string): TimestampInterv
     seconds > maxSeconds
   ) {
     return {
-      message: `Enter a whole number from ${minSeconds} to ${maxSeconds} seconds.`,
+      message: t('settings.timestamps.interval.validation', {
+        max: maxSeconds,
+        min: minSeconds,
+      }),
       valid: false,
     };
   }
@@ -87,6 +92,8 @@ export const MAX_SMART_PARAGRAPH_PAUSE_MS = 30_000;
 
 export const MIN_DIARIZATION_MAX_SPEAKERS = 1;
 export const MAX_DIARIZATION_MAX_SPEAKERS = 8;
+export const MIN_TTS_SPEED = 0.75;
+export const MAX_TTS_SPEED = 2;
 
 export const SPEAKING_STYLES = [
   'responsive',
@@ -166,15 +173,19 @@ export interface PluginSettings {
   llmRemoteThresholdChars: number;
   llmRemoteTimeoutSec: number;
   llmRouting: LlmRouting;
+  lastObsidianLanguage: string | null;
   localTranscriptSidebarBootstrapped: boolean;
   modelStorePathOverride: string;
   retainLastUtterance: boolean;
-  schemaVersion: 4;
+  schemaVersion: 6;
   selectedModel: SelectedModel | null;
   // Last-known-good capabilities for `selectedModel`, captured on a successful
   // probe. Lets startup skip re-probing the sidecar (which forces a full
   // model load) when the cached selection still matches.
   selectedModelCapabilitiesSnapshot: SelectedModelCapabilitiesSnapshot | null;
+  selectedTtsModel: SelectedModel | null;
+  selectedTtsModelCapabilitiesSnapshot: SelectedModelCapabilitiesSnapshot | null;
+  selectedTtsVoice: string | null;
   setupCompletedAt: string | null;
   sidecarPathOverride: string;
   sidecarRequestTimeoutSeconds: number;
@@ -187,7 +198,10 @@ export interface PluginSettings {
   timestampsEnabled: boolean;
   timestampSessionHeader: boolean;
   timestampSparseIntervalMs: number;
+  translationSourceLanguage: TranslationLanguage | null;
+  translationTargetLanguage: TranslationLanguage | null;
   transcriptFormatting: TranscriptFormattingMode;
+  ttsSpeed: number;
   useLlmNoteContext: boolean;
   useNoteAsContext: boolean;
 }
@@ -223,12 +237,16 @@ export const DEFAULT_PLUGIN_SETTINGS: PluginSettings = {
   llmRemoteThresholdChars: DEFAULT_LLM_REMOTE_THRESHOLD_CHARS,
   llmRemoteTimeoutSec: 60,
   llmRouting: 'local',
+  lastObsidianLanguage: null,
   localTranscriptSidebarBootstrapped: false,
   modelStorePathOverride: '',
   retainLastUtterance: true,
-  schemaVersion: 4,
+  schemaVersion: 6,
   selectedModel: null,
   selectedModelCapabilitiesSnapshot: null,
+  selectedTtsModel: null,
+  selectedTtsModelCapabilitiesSnapshot: null,
+  selectedTtsVoice: null,
   setupCompletedAt: null,
   sidecarPathOverride: '',
   sidecarRequestTimeoutSeconds: 300,
@@ -241,7 +259,10 @@ export const DEFAULT_PLUGIN_SETTINGS: PluginSettings = {
   timestampsEnabled: false,
   timestampSessionHeader: true,
   timestampSparseIntervalMs: DEFAULT_TIMESTAMP_SPARSE_INTERVAL_MS,
+  translationSourceLanguage: null,
+  translationTargetLanguage: null,
   transcriptFormatting: 'smart',
+  ttsSpeed: 1,
   useLlmNoteContext: false,
   useNoteAsContext: true,
 };
@@ -343,6 +364,7 @@ export function resolvePluginSettings(data: unknown): PluginSettings {
       MAX_LLM_REMOTE_TIMEOUT_SEC,
     ),
     llmRouting: resolveLlmRouting(raw),
+    lastObsidianLanguage: readLastObsidianLanguage(raw.lastObsidianLanguage),
     localTranscriptSidebarBootstrapped: readBoolean(
       raw.localTranscriptSidebarBootstrapped,
       DEFAULT_PLUGIN_SETTINGS.localTranscriptSidebarBootstrapped,
@@ -356,14 +378,23 @@ export function resolvePluginSettings(data: unknown): PluginSettings {
       DEFAULT_PLUGIN_SETTINGS.retainLastUtterance,
     ),
     // Bump `schemaVersion` and add a migration step when renaming a key or changing default semantics.
-    schemaVersion: 4,
+    schemaVersion: 6,
     selectedModel: readSelectedModel(raw.selectedModel),
     // Automatic detection became a capability separate from language tags in
     // schema 4. Older snapshots cannot prove that exact-model behavior, so
     // force one fresh probe during migration.
     selectedModelCapabilitiesSnapshot:
-      raw.schemaVersion === 4
+      raw.schemaVersion === 4 || raw.schemaVersion === 5 || raw.schemaVersion === 6
         ? readSelectedModelCapabilitiesSnapshot(raw.selectedModelCapabilitiesSnapshot)
+        : null,
+    selectedTtsModel: readSelectedModel(raw.selectedTtsModel),
+    selectedTtsModelCapabilitiesSnapshot:
+      raw.schemaVersion === 6
+        ? readSelectedModelCapabilitiesSnapshot(raw.selectedTtsModelCapabilitiesSnapshot)
+        : null,
+    selectedTtsVoice:
+      typeof raw.selectedTtsVoice === 'string' && raw.selectedTtsVoice.trim().length > 0
+        ? raw.selectedTtsVoice.trim()
         : null,
     setupCompletedAt: readSetupCompletedAt(raw.setupCompletedAt),
     sidecarPathOverride: readString(
@@ -406,9 +437,17 @@ export function resolvePluginSettings(data: unknown): PluginSettings {
       MIN_TIMESTAMP_SPARSE_INTERVAL_MS,
       MAX_TIMESTAMP_SPARSE_INTERVAL_MS,
     ),
+    translationSourceLanguage: normalizeTranslationLanguage(raw.translationSourceLanguage),
+    translationTargetLanguage: normalizeTranslationLanguage(raw.translationTargetLanguage),
     transcriptFormatting: isTranscriptFormattingMode(raw.transcriptFormatting)
       ? raw.transcriptFormatting
       : DEFAULT_PLUGIN_SETTINGS.transcriptFormatting,
+    ttsSpeed: readClampedNumber(
+      raw.ttsSpeed,
+      DEFAULT_PLUGIN_SETTINGS.ttsSpeed,
+      MIN_TTS_SPEED,
+      MAX_TTS_SPEED,
+    ),
     useLlmNoteContext: readBoolean(
       raw.useLlmNoteContext,
       DEFAULT_PLUGIN_SETTINGS.useLlmNoteContext,
@@ -613,16 +652,16 @@ function migrateLlmPresetState(args: {
   }
   if (args.userPresets.length >= LLM_USER_PRESET_MAX_COUNT) {
     console.warn(
-      '[Local Dictation] Custom LLM prompt could not be migrated into a preset: the preset limit is reached. The prompt was dropped.',
+      '[Speech Kit] Custom LLM prompt could not be migrated into a preset: the preset limit is reached. The prompt was dropped.',
     );
     return { activeRef: resolvedRef ?? fallbackRef, userPresets: args.userPresets };
   }
   const labels = new Set(
     [...LLM_BUILTIN_PRESETS, ...args.userPresets].map((preset) => preset.label.toLowerCase()),
   );
-  let label = 'My preset';
+  let label = t('settings.llm.migratedPreset');
   for (let n = 2; labels.has(label.toLowerCase()); n += 1) {
-    label = `My preset ${n}`;
+    label = t('settings.llm.migratedPresetNumbered', { number: n });
   }
   const migrated: LlmPreset = { id: randomUUID(), label, output: 'replace', prompt };
   return {
@@ -802,16 +841,42 @@ function readSelectedModel(selectedModel: unknown): SelectedModel | null {
 function readSelectedModelCapabilitiesSnapshot(
   value: unknown,
 ): SelectedModelCapabilitiesSnapshot | null {
-  if (!isSelectedModelCapabilitiesSnapshot(value)) {
+  const normalized = normalizeLegacyCapabilitiesSnapshot(value);
+  if (!isSelectedModelCapabilitiesSnapshot(normalized)) {
     return DEFAULT_PLUGIN_SETTINGS.selectedModelCapabilitiesSnapshot;
   }
 
   return {
-    capabilities: value.capabilities,
-    selection: normalizeSelectedModel(value.selection),
+    capabilities: normalized.capabilities,
+    selection: normalizeSelectedModel(normalized.selection),
+  };
+}
+
+function normalizeLegacyCapabilitiesSnapshot(value: unknown): unknown {
+  if (!isRecord(value) || !isRecord(value.capabilities) || !isRecord(value.capabilities.family)) {
+    return value;
+  }
+  return {
+    ...value,
+    capabilities: {
+      ...value.capabilities,
+      family: {
+        availableVoices: [],
+        outputSampleRate: null,
+        supportsSpeedControl: false,
+        task: 'stt',
+        ...value.capabilities.family,
+      },
+    },
   };
 }
 
 function readListeningMode(value: unknown): ListeningMode {
   return isListeningMode(value) ? value : DEFAULT_PLUGIN_SETTINGS.listeningMode;
+}
+
+function readLastObsidianLanguage(value: unknown): string | null {
+  if (typeof value !== 'string') return null;
+  const language = resolveBaseLanguageTag(value);
+  return language.length > 0 ? language : null;
 }

@@ -7,7 +7,7 @@ use ort::value::{DynValue, PrimitiveTensorElementType, Tensor, Value};
 use serde::Deserialize;
 
 use crate::engine::capabilities::{
-    LanguageSupport, ModelFamilyCapabilities, ModelFamilyId, RuntimeId,
+    LanguageSupport, ModelFamilyCapabilities, ModelFamilyId, ModelTask, RuntimeId,
 };
 use crate::engine::traits::{LoadedModel, ModelFamilyAdapter, StreamingModel};
 use crate::protocol::{TimestampGranularity, TimestampSource, TranscriptSegment};
@@ -45,7 +45,14 @@ const REQUIRED_SIBLINGS: &[&str] = &[
     TOKENIZER_FILENAME,
 ];
 
-const CAPABILITIES: ModelFamilyCapabilities = ModelFamilyCapabilities {
+static CAPABILITIES: ModelFamilyCapabilities = ModelFamilyCapabilities {
+    task: ModelTask::Stt,
+    // ORT's CUDA EP segfaults in every Moonshine graph on CUDA 12 and 13.
+    // Keep the CUDA sidecar stable by routing this family to CPU.
+    supports_hardware_acceleration: false,
+    available_voices: Vec::new(),
+    supports_speed_control: false,
+    output_sample_rate: None,
     supports_segment_timestamps: false,
     supports_word_timestamps: false,
     supports_initial_prompt: false,
@@ -422,6 +429,7 @@ fn engine_output(decoded: DecodedTranscript, sample_count: usize) -> EngineTrans
     let text = decoded.text.trim();
     if text.is_empty() {
         return EngineTranscriptOutput {
+            detected_language: None,
             segments: Vec::new(),
             diagnostics: Vec::new(),
         };
@@ -444,6 +452,7 @@ fn engine_output(decoded: DecodedTranscript, sample_count: usize) -> EngineTrans
     };
 
     EngineTranscriptOutput {
+        detected_language: None,
         segments: vec![segment],
         diagnostics: vec![diagnostics],
     }

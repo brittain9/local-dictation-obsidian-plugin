@@ -109,6 +109,11 @@ fn fixtures() -> Vec<Fixture> {
 #[test]
 fn multilingual_fixtures_are_pinned_16khz_audio() {
     for fixture in fixtures() {
+        assert!(
+            !fixture.anchors.is_empty(),
+            "{} must define quality anchors",
+            fixture.language,
+        );
         let bytes = std::fs::read(&fixture.path).expect("read multilingual fixture");
         let digest = Sha256::digest(&bytes)
             .iter()

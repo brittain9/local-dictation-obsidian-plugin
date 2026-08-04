@@ -1,4 +1,5 @@
 import type { AcceleratorId } from '../models/model-management-types';
+import { t } from '../shared/i18n';
 import type { PluginLogger } from '../shared/plugin-logger';
 import type {
   AccelerationPreference,
@@ -37,12 +38,19 @@ interface AccelerationDescription {
   fallbacks: AccelerationFallback[];
 }
 
+/**
+ * The subset of a `SystemInfoEvent` that acceleration reporting needs. Narrowed
+ * so the settings tab can pass the model install manager's cached state, which
+ * carries the same two lists without being a full event.
+ */
+export type AccelerationSnapshot = Pick<SystemInfoEvent, 'compiledAdapters' | 'compiledRuntimes'>;
+
 export function describeAcceleration(
-  systemInfo: SystemInfoEvent | null,
+  systemInfo: AccelerationSnapshot | null,
   accelerationPreference: AccelerationPreference,
 ): AccelerationDescription {
   if (systemInfo === null) {
-    return { label: 'pending (sidecar not ready)', fallbacks: [] };
+    return { label: t('settings.acceleration.pending'), fallbacks: [] };
   }
 
   if (accelerationPreference === 'cpu_only') {
@@ -78,7 +86,9 @@ function buildLabel(backends: EngineBackend[]): string {
   if (firstNonCpu === undefined) {
     const withMissing = backends.find((b) => b.missingGpu !== null);
     if (withMissing !== undefined && withMissing.missingGpu !== null) {
-      return `CPU (${formatAcceleratorLabel(withMissing.missingGpu.accelerator)} unavailable)`;
+      return t('settings.acceleration.unavailable', {
+        accelerator: formatAcceleratorLabel(withMissing.missingGpu.accelerator),
+      });
     }
     return 'CPU';
   }
@@ -99,7 +109,7 @@ function resolveEngineBackend(
   runtime: CompiledRuntimeInfo | undefined,
 ): EngineBackend {
   const engineName = adapter.displayName;
-  if (runtime === undefined) {
+  if (runtime === undefined || !adapter.familyCapabilities.supportsHardwareAcceleration) {
     return { engineName, effective: 'cpu', missingGpu: null };
   }
   const caps = runtime.runtimeCapabilities;
@@ -109,14 +119,17 @@ function resolveEngineBackend(
       return { engineName, effective: id, missingGpu: null };
     }
   }
-  for (const id of nonCpu) {
-    const detail = caps.acceleratorDetails[id];
-    if (detail !== undefined && detail.available === false) {
+  // The sidecar derives `availableAccelerators` as only the accelerators that
+  // probed successfully, so a GPU that failed to initialise is by construction
+  // absent from it. The fallback search has to read `acceleratorDetails`, which
+  // is the only place the failure and its reason survive.
+  for (const [id, detail] of Object.entries(caps.acceleratorDetails)) {
+    if (id !== 'cpu' && detail?.available === false) {
       return {
         engineName,
         effective: 'cpu',
         missingGpu: {
-          accelerator: id,
+          accelerator: id as AcceleratorId,
           reason: formatReason(detail.unavailableReason),
         },
       };
@@ -127,10 +140,10 @@ function resolveEngineBackend(
 
 function formatReason(reason: string | null): string {
   if (reason === null) {
-    return 'unknown reason';
+    return t('settings.acceleration.unknownReason');
   }
   const trimmed = reason.trim();
-  return trimmed.length > 0 ? trimmed : 'unknown reason';
+  return trimmed.length > 0 ? trimmed : t('settings.acceleration.unknownReason');
 }
 
 export function logAccelerationFallbacks(

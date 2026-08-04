@@ -1,5 +1,5 @@
 /* ===================================================================
-   Local Dictation - Plugin Styles
+   Speech Kit - Plugin Styles
    All selectors prefixed with .local-stt- to avoid collisions.
    All colors use Obsidian CSS variables with fallback values.
    =================================================================== */
@@ -69,20 +69,177 @@
   color: var(--text-muted);
 }
 
+.local-stt-tag--warning {
+  border: 1px solid var(--color-orange, var(--text-warning));
+  background: color-mix(in srgb, var(--color-orange, var(--text-warning)) 12%, transparent);
+  color: var(--text-normal);
+}
+
 /* --- Modal toolbar (tab bar) -------------------------------------- */
 
 .local-stt-toolbar {
   display: flex;
   align-items: center;
-  gap: 12px;
-  margin-bottom: 8px;
-  border-bottom: 1px solid var(--background-modifier-border, rgba(128, 128, 128, 0.2));
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 12px;
+}
+
+.local-stt-task-switcher {
+  display: inline-flex;
+  padding: 2px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-m);
+  background: var(--background-secondary);
+}
+
+.local-stt-task-switcher__button {
+  min-height: 30px;
+  padding: 4px 12px;
+  border: 0;
+  border-radius: var(--radius-s);
+  background: transparent;
+  color: var(--text-muted);
+  font-size: var(--font-ui-small);
+  font-weight: 600;
+}
+
+.local-stt-task-switcher__button.is-active {
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+}
+
+.local-stt-task-switcher__button:focus-visible,
+.local-stt-language-rail__button:focus-visible,
+.local-stt-tab:focus-visible {
+  outline: 2px solid var(--interactive-accent);
+  outline-offset: 2px;
+}
+
+.local-stt-model-search {
+  width: min(240px, 42%);
+  min-width: 140px;
+}
+
+.local-stt-model-browser {
+  display: grid;
+  grid-template-columns: 148px minmax(0, 1fr);
+  gap: 16px;
+  min-height: 280px;
+}
+
+.local-stt-model-browser__results {
+  min-width: 0;
+}
+
+.local-stt-language-rail {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding-right: 12px;
+  border-right: 1px solid var(--background-modifier-border);
+}
+
+.local-stt-language-rail__button {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: baseline;
+  gap: 8px;
+  width: 100%;
+  padding: 7px 9px;
+  border: 0;
+  border-radius: var(--radius-s);
+  background: transparent;
+  color: var(--text-muted);
+  text-align: left;
+}
+
+.local-stt-language-rail__button:hover {
+  background: var(--background-modifier-hover);
+  color: var(--text-normal);
+}
+
+.local-stt-language-rail__button.is-active {
+  background: var(--background-modifier-active-hover);
+  color: var(--text-normal);
+  font-weight: 600;
+}
+
+.local-stt-language-rail__code {
+  color: var(--text-faint);
+  font-family: var(--font-monospace);
+  font-size: var(--font-smallest);
+}
+
+.local-stt-model-warning {
+  margin-top: 6px;
+  color: var(--text-warning);
+  font-size: var(--font-smallest);
+}
+
+.local-stt-acceleration-status {
+  margin-top: 6px;
+}
+
+.local-stt-acceleration-fallback {
+  margin-top: 2px;
+  color: var(--text-warning);
+}
+
+.local-stt-voice-management {
+  margin: 0 0 6px 20px;
+  padding-left: 12px;
+  border-left: 1px solid var(--background-modifier-border);
+}
+
+.local-stt-voice-management > summary {
+  padding: 6px 0;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: var(--font-ui-small);
+  font-weight: 600;
+}
+
+.local-stt-task-label {
+  align-self: center;
+  margin: 0 6px 0 12px;
+  color: var(--text-muted);
+  font-size: var(--font-smallest);
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+.local-stt-task-label:first-child {
+  margin-left: 0;
+}
+
+.local-stt-voice-row {
+  margin-left: 24px;
+}
+
+.local-stt-read-aloud-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.local-stt-read-aloud-status button {
+  border: 0;
+  background: transparent;
+}
+
+.local-stt-read-aloud-status__menu {
+  padding: 0 4px;
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
 }
 
 .local-stt-tab-bar {
   display: flex;
   gap: 0;
   flex-shrink: 0;
+  overflow-x: auto;
+  scrollbar-width: thin;
 }
 
 .local-stt-tab {
@@ -192,6 +349,25 @@
   opacity: 0.7;
 }
 
+/* A failed install keeps the same card in the same row and turns red, rather
+   than moving the report to a banner somewhere else in the modal. The track
+   itself carries the colour because a failure has no meaningful percentage. */
+.local-stt-install-progress--failed {
+  border-color: var(--text-error, #cd5c5c);
+}
+
+.local-stt-install-progress--failed .local-stt-install-progress__status {
+  color: var(--text-error, #cd5c5c);
+}
+
+.local-stt-install-progress--failed .local-stt-install-progress__track {
+  background: var(--text-error, #cd5c5c);
+}
+
+.local-stt-install-progress--failed .local-stt-install-progress__fill {
+  display: none;
+}
+
 /* --- Empty state -------------------------------------------------- */
 
 .local-stt-empty-state {
@@ -265,6 +441,12 @@
   word-break: break-all;
 }
 
+/* Comma-separated value rows wrap between items, not through them —
+   `break-all` above exists for install paths and would split "F1, F2". */
+.local-stt-details-grid dd.local-stt-details-values {
+  word-break: normal;
+}
+
 .local-stt-mono {
   font-family: var(--font-monospace);
   font-size: var(--font-smallest);
@@ -312,7 +494,44 @@
 /* --- Manage-models modal width constraint ------------------------- */
 
 .local-stt-manage-models {
-  width: min(600px, 90vw);
+  width: min(760px, 92vw);
+}
+
+@media (max-width: 560px) {
+  .local-stt-toolbar {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .local-stt-model-search {
+    width: 100%;
+  }
+
+  .local-stt-model-browser {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .local-stt-model-browser__results {
+    width: 100%;
+  }
+
+  .local-stt-language-rail {
+    flex-direction: row;
+    overflow-x: auto;
+    padding: 0 0 8px;
+    border-right: 0;
+    border-bottom: 1px solid var(--background-modifier-border);
+    scrollbar-width: thin;
+  }
+
+  .local-stt-language-rail__button {
+    flex: 0 0 auto;
+    width: auto;
+    min-width: 112px;
+  }
 }
 
 .local-stt-external-model-guidance {
@@ -529,8 +748,13 @@
 
 /* --- Preset manager modal ------------------------------------------ */
 
-.local-stt-preset-manager .local-stt-preset-row {
+.local-stt-preset-manager .local-stt-preset-row .setting-item-info {
   cursor: pointer;
+}
+
+.local-stt-preset-manager .local-stt-preset-row .setting-item-info:focus-visible {
+  outline: 2px solid var(--interactive-accent);
+  outline-offset: 2px;
 }
 
 .local-stt-preset-manager .local-stt-preset-back {
@@ -985,6 +1209,41 @@
   font-variant-numeric: tabular-nums;
 }
 
+/* --- Settings attention ------------------------------------------ */
+
+/* This is also a native `setting-group`, which owns the vertical rhythm before
+   the following section heading. Bordered in the theme accent rather than a
+   muted grey: this callout is the one thing in Settings that is asking to be
+   acted on. The fill stays `--background-secondary` so the row text keeps full
+   contrast in every theme. */
+.local-stt-settings-attention {
+  overflow: hidden;
+  border: 1px solid var(--interactive-accent, #7c3aed);
+  border-left-width: 3px;
+  border-radius: var(--radius-m);
+  background: var(--background-secondary);
+}
+
+.local-stt-settings-attention .setting-items {
+  padding: var(--size-4-1) var(--size-4-4);
+}
+
+.local-stt-settings-attention__item .setting-item-name {
+  font-weight: var(--font-semibold);
+}
+
+@media (max-width: 500px) {
+  .local-stt-settings-attention .setting-item {
+    align-items: stretch;
+    flex-direction: column;
+    gap: var(--size-4-3);
+  }
+
+  .local-stt-settings-attention .setting-item-control {
+    justify-content: flex-start;
+  }
+}
+
 /* --- Setup wizard ------------------------------------------------- */
 
 .local-stt-setup-wizard {
@@ -1083,8 +1342,57 @@
   margin-top: 18px;
 }
 
-/* Visibility utility toggled in place of inline `style.display`, so show/hide
-   state lives in CSS (themeable, overridable) instead of element styles. */
-.local-stt-hidden {
-  display: none;
+/* --- Local translation -------------------------------------------- */
+
+.local-stt-translation-modal {
+  width: min(760px, 94vw);
+}
+
+.local-stt-translation-modal__privacy,
+.local-stt-translation-modal__status {
+  color: var(--text-muted);
+}
+
+.local-stt-translation-modal__languages {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
+  gap: var(--size-4-2);
+  align-items: end;
+}
+
+.local-stt-translation-modal__languages .setting-item {
+  border: 0;
+  display: block;
+  padding: var(--size-4-2) 0;
+}
+
+.local-stt-translation-modal__languages .setting-item-control {
+  justify-content: flex-start;
+}
+
+.local-stt-translation-modal__warning {
+  color: var(--text-warning);
+}
+
+.local-stt-translation-modal__preview {
+  max-height: 140px;
+  overflow: auto;
+  white-space: pre-wrap;
+}
+
+.local-stt-translation-modal__output {
+  box-sizing: border-box;
+  min-height: 220px;
+  resize: vertical;
+  width: 100%;
+}
+
+.local-stt-translation-modal__actions {
+  border: 0;
+}
+
+@media (max-width: 600px) {
+  .local-stt-translation-modal__languages {
+    grid-template-columns: 1fr;
+  }
 }

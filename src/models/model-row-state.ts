@@ -1,12 +1,18 @@
 import { basename } from 'node:path';
 
-import type { ActiveInstallInfo, ModelManagerState } from './model-install-manager';
+import { t } from '../shared/i18n';
+import type {
+  ActiveInstallInfo,
+  FailedInstallInfo,
+  ModelManagerState,
+} from './model-install-manager';
 import {
   type CatalogModelRecord,
   getTotalModelSize,
   type InstalledModelRecord,
   type ModelCatalogRecord,
   type ModelFamilyId,
+  type ModelTask,
   matchesModelTriple,
   type RuntimeId,
   type SelectedModel,
@@ -16,7 +22,15 @@ import {
 // Public types
 // ---------------------------------------------------------------------------
 
-type ModelRowAction = 'install' | 'use' | 'selected' | 'cancel' | 'remove' | 'details';
+type ModelRowAction =
+  | 'install'
+  | 'use'
+  | 'selected'
+  | 'cancel'
+  | 'remove'
+  | 'retry'
+  | 'dismiss'
+  | 'details';
 
 export interface ModelRowState {
   model: CatalogModelRecord;
@@ -24,6 +38,8 @@ export interface ModelRowState {
   isSelected: boolean;
   isInstalling: boolean;
   isCanceling: boolean;
+  /** The failed install for *this* model, so the row can report it in place. */
+  failedInstall: FailedInstallInfo | null;
   allowedActions: ModelRowAction[];
 }
 
@@ -31,18 +47,28 @@ export interface ModelFamilyTab {
   displayName: string;
   familyId: ModelFamilyId;
   runtimeId: RuntimeId;
+  task: ModelTask;
 }
 
 export interface CurrentModelDisplay {
   displayName: string;
   engineLabel: string;
   detail: string;
-  installedLabel: string;
+  status: CurrentModelStatus;
   sourceLabel: string;
   sizeBytes: number | null;
   installLocation: string | null;
   resolvedPath: string | null;
 }
+
+export type CurrentModelStatus =
+  | 'checking'
+  | 'external_file'
+  | 'external_validated'
+  | 'installed'
+  | 'not_installed'
+  | 'not_selected'
+  | 'unavailable';
 
 export function deriveModelFamilyTabs(
   state: Pick<ModelManagerState, 'catalog' | 'compiledAdapters'>,
@@ -60,6 +86,7 @@ export function deriveModelFamilyTabs(
             displayName: adapter.displayName,
             familyId: adapter.familyId,
             runtimeId: adapter.runtimeId,
+            task: family.task,
           },
         ];
   });
@@ -70,10 +97,16 @@ export function deriveModelFamilyTabs(
 // ---------------------------------------------------------------------------
 
 export function deriveModelRowStates(state: ModelManagerState): ModelRowState[] {
-  const { catalog, installedModels, selectedModel, activeInstall } = state;
+  const { catalog, installedModels, selectedModel, activeInstall, failedInstall } = state;
 
   return [...catalog.models].sort(compareCatalogModels).map((model) => {
-    return deriveRowState(model, installedModels, selectedModel, activeInstall);
+    return deriveRowState(
+      model,
+      installedModels,
+      model.task === 'tts' ? state.selectedTtsModel : selectedModel,
+      activeInstall,
+      failedInstall,
+    );
   });
 }
 
@@ -82,6 +115,7 @@ function deriveRowState(
   installedModels: InstalledModelRecord[],
   selectedModel: SelectedModel | null,
   activeInstall: ActiveInstallInfo | null,
+  failedInstall: FailedInstallInfo | null,
 ): ModelRowState {
   const installed =
     installedModels.find((m) =>
@@ -103,13 +137,28 @@ function deriveRowState(
 
   const hasOtherActiveInstall = activeInstall !== null && thisInstall === null;
 
-  const allowedActions = deriveAllowedActions({
-    installed,
-    isSelected,
-    isInstalling,
-    isCanceling,
-    hasOtherActiveInstall,
-  });
+  const thisFailure =
+    failedInstall !== null &&
+    matchesModelTriple(failedInstall.selection, model.runtimeId, model.familyId, model.modelId)
+      ? failedInstall
+      : null;
+
+  const hasFailed = thisFailure !== null;
+  // A translation pack is never selected as the active engine, so an installed
+  // one that is sitting idle only offers remove and details.
+  const isIdleTranslationPack =
+    model.task === 'translation' && installed && !isInstalling && !isCanceling && !hasFailed;
+
+  const allowedActions: ModelRowAction[] = isIdleTranslationPack
+    ? ['remove', 'details']
+    : deriveAllowedActions({
+        installed,
+        isSelected,
+        isInstalling,
+        isCanceling,
+        hasFailed,
+        hasOtherActiveInstall,
+      });
 
   return {
     model,
@@ -117,6 +166,7 @@ function deriveRowState(
     isSelected,
     isInstalling,
     isCanceling,
+    failedInstall: thisFailure,
     allowedActions,
   };
 }
@@ -126,9 +176,11 @@ function deriveAllowedActions(flags: {
   isSelected: boolean;
   isInstalling: boolean;
   isCanceling: boolean;
+  hasFailed: boolean;
   hasOtherActiveInstall: boolean;
 }): ModelRowAction[] {
-  const { installed, isSelected, isInstalling, isCanceling, hasOtherActiveInstall } = flags;
+  const { installed, isSelected, isInstalling, isCanceling, hasFailed, hasOtherActiveInstall } =
+    flags;
 
   // Currently canceling or cancelStuck — only details allowed.
   if (isCanceling) {
@@ -138,6 +190,12 @@ function deriveAllowedActions(flags: {
   // Currently installing — cancel and details.
   if (isInstalling) {
     return ['cancel', 'details'];
+  }
+
+  // This model's last install failed. Recovery replaces the normal actions so
+  // the row itself is the failure report — there is no banner elsewhere.
+  if (hasFailed) {
+    return ['retry', 'dismiss', 'details'];
   }
 
   // Not installing this model, and it is not installed.
@@ -164,22 +222,24 @@ function deriveAllowedActions(flags: {
 // deriveCurrentModelDisplay
 // ---------------------------------------------------------------------------
 
-const EMPTY_CURRENT_MODEL_DISPLAY: CurrentModelDisplay = {
-  displayName: 'No model selected',
-  engineLabel: '',
-  detail: 'Choose an installed model or validate an external file.',
-  installedLabel: 'Not selected',
-  sourceLabel: '',
-  sizeBytes: null,
-  installLocation: null,
-  resolvedPath: null,
-};
+function emptyCurrentModelDisplay(): CurrentModelDisplay {
+  return {
+    displayName: t('models.current.noneSelected'),
+    engineLabel: '',
+    detail: t('models.current.noneSelectedDesc'),
+    status: 'not_selected',
+    sourceLabel: '',
+    sizeBytes: null,
+    installLocation: null,
+    resolvedPath: null,
+  };
+}
 
 export function deriveCurrentModelDisplay(state: ModelManagerState): CurrentModelDisplay {
   const { selectedModel, catalog, installedModels } = state;
 
   if (selectedModel === null) {
-    return EMPTY_CURRENT_MODEL_DISPLAY;
+    return emptyCurrentModelDisplay();
   }
 
   if (selectedModel.kind === 'external_file') {
@@ -193,8 +253,8 @@ export function deriveCurrentModelDisplay(state: ModelManagerState): CurrentMode
         selectedModel.familyId,
       ),
       detail: status.detail,
-      installedLabel: status.installedLabel,
-      sourceLabel: 'External file',
+      status: status.status,
+      sourceLabel: t('models.current.externalFile'),
       sizeBytes: null,
       installLocation: null,
       resolvedPath: selectedModel.filePath,
@@ -226,9 +286,9 @@ export function deriveCurrentModelDisplay(state: ModelManagerState): CurrentMode
   return {
     displayName,
     engineLabel,
-    detail: installedModel !== null ? '' : 'The selected managed model is not installed.',
-    installedLabel: installedModel !== null ? 'Installed' : 'Not installed',
-    sourceLabel: 'Managed download',
+    detail: installedModel !== null ? '' : t('models.current.managedNotInstalled'),
+    status: installedModel !== null ? 'installed' : 'not_installed',
+    sourceLabel: t('models.current.managedDownload'),
     sizeBytes,
     installLocation: installedModel?.installPath ?? null,
     resolvedPath: installedModel?.runtimePath ?? null,
@@ -237,29 +297,27 @@ export function deriveCurrentModelDisplay(state: ModelManagerState): CurrentMode
 
 function deriveExternalModelStatus(
   capabilities: ModelManagerState['selectedModelCapabilities'],
-): Pick<CurrentModelDisplay, 'detail' | 'installedLabel'> {
+): Pick<CurrentModelDisplay, 'detail' | 'status'> {
   switch (capabilities.status) {
     case 'ready':
       return {
         detail: '',
-        installedLabel: 'External validated',
+        status: 'external_validated',
       };
     case 'pending':
       return {
         detail: '',
-        installedLabel: 'Checking',
+        status: 'checking',
       };
     case 'unavailable':
       return {
-        detail:
-          capabilities.details ??
-          'The external model is unavailable. Validate the file again to see details.',
-        installedLabel: 'Unavailable',
+        detail: t('models.current.externalUnavailableDesc'),
+        status: 'unavailable',
       };
     case 'none':
       return {
-        detail: 'Validate the external model file before dictating.',
-        installedLabel: 'External file',
+        detail: t('models.current.validateBeforeDictating'),
+        status: 'external_file',
       };
   }
 }
@@ -280,10 +338,16 @@ function resolveFamilyDisplayName(
   switch (familyId) {
     case 'cohere_transcribe':
       return 'Cohere Transcribe';
+    case 'firefox_translations':
+      return 'Firefox Translations';
     case 'moonshine':
       return 'Moonshine';
     case 'nemotron_asr':
       return 'NVIDIA Nemotron 3.5 ASR';
+    case 'pocket_tts':
+      return 'Pocket TTS';
+    case 'supertonic':
+      return 'Supertonic 3';
     case 'whisper':
       return 'Whisper';
   }

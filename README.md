@@ -1,94 +1,109 @@
-# Local Dictation
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/brittain9/speech-kit-obsidian-plugin/main/docs/media/hero-dark.png">
+  <img src="https://raw.githubusercontent.com/brittain9/speech-kit-obsidian-plugin/main/docs/media/hero-light.png" alt="Speech Kit — Speech and language toolkit for Obsidian" width="100%">
+</picture>
 
-[![GitHub release](https://img.shields.io/github/v/release/brittain9/local-dictation-obsidian-plugin?style=flat-square)](https://github.com/brittain9/local-dictation-obsidian-plugin/releases/latest)
-[![GitHub stars](https://img.shields.io/github/stars/brittain9/local-dictation-obsidian-plugin?style=flat-square)](https://github.com/brittain9/local-dictation-obsidian-plugin)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=flat-square)](LICENSE)
+Dictate live. Transcribe meetings. Translate text. Listen to notes. One plugin inside the editor where your notes already live.
 
-**Private speech-to-text, directly in your Obsidian notes.** Dictate voice notes with live text or transcribe meetings from your microphone and system audio. Transcription runs on your device, with no account or cloud service required.
+> **Local Dictation is now Speech Kit.** It is the same plugin with the same local-first foundation, now with a name that fits what it has become. Existing installs, settings, and hotkeys carry over automatically.
 
-Optional AI cleanup can summarize, extract action items, or reshape a transcript. It stays off until you configure and select it, and audio is never sent for cleanup.
+[Install Speech Kit from Obsidian Community Plugins](https://obsidian.md/plugins?id=local-dictation)
 
-[Install Local Dictation from Obsidian Community Plugins](https://obsidian.md/plugins?id=local-dictation)
+## What it does
 
-## See it in action
+- 🎤 **Speech:** Dictate with live streaming text, or capture higher-accuracy transcripts from meetings, calls, and other audio.
+- 🔊 **Voice:** Listen to your notes with natural voices.
+- 🌍 **Language:** Translate notes locally across eight languages.
+- 🧠 **Models:** Choose from a managed catalog of speech, voice, and translation models, with optional LLM text tools.
 
-![Obsidian showing Local Dictation's active waveform icon and provisional Moonshine text in a disposable vault](docs/media/live-dictation.png)
+<p align="center">
+  <img src="https://raw.githubusercontent.com/brittain9/speech-kit-obsidian-plugin/main/docs/media/speech-kit-translation-demo.gif" alt="Speech Kit translating an Obsidian note from English to Spanish and replacing the original text" width="560">
+</p>
 
-_Live Moonshine output captured while the real plugin transcribed a synthetic audio file through Chromium's test microphone._
+## Why Speech Kit?
 
-![Obsidian reading view showing synthetic meeting notes with a microphone and system audio source, timestamped speaker labels, and action items](docs/media/meeting-notes.png)
+Speech and language tools are usually fragmented. One tool handles dictation. Another transcribes meetings. Another reads text aloud. Another translates. Each brings its own settings, models, and hotkeys, and often its own cloud account, subscription, and privacy policy.
 
-_A synthetic meeting note demonstrates the system-audio, timestamp, and speaker-label workflow without exposing a real vault._
+Speech Kit replaces that stack with one consistent workflow inside Obsidian: one model manager, one settings surface, and one set of commands.
 
-![Local Dictation setup wizard explaining streaming Moonshine and batch Whisper models in a disposable Obsidian vault](docs/media/setup-wizard.png)
+Dictate an idea. Capture a meeting. Translate a passage. Listen to a note. Refine the result. It all happens inside the editor where your notes already live.
 
-_The first-run wizard installs the native engine and helps you choose between live and batch transcription._
+## Choose the models that fit your workflow
 
-## Choose your workflow
+Speech Kit is not tied to one speech engine or hosted API. It manages a growing catalog of models. Install only what you need, mix and match, and change models as your language, hardware, or priorities change.
 
-| Workflow | What happens | Model fit |
-| --- | --- | --- |
-| **Live dictation** | Provisional words appear and revise in place while you speak. | Moonshine streaming models; experimental Nemotron 3.5 ASR |
-| **Notes and drafts** | Final text lands at your cursor after each pause. | Whisper or Cohere Transcribe batch models |
-| **Meetings and calls** | Add computer audio to microphone capture, then optionally label speakers and add timestamps. | Whisper or Cohere Transcribe batch models |
+| You want | Choose |
+| --- | --- |
+| Words on screen while you speak | Moonshine streaming models |
+| Multilingual live transcription | Nemotron 3.5 ASR |
+| The most accurate transcripts | Whisper Large V3 Turbo, Cohere Transcribe, and other batch models |
+| Natural local voices | Pocket TTS or Supertonic 3 |
+| Fast offline translation | Firefox Translations |
 
-Local Dictation supports English, Spanish, German, French, Portuguese, Italian, Dutch, and Japanese with the multilingual Whisper Large V3 Turbo and Nemotron 3.5 ASR models; those models can also auto-detect. Cohere Transcribe, Moonshine, and the `.en` Whisper models remain English-only. All catalog models run locally. Moonshine remains the recommended English live-dictation default; Nemotron 3.5 ASR is the multilingual streaming option. Speaker labels currently require a batch model.
+The setup wizard installs the native engine and your first speech model. From there, Speech Kit manages the downloads and you choose how you work.
 
-Language choices use base tags (for example, Portuguese rather than a separate
-Brazilian Portuguese option). Manual selection gives the most predictable
-cleanup. Auto detection chooses one language per utterance; mixed-language
-code-switching within one utterance is not yet a quality guarantee.
+## Dictate, transcribe, translate, listen, and refine
 
-## Features
+**Dictate.** Streaming words appear and revise in place while you speak. Finished text lands as Markdown at your cursor. Switch to a batch model when accuracy after each pause matters more than immediacy.
 
-- **Live text.** Moonshine and experimental Nemotron streaming models show provisional words and revise them in place until each utterance finalizes.
-- **Meeting capture.** Include system audio from meetings, calls, or videos alongside your microphone on Windows, Linux, and macOS 14.2 or later.
-- **Speaker labels.** Optional on-device diarization assigns session-stable speaker labels. Set an expected maximum when automatic detection creates extra labels. Speaker embeddings stay in memory and are discarded after the session.
-- **Timestamps.** Add elapsed or wall-clock landmarks at intervals, at every phrase, or at Smart paragraph breaks — with sentence-level phrase timing when the model provides it.
-- **Local model choices.** Choose Whisper, Cohere Transcribe, Moonshine, or experimental NVIDIA Nemotron 3.5 ASR models and download them from Settings.
-- **Optional text transformation.** Clean up, summarize, extract action items, or apply a custom prompt through local Ollama or remote OpenRouter models.
-- **Short-lived recovery.** Reinsert the latest finalized utterance, or copy and safely restore the raw text from the most recent replace-style batch cleanup.
-- **Explicit remote controls.** Keep transformations local, allow OpenRouter only for oversized transcripts, or disable remote and LLM features entirely.
+**Transcribe.** Combine your microphone with system audio to capture meetings, calls, interviews, and videos. Add timestamps and optional on-device speaker labels.
+
+**Translate.** Translate a selection or a whole note between English and seven other languages. Preview the result before replacing your text, inserting it into the note, or copying it. One local model pack covers every supported direction.
+
+**Listen.** Read any note aloud with natural local voices. Control the voice, speed, and playback without leaving Obsidian.
+
+**Refine.** Optional LLM tools can clean up, summarize, restructure, or transform text with your own prompts.
+
+## One toolkit across platforms
+
+Many speech apps are limited to one operating system, one model, or one part of the workflow. Speech Kit brings the same toolkit to macOS, Windows, and Linux, with hardware acceleration and system-audio capture where available.
+
+| Platform | Architecture | Acceleration | System audio |
+| --- | --- | --- | --- |
+| macOS | Apple silicon | Metal for Whisper | macOS 14.2 or later |
+| Windows | x86-64 | Optional NVIDIA CUDA | Supported |
+| Linux | x86-64 glibc | Optional NVIDIA CUDA | PulseAudio or PipeWire |
+
+Choose your platform. Choose your models. Keep one workflow inside Obsidian.
 
 ## Getting started
 
-1. [Install **Local Dictation** from Community Plugins](https://obsidian.md/plugins?id=local-dictation).
-2. Follow the setup wizard to download the native speech-to-text engine and a model.
-3. On the final step, select **Try dictation now** to begin in the open Markdown note. Or select **Done** and start later from the ribbon microphone or **Local Dictation: Toggle dictation** hotkey. Text lands at your cursor.
+1. Install **Speech Kit** from [Community Plugins](https://obsidian.md/plugins?id=local-dictation).
+2. Follow the setup wizard to install the native engine and a speech model.
+3. Select **Try dictation now**, or start from the ribbon, command palette, or a hotkey.
 
-The engine and models need a one-time download. Transcription then works without an ongoing network connection.
+Dictation, transcription, translation, and read aloud require no account, API key, usage credits, or cloud service. Once their models are installed, they continue working offline.
 
-## Platform support
+Optional LLM text tools are separate. You can connect a local or remote provider when you choose to use them.
 
-Published sidecar builds currently target Apple silicon on macOS and x86-64 on Windows and Linux.
+## Language support
 
-| Platform | CPU | Hardware acceleration | System audio |
-| --- | --- | --- | --- |
-| **macOS (Apple silicon)** | Supported | Metal is automatic for Whisper | macOS 14.2 or later |
-| **Windows (x86-64)** | Supported | Optional CUDA on a recent NVIDIA GPU | Supported |
-| **Linux (x86-64)** | Supported | Optional CUDA on a recent NVIDIA GPU | Supported through PulseAudio/PipeWire |
+The complete interface is available in English, Spanish, German, French, Portuguese, Italian, Dutch, and Japanese.
 
-macOS and Windows are the primary tested targets. On Linux, the plugin is used daily on Fedora (native and Flatpak); other x86-64 glibc distributions are compatibility targets rather than distro-specific guarantees. See the [Linux support guide](docs/guides/linux-support.md) for package, audio-stack, Flatpak, and troubleshooting details.
+Local translation supports English in either direction with each of the other seven languages. Transcription language support depends on the selected model. Multilingual models cover the full verified set, while some smaller or specialized models are English-only.
 
-If something breaks on your distribution, [open an issue](https://github.com/brittain9/local-dictation-obsidian-plugin/issues).
+## Local-first, private by default
 
-For GPU requirements and sandbox-specific setup, see the [CUDA setup guide](docs/guides/cuda-setup.md).
+Speech Kit works without accounts, subscriptions, or required cloud services.
 
-## Privacy
+* **Your work stays on your machine.** Dictation, transcription, read aloud, and translation run locally and continue working offline once their models are installed.
+* **No account, telemetry, or metered usage.** No API key, credit card, subscription, or usage credits to monitor.
+* **LLM tools are optional.** Add flexible language processing to your workflow using a local model or a remote provider you choose. Text leaves your device only when you explicitly use a remote provider, and audio is never uploaded.
+* **Choose what works for you.** Install high-quality models suited to your language, hardware, and workflow.
+* **Transparent and open.** Downloads are explicit, third-party licenses are documented, and Speech Kit is open source.
 
-- **Transcription stays local.** Audio is processed by the native sidecar on your computer and is not uploaded for transcription.
-- **Downloads are explicit.** The sidecar comes from GitHub Releases and is installed with the plugin. Model files come from the source URLs shown in the catalog and use a shared local data directory outside your vault by default.
-- **Remote cleanup uses text, not audio.** If you configure and select OpenRouter, it receives the transcript plus any note context you choose to include. Ollama requests stay on your computer through its loopback interface.
-- **Remote processing is optional.** You can disable OpenRouter routing or all LLM features from Settings. If you use OpenRouter, configure its provider and zero-data-retention controls to match your requirements.
-- **Speaker identity is session-only.** Diarization embeddings are held in memory for the active session and are not persisted as voice profiles.
-- **Recovery text is memory-only.** At most one recent utterance and one raw/transformed batch-cleanup record with its document snapshot are retained. Disable retention or use the clear commands to discard them immediately; none of this recovery state is written to disk.
+## Support development
 
-## Contributing
+If Speech Kit is useful to you, please support development:
 
-Local Dictation pairs a TypeScript plugin with a Rust sidecar for inference. See [CONTRIBUTING.md](CONTRIBUTING.md) for the architecture, setup, and workflow.
+<a href="https://buymeacoffee.com/alexbrittaq"><img src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png" alt="Buy Me a Coffee" width="217"></a>
 
-## License
+## Development and project links
 
-Local Dictation is MIT-licensed; see [LICENSE](LICENSE).
+Speech Kit pairs a TypeScript plugin with a Rust native sidecar. See [CONTRIBUTING.md](CONTRIBUTING.md) for its architecture, setup, and development workflow.
 
-Third-party component and model licenses are documented in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) and shown in the model catalog before download.
+[Community Plugin](https://obsidian.md/plugins?id=local-dictation) · [Latest release](https://github.com/brittain9/speech-kit-obsidian-plugin/releases/latest)
+
+[Issues](https://github.com/brittain9/speech-kit-obsidian-plugin/issues) · [License](LICENSE)
+
+Third-party component and model licenses are documented in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) and shown before model download.

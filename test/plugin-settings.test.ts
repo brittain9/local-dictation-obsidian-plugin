@@ -36,13 +36,42 @@ describe('resolvePluginSettings', () => {
   });
 
   it('defaults missing schemaVersion to the current settings schema', () => {
-    expect(resolvePluginSettings({}).schemaVersion).toBe(4);
+    expect(resolvePluginSettings({}).schemaVersion).toBe(6);
   });
 
   it('migrates missing or invalid dictation language to English', () => {
     expect(resolvePluginSettings({}).dictationLanguage).toBe('en');
     expect(resolvePluginSettings({ dictationLanguage: 'ja' }).dictationLanguage).toBe('ja');
     expect(resolvePluginSettings({ dictationLanguage: 'xx' }).dictationLanguage).toBe('en');
+  });
+
+  it('tolerantly reads supported translation language preferences', () => {
+    expect(
+      resolvePluginSettings({
+        translationSourceLanguage: ' FR ',
+        translationTargetLanguage: 'en',
+      }),
+    ).toMatchObject({
+      translationSourceLanguage: 'fr',
+      translationTargetLanguage: 'en',
+    });
+    expect(
+      resolvePluginSettings({
+        translationSourceLanguage: 'xx',
+        translationTargetLanguage: 42,
+      }),
+    ).toMatchObject({
+      translationSourceLanguage: null,
+      translationTargetLanguage: null,
+    });
+  });
+
+  it('normalizes a remembered Obsidian language to its base tag', () => {
+    expect(resolvePluginSettings({ lastObsidianLanguage: ' PT_br ' }).lastObsidianLanguage).toBe(
+      'pt',
+    );
+    expect(resolvePluginSettings({ lastObsidianLanguage: '' }).lastObsidianLanguage).toBeNull();
+    expect(resolvePluginSettings({ lastObsidianLanguage: 42 }).lastObsidianLanguage).toBeNull();
   });
 
   it('enables LLM capabilities but keeps transformation off by default', () => {
@@ -181,23 +210,21 @@ describe('resolvePluginSettings', () => {
     });
   });
 
-  it.each([
-    'at_cursor',
-    'end_of_note',
-  ] as const)('accepts the supported dictation anchor %s', (dictationAnchor) => {
-    expect(resolvePluginSettings({ dictationAnchor }).dictationAnchor).toBe(dictationAnchor);
-  });
+  it.each(['at_cursor', 'end_of_note'] as const)(
+    'accepts the supported dictation anchor %s',
+    (dictationAnchor) => {
+      expect(resolvePluginSettings({ dictationAnchor }).dictationAnchor).toBe(dictationAnchor);
+    },
+  );
 
-  it.each([
-    'smart',
-    'space',
-    'new_line',
-    'new_paragraph',
-  ] as const)('accepts the supported transcript formatting mode %s', (transcriptFormatting) => {
-    expect(resolvePluginSettings({ transcriptFormatting }).transcriptFormatting).toBe(
-      transcriptFormatting,
-    );
-  });
+  it.each(['smart', 'space', 'new_line', 'new_paragraph'] as const)(
+    'accepts the supported transcript formatting mode %s',
+    (transcriptFormatting) => {
+      expect(resolvePluginSettings({ transcriptFormatting }).transcriptFormatting).toBe(
+        transcriptFormatting,
+      );
+    },
+  );
 
   it('falls back when persisted values are invalid', () => {
     expect(
@@ -239,15 +266,20 @@ describe('resolvePluginSettings', () => {
     };
     const capabilities = {
       family: {
+        availableVoices: [],
         maxAudioDurationSecs: null,
+        outputSampleRate: null,
         producesPunctuation: true,
+        supportsHardwareAcceleration: true,
         supportedLanguages: { kind: 'all' as const },
         supportsInitialPrompt: true,
+        supportsSpeedControl: false,
         supportsLanguageSelection: true,
         supportsAutomaticLanguageDetection: true,
         supportsSegmentTimestamps: true,
         supportsStreaming: false,
         supportsWordTimestamps: false,
+        task: 'stt' as const,
       },
       familyId: 'whisper' as const,
       runtime: {
@@ -258,12 +290,14 @@ describe('resolvePluginSettings', () => {
       runtimeId: 'whisper_cpp' as const,
     };
 
-    expect(
-      resolvePluginSettings({
-        schemaVersion: 4,
-        selectedModelCapabilitiesSnapshot: { capabilities, selection },
-      }).selectedModelCapabilitiesSnapshot,
-    ).toEqual({ capabilities, selection });
+    for (const schemaVersion of [4, 5]) {
+      expect(
+        resolvePluginSettings({
+          schemaVersion,
+          selectedModelCapabilitiesSnapshot: { capabilities, selection },
+        }).selectedModelCapabilitiesSnapshot,
+      ).toEqual({ capabilities, selection });
+    }
 
     expect(
       resolvePluginSettings({
@@ -380,21 +414,15 @@ describe('resolvePluginSettings', () => {
     expect(validateTimestampIntervalSeconds(value)).toEqual({ milliseconds, valid: true });
   });
 
-  it.each([
-    '',
-    'ten',
-    'NaN',
-    '9',
-    '10.5',
-    '601',
-    '1e2',
-    '0x10',
-  ])('rejects timestamp interval %j', (value) => {
-    expect(validateTimestampIntervalSeconds(value)).toEqual({
-      message: 'Enter a whole number from 10 to 600 seconds.',
-      valid: false,
-    });
-  });
+  it.each(['', 'ten', 'NaN', '9', '10.5', '601', '1e2', '0x10'])(
+    'rejects timestamp interval %j',
+    (value) => {
+      expect(validateTimestampIntervalSeconds(value)).toEqual({
+        message: 'Enter a whole number from 10 to 600 seconds.',
+        valid: false,
+      });
+    },
+  );
 
   it('defaults smart paragraph thresholds to separate line and paragraph pauses', () => {
     expect(DEFAULT_PLUGIN_SETTINGS.smartParagraphLineBreakPauseMs).toBe(
@@ -463,14 +491,17 @@ describe('resolvePluginSettings', () => {
     ['global enabled and remote disabled', true, false, false],
     ['global disabled and remote enabled', false, true, false],
     ['both disabled', false, false, false],
-  ] as const)('resolves effective remote LLM availability when %s', (_label, llmFeaturesEnabled, llmRemoteFeaturesEnabled, expected) => {
-    expect(
-      isRemoteLlmEffectivelyEnabled({
-        llmFeaturesEnabled,
-        llmRemoteFeaturesEnabled,
-      }),
-    ).toBe(expected);
-  });
+  ] as const)(
+    'resolves effective remote LLM availability when %s',
+    (_label, llmFeaturesEnabled, llmRemoteFeaturesEnabled, expected) => {
+      expect(
+        isRemoteLlmEffectivelyEnabled({
+          llmFeaturesEnabled,
+          llmRemoteFeaturesEnabled,
+        }),
+      ).toBe(expected);
+    },
+  );
 
   it('migrates the legacy single Ollama model into per-provider model storage', () => {
     expect(
