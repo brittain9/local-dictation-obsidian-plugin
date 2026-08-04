@@ -9,7 +9,6 @@ import {
   DEFAULT_PLUGIN_SETTINGS,
   DEFAULT_SMART_PARAGRAPH_LINE_BREAK_PAUSE_MS,
   DEFAULT_SMART_PARAGRAPH_PARAGRAPH_PAUSE_MS,
-  isRemoteLlmEffectivelyEnabled,
   LLM_USER_PRESET_MAX_COUNT,
   LLM_USER_PRESET_MAX_DESCRIPTION_CHARS,
   LLM_USER_PRESET_MAX_LABEL_CHARS,
@@ -17,7 +16,6 @@ import {
   MIN_SMART_PARAGRAPH_PAUSE_MS,
   resetLlmPostprocessDefaults,
   resolvePluginSettings,
-  shouldRefreshLlmSidebar,
   validateTimestampIntervalSeconds,
 } from '../src/settings/plugin-settings';
 
@@ -35,8 +33,19 @@ describe('resolvePluginSettings', () => {
     expect(resolvePluginSettings(undefined)).toEqual(DEFAULT_PLUGIN_SETTINGS);
   });
 
+  it('distinguishes a fresh install from an existing vault with missing routing data', () => {
+    expect(resolvePluginSettings(null).llmRoutingPolicy).toBeNull();
+    expect(resolvePluginSettings({}).llmRoutingPolicy).toEqual({
+      kind: 'fixed',
+      providerId: 'ollama',
+    });
+    expect(
+      resolvePluginSettings({ llmRoutingPolicy: null, schemaVersion: 7 }).llmRoutingPolicy,
+    ).toBeNull();
+  });
+
   it('defaults missing schemaVersion to the current settings schema', () => {
-    expect(resolvePluginSettings({}).schemaVersion).toBe(6);
+    expect(resolvePluginSettings({}).schemaVersion).toBe(7);
   });
 
   it('migrates missing or invalid dictation language to English', () => {
@@ -77,10 +86,10 @@ describe('resolvePluginSettings', () => {
   it('enables LLM capabilities but keeps transformation off by default', () => {
     expect(DEFAULT_PLUGIN_SETTINGS).toMatchObject({
       llmFeaturesEnabled: true,
-      llmRemoteFeaturesEnabled: true,
       llmPostprocessActivePresetRef: `builtin:${DEFAULT_LLM_BUILTIN_PRESET_ID}`,
       llmPostprocessMode: 'off',
       llmPostprocessUserPresets: [],
+      llmRoutingPolicy: null,
     });
   });
 
@@ -125,8 +134,7 @@ describe('resolvePluginSettings', () => {
         dictationAnchor: 'end_of_note',
         listeningMode: 'always_on',
         llmFeaturesEnabled: false,
-        llmOpenRouterSecretId: ' openrouter-secret ',
-        llmRemoteFeaturesEnabled: false,
+        llmNetworkTimeoutSec: 90,
         llmPostprocessMode: 'batch',
         llmPostprocessNoteContextChars: 4000,
         llmPostprocessPriorUtterancesN: 3,
@@ -134,12 +142,24 @@ describe('resolvePluginSettings', () => {
         llmPostprocessSkipMinWords: 6,
         llmPostprocessTemperature: 0.4,
         llmPostprocessTotalContextCap: 9000,
-        llmProviderModels: {
-          ollama: ' llama3.2:latest ',
-          openrouter: ' anthropic/claude-sonnet-4.5 ',
+        llmProviderConfigurations: {
+          ollama: { model: ' llama3.2:latest ' },
+          openrouter: {
+            model: ' anthropic/claude-sonnet-4.5 ',
+            secretId: ' openrouter-secret ',
+          },
+          openai_compatible: {
+            baseUrl: ' http://localhost:1234/v1/ ',
+            model: ' local-model ',
+            secretId: ' custom-secret ',
+          },
         },
-        llmRemoteThresholdChars: 8000,
-        llmRouting: 'auto',
+        llmRoutingPolicy: {
+          defaultProviderId: 'ollama',
+          kind: 'transcript_size',
+          largeTranscriptProviderId: 'openrouter',
+          thresholdChars: 8000,
+        },
         localTranscriptSidebarBootstrapped: true,
         modelStorePathOverride: ' /tmp/models ',
         selectedModel: {
@@ -169,8 +189,7 @@ describe('resolvePluginSettings', () => {
       dictationAnchor: 'end_of_note',
       listeningMode: 'always_on',
       llmFeaturesEnabled: false,
-      llmOpenRouterSecretId: 'openrouter-secret',
-      llmRemoteFeaturesEnabled: false,
+      llmNetworkTimeoutSec: 90,
       // Seeded from the stored mode (no explicit value persisted).
       llmPostprocessLastEnabledMode: 'batch',
       llmPostprocessMode: 'batch',
@@ -180,12 +199,24 @@ describe('resolvePluginSettings', () => {
       llmPostprocessSkipMinWords: 6,
       llmPostprocessTemperature: 0.4,
       llmPostprocessTotalContextCap: 9000,
-      llmProviderModels: {
-        ollama: 'llama3.2:latest',
-        openrouter: 'anthropic/claude-sonnet-4.5',
+      llmProviderConfigurations: {
+        ollama: { model: 'llama3.2:latest' },
+        openrouter: {
+          model: 'anthropic/claude-sonnet-4.5',
+          secretId: 'openrouter-secret',
+        },
+        openai_compatible: {
+          baseUrl: 'http://localhost:1234/v1',
+          model: 'local-model',
+          secretId: 'custom-secret',
+        },
       },
-      llmRemoteThresholdChars: 8000,
-      llmRouting: 'auto',
+      llmRoutingPolicy: {
+        defaultProviderId: 'ollama',
+        kind: 'transcript_size',
+        largeTranscriptProviderId: 'openrouter',
+        thresholdChars: 8000,
+      },
       localTranscriptSidebarBootstrapped: true,
       modelStorePathOverride: '/tmp/models',
       selectedModel: {
@@ -254,7 +285,10 @@ describe('resolvePluginSettings', () => {
         transcriptFormatting: 'tab',
         useNoteAsContext: 'yes',
       }),
-    ).toEqual(DEFAULT_PLUGIN_SETTINGS);
+    ).toEqual({
+      ...DEFAULT_PLUGIN_SETTINGS,
+      llmRoutingPolicy: { kind: 'fixed', providerId: 'ollama' },
+    });
   });
 
   it('round-trips a well-formed selectedModelCapabilitiesSnapshot', () => {
@@ -471,66 +505,58 @@ describe('resolvePluginSettings', () => {
     expect(resolvePluginSettings({ useLlmNoteContext: false }).useLlmNoteContext).toBe(false);
   });
 
-  it('refreshes the LLM sidebar when remote availability changes', () => {
-    expect(
-      shouldRefreshLlmSidebar(DEFAULT_PLUGIN_SETTINGS, {
-        ...DEFAULT_PLUGIN_SETTINGS,
-        llmRemoteFeaturesEnabled: false,
-      }),
-    ).toBe(true);
-    expect(
-      shouldRefreshLlmSidebar(DEFAULT_PLUGIN_SETTINGS, {
-        ...DEFAULT_PLUGIN_SETTINGS,
-        developerMode: true,
-      }),
-    ).toBe(false);
-  });
-
-  it.each([
-    ['both enabled', true, true, true],
-    ['global enabled and remote disabled', true, false, false],
-    ['global disabled and remote enabled', false, true, false],
-    ['both disabled', false, false, false],
-  ] as const)(
-    'resolves effective remote LLM availability when %s',
-    (_label, llmFeaturesEnabled, llmRemoteFeaturesEnabled, expected) => {
-      expect(
-        isRemoteLlmEffectivelyEnabled({
-          llmFeaturesEnabled,
-          llmRemoteFeaturesEnabled,
-        }),
-      ).toBe(expected);
-    },
-  );
-
-  it('migrates the legacy single Ollama model into per-provider model storage', () => {
+  it('migrates the legacy single Ollama model into provider configuration', () => {
     expect(
       resolvePluginSettings({
         llmPostprocessModel: ' llama3.2:latest ',
       }),
     ).toMatchObject({
-      llmProviderModels: {
-        ollama: 'llama3.2:latest',
-        openrouter: '',
+      llmProviderConfigurations: {
+        ollama: { model: 'llama3.2:latest' },
+        openrouter: { model: '', secretId: '' },
       },
     });
   });
 
   it.each([
-    ['ollama maps to local', 'ollama', 'local'],
-    ['openrouter maps to remote', 'openrouter', 'remote'],
-    ['gemini maps to local', 'gemini', 'local'],
-  ] as const)('migrates legacy llmProvider %s', (_label, llmProvider, llmRouting) => {
-    expect(resolvePluginSettings({ llmProvider }).llmRouting).toBe(llmRouting);
+    ['ollama maps to Ollama', 'ollama', 'ollama'],
+    ['openrouter maps to OpenRouter', 'openrouter', 'openrouter'],
+    ['gemini maps to Ollama', 'gemini', 'ollama'],
+  ] as const)('migrates legacy llmProvider %s', (_label, llmProvider, providerId) => {
+    expect(resolvePluginSettings({ llmProvider }).llmRoutingPolicy).toEqual({
+      kind: 'fixed',
+      providerId,
+    });
   });
 
-  it('prefers a valid llmRouting over a legacy llmProvider value', () => {
-    expect(resolvePluginSettings({ llmProvider: 'ollama', llmRouting: 'remote' }).llmRouting).toBe(
-      'remote',
-    );
+  it('migrates old local, remote, and auto routing policies', () => {
+    expect(resolvePluginSettings({ llmRouting: 'local' }).llmRoutingPolicy).toEqual({
+      kind: 'fixed',
+      providerId: 'ollama',
+    });
+    expect(resolvePluginSettings({ llmRouting: 'remote' }).llmRoutingPolicy).toEqual({
+      kind: 'fixed',
+      providerId: 'openrouter',
+    });
+    expect(
+      resolvePluginSettings({ llmRemoteThresholdChars: 8_000, llmRouting: 'auto' })
+        .llmRoutingPolicy,
+    ).toEqual({
+      defaultProviderId: 'ollama',
+      kind: 'transcript_size',
+      largeTranscriptProviderId: 'openrouter',
+      thresholdChars: 8_000,
+    });
   });
 
-  it('drops the legacy gemini model and keeps ollama/openrouter', () => {
+  it('keeps a remote-disabled vault fixed on Ollama during migration', () => {
+    expect(
+      resolvePluginSettings({ llmRemoteFeaturesEnabled: false, llmRouting: 'auto' })
+        .llmRoutingPolicy,
+    ).toEqual({ kind: 'fixed', providerId: 'ollama' });
+  });
+
+  it('drops the legacy Gemini model and keeps Ollama and OpenRouter models', () => {
     expect(
       resolvePluginSettings({
         llmProviderModels: {
@@ -538,25 +564,34 @@ describe('resolvePluginSettings', () => {
           ollama: 'new-ollama',
           openrouter: 'openai/gpt-4.1',
         },
-      }).llmProviderModels,
+      }).llmProviderConfigurations,
     ).toEqual({
-      ollama: 'new-ollama',
-      openrouter: 'openai/gpt-4.1',
+      ollama: { model: 'new-ollama' },
+      openrouter: { model: 'openai/gpt-4.1', secretId: '' },
+      openai_compatible: DEFAULT_PLUGIN_SETTINGS.llmProviderConfigurations.openai_compatible,
     });
   });
 
-  it('clamps the remote routing threshold at the settings boundary', () => {
-    expect(resolvePluginSettings({ llmRemoteThresholdChars: 1 }).llmRemoteThresholdChars).toBe(500);
+  it('clamps migrated and current routing thresholds at the settings boundary', () => {
     expect(
-      resolvePluginSettings({ llmRemoteThresholdChars: 999_999 }).llmRemoteThresholdChars,
-    ).toBe(60_000);
+      resolvePluginSettings({ llmRemoteThresholdChars: 1, llmRouting: 'auto' }).llmRoutingPolicy,
+    ).toMatchObject({ thresholdChars: 500 });
+    expect(
+      resolvePluginSettings({
+        llmRoutingPolicy: {
+          defaultProviderId: 'ollama',
+          kind: 'transcript_size',
+          largeTranscriptProviderId: 'openrouter',
+          thresholdChars: 999_999,
+        },
+      }).llmRoutingPolicy,
+    ).toMatchObject({ thresholdChars: 60_000 });
   });
 
-  it('clamps the remote timeout at the settings boundary', () => {
-    expect(resolvePluginSettings({ llmRemoteTimeoutSec: 1 }).llmRemoteTimeoutSec).toBe(5);
-    expect(resolvePluginSettings({ llmRemoteTimeoutSec: 9_999 }).llmRemoteTimeoutSec).toBe(600);
-    expect(resolvePluginSettings({ llmRemoteTimeoutSec: 'soon' }).llmRemoteTimeoutSec).toBe(60);
-    expect(resolvePluginSettings({ llmRemoteTimeoutSec: 120 }).llmRemoteTimeoutSec).toBe(120);
+  it('clamps the provider-neutral network timeout and migrates the old value', () => {
+    expect(resolvePluginSettings({ llmNetworkTimeoutSec: 1 }).llmNetworkTimeoutSec).toBe(5);
+    expect(resolvePluginSettings({ llmNetworkTimeoutSec: 9_999 }).llmNetworkTimeoutSec).toBe(600);
+    expect(resolvePluginSettings({ llmRemoteTimeoutSec: 120 }).llmNetworkTimeoutSec).toBe(120);
   });
 
   it('falls back to the default when useLlmNoteContext is not a boolean', () => {
@@ -848,8 +883,13 @@ describe('system audio inclusion', () => {
 });
 
 describe('resetLlmPostprocessDefaults', () => {
-  it('resets editable LLM defaults while preserving preset state and provider models', () => {
+  it('resets editable LLM defaults while preserving preset state and provider configuration', () => {
     const presets = [makeUserPreset({ id: 'a', label: 'Keep me' })];
+    const llmProviderConfigurations = {
+      ...DEFAULT_PLUGIN_SETTINGS.llmProviderConfigurations,
+      ollama: { model: 'llama3' },
+      openrouter: { model: 'openai/gpt-4.1', secretId: 'openrouter-key' },
+    };
     const reset = resetLlmPostprocessDefaults({
       ...DEFAULT_PLUGIN_SETTINGS,
       llmFeaturesEnabled: false,
@@ -863,10 +903,7 @@ describe('resetLlmPostprocessDefaults', () => {
       llmPostprocessTemperature: 1,
       llmPostprocessTotalContextCap: 333,
       llmPostprocessUserPresets: presets,
-      llmProviderModels: {
-        ollama: 'llama3',
-        openrouter: 'openai/gpt-4.1',
-      },
+      llmProviderConfigurations,
     });
 
     expect(reset).toMatchObject({
@@ -876,10 +913,7 @@ describe('resetLlmPostprocessDefaults', () => {
       llmPostprocessMode: 'per_utterance',
       llmPostprocessShowRawBelow: true,
       llmPostprocessUserPresets: presets,
-      llmProviderModels: {
-        ollama: 'llama3',
-        openrouter: 'openai/gpt-4.1',
-      },
+      llmProviderConfigurations,
     });
   });
 

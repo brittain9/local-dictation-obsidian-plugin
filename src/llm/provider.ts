@@ -1,17 +1,24 @@
-import type { PluginSettings } from '../settings/plugin-settings';
-import { OllamaProvider } from './ollama-provider';
-import { OpenRouterProvider } from './openrouter-provider';
-
-export const LLM_PROVIDER_IDS = ['ollama', 'openrouter'] as const;
+export const LLM_PROVIDER_IDS = ['ollama', 'openrouter', 'openai_compatible'] as const;
 
 export type LlmProviderId = (typeof LLM_PROVIDER_IDS)[number];
 
-export const LLM_ROUTINGS = ['local', 'remote', 'auto'] as const;
+export function isLlmProviderId(value: unknown): value is LlmProviderId {
+  return typeof value === 'string' && (LLM_PROVIDER_IDS as readonly string[]).includes(value);
+}
 
-export type LlmRouting = (typeof LLM_ROUTINGS)[number];
+export type LlmRoutingPolicy =
+  | { kind: 'fixed'; providerId: LlmProviderId }
+  | {
+      defaultProviderId: LlmProviderId;
+      kind: 'transcript_size';
+      largeTranscriptProviderId: LlmProviderId;
+      thresholdChars: number;
+    };
 
-export function isLlmRouting(value: unknown): value is LlmRouting {
-  return typeof value === 'string' && (LLM_ROUTINGS as readonly string[]).includes(value);
+export interface LlmProviderConfigurations {
+  ollama: { model: string };
+  openrouter: { model: string; secretId: string };
+  openai_compatible: { baseUrl: string; model: string; secretId: string };
 }
 
 export type ProviderErrorCode =
@@ -21,6 +28,7 @@ export type ProviderErrorCode =
   | 'http_error'
   | 'invalid_response'
   | 'model_not_configured'
+  | 'permission_denied'
   | 'rate_limited'
   | 'timeout'
   | 'unknown_model';
@@ -29,6 +37,7 @@ export type ProviderHealth =
   | { kind: 'unknown' }
   | { kind: 'unreachable' }
   | { kind: 'auth_invalid' }
+  | { kind: 'permission_denied' }
   | { kind: 'rate_limited' }
   | { kind: 'no_models' }
   | { kind: 'ready'; modelCount: number };
@@ -65,8 +74,6 @@ export interface LlmProvider {
   probe(): Promise<ProviderHealth>;
 }
 
-export type LlmProviderModels = Record<LlmProviderId, string>;
-
 export interface LlmCleanupFailure {
   code: ProviderErrorCode;
   message: string;
@@ -96,60 +103,46 @@ export class ProviderError extends Error {
   }
 }
 
-export function createProvider(
+export function getProviderModel(
+  configurations: LlmProviderConfigurations,
   providerId: LlmProviderId,
-  settings: PluginSettings,
-  openRouterApiKey = '',
-): LlmProvider {
-  switch (providerId) {
-    case 'ollama':
-      return new OllamaProvider();
-    case 'openrouter':
-      return new OpenRouterProvider({
-        apiKey: openRouterApiKey,
-        timeoutMs: settings.llmRemoteTimeoutSec * 1000,
-      });
-  }
+): string {
+  return configurations[providerId].model.trim();
 }
 
-export function getProviderModel(settings: PluginSettings, providerId: LlmProviderId): string {
-  return settings.llmProviderModels[providerId].trim();
-}
-
-export function withProviderModel(
-  settings: PluginSettings,
+export function withProviderConfigurationModel(
+  configurations: LlmProviderConfigurations,
   providerId: LlmProviderId,
   model: string,
-): PluginSettings {
+): LlmProviderConfigurations {
   return {
-    ...settings,
-    llmProviderModels: {
-      ...settings.llmProviderModels,
-      [providerId]: model.trim(),
-    },
+    ...configurations,
+    [providerId]: { ...configurations[providerId], model: model.trim() },
   };
 }
 
-// Pure size-based routing: 'local' always picks Ollama, 'remote' always picks
-// OpenRouter, and 'auto' escalates to OpenRouter once the *transcript*
-// exceeds the configured character threshold (local models choke on large
-// contexts). This deliberately ignores the full prompt/user-message size,
-// which also carries note/prior-utterance context: the UI promises that Auto
-// only sends large transcripts to OpenRouter, and a short dictation must not
-// escalate just because it happens to have a large note attached.
-export function selectRouteProviderId(
-  routing: LlmRouting,
-  transcriptChars: number,
-  thresholdChars: number,
-): LlmProviderId {
-  switch (routing) {
-    case 'local':
-      return 'ollama';
-    case 'remote':
-      return 'openrouter';
-    case 'auto':
-      return transcriptChars <= thresholdChars ? 'ollama' : 'openrouter';
-  }
+export function withProviderSecretId(
+  configurations: LlmProviderConfigurations,
+  providerId: 'openrouter' | 'openai_compatible',
+  secretId: string,
+): LlmProviderConfigurations {
+  return {
+    ...configurations,
+    [providerId]: { ...configurations[providerId], secretId: secretId.trim() },
+  };
+}
+
+export function withOpenAiCompatibleBaseUrl(
+  configurations: LlmProviderConfigurations,
+  baseUrl: string,
+): LlmProviderConfigurations {
+  return {
+    ...configurations,
+    openai_compatible: {
+      ...configurations.openai_compatible,
+      baseUrl: baseUrl.trim().replace(/\/+$/u, ''),
+    },
+  };
 }
 
 export function formatLlmProviderName(providerId: LlmProviderId): string {
@@ -158,5 +151,7 @@ export function formatLlmProviderName(providerId: LlmProviderId): string {
       return 'Ollama';
     case 'openrouter':
       return 'OpenRouter';
+    case 'openai_compatible':
+      return 'Custom endpoint';
   }
 }

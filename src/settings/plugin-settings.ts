@@ -19,7 +19,8 @@ import {
   resolveActivePresetEntry,
   resolvePresetEntry,
 } from '../llm/presets';
-import { isLlmRouting, type LlmProviderModels, type LlmRouting } from '../llm/provider';
+import type { LlmProviderConfigurations, LlmRoutingPolicy } from '../llm/provider';
+import { normalizeLlmRoutingPolicy } from '../llm/routing-policy';
 import {
   isSelectedModel,
   isSelectedModelCapabilitiesSnapshot,
@@ -120,9 +121,10 @@ export const DEFAULT_LLM_POSTPROCESS_SKIP = {
   minWords: 4,
 } as const;
 
-export const DEFAULT_LLM_REMOTE_THRESHOLD_CHARS = 6_000;
-export const MIN_LLM_REMOTE_THRESHOLD_CHARS = 500;
-export const MAX_LLM_REMOTE_THRESHOLD_CHARS = 60_000;
+export const DEFAULT_LLM_ROUTING_THRESHOLD_CHARS = 6_000;
+export const MIN_LLM_ROUTING_THRESHOLD_CHARS = 500;
+export const MAX_LLM_ROUTING_THRESHOLD_CHARS = 60_000;
+export const DEFAULT_OPENAI_COMPATIBLE_SECRET_ID = 'local-dictation-openai-compatible-api-key';
 
 export const LLM_USER_PRESET_MAX_LABEL_CHARS = 60;
 export const LLM_USER_PRESET_MAX_DESCRIPTION_CHARS = 240;
@@ -135,8 +137,8 @@ export const LLM_NOTE_CONTEXT_CHARS_MAX = 12_000;
 export const LLM_PRIOR_UTTERANCES_MAX = 5;
 export const LLM_TOTAL_CONTEXT_CAP_MAX = 30_000;
 export const LLM_TEMPERATURE_MAX = 2;
-export const MAX_LLM_REMOTE_TIMEOUT_SEC = 600;
-export const MIN_LLM_REMOTE_TIMEOUT_SEC = 5;
+export const MAX_LLM_NETWORK_TIMEOUT_SEC = 600;
+export const MIN_LLM_NETWORK_TIMEOUT_SEC = 5;
 
 export interface AudioInputDevice {
   deviceId: string;
@@ -155,8 +157,7 @@ export interface PluginSettings {
   dictationLanguage: DictationLanguage;
   listeningMode: ListeningMode;
   llmFeaturesEnabled: boolean;
-  llmOpenRouterSecretId: string;
-  llmRemoteFeaturesEnabled: boolean;
+  llmNetworkTimeoutSec: number;
   llmPostprocessActivePresetRef: string;
   // The user's timing choice while the transform is enabled; survives the
   // mode being set to 'off' so re-enabling restores it across restarts.
@@ -169,15 +170,13 @@ export interface PluginSettings {
   llmPostprocessTemperature: number;
   llmPostprocessTotalContextCap: number;
   llmPostprocessUserPresets: LlmPreset[];
-  llmProviderModels: LlmProviderModels;
-  llmRemoteThresholdChars: number;
-  llmRemoteTimeoutSec: number;
-  llmRouting: LlmRouting;
+  llmProviderConfigurations: LlmProviderConfigurations;
+  llmRoutingPolicy: LlmRoutingPolicy | null;
   lastObsidianLanguage: string | null;
   localTranscriptSidebarBootstrapped: boolean;
   modelStorePathOverride: string;
   retainLastUtterance: boolean;
-  schemaVersion: 6;
+  schemaVersion: 7;
   selectedModel: SelectedModel | null;
   // Last-known-good capabilities for `selectedModel`, captured on a successful
   // probe. Lets startup skip re-probing the sidecar (which forces a full
@@ -218,8 +217,7 @@ export const DEFAULT_PLUGIN_SETTINGS: PluginSettings = {
   dictationLanguage: DEFAULT_DICTATION_LANGUAGE,
   listeningMode: 'always_on',
   llmFeaturesEnabled: true,
-  llmOpenRouterSecretId: '',
-  llmRemoteFeaturesEnabled: true,
+  llmNetworkTimeoutSec: 60,
   llmPostprocessActivePresetRef: DEFAULT_LLM_ACTIVE_PRESET_REF,
   llmPostprocessLastEnabledMode: 'per_utterance',
   llmPostprocessMode: 'off',
@@ -230,18 +228,21 @@ export const DEFAULT_PLUGIN_SETTINGS: PluginSettings = {
   llmPostprocessTemperature: DEFAULT_LLM_POSTPROCESS_GENERATION.temperature,
   llmPostprocessTotalContextCap: DEFAULT_LLM_POSTPROCESS_CONTEXT.totalContextCap,
   llmPostprocessUserPresets: [],
-  llmProviderModels: {
-    ollama: '',
-    openrouter: '',
+  llmProviderConfigurations: {
+    ollama: { model: '' },
+    openrouter: { model: '', secretId: '' },
+    openai_compatible: {
+      baseUrl: '',
+      model: '',
+      secretId: DEFAULT_OPENAI_COMPATIBLE_SECRET_ID,
+    },
   },
-  llmRemoteThresholdChars: DEFAULT_LLM_REMOTE_THRESHOLD_CHARS,
-  llmRemoteTimeoutSec: 60,
-  llmRouting: 'local',
+  llmRoutingPolicy: null,
   lastObsidianLanguage: null,
   localTranscriptSidebarBootstrapped: false,
   modelStorePathOverride: '',
   retainLastUtterance: true,
-  schemaVersion: 6,
+  schemaVersion: 7,
   selectedModel: null,
   selectedModelCapabilitiesSnapshot: null,
   selectedTtsModel: null,
@@ -269,6 +270,7 @@ export const DEFAULT_PLUGIN_SETTINGS: PluginSettings = {
 
 export function resolvePluginSettings(data: unknown): PluginSettings {
   const raw = isRecord(data) ? data : {};
+  const isFreshInstall = data === null || data === undefined;
   const smartParagraphPauses = normalizeSmartParagraphPauseSettings({
     lineBreakPauseMs: raw.smartParagraphLineBreakPauseMs,
     paragraphPauseMs: raw.smartParagraphParagraphPauseMs,
@@ -280,7 +282,7 @@ export function resolvePluginSettings(data: unknown): PluginSettings {
   });
   const legacyModel =
     typeof raw.llmPostprocessModel === 'string' ? raw.llmPostprocessModel.trim() : '';
-  const llmProviderModels = readLlmProviderModels(raw.llmProviderModels, legacyModel);
+  const llmProviderConfigurations = readLlmProviderConfigurations(raw, legacyModel);
 
   return {
     accelerationPreference: readAccelerationPreference(raw.accelerationPreference),
@@ -301,13 +303,11 @@ export function resolvePluginSettings(data: unknown): PluginSettings {
       raw.llmFeaturesEnabled,
       DEFAULT_PLUGIN_SETTINGS.llmFeaturesEnabled,
     ),
-    llmOpenRouterSecretId: readSecretId(
-      raw.llmOpenRouterSecretId,
-      DEFAULT_PLUGIN_SETTINGS.llmOpenRouterSecretId,
-    ),
-    llmRemoteFeaturesEnabled: readBoolean(
-      raw.llmRemoteFeaturesEnabled,
-      DEFAULT_PLUGIN_SETTINGS.llmRemoteFeaturesEnabled,
+    llmNetworkTimeoutSec: readClampedInteger(
+      raw.llmNetworkTimeoutSec ?? raw.llmRemoteTimeoutSec,
+      DEFAULT_PLUGIN_SETTINGS.llmNetworkTimeoutSec,
+      MIN_LLM_NETWORK_TIMEOUT_SEC,
+      MAX_LLM_NETWORK_TIMEOUT_SEC,
     ),
     llmPostprocessActivePresetRef: activeRef,
     llmPostprocessLastEnabledMode: readLastEnabledMode(
@@ -350,20 +350,8 @@ export function resolvePluginSettings(data: unknown): PluginSettings {
       LLM_TOTAL_CONTEXT_CAP_MAX,
     ),
     llmPostprocessUserPresets: userPresets,
-    llmProviderModels,
-    llmRemoteThresholdChars: readClampedInteger(
-      raw.llmRemoteThresholdChars,
-      DEFAULT_PLUGIN_SETTINGS.llmRemoteThresholdChars,
-      MIN_LLM_REMOTE_THRESHOLD_CHARS,
-      MAX_LLM_REMOTE_THRESHOLD_CHARS,
-    ),
-    llmRemoteTimeoutSec: readClampedInteger(
-      raw.llmRemoteTimeoutSec,
-      DEFAULT_PLUGIN_SETTINGS.llmRemoteTimeoutSec,
-      MIN_LLM_REMOTE_TIMEOUT_SEC,
-      MAX_LLM_REMOTE_TIMEOUT_SEC,
-    ),
-    llmRouting: resolveLlmRouting(raw),
+    llmProviderConfigurations,
+    llmRoutingPolicy: resolveLlmRoutingPolicy(raw, isFreshInstall),
     lastObsidianLanguage: readLastObsidianLanguage(raw.lastObsidianLanguage),
     localTranscriptSidebarBootstrapped: readBoolean(
       raw.localTranscriptSidebarBootstrapped,
@@ -378,18 +366,21 @@ export function resolvePluginSettings(data: unknown): PluginSettings {
       DEFAULT_PLUGIN_SETTINGS.retainLastUtterance,
     ),
     // Bump `schemaVersion` and add a migration step when renaming a key or changing default semantics.
-    schemaVersion: 6,
+    schemaVersion: 7,
     selectedModel: readSelectedModel(raw.selectedModel),
     // Automatic detection became a capability separate from language tags in
     // schema 4. Older snapshots cannot prove that exact-model behavior, so
     // force one fresh probe during migration.
     selectedModelCapabilitiesSnapshot:
-      raw.schemaVersion === 4 || raw.schemaVersion === 5 || raw.schemaVersion === 6
+      raw.schemaVersion === 4 ||
+      raw.schemaVersion === 5 ||
+      raw.schemaVersion === 6 ||
+      raw.schemaVersion === 7
         ? readSelectedModelCapabilitiesSnapshot(raw.selectedModelCapabilitiesSnapshot)
         : null,
     selectedTtsModel: readSelectedModel(raw.selectedTtsModel),
     selectedTtsModelCapabilitiesSnapshot:
-      raw.schemaVersion === 6
+      raw.schemaVersion === 6 || raw.schemaVersion === 7
         ? readSelectedModelCapabilitiesSnapshot(raw.selectedTtsModelCapabilitiesSnapshot)
         : null,
     selectedTtsVoice:
@@ -500,16 +491,6 @@ export function resetLlmPostprocessDefaults(settings: PluginSettings): PluginSet
     llmPostprocessTotalContextCap: DEFAULT_PLUGIN_SETTINGS.llmPostprocessTotalContextCap,
     useLlmNoteContext: DEFAULT_PLUGIN_SETTINGS.useLlmNoteContext,
   };
-}
-
-export function isRemoteLlmEffectivelyEnabled(
-  settings: Pick<PluginSettings, 'llmFeaturesEnabled' | 'llmRemoteFeaturesEnabled'>,
-): boolean {
-  return settings.llmFeaturesEnabled && settings.llmRemoteFeaturesEnabled;
-}
-
-export function shouldRefreshLlmSidebar(previous: PluginSettings, next: PluginSettings): boolean {
-  return previous.llmRemoteFeaturesEnabled !== next.llmRemoteFeaturesEnabled;
 }
 
 function readAudioInputDevice(value: unknown): AudioInputDevice | null {
@@ -690,36 +671,101 @@ function readLlmPostprocessMode(value: unknown): LlmPostprocessMode {
   return DEFAULT_PLUGIN_SETTINGS.llmPostprocessMode;
 }
 
-// Resolve routing from a valid `llmRouting`, else map the legacy `llmProvider`
-// enum (ollama→local, openrouter→remote, gemini→local since Gemini is gone),
-// else fall back to the default. schemaVersion stays 1: these are tolerant reads.
-function resolveLlmRouting(raw: Record<string, unknown>): LlmRouting {
-  if (isLlmRouting(raw.llmRouting)) {
-    return raw.llmRouting;
-  }
-  switch (raw.llmProvider) {
-    case 'ollama':
-      return 'local';
-    case 'openrouter':
-      return 'remote';
-    case 'gemini':
-      return 'local';
-    default:
-      return DEFAULT_PLUGIN_SETTINGS.llmRouting;
-  }
-}
-
-function readLlmProviderModels(value: unknown, legacyOllamaModel: string): LlmProviderModels {
-  if (!isRecord(value)) {
+function resolveLlmRoutingPolicy(
+  raw: Record<string, unknown>,
+  isFreshInstall: boolean,
+): LlmRoutingPolicy | null {
+  if (Object.hasOwn(raw, 'llmRoutingPolicy')) {
+    if (raw.llmRoutingPolicy === null) {
+      return null;
+    }
+    const normalized = normalizeLlmRoutingPolicy(raw.llmRoutingPolicy);
+    if (normalized === null) {
+      return { kind: 'fixed', providerId: 'ollama' };
+    }
+    if (normalized.kind === 'fixed') {
+      return normalized;
+    }
     return {
-      ...DEFAULT_PLUGIN_SETTINGS.llmProviderModels,
-      ollama: legacyOllamaModel,
+      ...normalized,
+      thresholdChars: readClampedInteger(
+        normalized.thresholdChars,
+        DEFAULT_LLM_ROUTING_THRESHOLD_CHARS,
+        MIN_LLM_ROUTING_THRESHOLD_CHARS,
+        MAX_LLM_ROUTING_THRESHOLD_CHARS,
+      ),
     };
   }
+  if (isFreshInstall) {
+    return null;
+  }
+  if (raw.llmRemoteFeaturesEnabled === false) {
+    return { kind: 'fixed', providerId: 'ollama' };
+  }
+
+  const routing =
+    raw.llmRouting === 'local' || raw.llmRouting === 'remote' || raw.llmRouting === 'auto'
+      ? raw.llmRouting
+      : raw.llmProvider === 'openrouter'
+        ? 'remote'
+        : raw.llmProvider === 'ollama' || raw.llmProvider === 'gemini'
+          ? 'local'
+          : null;
+  if (routing === 'remote') {
+    return { kind: 'fixed', providerId: 'openrouter' };
+  }
+  if (routing === 'auto') {
+    return {
+      defaultProviderId: 'ollama',
+      kind: 'transcript_size',
+      largeTranscriptProviderId: 'openrouter',
+      thresholdChars: readClampedInteger(
+        raw.llmRemoteThresholdChars,
+        DEFAULT_LLM_ROUTING_THRESHOLD_CHARS,
+        MIN_LLM_ROUTING_THRESHOLD_CHARS,
+        MAX_LLM_ROUTING_THRESHOLD_CHARS,
+      ),
+    };
+  }
+  return { kind: 'fixed', providerId: 'ollama' };
+}
+
+function readLlmProviderConfigurations(
+  raw: Record<string, unknown>,
+  legacyOllamaModel: string,
+): LlmProviderConfigurations {
+  const configurations = isRecord(raw.llmProviderConfigurations)
+    ? raw.llmProviderConfigurations
+    : {};
+  const ollama = isRecord(configurations.ollama) ? configurations.ollama : {};
+  const openrouter = isRecord(configurations.openrouter) ? configurations.openrouter : {};
+  const compatible = isRecord(configurations.openai_compatible)
+    ? configurations.openai_compatible
+    : {};
+  const legacyModels = isRecord(raw.llmProviderModels) ? raw.llmProviderModels : {};
 
   return {
-    ollama: readString(value.ollama, DEFAULT_PLUGIN_SETTINGS.llmProviderModels.ollama),
-    openrouter: readString(value.openrouter, DEFAULT_PLUGIN_SETTINGS.llmProviderModels.openrouter),
+    ollama: {
+      model: readString(ollama.model, readString(legacyModels.ollama, legacyOllamaModel)),
+    },
+    openrouter: {
+      model: readString(openrouter.model, readString(legacyModels.openrouter, '')),
+      secretId: readSecretId(openrouter.secretId, readSecretId(raw.llmOpenRouterSecretId, '')),
+    },
+    openai_compatible: {
+      baseUrl: readString(
+        compatible.baseUrl,
+        DEFAULT_PLUGIN_SETTINGS.llmProviderConfigurations.openai_compatible.baseUrl,
+      ).replace(/\/+$/u, ''),
+      model: readString(
+        compatible.model,
+        DEFAULT_PLUGIN_SETTINGS.llmProviderConfigurations.openai_compatible.model,
+      ),
+      secretId: readSecretId(
+        compatible.secretId,
+        DEFAULT_PLUGIN_SETTINGS.llmProviderConfigurations.openai_compatible.secretId,
+      ),
+    },
   };
 }
 
@@ -827,8 +873,6 @@ export function isTimestampDensity(value: unknown): value is TimestampDensity {
 export function isListeningMode(value: unknown): value is ListeningMode {
   return typeof value === 'string' && (LISTENING_MODES as readonly string[]).includes(value);
 }
-
-export { isLlmRouting };
 
 function readSelectedModel(selectedModel: unknown): SelectedModel | null {
   if (isSelectedModel(selectedModel)) {
