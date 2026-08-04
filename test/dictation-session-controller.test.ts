@@ -209,6 +209,46 @@ describe('DictationSessionController', () => {
     mutation.release();
   });
 
+  it('keeps a session raw when LLM features are disabled while it is starting', async () => {
+    const sidecarConnection = new FakeSidecarConnection();
+    let completeEnsureStarted: (() => void) | undefined;
+    sidecarConnection.ensureStarted.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          completeEnsureStarted = resolve;
+        }),
+    );
+    const sessions: FakeSession[] = [];
+    const cleanup = vi.fn(async () => ({
+      model: 'model',
+      providerId: 'ollama' as const,
+      text: 'cleaned',
+    }));
+    const controller = createController({
+      createSession: (session) => sessions.push(session),
+      getSettings: () =>
+        createSettings({
+          llmFeaturesEnabled: true,
+          llmPostprocessMode: 'per_utterance',
+          llmPostprocessSkipMinWords: 0,
+          selectedModel: createExternalModelSelection(),
+        }),
+      llmRouter: createFakeLlmRouter({ cleanup }),
+      sidecarConnection,
+    });
+
+    const starting = controller.startDictation();
+    await vi.waitFor(() => expect(sidecarConnection.ensureStarted).toHaveBeenCalledOnce());
+    controller.disableLlmForActiveSessions();
+    completeEnsureStarted?.();
+    await starting;
+
+    const sessionId = sidecarConnection.startSession.mock.calls[0]?.[0].sessionId ?? '';
+    sidecarConnection.emit(transcriptReady(sessionId, 'raw transcript'));
+    await vi.waitFor(() => expect(sessions[0]?.acceptedTexts).toEqual(['raw transcript']));
+    expect(cleanup).not.toHaveBeenCalled();
+  });
+
   it('holds speech through dictation drain and releases it on terminal cleanup', async () => {
     const sidecarLifecycleGate = new SidecarLifecycleGate();
     const sidecarConnection = new FakeSidecarConnection();
@@ -1808,7 +1848,7 @@ describe('DictationSessionController', () => {
           llmPostprocessMode: 'per_utterance',
           llmPostprocessShowRawBelow: true,
           llmPostprocessSkipMinWords: 0,
-          llmRouting: 'remote',
+          llmRoutingPolicy: { kind: 'fixed', providerId: 'openrouter' },
           selectedModel: createExternalModelSelection(),
         }),
       llmRouter: createFakeLlmRouter({
@@ -1837,6 +1877,78 @@ describe('DictationSessionController', () => {
     });
   });
 
+  it('aborts in-flight LLM work and keeps the active session raw after global disable', async () => {
+    const sidecarConnection = new FakeSidecarConnection();
+    const sessions: FakeSession[] = [];
+    let cleanupSignal: AbortSignal | undefined;
+    const cleanup = vi.fn(
+      ({ abortSignal }: { abortSignal?: AbortSignal }) =>
+        new Promise<LlmRouterCleanupResult>((_resolve, reject) => {
+          cleanupSignal = abortSignal;
+          abortSignal?.addEventListener('abort', () => {
+            reject(new ProviderError('aborted', 'aborted'));
+          });
+        }),
+    );
+    const controller = createController({
+      createSession: (session) => sessions.push(session),
+      getSettings: () =>
+        createSettings({
+          llmFeaturesEnabled: true,
+          llmPostprocessMode: 'per_utterance',
+          llmPostprocessSkipMinWords: 0,
+          selectedModel: createExternalModelSelection(),
+        }),
+      llmRouter: createFakeLlmRouter({ cleanup }),
+      sidecarConnection,
+    });
+
+    await controller.startDictation();
+    const sessionId = sidecarConnection.startSession.mock.calls[0]?.[0].sessionId ?? '';
+    sidecarConnection.emit(transcriptReady(sessionId, 'first raw transcript'));
+    await vi.waitFor(() => expect(cleanup).toHaveBeenCalledOnce());
+
+    controller.disableLlmForActiveSessions();
+
+    expect(cleanupSignal?.aborted).toBe(true);
+    await vi.waitFor(() => {
+      expect(sessions[0]?.acceptedTexts).toEqual(['first raw transcript']);
+    });
+
+    sidecarConnection.emit(
+      transcriptReady(sessionId, 'second raw transcript', { utteranceIndex: 1 }),
+    );
+    await vi.waitFor(() => {
+      expect(sessions[0]?.acceptedTexts).toEqual(['first raw transcript', 'second raw transcript']);
+    });
+    expect(cleanup).toHaveBeenCalledOnce();
+  });
+
+  it('keeps transcripts raw when provider configuration is not ready at session start', async () => {
+    const sidecarConnection = new FakeSidecarConnection();
+    const sessions: FakeSession[] = [];
+    const controller = createController({
+      createSession: (session) => sessions.push(session),
+      getSettings: () =>
+        createSettings({
+          llmFeaturesEnabled: true,
+          llmPostprocessMode: 'per_utterance',
+          llmPostprocessSkipMinWords: 0,
+          selectedModel: createExternalModelSelection(),
+        }),
+      llmRouter: null,
+      sidecarConnection,
+    });
+
+    await controller.startDictation();
+    const sessionId = sidecarConnection.startSession.mock.calls[0]?.[0].sessionId ?? '';
+    sidecarConnection.emit(transcriptReady(sessionId, 'raw transcript'));
+
+    await vi.waitFor(() => {
+      expect(sessions[0]?.acceptedTexts).toEqual(['raw transcript']);
+    });
+  });
+
   it('attributes cleanup failures to the provider selected by the router', async () => {
     const sidecarConnection = new FakeSidecarConnection();
     const onLlmCleanupFailure = vi.fn();
@@ -1846,7 +1958,7 @@ describe('DictationSessionController', () => {
           llmFeaturesEnabled: true,
           llmPostprocessMode: 'per_utterance',
           llmPostprocessSkipMinWords: 0,
-          llmRouting: 'remote',
+          llmRoutingPolicy: { kind: 'fixed', providerId: 'openrouter' },
           selectedModel: createExternalModelSelection(),
         }),
       llmRouter: createFakeLlmRouter({
@@ -3026,7 +3138,7 @@ function createController({
   createSession?: (session: FakeSession, options: CreateSessionOptions) => void;
   getSettings?: () => PluginSettings;
   hasDictationTarget?: () => boolean;
-  llmRouter?: LlmRouter;
+  llmRouter?: LlmRouter | null;
   logger?: FakeLogger;
   feedback?: Pick<UserFeedback, 'show'>;
   onLlmCleanupFailure?: (failure: LlmCleanupFailure) => void;

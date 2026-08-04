@@ -15,7 +15,7 @@ import { sessionProcessingExtension } from './editor/session-processing-extensio
 import { TemporaryLeafPinLeaseManager } from './editor/temporary-leaf-pin';
 import { syncDictationLanguageWithObsidian } from './language/dictation-language-sync';
 import type { LlmCleanupFailure } from './llm/provider';
-import { createLlmRouter } from './llm/router';
+import { createConfiguredLlmRouter } from './llm/runtime';
 import { ManageModelsModal, type ModelPickerOptions } from './models/manage-models-modal';
 import { ModelInstallManager } from './models/model-install-manager';
 import {
@@ -32,12 +32,11 @@ import { logAccelerationFallbacks } from './settings/acceleration-info';
 import { LlmPresetStateStore } from './settings/llm-preset-state';
 import { restoreLlmTransformationDefaults } from './settings/llm-transformation-reset';
 import { handleMicrophoneDeviceFallback } from './settings/microphone-fallback';
-import { getOpenRouterApiKey, loadPluginSettings } from './settings/openrouter-secret-storage';
+import { loadPluginSettings } from './settings/openrouter-secret-storage';
 import {
   DEFAULT_PLUGIN_SETTINGS,
   type PluginSettings,
   resolvePluginSettings,
-  shouldRefreshLlmSidebar,
 } from './settings/plugin-settings';
 import { LocalSttSettingTab } from './settings/settings-tab';
 import {
@@ -196,7 +195,7 @@ export default class LocalSttPlugin extends Plugin {
       (leaf) =>
         new LocalDictationView(leaf, {
           feedback: this.feedback,
-          getOpenRouterApiKey: () => this.getOpenRouterApiKey(),
+          getSecret: (secretId) => this.getSecret(secretId),
           getSettings: () => this.settings,
           getLlmCleanupFailure: () => this.llmCleanupFailure,
           logger: this.logger,
@@ -236,12 +235,7 @@ export default class LocalSttPlugin extends Plugin {
           sessionId,
         }),
       createLlmRouter: (settings) =>
-        createLlmRouter(
-          settings,
-          undefined,
-          () => this.settings.llmRemoteFeaturesEnabled,
-          () => this.getOpenRouterApiKey(),
-        ),
+        createConfiguredLlmRouter(settings, (secretId) => this.getSecret(secretId)),
       getSettings: () => this.settings,
       hasDictationTarget: () => Session.hasDictationTarget(this.app),
       feedback: this.feedback,
@@ -678,8 +672,11 @@ export default class LocalSttPlugin extends Plugin {
     await this.requirePresetStateStore().commitPreservingPresetState(nextSettings);
   }
 
-  private getOpenRouterApiKey(): string {
-    return getOpenRouterApiKey(this.settings, this.app.secretStorage);
+  private getSecret(secretId: string): string {
+    if (secretId.length === 0) {
+      return '';
+    }
+    return this.app.secretStorage.getSecret(secretId)?.trim() ?? '';
   }
 
   private async applySettings(
@@ -688,6 +685,10 @@ export default class LocalSttPlugin extends Plugin {
   ): Promise<void> {
     const previousSettings = this.settings;
     this.settings = resolvePluginSettings(nextSettings);
+    const llmWasDisabled = previousSettings.llmFeaturesEnabled && !this.settings.llmFeaturesEnabled;
+    if (llmWasDisabled) {
+      this.dictationController?.disableLlmForActiveSessions();
+    }
     this.lastUtteranceRecovery.setEnabled(this.settings.retainLastUtterance);
     this.rawTranscriptRecovery.setEnabled(this.settings.retainLastUtterance);
     if (options.persist) {
@@ -700,13 +701,6 @@ export default class LocalSttPlugin extends Plugin {
     if (previousSettings.llmFeaturesEnabled !== this.settings.llmFeaturesEnabled) {
       await this.syncLocalDictationSidebar();
       return;
-    }
-    if (shouldRefreshLlmSidebar(previousSettings, this.settings)) {
-      for (const leaf of this.app.workspace.getLeavesOfType(LOCAL_DICTATION_VIEW_TYPE)) {
-        if (leaf.view instanceof LocalDictationView) {
-          leaf.view.refresh();
-        }
-      }
     }
   }
 
