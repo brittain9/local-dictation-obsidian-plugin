@@ -139,7 +139,10 @@ Retain `Enable LLM features` as the single live kill switch. Check it immediatel
 before every transformation request, including requests from a session that is
 already running. Turning it off prevents further provider requests in that
 session; cancelling a request already in flight remains best effort because its
-payload may already have reached the selected endpoint.
+payload may already have reached the selected endpoint. Once disabled, that
+session remains raw even if the switch is turned back on; re-enabling LLM
+features applies to the next session so a running session never resumes against
+stale provider or routing snapshots.
 
 ## User experience
 
@@ -336,6 +339,7 @@ Session behavior stays predictable:
   session start. Settings changes apply to the next session.
 - The global LLM feature switch is the privacy exception: read it live before
   each request so disabling LLM features blocks further requests immediately.
+  A disabled session remains raw; re-enabling applies only to new sessions.
 
 This boundary is sufficient for possible later extraction. Publishing a package
 or making the sidebar/settings UI portable is not part of this work.
@@ -496,7 +500,8 @@ sidecar code should change.
 12. All new user-visible copy goes through Speech Kit's locale catalogs with
     placeholder parity and English fallback.
 13. Disabling LLM features during a running session prevents every subsequent
-    provider request, regardless of the snapshotted policy.
+    provider request, regardless of the snapshotted policy. Re-enabling applies
+    only to sessions started afterward.
 
 ## Non-goals
 
