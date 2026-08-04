@@ -2,7 +2,7 @@
 
 Status: proposed for implementation
 
-Source: [issue #276](https://github.com/brittain9/local-dictation-obsidian-plugin/issues/276)
+Source: [issue #276](https://github.com/brittain9/speech-kit-obsidian-plugin/issues/276)
 and the product-design discussion that followed it. The attached implementation
 diff on the issue was deliberately not used as design input.
 
@@ -17,10 +17,11 @@ jobs on one provider and send transcripts that exceed that provider's useful
 context or performance envelope to another. Provider selection must no longer
 encode a claim about where the provider runs.
 
-This is a provider and routing redesign, not a general automation engine. Its
-core logic should remain independent of Obsidian so another plugin could reuse
-the provider adapters and routing policy without copying settings or sidebar
-code.
+This is a provider and routing redesign, not a general automation engine. Keep
+the provider adapters and policy selector independent of Obsidian UI and the
+full settings model because that makes them easier to test and leaves a clean
+extraction seam. Do not add an abstraction or package solely for hypothetical
+reuse.
 
 ## Problem
 
@@ -40,6 +41,15 @@ false model and spread provider-specific branching through routing, settings,
 and UI code. Instead, provider configuration and routing policy become separate
 sources of truth.
 
+The design uses three terms consistently:
+
+- **Provider connection**: a destination plus its model, endpoint, and secret
+  reference.
+- **Routing policy**: the rule that selects a provider connection. This is an
+  implementation term, not a concept users must learn in the UI.
+- **Transformation payload**: transcript text plus any enabled note or prior
+  utterance context. Audio is never part of this payload.
+
 ## Product model
 
 ### Provider connections
@@ -50,7 +60,7 @@ The first release supports exactly three provider types:
 | --- | --- | --- | --- |
 | Ollama | Built-in Ollama endpoint | None | Ollama catalog |
 | OpenRouter | Fixed OpenRouter API endpoint | Required bearer key | Searchable OpenRouter catalog with existing pricing metadata |
-| Custom OpenAI-compatible | User-supplied base URL | Optional bearer key | Best-effort OpenAI-compatible model list |
+| Custom endpoint (OpenAI-compatible) | User-supplied base URL | Optional bearer key | Best-effort OpenAI-compatible model list |
 
 A provider connection owns one configured model. Routing between two models on
 the same provider, multiple custom endpoint profiles, and named connections are
@@ -125,6 +135,12 @@ Ollama as a privileged special case. Provider selection is the opt-in. During
 migration, a vault that explicitly disabled remote LLM use resolves to a fixed
 Ollama policy so the upgrade never broadens its effective data-sharing behavior.
 
+Retain `Enable LLM features` as the single live kill switch. Check it immediately
+before every transformation request, including requests from a session that is
+already running. Turning it off prevents further provider requests in that
+session; cancelling a request already in flight remains best effort because its
+payload may already have reached the selected endpoint.
+
 ## User experience
 
 ### Routing controls
@@ -132,11 +148,19 @@ Ollama policy so the upgrade never broadens its effective data-sharing behavior.
 Remove Local, Remote, and Auto from the user-facing interface. The transform
 sidebar presents routing directly:
 
-1. **Default provider** — Ollama, OpenRouter, or OpenAI-compatible.
+1. **Provider** — Ollama, OpenRouter, or Custom endpoint.
 2. **Use a different provider for large transcripts** — off by default.
 3. When enabled:
+   - Rename the first control to **Default provider**.
    - **Large-transcript provider** — every provider except the selected default.
    - A compact threshold summary with the existing Model settings affordance.
+
+With no policy selected, show the empty **Provider** control and `Choose a
+provider to use transforms.` in the same sidebar. Reveal the large-transcript
+toggle only after the first provider is selected. Until every active routing leg
+has a valid provider configuration and model, keep raw transcript behavior and
+show the missing setup inline rather than allowing a request that is guaranteed
+to fail.
 
 The labels describe behavior without requiring users to learn internal policy
 names. Representative summaries:
@@ -144,11 +168,10 @@ names. Representative summaries:
 - `All transcripts use Ollama.`
 - `All transcripts use OpenRouter.`
 - `Ollama up to 6,000 characters; OpenRouter above 6,000.`
-- `LM Studio up to 6,000 characters; OpenRouter above 6,000.`
+- `Custom endpoint (localhost:1234) up to 6,000 characters; OpenRouter above 6,000.`
 
-"LM Studio" in the final example is descriptive endpoint labeling, not a new
-provider type. A custom connection may display a recognizable loopback hostname
-or a user-facing `OpenAI-compatible` label; the persisted provider ID remains
+Do not guess a product name from a URL. A custom connection is labeled `Custom
+endpoint` plus its host when configured; the persisted provider ID remains
 generic.
 
 ### Progressive provider configuration
@@ -167,13 +190,13 @@ reference, or model. Returning to it restores its configuration.
 
 ### Model selection
 
-Model entry is always editable. Discovery enhances it but never gates provider
-use:
+Discovery enhances model selection but never gates use of a custom endpoint:
 
 - Ollama keeps its local dropdown and refresh action.
-- OpenRouter keeps searchable suggestions, display names, and price tiers.
+- OpenRouter keeps its editable searchable input, display names, and price tiers.
 - OpenAI-compatible calls `GET {baseUrl}/models` with the configured bearer key
-  when present and builds searchable suggestions from valid `data[].id` values.
+  when present and builds searchable suggestions from valid `data[].id` values;
+  its model input always remains editable.
 - If model discovery is unsupported, malformed, or unavailable, retain manual
   entry and show `Couldn't load models—enter a model ID manually.` inline.
 
@@ -193,10 +216,12 @@ Present fields in dependency order:
    exact model together.
 
 Normalize surrounding whitespace and trailing slashes only. Do not silently add
-`/v1`, rewrite paths, or accept URL credentials. Display the destination host
-beside the configuration. A non-loopback HTTP endpoint receives a clear
-unencrypted-connection warning; the plugin does not otherwise judge whether a
-user-configured endpoint is local, private, or trustworthy.
+`/v1` or rewrite paths. Reject URL credentials, query parameters, and fragments;
+authentication belongs only in Secret Storage, and endpoint paths must compose
+predictably. Display the destination host beside the configuration. A
+non-loopback HTTP endpoint receives a clear unencrypted-connection warning; the
+plugin does not otherwise judge whether a user-configured endpoint is local,
+private, or trustworthy.
 
 ### Settings copy
 
@@ -204,8 +229,9 @@ Remove provider-location language throughout settings and dialogs:
 
 - Remove `Enable remote LLM`; explicit provider selection replaces it.
 - `Remote routing threshold` -> `Large-transcript threshold`
-- `Remote timeout` -> `Provider timeout`
-- `Sends ... to OpenRouter` -> `Sends ... to the provider selected by the routing policy`
+- `Remote timeout` -> `Network request timeout`, applying to OpenRouter and the
+  custom endpoint while Ollama keeps its current timeout behavior
+- `Sends ... to OpenRouter` -> `Sends ... to the provider selected above`
 
 Keep the explicit statement that audio is never sent. Failure banners and
 status rows name the provider that actually handled the job.
@@ -218,20 +244,32 @@ by the transformation pipeline:
 - `POST {baseUrl}/chat/completions`
 - `GET {baseUrl}/models` for best-effort discovery
 - OpenAI-shaped `messages`, `model`, `temperature`, `stream: false`, and
-  `max_tokens` request fields
+  `max_tokens` request fields. This deliberately preserves the portable field
+  already used by OpenRouter and LM Studio; endpoints or model families that
+  require `max_completion_tokens` are outside this initial compatibility subset.
 - Text from `choices[0].message.content`
 - Optional `Authorization: Bearer <key>` header
 - Existing abort, timeout, response-size, malformed-JSON, empty-output, and
   truncated-output protections
 
-Provider error mapping remains typed and provider-attributed. At minimum, map
-401/403 to authentication failure, 404 model failures when the response
-identifies a model, 429 to rate limiting, request abort, timeout, connection
-failure, malformed response, and empty response.
+Provider error mapping remains typed and provider-attributed. For the custom
+adapter, map 401 to authentication failure, 403 to permission denied, 404 model
+failures when the response identifies a model, 429 to rate limiting, request
+abort, timeout, connection failure, malformed response, and empty response.
+Permission copy must mention credentials and account/model access rather than
+claiming the API key alone is invalid; Bedrock can return 403 for IAM or
+model-access policy. Preserve OpenRouter's existing adapter-specific mappings
+unchanged.
 
-This contract supports OpenAI, default LM Studio servers, OpenRouter-like
-gateways, and Amazon Bedrock endpoints configured with a Bedrock API key. The
-following require separate adapters and are out of scope:
+This contract supports compatible OpenAI Chat Completions models, default LM
+Studio servers, OpenRouter-like gateways, and Amazon Bedrock's OpenAI-compatible
+endpoints configured with a Bedrock API key. LM Studio documents `/v1/models` and
+`/v1/chat/completions` in its
+[OpenAI compatibility API](https://lmstudio.ai/docs/developer/openai-compat).
+Amazon documents the same calls and bearer-key authentication for
+[Bedrock Chat Completions](https://docs.aws.amazon.com/bedrock/latest/userguide/inference-chat-completions-mantle.html),
+including the recommended regional `bedrock-mantle` base URL. The following
+require separate adapters and are out of scope:
 
 - AWS credential-chain or SigV4 authentication
 - Azure deployment-style paths and `api-version` query parameters
@@ -241,8 +279,8 @@ following require separate adapters and are out of scope:
 
 ## Module design
 
-The reusable seam lives under `src/llm` and must not depend on Obsidian UI or the
-full `PluginSettings` shape.
+The provider and policy seam lives under `src/llm` and must not depend on
+Obsidian UI or the full `PluginSettings` shape.
 
 ### Provider seam
 
@@ -266,7 +304,8 @@ integration layer.
 Use composition for the OpenAI wire implementation:
 
 - An internal OpenAI chat client owns URL joining, headers, request shape,
-  response parsing, and common HTTP error mapping.
+  response parsing, and transport/HTTP-status capture. Provider adapters retain
+  provider-specific status interpretation and user-facing errors.
 - `OpenRouterProvider` composes it and retains OpenRouter catalog/pricing and key
   health behavior.
 - `OpenAiCompatibleProvider` composes it and supplies generic model discovery
@@ -295,46 +334,58 @@ Session behavior stays predictable:
 
 - Policy, provider configuration, models, and thresholds are snapshotted at
   session start. Settings changes apply to the next session.
+- The global LLM feature switch is the privacy exception: read it live before
+  each request so disabling LLM features blocks further requests immediately.
 
-This module shape is reusable by extraction, but publishing a package or making
-the sidebar/settings UI portable is not part of this work.
+This boundary is sufficient for possible later extraction. Publishing a package
+or making the sidebar/settings UI portable is not part of this work.
 
 ## Persisted settings and migration
 
-Bump the plugin settings schema to version 5 because keys are renamed and the
-routing representation changes semantics.
+Bump the plugin settings schema from version 6 to version 7 because keys are
+renamed and the routing representation changes semantics.
 
 The normalized settings shape should have one source of truth for:
 
 - `llmRoutingPolicy: LlmRoutingPolicy | null`
 - Provider configuration for Ollama, OpenRouter, and OpenAI-compatible,
   including one model per provider and secret references where applicable
-- Provider-neutral timeout
+- One network request timeout for OpenRouter and the custom endpoint; Ollama
+  retains its current fixed timeout
 
 The exact nested property names may follow existing settings style, but old and
 new fields must not coexist in normalized `PluginSettings`.
 
-Migrate schema-4 behavior exactly:
+Migrate every existing schema through version 6 by preserving its current
+effective behavior:
 
-| Schema-4 value | Schema-5 policy |
+| Existing effective behavior | Schema-7 policy |
 | --- | --- |
+| Remote LLM explicitly disabled | Fixed Ollama |
 | `llmRouting: 'local'` | Fixed Ollama |
 | `llmRouting: 'remote'` | Fixed OpenRouter |
 | `llmRouting: 'auto'` | Size-based: Ollama -> OpenRouter at `llmRemoteThresholdChars` |
-| Invalid explicit routing | No selected policy |
+| Legacy `llmProvider: 'ollama'` or `'gemini'` | Fixed Ollama |
+| Legacy `llmProvider: 'openrouter'` | Fixed OpenRouter |
+| Missing or malformed routing in an existing settings object | Fixed Ollama, matching the current tolerant fallback |
 
-An explicit `llmRemoteFeaturesEnabled: false` overrides those mappings and
-migrates to fixed Ollama, matching the vault's effective schema-4 behavior.
+Only a genuinely fresh installation with no persisted settings starts with no
+selected policy. This distinction prevents the new opt-in default from silently
+changing an existing vault's effective route.
 
 Also migrate:
 
 - Existing Ollama and OpenRouter models into their provider configurations.
 - `llmOpenRouterSecretId` without copying secret material into persisted data.
-- `llmRemoteTimeoutSec` to the provider-neutral timeout.
-- Legacy `llmProvider` and `llmPostprocessModel` through their current tolerant
-  migrations before producing the schema-5 shape.
+- `llmRemoteTimeoutSec` to the network request timeout without changing
+  Ollama's timeout.
+- Legacy `llmPostprocessModel` through its current tolerant migration before
+  producing the schema-7 shape.
+- Update schema-version guards for unrelated persisted capability snapshots so
+  schema-7 data preserves valid dictation and TTS snapshots instead of forcing
+  a model reprobe on every restart.
 
-The settings loader persists the normalized schema-5 shape after migration so
+The settings loader persists the normalized schema-7 shape after migration so
 renamed keys are removed from `data.json`. Fresh installations default to no
 selected routing policy; LLM transformation itself remains off until enabled.
 
@@ -349,17 +400,18 @@ selected routing policy; LLM transformation itself remains off until enabled.
 | Advanced model settings | `src/ui/llm-model-settings-modal.ts`, `src/ui/llm-model-settings-presentation.ts` |
 | Plugin composition | `src/main.ts`, `src/ui/local-dictation-view.ts` |
 | Verification | Existing provider, router, settings, sidebar, and presentation test suites plus the new adapter tests |
+| Localization | `src/locales/*.ts`, `test/locales-parity.test.ts` |
 | Documentation | `docs/system-architecture.md` and release notes |
 
 ## Implementation plan
 
 Implement in small, reviewable commits:
 
-1. **Define provider configuration and routing policy.** Add schema-5 settings
+1. **Define provider configuration and routing policy.** Add schema-7 settings
    types, pure policy selection, invariant tests, and exact migration coverage.
 2. **Decouple the router from plugin settings.** Pass normalized policy and
    provider/model lookup across the seam; preserve session snapshot and failure
-   semantics.
+   semantics while keeping the global LLM feature switch live.
 3. **Extract the OpenAI chat wire client.** Move shared request/response and
    error behavior out of OpenRouter without changing its observable behavior.
 4. **Add the custom OpenAI-compatible adapter.** Implement optional bearer
@@ -371,7 +423,8 @@ Implement in small, reviewable commits:
 6. **Replace sidebar routing controls.** Render fixed/size-based policies,
    progressive provider configuration, provider-neutral status, and endpoint
    disclosure.
-7. **Update settings and documentation.** Rename remote-specific copy, update
+7. **Update localized UI and documentation.** Rename remote-specific copy through
+   the locale catalogs, preserve placeholders across every translation, update
    the model-settings presentation, architecture documentation, and release
    notes.
 8. **Simplify after verification.** Remove obsolete routing types, render
@@ -385,10 +438,12 @@ Implement in small, reviewable commits:
 - Pure routing-policy tests: fixed selection, both threshold edges, invalid
   duplicate providers, and every provider ID in either leg.
 - Router tests: selected provider/model, session snapshot behavior,
-  provider-attributed errors, and no implicit retry.
-- Settings tests: every schema-4 route migration, fresh no-policy default,
-  malformed provider configuration, secret-reference migration, and removal of
-  old normalized keys.
+  live global-disable behavior, provider-attributed errors, and no implicit
+  retry.
+- Settings tests: every supported historical route migration, fresh no-policy
+  default, malformed provider configuration, secret-reference migration,
+  removal of old normalized keys, and preservation of every unrelated setting,
+  including dictation and TTS capability snapshots under schema 7.
 - OpenAI-compatible adapter tests: optional auth header, URL joining, model
   parsing, unsupported model discovery, completion parsing, status mapping,
   abort, timeout, response cap, and truncated output.
@@ -396,9 +451,12 @@ Implement in small, reviewable commits:
   and existing error copy are unchanged after extraction.
 - Presentation tests for fixed, size-based, unconfigured, and model discovery
   fallback states.
+- Locale parity tests for every new or renamed user-facing string and
+  placeholder.
 
-Run `npm run check:frontend` for the implementation. No native sidecar code
-should change.
+Use `npm run check:frontend` while iterating and run the repository's full
+`npm run check` quality gate before merging the implementation. No native
+sidecar code should change.
 
 ### Manual
 
@@ -408,7 +466,9 @@ should change.
   threshold edges.
 - LM Studio at `http://localhost:1234/v1` with no key: model discovery, manual
   model entry, connection test, fixed routing, and either size-policy leg.
-- A key-protected OpenAI-compatible endpoint over HTTPS.
+- Amazon Bedrock at its regional OpenAI-compatible `/v1` base URL with a Bedrock
+  API key: model discovery, connection test, and one real transformation.
+- Another key-protected OpenAI-compatible endpoint over HTTPS when available.
 - Restart Obsidian after configuring every provider and confirm models,
   endpoint, policy, and secret references restore without plaintext keys.
 
@@ -421,7 +481,7 @@ should change.
    different supported provider, using transcript length rather than assembled
    context length.
 5. Existing Local, Remote, and Auto settings migrate without behavior change;
-   an explicitly disabled schema-4 remote capability remains fixed to Ollama.
+   an explicitly disabled remote capability remains fixed to Ollama.
 6. The custom OpenAI-compatible adapter works with an optional bearer key and
    does not require model discovery to succeed.
 7. Provider configuration, routing policy, and locality metadata remain
@@ -433,6 +493,10 @@ should change.
     plugin settings model.
 11. Ollama and OpenRouter retain their current model selection, health,
     transformation, and error behavior.
+12. All new user-visible copy goes through Speech Kit's locale catalogs with
+    placeholder parity and English fallback.
+13. Disabling LLM features during a running session prevents every subsequent
+    provider request, regardless of the snapshotted policy.
 
 ## Non-goals
 
