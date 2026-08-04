@@ -8,7 +8,7 @@ import type { TestElement } from './__mocks__/obsidian';
 it('announces the changing sidebar workflow summary as one atomic status', () => {
   const view = new LocalDictationView({ app: {} } as unknown as WorkspaceLeaf, {
     feedback: { show: vi.fn() },
-    getOpenRouterApiKey: () => '',
+    getSecret: () => '',
     getSettings: () => ({ ...DEFAULT_PLUGIN_SETTINGS, llmFeaturesEnabled: false }),
     mutatePresetState: vi.fn(async () => {}),
     saveSettings: vi.fn(async () => {}),

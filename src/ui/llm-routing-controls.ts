@@ -7,19 +7,28 @@ import {
   setIcon,
 } from 'obsidian';
 
+import { isLoopbackHostname, validateOpenAiCompatibleBaseUrl } from '../llm/openai-compatible-url';
 import { MIN_OUTPUT_TOKENS } from '../llm/output-budget';
 import {
-  createProvider,
   formatLlmProviderName,
   getProviderModel,
+  LLM_PROVIDER_IDS,
   type LlmProviderId,
-  type LlmRouting,
+  type LlmRoutingPolicy,
   type ModelOption,
   ProviderError,
   type ProviderHealth,
-  withProviderModel,
+  withOpenAiCompatibleBaseUrl,
+  withProviderConfigurationModel,
+  withProviderSecretId,
 } from '../llm/provider';
-import { isLlmRouting, type PluginSettings } from '../settings/plugin-settings';
+import { createProvider } from '../llm/provider-factory';
+import { resolveLlmReadiness } from '../llm/readiness';
+import { activeLlmProviderIds } from '../llm/routing-policy';
+import {
+  DEFAULT_LLM_ROUTING_THRESHOLD_CHARS,
+  type PluginSettings,
+} from '../settings/plugin-settings';
 import { t } from '../shared/i18n';
 import type { PluginLogger } from '../shared/plugin-logger';
 import type { UserFeedback } from '../shared/user-feedback';
@@ -30,7 +39,7 @@ import { deriveInlineStatus, INLINE_STATUS_PRESENTATION } from './llm-status';
 export interface LlmRoutingControlsDependencies {
   app: App;
   feedback: Pick<UserFeedback, 'show'>;
-  getOpenRouterApiKey: () => string;
+  getSecret: (secretId: string) => string;
   getSettings: () => PluginSettings;
   logger?: PluginLogger | undefined;
   openModelSettings: () => void;
@@ -38,13 +47,7 @@ export interface LlmRoutingControlsDependencies {
   requestRerender: () => void;
 }
 
-const ROUTING_SEGMENTS: ReadonlyArray<{ label: string; value: LlmRouting }> = [
-  { label: t('llm.routing.local'), value: 'local' },
-  { label: t('llm.routing.remote'), value: 'remote' },
-  { label: t('llm.routing.auto'), value: 'auto' },
-];
-
-const API_KEY_REFRESH_DEBOUNCE_MS = 500;
+const SECRET_REFRESH_DEBOUNCE_MS = 500;
 const TEST_RESULT_ICON_MS = 2500;
 
 interface ProviderState {
@@ -54,14 +57,10 @@ interface ProviderState {
 }
 
 function emptyProviderState(): ProviderState {
-  return {
-    health: { kind: 'unknown' },
-    models: [],
-    modelsLoaded: false,
-  };
+  return { health: { kind: 'unknown' }, models: [], modelsLoaded: false };
 }
 
-class OpenRouterModelSuggest extends AbstractInputSuggest<ModelOption> {
+class ModelSuggest extends AbstractInputSuggest<ModelOption> {
   constructor(
     app: App,
     inputEl: HTMLInputElement | HTMLDivElement,
@@ -72,20 +71,20 @@ class OpenRouterModelSuggest extends AbstractInputSuggest<ModelOption> {
   }
 
   override getSuggestions(query: string): ModelOption[] {
-    const q = query.trim().toLowerCase();
-    const catalog = this.getCatalog();
-    if (q.length === 0) {
-      return catalog;
+    const normalized = query.trim().toLowerCase();
+    if (normalized.length === 0) {
+      return this.getCatalog();
     }
-    return catalog.filter(
-      (model) => model.id.toLowerCase().includes(q) || model.displayName.toLowerCase().includes(q),
+    return this.getCatalog().filter(
+      (model) =>
+        model.id.toLowerCase().includes(normalized) ||
+        model.displayName.toLowerCase().includes(normalized),
     );
   }
 
   override renderSuggestion(model: ModelOption, el: HTMLElement): void {
     const top = el.createDiv({ cls: 'local-dictation-suggest__top' });
     top.createSpan({ cls: 'local-dictation-suggest__primary', text: model.id });
-
     const tier = priceTier(model.pricing);
     if (tier !== null) {
       const pill = top.createSpan({
@@ -93,13 +92,9 @@ class OpenRouterModelSuggest extends AbstractInputSuggest<ModelOption> {
         text: tier === 'free' ? t('common.free') : tier,
       });
       pill.setAttribute('title', t('llm.routing.priceTierTooltip'));
-      if (tier === 'free') {
-        pill.addClass('local-dictation-price--free');
-      } else if (tier === '$$$' || tier === '$$$$') {
-        pill.addClass('local-dictation-price--premium');
-      }
+      if (tier === 'free') pill.addClass('local-dictation-price--free');
+      if (tier === '$$$' || tier === '$$$$') pill.addClass('local-dictation-price--premium');
     }
-
     if (model.displayName !== model.id) {
       el.createSpan({ cls: 'local-dictation-suggest__secondary', text: model.displayName });
     }
@@ -112,332 +107,81 @@ class OpenRouterModelSuggest extends AbstractInputSuggest<ModelOption> {
   }
 }
 
-// Self-contained routing UI (Layout A): a segmented Local/Remote/Auto control
-// that reveals only the active mode's provider config, plus the OpenRouter API
-// key. Owns per-provider model-cache and health state; the API-key input lives
-// here and nowhere else.
 export class LlmRoutingControls {
   private readonly providers: Record<LlmProviderId, ProviderState> = {
     ollama: emptyProviderState(),
     openrouter: emptyProviderState(),
+    openai_compatible: emptyProviderState(),
   };
-  private apiKeyRefreshTimerId: number | null = null;
   private modelsRefreshInFlight: Partial<Record<LlmProviderId, boolean>> = {};
   private onModelInput: ((element: HTMLElement) => void) | null = null;
-  private openRouterTestInFlight = false;
+  private secretRefreshTimerId: number | null = null;
+  private readonly testsInFlight = new Set<LlmProviderId>();
 
   constructor(private readonly dependencies: LlmRoutingControlsDependencies) {}
 
-  // Optional hook so a host view can keep focus tracking on the freetext inputs.
   setInputTracker(tracker: (element: HTMLElement) => void): void {
     this.onModelInput = tracker;
   }
 
   dispose(): void {
-    if (this.apiKeyRefreshTimerId !== null) {
-      window.clearTimeout(this.apiKeyRefreshTimerId);
-      this.apiKeyRefreshTimerId = null;
+    if (this.secretRefreshTimerId !== null) {
+      window.clearTimeout(this.secretRefreshTimerId);
+      this.secretRefreshTimerId = null;
     }
   }
 
-  // Kick off background model loads for whichever providers the current routing
-  // needs, so the dropdowns are populated by the time the user looks. Called on
-  // open, window focus, and routing changes — points where the outside world may
-  // have changed — so it also retries providers whose last load left them
-  // unhealthy (e.g. Ollama was started after the first probe).
   refreshActiveProviders(options: { forceLocal?: boolean } = {}): Promise<void> {
-    const settings = this.dependencies.getSettings();
-    const refreshes: Promise<void>[] = [];
-    if (!settings.llmRemoteFeaturesEnabled) {
-      refreshes.push(
-        options.forceLocal === true ? this.refreshModels('ollama') : this.recheckModels('ollama'),
-      );
-      return Promise.all(refreshes).then(() => undefined);
-    }
-    if (settings.llmRouting === 'local' || settings.llmRouting === 'auto') {
-      refreshes.push(
-        options.forceLocal === true ? this.refreshModels('ollama') : this.recheckModels('ollama'),
-      );
-    }
-    if (settings.llmRouting === 'remote' || settings.llmRouting === 'auto') {
-      refreshes.push(this.recheckModels('openrouter'));
-    }
+    const refreshes = activeLlmProviderIds(this.dependencies.getSettings().llmRoutingPolicy).map(
+      (providerId) =>
+        providerId === 'ollama' && options.forceLocal === true
+          ? this.refreshModels(providerId)
+          : this.recheckModels(providerId),
+    );
     return Promise.all(refreshes).then(() => undefined);
   }
 
-  private recheckModels(providerId: LlmProviderId): Promise<void> {
-    const state = this.providers[providerId];
-    if (state.modelsLoaded && state.health.kind === 'ready') {
-      return Promise.resolve();
-    }
-    return this.refreshModels(providerId);
-  }
-
-  // Background warm: load a provider's catalog once. Unlike `recheckModels`,
-  // this never retries a failed load — a failure triggers a re-render, and the
-  // render paths below call this, so retrying here would loop.
-  private warmModels(providerId: LlmProviderId): void {
-    const state = this.providers[providerId];
-    if (state.modelsLoaded || this.modelsRefreshInFlight[providerId] === true) {
-      return;
-    }
-    void this.refreshModels(providerId);
-  }
-
   render(parent: HTMLElement, settings: PluginSettings): void {
-    if (!settings.llmRemoteFeaturesEnabled) {
-      this.renderModelBehavior(parent, settings);
-      this.renderModelDropdown(parent, settings, 'ollama');
-      return;
-    }
-
-    this.renderSegmentedControl(parent, settings);
+    this.renderProviderSelection(parent, settings);
     this.renderModelBehavior(parent, settings);
+    this.renderReadiness(parent, settings);
 
-    switch (settings.llmRouting) {
-      case 'local':
-        this.renderModelDropdown(parent, settings, 'ollama');
-        return;
-      case 'remote':
-        this.renderApiKey(parent, settings);
-        this.renderOpenRouterModel(parent, settings);
-        return;
-      case 'auto':
-        this.renderAutoControls(parent, settings);
-        return;
-    }
-  }
-
-  private renderSegmentedControl(parent: HTMLElement, settings: PluginSettings): void {
-    const field = parent.createDiv({ cls: 'local-dictation-route-field' });
-    const segmented = field.createDiv({ cls: 'local-dictation-segmented' });
-    segmented.setAttribute('role', 'group');
-    segmented.setAttribute('aria-label', t('llm.routing.ariaLabel'));
-    for (const segment of ROUTING_SEGMENTS) {
-      const isActive = settings.llmRouting === segment.value;
-      const button = segmented.createEl('button', {
-        cls: 'local-dictation-segmented__option',
-        text: segment.label,
-      });
-      button.type = 'button';
-      button.setAttribute('aria-pressed', String(isActive));
-      button.toggleClass('is-active', isActive);
-      button.addEventListener('click', () => {
-        if (this.dependencies.getSettings().llmRouting === segment.value) {
-          return;
-        }
-        void this.applyRouting(segment.value);
-      });
-    }
-
-    field.createDiv({
-      cls: 'local-dictation-route-field__hint',
-      text: routingHint(settings.llmRouting),
-    });
-  }
-
-  private async applyRouting(routing: LlmRouting): Promise<void> {
-    if (!isLlmRouting(routing)) {
+    const policy = settings.llmRoutingPolicy;
+    if (policy === null) {
       return;
     }
-    await this.dependencies.persist({ ...this.dependencies.getSettings(), llmRouting: routing });
-    void this.refreshActiveProviders();
+    if (policy.kind === 'fixed') {
+      this.renderProviderConfiguration(parent, settings, policy.providerId);
+      return;
+    }
+
+    this.renderLeg(parent, t('llm.routing.defaultLeg'));
+    this.renderProviderConfiguration(parent, settings, policy.defaultProviderId);
+    this.renderLeg(parent, t('llm.routing.largeLeg'));
+    this.renderProviderConfiguration(parent, settings, policy.largeTranscriptProviderId);
   }
 
-  private renderAutoControls(parent: HTMLElement, settings: PluginSettings): void {
-    this.renderLeg(parent, t('llm.routing.localLeg'));
-    this.renderModelDropdown(parent, settings, 'ollama');
-
-    this.renderLeg(parent, t('llm.routing.remoteLeg'));
-    this.renderApiKey(parent, settings);
-    this.renderOpenRouterModel(parent, settings);
-  }
-
-  private renderModelBehavior(parent: HTMLElement, settings: PluginSettings): void {
-    new Setting(parent)
-      .setName(t('llm.model.behavior.name'))
-      .setDesc(describeModelBehavior(settings))
-      .addExtraButton((button) => {
-        button
-          .setIcon('sliders-horizontal')
-          .setTooltip(t('llm.model.settingsTooltip'))
-          .onClick(() => {
-            this.dependencies.openModelSettings();
-          });
-        button.extraSettingsEl.setAttribute('aria-label', t('llm.model.settingsTooltip'));
-      });
-  }
-
-  private renderLeg(parent: HTMLElement, label: string): void {
-    parent.createDiv({ cls: 'local-dictation-route-leg', text: label });
-  }
-
-  private renderModelDropdown(
-    parent: HTMLElement,
-    settings: PluginSettings,
-    providerId: LlmProviderId,
-  ): void {
-    const state = this.providers[providerId];
-    const selectedModel = getProviderModel(settings, providerId);
-    const providerName = formatLlmProviderName(providerId);
-    const hasSelectedModel =
-      selectedModel.length > 0 && state.models.some((model) => model.id === selectedModel);
-
-    new Setting(parent)
-      .setName(t('llm.routing.providerModel', { provider: providerName }))
-      .setDesc(t('llm.routing.ollamaModelDescription'))
-      .addDropdown((dropdown) => {
-        dropdown.addOption('', t('llm.routing.selectModel'));
-        if (selectedModel.length > 0 && !hasSelectedModel) {
-          dropdown.addOption(selectedModel, selectedModel);
-        }
-        for (const model of state.models) {
-          dropdown.addOption(model.id, model.displayName);
-        }
-        dropdown.setValue(selectedModel);
-        dropdown.onChange(async (value) => {
-          const nextModel = value.trim();
-          await this.dependencies.persist(
-            withProviderModel(this.dependencies.getSettings(), providerId, nextModel),
-          );
-          this.prewarm(providerId, nextModel);
-        });
-      })
-      .addExtraButton((button) => {
-        button
-          .setIcon('refresh-cw')
-          .setTooltip(t('llm.routing.refreshModels', { provider: providerName }))
-          .onClick(() => {
-            void this.refreshModels(providerId);
-          });
-        button.extraSettingsEl.setAttribute(
-          'aria-label',
-          t('llm.routing.refreshModels', { provider: providerName }),
-        );
-      });
-
-    this.renderStatusRow(parent, providerId);
-
-    this.warmModels(providerId);
-  }
-
-  private renderApiKey(parent: HTMLElement, settings: PluginSettings): void {
-    new Setting(parent)
-      .setName(t('llm.routing.apiKey.name'))
-      .setDesc(t('llm.routing.apiKey.description'))
-      .addComponent((containerEl) => {
-        return new SecretComponent(this.dependencies.app, containerEl)
-          .setValue(settings.llmOpenRouterSecretId)
-          .onChange(async (secretId) => {
-            this.providers.openrouter = emptyProviderState();
-            await this.dependencies.persist(
-              { ...this.dependencies.getSettings(), llmOpenRouterSecretId: secretId.trim() },
-              { rerender: false },
-            );
-            this.scheduleApiKeyRefresh();
-          });
-      });
-  }
-
-  private renderOpenRouterModel(parent: HTMLElement, settings: PluginSettings): void {
-    const selectedModel = getProviderModel(settings, 'openrouter');
-    // Assigned once the status row exists; the input handlers below call it after
-    // each edit so the status tracks the model without a focus-stealing re-render.
-    let refreshStatus: () => void = () => {};
-    new Setting(parent)
-      .setName(t('llm.routing.openRouterModel.name'))
-      .setDesc(t('llm.routing.openRouterModel.description'))
-      .addText((text) => {
-        text.setPlaceholder('anthropic/claude-sonnet-4.5');
-        text.setValue(selectedModel);
-        this.onModelInput?.(text.inputEl);
-        // Constructing the suggest registers it with the input; AbstractInputSuggest
-        // owns its own popover lifecycle, so we keep no handle.
-        new OpenRouterModelSuggest(
-          this.dependencies.app,
-          text.inputEl,
-          () => this.providers.openrouter.models,
-          (id) => {
-            void (async () => {
-              await this.dependencies.persist(
-                withProviderModel(this.dependencies.getSettings(), 'openrouter', id),
-                { rerender: false },
-              );
-              refreshStatus();
-            })();
-          },
-        );
-        text.onChange(async (value) => {
-          await this.dependencies.persist(
-            withProviderModel(this.dependencies.getSettings(), 'openrouter', value),
-            { rerender: false },
-          );
-          refreshStatus();
-        });
-      })
-      .addExtraButton((button) => {
-        button.setIcon('plug-zap').setTooltip(t('llm.routing.testConnection'));
-        button.extraSettingsEl.setAttribute('aria-label', t('llm.routing.testConnection'));
-        button.onClick(() => {
-          void this.runOpenRouterTest(button);
-        });
-      });
-
-    refreshStatus = this.renderStatusRow(parent, 'openrouter');
-
-    this.warmModels('openrouter');
-  }
-
-  // Render the inline status line and return a callback that re-derives it in
-  // place. The OpenRouter model field persists with `rerender: false`, so it uses
-  // this to keep the status in sync with the selected model instead of relying on
-  // a full settings re-render (which would steal focus from the text input).
-  private renderStatusRow(parent: HTMLElement, providerId: LlmProviderId): () => void {
-    const row = parent.createDiv();
-    row.setAttribute('aria-live', 'polite');
-    row.setAttribute('role', 'status');
-    const update = (): void => {
-      row.empty();
-      const state = this.providers[providerId];
-      const status = deriveInlineStatus({
-        health: state.health,
-        models: state.modelsLoaded ? state.models : [],
-        providerId,
-        selectedModel: getProviderModel(this.dependencies.getSettings(), providerId),
-      });
-      if (status === null) {
-        row.className = '';
-        return;
-      }
-      const { className, icon } = INLINE_STATUS_PRESENTATION[status.variant];
-      row.className = `local-dictation-status ${className}`;
-      const iconEl = row.createSpan({ cls: 'local-dictation-status__icon' });
-      iconEl.setAttribute('aria-hidden', 'true');
-      setIcon(iconEl, icon);
-      row.createSpan({ cls: 'local-dictation-status__text', text: status.text });
-    };
-    update();
-    return update;
-  }
-
-  // Proves the whole remote path — key, credits, and the exact model id — with a
-  // minimal real completion. Returns null on success, or a user-facing failure
-  // message in the same vocabulary as the cleanup-failure banner.
-  async testOpenRouter(): Promise<string | null> {
+  async testProvider(providerId: Exclude<LlmProviderId, 'ollama'>): Promise<string | null> {
     const settings = this.dependencies.getSettings();
-    const model = getProviderModel(settings, 'openrouter').trim();
+    const model = getProviderModel(settings.llmProviderConfigurations, providerId);
     if (model.length === 0) {
       return formatCleanupFailureBanner({
         code: 'model_not_configured',
         message: '',
-        providerId: 'openrouter',
+        providerId,
       });
+    }
+    if (providerId === 'openai_compatible') {
+      const validation = validateOpenAiCompatibleBaseUrl(
+        settings.llmProviderConfigurations.openai_compatible.baseUrl,
+      );
+      if (!validation.valid) {
+        return customUrlValidationMessage(validation.code);
+      }
     }
 
     try {
-      await this.createProvider('openrouter', settings).cleanup({
-        // The budget floor, not a tiny cap: reasoning models spend hidden
-        // output tokens before the visible reply and would trip a small limit.
+      await this.createProvider(providerId, settings).cleanup({
         maxOutputTokens: MIN_OUTPUT_TOKENS,
         model,
         prompt: 'Reply with the single word OK.',
@@ -456,78 +200,414 @@ export class LlmRoutingControls {
       return formatCleanupFailureBanner({
         code: providerError.code,
         message: providerError.message,
-        providerId: 'openrouter',
+        providerId,
       });
     }
   }
 
-  private async runOpenRouterTest(button: ExtraButtonComponent): Promise<void> {
-    if (this.openRouterTestInFlight) {
-      return;
-    }
-    this.openRouterTestInFlight = true;
-    button.setDisabled(true);
-    try {
-      const failure = await this.testOpenRouter();
-      button.setIcon(failure === null ? 'check' : 'x');
-      if (failure !== null) {
-        this.dependencies.feedback.show({ intent: 'warning', message: failure });
+  private renderProviderSelection(parent: HTMLElement, settings: PluginSettings): void {
+    const policy = settings.llmRoutingPolicy;
+    const selectedProvider =
+      policy === null ? '' : policy.kind === 'fixed' ? policy.providerId : policy.defaultProviderId;
+    const name =
+      policy?.kind === 'transcript_size'
+        ? t('llm.routing.defaultProvider')
+        : t('llm.routing.provider');
+
+    new Setting(parent).setName(name).addDropdown((dropdown) => {
+      dropdown.addOption('', t('llm.routing.chooseProvider'));
+      for (const providerId of LLM_PROVIDER_IDS) {
+        dropdown.addOption(providerId, providerLabel(providerId));
       }
-      window.setTimeout(() => {
-        button.setIcon('plug-zap');
-      }, TEST_RESULT_ICON_MS);
-    } finally {
-      this.openRouterTestInFlight = false;
-      button.setDisabled(false);
+      dropdown.setValue(selectedProvider);
+      dropdown.onChange(async (value) => {
+        if (value === '') {
+          await this.persistPolicy(null);
+          return;
+        }
+        if (!LLM_PROVIDER_IDS.includes(value as LlmProviderId)) {
+          return;
+        }
+        const providerId = value as LlmProviderId;
+        if (policy?.kind !== 'transcript_size') {
+          await this.persistPolicy({ kind: 'fixed', providerId });
+          return;
+        }
+        await this.persistPolicy({
+          ...policy,
+          defaultProviderId: providerId,
+          largeTranscriptProviderId:
+            policy.largeTranscriptProviderId === providerId
+              ? firstOtherProvider(providerId)
+              : policy.largeTranscriptProviderId,
+        });
+      });
+    });
+
+    if (policy !== null) {
+      new Setting(parent)
+        .setName(t('llm.routing.useLargeProvider'))
+        .setDesc(t('llm.routing.useLargeProviderDescription'))
+        .addToggle((toggle) => {
+          toggle.setValue(policy.kind === 'transcript_size');
+          toggle.onChange(async (enabled) => {
+            const current = this.dependencies.getSettings().llmRoutingPolicy;
+            if (current === null) return;
+            if (!enabled) {
+              await this.persistPolicy({
+                kind: 'fixed',
+                providerId:
+                  current.kind === 'fixed' ? current.providerId : current.defaultProviderId,
+              });
+              return;
+            }
+            const defaultProviderId =
+              current.kind === 'fixed' ? current.providerId : current.defaultProviderId;
+            await this.persistPolicy({
+              defaultProviderId,
+              kind: 'transcript_size',
+              largeTranscriptProviderId:
+                current.kind === 'transcript_size'
+                  ? current.largeTranscriptProviderId
+                  : firstOtherProvider(defaultProviderId),
+              thresholdChars:
+                current.kind === 'transcript_size'
+                  ? current.thresholdChars
+                  : DEFAULT_LLM_ROUTING_THRESHOLD_CHARS,
+            });
+          });
+        });
+    }
+
+    if (policy?.kind === 'transcript_size') {
+      new Setting(parent).setName(t('llm.routing.largeProvider')).addDropdown((dropdown) => {
+        for (const providerId of LLM_PROVIDER_IDS) {
+          if (providerId !== policy.defaultProviderId) {
+            dropdown.addOption(providerId, providerLabel(providerId));
+          }
+        }
+        dropdown.setValue(policy.largeTranscriptProviderId);
+        dropdown.onChange(async (value) => {
+          if (
+            !LLM_PROVIDER_IDS.includes(value as LlmProviderId) ||
+            value === policy.defaultProviderId
+          ) {
+            return;
+          }
+          await this.persistPolicy({
+            ...policy,
+            largeTranscriptProviderId: value as LlmProviderId,
+          });
+        });
+      });
     }
   }
 
-  private prewarm(providerId: LlmProviderId, modelId: string): void {
-    if (modelId.length === 0) {
-      return;
-    }
-    const provider = this.createProvider(providerId);
-    void provider.prewarmModel?.(modelId)?.catch((error: unknown) => {
-      this.dependencies.logger?.warn(
-        'llm',
-        `${formatLlmProviderName(providerId)} pre-warm failed`,
-        error,
-      );
+  private renderModelBehavior(parent: HTMLElement, settings: PluginSettings): void {
+    new Setting(parent)
+      .setName(t('llm.model.behavior.name'))
+      .setDesc(describeModelBehavior(settings))
+      .addExtraButton((button) => {
+        button
+          .setIcon('sliders-horizontal')
+          .setTooltip(t('llm.model.settingsTooltip'))
+          .onClick(() => this.dependencies.openModelSettings());
+        button.extraSettingsEl.setAttribute('aria-label', t('llm.model.settingsTooltip'));
+      });
+  }
+
+  private renderReadiness(parent: HTMLElement, settings: PluginSettings): void {
+    const readiness = resolveLlmReadiness({
+      configurations: settings.llmProviderConfigurations,
+      getSecret: this.dependencies.getSecret,
+      policy: settings.llmRoutingPolicy,
+    });
+    if (readiness.ready) return;
+
+    const row = parent.createDiv({ cls: 'local-dictation-status local-dictation-status--warning' });
+    row.setAttribute('role', 'status');
+    const icon = row.createSpan({ cls: 'local-dictation-status__icon' });
+    icon.setAttribute('aria-hidden', 'true');
+    setIcon(icon, 'alert-triangle');
+    row.createSpan({
+      cls: 'local-dictation-status__text',
+      text: readinessMessage(readiness.issue),
     });
   }
 
-  private scheduleApiKeyRefresh(): void {
-    if (this.apiKeyRefreshTimerId !== null) {
-      window.clearTimeout(this.apiKeyRefreshTimerId);
-    }
-    this.apiKeyRefreshTimerId = window.setTimeout(() => {
-      this.apiKeyRefreshTimerId = null;
-      if (this.dependencies.getOpenRouterApiKey().length === 0) {
-        this.dependencies.requestRerender();
+  private renderProviderConfiguration(
+    parent: HTMLElement,
+    settings: PluginSettings,
+    providerId: LlmProviderId,
+  ): void {
+    switch (providerId) {
+      case 'ollama':
+        this.renderOllamaModel(parent, settings);
         return;
-      }
-      void this.refreshProviderHealth('openrouter');
-    }, API_KEY_REFRESH_DEBOUNCE_MS);
+      case 'openrouter':
+        this.renderSecret(parent, settings, providerId);
+        this.renderEditableModel(parent, settings, providerId);
+        return;
+      case 'openai_compatible':
+        this.renderCustomBaseUrl(parent, settings);
+        this.renderSecret(parent, settings, providerId);
+        this.renderEditableModel(parent, settings, providerId);
+        return;
+    }
   }
 
-  private async refreshProviderHealth(providerId: LlmProviderId): Promise<void> {
+  private renderOllamaModel(parent: HTMLElement, settings: PluginSettings): void {
+    const providerId = 'ollama';
     const state = this.providers[providerId];
-    try {
-      state.health = await this.createProvider(providerId).probe();
-    } catch (error) {
-      state.health = providerHealthFromError(error);
+    const selectedModel = getProviderModel(settings.llmProviderConfigurations, providerId);
+    const hasSelectedModel = state.models.some((model) => model.id === selectedModel);
+    new Setting(parent)
+      .setName(t('llm.routing.providerModel', { provider: formatLlmProviderName(providerId) }))
+      .setDesc(t('llm.routing.ollamaModelDescription'))
+      .addDropdown((dropdown) => {
+        dropdown.addOption('', t('llm.routing.selectModel'));
+        if (selectedModel.length > 0 && !hasSelectedModel) {
+          dropdown.addOption(selectedModel, selectedModel);
+        }
+        for (const model of state.models) dropdown.addOption(model.id, model.displayName);
+        dropdown.setValue(selectedModel);
+        dropdown.onChange(async (model) => {
+          await this.persistModel(providerId, model);
+          this.prewarm(model);
+        });
+      })
+      .addExtraButton((button) => {
+        button
+          .setIcon('refresh-cw')
+          .setTooltip(t('llm.routing.refreshModels', { provider: 'Ollama' }))
+          .onClick(() => void this.refreshModels(providerId));
+      });
+    this.renderStatusRow(parent, providerId);
+    this.warmModels(providerId);
+  }
+
+  private renderCustomBaseUrl(parent: HTMLElement, settings: PluginSettings): void {
+    const config = settings.llmProviderConfigurations.openai_compatible;
+    new Setting(parent)
+      .setName(t('llm.routing.customBaseUrl.name'))
+      .setDesc(t('llm.routing.customBaseUrl.description'))
+      .addText((text) => {
+        text.setPlaceholder('http://localhost:1234/v1');
+        text.setValue(config.baseUrl);
+        this.onModelInput?.(text.inputEl);
+        text.inputEl.addEventListener('blur', () => {
+          this.dependencies.requestRerender();
+        });
+        text.onChange(async (baseUrl) => {
+          this.providers.openai_compatible = emptyProviderState();
+          const current = this.dependencies.getSettings();
+          await this.dependencies.persist(
+            {
+              ...current,
+              llmProviderConfigurations: withOpenAiCompatibleBaseUrl(
+                current.llmProviderConfigurations,
+                baseUrl,
+              ),
+            },
+            { rerender: false },
+          );
+        });
+      });
+
+    const validation = validateOpenAiCompatibleBaseUrl(config.baseUrl);
+    if (!validation.valid) return;
+    const url = new URL(validation.normalizedUrl);
+    const destination = parent.createDiv({ cls: 'local-dictation-route-field__hint' });
+    destination.setText(t('llm.routing.customDestination', { host: url.host }));
+    if (url.protocol === 'http:' && !isLoopbackHostname(url.hostname)) {
+      const warning = parent.createDiv({
+        cls: 'local-dictation-status local-dictation-status--warning',
+      });
+      warning.setText(t('llm.routing.insecureHttpWarning'));
     }
-    this.dependencies.requestRerender();
+  }
+
+  private renderSecret(
+    parent: HTMLElement,
+    settings: PluginSettings,
+    providerId: 'openrouter' | 'openai_compatible',
+  ): void {
+    const configuration = settings.llmProviderConfigurations[providerId];
+    new Setting(parent)
+      .setName(
+        providerId === 'openrouter'
+          ? t('llm.routing.openRouterApiKey.name')
+          : t('llm.routing.customApiKey.name'),
+      )
+      .setDesc(
+        providerId === 'openrouter'
+          ? t('llm.routing.openRouterApiKey.description')
+          : t('llm.routing.customApiKey.description'),
+      )
+      .addComponent((containerEl) =>
+        new SecretComponent(this.dependencies.app, containerEl)
+          .setValue(configuration.secretId)
+          .onChange(async (secretId) => {
+            this.providers[providerId] = emptyProviderState();
+            const current = this.dependencies.getSettings();
+            await this.dependencies.persist(
+              {
+                ...current,
+                llmProviderConfigurations: withProviderSecretId(
+                  current.llmProviderConfigurations,
+                  providerId,
+                  secretId,
+                ),
+              },
+              { rerender: false },
+            );
+            this.scheduleSecretRefresh(providerId);
+          }),
+      );
+  }
+
+  private renderEditableModel(
+    parent: HTMLElement,
+    settings: PluginSettings,
+    providerId: 'openrouter' | 'openai_compatible',
+  ): void {
+    const selectedModel = getProviderModel(settings.llmProviderConfigurations, providerId);
+    let refreshStatus: () => void = () => {};
+    new Setting(parent)
+      .setName(
+        providerId === 'openrouter'
+          ? t('llm.routing.openRouterModel.name')
+          : t('llm.routing.customModel.name'),
+      )
+      .setDesc(
+        providerId === 'openrouter'
+          ? t('llm.routing.openRouterModel.description')
+          : t('llm.routing.customModel.description'),
+      )
+      .addText((text) => {
+        text.setPlaceholder(
+          providerId === 'openrouter' ? 'anthropic/claude-sonnet-4.5' : 'model-id',
+        );
+        text.setValue(selectedModel);
+        this.onModelInput?.(text.inputEl);
+        text.inputEl.addEventListener('blur', () => {
+          this.dependencies.requestRerender();
+        });
+        new ModelSuggest(
+          this.dependencies.app,
+          text.inputEl,
+          () => this.providers[providerId].models,
+          (model) => void this.persistModel(providerId, model, false).then(refreshStatus),
+        );
+        text.onChange(async (model) => {
+          await this.persistModel(providerId, model, false);
+          refreshStatus();
+        });
+      })
+      .addExtraButton((button) => {
+        button.setIcon('plug-zap').setTooltip(t('llm.routing.testConnection'));
+        button.extraSettingsEl.setAttribute('aria-label', t('llm.routing.testConnection'));
+        button.onClick(() => void this.runConnectionTest(providerId, button));
+      });
+    refreshStatus = this.renderStatusRow(parent, providerId);
+    this.warmModels(providerId);
+  }
+
+  private renderStatusRow(parent: HTMLElement, providerId: LlmProviderId): () => void {
+    const row = parent.createDiv();
+    row.setAttribute('aria-live', 'polite');
+    row.setAttribute('role', 'status');
+    const update = (): void => {
+      row.empty();
+      const state = this.providers[providerId];
+      const status = deriveInlineStatus({
+        health: state.health,
+        models: state.modelsLoaded ? state.models : [],
+        providerId,
+        selectedModel: getProviderModel(
+          this.dependencies.getSettings().llmProviderConfigurations,
+          providerId,
+        ),
+      });
+      if (status === null) {
+        row.className = '';
+        return;
+      }
+      const presentation = INLINE_STATUS_PRESENTATION[status.variant];
+      row.className = `local-dictation-status ${presentation.className}`;
+      const icon = row.createSpan({ cls: 'local-dictation-status__icon' });
+      icon.setAttribute('aria-hidden', 'true');
+      setIcon(icon, presentation.icon);
+      row.createSpan({ cls: 'local-dictation-status__text', text: status.text });
+    };
+    update();
+    return update;
+  }
+
+  private renderLeg(parent: HTMLElement, label: string): void {
+    parent.createDiv({ cls: 'local-dictation-route-leg', text: label });
+  }
+
+  private async persistPolicy(policy: LlmRoutingPolicy | null): Promise<void> {
+    await this.dependencies.persist({
+      ...this.dependencies.getSettings(),
+      llmRoutingPolicy: policy,
+    });
+    void this.refreshActiveProviders();
+  }
+
+  private async persistModel(
+    providerId: LlmProviderId,
+    model: string,
+    rerender = true,
+  ): Promise<void> {
+    const current = this.dependencies.getSettings();
+    await this.dependencies.persist(
+      {
+        ...current,
+        llmProviderConfigurations: withProviderConfigurationModel(
+          current.llmProviderConfigurations,
+          providerId,
+          model,
+        ),
+      },
+      { rerender },
+    );
+  }
+
+  private recheckModels(providerId: LlmProviderId): Promise<void> {
+    const state = this.providers[providerId];
+    return state.modelsLoaded && state.health.kind === 'ready'
+      ? Promise.resolve()
+      : this.refreshModels(providerId);
+  }
+
+  private warmModels(providerId: LlmProviderId): void {
+    const state = this.providers[providerId];
+    if (state.modelsLoaded || this.modelsRefreshInFlight[providerId] === true) return;
+    if (
+      providerId === 'openai_compatible' &&
+      !validateOpenAiCompatibleBaseUrl(
+        this.dependencies.getSettings().llmProviderConfigurations.openai_compatible.baseUrl,
+      ).valid
+    ) {
+      return;
+    }
+    void this.refreshModels(providerId);
   }
 
   private async refreshModels(providerId: LlmProviderId): Promise<void> {
-    if (this.modelsRefreshInFlight[providerId] === true) {
+    if (this.modelsRefreshInFlight[providerId] === true) return;
+    if (
+      providerId === 'openai_compatible' &&
+      !validateOpenAiCompatibleBaseUrl(
+        this.dependencies.getSettings().llmProviderConfigurations.openai_compatible.baseUrl,
+      ).valid
+    ) {
       return;
     }
     this.modelsRefreshInFlight[providerId] = true;
-
     const state = this.providers[providerId];
-    const providerName = formatLlmProviderName(providerId);
     try {
       const models = await this.createProvider(providerId).listModels();
       state.models = models;
@@ -536,30 +616,117 @@ export class LlmRoutingControls {
     } catch (error) {
       state.models = [];
       state.health = providerHealthFromError(error);
-      this.dependencies.logger?.warn('llm', `${providerName} refresh failed`, error);
+      this.dependencies.logger?.warn(
+        'llm',
+        `${formatLlmProviderName(providerId)} refresh failed`,
+        error,
+      );
     } finally {
       state.modelsLoaded = true;
       this.modelsRefreshInFlight[providerId] = false;
     }
-
     this.dependencies.requestRerender();
+  }
+
+  private scheduleSecretRefresh(providerId: 'openrouter' | 'openai_compatible'): void {
+    if (this.secretRefreshTimerId !== null) window.clearTimeout(this.secretRefreshTimerId);
+    this.secretRefreshTimerId = window.setTimeout(() => {
+      this.secretRefreshTimerId = null;
+      void this.refreshModels(providerId);
+    }, SECRET_REFRESH_DEBOUNCE_MS);
+  }
+
+  private async runConnectionTest(
+    providerId: 'openrouter' | 'openai_compatible',
+    button: ExtraButtonComponent,
+  ): Promise<void> {
+    if (this.testsInFlight.has(providerId)) return;
+    this.testsInFlight.add(providerId);
+    button.setDisabled(true);
+    try {
+      const failure = await this.testProvider(providerId);
+      button.setIcon(failure === null ? 'check' : 'x');
+      if (failure !== null) {
+        this.dependencies.feedback.show({ intent: 'warning', message: failure });
+      }
+      window.setTimeout(() => {
+        button.setIcon('plug-zap');
+      }, TEST_RESULT_ICON_MS);
+    } finally {
+      this.testsInFlight.delete(providerId);
+      button.setDisabled(false);
+    }
+  }
+
+  private prewarm(model: string): void {
+    if (model.length === 0) return;
+    const provider = this.createProvider('ollama');
+    void provider.prewarmModel?.(model)?.catch((error: unknown) => {
+      this.dependencies.logger?.warn('llm', 'Ollama pre-warm failed', error);
+    });
   }
 
   private createProvider(
     providerId: LlmProviderId,
     settings = this.dependencies.getSettings(),
   ): ReturnType<typeof createProvider> {
-    return createProvider(providerId, settings, this.dependencies.getOpenRouterApiKey());
+    return createProvider(providerId, {
+      configurations: settings.llmProviderConfigurations,
+      getSecret: this.dependencies.getSecret,
+      networkTimeoutMs: settings.llmNetworkTimeoutSec * 1000,
+    });
   }
 }
 
-function routingHint(routing: LlmRouting): string {
-  switch (routing) {
-    case 'local':
-      return t('llm.routing.localHint');
-    case 'remote':
-      return t('llm.routing.remoteHint');
-    case 'auto':
-      return t('llm.routing.autoHint');
+function providerLabel(providerId: LlmProviderId): string {
+  switch (providerId) {
+    case 'ollama':
+      return t('llm.provider.ollama');
+    case 'openrouter':
+      return t('llm.provider.openrouter');
+    case 'openai_compatible':
+      return t('llm.provider.custom');
+  }
+}
+
+function firstOtherProvider(providerId: LlmProviderId): LlmProviderId {
+  return LLM_PROVIDER_IDS.find((candidate) => candidate !== providerId) ?? 'ollama';
+}
+
+function readinessMessage(issue: {
+  code: string;
+  message?: string;
+  providerId?: LlmProviderId;
+}): string {
+  switch (issue.code) {
+    case 'provider_missing':
+      return t('llm.readiness.chooseProvider');
+    case 'model_missing':
+      return t('llm.readiness.chooseModel', {
+        provider: formatLlmProviderName(issue.providerId ?? 'ollama'),
+      });
+    case 'api_key_missing':
+      return t('llm.readiness.apiKeyMissing');
+    case 'base_url_invalid':
+      return t('llm.readiness.baseUrlInvalid');
+    default:
+      return t('llm.readiness.routingInvalid');
+  }
+}
+
+function customUrlValidationMessage(
+  code: Exclude<ReturnType<typeof validateOpenAiCompatibleBaseUrl>, { valid: true }>['code'],
+): string {
+  switch (code) {
+    case 'empty':
+      return t('llm.validation.baseUrl.empty');
+    case 'not_absolute':
+      return t('llm.validation.baseUrl.absolute');
+    case 'scheme':
+      return t('llm.validation.baseUrl.scheme');
+    case 'credentials':
+      return t('llm.validation.baseUrl.credentials');
+    case 'query_or_fragment':
+      return t('llm.validation.baseUrl.queryOrFragment');
   }
 }

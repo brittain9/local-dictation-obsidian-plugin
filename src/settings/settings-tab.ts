@@ -38,7 +38,6 @@ import {
   type DictationAnchor,
   isDictationAnchor,
   isListeningMode,
-  isRemoteLlmEffectivelyEnabled,
   isSpeakingStyle,
   isTranscriptFormattingMode,
   type PluginSettings,
@@ -409,18 +408,6 @@ export class LocalSttSettingTab extends PluginSettingTab {
       toggle.onChange(async (value) => {
         await this.access.persistOne('llmFeaturesEnabled', value);
         this.refreshSettingsTab();
-      });
-    });
-
-    const remoteLlmSetting = new Setting(llmCard)
-      .setName(t('settings.llm.enableRemote.name'))
-      .setDesc(t('settings.llm.enableRemote.desc'));
-    remoteLlmSetting.addToggle((toggle) => {
-      toggle.setValue(isRemoteLlmEffectivelyEnabled(settings));
-      toggle.setDisabled(!settings.llmFeaturesEnabled);
-      toggle.onChange(async (value) => {
-        if (!this.dependencies.getSettings().llmFeaturesEnabled) return;
-        await this.access.persistOne('llmRemoteFeaturesEnabled', value);
       });
     });
 

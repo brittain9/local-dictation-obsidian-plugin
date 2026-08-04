@@ -601,6 +601,11 @@ export class Setting {
     return this;
   }
 
+  addComponent(callback: (containerEl: TestElement) => unknown): this {
+    callback(this.controlEl);
+    return this;
+  }
+
   addDropdown(callback: (dropdown: DropdownComponent) => void): this {
     const dropdown = new DropdownComponent();
     this.dropdownComponents.push(dropdown);

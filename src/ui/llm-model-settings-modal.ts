@@ -6,12 +6,13 @@ import {
   type ModalSettingsPersistence,
 } from '../settings/modal-settings-auto-saver';
 import {
+  DEFAULT_LLM_ROUTING_THRESHOLD_CHARS,
   DEFAULT_PLUGIN_SETTINGS,
   LLM_TEMPERATURE_MAX,
-  MAX_LLM_REMOTE_THRESHOLD_CHARS,
-  MAX_LLM_REMOTE_TIMEOUT_SEC,
-  MIN_LLM_REMOTE_THRESHOLD_CHARS,
-  MIN_LLM_REMOTE_TIMEOUT_SEC,
+  MAX_LLM_NETWORK_TIMEOUT_SEC,
+  MAX_LLM_ROUTING_THRESHOLD_CHARS,
+  MIN_LLM_NETWORK_TIMEOUT_SEC,
+  MIN_LLM_ROUTING_THRESHOLD_CHARS,
   type PluginSettings,
 } from '../settings/plugin-settings';
 import { t } from '../shared/i18n';
@@ -20,10 +21,11 @@ import { addValidatedNumberSetting } from './validated-number-setting';
 
 type LlmModelSettingsModalDependencies = ModalSettingsPersistence;
 
-type ModelDraft = Pick<
-  PluginSettings,
-  'llmPostprocessTemperature' | 'llmRemoteThresholdChars' | 'llmRemoteTimeoutSec'
->;
+interface ModelDraft {
+  llmNetworkTimeoutSec: number;
+  llmPostprocessTemperature: number;
+  llmRoutingThresholdChars: number;
+}
 
 type ModelField = keyof ModelDraft;
 
@@ -70,31 +72,47 @@ export class LlmModelSettingsModal extends Modal {
           : this.draft.llmPostprocessTemperature,
     });
 
-    if (presentation.remoteThresholdChars !== null) {
-      this.addNumberField('llmRemoteThresholdChars', {
-        desc: t('llm.model.remoteThreshold.description'),
+    if (presentation.routingThresholdChars !== null) {
+      this.addNumberField('llmRoutingThresholdChars', {
+        desc: t('llm.model.routingThreshold.description'),
         integer: true,
-        max: MAX_LLM_REMOTE_THRESHOLD_CHARS,
-        min: MIN_LLM_REMOTE_THRESHOLD_CHARS,
-        name: t('llm.model.remoteThreshold.name'),
+        max: MAX_LLM_ROUTING_THRESHOLD_CHARS,
+        min: MIN_LLM_ROUTING_THRESHOLD_CHARS,
+        name: t('llm.model.routingThreshold.name'),
       });
     }
 
-    if (presentation.remoteTimeoutSec !== null) {
-      this.addNumberField('llmRemoteTimeoutSec', {
-        desc: t('llm.model.remoteTimeout.description'),
+    if (presentation.networkTimeoutSec !== null) {
+      this.addNumberField('llmNetworkTimeoutSec', {
+        desc: t('llm.model.networkTimeout.description'),
         integer: true,
-        max: MAX_LLM_REMOTE_TIMEOUT_SEC,
-        min: MIN_LLM_REMOTE_TIMEOUT_SEC,
-        name: t('llm.model.remoteTimeout.name'),
+        max: MAX_LLM_NETWORK_TIMEOUT_SEC,
+        min: MIN_LLM_NETWORK_TIMEOUT_SEC,
+        name: t('llm.model.networkTimeout.name'),
       });
     }
 
     new Setting(this.contentEl).addButton((button) => {
       button.setButtonText(t('common.reset')).onClick(async () => {
-        this.draft = draftFromSettings(DEFAULT_PLUGIN_SETTINGS);
+        this.draft = {
+          llmNetworkTimeoutSec: DEFAULT_PLUGIN_SETTINGS.llmNetworkTimeoutSec,
+          llmPostprocessTemperature: DEFAULT_PLUGIN_SETTINGS.llmPostprocessTemperature,
+          llmRoutingThresholdChars: DEFAULT_LLM_ROUTING_THRESHOLD_CHARS,
+        };
         this.render();
-        await this.autoSaver.persist(this.draft);
+        const current = this.dependencies.getSettings();
+        await this.autoSaver.persist({
+          llmNetworkTimeoutSec: this.draft.llmNetworkTimeoutSec,
+          llmPostprocessTemperature: this.draft.llmPostprocessTemperature,
+          ...(current.llmRoutingPolicy?.kind === 'transcript_size'
+            ? {
+                llmRoutingPolicy: {
+                  ...current.llmRoutingPolicy,
+                  thresholdChars: this.draft.llmRoutingThresholdChars,
+                },
+              }
+            : {}),
+        });
       });
     });
   }
@@ -116,17 +134,33 @@ export class LlmModelSettingsModal extends Modal {
       ...options,
       onChange: (value) => {
         this.draft = { ...this.draft, [key]: value };
-        void this.autoSaver.persist({ [key]: value });
+        void this.persistField(key, value);
       },
       value: options.value ?? this.draft[key],
     });
+  }
+
+  private persistField(key: ModelField, value: number): Promise<void> {
+    if (key === 'llmRoutingThresholdChars') {
+      const policy = this.dependencies.getSettings().llmRoutingPolicy;
+      return policy?.kind === 'transcript_size'
+        ? this.autoSaver.persist({ llmRoutingPolicy: { ...policy, thresholdChars: value } })
+        : Promise.resolve();
+    }
+    if (key === 'llmNetworkTimeoutSec') {
+      return this.autoSaver.persist({ llmNetworkTimeoutSec: value });
+    }
+    return this.autoSaver.persist({ llmPostprocessTemperature: value });
   }
 }
 
 function draftFromSettings(settings: PluginSettings): ModelDraft {
   return {
+    llmNetworkTimeoutSec: settings.llmNetworkTimeoutSec,
     llmPostprocessTemperature: settings.llmPostprocessTemperature,
-    llmRemoteThresholdChars: settings.llmRemoteThresholdChars,
-    llmRemoteTimeoutSec: settings.llmRemoteTimeoutSec,
+    llmRoutingThresholdChars:
+      settings.llmRoutingPolicy?.kind === 'transcript_size'
+        ? settings.llmRoutingPolicy.thresholdChars
+        : DEFAULT_LLM_ROUTING_THRESHOLD_CHARS,
   };
 }
