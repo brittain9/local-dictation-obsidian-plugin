@@ -1,6 +1,6 @@
 import { formatErrorMessage } from '../shared/format-utils';
 import { isRecord } from '../shared/type-guards';
-import { PROBE_TIMEOUT_MS } from './http-shared';
+import { PROBE_TIMEOUT_MS, requestUrlJson } from './http-shared';
 import { OpenAiChatClient } from './openai-chat-client';
 import {
   type OpenAiCompatibleBaseUrlValidation,
@@ -27,7 +27,8 @@ export class OpenAiCompatibleProvider implements LlmProvider {
     this.client = new OpenAiChatClient({
       apiKey: options.apiKey,
       baseUrl: validation.normalizedUrl,
-      providerName: 'Custom endpoint',
+      providerName: 'OpenAI-compatible endpoint',
+      requestJson: requestUrlJson,
       ...(options.timeoutMs === undefined ? {} : { timeoutMs: options.timeoutMs }),
     });
   }
@@ -93,7 +94,10 @@ function baseUrlValidationMessage(
 
 function parseModels(response: unknown): ModelOption[] {
   if (!isRecord(response) || !Array.isArray(response.data)) {
-    throw new ProviderError('Custom endpoint returned an invalid model list.', 'invalid_response');
+    throw new ProviderError(
+      'OpenAI-compatible endpoint returned an invalid model list.',
+      'invalid_response',
+    );
   }
   return response.data
     .map((entry): ModelOption | null => {
@@ -117,16 +121,28 @@ function mapOpenAiCompatibleError(error: unknown): ProviderError {
 
   const details = { responseText: error.responseText, status: error.status };
   if (error.status === 401) {
-    return new ProviderError('Custom endpoint API key rejected.', 'auth_invalid', details);
+    return new ProviderError(
+      'OpenAI-compatible endpoint API key rejected.',
+      'auth_invalid',
+      details,
+    );
   }
   if (error.status === 403) {
-    return new ProviderError('Custom endpoint denied access.', 'permission_denied', details);
+    return new ProviderError(
+      'OpenAI-compatible endpoint denied access.',
+      'permission_denied',
+      details,
+    );
   }
   if (error.status === 429) {
-    return new ProviderError('Custom endpoint rate limit hit.', 'rate_limited', details);
+    return new ProviderError('OpenAI-compatible endpoint rate limit hit.', 'rate_limited', details);
   }
   if (error.status === 404 && /model/i.test(error.responseText ?? error.message)) {
-    return new ProviderError('Custom endpoint model was not found.', 'unknown_model', details);
+    return new ProviderError(
+      'OpenAI-compatible endpoint model was not found.',
+      'unknown_model',
+      details,
+    );
   }
   return error;
 }

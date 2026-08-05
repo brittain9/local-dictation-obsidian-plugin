@@ -1016,6 +1016,26 @@
   min-width: min(10rem, 100%);
 }
 
+.local-dictation-sidebar .local-dictation-model-setting {
+  flex-direction: column;
+  align-items: stretch;
+}
+
+.local-dictation-sidebar .local-dictation-model-setting .setting-item-info {
+  margin-right: 0;
+  margin-bottom: 6px;
+}
+
+.local-dictation-sidebar .local-dictation-model-setting .setting-item-control {
+  justify-content: flex-start;
+  width: 100%;
+}
+
+.local-dictation-sidebar .local-dictation-model-setting input[type="text"] {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
 /* When the sidebar is dragged narrow, stack setting rows vertically so labels
    and controls don't get squeezed onto a single short line. */
 
@@ -1081,6 +1101,16 @@
   color: var(--text-muted);
 }
 
+.local-dictation-connection-test--loading svg {
+  animation: local-dictation-connection-test-spin 800ms linear infinite;
+}
+
+@keyframes local-dictation-connection-test-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 /* --- LLM routing control ------------------------------------------ */
 
 .local-dictation-route-field {
@@ -1088,7 +1118,9 @@
 }
 
 .local-dictation-route-field__hint {
-  margin-top: var(--size-4-2);
+  margin: 0;
+  padding: 0 var(--size-4-3) var(--size-4-3);
+  overflow-wrap: anywhere;
   font-size: var(--font-ui-smaller);
   color: var(--text-muted);
 }
@@ -1140,10 +1172,10 @@
   display: flex;
   align-items: center;
   gap: var(--size-4-2);
-  padding: var(--size-4-3) 0 var(--size-4-1);
+  padding: var(--size-4-4) var(--size-4-3) var(--size-4-2);
   font-size: var(--font-ui-smaller);
   font-weight: 600;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--text-faint);
 }

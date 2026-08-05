@@ -60,7 +60,7 @@ The first release supports exactly three provider types:
 | --- | --- | --- | --- |
 | Ollama | Built-in Ollama endpoint | None | Ollama catalog |
 | OpenRouter | Fixed OpenRouter API endpoint | Required bearer key | Searchable OpenRouter catalog with existing pricing metadata |
-| Custom endpoint (OpenAI-compatible) | User-supplied base URL | Optional bearer key | Best-effort OpenAI-compatible model list |
+| OpenAI-compatible | User-supplied base URL | Optional bearer key | Best-effort OpenAI-compatible model list |
 
 A provider connection owns one configured model. Routing between two models on
 the same provider, multiple custom endpoint profiles, and named connections are
@@ -151,12 +151,12 @@ stale provider or routing snapshots.
 Remove Local, Remote, and Auto from the user-facing interface. The transform
 sidebar presents routing directly:
 
-1. **Provider** — Ollama, OpenRouter, or Custom endpoint.
+1. **Provider** — Ollama, OpenRouter, or OpenAI-compatible.
 2. **Use a different provider for large transcripts** — off by default.
 3. When enabled:
    - Rename the first control to **Default provider**.
    - **Large-transcript provider** — every provider except the selected default.
-   - A compact threshold summary with the existing Model settings affordance.
+   - **Large transcript threshold** directly below the two provider controls.
 
 With no policy selected, show the empty **Provider** control and `Choose a
 provider to use transforms.` in the same sidebar. Reveal the large-transcript
@@ -165,17 +165,10 @@ has a valid provider configuration and model, keep raw transcript behavior and
 show the missing setup inline rather than allowing a request that is guaranteed
 to fail.
 
-The labels describe behavior without requiring users to learn internal policy
-names. Representative summaries:
-
-- `All transcripts use Ollama.`
-- `All transcripts use OpenRouter.`
-- `Ollama up to 6,000 characters; OpenRouter above 6,000.`
-- `Custom endpoint (localhost:1234) up to 6,000 characters; OpenRouter above 6,000.`
-
-Do not guess a product name from a URL. A custom connection is labeled `Custom
-endpoint` plus its host when configured; the persisted provider ID remains
-generic.
+The controls describe routing directly without requiring users to learn
+internal policy names or repeating the route in a separate summary. Do not
+guess a product name from a URL. The connection is labeled
+`OpenAI-compatible`, and the persisted provider ID remains generic.
 
 ### Progressive provider configuration
 
@@ -312,7 +305,9 @@ Use composition for the OpenAI wire implementation:
 - `OpenRouterProvider` composes it and retains OpenRouter catalog/pricing and key
   health behavior.
 - `OpenAiCompatibleProvider` composes it and supplies generic model discovery
-  and optional authentication.
+  and optional authentication. It uses Obsidian's CORS-free HTTP transport so
+  local servers such as LM Studio do not need to expose browser CORS headers;
+  caller aborts and timeouts still settle promptly and ignore any later result.
 
 Do not introduce inheritance, a declarative provider DSL, or a registry whose
 configuration surface merely mirrors the three constructors.

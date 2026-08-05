@@ -32,7 +32,7 @@ import { PresetManagerModal } from './preset-manager-modal';
 
 export const LOCAL_DICTATION_VIEW_TYPE = 'local-dictation-sidebar';
 const LOCAL_DICTATION_VIEW_ICON = 'audio-lines';
-const NARROW_SIDEBAR_WIDTH_PX = 420;
+const NARROW_SIDEBAR_WIDTH_PX = 560;
 
 const CLEANUP_MODE_OPTIONS: ReadonlyArray<{ label: string; value: LlmPresetTiming }> = [
   { label: t('llm.timing.option.perUtterance'), value: 'per_utterance' },
@@ -153,42 +153,47 @@ export class LocalDictationView extends ItemView {
 
   refresh(): void {
     const { contentEl } = this;
+    const scrollTop = contentEl.scrollTop;
     const settings = this.dependencies.getSettings();
 
-    this.focusedInput = null;
-    this.deferredRenderPending = false;
-    contentEl.empty();
-    contentEl.addClass('local-dictation-sidebar');
+    try {
+      this.focusedInput = null;
+      this.deferredRenderPending = false;
+      contentEl.empty();
+      contentEl.addClass('local-dictation-sidebar');
 
-    const presentation = resolveLlmSidebarPresentation(settings);
-    this.renderOverview(contentEl, presentation);
+      const presentation = resolveLlmSidebarPresentation(settings);
+      this.renderOverview(contentEl, presentation);
 
-    if (!settings.llmFeaturesEnabled) {
-      this.renderEmptyState(contentEl, presentation);
-      return;
+      if (!settings.llmFeaturesEnabled) {
+        this.renderEmptyState(contentEl, presentation);
+        return;
+      }
+
+      const transformGroup = contentEl.createDiv({ cls: 'setting-group' });
+      const transformItems = transformGroup.createDiv({ cls: 'setting-items' });
+      this.renderCleanupToggle(transformItems, settings);
+
+      if (settings.llmPostprocessMode === 'off') {
+        this.renderEmptyState(contentEl, presentation);
+        return;
+      }
+
+      this.renderRuntimeFailureBanner(transformItems);
+
+      const styleGroup = createSettingGroup(contentEl, t('llm.sidebar.group.preset'));
+      this.renderPresetPicker(styleGroup, settings);
+      this.renderCleanupMode(styleGroup, settings);
+      this.renderOriginalTranscriptToggle(styleGroup, settings);
+
+      const whereGroup = createSettingGroup(contentEl, t('llm.sidebar.group.model'));
+      this.routingControls.render(whereGroup, settings);
+
+      const contextGroup = createSettingGroup(contentEl, t('llm.sidebar.group.context'));
+      this.renderUseNoteContextToggle(contextGroup, settings);
+    } finally {
+      contentEl.scrollTop = scrollTop;
     }
-
-    const transformGroup = contentEl.createDiv({ cls: 'setting-group' });
-    const transformItems = transformGroup.createDiv({ cls: 'setting-items' });
-    this.renderCleanupToggle(transformItems, settings);
-
-    if (settings.llmPostprocessMode === 'off') {
-      this.renderEmptyState(contentEl, presentation);
-      return;
-    }
-
-    this.renderRuntimeFailureBanner(transformItems);
-
-    const styleGroup = createSettingGroup(contentEl, t('llm.sidebar.group.preset'));
-    this.renderPresetPicker(styleGroup, settings);
-    this.renderCleanupMode(styleGroup, settings);
-    this.renderOriginalTranscriptToggle(styleGroup, settings);
-
-    const whereGroup = createSettingGroup(contentEl, t('llm.sidebar.group.model'));
-    this.routingControls.render(whereGroup, settings);
-
-    const contextGroup = createSettingGroup(contentEl, t('llm.sidebar.group.context'));
-    this.renderUseNoteContextToggle(contextGroup, settings);
   }
 
   requestRefresh(): void {
@@ -347,7 +352,7 @@ export class LocalDictationView extends ItemView {
 
     setting.addExtraButton((button) => {
       button
-        .setIcon('sliders-horizontal')
+        .setIcon('list-tree')
         .setTooltip(t('llm.preset.manager.title'))
         .onClick(() => {
           void this.openPresetManager();

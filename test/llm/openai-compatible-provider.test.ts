@@ -1,3 +1,9 @@
+import {
+  type RequestUrlParam,
+  type RequestUrlResponse,
+  type RequestUrlResponsePromise,
+  requestUrl,
+} from 'obsidian';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { MAX_RESPONSE_BYTES } from '../../src/llm/http-shared';
@@ -78,6 +84,28 @@ describe('OpenAiCompatibleProvider', () => {
       { displayName: 'a-model', id: 'a-model' },
       { displayName: 'z-model', id: 'z-model' },
     ]);
+  });
+
+  it('discovers localhost models through Obsidian without requiring browser CORS headers', async () => {
+    const fetchMock = mockFetch(async () => {
+      throw new TypeError('Failed to fetch');
+    });
+    vi.mocked(requestUrl)
+      .mockReset()
+      .mockResolvedValue(
+        requestUrlResponse({
+          data: [{ id: 'prism-ml/bonsai-27b' }, { id: 'text-embedding-nomic-embed-text-v1.5' }],
+        }),
+      );
+
+    await expect(
+      provider({ baseUrl: 'http://127.0.0.1:1234/v1' }).listModels(),
+    ).resolves.toContainEqual({
+      displayName: 'prism-ml/bonsai-27b',
+      id: 'prism-ml/bonsai-27b',
+    });
+    expect(requestUrl).toHaveBeenCalledOnce();
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 
   it.each([
@@ -165,12 +193,60 @@ function jsonResponse(body: unknown, status = 200): Response {
   });
 }
 
+function requestUrlResponse(body: unknown, status = 200): RequestUrlResponse {
+  const text = JSON.stringify(body);
+  return {
+    arrayBuffer: new TextEncoder().encode(text).buffer,
+    headers: { 'content-type': 'application/json' },
+    json: body,
+    status,
+    text,
+  };
+}
+
 function mockFetch(
   implementation: (url: RequestInfo | URL, init?: RequestInit) => Promise<Response>,
 ): ReturnType<typeof vi.fn<(url: RequestInfo | URL, init?: RequestInit) => Promise<Response>>> {
   const fetchMock = vi.fn(implementation);
   vi.stubGlobal('fetch', fetchMock);
+  vi.mocked(requestUrl).mockImplementation((request) => {
+    const response = (async (): Promise<RequestUrlResponse> => {
+      const options: RequestUrlParam = typeof request === 'string' ? { url: request } : request;
+      const fetchResponse = await fetchMock(options.url, {
+        ...(options.body === undefined ? {} : { body: options.body }),
+        ...(options.headers === undefined ? {} : { headers: options.headers }),
+        ...(options.method === undefined ? {} : { method: options.method }),
+      });
+      const arrayBuffer = await fetchResponse.arrayBuffer();
+      const text = new TextDecoder().decode(arrayBuffer);
+      let json: unknown = null;
+      try {
+        json = JSON.parse(text);
+      } catch {
+        // The production transport parses response.text so malformed JSON must
+        // still reach that validation path.
+      }
+      return {
+        arrayBuffer,
+        headers: Object.fromEntries(fetchResponse.headers.entries()),
+        json,
+        status: fetchResponse.status,
+        text,
+      };
+    })();
+    return toRequestUrlResponsePromise(response);
+  });
   return fetchMock;
+}
+
+function toRequestUrlResponsePromise(
+  promise: Promise<RequestUrlResponse>,
+): RequestUrlResponsePromise {
+  const response = promise as RequestUrlResponsePromise;
+  response.arrayBuffer = promise.then((value) => value.arrayBuffer);
+  response.json = promise.then((value) => value.json);
+  response.text = promise.then((value) => value.text);
+  return response;
 }
 
 function rejectWhenAborted(init: RequestInit | undefined): Promise<Response> {

@@ -8,7 +8,6 @@ import {
 } from 'obsidian';
 
 import { isLoopbackHostname, validateOpenAiCompatibleBaseUrl } from '../llm/openai-compatible-url';
-import { MIN_OUTPUT_TOKENS } from '../llm/output-budget';
 import {
   formatLlmProviderName,
   getProviderModel,
@@ -27,14 +26,17 @@ import { resolveLlmReadiness } from '../llm/readiness';
 import { activeLlmProviderIds } from '../llm/routing-policy';
 import {
   DEFAULT_LLM_ROUTING_THRESHOLD_CHARS,
+  MAX_LLM_ROUTING_THRESHOLD_CHARS,
+  MIN_LLM_ROUTING_THRESHOLD_CHARS,
   type PluginSettings,
 } from '../settings/plugin-settings';
 import { t } from '../shared/i18n';
 import type { PluginLogger } from '../shared/plugin-logger';
 import type { UserFeedback } from '../shared/user-feedback';
-import { describeModelBehavior } from './llm-model-settings-presentation';
+import { describeAdvancedModelSettings } from './llm-model-settings-presentation';
 import { formatCleanupFailureBanner, priceTier, providerHealthFromError } from './llm-provider-ui';
 import { deriveInlineStatus, INLINE_STATUS_PRESENTATION } from './llm-status';
+import { addValidatedNumberSetting } from './validated-number-setting';
 
 export interface LlmRoutingControlsDependencies {
   app: App;
@@ -49,6 +51,7 @@ export interface LlmRoutingControlsDependencies {
 
 const SECRET_REFRESH_DEBOUNCE_MS = 500;
 const TEST_RESULT_ICON_MS = 2500;
+const CONNECTION_TEST_MAX_OUTPUT_TOKENS = 16;
 
 interface ProviderState {
   health: ProviderHealth;
@@ -132,18 +135,17 @@ export class LlmRoutingControls {
   }
 
   refreshActiveProviders(options: { forceLocal?: boolean } = {}): Promise<void> {
-    const refreshes = activeLlmProviderIds(this.dependencies.getSettings().llmRoutingPolicy).map(
-      (providerId) =>
-        providerId === 'ollama' && options.forceLocal === true
-          ? this.refreshModels(providerId)
-          : this.recheckModels(providerId),
+    const settings = this.dependencies.getSettings();
+    const refreshes = activeLlmProviderIds(settings.llmRoutingPolicy).map((providerId) =>
+      options.forceLocal === true && shouldForceLocalCatalogRefresh(providerId, settings)
+        ? this.refreshModels(providerId)
+        : this.recheckModels(providerId),
     );
     return Promise.all(refreshes).then(() => undefined);
   }
 
   render(parent: HTMLElement, settings: PluginSettings): void {
     this.renderProviderSelection(parent, settings);
-    this.renderModelBehavior(parent, settings);
     this.renderReadiness(parent, settings);
 
     const policy = settings.llmRoutingPolicy;
@@ -152,6 +154,7 @@ export class LlmRoutingControls {
     }
     if (policy.kind === 'fixed') {
       this.renderProviderConfiguration(parent, settings, policy.providerId);
+      this.renderAdvancedSettings(parent, settings);
       return;
     }
 
@@ -159,6 +162,7 @@ export class LlmRoutingControls {
     this.renderProviderConfiguration(parent, settings, policy.defaultProviderId);
     this.renderLeg(parent, t('llm.routing.largeLeg'));
     this.renderProviderConfiguration(parent, settings, policy.largeTranscriptProviderId);
+    this.renderAdvancedSettings(parent, settings);
   }
 
   async testProvider(providerId: Exclude<LlmProviderId, 'ollama'>): Promise<string | null> {
@@ -182,7 +186,7 @@ export class LlmRoutingControls {
 
     try {
       await this.createProvider(providerId, settings).cleanup({
-        maxOutputTokens: MIN_OUTPUT_TOKENS,
+        maxOutputTokens: CONNECTION_TEST_MAX_OUTPUT_TOKENS,
         model,
         prompt: 'Reply with the single word OK.',
         temperature: 0,
@@ -300,13 +304,25 @@ export class LlmRoutingControls {
           });
         });
       });
+
+      addValidatedNumberSetting(parent, {
+        desc: t('llm.model.routingThreshold.description'),
+        integer: true,
+        max: MAX_LLM_ROUTING_THRESHOLD_CHARS,
+        min: MIN_LLM_ROUTING_THRESHOLD_CHARS,
+        name: t('llm.model.routingThreshold.name'),
+        onChange: (thresholdChars) => {
+          void this.persistRoutingThreshold(thresholdChars);
+        },
+        value: policy.thresholdChars,
+      }).setClass('local-dictation-route-setting');
     }
   }
 
-  private renderModelBehavior(parent: HTMLElement, settings: PluginSettings): void {
+  private renderAdvancedSettings(parent: HTMLElement, settings: PluginSettings): void {
     new Setting(parent)
       .setName(t('llm.model.behavior.name'))
-      .setDesc(describeModelBehavior(settings))
+      .setDesc(describeAdvancedModelSettings(settings))
       .addExtraButton((button) => {
         button
           .setIcon('sliders-horizontal')
@@ -473,7 +489,7 @@ export class LlmRoutingControls {
   ): void {
     const selectedModel = getProviderModel(settings.llmProviderConfigurations, providerId);
     let refreshStatus: () => void = () => {};
-    new Setting(parent)
+    const setting = new Setting(parent)
       .setName(
         providerId === 'openrouter'
           ? t('llm.routing.openRouterModel.name')
@@ -483,34 +499,58 @@ export class LlmRoutingControls {
         providerId === 'openrouter'
           ? t('llm.routing.openRouterModel.description')
           : t('llm.routing.customModel.description'),
-      )
-      .addText((text) => {
-        text.setPlaceholder(
-          providerId === 'openrouter' ? 'anthropic/claude-sonnet-4.5' : 'model-id',
-        );
-        text.setValue(selectedModel);
-        this.onModelInput?.(text.inputEl);
-        text.inputEl.addEventListener('blur', () => {
-          this.dependencies.requestRerender();
-        });
+      );
+    setting.setClass('local-dictation-model-setting');
+    setting.addText((text) => {
+      text.setPlaceholder(providerId === 'openrouter' ? 'anthropic/claude-sonnet-4.5' : 'model-id');
+      text.setValue(selectedModel);
+      this.onModelInput?.(text.inputEl);
+      text.inputEl.addEventListener('blur', () => {
+        this.dependencies.requestRerender();
+      });
+      if (providerId === 'openrouter') {
         new ModelSuggest(
           this.dependencies.app,
           text.inputEl,
           () => this.providers[providerId].models,
           (model) => void this.persistModel(providerId, model, false).then(refreshStatus),
         );
-        text.onChange(async (model) => {
-          await this.persistModel(providerId, model, false);
-          refreshStatus();
-        });
-      })
-      .addExtraButton((button) => {
-        button.setIcon('plug-zap').setTooltip(t('llm.routing.testConnection'));
-        button.extraSettingsEl.setAttribute('aria-label', t('llm.routing.testConnection'));
-        button.onClick(() => void this.runConnectionTest(providerId, button));
+      } else {
+        this.renderOpenAiCompatibleModelOptions(setting.controlEl, text.inputEl);
+      }
+      text.onChange(async (model) => {
+        await this.persistModel(providerId, model, false);
+        refreshStatus();
       });
+    });
+    if (providerId === 'openai_compatible') {
+      setting.addExtraButton((button) => {
+        const label = t('llm.routing.refreshModels', {
+          provider: formatLlmProviderName(providerId),
+        });
+        button.setIcon('refresh-cw').setTooltip(label);
+        button.extraSettingsEl.setAttribute('aria-label', label);
+        button.onClick(() => void this.refreshModels(providerId));
+      });
+    }
+    setting.addExtraButton((button) => {
+      button.setIcon('plug-zap').setTooltip(t('llm.routing.testConnection'));
+      button.extraSettingsEl.setAttribute('aria-label', t('llm.routing.testConnection'));
+      button.onClick(() => void this.runConnectionTest(providerId, button));
+    });
     refreshStatus = this.renderStatusRow(parent, providerId);
     this.warmModels(providerId);
+  }
+
+  private renderOpenAiCompatibleModelOptions(control: HTMLElement, input: HTMLInputElement): void {
+    const listId = 'local-dictation-openai-compatible-models';
+    input.setAttribute('list', listId);
+    const datalist = control.createEl('datalist', { attr: { id: listId } });
+    for (const model of this.providers.openai_compatible.models) {
+      datalist.createEl('option', {
+        attr: { label: model.displayName, value: model.id },
+      });
+    }
   }
 
   private renderStatusRow(parent: HTMLElement, providerId: LlmProviderId): () => void {
@@ -554,6 +594,18 @@ export class LlmRoutingControls {
       llmRoutingPolicy: policy,
     });
     void this.refreshActiveProviders();
+  }
+
+  private async persistRoutingThreshold(thresholdChars: number): Promise<void> {
+    const current = this.dependencies.getSettings();
+    if (current.llmRoutingPolicy?.kind !== 'transcript_size') return;
+    await this.dependencies.persist(
+      {
+        ...current,
+        llmRoutingPolicy: { ...current.llmRoutingPolicy, thresholdChars },
+      },
+      { rerender: false },
+    );
   }
 
   private async persistModel(
@@ -642,7 +694,11 @@ export class LlmRoutingControls {
   ): Promise<void> {
     if (this.testsInFlight.has(providerId)) return;
     this.testsInFlight.add(providerId);
-    button.setDisabled(true);
+    button
+      .setDisabled(true)
+      .setIcon('loader-circle')
+      .setTooltip(t('llm.routing.testingConnection'));
+    button.extraSettingsEl.addClass('local-dictation-connection-test--loading');
     try {
       const failure = await this.testProvider(providerId);
       button.setIcon(failure === null ? 'check' : 'x');
@@ -650,10 +706,11 @@ export class LlmRoutingControls {
         this.dependencies.feedback.show({ intent: 'warning', message: failure });
       }
       window.setTimeout(() => {
-        button.setIcon('plug-zap');
+        button.setIcon('plug-zap').setTooltip(t('llm.routing.testConnection'));
       }, TEST_RESULT_ICON_MS);
     } finally {
       this.testsInFlight.delete(providerId);
+      button.extraSettingsEl.removeClass('local-dictation-connection-test--loading');
       button.setDisabled(false);
     }
   }
@@ -691,6 +748,19 @@ function providerLabel(providerId: LlmProviderId): string {
 
 function firstOtherProvider(providerId: LlmProviderId): LlmProviderId {
   return LLM_PROVIDER_IDS.find((candidate) => candidate !== providerId) ?? 'ollama';
+}
+
+function shouldForceLocalCatalogRefresh(
+  providerId: LlmProviderId,
+  settings: PluginSettings,
+): boolean {
+  if (providerId === 'ollama') return true;
+  if (providerId !== 'openai_compatible') return false;
+
+  const validation = validateOpenAiCompatibleBaseUrl(
+    settings.llmProviderConfigurations.openai_compatible.baseUrl,
+  );
+  return validation.valid && isLoopbackHostname(new URL(validation.normalizedUrl).hostname);
 }
 
 function readinessMessage(issue: {

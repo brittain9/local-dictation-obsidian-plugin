@@ -1,7 +1,10 @@
 import { describe, expect, it } from 'vitest';
 
 import { DEFAULT_PLUGIN_SETTINGS } from '../src/settings/plugin-settings';
-import { resolveModelSettingsPresentation } from '../src/ui/llm-model-settings-presentation';
+import {
+  describeAdvancedModelSettings,
+  resolveModelSettingsPresentation,
+} from '../src/ui/llm-model-settings-presentation';
 
 describe('resolveModelSettingsPresentation', () => {
   it('shows only temperature for fixed Ollama routing', () => {
@@ -13,7 +16,6 @@ describe('resolveModelSettingsPresentation', () => {
       }),
     ).toEqual({
       networkTimeoutSec: null,
-      routingThresholdChars: null,
       temperature: { presetLabel: null, value: 0.4 },
     });
   });
@@ -27,11 +29,11 @@ describe('resolveModelSettingsPresentation', () => {
           llmNetworkTimeoutSec: 91,
           llmRoutingPolicy: { kind: 'fixed', providerId },
         }),
-      ).toMatchObject({ networkTimeoutSec: 91, routingThresholdChars: null });
+      ).toMatchObject({ networkTimeoutSec: 91 });
     },
   );
 
-  it('shows threshold and timeout when either size-routing leg uses the network', () => {
+  it('shows timeout when either size-routing leg uses the network', () => {
     expect(
       resolveModelSettingsPresentation({
         ...DEFAULT_PLUGIN_SETTINGS,
@@ -43,20 +45,32 @@ describe('resolveModelSettingsPresentation', () => {
           thresholdChars: 12_345,
         },
       }),
-    ).toMatchObject({ networkTimeoutSec: 91, routingThresholdChars: 12_345 });
+    ).toMatchObject({ networkTimeoutSec: 91 });
   });
 
-  it('shows threshold without timeout when both legs are non-networked adapters', () => {
+  it('explains that temperature is shared without repeating routing policy', () => {
+    const description = describeAdvancedModelSettings({
+      ...DEFAULT_PLUGIN_SETTINGS,
+      llmPostprocessTemperature: 0.3,
+      llmRoutingPolicy: {
+        defaultProviderId: 'ollama',
+        kind: 'transcript_size',
+        largeTranscriptProviderId: 'openrouter',
+        thresholdChars: 6_000,
+      },
+    });
+
+    expect(description).toBe('Temperature 0.3 for both providers · 60s network timeout');
+    expect(description).not.toContain('6,000');
+  });
+
+  it('does not mention provider sharing for a fixed route', () => {
     expect(
-      resolveModelSettingsPresentation({
+      describeAdvancedModelSettings({
         ...DEFAULT_PLUGIN_SETTINGS,
-        llmRoutingPolicy: {
-          defaultProviderId: 'ollama',
-          kind: 'transcript_size',
-          largeTranscriptProviderId: 'ollama',
-          thresholdChars: 1_000,
-        },
+        llmPostprocessTemperature: 0.3,
+        llmRoutingPolicy: { kind: 'fixed', providerId: 'openai_compatible' },
       }),
-    ).toMatchObject({ networkTimeoutSec: null, routingThresholdChars: 1_000 });
+    ).toBe('Temperature 0.3 · 60s network timeout');
   });
 });

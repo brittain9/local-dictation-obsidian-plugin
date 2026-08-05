@@ -2,6 +2,14 @@ import { vi } from 'vitest';
 
 export const getLanguage = vi.fn(() => 'en');
 
+export const requestUrl = vi.fn(async () => ({
+  arrayBuffer: new ArrayBuffer(0),
+  headers: {},
+  json: {},
+  status: 200,
+  text: '{}',
+}));
+
 const elementParents = new WeakMap<TestElement, TestElement>();
 
 export class TestDocument {
@@ -29,6 +37,7 @@ export class TestElement {
   disabled = false;
   id = '';
   innerHTML = '';
+  scrollTop = 0;
   readonly ownerDocument: TestDocument;
   readonly style: Record<string, string> = { width: '' };
   tabIndex = -1;
@@ -61,6 +70,10 @@ export class TestElement {
 
   addClass(className: string): void {
     this.className = [this.className, className].filter(Boolean).join(' ');
+  }
+
+  removeClass(className: string): void {
+    this.setClass(className, false);
   }
 
   addEventListener(event: string, listener: (event: TestEvent) => unknown): void {
@@ -112,6 +125,7 @@ export class TestElement {
     }
     this.children.length = 0;
     this.innerHTML = '';
+    this.scrollTop = 0;
     this.textContent = '';
   }
 

@@ -112,7 +112,7 @@ describe('LLM transform settings modals', () => {
     expect(temperature.disabled).toBe(true);
   });
 
-  it('persists each applicable size-routing model setting when it changes', async () => {
+  it('persists each applicable advanced model setting when it changes', async () => {
     let settings = {
       ...DEFAULT_PLUGIN_SETTINGS,
       llmRoutingPolicy: {
@@ -132,20 +132,18 @@ describe('LLM transform settings modals', () => {
 
     modal.open();
     MockSetting.named('Temperature').onlyText().change('0.8');
-    MockSetting.named('Large transcript threshold').onlyText().change('7000');
     MockSetting.named('Network timeout').onlyText().change('45');
 
     await vi.waitFor(() => {
       expect(settings).toMatchObject({
         llmPostprocessTemperature: 0.8,
         llmNetworkTimeoutSec: 45,
-        llmRoutingPolicy: expect.objectContaining({ thresholdChars: 7000 }),
       });
     });
-    expect(saveSettings).toHaveBeenCalledTimes(3);
+    expect(saveSettings).toHaveBeenCalledTimes(2);
   });
 
-  it('hides network and threshold settings for fixed Ollama routing', () => {
+  it('hides network settings for fixed Ollama routing', () => {
     const settings = {
       ...DEFAULT_PLUGIN_SETTINGS,
       llmRoutingPolicy: { kind: 'fixed' as const, providerId: 'ollama' as const },
@@ -157,7 +155,6 @@ describe('LLM transform settings modals', () => {
     }).open();
 
     const names = MockSetting.instances.map((setting) => setting.name);
-    expect(names).not.toContain('Large transcript threshold');
     expect(names).not.toContain('Network timeout');
   });
 });

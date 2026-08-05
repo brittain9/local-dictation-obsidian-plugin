@@ -1,5 +1,3 @@
-import { validateOpenAiCompatibleBaseUrl } from '../llm/openai-compatible-url';
-import { formatLlmProviderName, type LlmProviderId } from '../llm/provider';
 import { activeLlmProviderIds } from '../llm/routing-policy';
 import type { PluginSettings } from '../settings/plugin-settings';
 import { t } from '../shared/i18n';
@@ -7,7 +5,6 @@ import { activePresetOverride } from './llm-preset-overrides';
 
 export interface ModelSettingsPresentation {
   networkTimeoutSec: number | null;
-  routingThresholdChars: number | null;
   temperature: {
     presetLabel: string | null;
     value: number;
@@ -29,59 +26,19 @@ export function resolveModelSettingsPresentation(
 
   return {
     networkTimeoutSec: networkSettingsApply ? settings.llmNetworkTimeoutSec : null,
-    routingThresholdChars:
-      settings.llmRoutingPolicy?.kind === 'transcript_size'
-        ? settings.llmRoutingPolicy.thresholdChars
-        : null,
     temperature,
   };
 }
 
-export function describeModelBehavior(settings: PluginSettings): string {
+export function describeAdvancedModelSettings(settings: PluginSettings): string {
   const presentation = resolveModelSettingsPresentation(settings);
-  const parts = [
-    describeRouting(settings),
-    t('llm.model.summary.temperature', { value: presentation.temperature.value }),
-  ].filter((part) => part.length > 0);
-  if (presentation.routingThresholdChars !== null) {
-    parts.push(
-      t('llm.model.summary.routingThreshold', {
-        value: presentation.routingThresholdChars.toLocaleString(),
-      }),
-    );
-  }
+  const temperatureKey =
+    settings.llmRoutingPolicy?.kind === 'transcript_size'
+      ? 'llm.model.summary.temperatureShared'
+      : 'llm.model.summary.temperature';
+  const parts = [t(temperatureKey, { value: presentation.temperature.value })];
   if (presentation.networkTimeoutSec !== null) {
     parts.push(t('llm.model.summary.timeout', { value: presentation.networkTimeoutSec }));
   }
   return parts.join(' · ');
-}
-
-function describeRouting(settings: PluginSettings): string {
-  const policy = settings.llmRoutingPolicy;
-  if (policy === null) {
-    return '';
-  }
-  if (policy.kind === 'fixed') {
-    return t('llm.routing.summary.fixed', {
-      provider: providerDisplayName(settings, policy.providerId),
-    });
-  }
-  return t('llm.routing.summary.size', {
-    defaultProvider: providerDisplayName(settings, policy.defaultProviderId),
-    largeProvider: providerDisplayName(settings, policy.largeTranscriptProviderId),
-    threshold: policy.thresholdChars.toLocaleString(),
-  });
-}
-
-function providerDisplayName(settings: PluginSettings, providerId: LlmProviderId): string {
-  if (providerId !== 'openai_compatible') {
-    return formatLlmProviderName(providerId);
-  }
-  const validation = validateOpenAiCompatibleBaseUrl(
-    settings.llmProviderConfigurations.openai_compatible.baseUrl,
-  );
-  if (!validation.valid) {
-    return formatLlmProviderName(providerId);
-  }
-  return t('llm.provider.customHost', { host: new URL(validation.normalizedUrl).host });
 }

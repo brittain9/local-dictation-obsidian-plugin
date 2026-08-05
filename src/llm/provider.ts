@@ -152,6 +152,6 @@ export function formatLlmProviderName(providerId: LlmProviderId): string {
     case 'openrouter':
       return 'OpenRouter';
     case 'openai_compatible':
-      return 'Custom endpoint';
+      return 'OpenAI-compatible';
   }
 }

@@ -1,11 +1,12 @@
 import { isRecord } from '../shared/type-guards';
-import { CLEANUP_TIMEOUT_MS, fetchJson, PROBE_TIMEOUT_MS } from './http-shared';
+import { CLEANUP_TIMEOUT_MS, fetchJson, type JsonRequester, PROBE_TIMEOUT_MS } from './http-shared';
 import { ProviderError } from './provider';
 
 interface OpenAiChatClientOptions {
   apiKey: string;
   baseUrl: string;
   providerName: string;
+  requestJson?: JsonRequester;
   timeoutMs?: number;
 }
 
@@ -19,12 +20,14 @@ export class OpenAiChatClient {
   private readonly apiKey: string;
   private readonly baseUrl: string;
   private readonly providerName: string;
+  private readonly request: JsonRequester;
   private readonly timeoutMs: number;
 
   constructor(options: OpenAiChatClientOptions) {
     this.apiKey = options.apiKey.trim();
     this.baseUrl = options.baseUrl.replace(/\/+$/u, '');
     this.providerName = options.providerName;
+    this.request = options.requestJson ?? fetchJson;
     this.timeoutMs = options.timeoutMs ?? CLEANUP_TIMEOUT_MS;
   }
 
@@ -79,7 +82,7 @@ export class OpenAiChatClient {
       headers.authorization = `Bearer ${this.apiKey}`;
     }
 
-    return fetchJson(
+    return this.request(
       `${this.baseUrl}${path}`,
       { ...init, headers },
       {
