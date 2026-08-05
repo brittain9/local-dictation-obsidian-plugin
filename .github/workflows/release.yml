@@ -400,16 +400,12 @@ jobs:
         run: gh release edit "$TAG" --draft=false --repo "$GITHUB_REPOSITORY"
 
   # At-a-glance timing analytics for the run: who took how long, and which steps
-  # dominated. Renders to the run's job summary and a release-report.md artifact
-  # from the jobs REST API (no per-job instrumentation). Peer of publish — it
-  # does NOT gate the release — and runs even on failure, since a slow/failed run
-  # is exactly when the breakdown is wanted. See #143.
+  # dominated. It runs after publish so the measured wall clock includes the
+  # actual publication path, but it does not gate publication. It also runs
+  # after a failed publish so slow/failed runs still leave useful evidence.
   release-report:
     needs:
-      - metadata
-      - plugin-bundle
-      - build-sidecar-posix
-      - build-sidecar-windows
+      - publish
     if: always()
     permissions:
       actions: read
@@ -419,14 +415,19 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
 
+      - id: build-config
+        name: Resolve release build configuration
+        uses: ./.github/actions/resolve-release-build-config
+
       - name: Setup Node.js + npm
         uses: ./.github/actions/setup-node-npm
         with:
-          node-version: ${{ needs.metadata.outputs.node_version }}
+          node-version: ${{ steps.build-config.outputs.node-version }}
 
       - name: Render release timing report
         env:
           GH_TOKEN: ${{ github.token }}
+          TARGET_RELEASE_SECONDS: '1500'
         run: node scripts/release-timing-report.mjs
 
       - name: Upload release timing report
