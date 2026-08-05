@@ -1,12 +1,9 @@
 import type { EditorView } from '@codemirror/view';
 import type { App, TFile } from 'obsidian';
 
+import { type ClipboardProvider, tryWriteClipboardText } from '../shared/clipboard';
 import { t } from '../shared/i18n';
 import type { UserFeedback } from '../shared/user-feedback';
-
-interface ClipboardWriter {
-  writeText(text: string): Promise<void>;
-}
 
 interface MarkdownLeafLike {
   view?: {
@@ -28,7 +25,7 @@ export interface RawTranscriptRecoveryReceipt {
 
 interface RawTranscriptRecoveryDependencies {
   feedback: Pick<UserFeedback, 'show'>;
-  getClipboard: () => ClipboardWriter | null | undefined;
+  getClipboard: ClipboardProvider;
   workspace: Pick<App['workspace'], 'getLeavesOfType'>;
 }
 
@@ -83,15 +80,7 @@ export class RawTranscriptRecovery {
       return false;
     }
 
-    try {
-      const clipboard = this.dependencies.getClipboard();
-      if (clipboard === null || clipboard === undefined) {
-        throw new Error('Clipboard API unavailable.');
-      }
-      await clipboard.writeText(receipt.rawText);
-    } catch {
-      // Do not attach the clipboard error as feedback cause: a hostile or buggy
-      // implementation could echo the private text it was asked to copy.
+    if (!(await tryWriteClipboardText(this.dependencies.getClipboard, receipt.rawText))) {
       this.dependencies.feedback.show({
         intent: 'error',
         key: 'raw-transcript-copy-failed',

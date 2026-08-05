@@ -6,6 +6,7 @@ import { AudioCaptureStream } from './audio/audio-capture-stream';
 import { SidecarAudioLevelMeter } from './audio/sidecar-audio-level-meter';
 import { registerCommands } from './commands/register-commands';
 import { DictationSessionController } from './dictation/dictation-session-controller';
+import { FinalizedUtteranceAutoCopy } from './dictation/finalized-utterance-auto-copy';
 import { LastUtteranceRecovery } from './dictation/last-utterance-recovery';
 import { dictationAnchorExtension } from './editor/dictation-anchor-extension';
 import { noteSurfaceUpdateListenerExtension } from './editor/note-surface';
@@ -96,6 +97,11 @@ export default class LocalSttPlugin extends Plugin {
   private readonly feedback: UserFeedback = createUserFeedback({
     logger: this.logger,
     presenter: createObsidianFeedbackPresenter(),
+  });
+  private readonly finalizedUtteranceAutoCopy = new FinalizedUtteranceAutoCopy({
+    feedback: this.feedback,
+    getClipboard: () => window.navigator.clipboard,
+    getSettings: () => this.settings,
   });
   private llmCleanupFailure: LlmCleanupFailure | null = null;
   private readonly lastUtteranceRecovery = new LastUtteranceRecovery(this.feedback);
@@ -252,6 +258,7 @@ export default class LocalSttPlugin extends Plugin {
       },
       onFinalizedUtteranceAccepted: (text) => {
         this.lastUtteranceRecovery.recordFinalizedUtterance(text);
+        void this.finalizedUtteranceAutoCopy.copyAcceptedUtterance(text);
       },
       onRawTranscriptRecoveryAvailable: (receipt) => {
         this.rawTranscriptRecovery.record(receipt);
@@ -547,6 +554,7 @@ export default class LocalSttPlugin extends Plugin {
   }
 
   private async disposeAll(): Promise<void> {
+    this.finalizedUtteranceAutoCopy.dispose();
     this.lastUtteranceRecovery.clear();
     this.rawTranscriptRecovery.clear();
     this.releaseReadAloudModelSubscription?.();

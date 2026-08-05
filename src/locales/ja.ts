@@ -126,7 +126,6 @@ export const ja = {
   'settings.groups.model': 'モデル',
   'settings.groups.capture': '録音',
   'settings.groups.transcriptOutput': 'トランスクリプト出力',
-  'settings.groups.timestamps': 'タイムスタンプ',
   'settings.groups.llmTransformation': 'LLM変換',
   'settings.groups.engine': 'エンジン',
   'settings.groups.advanced': '詳細設定',

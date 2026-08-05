@@ -44,6 +44,7 @@ describe('registerCommands', () => {
 
     expect(reinsertCommand?.name).toBe('Reinsert last utterance');
     expect(clearCommand?.name).toBe('Clear last utterance');
+    expect(commands.some(({ id }) => id === 'copy-last-utterance')).toBe(false);
     expect(reinsertCommand?.editorCheckCallback?.(true, editor, {} as never)).toBe(false);
     expect(clearCommand?.checkCallback?.(true)).toBe(false);
     expect(reinsertLastUtterance).not.toHaveBeenCalled();

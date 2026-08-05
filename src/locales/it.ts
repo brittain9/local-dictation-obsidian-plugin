@@ -129,7 +129,6 @@ export const it = {
   'settings.groups.model': 'Modelli',
   'settings.groups.capture': 'Acquisizione',
   'settings.groups.transcriptOutput': 'Output della trascrizione',
-  'settings.groups.timestamps': 'Timestamp',
   'settings.groups.llmTransformation': 'Trasformazione LLM',
   'settings.groups.engine': 'Motore',
   'settings.groups.advanced': 'Avanzate',

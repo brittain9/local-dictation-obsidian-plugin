@@ -109,6 +109,17 @@ const SPEAKING_STYLE_OPTIONS: ReadonlyArray<DropdownOption<SpeakingStyle>> = [
   { label: t('settings.phraseFinalization.patientOption'), value: 'patient' },
 ];
 
+export function renderAutomaticCopyFinalizedUtterancesSetting(
+  parent: HTMLElement,
+  access: SettingAccess,
+): Setting {
+  return addToggleSetting(parent, access, {
+    name: t('settings.autoCopyFinalizedUtterances.name'),
+    desc: t('settings.autoCopyFinalizedUtterances.desc'),
+    key: 'autoCopyFinalizedUtterances',
+  });
+}
+
 export class LocalSttSettingTab extends PluginSettingTab {
   override readonly icon = 'audio-lines';
 
@@ -309,6 +320,8 @@ export class LocalSttSettingTab extends PluginSettingTab {
       isValid: isDictationAnchor,
     });
 
+    renderAutomaticCopyFinalizedUtterancesSetting(outputCard, this.access);
+
     this.renderTranscriptFormattingSetting(outputCard);
 
     const diarizationSetting = addToggleSetting(outputCard, this.access, {
@@ -341,8 +354,7 @@ export class LocalSttSettingTab extends PluginSettingTab {
       button.extraSettingsEl.setAttribute('aria-label', t('settings.speakerLabels.modal.title'));
     });
 
-    const timestampsCard = createSettingGroup(containerEl, t('settings.groups.timestamps'));
-    this.renderTimestampSettings(timestampsCard, settings);
+    this.renderTimestampSettings(outputCard, settings);
 
     // --- Read aloud ---
     const readAloudSection = createSettingGroup(containerEl, t('settings.groups.readAloud'));

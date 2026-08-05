@@ -2,6 +2,8 @@ export const en = {
   'notice.dictationNotActive': 'Dictation is not currently active.',
   'notice.dictationStartFailed': 'Could not start dictation.',
   'notice.dictationStopFailed': 'Could not stop dictation.',
+  'notice.finalizedUtteranceAutoCopyFailed':
+    'Could not automatically copy the finalized utterance.',
   'notice.lastUtteranceCleared': 'Cleared the last retained utterance.',
   'notice.lastUtteranceReinsertFailed': 'Could not reinsert the last finalized utterance.',
   'notice.lastUtteranceReinserted': 'Reinserted the last finalized utterance.',
@@ -171,7 +173,6 @@ export const en = {
   'settings.groups.translation': 'Translation',
   'settings.groups.capture': 'Capture',
   'settings.groups.transcriptOutput': 'Transcript output',
-  'settings.groups.timestamps': 'Timestamps',
   'settings.groups.llmTransformation': 'LLM transformation',
   'settings.groups.engine': 'Engine',
   'settings.groups.advanced': 'Advanced',
@@ -236,6 +237,9 @@ export const en = {
   'settings.listeningMode.oneSentence': 'One sentence',
   'settings.listeningMode.name': 'Listening mode',
   'settings.listeningMode.desc': 'Continuous, or stop after one sentence.',
+  'settings.autoCopyFinalizedUtterances.name': 'Automatically copy finalized utterances',
+  'settings.autoCopyFinalizedUtterances.desc':
+    'Each finalized phrase replaces the system clipboard.',
   'settings.insertText.atCursor': 'At cursor',
   'settings.insertText.endOfNote': 'End of note',
   'settings.insertText.name': 'Insert text',
