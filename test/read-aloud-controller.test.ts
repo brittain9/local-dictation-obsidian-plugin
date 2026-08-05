@@ -4,6 +4,10 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ModelCatalogRecord } from '../src/models/model-management-types';
 import { DEFAULT_PLUGIN_SETTINGS } from '../src/settings/plugin-settings';
 import type { StartSynthesisCommand } from '../src/sidecar/protocol';
+import {
+  SidecarLifecycleConflictError,
+  SidecarLifecycleGate,
+} from '../src/sidecar/sidecar-lifecycle-gate';
 
 const playback = vi.hoisted(() => ({
   enqueue: vi.fn(),
@@ -84,26 +88,37 @@ type StartSynthesisMock = ReturnType<
 >;
 
 function controllerHarness(options: {
+  catalog?: ModelCatalogRecord;
   dictationLanguage?: 'auto' | 'en';
+  onModelMissing?: () => Promise<void> | void;
   selected: boolean;
+  selectedVoice?: string | null;
+  sidecarLifecycleGate?: SidecarLifecycleGate;
   startSynthesis?: StartSynthesisMock;
 }) {
   const feedback = { show: vi.fn() };
   const stopDictation = vi.fn(async (): Promise<void> => undefined);
   const cancelSynthesis = vi.fn();
+  const onModelMissing = options.onModelMissing ?? vi.fn();
   const startSynthesis =
     options.startSynthesis ??
     vi.fn(async (_payload: Omit<StartSynthesisCommand, 'type'>) => undefined);
   const controller = new ReadAloudController({
     feedback,
-    getCatalog: () => TTS_CATALOG,
+    getCatalog: () => options.catalog ?? TTS_CATALOG,
     getSettings: () => ({
       ...DEFAULT_PLUGIN_SETTINGS,
       dictationLanguage: options.dictationLanguage ?? DEFAULT_PLUGIN_SETTINGS.dictationLanguage,
       selectedTtsModel: options.selected ? TTS_SELECTION : null,
-      selectedTtsVoice: options.selected ? 'alba' : null,
+      selectedTtsVoice:
+        options.selectedVoice === undefined
+          ? options.selected
+            ? 'alba'
+            : null
+          : options.selectedVoice,
     }),
     isDictationBusy: () => true,
+    onModelMissing,
     onStateChange: vi.fn(),
     sidecarConnection: {
       cancelSynthesis,
@@ -112,9 +127,17 @@ function controllerHarness(options: {
       subscribe: vi.fn(() => vi.fn()),
       subscribeSynthesisAudio: vi.fn(() => vi.fn()),
     },
+    sidecarLifecycleGate: options.sidecarLifecycleGate ?? new SidecarLifecycleGate(),
     stopDictation,
   });
-  return { cancelSynthesis, controller, feedback, startSynthesis, stopDictation };
+  return {
+    cancelSynthesis,
+    controller,
+    feedback,
+    onModelMissing,
+    startSynthesis,
+    stopDictation,
+  };
 }
 
 beforeEach(() => {
@@ -141,6 +164,68 @@ describe('resolveReadRange', () => {
 });
 
 describe('ReadAloudController', () => {
+  it('refuses a start synchronously while sidecar maintenance is active', async () => {
+    const sidecarLifecycleGate = new SidecarLifecycleGate();
+    const mutation = sidecarLifecycleGate.acquireMutation();
+    const harness = controllerHarness({ selected: true, sidecarLifecycleGate });
+
+    await harness.controller.read(editorFor('Speak this.', { ch: 0, line: 0 }));
+
+    expect(harness.stopDictation).not.toHaveBeenCalled();
+    expect(harness.startSynthesis).not.toHaveBeenCalled();
+    expect(harness.feedback.show).toHaveBeenCalledWith({
+      intent: 'warning',
+      key: 'sidecar-maintenance',
+      message:
+        'The speech engine is being installed or restarted. Wait for it to finish, then try again.',
+    });
+    mutation.release();
+  });
+
+  it('holds its speech lease until a stopped asynchronous start has unwound', async () => {
+    const sidecarLifecycleGate = new SidecarLifecycleGate();
+    let completeStart: (() => void) | undefined;
+    const startSynthesis = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          completeStart = resolve;
+        }),
+    );
+    const harness = controllerHarness({
+      selected: true,
+      sidecarLifecycleGate,
+      startSynthesis,
+    });
+
+    const reading = harness.controller.read(editorFor('Speak this.', { ch: 0, line: 0 }));
+    await vi.waitFor(() => expect(startSynthesis).toHaveBeenCalledOnce());
+    expect(() => sidecarLifecycleGate.acquireMutation()).toThrow(SidecarLifecycleConflictError);
+
+    harness.controller.stop();
+    harness.controller.stop();
+    expect(() => sidecarLifecycleGate.acquireMutation()).toThrow(SidecarLifecycleConflictError);
+
+    completeStart?.();
+    await reading;
+    const mutation = sidecarLifecycleGate.acquireMutation();
+    mutation.release();
+  });
+
+  it('releases an active speech lease exactly once across repeated cleanup', async () => {
+    const sidecarLifecycleGate = new SidecarLifecycleGate();
+    const harness = controllerHarness({ selected: true, sidecarLifecycleGate });
+
+    await harness.controller.read(editorFor('Speak this.', { ch: 0, line: 0 }));
+    expect(() => sidecarLifecycleGate.acquireMutation()).toThrow(SidecarLifecycleConflictError);
+
+    harness.controller.stop();
+    harness.controller.dispose();
+    harness.controller.stop();
+
+    const mutation = sidecarLifecycleGate.acquireMutation();
+    mutation.release();
+  });
+
   it('restarts settings changes from the current sentence', async () => {
     const harness = controllerHarness({ selected: true });
     const editor = editorFor('First sentence. Second sentence. Third sentence.', {
@@ -170,17 +255,157 @@ describe('ReadAloudController', () => {
     );
   });
 
-  it('validates TTS configuration before stopping dictation', async () => {
-    const harness = controllerHarness({ selected: false });
+  it.each([
+    ['no selection', false, TTS_CATALOG],
+    [
+      'a selection missing from the catalog',
+      true,
+      { ...TTS_CATALOG, models: [] } as ModelCatalogRecord,
+    ],
+  ])('offers the same model setup action for %s', async (_scenario, selected, catalog) => {
+    const harness = controllerHarness({ catalog, selected });
 
     await harness.controller.read(editorFor('Speak this.', { ch: 0, line: 0 }));
 
     expect(harness.stopDictation).not.toHaveBeenCalled();
     expect(harness.startSynthesis).not.toHaveBeenCalled();
-    expect(harness.feedback.show).toHaveBeenCalledOnce();
+    expect(harness.onModelMissing).not.toHaveBeenCalled();
+    expect(harness.feedback.show).toHaveBeenCalledWith({
+      action: {
+        label: 'Choose model',
+        run: expect.any(Function),
+      },
+      intent: 'action-required',
+      key: 'read-aloud-model-required',
+      message: 'Install and select a read-aloud model first.',
+    });
+  });
+
+  it('opens model setup only when the user invokes the feedback action', async () => {
+    const harness = controllerHarness({ selected: false });
+
+    await harness.controller.read(editorFor('Speak this.', { ch: 0, line: 0 }));
+
+    expect(harness.onModelMissing).not.toHaveBeenCalled();
+    const request = harness.feedback.show.mock.calls[0]?.[0];
+    if (request?.action === undefined) throw new Error('model setup action was not offered');
+
+    request.action.run();
+
+    await vi.waitFor(() => expect(harness.onModelMissing).toHaveBeenCalledOnce());
+  });
+
+  it('restores the model setup action when opening recovery fails', async () => {
+    const onModelMissing = vi.fn(async () => {
+      throw new Error('model picker failed');
+    });
+    const harness = controllerHarness({ onModelMissing, selected: false });
+
+    await harness.controller.read(editorFor('Speak this.', { ch: 0, line: 0 }));
+    const request = harness.feedback.show.mock.calls[0]?.[0];
+    if (request?.action === undefined) throw new Error('model setup action was not offered');
+    request.action.run();
+
+    await vi.waitFor(() => expect(harness.feedback.show).toHaveBeenCalledTimes(2));
+    expect(harness.feedback.show).toHaveBeenLastCalledWith({
+      action: {
+        label: 'Choose model',
+        run: expect.any(Function),
+      },
+      cause: expect.any(Error),
+      intent: 'action-required',
+      key: 'read-aloud-model-required',
+      message: 'Install and select a read-aloud model first.',
+    });
+  });
+
+  it('restores the model setup action when recovery throws synchronously', async () => {
+    const onModelMissing = vi.fn(() => {
+      throw new Error('model picker threw');
+    });
+    const harness = controllerHarness({ onModelMissing, selected: false });
+
+    await harness.controller.read(editorFor('Speak this.', { ch: 0, line: 0 }));
+    const request = harness.feedback.show.mock.calls[0]?.[0];
+    if (request?.action === undefined) throw new Error('model setup action was not offered');
+    request.action.run();
+
+    await vi.waitFor(() => expect(harness.feedback.show).toHaveBeenCalledTimes(2));
+    expect(harness.feedback.show).toHaveBeenLastCalledWith({
+      action: {
+        label: 'Choose model',
+        run: expect.any(Function),
+      },
+      cause: expect.any(Error),
+      intent: 'action-required',
+      key: 'read-aloud-model-required',
+      message: 'Install and select a read-aloud model first.',
+    });
+  });
+
+  it('uses the stable model-required key across repeated invocations', async () => {
+    const harness = controllerHarness({ selected: false });
+    const editor = editorFor('Speak this.', { ch: 0, line: 0 });
+
+    await harness.controller.read(editor);
+    await harness.controller.read(editor);
+
+    expect(harness.feedback.show).toHaveBeenCalledTimes(2);
+    expect(harness.feedback.show.mock.calls.map(([request]) => request.key)).toEqual([
+      'read-aloud-model-required',
+      'read-aloud-model-required',
+    ]);
+    expect(harness.onModelMissing).not.toHaveBeenCalled();
+  });
+
+  it('prioritizes no-text feedback without offering model setup', async () => {
+    const harness = controllerHarness({ selected: false });
+
+    await harness.controller.read(editorFor('   ', { ch: 0, line: 0 }));
+
+    expect(harness.feedback.show).toHaveBeenCalledWith({
+      intent: 'warning',
+      message: 'There is no speakable text here.',
+    });
+    expect(harness.onModelMissing).not.toHaveBeenCalled();
+    expect(harness.stopDictation).not.toHaveBeenCalled();
+    expect(harness.startSynthesis).not.toHaveBeenCalled();
+  });
+
+  it('keeps missing-voice feedback distinct from model setup', async () => {
+    const harness = controllerHarness({
+      catalog: {
+        ...TTS_CATALOG,
+        models: TTS_CATALOG.models.map(({ defaultVoice: _defaultVoice, ...model }) => model),
+      },
+      selected: true,
+      selectedVoice: null,
+    });
+
+    await harness.controller.read(editorFor('Speak this.', { ch: 0, line: 0 }));
+
+    expect(harness.feedback.show).toHaveBeenCalledWith({
+      intent: 'warning',
+      message: 'Select an installed voice first.',
+    });
+    expect(harness.onModelMissing).not.toHaveBeenCalled();
+    expect(harness.stopDictation).not.toHaveBeenCalled();
+    expect(harness.startSynthesis).not.toHaveBeenCalled();
+  });
+
+  it('keeps the configured synthesis path free of setup feedback', async () => {
+    const harness = controllerHarness({ selected: true });
+
+    await harness.controller.read(editorFor('Speak this.', { ch: 0, line: 0 }));
+
+    expect(harness.stopDictation).toHaveBeenCalledOnce();
+    expect(harness.startSynthesis).toHaveBeenCalledOnce();
+    expect(harness.onModelMissing).not.toHaveBeenCalled();
+    expect(harness.feedback.show).not.toHaveBeenCalled();
   });
 
   it('does not let a stale start failure clear a newer reading', async () => {
+    const sidecarLifecycleGate = new SidecarLifecycleGate();
     const firstStart: { reject?: (error: unknown) => void } = {};
     const firstStartPromise = new Promise<void>((_resolve, reject) => {
       firstStart.reject = reject;
@@ -189,7 +414,11 @@ describe('ReadAloudController', () => {
       .fn<(payload: Omit<StartSynthesisCommand, 'type'>) => Promise<void>>()
       .mockReturnValueOnce(firstStartPromise)
       .mockResolvedValueOnce(undefined);
-    const harness = controllerHarness({ selected: true, startSynthesis });
+    const harness = controllerHarness({
+      selected: true,
+      sidecarLifecycleGate,
+      startSynthesis,
+    });
     const editor = editorFor('Speak this sentence.', { ch: 0, line: 0 });
 
     const first = harness.controller.read(editor);
@@ -201,6 +430,11 @@ describe('ReadAloudController', () => {
 
     expect(harness.controller.getState()).toBe('reading');
     expect(harness.feedback.show).not.toHaveBeenCalled();
+    expect(() => sidecarLifecycleGate.acquireMutation()).toThrow(SidecarLifecycleConflictError);
+
+    harness.controller.stop();
+    const mutation = sidecarLifecycleGate.acquireMutation();
+    mutation.release();
   });
 
   it('does not start after Stop cancels a read waiting for dictation to drain', async () => {

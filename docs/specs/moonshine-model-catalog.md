@@ -30,10 +30,9 @@ real bug fix:
 - The adapter resolves the six sibling files from the primary graph's
   directory (`REQUIRED_SIBLINGS`, `native/src/adapters/moonshine.rs:22-38`),
   which is exactly the layout a managed install produces.
-- `engine-moonshine` is already compiled into **every** shipped sidecar:
-  `scripts/build-sidecar.mjs:6-9` (all desktop builds) and the CUDA builds
-  via the `gpu-ort-cuda` transitive feature (`native/Cargo.toml:39`).
-  Packaging needs verification, not work.
+- `engine-moonshine` is already compiled into **every** shipped sidecar.
+  Moonshine uses CPU ONNX Runtime in both CPU and CUDA variants; the CUDA
+  variant's acceleration applies only to Whisper.
 - Catalog validation (`native/src/catalog.rs:122-247`) enforces unique ids,
   hex sha256, https URLs, safe relative filenames, and ≥1 required
   `transcription_model` artifact; the `bundled_catalog_is_valid` test will

@@ -25,6 +25,7 @@ describe('model settings section ownership', () => {
       catalog: { catalogVersion: 1, collections: [], families: [], models: [] },
       compiledAdapters: [],
       compiledRuntimes: [],
+      failedInstall: null,
       installedModels: [],
       loadError: null,
       loadStatus: 'ready',

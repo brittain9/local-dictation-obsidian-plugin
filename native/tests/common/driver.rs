@@ -13,10 +13,10 @@
 //! context, request a stop, and gather every `transcript_ready` until the
 //! session stops.
 
-use std::io::{Read, Write};
+use std::io::{BufRead, Read, Write};
 use std::path::Path;
 use std::process::{Child, Command as ProcessCommand, Stdio};
-use std::sync::mpsc;
+use std::sync::{Arc, Mutex, mpsc};
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -403,12 +403,21 @@ fn run_via_process(
     let mut child = ProcessCommand::new(bin)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
-        .stderr(Stdio::inherit())
+        .stderr(Stdio::piped())
         .spawn()
         .unwrap_or_else(|error| panic!("failed to spawn sidecar {bin}: {error}"));
 
     let mut stdin = child.stdin.take().expect("piped stdin");
     let stdout = child.stdout.take().expect("piped stdout");
+    let stderr = child.stderr.take().expect("piped stderr");
+
+    // Captured rather than inherited so that a child that dies before reading a
+    // single frame can still explain itself in the failure message.
+    let captured_stderr = CapturedStderr::default();
+    let stderr_collector = {
+        let captured = captured_stderr.clone();
+        thread::spawn(move || collect_stderr(stderr, captured))
+    };
 
     // Reader thread: continuously parse event frames so the child never blocks
     // writing to a full stdout pipe while we are still feeding it input.
@@ -423,34 +432,76 @@ fn run_via_process(
     });
 
     let model_selection = whisper_selection(model_path);
-    write_command_frame(
-        &mut stdin,
-        &start_session_json(&session_id, &model_selection, style, diarization_enabled),
-    );
-    for frame in frames {
-        write_audio_frame(&mut stdin, &session_id, frame);
-    }
-    write_command_frame(
-        &mut stdin,
-        &serde_json::json!({ "type": "stop_session", "sessionId": session_id }),
-    );
-    stdin.flush().ok();
-
+    // Every write is a place the child may already be dead, and a dead child
+    // shows up here only as `BrokenPipe`. Feeding stops at the first such error
+    // so the run ends on the child's own diagnosis rather than on a cascade of
+    // broken-pipe panics from the frames that follow.
     let mut outcome = TranscriptionOutcome::default();
-    let deadline = Instant::now() + DRIVE_TIMEOUT;
-    while !outcome.stopped && Instant::now() < deadline {
-        match event_rx.recv_timeout(POLL_INTERVAL) {
-            Ok(event) => apply_json_event(&mut stdin, &event, &mut outcome),
-            Err(mpsc::RecvTimeoutError::Timeout) => continue,
-            Err(mpsc::RecvTimeoutError::Disconnected) => break,
+    let mut send_failure = None;
+
+    let start = start_session_json(&session_id, &model_selection, style, diarization_enabled);
+    if let Err(error) = write_command_frame(&mut stdin, &start) {
+        send_failure = Some(format!("start_session: {error}"));
+    }
+    if send_failure.is_none() {
+        for (index, frame) in frames.iter().enumerate() {
+            if let Err(error) = write_audio_frame(&mut stdin, &session_id, frame) {
+                send_failure = Some(format!("audio frame {index}: {error}"));
+                break;
+            }
+        }
+    }
+    if send_failure.is_none()
+        && let Err(error) = write_command_frame(
+            &mut stdin,
+            &serde_json::json!({ "type": "stop_session", "sessionId": session_id }),
+        )
+    {
+        send_failure = Some(format!("stop_session: {error}"));
+    }
+    if send_failure.is_none()
+        && let Err(error) = stdin.flush()
+    {
+        send_failure = Some(format!("flush: {error}"));
+    }
+
+    if send_failure.is_none() {
+        let deadline = Instant::now() + DRIVE_TIMEOUT;
+        while !outcome.stopped && Instant::now() < deadline {
+            match event_rx.recv_timeout(POLL_INTERVAL) {
+                Ok(event) => apply_json_event(&mut stdin, &event, &mut outcome),
+                Err(mpsc::RecvTimeoutError::Timeout) => continue,
+                Err(mpsc::RecvTimeoutError::Disconnected) => break,
+            }
         }
     }
 
-    write_command_frame(&mut stdin, &serde_json::json!({ "type": "shutdown" }));
+    let _ = write_command_frame(&mut stdin, &serde_json::json!({ "type": "shutdown" }));
     stdin.flush().ok();
     drop(stdin);
     let _ = reader.join();
-    let _ = wait_with_timeout(&mut child, Duration::from_secs(10));
+    let fate = reap(&mut child, Duration::from_secs(10));
+    let _ = stderr_collector.join();
+
+    // Report the child's fate through the outcome rather than a panic, so
+    // scoring stays the single judge of a run while still explaining *why* a
+    // transcript came back empty. `describe_exit` names the signal, which is
+    // the only trace a native crash leaves.
+    if send_failure.is_some() || (!fate.is_clean_exit() && !outcome.stopped) {
+        let fate = fate.describe();
+        let stderr = captured_stderr.snapshot();
+        let stderr = if stderr.trim().is_empty() {
+            "<child printed nothing to stderr>".to_string()
+        } else {
+            stderr
+        };
+        let while_sending = send_failure
+            .map(|failure| format!(" while sending {failure}"))
+            .unwrap_or_default();
+        outcome.errors.push(format!(
+            "sidecar {fate}{while_sending}\n--- child stderr ---\n{stderr}--- end child stderr ---"
+        ));
+    }
 
     outcome
 }
@@ -463,7 +514,10 @@ fn apply_json_event(
     match event.get("type").and_then(serde_json::Value::as_str) {
         Some("context_request") => {
             if let Some(correlation_id) = event.get("correlationId").and_then(|v| v.as_str()) {
-                write_command_frame(
+                // A write failure here means the child is gone; the drive loop
+                // ends on the resulting stdout disconnect and the caller reports
+                // the child's fate.
+                let _ = write_command_frame(
                     stdin,
                     &serde_json::json!({
                         "type": "context_response",
@@ -562,24 +616,31 @@ fn speaking_style_wire(style: SpeakingStyle) -> &'static str {
     }
 }
 
-fn write_frame(writer: &mut impl Write, kind: u8, payload: &[u8]) {
+fn write_frame(writer: &mut impl Write, kind: u8, payload: &[u8]) -> std::io::Result<()> {
     let len = u32::try_from(payload.len()).expect("frame payload fits in u32");
     let mut header = [0_u8; FRAME_HEADER_LEN];
     header[0] = kind;
     header[1..].copy_from_slice(&len.to_le_bytes());
-    writer.write_all(&header).expect("write frame header");
-    writer.write_all(payload).expect("write frame payload");
+    writer.write_all(&header)?;
+    writer.write_all(payload)
 }
 
-pub fn write_command_frame(writer: &mut impl Write, command: &serde_json::Value) {
+pub fn write_command_frame(
+    writer: &mut impl Write,
+    command: &serde_json::Value,
+) -> std::io::Result<()> {
     let payload = serde_json::to_vec(command).expect("serialize command");
-    write_frame(writer, JSON_FRAME_KIND, &payload);
+    write_frame(writer, JSON_FRAME_KIND, &payload)
 }
 
-fn write_audio_frame(writer: &mut impl Write, session_id: &str, frame_bytes: &[u8]) {
+fn write_audio_frame(
+    writer: &mut impl Write,
+    session_id: &str,
+    frame_bytes: &[u8],
+) -> std::io::Result<()> {
     let envelope =
         encode_audio_frame_envelope(session_id, frame_bytes).expect("audio frame should encode");
-    write_frame(writer, AUDIO_FRAME_KIND, &envelope);
+    write_frame(writer, AUDIO_FRAME_KIND, &envelope)
 }
 
 pub fn read_event_frame(reader: &mut impl Read) -> Option<serde_json::Value> {
@@ -606,6 +667,109 @@ fn read_exact_or_eof(reader: &mut impl Read, buffer: &mut [u8]) -> Option<()> {
         }
     }
     Some(())
+}
+
+/// Everything the child wrote to stderr, shared between the collector thread
+/// and the driver so a failure report can quote it.
+#[derive(Clone, Default)]
+struct CapturedStderr(Arc<Mutex<String>>);
+
+impl CapturedStderr {
+    fn snapshot(&self) -> String {
+        self.0.lock().map(|text| text.clone()).unwrap_or_default()
+    }
+}
+
+/// Reads the child's stderr to completion, echoing each line so `--nocapture`
+/// still shows it live while also retaining it for a failure report.
+fn collect_stderr(stderr: std::process::ChildStderr, captured: CapturedStderr) {
+    let reader = std::io::BufReader::new(stderr);
+    for line in reader.lines().map_while(Result::ok) {
+        eprintln!("[sidecar stderr] {line}");
+        if let Ok(mut text) = captured.0.lock() {
+            text.push_str(&line);
+            text.push('\n');
+        }
+    }
+}
+
+/// Why the spawned sidecar is no longer running.
+enum ChildFate {
+    Exited(std::process::ExitStatus),
+    /// Still alive at the deadline, so the parent killed it. Distinguished from
+    /// `Exited` because the resulting status is the parent's own SIGKILL and
+    /// says nothing about the child.
+    Hung,
+    Unreapable(std::io::Error),
+}
+
+impl ChildFate {
+    fn is_clean_exit(&self) -> bool {
+        matches!(self, Self::Exited(status) if status.success())
+    }
+
+    fn describe(&self) -> String {
+        match self {
+            Self::Exited(status) => describe_exit(*status),
+            Self::Hung => {
+                "was still running at the shutdown deadline (parent killed it)".to_string()
+            }
+            Self::Unreapable(error) => format!("could not be reaped: {error}"),
+        }
+    }
+}
+
+fn reap(child: &mut Child, timeout: Duration) -> ChildFate {
+    let deadline = Instant::now() + timeout;
+    loop {
+        match child.try_wait() {
+            Ok(Some(status)) => return ChildFate::Exited(status),
+            Ok(None) if Instant::now() >= deadline => {
+                let _ = child.kill();
+                let _ = child.wait();
+                return ChildFate::Hung;
+            }
+            Ok(None) => thread::sleep(Duration::from_millis(20)),
+            Err(error) => return ChildFate::Unreapable(error),
+        }
+    }
+}
+
+/// Spells out how a process ended.
+///
+/// A dead child surfaces in the parent only as `BrokenPipe` on the next write,
+/// which says nothing about *why* it died. On Unix a native crash (SIGSEGV,
+/// SIGABRT) leaves no exit code at all — only a signal, which `ExitStatus`'s
+/// own `Display` renders opaquely — so the signal is named here.
+fn describe_exit(status: std::process::ExitStatus) -> String {
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::ExitStatusExt;
+        if let Some(signal) = status.signal() {
+            let name = match signal {
+                2 => "SIGINT",
+                4 => "SIGILL",
+                6 => "SIGABRT",
+                7 => "SIGBUS",
+                8 => "SIGFPE",
+                9 => "SIGKILL",
+                11 => "SIGSEGV",
+                13 => "SIGPIPE",
+                15 => "SIGTERM",
+                _ => "unknown signal",
+            };
+            let core = if status.core_dumped() {
+                " (core dumped)"
+            } else {
+                ""
+            };
+            return format!("was killed by signal {signal} {name}{core}");
+        }
+    }
+    match status.code() {
+        Some(code) => format!("exited with code {code}"),
+        None => format!("ended with status {status}"),
+    }
 }
 
 pub fn wait_with_timeout(child: &mut Child, timeout: Duration) -> Option<std::process::ExitStatus> {

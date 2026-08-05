@@ -1,3 +1,5 @@
+import { requestUrl } from 'obsidian';
+
 import { formatErrorMessage } from '../shared/format-utils';
 import { ProviderError } from './provider';
 
@@ -5,16 +7,22 @@ export const CLEANUP_TIMEOUT_MS = 60_000;
 export const PROBE_TIMEOUT_MS = 3_000;
 export const MAX_RESPONSE_BYTES = 2 * 1024 * 1024;
 
-interface FetchJsonOptions {
+export interface JsonRequestOptions {
   abortSignal?: AbortSignal | undefined;
   maxBytes?: number;
   timeoutMs?: number;
 }
 
+export type JsonRequester = (
+  url: string,
+  init?: RequestInit,
+  options?: JsonRequestOptions,
+) => Promise<unknown>;
+
 export async function fetchJson(
   url: string,
   init: RequestInit = {},
-  options: FetchJsonOptions = {},
+  options: JsonRequestOptions = {},
 ): Promise<unknown> {
   const timeoutMs = options.timeoutMs ?? CLEANUP_TIMEOUT_MS;
   const maxBytes = options.maxBytes ?? MAX_RESPONSE_BYTES;
@@ -78,6 +86,92 @@ export async function fetchJson(
     window.clearTimeout(timeoutId);
     options.abortSignal?.removeEventListener('abort', abortFromCaller);
   }
+}
+
+// Obsidian's renderer fetch is subject to browser CORS, which many local
+// OpenAI-compatible servers (including LM Studio) do not enable. requestUrl is
+// the supported CORS-free transport. It cannot cancel its underlying request,
+// but the caller still receives timeout/abort failures promptly and ignores any
+// later response, matching the observable provider contract.
+export async function requestUrlJson(
+  url: string,
+  init: RequestInit = {},
+  options: JsonRequestOptions = {},
+): Promise<unknown> {
+  const timeoutMs = options.timeoutMs ?? CLEANUP_TIMEOUT_MS;
+  const maxBytes = options.maxBytes ?? MAX_RESPONSE_BYTES;
+  if (options.abortSignal?.aborted === true) {
+    throw new ProviderError('Provider request aborted.', 'aborted');
+  }
+
+  const headers: Record<string, string> = {};
+  new Headers(init.headers).forEach((value, key) => {
+    headers[key] = value;
+  });
+  const body = requestUrlBody(init.body);
+  let timeoutId: number | null = null;
+  let abortFromCaller: (() => void) | null = null;
+
+  const interruption = new Promise<never>((_resolve, reject) => {
+    timeoutId = window.setTimeout(() => {
+      reject(new ProviderError(`Provider request timed out after ${timeoutMs}ms.`, 'timeout'));
+    }, timeoutMs);
+    abortFromCaller = () => {
+      reject(new ProviderError('Provider request aborted.', 'aborted'));
+    };
+    options.abortSignal?.addEventListener('abort', abortFromCaller, { once: true });
+  });
+
+  try {
+    const response = await Promise.race([
+      requestUrl({
+        url,
+        ...(body === undefined ? {} : { body }),
+        headers,
+        method: init.method ?? 'GET',
+        throw: false,
+      }),
+      interruption,
+    ]);
+
+    if (response.arrayBuffer.byteLength > maxBytes) {
+      throw new ProviderError(`Provider response exceeded ${maxBytes} bytes.`, 'invalid_response');
+    }
+    if (response.status < 200 || response.status >= 300) {
+      throw new ProviderError(`Provider returned HTTP ${response.status}.`, 'http_error', {
+        responseText: response.text,
+        status: response.status,
+      });
+    }
+
+    try {
+      return JSON.parse(response.text);
+    } catch (error) {
+      throw new ProviderError(
+        `Provider returned malformed JSON: ${String(error)}`,
+        'invalid_response',
+      );
+    }
+  } catch (error) {
+    if (error instanceof ProviderError) {
+      throw error;
+    }
+    throw new ProviderError(
+      `Failed to reach provider: ${formatErrorMessage(error)}`,
+      'connection_failed',
+    );
+  } finally {
+    if (timeoutId !== null) window.clearTimeout(timeoutId);
+    if (abortFromCaller !== null) {
+      options.abortSignal?.removeEventListener('abort', abortFromCaller);
+    }
+  }
+}
+
+function requestUrlBody(body: BodyInit | null | undefined): string | ArrayBuffer | undefined {
+  if (body === undefined || body === null) return undefined;
+  if (typeof body === 'string' || body instanceof ArrayBuffer) return body;
+  throw new ProviderError('Provider request body type is unsupported.', 'connection_failed');
 }
 
 async function readResponseText(response: Response, maxBytes: number): Promise<string> {

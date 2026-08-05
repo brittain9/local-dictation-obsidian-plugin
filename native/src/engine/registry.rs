@@ -22,6 +22,13 @@ impl EngineRegistry {
         #[allow(unused_mut)]
         let mut registry = Self::default();
 
+        registry.register_runtime(Box::new(
+            crate::runtimes::bergamot_wasm::BergamotWasmRuntime::probe(),
+        ));
+        registry.register_adapter(Box::new(
+            crate::adapters::firefox_translations::FirefoxTranslationsAdapter,
+        ));
+
         #[cfg(feature = "engine-whisper")]
         {
             registry.register_runtime(Box::new(
@@ -261,6 +268,7 @@ mod tests {
     fn whisper_family_caps() -> ModelFamilyCapabilities {
         ModelFamilyCapabilities {
             task: ModelTask::Stt,
+            supports_hardware_acceleration: true,
             available_voices: Vec::new(),
             supports_speed_control: false,
             output_sample_rate: None,
@@ -393,6 +401,7 @@ mod tests {
     fn capabilities(supports_initial_prompt: bool) -> ModelFamilyCapabilities {
         ModelFamilyCapabilities {
             task: ModelTask::Stt,
+            supports_hardware_acceleration: true,
             available_voices: Vec::new(),
             supports_speed_control: false,
             output_sample_rate: None,

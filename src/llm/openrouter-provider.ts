@@ -1,6 +1,7 @@
 import { formatErrorMessage } from '../shared/format-utils';
 import { isRecord } from '../shared/type-guards';
-import { CLEANUP_TIMEOUT_MS, fetchJson, PROBE_TIMEOUT_MS } from './http-shared';
+import { CLEANUP_TIMEOUT_MS, PROBE_TIMEOUT_MS } from './http-shared';
+import { OpenAiChatClient } from './openai-chat-client';
 import type {
   CleanupOptions,
   LlmProvider,
@@ -22,12 +23,17 @@ export class OpenRouterProvider implements LlmProvider {
   readonly id = 'openrouter' as const;
   private readonly apiKey: string;
   private readonly baseUrl: string;
-  private readonly timeoutMs: number;
+  private readonly client: OpenAiChatClient;
 
   constructor(options: OpenRouterProviderOptions) {
     this.apiKey = options.apiKey.trim();
     this.baseUrl = options.baseUrl ?? OPENROUTER_API_BASE_URL;
-    this.timeoutMs = options.timeoutMs ?? CLEANUP_TIMEOUT_MS;
+    this.client = new OpenAiChatClient({
+      apiKey: this.apiKey,
+      baseUrl: this.baseUrl,
+      providerName: 'OpenRouter',
+      timeoutMs: options.timeoutMs ?? CLEANUP_TIMEOUT_MS,
+    });
   }
 
   async cleanup(options: CleanupOptions): Promise<string> {
@@ -36,31 +42,7 @@ export class OpenRouterProvider implements LlmProvider {
     }
 
     try {
-      const response = await fetchJson(
-        `${this.baseUrl}/chat/completions`,
-        {
-          body: JSON.stringify({
-            // OpenRouter's portable output-token cap is `max_tokens`; the newer
-            // `max_completion_tokens` isn't honored by every proxied provider.
-            max_tokens: options.maxOutputTokens,
-            messages: [
-              { content: options.prompt, role: 'system' },
-              { content: options.userMessage, role: 'user' },
-            ],
-            model: options.model,
-            stream: false,
-            temperature: options.temperature,
-          }),
-          headers: {
-            authorization: `Bearer ${this.apiKey}`,
-            'content-type': 'application/json',
-          },
-          method: 'POST',
-        },
-        { abortSignal: options.abortSignal, timeoutMs: this.timeoutMs },
-      );
-
-      return parseChatContent(response);
+      return await this.client.chatCompletion(options);
     } catch (error) {
       throw mapOpenRouterError(error);
     }
@@ -68,7 +50,8 @@ export class OpenRouterProvider implements LlmProvider {
 
   async listModels(): Promise<ModelOption[]> {
     try {
-      const response = await fetchJson(`${this.baseUrl}/models`, undefined, {
+      const response = await this.client.getJson('/models', {
+        includeAuthorization: false,
         timeoutMs: PROBE_TIMEOUT_MS,
       });
       return parseModels(response);
@@ -85,11 +68,7 @@ export class OpenRouterProvider implements LlmProvider {
     // The key check and model fetch are independent; run them in parallel so
     // the worst-case status latency is one probe timeout instead of two.
     const [keyResult, modelsResult] = await Promise.allSettled([
-      fetchJson(
-        `${this.baseUrl}/key`,
-        { headers: { authorization: `Bearer ${this.apiKey}` } },
-        { timeoutMs: PROBE_TIMEOUT_MS },
-      ),
+      this.client.getJson('/key', { timeoutMs: PROBE_TIMEOUT_MS }),
       this.listModels(),
     ]);
 
@@ -227,33 +206,6 @@ function toPerMillionUsd(raw: unknown): number | null {
     return null;
   }
   return perToken * 1_000_000;
-}
-
-function parseChatContent(response: unknown): string {
-  if (!isRecord(response) || !Array.isArray(response.choices)) {
-    throw new ProviderError('OpenRouter returned an invalid chat response.', 'invalid_response');
-  }
-
-  const choice: unknown = response.choices[0];
-  if (
-    !isRecord(choice) ||
-    !isRecord(choice.message) ||
-    typeof choice.message.content !== 'string'
-  ) {
-    throw new ProviderError('OpenRouter returned an invalid chat message.', 'invalid_response');
-  }
-  if (choice.finish_reason === 'length') {
-    throw new ProviderError(
-      'OpenRouter stopped because the transformed text exceeded the output limit.',
-      'invalid_response',
-    );
-  }
-
-  const content = choice.message.content.trim();
-  if (content.length === 0) {
-    throw new ProviderError('OpenRouter returned an empty chat message.', 'invalid_response');
-  }
-  return content;
 }
 
 function mapOpenRouterError(error: unknown): ProviderError {

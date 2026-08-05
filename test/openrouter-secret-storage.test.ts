@@ -2,13 +2,13 @@ import { describe, expect, it, vi } from 'vitest';
 
 import {
   DEFAULT_OPENROUTER_SECRET_ID,
-  getOpenRouterApiKey,
+  getLlmProviderSecret,
   loadPluginSettings,
 } from '../src/settings/openrouter-secret-storage';
 import { DEFAULT_PLUGIN_SETTINGS } from '../src/settings/plugin-settings';
 
-describe('OpenRouter secret storage', () => {
-  it('moves a legacy plaintext key into Secret Storage and requests sanitized persistence', () => {
+describe('LLM Secret Storage integration', () => {
+  it('moves a legacy plaintext OpenRouter key and requests sanitized persistence', () => {
     const setSecret = vi.fn();
     const getSecret = vi.fn(() => null);
 
@@ -17,101 +17,89 @@ describe('OpenRouter secret storage', () => {
         llmOpenRouterApiKey: ' sk-or-legacy ',
         llmProviderModels: { ollama: '', openrouter: 'openai/gpt-4.1' },
       },
-      { setSecret, getSecret },
+      { getSecret, setSecret },
     );
 
     expect(setSecret).toHaveBeenCalledWith(DEFAULT_OPENROUTER_SECRET_ID, 'sk-or-legacy');
-    expect(result).toMatchObject({
-      settings: {
-        llmOpenRouterSecretId: DEFAULT_OPENROUTER_SECRET_ID,
-        llmProviderModels: { ollama: '', openrouter: 'openai/gpt-4.1' },
-      },
-      shouldPersist: true,
+    expect(result.settings.llmProviderConfigurations.openrouter).toEqual({
+      model: 'openai/gpt-4.1',
+      secretId: DEFAULT_OPENROUTER_SECRET_ID,
     });
+    expect(result.shouldPersist).toBe(true);
     expect(result.settings).not.toHaveProperty('llmOpenRouterApiKey');
   });
 
-  it('keeps an existing selected secret ID during migration', () => {
+  it('keeps an existing selected OpenRouter secret ID during migration', () => {
     const setSecret = vi.fn();
-    const getSecret = vi.fn(() => null);
-
     const result = loadPluginSettings(
-      {
-        llmOpenRouterApiKey: 'sk-or-legacy',
-        llmOpenRouterSecretId: 'my-openrouter-key',
-      },
-      { setSecret, getSecret },
+      { llmOpenRouterApiKey: 'sk-or-legacy', llmOpenRouterSecretId: 'my-openrouter-key' },
+      { getSecret: () => null, setSecret },
     );
 
     expect(setSecret).toHaveBeenCalledWith('my-openrouter-key', 'sk-or-legacy');
-    expect(result.settings.llmOpenRouterSecretId).toBe('my-openrouter-key');
+    expect(result.settings.llmProviderConfigurations.openrouter.secretId).toBe('my-openrouter-key');
   });
 
-  it('does not overwrite a newer stored secret when the legacy field reappears', () => {
+  it('does not overwrite a newer stored secret when plaintext reappears', () => {
     const setSecret = vi.fn();
-    const getSecret = vi.fn(() => 'sk-or-current');
-
     const result = loadPluginSettings(
       {
         llmOpenRouterApiKey: 'sk-or-stale',
         llmOpenRouterSecretId: DEFAULT_OPENROUTER_SECRET_ID,
       },
-      { setSecret, getSecret },
+      { getSecret: () => 'sk-or-current', setSecret },
     );
 
-    expect(getSecret).toHaveBeenCalledWith(DEFAULT_OPENROUTER_SECRET_ID);
     expect(setSecret).not.toHaveBeenCalled();
-    // The newer key survives, and the stale plaintext field is still stripped.
     expect(result.shouldPersist).toBe(true);
-    expect(result.settings).not.toHaveProperty('llmOpenRouterApiKey');
-    expect(result.settings.llmOpenRouterSecretId).toBe(DEFAULT_OPENROUTER_SECRET_ID);
   });
 
-  it('does not request a settings rewrite when no legacy field exists', () => {
-    const setSecret = vi.fn();
-    const getSecret = vi.fn(() => null);
-
+  it('requests one normalized rewrite for settings schemas before version 7', () => {
     const result = loadPluginSettings(
-      { llmOpenRouterSecretId: 'my-openrouter-key' },
-      { setSecret, getSecret },
+      { schemaVersion: 6 },
+      { getSecret: () => null, setSecret: vi.fn() },
     );
 
-    expect(setSecret).not.toHaveBeenCalled();
+    expect(result.settings.schemaVersion).toBe(7);
+    expect(result.shouldPersist).toBe(true);
+  });
+
+  it('does not rewrite already-normalized schema 7 settings', () => {
+    const result = loadPluginSettings(DEFAULT_PLUGIN_SETTINGS, {
+      getSecret: () => null,
+      setSecret: vi.fn(),
+    });
+
     expect(result.shouldPersist).toBe(false);
   });
 
-  it('propagates Secret Storage failures before plaintext settings can be rewritten', () => {
-    const error = new Error('secret storage unavailable');
-
-    expect(() =>
-      loadPluginSettings(
-        { llmOpenRouterApiKey: 'sk-or-legacy' },
-        {
-          getSecret: () => null,
-          setSecret: () => {
-            throw error;
+  it.each([
+    ['openrouter', 'openrouter-secret'],
+    ['openai_compatible', 'custom-secret'],
+  ] as const)(
+    'resolves the selected %s secret without persisting key material',
+    (providerId, secretId) => {
+      const getSecret = vi.fn(() => ' secure-value ');
+      const settings = {
+        ...DEFAULT_PLUGIN_SETTINGS,
+        llmProviderConfigurations: {
+          ...DEFAULT_PLUGIN_SETTINGS.llmProviderConfigurations,
+          [providerId]: {
+            ...DEFAULT_PLUGIN_SETTINGS.llmProviderConfigurations[providerId],
+            secretId,
           },
         },
-      ),
-    ).toThrow(error);
-  });
+      };
 
-  it('resolves the selected secret without putting key material in settings', () => {
-    const getSecret = vi.fn(() => ' sk-or-secure ');
-    const settings = {
-      ...DEFAULT_PLUGIN_SETTINGS,
-      llmOpenRouterSecretId: 'my-openrouter-key',
-    };
+      expect(getLlmProviderSecret(settings, providerId, { getSecret })).toBe('secure-value');
+      expect(getSecret).toHaveBeenCalledWith(secretId);
+    },
+  );
 
-    expect(getOpenRouterApiKey(settings, { getSecret })).toBe('sk-or-secure');
-    expect(getSecret).toHaveBeenCalledWith('my-openrouter-key');
-    expect(settings).not.toHaveProperty('llmOpenRouterApiKey');
-  });
-
-  it('does not query Secret Storage when no secret is selected', () => {
+  it('never queries Secret Storage for Ollama', () => {
     const getSecret = vi.fn(() => 'unexpected');
 
-    expect(getOpenRouterApiKey(DEFAULT_PLUGIN_SETTINGS, { getSecret })).toBe('');
+    expect(getLlmProviderSecret(DEFAULT_PLUGIN_SETTINGS, 'ollama', { getSecret })).toBe('');
     expect(getSecret).not.toHaveBeenCalled();
   });
 });

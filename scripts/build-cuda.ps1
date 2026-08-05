@@ -39,13 +39,6 @@ foreach ($tool in 'cargo', 'node', 'nvcc') {
 $jobs = Read-PositiveInt 'BUILD_JOBS' ([Environment]::ProcessorCount)
 $env:CARGO_BUILD_JOBS = "$jobs"
 $env:CMAKE_BUILD_PARALLEL_LEVEL = "$jobs"
-# Pin the ONNX Runtime CUDA execution-provider major (see build-cuda.sh). The
-# release config is authoritative; callers may override it for compatibility
-# testing.
-if (-not $env:ORT_CUDA_VERSION) {
-  $env:ORT_CUDA_VERSION = & node scripts/read-release-build-config.mjs --field ortCudaVersion
-  if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-}
 
 # Disable the whisper/ggml ccache probe (no ccache on the runner; the rust-cache
 # target-cuda restore is what makes warm builds fast, not ccache), matching
@@ -66,7 +59,7 @@ $cargoArgs = @(
   '--locked',
   '--manifest-path', 'native/Cargo.toml',
   '--target-dir', 'native/target-cuda',
-  '--features', 'gpu-cuda,gpu-ort-cuda',
+  '--features', 'engine-whisper,engine-cohere-transcribe,engine-moonshine,engine-nemotron-asr,engine-pocket-tts,engine-supertonic,gpu-cuda',
   '-j', "$jobs"
 )
 if ($Release) { $cargoArgs += '--release' }
@@ -79,7 +72,6 @@ Invoke-TimedStep "CUDA sidecar preflight" {
   Write-Host "profile: $buildProfile"
   Write-Host "jobs: $jobs"
   Write-Host "CUDA_PATH: $env:CUDA_PATH"
-  Write-Host "ORT_CUDA_VERSION: $env:ORT_CUDA_VERSION"
   Write-Host "CMAKE_CUDA_ARCHITECTURES: $env:CMAKE_CUDA_ARCHITECTURES"
   Write-Host "CARGO_TIMINGS: $env:CARGO_TIMINGS"
   Write-Host "CARGO_VERBOSE: $env:CARGO_VERBOSE"
@@ -95,8 +87,33 @@ Invoke-TimedStep "Build CUDA sidecar ($buildProfile)" {
 }
 
 $outDir = "native/target-cuda/$buildProfile"
-$providers = (& node scripts/list-cuda-artifacts.mjs providers win32) -split "`r?`n" | Where-Object { $_ -ne '' }
-$expected = @("$outDir/local-dictation-sidecar.exe") + ($providers | ForEach-Object { "$outDir/$_" })
+$cudaRoot = if ($env:CUDA_PATH) {
+  $env:CUDA_PATH
+} else {
+  Split-Path -Parent (Split-Path -Parent (Get-Command nvcc).Source)
+}
+$cudaBinDirs = @(
+  (Join-Path $cudaRoot 'bin/x64'),
+  (Join-Path $cudaRoot 'bin')
+) | Where-Object { Test-Path $_ }
+$runtimeFiles = @(& node scripts/list-cuda-artifacts.mjs win32)
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+Invoke-TimedStep "Stage CUDA runtime libraries" {
+  foreach ($runtimeFile in $runtimeFiles) {
+    $source = $cudaBinDirs |
+      ForEach-Object { Join-Path $_ $runtimeFile } |
+      Where-Object { Test-Path $_ } |
+      Select-Object -First 1
+    if (-not $source) {
+      throw "required CUDA runtime library not found under ${cudaRoot}: $runtimeFile"
+    }
+    Copy-Item -LiteralPath $source -Destination (Join-Path $outDir $runtimeFile) -Force
+  }
+}
+
+$expected = @("$outDir/local-dictation-sidecar.exe") +
+  ($runtimeFiles | ForEach-Object { Join-Path $outDir $_ })
 Invoke-TimedStep "Verify CUDA sidecar artifacts" {
   foreach ($path in $expected) {
     if (-not (Test-Path $path)) {

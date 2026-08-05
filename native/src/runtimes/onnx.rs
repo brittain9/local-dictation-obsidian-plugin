@@ -1,13 +1,6 @@
 use std::collections::HashMap;
 use std::path::Path;
-#[cfg(feature = "gpu-ort-cuda")]
-use std::sync::OnceLock;
 
-#[cfg(feature = "gpu-ort-cuda")]
-use ort::ep::{
-    CUDA, ExecutionProvider,
-    cuda::{CUDA_DYLIBS, CUDNN_DYLIBS},
-};
 use ort::session::Session;
 
 use crate::engine::capabilities::{
@@ -26,15 +19,6 @@ impl OnnxRuntime {
             HashMap::new();
 
         accelerator_details.insert(AcceleratorId::Cpu, AcceleratorAvailability::available());
-
-        #[cfg(feature = "gpu-ort-cuda")]
-        accelerator_details.insert(
-            AcceleratorId::Cuda,
-            match probe_cuda_execution_provider() {
-                Ok(()) => AcceleratorAvailability::available(),
-                Err(reason) => AcceleratorAvailability::unavailable(reason),
-            },
-        );
 
         Self {
             capabilities: RuntimeCapabilities::from_details(
@@ -55,112 +39,43 @@ impl Runtime for OnnxRuntime {
     }
 }
 
-/// Build an ORT session for `model_path`, optionally registering the CUDA EP
-/// when `gpu_config.use_gpu` is set and the `gpu-ort-cuda` feature is compiled.
+/// Build a CPU ONNX Runtime session for `model_path`.
+///
+/// Production ONNX execution is CPU-only. The tested ASR exports were unsafe or
+/// slower under the generic CUDA EP because unsupported operators split
+/// inference across CPU and GPU. Other families stay on CPU without an
+/// unverified acceleration claim. A future accelerated backend must be enabled
+/// per model family only after it proves a meaningful user benefit.
 pub fn build_session(
     model_path: &Path,
-    gpu_config: GpuConfig,
+    _gpu_config: GpuConfig,
 ) -> Result<Session, TranscriptionError> {
-    let mut builder = Session::builder()
-        .map_err(|e| TranscriptionError::transcription_failure("session builder", &e))?;
-
-    #[cfg(feature = "gpu-ort-cuda")]
-    if gpu_config.use_gpu {
-        ensure_cuda_execution_provider_ready()
-            .map_err(|e| TranscriptionError::transcription_failure("CUDA dependency check", &e))?;
-
-        builder = builder
-            .with_execution_providers([CUDA::default().build().error_on_failure()])
-            .map_err(|e| TranscriptionError::transcription_failure("CUDA EP registration", &e))?;
-    }
-
-    #[cfg(not(feature = "gpu-ort-cuda"))]
-    let _ = gpu_config;
-
-    builder
+    Session::builder()
+        .map_err(|e| TranscriptionError::transcription_failure("session builder", &e))?
         .commit_from_file(model_path)
         .map_err(|e| TranscriptionError::transcription_failure("model loading", &e))
 }
 
-#[cfg(feature = "gpu-ort-cuda")]
-pub fn probe_cuda_execution_provider() -> Result<(), String> {
-    ensure_cuda_execution_provider_ready()
-}
+#[cfg(test)]
+mod tests {
+    use super::*;
 
-#[cfg(feature = "gpu-ort-cuda")]
-fn ensure_cuda_execution_provider_ready() -> Result<(), String> {
-    static CUDA_PRECHECK: OnceLock<Result<(), String>> = OnceLock::new();
+    #[test]
+    fn production_runtime_advertises_cpu_only() {
+        let runtime = OnnxRuntime::probe();
+        let capabilities = runtime.capabilities();
 
-    CUDA_PRECHECK.get_or_init(run_cuda_precheck).clone()
-}
-
-#[cfg(feature = "gpu-ort-cuda")]
-fn run_cuda_precheck() -> Result<(), String> {
-    let execution_provider = CUDA::default();
-    match execution_provider.is_available() {
-        Ok(false) => {
-            return Err("ONNX Runtime CUDA execution provider is unavailable.".to_string());
-        }
-        Err(error) => {
-            return Err(format!(
-                "Failed to query ONNX Runtime CUDA execution provider: {error}"
-            ));
-        }
-        Ok(true) => {}
+        assert_eq!(
+            capabilities.available_accelerators,
+            vec![AcceleratorId::Cpu]
+        );
+        assert_eq!(
+            capabilities
+                .accelerator_details
+                .keys()
+                .copied()
+                .collect::<Vec<_>>(),
+            vec![AcceleratorId::Cpu]
+        );
     }
-
-    preload_cuda_dependencies()?;
-
-    Session::builder()
-        .map_err(|error| format!("Failed to create an ONNX Runtime session builder: {error}"))?
-        .with_execution_providers([execution_provider.build().error_on_failure()])
-        .map(|_| ())
-        .map_err(|error| format!("CUDA execution provider registration failed: {error}"))
-}
-
-#[cfg(feature = "gpu-ort-cuda")]
-fn preload_cuda_dependencies() -> Result<(), String> {
-    // ORT can register the CUDA EP before delay-loaded CUDA/cuDNN DLLs are
-    // actually resolved. Preload them so missing runtime files become a CPU
-    // fallback reason instead of a fail-fast during the first encoder run.
-    let sidecar_dir = std::env::current_exe()
-        .ok()
-        .and_then(|path| path.parent().map(Path::to_path_buf));
-
-    for library_name in CUDA_DYLIBS {
-        preload_required_dylib(library_name, sidecar_dir.as_deref(), "CUDA runtime")?;
-    }
-
-    for library_name in CUDNN_DYLIBS {
-        preload_required_dylib(library_name, sidecar_dir.as_deref(), "cuDNN runtime")?;
-    }
-
-    Ok(())
-}
-
-#[cfg(feature = "gpu-ort-cuda")]
-fn preload_required_dylib(
-    library_name: &str,
-    sidecar_dir: Option<&Path>,
-    dependency_group: &str,
-) -> Result<(), String> {
-    if let Some(candidate) = sidecar_dir
-        .map(|dir| dir.join(library_name))
-        .filter(|candidate| candidate.is_file())
-    {
-        return ort::util::preload_dylib(&candidate).map_err(|error| {
-            format!(
-                "{dependency_group} library {} failed to load from {}: {error}",
-                library_name,
-                candidate.display()
-            )
-        });
-    }
-
-    ort::util::preload_dylib(Path::new(library_name)).map_err(|error| {
-        format!(
-            "{dependency_group} library {library_name} is not available from the sidecar \
-             directory or the system library search path: {error}"
-        )
-    })
 }

@@ -53,7 +53,8 @@ fn get_system_info_round_trips_through_the_real_binary() {
         let _ = event_tx.send(driver::read_event_frame(&mut stdout));
     });
 
-    driver::write_command_frame(&mut stdin, &json!({ "type": "get_system_info" }));
+    driver::write_command_frame(&mut stdin, &json!({ "type": "get_system_info" }))
+        .expect("get_system_info should write");
     stdin.flush().expect("get_system_info should flush");
 
     let event_json = event_rx
@@ -92,7 +93,8 @@ fn get_system_info_round_trips_through_the_real_binary() {
         "real Whisper adapter should advertise word timing",
     );
 
-    driver::write_command_frame(&mut stdin, &json!({ "type": "shutdown" }));
+    driver::write_command_frame(&mut stdin, &json!({ "type": "shutdown" }))
+        .expect("shutdown should write");
     stdin.flush().expect("shutdown should flush");
     drop(stdin);
 

@@ -27,6 +27,8 @@ export const en = {
   'notice.sidecarRestartFailed': 'Sidecar restart failed',
   'notice.sidecarRestartRequiresIdle':
     'Restart the sidecar only when dictation and reading are idle.',
+  'notice.sidecarMaintenanceInProgress':
+    'The speech engine is being installed or restarted. Wait for it to finish, then try again.',
   'notice.transcriptRecordFailed': 'Could not record the transcript.',
   'notice.sidecarSessionError': 'The speech engine reported an error.',
   'notice.sidecarVersionDrift.actionMultiple': 'Update speech engines',
@@ -38,18 +40,18 @@ export const en = {
   'notice.sidecarVersionDrift.cuda':
     'Updated to {version}, but the installed CUDA speech engine is out of date. Update now to keep them in sync.',
   'notice.surfaceDesynchronized':
-    'Dictation stopped because the note changed in a way Local Dictation could not safely track. Start dictation again to continue.',
+    'Dictation stopped because the note changed in a way Speech Kit could not safely track. Start dictation again to continue.',
   'notice.targetNoteClosed':
     'Dictation stopped because its target note was closed or replaced. Start dictation again to continue.',
   'notice.targetNoteDeleted':
     'Dictation stopped because its target note was deleted. Restore or recreate the note, then start dictation again.',
   'notice.transcriptWriteFailed':
-    'Dictation stopped because Local Dictation could not safely write to the note. Start dictation again to continue.',
+    'Dictation stopped because Speech Kit could not safely write to the note. Start dictation again to continue.',
   'setup.sidecar.cpu.firstRun.body':
-    'Local Dictation needs a one-time download of the CPU speech-to-text engine from GitHub releases. Transcription runs locally on your machine after this completes. You can install CUDA acceleration later from settings.',
+    'Speech Kit needs a one-time download of the CPU speech-to-text engine from GitHub releases. Transcription runs locally on your machine after this completes. You can install CUDA acceleration later from settings.',
   'setup.sidecar.cpu.firstRun.primaryButton': 'Download CPU sidecar',
-  'setup.sidecar.cpu.firstRun.success': 'Local Dictation sidecar installed and started.',
-  'setup.sidecar.cpu.firstRun.title': 'Finish setting up Local Dictation',
+  'setup.sidecar.cpu.firstRun.success': 'Speech Kit sidecar installed and started.',
+  'setup.sidecar.cpu.firstRun.title': 'Finish setting up Speech Kit',
   'setup.sidecar.cpu.install.body':
     'Download the CPU speech-to-text engine from GitHub releases. Transcription runs locally on your machine after this completes.',
   'setup.sidecar.cpu.install.primaryButton': 'Download CPU sidecar',
@@ -61,15 +63,15 @@ export const en = {
   'setup.sidecar.cpu.reinstall.success': 'CPU sidecar reinstalled and restarted.',
   'setup.sidecar.cpu.reinstall.title': 'Reinstall CPU sidecar',
   'setup.sidecar.cuda.install.body':
-    'Download the CUDA-accelerated sidecar for NVIDIA GPUs. This replaces the CPU sidecar while active. The CPU sidecar remains installed as a fallback.',
+    'Download the CUDA sidecar to accelerate Whisper models on a supported NVIDIA GPU. This replaces the CPU sidecar while active; the CPU sidecar remains installed as a fallback.',
   'setup.sidecar.cuda.install.primaryButton': 'Download CUDA sidecar',
   'setup.sidecar.cuda.install.success': 'CUDA sidecar installed and started.',
   'setup.sidecar.cuda.install.title': 'Install CUDA acceleration',
   'setup.sidecar.mac.firstRun.body':
-    'Local Dictation needs a one-time download of its speech-to-text engine from GitHub releases. Once installed, transcription runs entirely on your Mac — audio never leaves your machine.',
+    'Speech Kit needs a one-time download of its speech-to-text engine from GitHub releases. Once installed, transcription runs entirely on your Mac — audio never leaves your machine.',
   'setup.sidecar.mac.firstRun.primaryButton': 'Download sidecar',
-  'setup.sidecar.mac.firstRun.success': 'Local Dictation sidecar installed and started.',
-  'setup.sidecar.mac.firstRun.title': 'Finish setting up Local Dictation',
+  'setup.sidecar.mac.firstRun.success': 'Speech Kit sidecar installed and started.',
+  'setup.sidecar.mac.firstRun.title': 'Finish setting up Speech Kit',
   'setup.sidecar.mac.install.body':
     'Download the speech-to-text engine from GitHub releases. Transcription runs locally on your Mac after this completes.',
   'setup.sidecar.mac.install.primaryButton': 'Download sidecar',
@@ -81,14 +83,14 @@ export const en = {
   'setup.sidecar.mac.reinstall.success': 'Sidecar reinstalled and restarted.',
   'setup.sidecar.mac.reinstall.title': 'Reinstall sidecar',
   'setup.sidecar.update.body':
-    'Download the current {engineLabel} to match this version of Local Dictation. Existing installs are replaced in place.',
+    'Download the current {engineLabel} to match this version of Speech Kit. Existing installs are replaced in place.',
   'setup.sidecar.update.engine.cpuAndCuda': 'CPU and CUDA speech engines',
   'setup.sidecar.update.engine.cuda': 'CUDA speech engine',
   'setup.sidecar.update.engine.default': 'speech engine',
   'setup.sidecar.update.primaryButton_one': 'Update speech engine',
   'setup.sidecar.update.primaryButton_other': 'Update speech engines',
-  'setup.sidecar.update.success_one': 'Local Dictation speech engine updated and restarted.',
-  'setup.sidecar.update.success_other': 'Local Dictation speech engines updated and restarted.',
+  'setup.sidecar.update.success_one': 'Speech Kit speech engine updated and restarted.',
+  'setup.sidecar.update.success_other': 'Speech Kit speech engines updated and restarted.',
   'setup.sidecar.update.title_one': 'Update speech engine',
   'setup.sidecar.update.title_other': 'Update speech engines',
   'audio.microphone.permissionDeniedMac':
@@ -116,7 +118,45 @@ export const en = {
   'commands.readAloud': 'Read aloud',
   'commands.pauseResumeReadAloud': 'Pause or resume reading',
   'commands.stopReadAloud': 'Stop reading',
+  'commands.translateNote': 'Translate note',
+  'commands.translateSelection': 'Translate selection',
+  'translation.modal.titleWithPair': 'Translate: {source} → {target}',
+  'translation.modal.privacy': 'Translation runs entirely on this device.',
+  'translation.modal.from': 'From',
+  'translation.modal.to': 'To',
+  'translation.modal.swap': 'Swap',
+  'translation.modal.largeNote': 'Large note: translation may take a few seconds.',
+  'translation.modal.sourceSelection': 'Source selection',
+  'translation.modal.sourceNote': 'Source note',
+  'translation.modal.previewAria': 'Translation preview',
+  'translation.modal.preparing': 'Preparing local translation…',
+  'translation.modal.loading': 'Loading local model…',
+  'translation.modal.translating': 'Translating…',
+  'translation.modal.translatingProgress': 'Translating… {completed}/{total}',
+  'translation.modal.ready': 'Translation ready.',
+  'translation.modal.readyPartial_one':
+    'Translation ready. 1 block kept its original language because its formatting could not be preserved.',
+  'translation.modal.readyPartial_other':
+    'Translation ready. {count} blocks kept their original language because their formatting could not be preserved.',
+  'translation.modal.canceled': 'Translation canceled.',
+  'translation.modal.failed': 'Translation failed.',
+  'translation.modal.missingModel': 'Install the local translation pack to use this language pair.',
+  'translation.modal.incompleteModel':
+    'The translation model is missing files. Reinstall it to continue.',
+  'translation.modal.installModel': 'Install translation model',
+  'translation.modal.translateAgain': 'Translate again',
+  'translation.modal.cancel': 'Cancel',
+  'translation.modal.replace': 'Replace',
+  'translation.modal.insertBelow': 'Insert below',
+  'translation.modal.copy': 'Copy',
+  'translation.modal.stale':
+    'The note changed since this translation started. Copy the translation instead.',
+  'translation.notice.copied': 'Copied the translation.',
+  'translation.notice.copyFailed': 'Could not copy the translation.',
+  'translation.notice.tooLong': 'Translate up to {count} characters at a time.',
+  'translation.notice.noText': 'There is no text to translate in this note.',
   'common.reset': 'Reset',
+  'settings.acceleration.active': 'Configured acceleration: {accelerator}',
   'settings.acceleration.pending': 'pending (sidecar not ready)',
   'settings.acceleration.unavailable': 'CPU ({accelerator} unavailable)',
   'settings.acceleration.unknownReason': 'unknown reason',
@@ -130,6 +170,7 @@ export const en = {
   'settings.engine.named': '{engine} engine',
   'settings.groups.model': 'Models',
   'settings.groups.readAloud': 'Read aloud',
+  'settings.groups.translation': 'Translation',
   'settings.groups.capture': 'Capture',
   'settings.groups.transcriptOutput': 'Transcript output',
   'settings.groups.timestamps': 'Timestamps',
@@ -138,15 +179,28 @@ export const en = {
   'settings.groups.advanced': 'Advanced',
   'settings.readAloud.hotkey': 'Recommended shortcut',
   'settings.readAloud.hotkeyDesc':
-    'Bind “Local Dictation: Read aloud” to a hotkey. It reads selected text, or the entire note when nothing is selected.',
+    'Bind “Speech Kit: Read aloud” to a hotkey. It reads selected text, or the entire note when nothing is selected.',
   'settings.readAloud.voice': 'Voice',
   'settings.readAloud.voiceDesc': 'Choose from voices installed for the selected model.',
   'settings.readAloud.noVoices': 'No installed voices',
   'settings.readAloud.speed': 'Reading speed',
   'settings.readAloud.speedDesc':
     'Changing speed while reading restarts from the current sentence.',
+  'settings.translation.model.name': 'Translation model',
+  'settings.translation.model.installedDesc': '{model} · Installed · {size}',
+  'settings.translation.model.availableDesc': '{model} · Not installed · {size}',
+  'settings.translation.model.unavailable': 'No translation model is available.',
+  'settings.translation.model.download': 'Download translation model',
+  'settings.translation.model.manage': 'Manage translation models',
+  'settings.translation.source.name': 'Default source language',
+  'settings.translation.source.desc':
+    'Preselected when you translate a note or selection. You can change it before translating.',
+  'settings.translation.target.name': 'Default target language',
+  'settings.translation.target.desc':
+    'The language Speech Kit translates into by default. Every translation preview shows the active pair.',
   'models.manage.dictationModels': 'Speech to text',
   'models.manage.readAloudModels': 'Text to speech',
+  'models.manage.translationModels': 'Translation',
   'models.manage.allLanguages': 'All languages',
   'models.manage.familiesLabel': 'Model families',
   'models.manage.noneForLanguage': 'No models are available for this task and language.',
@@ -173,6 +227,7 @@ export const en = {
   'tts.control.pause': 'Pause reading',
   'tts.control.resume': 'Resume reading',
   'tts.control.stop': 'Stop reading',
+  'tts.action.chooseModel': 'Choose model',
   'tts.notice.noText': 'There is no speakable text here.',
   'tts.notice.modelRequired': 'Install and select a read-aloud model first.',
   'tts.notice.voiceRequired': 'Select an installed voice first.',
@@ -266,9 +321,6 @@ export const en = {
   'settings.llm.enableFeatures.name': 'Enable LLM features',
   'settings.llm.enableFeatures.desc':
     'Make LLM transformations available. Turn transformation on or off in the sidebar.',
-  'settings.llm.enableRemote.name': 'Enable remote LLM',
-  'settings.llm.enableRemote.desc':
-    'Allow transcript text and included note context to be sent to OpenRouter. Audio is never sent.',
   'settings.llm.restoreDefaults.name': 'Restore transform defaults',
   'settings.llm.restoreDefaults.desc':
     'Reset preset, timing, context, minimum words, and temperature. Saved presets and models are kept.',
@@ -287,11 +339,18 @@ export const en = {
   'settings.runSetup.desc': 'Re-run the first-time setup wizard.',
   'settings.hardwareAcceleration.name': 'Hardware acceleration',
   'settings.hardwareAcceleration.desc': 'Run inference on the GPU when available.',
-  'settings.hardwareAcceleration.busy': 'Cannot change hardware acceleration while dictating.',
+  'settings.hardwareAcceleration.busy':
+    'Cannot change hardware acceleration while dictation or Read aloud is active. If dictation is still processing after you stop it, run "Cancel dictation".',
   'settings.hardwareAcceleration.on': 'Hardware acceleration on.',
   'settings.hardwareAcceleration.off': 'Hardware acceleration off.',
-  'settings.hardwareAcceleration.restartFailed':
-    'Hardware acceleration was saved, but the speech engine could not restart. Restart Obsidian to apply it.',
+  'settings.hardwareAcceleration.saveFailed':
+    'Could not save the hardware acceleration setting. The previous setting is still active.',
+  'settings.hardwareAcceleration.restartFailedRolledBack':
+    'The speech engine could not restart with that setting. The previous setting was restored.',
+  'settings.hardwareAcceleration.rollbackSaveFailed':
+    'The speech engine could not restart, and the previous hardware acceleration setting could not be restored. Restart Obsidian before trying again.',
+  'settings.hardwareAcceleration.rollbackRestartFailed':
+    'The previous hardware acceleration setting was restored, but the speech engine could not restart. Restart Obsidian before dictating.',
   'settings.noteContext.name': 'Use note as context',
   'settings.noteContext.desc':
     'For manually selected English, send distinctive terms from the open note to help spelling.',
@@ -333,9 +392,18 @@ export const en = {
   'settings.install.installingSidecarMac': 'Installing sidecar',
   'settings.install.cancelling': 'Cancelling...',
   'settings.install.cancel': 'Cancel',
-  'settings.missingSidecar.name': 'Set up Local Dictation',
+  'settings.attention.regionLabel': 'Needs attention',
+  'settings.attention.installCuda.name': 'CUDA acceleration is available',
+  'settings.attention.installCuda.desc':
+    'A compatible NVIDIA GPU and driver were detected. Install the CUDA speech engine to accelerate Whisper models.',
+  'settings.attention.installCuda.action': 'Install CUDA acceleration',
+  'settings.attention.enableCuda.name': 'Enable CUDA acceleration',
+  'settings.attention.enableCuda.desc':
+    'The CUDA speech engine is installed and current, but hardware acceleration is turned off.',
+  'settings.attention.enableCuda.action': 'Enable',
+  'settings.missingSidecar.name': 'Set up Speech Kit',
   'settings.missingSidecar.desc':
-    "Local Dictation isn't ready yet. Run the setup wizard to install the speech engine and a model.",
+    "Speech Kit isn't ready yet. Run the setup wizard to install the speech engine and a model.",
   'settings.sidecar.name': 'Sidecar',
   'settings.sidecar.genericName': 'sidecar',
   'settings.sidecar.variantName': '{variant} sidecar',
@@ -343,19 +411,30 @@ export const en = {
   'settings.sidecar.cpuName': 'CPU sidecar',
   'settings.sidecar.cpuDesc': 'Speech-to-text engine. Required.',
   'settings.sidecar.gpuName': 'GPU sidecar',
-  'settings.sidecar.cudaActive': 'CUDA acceleration active.',
   'settings.sidecar.cudaLibraryPath.name': 'CUDA library path',
   'settings.sidecar.cudaLibraryPath.desc':
     'Optional library search path for the sidecar (Flatpak, custom CUDA installs).',
   'settings.sidecar.installAnyway': 'Install anyway',
-  'settings.sidecar.installAnywayTooltip':
-    'Proceed with CUDA install even though no NVIDIA driver was detected.',
+  'settings.sidecar.installUnverifiedTooltip':
+    'Proceed with CUDA install even though compatibility could not be confirmed.',
+  'settings.sidecar.cudaCompatibility.compatible':
+    'Compatible NVIDIA CUDA environment detected. The CUDA sidecar can accelerate Whisper models.',
+  'settings.sidecar.cudaCompatibility.incompatibleDriver':
+    'NVIDIA driver is too old. Update to R{minimumDriverMajor} or later to use the published CUDA sidecar.',
+  'settings.sidecar.cudaCompatibility.incompatibleGpu':
+    'NVIDIA GPU needs compute capability {minimumComputeCapability} or later for the published CUDA sidecar.',
+  'settings.sidecar.cudaCompatibility.absent':
+    'NVIDIA driver not detected. The CUDA sidecar requires a compatible NVIDIA GPU and driver.',
+  'settings.sidecar.cudaCompatibility.unknown':
+    'CUDA compatibility could not be confirmed. Check your NVIDIA driver and GPU before installing.',
+  'settings.sidecar.cudaCompatibility.unsupported':
+    'CUDA sidecar releases are available only for Windows and Linux x64.',
   'settings.sidecar.stopBeforeInstall':
-    'Stop dictation before installing a sidecar — the install restarts the engine. If a transcript is still processing, run "Cancel dictation" to stop it now.',
-  'settings.sidecar.stopBeforeUpdate':
-    'Stop dictation before updating sidecars — the update restarts the engine. If a transcript is still processing, run "Cancel dictation" to stop it now.',
+    'Stop dictation or Read aloud before installing a sidecar — the install restarts the engine. If dictation is still processing, run "Cancel dictation" to stop it now.',
   'settings.sidecar.stopBeforeUninstall':
-    'Stop dictation before uninstalling the {sidecar}. If a transcript is still processing, run "Cancel dictation" to stop it now.',
+    'Stop dictation or Read aloud before uninstalling the {sidecar}. If dictation is still processing, run "Cancel dictation" to stop it now.',
+  'settings.sidecar.operationInProgress':
+    'Another speech-engine maintenance operation is in progress. Wait for it to finish, then try again.',
   'settings.sidecar.uninstallFailed':
     'Could not uninstall the {sidecar}. Close other setup windows and try again.',
   'settings.sidecar.uninstalled': 'Sidecar uninstalled.',
@@ -363,22 +442,10 @@ export const en = {
   'settings.sidecar.cpuUninstalled': 'CPU sidecar uninstalled.',
   'settings.sidecar.restartFailed':
     'The speech engine could not restart. Restart Obsidian before dictating.',
-  'settings.sidecar.becameActive':
-    'Dictation became active before the sidecar files could be changed. Stop or cancel dictation, then retry.',
   'settings.sidecar.reinstall': 'Reinstall',
   'settings.sidecar.uninstall': 'Uninstall',
   'settings.sidecar.install': 'Install',
-  'settings.sidecar.driver.present': 'NVIDIA GPU detected — faster transcription.',
-  'settings.sidecar.driver.presentTooltip':
-    'Downloads the CUDA sidecar archive from GitHub releases.',
-  'settings.sidecar.driver.absent':
-    'Requires an NVIDIA GPU. Install anyway if you know yours is supported.',
-  'settings.sidecar.driver.absentTooltip':
-    'nvidia-smi was not found on PATH. Use "Install anyway" if you are certain your system supports CUDA.',
-  'settings.sidecar.driver.unknown': "Couldn't probe for NVIDIA — install only if you're sure.",
-  'settings.sidecar.driver.unknownTooltip':
-    'Unable to probe for an NVIDIA driver. Proceed only if you know your GPU supports CUDA.',
-  'plugin.name': 'Local Dictation',
+  'plugin.name': 'Speech Kit',
   'common.cancel': 'Cancel',
   'common.delete': 'Delete',
   'common.duplicate': 'Duplicate',
@@ -388,11 +455,11 @@ export const en = {
   'common.on': 'On',
   'common.save': 'Save',
   'common.unavailable': 'Unavailable',
-  'ribbon.idle': 'Local Dictation — start dictation',
-  'ribbon.starting': 'Local Dictation — starting…',
-  'ribbon.listening': 'Local Dictation — listening',
-  'ribbon.speechDetected': 'Local Dictation — hearing speech',
-  'ribbon.error': 'Local Dictation — error',
+  'ribbon.idle': 'Speech Kit — start dictation',
+  'ribbon.starting': 'Speech Kit — starting…',
+  'ribbon.listening': 'Speech Kit — listening',
+  'ribbon.speechDetected': 'Speech Kit — hearing speech',
+  'ribbon.error': 'Speech Kit — error',
   'validation.wholeNumberRange': 'Enter a whole number from {min} to {max}.',
   'validation.numberRange': 'Enter a number from {min} to {max}.',
   'llm.managedByPreset': 'Managed by “{preset}”. Edit that preset to change this value.',
@@ -412,22 +479,24 @@ export const en = {
     'Maximum combined characters from note context and previous phrases.',
   'llm.context.useCurrentNote.name': 'Use current note as context',
   'llm.context.useCurrentNote.description': 'Include text above the cursor in each prompt.',
-  'llm.model.title': 'Model settings',
-  'llm.model.settingsTooltip': 'Model settings',
+  'llm.model.title': 'Advanced model settings',
+  'llm.model.settingsTooltip': 'Advanced model settings',
   'llm.model.temperature.name': 'Temperature',
   'llm.model.temperature.description':
-    'Sampling variation. 0 is deterministic; higher values are more varied.',
-  'llm.model.remoteThreshold.name': 'Remote routing threshold',
-  'llm.model.remoteThreshold.description':
-    'Transcript length that sends Auto transforms to OpenRouter (characters).',
-  'llm.model.remoteTimeout.name': 'Remote timeout',
-  'llm.model.remoteTimeout.description':
-    'Stop waiting for OpenRouter after this many seconds. The original transcript is kept.',
-  'llm.model.behavior.name': 'Model behavior',
+    'Sampling variation sent to every provider. 0 is deterministic; higher values are more varied.',
+  'llm.model.routingThreshold.name': 'Large transcript threshold',
+  'llm.model.routingThreshold.description':
+    'Use the large-transcript provider above this many characters.',
+  'llm.model.networkTimeout.name': 'Network timeout',
+  'llm.model.networkTimeout.description':
+    'Stop waiting for network providers after this many seconds. The original transcript is kept.',
+  'llm.model.behavior.name': 'Advanced settings',
   'llm.model.summary.temperature': 'Temperature {value}',
-  'llm.model.summary.remoteThreshold': 'Remote at {value}+ chars',
-  'llm.model.summary.timeout': '{value}s timeout',
+  'llm.model.summary.temperatureShared': 'Temperature {value} for both providers',
+  'llm.model.summary.timeout': '{value}s network timeout',
   'llm.failure.authInvalid': '{provider} API key rejected. Check settings.',
+  'llm.failure.permissionDenied':
+    '{provider} denied access. Check credentials, account permissions, or model access.',
   'llm.failure.rateLimited': '{provider} rate limit hit. Falling back to raw text.',
   'llm.failure.network': 'Network error reaching {provider}.',
   'llm.failure.modelNotConfigured': '{provider} model is not configured. Choose one under Model.',
@@ -435,9 +504,13 @@ export const en = {
   'llm.failure.unknown': 'LLM transform failed. See console.',
   'llm.status.selectOllamaModel': 'Select an Ollama model below.',
   'llm.status.selectOpenRouterModel': 'Select an OpenRouter model below.',
+  'llm.status.selectCustomModel': 'Enter a model ID below.',
+  'llm.status.customModelsUnavailable': "Couldn't load models—enter a model ID manually.",
   'llm.status.ollamaNotRunning': 'Ollama is not running.',
   'llm.status.unreachable': '{provider} is unreachable.',
   'llm.status.authInvalid': '{provider} API key rejected.',
+  'llm.status.permissionDenied':
+    '{provider} denied access. Check credentials, account permissions, or model access.',
   'llm.status.rateLimited': '{provider} rate limit hit.',
   'llm.status.noOllamaModels': 'No chat models installed in Ollama.',
   'llm.status.noModels': 'No usable {provider} models found.',
@@ -452,25 +525,53 @@ export const en = {
     'All at once may rewrite or remove timestamps, depending on the preset.',
   'llm.timing.option.perUtterance': 'After each phrase',
   'llm.timing.option.batch': 'All at once on stop',
-  'llm.routing.local': 'Local',
-  'llm.routing.remote': 'Remote',
-  'llm.routing.auto': 'Auto',
-  'llm.routing.ariaLabel': 'Run transforms with',
-  'llm.routing.localHint': 'Runs entirely on your device with Ollama.',
-  'llm.routing.remoteHint': 'Sends each transcript to OpenRouter for transformation.',
-  'llm.routing.autoHint': 'Stays on-device, and hands large transcripts to OpenRouter.',
-  'llm.routing.localLeg': 'Local · Ollama',
-  'llm.routing.remoteLeg': 'Remote · OpenRouter',
   'llm.routing.priceTierTooltip': 'Approximate price tier',
   'llm.routing.providerModel': '{provider} model',
   'llm.routing.ollamaModelDescription': 'Pick a local Ollama chat model.',
   'llm.routing.selectModel': 'Select a model',
   'llm.routing.refreshModels': 'Refresh {provider} models',
-  'llm.routing.apiKey.name': 'OpenRouter API key',
-  'llm.routing.apiKey.description': 'Stored securely by Obsidian.',
   'llm.routing.openRouterModel.name': 'OpenRouter model',
   'llm.routing.openRouterModel.description': 'Type to search OpenRouter models.',
   'llm.routing.testConnection': 'Test API key and model',
+  'llm.routing.testingConnection': 'Testing connection…',
+  'llm.provider.ollama': 'Ollama',
+  'llm.provider.openrouter': 'OpenRouter',
+  'llm.provider.custom': 'OpenAI-compatible',
+  'llm.routing.provider': 'Provider',
+  'llm.routing.defaultProvider': 'Default provider',
+  'llm.routing.largeProvider': 'Large-transcript provider',
+  'llm.routing.chooseProvider': 'Choose a provider',
+  'llm.routing.audioPrivacy':
+    'Only transcript text and enabled context are sent. Audio is never sent.',
+  'llm.routing.useLargeProvider': 'Use a different provider for large transcripts',
+  'llm.routing.useLargeProviderDescription':
+    'Route transcripts over the configured character threshold to another provider.',
+  'llm.routing.defaultLeg': 'Default',
+  'llm.routing.largeLeg': 'Large transcripts',
+  'llm.routing.openRouterApiKey.name': 'OpenRouter API key',
+  'llm.routing.openRouterApiKey.description': 'Required. Stored securely by Obsidian.',
+  'llm.routing.customBaseUrl.name': 'Base URL',
+  'llm.routing.customBaseUrl.description':
+    'Include the API version path when required, for example http://localhost:1234/v1.',
+  'llm.routing.customDestination': 'Transformation destination: {host}',
+  'llm.routing.insecureHttpWarning':
+    'This non-local endpoint uses unencrypted HTTP. Transcript text and API keys may be exposed.',
+  'llm.routing.customApiKey.name': 'API key',
+  'llm.routing.customApiKey.description': 'Optional. Stored securely by Obsidian.',
+  'llm.routing.customModel.name': 'Model',
+  'llm.routing.customModel.description':
+    "Choose a discovered model or enter a model ID. If discovery isn't available, manual entry still works.",
+  'llm.readiness.chooseProvider': 'Choose a provider to use transforms.',
+  'llm.readiness.chooseModel': 'Choose a model for {provider}.',
+  'llm.readiness.apiKeyMissing': 'Choose an OpenRouter API key in Secret Storage.',
+  'llm.readiness.baseUrlInvalid': 'Enter a valid OpenAI-compatible base URL.',
+  'llm.readiness.routingInvalid': 'Choose two different providers for size-based routing.',
+  'llm.validation.baseUrl.empty': 'Enter an OpenAI-compatible base URL.',
+  'llm.validation.baseUrl.absolute': 'Enter an absolute HTTP or HTTPS URL.',
+  'llm.validation.baseUrl.scheme': 'The base URL must use HTTP or HTTPS.',
+  'llm.validation.baseUrl.credentials': 'Remove credentials from the URL and use Secret Storage.',
+  'llm.validation.baseUrl.queryOrFragment':
+    'The base URL cannot contain a query string or fragment.',
   'llm.sidebar.eyebrow': 'Transcript workflow',
   'llm.sidebar.title': 'Transform dictation',
   'llm.sidebar.description': 'Choose how spoken text is shaped before it reaches your note.',
@@ -488,7 +589,7 @@ export const en = {
   'llm.sidebar.activePreset': 'Active preset',
   'llm.sidebar.unavailable.title': 'LLM features are unavailable',
   'llm.sidebar.unavailable.description':
-    'Enable LLM features in Local Dictation settings to configure transforms.',
+    'Enable LLM features in Speech Kit settings to configure transforms.',
   'llm.sidebar.unavailable.summary': 'Enable LLM features in settings',
   'llm.sidebar.off.title': 'Raw transcript mode',
   'llm.sidebar.off.description':
@@ -594,8 +695,8 @@ export const en = {
   'setup.ready.waitForDictation': 'Wait for the current dictation to finish, then try again.',
   'setup.ready.openMarkdownNote': 'Open a Markdown note in editing mode, then try dictation again.',
   'setup.ready.completionFailed': "Couldn't finish setup. Try again.",
-  'setup.wizard.welcomeTitle': 'Welcome to Local Dictation',
-  'setup.wizard.title': 'Set up Local Dictation',
+  'setup.wizard.welcomeTitle': 'Welcome to Speech Kit',
+  'setup.wizard.title': 'Set up Speech Kit',
   'setup.wizard.engineReadyTitle': 'Speech engine ready',
   'setup.wizard.engineReadyDesc': 'The local speech-to-text engine is installed and ready.',
   'setup.wizard.intro':
@@ -606,7 +707,7 @@ export const en = {
   'setup.wizard.startTalking':
     'Then hit the mic in the ribbon (or your own hotkey) and start talking.',
   'setup.wizard.cpuBuildNote':
-    'Starts with the CPU build. NVIDIA GPU? You can install the CUDA-accelerated build later from Settings.',
+    'Starts with the CPU build. NVIDIA GPU? You can install the CUDA build later to accelerate Whisper models.',
   'setup.wizard.downloadEngine': 'Download engine',
   'setup.wizard.modelSelectedTitle': 'Model selected',
   'setup.wizard.pickModelTitle': 'Pick a transcription model',
@@ -615,9 +716,9 @@ export const en = {
   'setup.wizard.modelIntro':
     'Install a transcription model to enable dictation. You can install more later — smaller models are faster, larger models are more accurate.',
   'setup.wizard.modelKinds':
-    'Two kinds are available: streaming models show words live as you speak; standard models transcribe after each pause. For hands-free dictation, start with the recommended Moonshine Small model. Nemotron 3.5 ASR is an experimental, higher-resource streaming option.',
+    'Two kinds are available: streaming models show words live as you speak; standard models transcribe after each pause. For hands-free dictation, start with the recommended Moonshine Small model. Nemotron 3.5 ASR is a higher-resource streaming option.',
   'setup.wizard.gpuNote':
-    'Larger models run much faster with GPU acceleration. If you have an NVIDIA GPU, you can install the CUDA-accelerated build later from Settings.',
+    'Whisper models can run much faster with GPU acceleration. If you have an NVIDIA GPU, you can install the CUDA build later from Settings.',
   'setup.wizard.openModelPicker': 'Open model picker',
   'setup.wizard.readyTitle': "You're ready to dictate",
   'setup.wizard.readyDesc':
@@ -627,12 +728,11 @@ export const en = {
     'Look for this icon in the Obsidian ribbon. Click it to start dictating; click again to stop.',
   'setup.wizard.hotkeyTitle': 'Or bind a hotkey',
   'setup.wizard.hotkeyDescBefore': 'Bind a shortcut to the ',
-  'setup.wizard.toggleCommandName': 'Local Dictation: Toggle dictation',
+  'setup.wizard.toggleCommandName': 'Speech Kit: Toggle dictation',
   'setup.wizard.hotkeyDescAfter': ' command to start and stop from anywhere in Obsidian.',
   'setup.wizard.openHotkeySettings': 'Open hotkey settings',
   'setup.wizard.tryDictationNow': 'Try dictation now',
-  'setup.wizard.openHotkeySettingsFallback':
-    'Open Settings → Hotkeys and search for "Local Dictation".',
+  'setup.wizard.openHotkeySettingsFallback': 'Open Settings → Hotkeys and search for "Speech Kit".',
   'setup.sidecar.modal.download': 'Download',
   'setup.sidecar.modal.variantDownload': '{variant} download',
   'setup.sidecar.modal.version': 'Version',
@@ -662,14 +762,18 @@ export const en = {
   'models.manage.selected': 'Selected',
   'models.manage.cancelling': 'Cancelling…',
   'models.manage.details': 'Details',
+  'models.manage.retryInstall': 'Retry',
+  'models.manage.dismissInstallFailure': 'Dismiss',
   'models.manage.installStartFailed': 'Could not start the model install. Try again.',
   'models.manage.selectFailed': 'Could not select the model. Check that its files are available.',
   'models.manage.selectedNotice': 'Model selected.',
   'models.manage.removeFailed': 'Could not remove the model. Close any process using its files.',
+  'models.manage.stopSpeechFirst':
+    'Stop dictation or Read aloud first — the speech engine is using model files right now.',
   'models.manage.removedNotice': 'Model removed.',
   'models.external.title': 'Use external file',
   'models.external.intro':
-    'External models are for advanced use. Local Dictation does not download, update, or checksum-verify these files.',
+    'External models are for advanced use. Speech Kit does not download, update, or checksum-verify these files.',
   'models.external.family.name': 'Model family',
   'models.external.family.desc':
     'Choose the loader that matches the model. The family is not inferred from its filename.',
@@ -778,7 +882,7 @@ export const en = {
   'sidecarError.no_active_session': 'There is no active dictation session.',
   'sidecarError.session_already_exists': 'A dictation session with this id already exists.',
   'sidecarError.session_capacity_exceeded':
-    'Local Dictation already has the maximum number of active sessions.',
+    'Speech Kit already has the maximum number of active sessions.',
   'sidecarError.sidecar_exited': 'The sidecar process exited unexpectedly.',
   'sidecarError.system_audio_capture_failed': 'Could not start system-audio capture.',
   'sidecarError.system_audio_permission_denied':
@@ -844,11 +948,15 @@ export const en = {
   'catalog.family.moonshine.summary':
     'Shows words while you speak. Tiny favors lower resource use, Small balances speed and quality, and Medium favors quality.',
   'catalog.family.nemotron_asr.summary':
-    'Experimental high-accuracy multilingual streaming with a larger download and higher resource use. Moonshine Small remains the recommended English live-dictation default.',
+    'High-accuracy multilingual streaming with a larger download and higher resource use. Moonshine Small remains the recommended English live-dictation default.',
   'catalog.family.supertonic.summary':
     'Lightning-fast on-device multilingual TTS via ONNX Runtime.',
   'catalog.family.pocket_tts.summary':
     'Reads notes aloud locally in English, French, German, Spanish, Portuguese, and Italian with selectable voices and pitch-preserving speed control.',
+  'catalog.firefox_translations_release_2026_07.summary':
+    'Fast local translation between English and seven product languages using models released in Firefox.',
+  'catalog.family.firefox_translations.summary':
+    'Translates note text locally with the compact Bergamot engine and released Firefox models.',
   'setup.sidecar.modal.unsupportedPlatform':
     'This speech engine build is not available for your platform or architecture.',
   'setup.sidecar.modal.genericInstallError':

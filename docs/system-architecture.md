@@ -1,15 +1,16 @@
 # System Architecture
 
-Local Dictation is an Obsidian plugin that handles speech in both directions
+Speech Kit is an Obsidian plugin that handles voice and language workflows
 entirely on-device. Dictation audio crosses a binary protocol into a native
 Rust sidecar and returns as text. Read-aloud text takes the inverse path and
-returns as audio for playback in Obsidian.
+returns as audio for playback in Obsidian. Text translation runs inside an
+isolated WebAssembly worker in the plugin process.
 
 The split is deliberate:
 
 - **The plugin (TypeScript, `src/`)** owns Obsidian UX — capture and playback,
-  settings, orchestration, Markdown extraction, the optional LLM transform,
-  rendering, and editor insertion.
+  settings, orchestration, Markdown extraction, local translation, the
+  optional LLM transform, rendering, and editor insertion.
 - **The sidecar (Rust, `native/`)** owns local speech inference — the complete
   audio-to-text pipeline plus text-to-audio synthesis and speed processing.
 
@@ -18,9 +19,10 @@ flowchart LR
     subgraph Plugin ["Obsidian plugin (TypeScript)"]
         CAP["Audio capture<br/>(mic / system audio → PCM)"]
         CFG["Session config + commands"]
-        LLM["LLM transform<br/>(optional · Ollama / OpenRouter)"]
+        LLM["LLM transform<br/>(optional · Ollama / OpenRouter / custom)"]
         REND["Render + insert<br/>(timestamps, formatting, speaker labels)"]
         TEXT["Markdown extraction<br/>+ sentence chunks"]
+        MT["Markdown segmentation<br/>+ Bergamot WASM worker"]
         PLAY["Web Audio playback"]
     end
 
@@ -38,6 +40,7 @@ flowchart LR
     DIA -->|"stdout: transcript_ready"| LLM --> REND
     TEXT -->|"stdin: start_synthesis"| SYNTH
     SYNTH -->|"stdout: model-native PCM"| PLAY
+    REND -->|"explicit translate command"| MT -->|"preview + atomic edit"| REND
 ```
 
 The plugin and sidecar talk over a single framed byte stream on the sidecar's
@@ -281,10 +284,13 @@ Pocket TTS and Supertonic use
 `adapter.load_synthesis → synthesis_model.synthesize` on a separate synthesis
 worker, so they do not enter the dictation session pipeline.
 Capabilities reach the plugin two ways: inventory (`system_info`) and
-per-selection merge (`model_probe_result.mergedCapabilities`). Each runtime probes
-its accelerators at startup — `whisper_cpp` checks for a usable Metal or CUDA
-device, `onnx_runtime` tries to register the ONNX Runtime CUDA provider — and
-reports what's actually available.
+per-selection merge (`model_probe_result.mergedCapabilities`). `whisper_cpp`
+advertises the Metal or CUDA backend compiled into the sidecar; this is a
+configured route, not observation of the backend after model load. The plugin
+separately checks NVIDIA compatibility before recommending the CUDA sidecar.
+The production `onnx_runtime` integration is CPU-only. The tested ONNX ASR
+exports were slower or unsafe with the generic CUDA execution provider; other
+families remain on CPU without an unverified acceleration claim.
 
 **Compiled runtimes and adapters:**
 
@@ -295,7 +301,7 @@ reports what's actually available.
 
 Cargo features: `engine-whisper`, `engine-cohere-transcribe`,
 `engine-moonshine`, `engine-nemotron-asr`, `engine-pocket-tts`,
-`engine-supertonic`, `gpu-metal`, `gpu-cuda`, `gpu-ort-cuda`. A missing
+`engine-supertonic`, `gpu-metal`, `gpu-cuda`. A missing
 `(runtimeId, familyId)` pair surfaces as an `unsupported_engine` error rather
 than a silent failure.
 
@@ -336,8 +342,9 @@ than a silent failure.
 | Moonshine Tiny | `onnx_runtime` · `moonshine` | Quantized | 49 MB | Streaming (live), 34M params |
 | Moonshine Small | `onnx_runtime` · `moonshine` | Quantized | 157 MB | Streaming (live), balanced, 123M params |
 | Moonshine Medium | `onnx_runtime` · `moonshine` | Quantized | 289 MB | Streaming (live), 245M params |
-| Nemotron 3.5 ASR 560 ms | `onnx_runtime` · `nemotron_asr` | INT8 | 651 MB | Experimental multilingual streaming |
+| Nemotron 3.5 ASR 560 ms | `onnx_runtime` · `nemotron_asr` | INT8 | 651 MB | Multilingual streaming |
 | Supertonic 3 | `onnx_runtime` · `supertonic` | ONNX | 398 MB | Read aloud in eight app languages, 10 voices |
+| Firefox Translations | `bergamot_wasm` · `firefox_translations` | Bergamot | 526 MB | 14 English-anchored local translation directions |
 
 Moonshine models are streaming (live-dictation) entries in the managed catalog,
 installed through Manage Models like any other model. Each is a multi-file ORT
@@ -347,7 +354,7 @@ SHA-256 hashes. They are English-only and do not apply speaker labels. See
 [`docs/guides/moonshine-live-testing.md`](guides/moonshine-live-testing.md) for
 install and manual acceptance testing.
 
-Nemotron 3.5 ASR is a separate experimental managed entry; Moonshine Small
+Nemotron 3.5 ASR is a separate managed entry; Moonshine Small
 remains the recommended live-dictation default. Its encoder, decoder, joiner,
 and tokenizer are pinned by revision, size, and SHA-256. The adapter supports
 the 560 ms int8 export with verified manual and automatic language prompts. See
@@ -430,16 +437,25 @@ The plugin consumes every accepted `transcript_ready` revision:
 
 1. **LLM transform (optional, off by default).** Final revisions can be cleaned,
    rewritten, or summarized per utterance — or the whole session in batch —
-   through a local model
-   (Ollama) or OpenRouter. Routing is `local` by default; with remote enabled,
-   jobs over a configurable character threshold can auto-route to OpenRouter.
+   through Ollama, OpenRouter, or one user-configured OpenAI-compatible endpoint.
+   A provider must be chosen explicitly. Routing either uses one provider for
+   every transcript or sends transcripts above a configurable character
+   threshold to a second provider; provider failures never trigger failover.
    Audio is never sent; only the transcript text and any note context you opt in
    to. Lives in `src/llm/`.
+
+   Provider connections and routing policy are stored separately. The custom
+   adapter uses a validated user-supplied base URL, optional bearer key from
+   Obsidian Secret Storage, best-effort `GET /models` discovery, and
+   `POST /chat/completions`; manual model IDs remain usable when discovery is
+   unavailable. Provider/model choices are snapshotted when dictation starts,
+   while disabling LLM features is a live kill switch that aborts in-flight
+   cleanup and keeps the rest of that session raw.
 2. **Render.** The transcript renderer (`src/transcript/renderer.ts`) applies the
    user's formatting (`smart` / `space` / `new_line` / `new_paragraph`), optional
-   elapsed- or wall-clock timestamps, and speaker labels. Detailed timestamp
-   mode uses engine word alignments when available (Whisper), then engine
-   segments, then falls back to the VAD phrase boundary without dropping text.
+   elapsed- or wall-clock timestamps, and speaker labels. Timestamp frequency can
+   use fixed intervals, every engine segment or VAD phrase, or Smart paragraph
+   breaks.
 3. **Insert or revise.** The first revision lands at the dictation anchor;
    later revisions compare-and-swap the tracked utterance span. Non-final text
    has a theme-neutral provisional opacity decoration. A user edit latches the
@@ -469,6 +485,28 @@ The read-aloud path is independent from microphone capture and transcription:
 The model catalog and settings keep independent `stt` and `tts` selections.
 Pocket TTS and Supertonic models and optional voices are downloaded on demand
 and verified by their pinned size and SHA-256 before activation.
+
+---
+
+### Stage 9: Local Translation
+
+Translation is independent from the sidecar inference protocol:
+
+1. `TranslationController` captures a selection or whole-note snapshot.
+2. A pure TypeScript segmentation pass protects Markdown structure, code,
+   math, links, tags, frontmatter, and whitespace while extracting prose.
+3. The plugin resolves the exact installed Firefox Translations artifacts for
+   the explicit language pair and transfers their buffers to a Blob-backed Web
+   Worker.
+4. Bergamot WebAssembly translates all prose spans locally in one batch.
+5. The worker terminates after completion or immediately on cancellation.
+6. The modal previews the rebuilt Markdown. Replace is allowed only if the
+   original source is unchanged; insert and copy remain available otherwise.
+
+The sidecar catalog still owns SHA-256-pinned installation and removal. Its
+`bergamot_wasm` runtime and `firefox_translations` family describe capability
+and probe the managed install, but native inference is intentionally refused.
+No note text crosses the sidecar or network during translation.
 
 ---
 
@@ -521,10 +559,11 @@ A representative slice of user-facing settings (full list and defaults in
 | `transcriptFormatting` | `smart` | How utterance boundaries render |
 | `timestampsEnabled` | `false` | Render timestamps in the note |
 | `timestampClock` | `elapsed` | `elapsed` session time vs `wallclock` |
-| `timestampDensity` | `sparse` | `sparse` (interval), `every_utterance`, or model-aware `detailed` |
+| `timestampDensity` | `sparse` | `sparse` (interval), `every_utterance`, or `paragraph` |
 | `llmPostprocessMode` | `off` | LLM transform: `off` / `per_utterance` / `batch` |
-| `llmRouting` | `local` | `local` (Ollama) vs `remote` (OpenRouter) |
-| `llmRemoteThresholdChars` | `6000` | Size above which jobs auto-route to OpenRouter |
+| `llmRoutingPolicy` | `null` | Fixed provider or optional transcript-size split |
+| `llmProviderConfigurations` | Empty models | Ollama, OpenRouter, and OpenAI-compatible connection settings |
+| `llmNetworkTimeoutSec` | `60` | OpenRouter and custom-endpoint request timeout |
 | `sidecarRequestTimeoutSeconds` | `300` | Command/response timeout |
 | `sidecarStartupTimeoutSeconds` | `4` | Health-check timeout on launch |
 | `developerMode` | `false` | Verbose logging |
@@ -542,7 +581,7 @@ A representative slice of user-facing settings (full list and defaults in
 | **Silero VAD** | Speech probability per 32 ms window; drives boundary detection |
 | **Node.js child_process** | Spawns and manages the Rust sidecar |
 | **reqwest + sha2** | Downloads model files and verifies their SHA-256 |
-| **Ollama / OpenRouter** | Optional LLM transform (local / remote) on the plugin side |
+| **Ollama / OpenRouter / OpenAI-compatible APIs** | Optional provider-selected text transformation on the plugin side |
 
 ## Where Things Live
 

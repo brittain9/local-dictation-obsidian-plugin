@@ -1,5 +1,5 @@
 import type { App } from 'obsidian';
-import { Modal, Setting, setIcon } from 'obsidian';
+import { Modal, SearchComponent, Setting, setIcon } from 'obsidian';
 
 import {
   catalogModelSupportsLanguage,
@@ -9,11 +9,16 @@ import {
 import { formatBytes, formatVoiceLabel } from '../shared/format-utils';
 import { t } from '../shared/i18n';
 import type { UserFeedback } from '../shared/user-feedback';
+import { SidecarLifecycleConflictError } from '../sidecar/sidecar-lifecycle-gate';
 import { ConfirmModal } from '../ui/confirm-modal';
 import { styleDestructiveButton } from '../ui/destructive-button';
 import { localizeFamilySummary } from './catalog-localization';
 import { formatModelTagLabel } from './model-guidance';
-import { isCancellingPhase, type ModelInstallManager } from './model-install-manager';
+import {
+  isCancellingPhase,
+  type ModelInstallManager,
+  type ModelManagerState,
+} from './model-install-manager';
 import {
   createInstallProgressElement,
   type InstallProgressState,
@@ -34,7 +39,7 @@ import { deriveModelFamilyTabs, deriveModelRowStates, type ModelRowState } from 
 // Dependencies
 // ---------------------------------------------------------------------------
 
-export type ModelPickerTask = 'stt' | 'tts';
+export type ModelPickerTask = 'stt' | 'translation' | 'tts';
 
 export interface ModelPickerOptions {
   initialTask?: ModelPickerTask;
@@ -51,6 +56,17 @@ export function searchQueryAfterTaskSwitch(
   currentQuery: string,
 ): string {
   return currentTask === nextTask ? currentQuery : '';
+}
+
+function taskLabel(task: ModelPickerTask): string {
+  switch (task) {
+    case 'stt':
+      return t('models.manage.dictationModels');
+    case 'translation':
+      return t('models.manage.translationModels');
+    case 'tts':
+      return t('models.manage.readAloudModels');
+  }
 }
 
 export type ModelLanguageFilter = { kind: 'all' } | { kind: 'language'; tag: string };
@@ -171,9 +187,10 @@ export class ManageModelsModal extends Modal {
   private releaseSubscription: (() => void) | null = null;
   private tabButtons = new Map<string, HTMLButtonElement>();
   private tabBarEl: HTMLDivElement | null = null;
-  private searchInputEl: HTMLInputElement | null = null;
+  private search: SearchComponent | null = null;
   private searchQuery = '';
   private taskButtons = new Map<ModelPickerTask, HTMLButtonElement>();
+  private renderedFailureId: string | null = null;
 
   constructor(
     app: App,
@@ -185,7 +202,7 @@ export class ManageModelsModal extends Modal {
 
   override onOpen(): void {
     this.modalEl.addClass('local-stt-manage-models');
-    this.titleEl.setText(t('models.manage.title'));
+    this.setTitle(t('models.manage.title'));
     this.renderContent();
 
     this.releaseSubscription = this.deps.manager.subscribe(() => {
@@ -201,11 +218,16 @@ export class ManageModelsModal extends Modal {
     this.navigationSignature = '';
     this.tabBarEl = null;
     this.listContainer = null;
-    this.searchInputEl = null;
+    this.search = null;
     this.tabButtons.clear();
     this.taskButtons.clear();
 
     const state = this.deps.manager.getState();
+    this.renderedFailureId = state.failedInstall?.failureId ?? null;
+    // Reopening with a pending failure must land on the row that reports it,
+    // which overrides the caller's preferred initial task.
+    this.revealFailedModel(state);
+
     if (state.loadStatus === 'error' && this.deps.onRunSetup !== undefined) {
       this.renderLoadErrorPanel();
       return;
@@ -216,7 +238,7 @@ export class ManageModelsModal extends Modal {
       attr: { 'aria-label': t('models.manage.taskLabel'), role: 'tablist' },
       cls: 'local-stt-task-switcher',
     });
-    for (const task of ['stt', 'tts'] as const) {
+    for (const task of ['stt', 'tts', 'translation'] as const) {
       const button = taskSwitcher.createEl('button', {
         attr: {
           'aria-selected': String(task === this.activeTask),
@@ -224,36 +246,24 @@ export class ManageModelsModal extends Modal {
           type: 'button',
         },
         cls: 'local-stt-task-switcher__button',
-        text:
-          task === 'tts' ? t('models.manage.readAloudModels') : t('models.manage.dictationModels'),
+        text: taskLabel(task),
       });
       button.toggleClass('is-active', task === this.activeTask);
       button.addEventListener('click', () => this.switchTask(task));
       this.taskButtons.set(task, button);
     }
-    this.searchInputEl = toolbar.createEl('input', {
-      attr: {
-        'aria-label': t('models.manage.searchPlaceholder', {
-          task:
-            this.activeTask === 'tts'
-              ? t('models.manage.readAloudModels')
-              : t('models.manage.dictationModels'),
-        }),
-        placeholder: t('models.manage.searchPlaceholder', {
-          task:
-            this.activeTask === 'tts'
-              ? t('models.manage.readAloudModels')
-              : t('models.manage.dictationModels'),
-        }),
-        type: 'search',
-      },
-      cls: 'local-stt-model-search',
+    const searchLabel = t('models.manage.searchPlaceholder', {
+      task: taskLabel(this.activeTask),
     });
-    this.searchInputEl.value = this.searchQuery;
-    this.searchInputEl.addEventListener('input', () => {
-      this.searchQuery = this.searchInputEl?.value ?? '';
-      this.renderModelList();
-    });
+    const searchHost = toolbar.createDiv({ cls: 'local-stt-model-search' });
+    this.search = new SearchComponent(searchHost)
+      .setPlaceholder(searchLabel)
+      .setValue(this.searchQuery)
+      .onChange((value) => {
+        this.searchQuery = value;
+        this.renderModelList();
+      });
+    this.search.inputEl.setAttribute('aria-label', searchLabel);
 
     this.browserEl = this.contentEl.createDiv({ cls: 'local-stt-model-browser' });
     this.navigationEl = this.browserEl.createDiv({
@@ -298,10 +308,11 @@ export class ManageModelsModal extends Modal {
     this.navigationSignature = '';
     this.listContainer = null;
     this.tabBarEl = null;
-    this.searchInputEl = null;
+    this.search = null;
     this.tabButtons.clear();
     this.taskButtons.clear();
     this.progressElements.clear();
+    this.renderedFailureId = null;
     this.contentEl.empty();
   }
 
@@ -311,22 +322,30 @@ export class ManageModelsModal extends Modal {
 
   private switchTask(task: ModelPickerTask): void {
     if (task === this.activeTask) return;
+    this.setActiveTask(task);
+    this.renderNavigation();
+    this.renderModelList();
+  }
+
+  /**
+   * Moves the browser to `task` without rendering, so callers that are about to
+   * build the toolbar from scratch and callers reacting to a state change can
+   * share one definition of what switching tasks means.
+   */
+  private setActiveTask(task: ModelPickerTask): void {
+    if (task === this.activeTask) return;
     this.searchQuery = searchQueryAfterTaskSwitch(this.activeTask, task, this.searchQuery);
     this.activeTask = task;
-    if (this.searchInputEl !== null) {
-      this.searchInputEl.value = '';
-      const taskLabel =
-        task === 'tts' ? t('models.manage.readAloudModels') : t('models.manage.dictationModels');
-      const placeholder = t('models.manage.searchPlaceholder', { task: taskLabel });
-      this.searchInputEl.placeholder = placeholder;
-      this.searchInputEl.setAttribute('aria-label', placeholder);
+    if (this.search !== null) {
+      this.search.setValue('');
+      const placeholder = t('models.manage.searchPlaceholder', { task: taskLabel(task) });
+      this.search.setPlaceholder(placeholder);
+      this.search.inputEl.setAttribute('aria-label', placeholder);
     }
     for (const [candidate, button] of this.taskButtons) {
       button.toggleClass('is-active', candidate === task);
       button.setAttribute('aria-selected', String(candidate === task));
     }
-    this.renderNavigation();
-    this.renderModelList();
   }
 
   private renderNavigation(): void {
@@ -551,13 +570,15 @@ export class ManageModelsModal extends Modal {
     container.empty();
 
     const setting = new Setting(container);
-    setting.settingEl.addClass('local-stt-model-row');
+    setting.setClass('local-stt-model-row');
     setting.setName(row.model.displayName);
     const selectedLanguage = this.deps.manager.getDictationLanguage();
     const supportsSelectedLanguage =
-      row.model.task === 'tts' || catalogModelSupportsLanguage(row.model, selectedLanguage);
+      row.model.task !== 'stt' || catalogModelSupportsLanguage(row.model, selectedLanguage);
 
-    // Description: install progress when installing/canceling, tags + size otherwise.
+    // Description: install progress when installing/canceling, the same bar in
+    // its failed state when the last install for this model failed, tags + size
+    // otherwise.
     if (row.isInstalling || row.isCanceling) {
       const progressState = this.buildProgressState(row);
       if (progressState !== null) {
@@ -567,6 +588,21 @@ export class ManageModelsModal extends Modal {
         fragment.append(progressEl);
         setting.setDesc(fragment);
       }
+    } else if (row.failedInstall !== null) {
+      // Deliberately not registered in `progressElements`: a failure is a
+      // settled state with nothing left to tick.
+      const fragment = createFragment();
+      fragment.append(
+        createInstallProgressElement({
+          details: null,
+          downloadedBytes: null,
+          isCancelling: false,
+          message: row.failedInstall.message,
+          state: 'failed',
+          totalBytes: null,
+        }),
+      );
+      setting.setDesc(fragment);
     } else {
       const tags = this.buildTagsFragment(row.model);
       if (!supportsSelectedLanguage) {
@@ -670,6 +706,42 @@ export class ManageModelsModal extends Modal {
           });
           break;
 
+        case 'retry':
+          setting.addButton((button) => {
+            const failureId = row.failedInstall?.failureId ?? null;
+            button
+              .setCta()
+              .setButtonText(t('models.manage.retryInstall'))
+              .setDisabled(
+                this.actionInProgress ||
+                  failureId === null ||
+                  this.deps.manager.getState().activeInstall !== null,
+              )
+              .onClick(() => {
+                if (failureId === null) return;
+                void this.runAction(
+                  async () => {
+                    await this.deps.manager.retryFailedInstall(failureId);
+                  },
+                  { failureMessage: t('models.manage.installStartFailed') },
+                );
+              });
+          });
+          break;
+
+        case 'dismiss':
+          setting.addButton((button) => {
+            const failureId = row.failedInstall?.failureId ?? null;
+            button
+              .setButtonText(t('models.manage.dismissInstallFailure'))
+              .setDisabled(this.actionInProgress || failureId === null)
+              .onClick(() => {
+                if (failureId === null) return;
+                this.deps.manager.dismissFailedInstall(failureId);
+              });
+          });
+          break;
+
         case 'details':
           setting.addExtraButton((button) => {
             button
@@ -744,7 +816,7 @@ export class ManageModelsModal extends Modal {
       const voiceSetting = new Setting(details)
         .setName(formatVoiceLabel(voiceId))
         .setDesc(t('models.manage.optionalVoice'));
-      voiceSetting.settingEl.addClass('local-stt-voice-row');
+      voiceSetting.setClass('local-stt-voice-row');
       if (installed?.installedVoiceIds.includes(voiceId) ?? false) {
         voiceSetting.addButton((button) => {
           button.setButtonText(t('models.manage.voiceInstalled')).setDisabled(true);
@@ -820,6 +892,19 @@ export class ManageModelsModal extends Modal {
       return;
     }
 
+    const priorFailureId = this.renderedFailureId;
+    const nextFailureId = state.failedInstall?.failureId ?? null;
+    if (priorFailureId !== nextFailureId) {
+      this.renderedFailureId = nextFailureId;
+      // The failure is reported on the model's own row, so that row has to be
+      // reachable — otherwise an active tab, language, or search filter would
+      // swallow the only report the user gets.
+      this.revealFailedModel(state);
+      this.renderNavigation();
+      this.renderModelList();
+      return;
+    }
+
     if (this.navigationSignature !== this.buildNavigationSignature()) {
       this.renderNavigation();
       this.renderModelList();
@@ -889,7 +974,18 @@ export class ManageModelsModal extends Modal {
       }
       this.deps.onChanged();
     } catch (error) {
-      if (messages.failureMessage !== undefined) {
+      // A busy engine is not a failed action: the model is untouched and the
+      // same click works once playback stops. Saying "could not remove" here
+      // would send the user looking for a problem with the model.
+      if (error instanceof SidecarLifecycleConflictError) {
+        this.deps.feedback.show({
+          intent: 'warning',
+          message:
+            error.activeKind === 'mutation'
+              ? t('settings.sidecar.operationInProgress')
+              : t('models.manage.stopSpeechFirst'),
+        });
+      } else if (messages.failureMessage !== undefined) {
         this.deps.feedback.show({
           cause: error,
           intent: 'error',
@@ -905,6 +1001,35 @@ export class ManageModelsModal extends Modal {
   // -------------------------------------------------------------------------
   // Helpers
   // -------------------------------------------------------------------------
+
+  /**
+   * Points the browser at the model whose install just failed. Silent when
+   * there is no failure or the model left the catalog.
+   */
+  private revealFailedModel(state: Readonly<ModelManagerState>): void {
+    const failure = state.failedInstall;
+    if (failure === null) return;
+
+    const model = state.catalog.models.find((candidate) =>
+      matchesModelTriple(
+        candidate,
+        failure.selection.runtimeId,
+        failure.selection.familyId,
+        failure.selection.modelId,
+      ),
+    );
+    if (model === undefined) return;
+
+    this.setActiveTask(model.task);
+    this.activeTabs.set(model.task, { familyId: model.familyId, runtimeId: model.runtimeId });
+    if (!modelMatchesLanguageFilter(model, this.activeLanguage)) {
+      this.activeLanguage = ALL_MODEL_LANGUAGES;
+    }
+    if (this.searchQuery.trim().length > 0) {
+      this.searchQuery = '';
+      this.search?.setValue('');
+    }
+  }
 
   private getActiveTab(): AdapterTabKey | null {
     return this.activeTabs.get(this.activeTask) ?? null;

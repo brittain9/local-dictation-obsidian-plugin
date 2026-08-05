@@ -112,11 +112,15 @@ describe('LLM transform settings modals', () => {
     expect(temperature.disabled).toBe(true);
   });
 
-  it('persists each applicable Auto-routing model setting when it changes', async () => {
+  it('persists each applicable advanced model setting when it changes', async () => {
     let settings = {
       ...DEFAULT_PLUGIN_SETTINGS,
-      llmRemoteFeaturesEnabled: true,
-      llmRouting: 'auto' as const,
+      llmRoutingPolicy: {
+        defaultProviderId: 'ollama' as const,
+        kind: 'transcript_size' as const,
+        largeTranscriptProviderId: 'openrouter' as const,
+        thresholdChars: 6_000,
+      },
     };
     const saveSettings = vi.fn(async (next) => {
       settings = next;
@@ -128,24 +132,21 @@ describe('LLM transform settings modals', () => {
 
     modal.open();
     MockSetting.named('Temperature').onlyText().change('0.8');
-    MockSetting.named('Remote routing threshold').onlyText().change('7000');
-    MockSetting.named('Remote timeout').onlyText().change('45');
+    MockSetting.named('Network timeout').onlyText().change('45');
 
     await vi.waitFor(() => {
       expect(settings).toMatchObject({
         llmPostprocessTemperature: 0.8,
-        llmRemoteThresholdChars: 7000,
-        llmRemoteTimeoutSec: 45,
+        llmNetworkTimeoutSec: 45,
       });
     });
-    expect(saveSettings).toHaveBeenCalledTimes(3);
+    expect(saveSettings).toHaveBeenCalledTimes(2);
   });
 
-  it('hides remote-only model settings for local routing', () => {
+  it('hides network settings for fixed Ollama routing', () => {
     const settings = {
       ...DEFAULT_PLUGIN_SETTINGS,
-      llmRemoteFeaturesEnabled: true,
-      llmRouting: 'local' as const,
+      llmRoutingPolicy: { kind: 'fixed' as const, providerId: 'ollama' as const },
     };
 
     new LlmModelSettingsModal({} as App, {
@@ -154,7 +155,6 @@ describe('LLM transform settings modals', () => {
     }).open();
 
     const names = MockSetting.instances.map((setting) => setting.name);
-    expect(names).not.toContain('Remote routing threshold');
-    expect(names).not.toContain('Remote timeout');
+    expect(names).not.toContain('Network timeout');
   });
 });

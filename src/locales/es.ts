@@ -33,24 +33,24 @@ export const es = {
   'notice.sidecarVersionDrift.actionMultiple': 'Actualizar motores de voz',
   'notice.sidecarVersionDrift.actionOne': 'Actualizar motor de voz',
   'notice.sidecarVersionDrift.cpu':
-    'Local Dictation se actualizó a {version}, pero el motor de voz instalado está desactualizado. Actualícelo ahora para mantenerlos sincronizados.',
+    'Speech Kit se actualizó a {version}, pero el motor de voz instalado está desactualizado. Actualícelo ahora para mantenerlos sincronizados.',
   'notice.sidecarVersionDrift.cpuAndCuda':
-    'Local Dictation se actualizó a {version}, pero los motores de voz CPU y CUDA instalados están desactualizados. Actualícelos ahora para mantenerlos sincronizados.',
+    'Speech Kit se actualizó a {version}, pero los motores de voz CPU y CUDA instalados están desactualizados. Actualícelos ahora para mantenerlos sincronizados.',
   'notice.sidecarVersionDrift.cuda':
-    'Local Dictation se actualizó a {version}, pero el motor de voz CUDA instalado está desactualizado. Actualícelo ahora para mantenerlos sincronizados.',
+    'Speech Kit se actualizó a {version}, pero el motor de voz CUDA instalado está desactualizado. Actualícelo ahora para mantenerlos sincronizados.',
   'notice.surfaceDesynchronized':
-    'El dictado se detuvo porque la nota cambió de una manera que Local Dictation no pudo rastrear con seguridad. Inicie el dictado nuevamente para continuar.',
+    'El dictado se detuvo porque la nota cambió de una manera que Speech Kit no pudo rastrear con seguridad. Inicie el dictado nuevamente para continuar.',
   'notice.targetNoteClosed':
     'El dictado se detuvo porque la nota de destino se cerró o se reemplazó. Inicie el dictado nuevamente para continuar.',
   'notice.targetNoteDeleted':
     'El dictado se detuvo porque se eliminó la nota de destino. Restaure o vuelva a crear la nota y luego comience a dictar nuevamente.',
   'notice.transcriptWriteFailed':
-    'El dictado se detuvo porque Local Dictation no pudo escribir la nota de forma segura. Inicie el dictado nuevamente para continuar.',
+    'El dictado se detuvo porque Speech Kit no pudo escribir la nota de forma segura. Inicie el dictado nuevamente para continuar.',
   'setup.sidecar.cpu.firstRun.body':
-    'Local Dictation necesita una descarga única del motor de voz a texto CPU de las versiones GitHub. La transcripción se ejecuta localmente en su máquina una vez que se completa. Puede instalar la aceleración CUDA más tarde desde la configuración.',
+    'Speech Kit necesita una descarga única del motor de voz a texto CPU de las versiones GitHub. La transcripción se ejecuta localmente en su máquina una vez que se completa. Puede instalar la aceleración CUDA más tarde desde la configuración.',
   'setup.sidecar.cpu.firstRun.primaryButton': 'Descargar CPU sidecar',
-  'setup.sidecar.cpu.firstRun.success': 'Local Dictation sidecar instalado e iniciado.',
-  'setup.sidecar.cpu.firstRun.title': 'Terminar de configurar Local Dictation',
+  'setup.sidecar.cpu.firstRun.success': 'Speech Kit sidecar instalado e iniciado.',
+  'setup.sidecar.cpu.firstRun.title': 'Terminar de configurar Speech Kit',
   'setup.sidecar.cpu.install.body':
     'Descargue el motor de voz a texto CPU de las versiones GitHub. La transcripción se ejecuta localmente en su máquina una vez que se completa.',
   'setup.sidecar.cpu.install.primaryButton': 'Descargar CPU sidecar',
@@ -61,16 +61,14 @@ export const es = {
   'setup.sidecar.cpu.reinstall.primaryButton': 'Volver a descargar CPU sidecar',
   'setup.sidecar.cpu.reinstall.success': 'CPU sidecar reinstalado y reiniciado.',
   'setup.sidecar.cpu.reinstall.title': 'Reinstale CPU sidecar',
-  'setup.sidecar.cuda.install.body':
-    'Descargue el sidecar acelerado por CUDA para GPU NVIDIA. Este reemplaza al sidecar de CPU mientras está activo. El sidecar de CPU permanece instalado como alternativa.',
   'setup.sidecar.cuda.install.primaryButton': 'Descargar CUDA sidecar',
   'setup.sidecar.cuda.install.success': 'CUDA sidecar instalado e iniciado.',
   'setup.sidecar.cuda.install.title': 'Instalar aceleración CUDA',
   'setup.sidecar.mac.firstRun.body':
-    'Local Dictation necesita una descarga única de su motor de voz a texto de las versiones GitHub. Una vez instalada, la transcripción se ejecuta completamente en tu Mac: el audio nunca sale de tu máquina.',
+    'Speech Kit necesita una descarga única de su motor de voz a texto de las versiones GitHub. Una vez instalada, la transcripción se ejecuta completamente en tu Mac: el audio nunca sale de tu máquina.',
   'setup.sidecar.mac.firstRun.primaryButton': 'Descargar sidecar',
-  'setup.sidecar.mac.firstRun.success': 'Local Dictation sidecar instalado e iniciado.',
-  'setup.sidecar.mac.firstRun.title': 'Terminar de configurar Local Dictation',
+  'setup.sidecar.mac.firstRun.success': 'Speech Kit sidecar instalado e iniciado.',
+  'setup.sidecar.mac.firstRun.title': 'Terminar de configurar Speech Kit',
   'setup.sidecar.mac.install.body':
     'Descargue el motor de voz a texto de las versiones GitHub. La transcripción se ejecuta localmente en su Mac una vez que se completa.',
   'setup.sidecar.mac.install.primaryButton': 'Descargar sidecar',
@@ -82,15 +80,14 @@ export const es = {
   'setup.sidecar.mac.reinstall.success': 'Sidecar reinstalado y reiniciado.',
   'setup.sidecar.mac.reinstall.title': 'Reinstale sidecar',
   'setup.sidecar.update.body':
-    'Descargue el {engineLabel} actual para que coincida con esta versión de Local Dictation. Las instalaciones existentes se reemplazan en su lugar.',
+    'Descargue el {engineLabel} actual para que coincida con esta versión de Speech Kit. Las instalaciones existentes se reemplazan en su lugar.',
   'setup.sidecar.update.engine.cpuAndCuda': 'Motores de voz CPU y CUDA',
   'setup.sidecar.update.engine.cuda': 'Motor de voz CUDA',
   'setup.sidecar.update.engine.default': 'motor de voz',
   'setup.sidecar.update.primaryButton_one': 'Actualizar motor de voz',
   'setup.sidecar.update.primaryButton_other': 'Actualizar motores de voz',
-  'setup.sidecar.update.success_one': 'Motor de voz Local Dictation actualizado y reiniciado.',
-  'setup.sidecar.update.success_other':
-    'Motores de voz Local Dictation actualizados y reiniciados.',
+  'setup.sidecar.update.success_one': 'Motor de voz de Speech Kit actualizado y reiniciado.',
+  'setup.sidecar.update.success_other': 'Motores de voz de Speech Kit actualizados y reiniciados.',
   'setup.sidecar.update.title_one': 'Actualizar motor de voz',
   'setup.sidecar.update.title_other': 'Actualizar motores de voz',
   'audio.microphone.permissionDeniedMac':
@@ -225,9 +222,6 @@ export const es = {
   'settings.llm.enableFeatures.name': 'Habilitar funciones LLM',
   'settings.llm.enableFeatures.desc':
     'Poner a disposición las transformaciones LLM. Activa o desactiva la transformación en la barra lateral.',
-  'settings.llm.enableRemote.name': 'Habilitar LLM remoto',
-  'settings.llm.enableRemote.desc':
-    'Permitir que el texto de la transcripción y el contexto de la nota incluida se envíen a OpenRouter. El audio nunca se envía.',
   'settings.llm.restoreDefaults.name': 'Restaurar los valores predeterminados de transformación',
   'settings.llm.restoreDefaults.desc':
     'Restablezca el valor preestablecido, el tiempo, el contexto, las palabras mínimas y la temperatura. Se conservan los ajustes preestablecidos y los modelos guardados.',
@@ -249,11 +243,9 @@ export const es = {
   'settings.hardwareAcceleration.name': 'Aceleración de hardware',
   'settings.hardwareAcceleration.desc': 'Ejecute la inferencia en la GPU cuando esté disponible.',
   'settings.hardwareAcceleration.busy':
-    'No se puede cambiar la aceleración del hardware mientras se dicta.',
+    'No se puede cambiar la aceleración del hardware mientras el dictado o la lectura en voz alta estén activos. Si el dictado sigue procesándose después de detenerlo, ejecute "Cancelar dictado".',
   'settings.hardwareAcceleration.on': 'Aceleración de hardware activada.',
   'settings.hardwareAcceleration.off': 'Aceleración de hardware desactivada.',
-  'settings.hardwareAcceleration.restartFailed':
-    'Se guardó la aceleración del hardware, pero el motor de voz no pudo reiniciarse. Reinicie Obsidian para aplicarlo.',
   'settings.noteContext.name': 'Usar nota como contexto',
   'settings.noteContext.desc':
     'Para inglés seleccionado manualmente, envía términos distintivos de la nota abierta para mejorar la ortografía.',
@@ -294,9 +286,9 @@ export const es = {
   'settings.install.installingSidecarMac': 'Instalación de sidecar',
   'settings.install.cancelling': 'Cancelando...',
   'settings.install.cancel': 'Cancelar',
-  'settings.missingSidecar.name': 'Configurar Local Dictation',
+  'settings.missingSidecar.name': 'Configurar Speech Kit',
   'settings.missingSidecar.desc':
-    'Local Dictation aún no está listo. Ejecute el asistente de configuración para instalar el motor de voz y un modelo.',
+    'Speech Kit aún no está listo. Ejecute el asistente de configuración para instalar el motor de voz y un modelo.',
   'settings.sidecar.name': 'Sidecar',
   'settings.sidecar.genericName': 'sidecar',
   'settings.sidecar.variantName': 'Sidecar {variant}',
@@ -304,19 +296,14 @@ export const es = {
   'settings.sidecar.cpuName': 'CPU sidecar',
   'settings.sidecar.cpuDesc': 'Motor de voz a texto. Requerido.',
   'settings.sidecar.gpuName': 'GPU sidecar',
-  'settings.sidecar.cudaActive': 'Aceleración CUDA activa.',
   'settings.sidecar.cudaLibraryPath.name': 'Ruta de la biblioteca CUDA',
   'settings.sidecar.cudaLibraryPath.desc':
     'Ruta de búsqueda de biblioteca opcional para sidecar (Flatpak, instalaciones personalizadas de CUDA).',
   'settings.sidecar.installAnyway': 'Instalar de todos modos',
-  'settings.sidecar.installAnywayTooltip':
-    'Continúe con la instalación de CUDA aunque no se haya detectado ningún controlador NVIDIA.',
   'settings.sidecar.stopBeforeInstall':
-    'Detenga el dictado antes de instalar un sidecar: la instalación reinicia el motor. Si una transcripción aún se está procesando, ejecute "Cancelar dictado" para detenerla ahora.',
-  'settings.sidecar.stopBeforeUpdate':
-    'Detenga el dictado antes de actualizar sidecar: la actualización reinicia el motor. Si una transcripción aún se está procesando, ejecute "Cancelar dictado" para detenerla ahora.',
+    'Detenga el dictado o la lectura en voz alta antes de instalar un sidecar: la instalación reinicia el motor. Si el dictado sigue procesándose, ejecute "Cancelar dictado" para detenerlo ahora.',
   'settings.sidecar.stopBeforeUninstall':
-    'Detén el dictado antes de desinstalar {sidecar}. Si aún se está procesando una transcripción, ejecuta "Cancelar dictado" para detenerla ahora.',
+    'Detenga el dictado o la lectura en voz alta antes de desinstalar {sidecar}. Si el dictado sigue procesándose, ejecute "Cancelar dictado" para detenerlo ahora.',
   'settings.sidecar.uninstallFailed':
     'No se pudo desinstalar {sidecar}. Cierra las demás ventanas de configuración e inténtalo de nuevo.',
   'settings.sidecar.uninstalled': 'Sidecar desinstalado.',
@@ -324,22 +311,10 @@ export const es = {
   'settings.sidecar.cpuUninstalled': 'CPU sidecar desinstalado.',
   'settings.sidecar.restartFailed':
     'El motor de voz no pudo reiniciarse. Reinicie Obsidian antes de dictar.',
-  'settings.sidecar.becameActive':
-    'El dictado se activó antes de que se pudieran cambiar los archivos sidecar. Detenga o cancele el dictado y vuelva a intentarlo.',
   'settings.sidecar.reinstall': 'Reinstalar',
   'settings.sidecar.uninstall': 'Desinstalar',
   'settings.sidecar.install': 'Instalar',
-  'settings.sidecar.driver.present': 'GPU NVIDIA detectada: transcripción más rápida.',
-  'settings.sidecar.driver.presentTooltip':
-    'Descarga el archivo CUDA sidecar de las versiones GitHub.',
-  'settings.sidecar.driver.absent':
-    'Requiere una GPU NVIDIA. Instálelo de todos modos si sabe que la suya es compatible.',
-  'settings.sidecar.driver.absentTooltip':
-    'nvidia-smi no se encontró en PATH. Utilice "Instalar de todos modos" si está seguro de que su sistema admite CUDA.',
-  'settings.sidecar.driver.unknown': 'No se pudo buscar NVIDIA; instálelo solo si está seguro.',
-  'settings.sidecar.driver.unknownTooltip':
-    'No se puede buscar un controlador NVIDIA. Continúe solo si sabe que su GPU es compatible con CUDA.',
-  'plugin.name': 'Local Dictation',
+  'plugin.name': 'Speech Kit',
   'common.cancel': 'Cancelar',
   'common.delete': 'Borrar',
   'common.duplicate': 'Duplicar',
@@ -349,11 +324,11 @@ export const es = {
   'common.on': 'Activado',
   'common.save': 'Guardar',
   'common.unavailable': 'No disponible',
-  'ribbon.idle': 'Local Dictation — iniciar dictado',
-  'ribbon.starting': 'Local Dictation — empezando…',
-  'ribbon.listening': 'Local Dictation - escuchando',
-  'ribbon.speechDetected': 'Local Dictation — detectando voz',
-  'ribbon.error': 'Local Dictation — error',
+  'ribbon.idle': 'Speech Kit — iniciar dictado',
+  'ribbon.starting': 'Speech Kit — empezando…',
+  'ribbon.listening': 'Speech Kit - escuchando',
+  'ribbon.speechDetected': 'Speech Kit — detectando voz',
+  'ribbon.error': 'Speech Kit — error',
   'validation.wholeNumberRange': 'Ingrese un número entero desde {min} hasta {max}.',
   'validation.numberRange': 'Ingrese un número de {min} a {max}.',
   'llm.managedByPreset':
@@ -380,15 +355,8 @@ export const es = {
   'llm.model.temperature.name': 'Temperatura',
   'llm.model.temperature.description':
     'Variación muestral. 0 es determinista; los valores más altos son más variados.',
-  'llm.model.remoteThreshold.name': 'Umbral de enrutamiento remoto',
-  'llm.model.remoteThreshold.description':
-    'Longitud de la transcripción que envía transformaciones automáticas a OpenRouter (caracteres).',
-  'llm.model.remoteTimeout.name': 'Tiempo de espera remoto',
-  'llm.model.remoteTimeout.description':
-    'Deja de esperar por OpenRouter después de tantos segundos. Se conserva la transcripción original.',
   'llm.model.behavior.name': 'Comportamiento del modelo',
   'llm.model.summary.temperature': 'Temperatura {value}',
-  'llm.model.summary.remoteThreshold': 'Remoto en caracteres {value}+',
   'llm.model.summary.timeout': 'Tiempo de espera de {value}s',
   'llm.failure.authInvalid': 'Clave de API de {provider} rechazada. Verifique la configuración.',
   'llm.failure.rateLimited': 'Límite de tasa {provider} alcanzado. Volviendo al texto sin formato.',
@@ -417,23 +385,11 @@ export const es = {
     'Todos a la vez pueden reescribirse o eliminar marcas de tiempo, según el ajuste preestablecido.',
   'llm.timing.option.perUtterance': 'Después de cada frase',
   'llm.timing.option.batch': 'Todo a la vez al detenerse',
-  'llm.routing.local': 'Local',
-  'llm.routing.remote': 'Remoto',
-  'llm.routing.auto': 'Auto',
-  'llm.routing.ariaLabel': 'Ejecutar transformaciones con',
-  'llm.routing.localHint': 'Se ejecuta completamente en su dispositivo con Ollama.',
-  'llm.routing.remoteHint': 'Envía cada transcripción a OpenRouter para su transformación.',
-  'llm.routing.autoHint':
-    'Permanece en el dispositivo y entrega transcripciones grandes a OpenRouter.',
-  'llm.routing.localLeg': 'Local · Ollama',
-  'llm.routing.remoteLeg': 'Remoto · OpenRouter',
   'llm.routing.priceTierTooltip': 'Nivel de precio aproximado',
   'llm.routing.providerModel': 'Modelo de {provider}',
   'llm.routing.ollamaModelDescription': 'Elija un modelo de chat Ollama local.',
   'llm.routing.selectModel': 'Selecciona un modelo',
   'llm.routing.refreshModels': 'Actualizar modelos {provider}',
-  'llm.routing.apiKey.name': 'Clave de API de OpenRouter',
-  'llm.routing.apiKey.description': 'Almacenado de forma segura por Obsidian.',
   'llm.routing.openRouterModel.name': 'Modelo OpenRouter',
   'llm.routing.openRouterModel.description': 'Escriba para buscar modelos OpenRouter.',
   'llm.routing.testConnection': 'Probar clave de API y modelo',
@@ -457,7 +413,7 @@ export const es = {
   'llm.sidebar.activePreset': 'Preajuste activo',
   'llm.sidebar.unavailable.title': 'Las funciones de LLM no están disponibles',
   'llm.sidebar.unavailable.description':
-    'Habilite las funciones de LLM en la configuración de Local Dictation para configurar transformaciones.',
+    'Habilite las funciones de LLM en la configuración de Speech Kit para configurar transformaciones.',
   'llm.sidebar.unavailable.summary': 'Habilite las funciones de LLM en la configuración',
   'llm.sidebar.off.title': 'Modo de transcripción sin formato',
   'llm.sidebar.off.description':
@@ -568,8 +524,8 @@ export const es = {
   'setup.ready.openMarkdownNote':
     'Abra una nota Markdown en modo de edición y luego intente dictarla nuevamente.',
   'setup.ready.completionFailed': 'No se pudo finalizar la configuración. Intentar otra vez.',
-  'setup.wizard.welcomeTitle': 'Bienvenido a Local Dictation',
-  'setup.wizard.title': 'Configurar Local Dictation',
+  'setup.wizard.welcomeTitle': 'Bienvenido a Speech Kit',
+  'setup.wizard.title': 'Configurar Speech Kit',
   'setup.wizard.engineReadyTitle': 'Motor de voz listo',
   'setup.wizard.engineReadyDesc':
     'El motor local de conversión de voz a texto está instalado y listo.',
@@ -580,8 +536,6 @@ export const es = {
   'setup.wizard.pickModelStep': 'Elija un modelo de transcripción',
   'setup.wizard.startTalking':
     'Luego presiona el micrófono en la cinta (o tu propia tecla de acceso rápido) y comienza a hablar.',
-  'setup.wizard.cpuBuildNote':
-    'Comience con la compilación para CPU. ¿Tiene una GPU NVIDIA? Puede instalar la compilación acelerada por CUDA más adelante desde Configuración.',
   'setup.wizard.downloadEngine': 'Descargar motor',
   'setup.wizard.modelSelectedTitle': 'Modelo seleccionado',
   'setup.wizard.pickModelTitle': 'Elija un modelo de transcripción',
@@ -590,9 +544,7 @@ export const es = {
   'setup.wizard.modelIntro':
     'Instale un modelo de transcripción para habilitar el dictado. Puede instalar más más adelante: los modelos más pequeños son más rápidos, los modelos más grandes son más precisos.',
   'setup.wizard.modelKinds':
-    'Hay dos tipos disponibles: los modelos de transmisión muestran las palabras en directo mientras habla; los modelos estándar transcriben después de cada pausa. Para el dictado con manos libres, comience con el modelo Moonshine Small recomendado. Nemotron 3.5 ASR es una opción de transmisión experimental que consume más recursos.',
-  'setup.wizard.gpuNote':
-    'Los modelos más grandes funcionan mucho más rápido con la aceleración por GPU. Si tiene una GPU NVIDIA, puede instalar la compilación acelerada por CUDA más adelante desde Configuración.',
+    'Hay dos tipos disponibles: los modelos de transmisión muestran las palabras en directo mientras habla; los modelos estándar transcriben después de cada pausa. Para el dictado con manos libres, comience con el modelo Moonshine Small recomendado. Nemotron 3.5 ASR es una opción de transmisión que consume más recursos.',
   'setup.wizard.openModelPicker': 'Abrir selector de modelo',
   'setup.wizard.readyTitle': 'Estás listo para dictar',
   'setup.wizard.readyDesc':
@@ -602,13 +554,13 @@ export const es = {
     'Busque este icono en la cinta Obsidian. Haga clic en él para comenzar a dictar; haga clic nuevamente para detener.',
   'setup.wizard.hotkeyTitle': 'O vincular una tecla de acceso rápido',
   'setup.wizard.hotkeyDescBefore': 'Vincular un acceso directo al',
-  'setup.wizard.toggleCommandName': 'Local Dictation: alternar dictado',
+  'setup.wizard.toggleCommandName': 'Speech Kit: alternar dictado',
   'setup.wizard.hotkeyDescAfter':
     'comando para iniciar y detener desde cualquier lugar de Obsidian.',
   'setup.wizard.openHotkeySettings': 'Abrir configuración de teclas de acceso rápido',
   'setup.wizard.tryDictationNow': 'Prueba el dictado ahora',
   'setup.wizard.openHotkeySettingsFallback':
-    'Abra Configuración → Teclas de acceso rápido y busque "Local Dictation".',
+    'Abra Configuración → Teclas de acceso rápido y busque "Speech Kit".',
   'setup.sidecar.modal.download': 'Descargar',
   'setup.sidecar.modal.variantDownload': 'Descargar {variant}',
   'setup.sidecar.modal.version': 'Versión',
@@ -648,7 +600,7 @@ export const es = {
   'models.manage.removedNotice': 'Modelo eliminado.',
   'models.external.title': 'Usar archivo externo',
   'models.external.intro':
-    'Los modelos externos son para uso avanzado. Local Dictation no descarga, actualiza ni verifica la suma de comprobación de estos archivos.',
+    'Los modelos externos son para uso avanzado. Speech Kit no descarga, actualiza ni verifica la suma de comprobación de estos archivos.',
   'models.external.family.name': 'Familia del modelo',
   'models.external.family.desc':
     'Elija el cargador que coincida con el modelo. La familia no se deduce de su nombre de archivo.',
@@ -751,7 +703,7 @@ export const es = {
   'sidecarError.no_active_session': 'No hay sesión de dictado activa.',
   'sidecarError.session_already_exists': 'Ya existe una sesión de dictado con este identificador.',
   'sidecarError.session_capacity_exceeded':
-    'Local Dictation ya tiene el número máximo de sesiones activas.',
+    'Speech Kit ya tiene el número máximo de sesiones activas.',
   'sidecarError.system_audio_capture_failed': 'No se pudo iniciar la captura de audio del sistema.',
   'sidecarError.system_audio_permission_denied':
     'El permiso de grabación de audio del sistema está desactivado para Obsidian. Abra Configuración del sistema → Privacidad y seguridad → Grabación de audio del sistema y pantalla, habilite Obsidian e intente nuevamente.',
@@ -799,7 +751,7 @@ export const es = {
   'catalog.family.moonshine.summary':
     'Muestra las palabras mientras habla. Tiny favorece un menor uso de recursos, Small equilibra la velocidad y la calidad, y Medium favorece la calidad.',
   'catalog.family.nemotron_asr.summary':
-    'Transmisión multilingüe experimental de alta precisión con una mayor descarga y mayor uso de recursos. Moonshine Small sigue siendo el valor predeterminado recomendado para el dictado en vivo en inglés.',
+    'Transmisión multilingüe de alta precisión con una mayor descarga y mayor uso de recursos. Moonshine Small sigue siendo el valor predeterminado recomendado para el dictado en vivo en inglés.',
   'setup.sidecar.modal.unsupportedPlatform':
     'Esta compilación de motor de voz no está disponible para su plataforma o arquitectura.',
   'setup.sidecar.modal.genericInstallError':
@@ -848,4 +800,45 @@ export const es = {
     'Lectura local natural en inglés con voces seleccionables.',
   'catalog.family.pocket_tts.summary':
     'Lee notas localmente en inglés, francés, alemán, español, portugués e italiano con voces seleccionables y control de velocidad sin alterar el tono.',
+  'commands.translateNote': 'Traducir nota',
+  'commands.translateSelection': 'Traducir selección',
+  'models.manage.translationModels': 'Traducción',
+  'translation.modal.privacy': 'La traducción se ejecuta completamente en este dispositivo.',
+  'translation.modal.from': 'Origen',
+  'translation.modal.to': 'Destino',
+  'translation.modal.swap': 'Intercambiar',
+  'translation.modal.largeNote': 'Nota grande: la traducción puede tardar unos segundos.',
+  'translation.modal.sourceSelection': 'Selección original',
+  'translation.modal.sourceNote': 'Nota original',
+  'translation.modal.previewAria': 'Vista previa de la traducción',
+  'translation.modal.preparing': 'Preparando la traducción local…',
+  'translation.modal.loading': 'Cargando el modelo local…',
+  'translation.modal.translating': 'Traduciendo…',
+  'translation.modal.translatingProgress': 'Traduciendo… {completed}/{total}',
+  'translation.modal.ready': 'Traducción lista.',
+  'translation.modal.readyPartial_one':
+    'Traducción lista. 1 bloque conservó su idioma original porque no se pudo preservar su formato.',
+  'translation.modal.readyPartial_other':
+    'Traducción lista. {count} bloques conservaron su idioma original porque no se pudo preservar su formato.',
+  'translation.modal.canceled': 'Traducción cancelada.',
+  'translation.modal.failed': 'La traducción falló.',
+  'translation.modal.missingModel':
+    'Instala el paquete de traducción local para usar este par de idiomas.',
+  'translation.modal.incompleteModel':
+    'Al modelo de traducción le faltan archivos. Vuelve a instalarlo para continuar.',
+  'translation.modal.installModel': 'Instalar modelo de traducción',
+  'translation.modal.translateAgain': 'Traducir de nuevo',
+  'translation.modal.cancel': 'Cancelar',
+  'translation.modal.replace': 'Reemplazar',
+  'translation.modal.insertBelow': 'Insertar debajo',
+  'translation.modal.copy': 'Copiar',
+  'translation.modal.stale':
+    'La nota cambió desde que empezó esta traducción. Copia la traducción en su lugar.',
+  'translation.notice.copied': 'Se copió la traducción.',
+  'translation.notice.copyFailed': 'No se pudo copiar la traducción.',
+  'translation.notice.tooLong': 'Traduce hasta {count} caracteres a la vez.',
+  'catalog.firefox_translations_release_2026_07.summary':
+    'Traducción local rápida entre inglés y siete idiomas mediante modelos publicados en Firefox.',
+  'catalog.family.firefox_translations.summary':
+    'Traduce texto de notas localmente con el motor compacto Bergamot y modelos de Firefox.',
 } as const satisfies TranslationCatalog;

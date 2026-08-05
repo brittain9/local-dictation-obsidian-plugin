@@ -3,7 +3,6 @@ import { appendFile, readFile } from 'node:fs/promises';
 const CONFIG_PATH = '.github/release-build-config.json';
 const CONFIG_OUTPUT_NAMES = {
   ggmlNative: 'ggml-native',
-  ortCudaVersion: 'ort-cuda-version',
   cudaToolkitVersion: 'cuda-toolkit-version',
   cudaArchitectures: 'cuda-architectures',
   windowsCudaSubpackagesManifest: 'windows-cuda-subpackages-manifest',
@@ -37,10 +36,6 @@ for (const key of configKeys) {
 if (!/^\d+\.\d+\.\d+$/.test(config.cudaToolkitVersion)) {
   throw new Error(`${CONFIG_PATH} cudaToolkitVersion must use major.minor.patch.`);
 }
-if (!/^\d+$/.test(config.ortCudaVersion)) {
-  throw new Error(`${CONFIG_PATH} ortCudaVersion must be a numeric major version.`);
-}
-
 const nodeVersion = matchRequiredVersion('.mise.toml', mise, /^\s*node\s*=\s*"([^"]+)"\s*$/m);
 const rustToolchain = matchRequiredVersion(
   'rust-toolchain.toml',

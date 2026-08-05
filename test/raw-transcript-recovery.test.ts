@@ -10,7 +10,22 @@ import {
 import { StateBackedEditorView } from './fixtures/state-backed-editor-view';
 
 describe('RawTranscriptRecovery', () => {
-  it('overwrites the prior record and copies only the latest raw transcript', async () => {
+  it('records enabled recovery without presenting feedback', () => {
+    const rawText = 'private raw transcript';
+    const transformedText = 'private transformed transcript';
+    const harness = createHarness(transformedText, {
+      rawText,
+      to: transformedText.length,
+      transformedText,
+    });
+
+    harness.recovery.record(harness.receipt());
+
+    expect(harness.recovery.hasRecovery()).toBe(true);
+    expect(harness.feedback.show).not.toHaveBeenCalled();
+  });
+
+  it('overwrites the prior record and restores the latest receipt', () => {
     const harness = createHarness('clean one');
     harness.recovery.record(harness.receipt({ rawText: 'raw one' }));
     harness.view.state = EditorState.create({ doc: 'clean two' });
@@ -23,17 +38,25 @@ describe('RawTranscriptRecovery', () => {
       }),
     );
 
+    expect(harness.recovery.restoreRawTranscript()).toBe(true);
+    expect(harness.view.state.doc.toString()).toBe('raw two');
+  });
+
+  it('copies the retained raw transcript without consuming recovery', async () => {
+    const rawText = 'private raw transcript';
+    const harness = createHarness('clean');
+    harness.recovery.record(harness.receipt({ rawText }));
+
     expect(await harness.recovery.copyRawTranscript()).toBe(true);
 
-    expect(harness.writeText).toHaveBeenCalledOnce();
-    expect(harness.writeText).toHaveBeenCalledWith('raw two');
+    expect(harness.writeText).toHaveBeenCalledExactlyOnceWith(rawText);
+    expect(harness.recovery.hasRecovery()).toBe(true);
     expect(harness.feedback.show).toHaveBeenLastCalledWith({
       intent: 'success',
       key: 'raw-transcript-copied',
       message: 'Copied the raw transcript.',
     });
-    expect(harness.recovery.restoreRawTranscript()).toBe(true);
-    expect(harness.view.state.doc.toString()).toBe('raw two');
+    expect(JSON.stringify(harness.feedback.show.mock.calls)).not.toContain(rawText);
   });
 
   it('clears immediately when disabled and ignores records until re-enabled', () => {
@@ -41,9 +64,11 @@ describe('RawTranscriptRecovery', () => {
     harness.recovery.record(harness.receipt({ rawText: 'private raw' }));
 
     harness.recovery.setEnabled(false);
+    harness.feedback.show.mockClear();
     harness.recovery.record(harness.receipt({ rawText: 'must not persist' }));
 
     expect(harness.recovery.hasRecovery()).toBe(false);
+    expect(harness.feedback.show).not.toHaveBeenCalled();
 
     harness.recovery.setEnabled(true);
     expect(harness.recovery.hasRecovery()).toBe(false);

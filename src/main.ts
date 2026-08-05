@@ -16,7 +16,7 @@ import { sessionProcessingExtension } from './editor/session-processing-extensio
 import { TemporaryLeafPinLeaseManager } from './editor/temporary-leaf-pin';
 import { syncDictationLanguageWithObsidian } from './language/dictation-language-sync';
 import type { LlmCleanupFailure } from './llm/provider';
-import { createLlmRouter } from './llm/router';
+import { createConfiguredLlmRouter } from './llm/runtime';
 import { ManageModelsModal, type ModelPickerOptions } from './models/manage-models-modal';
 import { ModelInstallManager } from './models/model-install-manager';
 import {
@@ -24,17 +24,20 @@ import {
   type CatalogModelSelection,
   matchesModelTriple,
 } from './models/model-management-types';
+import {
+  openModelPickerWithSetup,
+  READ_ALOUD_MODEL_PICKER_OPTIONS,
+} from './models/model-picker-routing';
 import { Session } from './session/session';
 import { logAccelerationFallbacks } from './settings/acceleration-info';
 import { LlmPresetStateStore } from './settings/llm-preset-state';
 import { restoreLlmTransformationDefaults } from './settings/llm-transformation-reset';
 import { handleMicrophoneDeviceFallback } from './settings/microphone-fallback';
-import { getOpenRouterApiKey, loadPluginSettings } from './settings/openrouter-secret-storage';
+import { loadPluginSettings } from './settings/openrouter-secret-storage';
 import {
   DEFAULT_PLUGIN_SETTINGS,
   type PluginSettings,
   resolvePluginSettings,
-  shouldRefreshLlmSidebar,
 } from './settings/plugin-settings';
 import { LocalSttSettingTab } from './settings/settings-tab';
 import {
@@ -47,11 +50,22 @@ import { t } from './shared/i18n';
 import { createObsidianFeedbackPresenter } from './shared/obsidian-feedback-presenter';
 import { createPluginLogger, type PluginLogger } from './shared/plugin-logger';
 import { createUserFeedback, type UserFeedback } from './shared/user-feedback';
+import {
+  createCudaCompatibilityProvider,
+  isCudaSidecarUsable,
+  resolveCudaSidecarLaunchPolicy,
+} from './sidecar/cuda-compatibility';
+import { isCudaReleaseTarget } from './sidecar/gpu-precheck';
 import { assertSidecarExecutableIsFresh } from './sidecar/sidecar-build-state';
 import { SidecarConnection } from './sidecar/sidecar-connection';
 import { formatSidecarExecutableName } from './sidecar/sidecar-executable';
 import { SidecarInstallManager } from './sidecar/sidecar-install-manager';
 import {
+  SidecarLifecycleConflictError,
+  SidecarLifecycleGate,
+} from './sidecar/sidecar-lifecycle-gate';
+import {
+  type ResolvedSidecarExecutable,
   type ResolveSidecarExecutablePathOptions,
   resolveSidecarExecutablePath,
   SidecarNotInstalledError,
@@ -61,6 +75,7 @@ import {
   detectSidecarVersionDrift,
   type SidecarVersionDrift,
 } from './sidecar/sidecar-version-drift';
+import { TranslationController } from './translation/translation-controller';
 import { READ_ALOUD_SPEED_PRESETS, readAloudControlLabels } from './tts/read-aloud-control-labels';
 import { ReadAloudController, type ReadAloudState } from './tts/read-aloud-controller';
 import { didReadAloudSettingsChange, resolveReadAloudVoiceId } from './tts/read-aloud-selection';
@@ -71,6 +86,13 @@ export default class LocalSttPlugin extends Plugin {
   private audioCaptureStream: AudioCaptureStream | null = null;
   private audioLevelMeter: SidecarAudioLevelMeter | null = null;
   private dictationController: DictationSessionController | null = null;
+  /**
+   * Session-scoped so sidecar selection and version-drift repair can never
+   * disagree about whether CUDA is usable here. Settings owns a separate
+   * per-display provider, which is what picks up a newly installed driver.
+   */
+  private readonly getCudaCompatibility = createCudaCompatibilityProvider();
+  private readonly sidecarLifecycleGate = new SidecarLifecycleGate();
   private logger: PluginLogger = createPluginLogger(() => this.settings.developerMode);
   private readonly feedback: UserFeedback = createUserFeedback({
     logger: this.logger,
@@ -99,6 +121,7 @@ export default class LocalSttPlugin extends Plugin {
   private sidecarConnection: SidecarConnection | null = null;
   private sidecarInstallManager: SidecarInstallManager | null = null;
   private readonly temporaryLeafPinLeaseManager = new TemporaryLeafPinLeaseManager();
+  private translationController: TranslationController | null = null;
 
   override async onload(): Promise<void> {
     const persistedData: unknown = await this.loadData();
@@ -158,23 +181,27 @@ export default class LocalSttPlugin extends Plugin {
       },
     });
     this.modelInstallManager = new ModelInstallManager({
+      commitSettingsIf: (condition, createNextSettings) =>
+        this.requirePresetStateStore().commitPreservingPresetStateIf(condition, createNextSettings),
       getSettings: () => this.settings,
       logger: this.logger,
       saveSettings: async (nextSettings) => {
         await this.updateSettings(nextSettings);
       },
       sidecarConnection: this.sidecarConnection,
+      sidecarLifecycleGate: this.sidecarLifecycleGate,
     });
     this.sidecarInstallManager = new SidecarInstallManager({
       feedback: this.feedback,
       logger: this.logger,
+      sidecarLifecycleGate: this.sidecarLifecycleGate,
     });
     this.registerView(
       LOCAL_DICTATION_VIEW_TYPE,
       (leaf) =>
         new LocalDictationView(leaf, {
           feedback: this.feedback,
-          getOpenRouterApiKey: () => this.getOpenRouterApiKey(),
+          getSecret: (secretId) => this.getSecret(secretId),
           getSettings: () => this.settings,
           getLlmCleanupFailure: () => this.llmCleanupFailure,
           logger: this.logger,
@@ -214,12 +241,7 @@ export default class LocalSttPlugin extends Plugin {
           sessionId,
         }),
       createLlmRouter: (settings) =>
-        createLlmRouter(
-          settings,
-          undefined,
-          () => this.settings.llmRemoteFeaturesEnabled,
-          () => this.getOpenRouterApiKey(),
-        ),
+        createConfiguredLlmRouter(settings, (secretId) => this.getSecret(secretId)),
       getSettings: () => this.settings,
       hasDictationTarget: () => Session.hasDictationTarget(this.app),
       feedback: this.feedback,
@@ -254,6 +276,7 @@ export default class LocalSttPlugin extends Plugin {
         this.ribbonController?.setQueueTier(tier);
       },
       sidecarConnection: this.sidecarConnection,
+      sidecarLifecycleGate: this.sidecarLifecycleGate,
       stopConflictingSpeech: () => {
         this.readAloudController?.stop();
       },
@@ -266,13 +289,24 @@ export default class LocalSttPlugin extends Plugin {
       getSettings: () => this.settings,
       isDictationBusy: () => this.requireDictationController().isCaptureActive(),
       logger: this.logger,
+      onModelMissing: () => this.openModelPicker(READ_ALOUD_MODEL_PICKER_OPTIONS),
       onStateChange: (state) => this.renderReadAloudStatus(state),
       sidecarConnection: this.sidecarConnection,
+      sidecarLifecycleGate: this.sidecarLifecycleGate,
       stopDictation: () => this.requireDictationController().stopDictation(),
     });
     this.renderReadAloudStatus('idle');
     this.releaseReadAloudModelSubscription = this.requireModelInstallManager().subscribe(() => {
       this.renderReadAloudStatus(this.readAloudController?.getState() ?? 'idle');
+    });
+    this.translationController = new TranslationController({
+      app: this.app,
+      feedback: this.feedback,
+      getSettings: () => this.settings,
+      logger: this.logger,
+      modelManager: this.requireModelInstallManager(),
+      openModelPicker: () => this.openModelPicker({ initialTask: 'translation' }),
+      saveSettings: (nextSettings) => this.updateSettings(nextSettings),
     });
 
     this.addSettingTab(
@@ -291,15 +325,14 @@ export default class LocalSttPlugin extends Plugin {
             mutateSettings: (mutation) => this.requirePresetStateStore().mutateSettings(mutation),
           }),
         restartSidecar: async () => {
-          await this.requireSidecarConnection().restart(
-            this.settings.sidecarStartupTimeoutSeconds * 1000,
-          );
+          await this.restartSidecarConnection();
         },
         saveSettings: async (nextSettings) => {
           await this.updateSettings(nextSettings);
         },
         sidecarConnection: this.requireSidecarConnection(),
         sidecarInstallManager: this.requireSidecarInstallManager(),
+        sidecarLifecycleGate: this.sidecarLifecycleGate,
       }),
     );
 
@@ -335,6 +368,9 @@ export default class LocalSttPlugin extends Plugin {
       startDictation: async () => this.requireDictationController().startDictation(),
       stopReadAloud: () => this.requireReadAloudController().stop(),
       stopDictation: async () => this.requireDictationController().stopDictation(),
+      translateNote: (editor) => this.requireTranslationController().translateNote(editor),
+      translateSelection: (editor) =>
+        this.requireTranslationController().translateSelection(editor),
       toggleDictation: async () => this.requireDictationController().toggleDictation(),
       toggleReadAloudPaused: () => this.requireReadAloudController().togglePaused(),
     });
@@ -342,6 +378,14 @@ export default class LocalSttPlugin extends Plugin {
     this.registerEvent(
       this.app.workspace.on('editor-menu', (menu, editor) => {
         if (!editor.somethingSelected()) return;
+        menu.addItem((item) => {
+          item
+            .setTitle(t('commands.translateSelection'))
+            .setIcon('languages')
+            .onClick(() => {
+              this.requireTranslationController().translateSelection(editor);
+            });
+        });
         menu.addItem((item) => {
           item
             .setTitle(t('commands.readAloud'))
@@ -369,15 +413,17 @@ export default class LocalSttPlugin extends Plugin {
   private async runPostLayoutStartup(): Promise<void> {
     await this.bootstrapLocalDictationSidebar();
 
-    // Surface sidecar/plugin version drift before the health handshake. An
-    // Obsidian update swaps the plugin files but never the separately-installed
-    // sidecar, so a stale sidecar may even be the reason the handshake fails.
-    await this.checkSidecarVersionDrift();
-
     try {
-      await this.checkSidecarHealth({ showNotice: false });
-      const systemInfo = await this.requireSidecarConnection().getSystemInfo();
-      logAccelerationFallbacks(systemInfo, this.settings.accelerationPreference, this.logger);
+      await this.sidecarLifecycleGate.runUse(async () => {
+        // Surface sidecar/plugin version drift before the health handshake. An
+        // Obsidian update swaps the plugin files but never the separately-installed
+        // sidecar, so a stale sidecar may even be the reason the handshake fails.
+        await this.checkSidecarVersionDrift();
+
+        await this.checkSidecarHealth({ showNotice: false, useLease: false });
+        const systemInfo = await this.requireSidecarConnection().getSystemInfo();
+        logAccelerationFallbacks(systemInfo, this.settings.accelerationPreference, this.logger);
+      });
     } catch (error) {
       if (error instanceof SidecarNotInstalledError) {
         this.logger.debug('sidecar', 'sidecar not installed on startup');
@@ -426,13 +472,14 @@ export default class LocalSttPlugin extends Plugin {
     await this.ensureLocalDictationSidebar();
   }
 
-  async openSetupWizard(): Promise<void> {
+  async openSetupWizard(options: { throwOnFailure?: boolean } = {}): Promise<void> {
     let pluginDirectory: string;
 
     try {
       pluginDirectory = await this.resolvePluginDirectoryPath();
     } catch (error) {
       this.logger.error('installer', 'unable to resolve plugin directory for setup wizard', error);
+      if (options.throwOnFailure ?? false) throw error;
       return;
     }
 
@@ -454,9 +501,7 @@ export default class LocalSttPlugin extends Plugin {
       pluginDirectory,
       pluginVersion: this.manifest.version,
       postSidecarInstalled: async () => {
-        await this.requireSidecarConnection().restart(
-          this.settings.sidecarStartupTimeoutSeconds * 1000,
-        );
+        await this.restartSidecarConnection();
         const systemInfo = await this.requireSidecarConnection().getSystemInfo();
         logAccelerationFallbacks(systemInfo, this.settings.accelerationPreference, this.logger);
         await this.requireModelInstallManager().init();
@@ -470,24 +515,31 @@ export default class LocalSttPlugin extends Plugin {
   }
 
   async openModelPicker(options: ModelPickerOptions = {}): Promise<void> {
-    if (!(await this.isSidecarInstalled())) {
-      await this.openSetupWizard();
-      return;
-    }
-    new ManageModelsModal(this.app, {
-      feedback: this.feedback,
-      ...(options.initialTask === undefined ? {} : { initialTask: options.initialTask }),
-      manager: this.requireModelInstallManager(),
-      onChanged: options.onChanged ?? (() => {}),
-      onRunSetup: () => {
-        void this.openSetupWizard();
+    await openModelPickerWithSetup(
+      {
+        isSidecarInstalled: () => this.isSidecarInstalled(),
+        openPicker: (pickerOptions) => {
+          new ManageModelsModal(this.app, {
+            feedback: this.feedback,
+            ...(pickerOptions.initialTask === undefined
+              ? {}
+              : { initialTask: pickerOptions.initialTask }),
+            manager: this.requireModelInstallManager(),
+            onChanged: pickerOptions.onChanged ?? (() => {}),
+            onRunSetup: () => {
+              void this.openSetupWizard();
+            },
+          }).open();
+        },
+        openSetupWizard: () => this.openSetupWizard({ throwOnFailure: true }),
       },
-    }).open();
+      options,
+    );
   }
 
   private async isSidecarInstalled(): Promise<boolean> {
     try {
-      await this.resolveSidecarExecutablePath();
+      await this.resolveSidecarExecutable();
       return true;
     } catch (error) {
       if (error instanceof SidecarNotInstalledError) {
@@ -526,6 +578,12 @@ export default class LocalSttPlugin extends Plugin {
     }
 
     try {
+      this.translationController?.dispose();
+    } catch (error) {
+      this.logger.error('translation', 'failed to dispose translation controller cleanly', error);
+    }
+
+    try {
       await this.dictationController?.dispose();
     } catch (error) {
       this.logger.error('session', 'failed to dispose dictation controller cleanly', error);
@@ -543,13 +601,17 @@ export default class LocalSttPlugin extends Plugin {
     this.ribbonController?.dispose();
   }
 
-  private async checkSidecarHealth(options: { showNotice?: boolean } = {}): Promise<void> {
+  private async checkSidecarHealth(
+    options: { showNotice?: boolean; useLease?: boolean } = {},
+  ): Promise<void> {
     const sidecarConnection = this.requireSidecarConnection();
 
     try {
-      const health = await sidecarConnection.healthCheck(
-        this.settings.sidecarStartupTimeoutSeconds * 1000,
-      );
+      const health = await ((options.useLease ?? true)
+        ? this.sidecarLifecycleGate.runUse(async () =>
+            sidecarConnection.healthCheck(this.settings.sidecarStartupTimeoutSeconds * 1000),
+          )
+        : sidecarConnection.healthCheck(this.settings.sidecarStartupTimeoutSeconds * 1000));
 
       if (options.showNotice ?? true) {
         this.feedback.show({
@@ -558,6 +620,15 @@ export default class LocalSttPlugin extends Plugin {
         });
       }
     } catch (error) {
+      if (error instanceof SidecarLifecycleConflictError) {
+        if (options.showNotice ?? true) {
+          this.feedback.show({
+            intent: 'warning',
+            message: t('settings.sidecar.operationInProgress'),
+          });
+        }
+        return;
+      }
       this.handleError(t('notice.sidecarHealthCheckFailed'), error, options.showNotice ?? true);
       throw error;
     }
@@ -575,39 +646,44 @@ export default class LocalSttPlugin extends Plugin {
   }
 
   private async restartSidecar(): Promise<void> {
-    if (
-      this.requireDictationController().isBusy() ||
-      (this.readAloudController?.isActive() ?? false)
-    ) {
-      this.feedback.show({
-        intent: 'warning',
-        message: t('notice.sidecarRestartRequiresIdle'),
-      });
-      return;
-    }
-
-    const sidecarConnection = this.requireSidecarConnection();
-
     try {
-      const health = await sidecarConnection.restart(
-        this.settings.sidecarStartupTimeoutSeconds * 1000,
+      const health = await this.sidecarLifecycleGate.runMutation(() =>
+        this.restartSidecarConnection(),
       );
-
       this.feedback.show({
         intent: 'success',
         message: t('notice.sidecarRestarted', { version: health.sidecarVersion }),
       });
     } catch (error) {
+      if (error instanceof SidecarLifecycleConflictError) {
+        this.feedback.show({
+          intent: 'warning',
+          message:
+            error.activeKind === 'speech'
+              ? t('notice.sidecarRestartRequiresIdle')
+              : t('settings.sidecar.operationInProgress'),
+        });
+        return;
+      }
       this.handleError(t('notice.sidecarRestartFailed'), error, true);
     }
+  }
+
+  private async restartSidecarConnection() {
+    return await this.requireSidecarConnection().restart(
+      this.settings.sidecarStartupTimeoutSeconds * 1000,
+    );
   }
 
   private async updateSettings(nextSettings: PluginSettings): Promise<void> {
     await this.requirePresetStateStore().commitPreservingPresetState(nextSettings);
   }
 
-  private getOpenRouterApiKey(): string {
-    return getOpenRouterApiKey(this.settings, this.app.secretStorage);
+  private getSecret(secretId: string): string {
+    if (secretId.length === 0) {
+      return '';
+    }
+    return this.app.secretStorage.getSecret(secretId)?.trim() ?? '';
   }
 
   private async applySettings(
@@ -616,6 +692,10 @@ export default class LocalSttPlugin extends Plugin {
   ): Promise<void> {
     const previousSettings = this.settings;
     this.settings = resolvePluginSettings(nextSettings);
+    const llmWasDisabled = previousSettings.llmFeaturesEnabled && !this.settings.llmFeaturesEnabled;
+    if (llmWasDisabled) {
+      this.dictationController?.disableLlmForActiveSessions();
+    }
     this.lastUtteranceRecovery.setEnabled(this.settings.retainLastUtterance);
     this.rawTranscriptRecovery.setEnabled(this.settings.retainLastUtterance);
     if (options.persist) {
@@ -628,13 +708,6 @@ export default class LocalSttPlugin extends Plugin {
     if (previousSettings.llmFeaturesEnabled !== this.settings.llmFeaturesEnabled) {
       await this.syncLocalDictationSidebar();
       return;
-    }
-    if (shouldRefreshLlmSidebar(previousSettings, this.settings)) {
-      for (const leaf of this.app.workspace.getLeavesOfType(LOCAL_DICTATION_VIEW_TYPE)) {
-        if (leaf.view instanceof LocalDictationView) {
-          leaf.view.refresh();
-        }
-      }
     }
   }
 
@@ -667,11 +740,18 @@ export default class LocalSttPlugin extends Plugin {
     return this.readAloudController;
   }
 
+  private requireTranslationController(): TranslationController {
+    if (this.translationController === null) {
+      throw new Error('Translation controller has not been initialized.');
+    }
+    return this.translationController;
+  }
+
   private renderReadAloudStatus(state: ReadAloudState): void {
     const status = this.readAloudStatus;
     if (status === null) return;
     status.empty();
-    status.toggleClass('is-hidden', state === 'idle');
+    status.toggle(state !== 'idle');
     status.setAttribute('aria-live', 'polite');
     status.setAttribute('role', 'status');
     if (state === 'idle') return;
@@ -856,7 +936,16 @@ export default class LocalSttPlugin extends Plugin {
   }
 
   private async resolveSidecarLaunchSpec(): Promise<SidecarLaunchSpec> {
-    const executablePath = await this.resolveSidecarExecutablePath();
+    const resolved = await this.resolveSidecarExecutable();
+    const executablePath = resolved.path;
+    if (resolved.source === 'installed' && resolved.variant !== null) {
+      this.logger.debug(
+        'sidecar',
+        `using installed ${resolved.variant.toUpperCase()} sidecar at ${resolved.path}`,
+      );
+    } else if (resolved.source === 'dev' && resolved.variant === 'cuda') {
+      this.logger.debug('sidecar', `using CUDA sidecar build at ${resolved.path}`);
+    }
     const env =
       Platform.isLinux && this.settings.cudaLibraryPath.length > 0
         ? {
@@ -875,35 +964,32 @@ export default class LocalSttPlugin extends Plugin {
 
   private buildSidecarResolutionOptions(
     pluginDirectory: string,
+    cudaLaunchPolicy: ResolveSidecarExecutablePathOptions['cudaLaunchPolicy'],
   ): ResolveSidecarExecutablePathOptions {
     return {
       accelerationPreference: this.settings.accelerationPreference,
+      cudaLaunchPolicy,
       executableName: getSidecarExecutableName(),
       pluginDirectory,
       sidecarPathOverride: this.settings.sidecarPathOverride,
       sidecarProjectDirectory: join(pluginDirectory, 'native'),
-      supportsCuda: !Platform.isMacOS,
+      supportsCuda: isCudaReleaseTarget(process.platform, process.arch),
     };
   }
 
-  private async resolveSidecarExecutablePath(): Promise<string> {
+  private async resolveSidecarExecutable(): Promise<ResolvedSidecarExecutable> {
     const pluginDirectory = await this.resolvePluginDirectoryPath();
-    const options = this.buildSidecarResolutionOptions(pluginDirectory);
+    const options = this.buildSidecarResolutionOptions(
+      pluginDirectory,
+      resolveCudaSidecarLaunchPolicy(await this.getCudaCompatibility()),
+    );
     const resolved = await resolveSidecarExecutablePath(options);
 
-    if (resolved.source === 'installed' && resolved.variant !== null) {
-      this.logger.debug(
-        'sidecar',
-        `using installed ${resolved.variant.toUpperCase()} sidecar at ${resolved.path}`,
-      );
-    } else if (resolved.source === 'dev') {
-      if (resolved.variant === 'cuda') {
-        this.logger.debug('sidecar', `using CUDA sidecar build at ${resolved.path}`);
-      }
+    if (resolved.source === 'dev') {
       await assertSidecarExecutableIsFresh(resolved.path, options.sidecarProjectDirectory);
     }
 
-    return resolved.path;
+    return resolved;
   }
 
   /**
@@ -941,7 +1027,7 @@ export default class LocalSttPlugin extends Plugin {
         pluginDirectory,
         pluginVersion: this.manifest.version,
         preferredVariant: this.settings.accelerationPreference === 'cpu_only' ? 'cpu' : 'cuda',
-        supportsCuda: !Platform.isMacOS,
+        supportsCuda: isCudaSidecarUsable(await this.getCudaCompatibility()),
       });
     } catch (error) {
       this.logger.error('sidecar', 'version drift check failed', error);
@@ -986,7 +1072,6 @@ export default class LocalSttPlugin extends Plugin {
     return {
       app: this.app,
       feedback: this.feedback,
-      isDictationBusy: () => this.dictationController?.isBusy() ?? false,
       logger: this.logger,
       modelInstallManager: this.requireModelInstallManager(),
       pluginVersion: this.manifest.version,
@@ -995,18 +1080,17 @@ export default class LocalSttPlugin extends Plugin {
         // a reinstall from this startup notice needs no explicit refresh.
       },
       restartSidecar: async () => {
-        await this.requireSidecarConnection().restart(
-          this.settings.sidecarStartupTimeoutSeconds * 1000,
-        );
+        await this.restartSidecarConnection();
       },
       sidecarConnection: this.requireSidecarConnection(),
       sidecarInstallManager: this.requireSidecarInstallManager(),
+      sidecarLifecycleGate: this.sidecarLifecycleGate,
     };
   }
 
   private async resolvePluginDirectoryPath(): Promise<string> {
     if (!Platform.isDesktopApp) {
-      throw new Error('Local Dictation requires Obsidian desktop.');
+      throw new Error('Speech Kit requires Obsidian desktop.');
     }
 
     const vaultAdapter = this.app.vault.adapter;

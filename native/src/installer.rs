@@ -28,6 +28,8 @@ use crate::transcription::TranscriptionError;
 
 pub type ModelProbe =
     dyn Fn(RuntimeId, ModelFamilyId, &Path) -> Result<(), TranscriptionError> + Send + Sync;
+pub type BeforeModelReplace =
+    dyn Fn(RuntimeId, ModelFamilyId, &Path) -> Result<(), String> + Send + Sync;
 
 #[derive(Clone)]
 pub struct InstallRequest {
@@ -40,6 +42,7 @@ pub struct InstallRequest {
     pub store_root: PathBuf,
     pub incremental: bool,
     pub catalog: Arc<ModelCatalog>,
+    pub before_model_replace: Arc<BeforeModelReplace>,
 }
 
 struct ActiveInstall {
@@ -205,6 +208,14 @@ impl ModelInstallManager {
             model_id: active_model_id,
             state: ModelInstallState::Queued,
             total_bytes: Some(total_bytes),
+        }
+    }
+}
+
+impl Drop for ModelInstallManager {
+    fn drop(&mut self) {
+        if let Some(active_install) = self.active_install.as_ref() {
+            active_install.cancel_handle.cancel();
         }
     }
 }
@@ -701,6 +712,21 @@ async fn install_model_with_downloader(
             ),
         )
     })?;
+    (request.before_model_replace)(request.runtime_id, request.family_id, &target_dir).map_err(
+        |error| {
+            cleanup_stage_dir(&stage_dir);
+            fail_install(
+                downloaded_total,
+                format!("Failed to release the previous model before activation: {error}"),
+            )
+        },
+    )?;
+    check_for_cancel(
+        cancel_handle.as_ref(),
+        reporter,
+        &stage_dir,
+        downloaded_total,
+    )?;
     replace_install_dir(&stage_dir, &target_dir, &request.install_id).map_err(|error| {
         cleanup_stage_dir(&stage_dir);
         fail_install(
@@ -868,6 +894,7 @@ mod tests {
     use std::collections::HashMap;
     use std::fs;
     use std::sync::Arc;
+    use std::sync::atomic::{AtomicBool, Ordering};
     use std::sync::mpsc;
     use std::thread;
     use std::time::{Duration, Instant};
@@ -1048,6 +1075,50 @@ mod tests {
                 }
             )),
             "should have received a completed event with aggregate totals"
+        );
+    }
+
+    #[test]
+    fn install_runs_model_release_barrier_before_replacing_live_directory() {
+        let mut request = sample_request();
+        let target_dir = request
+            .store_root
+            .join("whisper_cpp")
+            .join("whisper")
+            .join("small");
+        fs::create_dir_all(&target_dir).expect("existing install should create");
+        fs::write(target_dir.join("model.bin"), b"old").expect("old model should write");
+        let barrier_called = Arc::new(AtomicBool::new(false));
+        request.before_model_replace = {
+            let expected_target = target_dir.clone();
+            let barrier_called = Arc::clone(&barrier_called);
+            Arc::new(move |runtime_id, family_id, target| {
+                assert_eq!(runtime_id, RuntimeId::WhisperCpp);
+                assert_eq!(family_id, ModelFamilyId::Whisper);
+                assert_eq!(target, expected_target);
+                assert_eq!(
+                    fs::read(target.join("model.bin")).expect("old model should still exist"),
+                    b"old"
+                );
+                barrier_called.store(true, Ordering::SeqCst);
+                Ok(())
+            })
+        };
+        let cancel_handle = Arc::new(InstallCancellation::new());
+        let (tx, _rx) = mpsc::channel();
+        let reporter = sample_reporter(&request, tx);
+        let downloader = MemoryDownloadSource::new([(
+            "https://example.com/model.bin".to_string(),
+            b"test".to_vec(),
+        )]);
+
+        run_install_test(&request, cancel_handle, &reporter, &downloader, &test_probe)
+            .expect("install should succeed");
+
+        assert!(barrier_called.load(Ordering::SeqCst));
+        assert_eq!(
+            fs::read(target_dir.join("model.bin")).expect("new model should exist"),
+            b"test"
         );
     }
 
@@ -1566,6 +1637,7 @@ mod tests {
             family_id: ModelFamilyId::Whisper,
             task: ModelTask::Stt,
             language_tags: vec!["en".to_string()],
+            translation_pairs: vec![],
             supports_automatic_language_detection: false,
             default_voice: None,
             license_label: "MIT".to_string(),
@@ -1601,6 +1673,7 @@ mod tests {
 
         InstallRequest {
             artifacts: model.artifacts.clone(),
+            before_model_replace: Arc::new(|_, _, _| Ok(())),
             catalog: Arc::new(catalog),
             runtime_id: RuntimeId::WhisperCpp,
             family_id: ModelFamilyId::Whisper,

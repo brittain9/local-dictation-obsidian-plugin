@@ -6,6 +6,7 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum RuntimeId {
+    BergamotWasm,
     OnnxRuntime,
     WhisperCpp,
 }
@@ -13,6 +14,7 @@ pub enum RuntimeId {
 impl RuntimeId {
     pub fn as_str(self) -> &'static str {
         match self {
+            Self::BergamotWasm => "bergamot_wasm",
             Self::OnnxRuntime => "onnx_runtime",
             Self::WhisperCpp => "whisper_cpp",
         }
@@ -20,6 +22,7 @@ impl RuntimeId {
 
     pub fn display_name(self) -> &'static str {
         match self {
+            Self::BergamotWasm => "Bergamot WebAssembly",
             Self::OnnxRuntime => "ONNX Runtime",
             Self::WhisperCpp => "whisper.cpp",
         }
@@ -30,6 +33,7 @@ impl RuntimeId {
 #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ModelFamilyId {
+    FirefoxTranslations,
     CohereTranscribe,
     Moonshine,
     NemotronAsr,
@@ -41,6 +45,7 @@ pub enum ModelFamilyId {
 impl ModelFamilyId {
     pub fn as_str(self) -> &'static str {
         match self {
+            Self::FirefoxTranslations => "firefox_translations",
             Self::CohereTranscribe => "cohere_transcribe",
             Self::Moonshine => "moonshine",
             Self::NemotronAsr => "nemotron_asr",
@@ -52,6 +57,7 @@ impl ModelFamilyId {
 
     pub fn display_name(self) -> &'static str {
         match self {
+            Self::FirefoxTranslations => "Firefox Translations",
             Self::CohereTranscribe => "Cohere Transcribe",
             Self::Moonshine => "Moonshine",
             Self::NemotronAsr => "NVIDIA Nemotron 3.5 ASR",
@@ -85,6 +91,7 @@ impl AcceleratorId {
 #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ModelFormat {
+    Bergamot,
     Ggml,
     Gguf,
     Onnx,
@@ -97,6 +104,7 @@ pub enum ModelFormat {
 #[serde(rename_all = "snake_case")]
 pub enum ModelTask {
     Stt,
+    Translation,
     Tts,
 }
 
@@ -104,6 +112,7 @@ impl ModelTask {
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Stt => "stt",
+            Self::Translation => "translation",
             Self::Tts => "tts",
         }
     }
@@ -175,6 +184,10 @@ impl RuntimeCapabilities {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ModelFamilyCapabilities {
     pub task: ModelTask,
+    /// Whether this adapter can execute any model work on a non-CPU
+    /// accelerator exposed by its runtime.
+    #[serde(rename = "supportsHardwareAcceleration")]
+    pub supports_hardware_acceleration: bool,
     #[serde(rename = "availableVoices")]
     pub available_voices: Vec<String>,
     #[serde(rename = "supportsSpeedControl")]
@@ -208,6 +221,7 @@ impl ModelFamilyCapabilities {
     pub const fn unknown() -> Self {
         Self {
             task: ModelTask::Stt,
+            supports_hardware_acceleration: false,
             available_voices: Vec::new(),
             supports_speed_control: false,
             output_sample_rate: None,
@@ -233,6 +247,7 @@ mod tests {
         let unknown = ModelFamilyCapabilities::unknown();
 
         assert_eq!(unknown.task, ModelTask::Stt);
+        assert!(!unknown.supports_hardware_acceleration);
         assert!(unknown.available_voices.is_empty());
         assert!(!unknown.supports_speed_control);
         assert!(unknown.output_sample_rate.is_none());
@@ -268,13 +283,16 @@ mod tests {
         let json = serde_json::to_value(&unknown).expect("capabilities should serialize");
 
         assert_eq!(json["supportsStreaming"], false);
+        assert_eq!(json["supportsHardwareAcceleration"], false);
         assert!(json.get("supports_streaming").is_none());
+        assert!(json.get("supports_hardware_acceleration").is_none());
     }
 
     #[test]
     fn tts_family_capabilities_serialize_the_synthesis_contract() {
         let capabilities = ModelFamilyCapabilities {
             task: ModelTask::Tts,
+            supports_hardware_acceleration: false,
             available_voices: vec!["alba".to_string(), "marius".to_string()],
             supports_speed_control: true,
             output_sample_rate: Some(24_000),

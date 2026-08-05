@@ -28,7 +28,9 @@ use crate::session::{
 };
 use crate::stages::StageEnablement;
 use crate::synthesis::SynthesisCancellation;
-use crate::synthesis_worker::{StartSynthesis as WorkerStartSynthesis, SynthesisWorker};
+use crate::synthesis_worker::{
+    PrepareModelRemoval, StartSynthesis as WorkerStartSynthesis, SynthesisWorker,
+};
 use crate::system_audio::{AudioFrameSink, SystemAudioCapture, SystemAudioController};
 use crate::transcription::{ENGLISH_LANGUAGE_TAG, GpuConfig};
 use crate::worker::{SessionMetadata, TranscriptionWorker, WorkerCommand, WorkerEvent};
@@ -161,6 +163,8 @@ impl AppState {
             })
         };
 
+        let synthesis_worker = SynthesisWorker::spawn(Arc::clone(&registry));
+
         Self {
             active_sessions: HashMap::new(),
             catalog: Arc::new(catalog),
@@ -169,7 +173,7 @@ impl AppState {
             session_factory,
             sidecar_version: sidecar_version.into(),
             system_audio,
-            synthesis_worker: SynthesisWorker::spawn(Arc::clone(&registry)),
+            synthesis_worker,
             transcription_worker: TranscriptionWorker::spawn(Arc::clone(&registry)),
         }
     }
@@ -372,7 +376,23 @@ impl AppState {
                 model_store_path_override,
             } => {
                 match resolve_model_store_info(model_store_path_override.as_deref()).and_then(
-                    |info| remove_installed_model(&info.path, runtime_id, family_id, &model_id),
+                    |info| {
+                        let install_dir = resolve_model_install_dir(
+                            &info.path, runtime_id, family_id, &model_id,
+                        )?;
+                        match self.synthesis_worker.prepare_model_removal(
+                            runtime_id,
+                            family_id,
+                            &install_dir,
+                        ) {
+                            PrepareModelRemoval::Ready => {
+                                remove_installed_model(&info.path, runtime_id, family_id, &model_id)
+                            }
+                            PrepareModelRemoval::InUse | PrepareModelRemoval::WorkerUnavailable => {
+                                Ok(false)
+                            }
+                        }
+                    },
                 ) {
                     Ok(removed) => events.push(Event::ModelRemoved {
                         runtime_id,
@@ -465,6 +485,16 @@ impl AppState {
                                 events.push(self.install_manager.start_install(InstallRequest {
                                     artifacts,
                                     catalog: Arc::clone(&self.catalog),
+                                    before_model_replace: {
+                                        let invalidator = self.synthesis_worker.cache_invalidator();
+                                        Arc::new(move |runtime_id, family_id, install_dir| {
+                                            invalidator.invalidate_and_wait(
+                                                runtime_id,
+                                                family_id,
+                                                install_dir,
+                                            )
+                                        })
+                                    },
                                     runtime_id,
                                     family_id,
                                     install_id,
@@ -655,9 +685,8 @@ impl AppState {
                     events.push(Event::Error {
                         code: "session_capacity_exceeded".to_string(),
                         details: Some(format!("maximum active sessions: {MAX_ACTIVE_SESSIONS}")),
-                        message:
-                            "Local Dictation already has the maximum number of active sessions."
-                                .to_string(),
+                        message: "Speech Kit already has the maximum number of active sessions."
+                            .to_string(),
                         session_id: Some(session_id),
                     });
                     return (ControlFlow::Continue, events);
@@ -710,6 +739,7 @@ impl AppState {
                         }
                         let use_gpu = resolve_use_gpu(
                             resolved_model.runtime_id,
+                            resolved_model.family_id,
                             acceleration_preference,
                             self.registry.as_ref(),
                         );
@@ -1836,7 +1866,7 @@ fn enter_overload_drain_if_saturated(active_session: &mut ActiveSession, events:
         details: Some(format!(
             "queue depth reached saturation at {QUEUE_OVERLOAD_DEPTH}"
         )),
-        message: "Local Dictation stopped because the transcription backlog reached capacity. Already accepted utterances will finish processing.".to_string(),
+        message: "Speech Kit stopped because the transcription backlog reached capacity. Already accepted utterances will finish processing.".to_string(),
         session_id: Some(active_session.session.config().session_id.clone()),
     });
 }
@@ -1966,30 +1996,44 @@ fn synthesis_error_event(
 
 fn resolve_use_gpu(
     runtime_id: RuntimeId,
+    family_id: ModelFamilyId,
     acceleration_preference: AccelerationPreference,
     registry: &EngineRegistry,
 ) -> bool {
     match acceleration_preference {
         AccelerationPreference::CpuOnly => false,
-        AccelerationPreference::Auto => match registry.runtime(runtime_id) {
-            Some(runtime) => runtime
-                .capabilities()
-                .available_accelerators
-                .iter()
-                .any(|accelerator| *accelerator != AcceleratorId::Cpu),
-            None => {
-                // Reaching here means dispatch picked a runtime the registry
-                // did not register — a registration bug, not a runtime state.
-                // Crash loudly in debug builds so regressions surface during
-                // development while release builds stay on CPU rather than
-                // panicking on a user's machine.
+        AccelerationPreference::Auto => {
+            let Some(adapter) = registry.adapter(runtime_id, family_id) else {
                 debug_assert!(
                     false,
-                    "resolve_use_gpu called with unregistered runtime {runtime_id:?}"
+                    "resolve_use_gpu called with unregistered adapter {runtime_id:?}:{family_id:?}"
                 );
-                false
+                return false;
+            };
+            if !adapter.capabilities().supports_hardware_acceleration {
+                return false;
             }
-        },
+
+            match registry.runtime(runtime_id) {
+                Some(runtime) => runtime
+                    .capabilities()
+                    .available_accelerators
+                    .iter()
+                    .any(|accelerator| *accelerator != AcceleratorId::Cpu),
+                None => {
+                    // Reaching here means dispatch picked a runtime the registry
+                    // did not register — a registration bug, not a runtime state.
+                    // Crash loudly in debug builds so regressions surface during
+                    // development while release builds stay on CPU rather than
+                    // panicking on a user's machine.
+                    debug_assert!(
+                        false,
+                        "resolve_use_gpu called with unregistered runtime {runtime_id:?}"
+                    );
+                    false
+                }
+            }
+        }
     }
 }
 
@@ -2125,6 +2169,7 @@ mod tests {
                 runtime_id: RuntimeId::WhisperCpp,
                 capabilities: ModelFamilyCapabilities {
                     task: ModelTask::Stt,
+                    supports_hardware_acceleration: true,
                     available_voices: Vec::new(),
                     supports_speed_control: false,
                     output_sample_rate: None,
@@ -2161,6 +2206,12 @@ mod tests {
             let mut adapter = Self::new();
             adapter.runtime_id = runtime_id;
             adapter.family_id = family_id;
+            adapter
+        }
+
+        fn without_hardware_acceleration() -> Self {
+            let mut adapter = Self::new();
+            adapter.capabilities.supports_hardware_acceleration = false;
             adapter
         }
 
@@ -2281,6 +2332,13 @@ mod tests {
         let mut registry = EngineRegistry::default();
         registry.register_runtime(Box::new(FakeRuntime::with_cuda()));
         registry.register_adapter(Box::new(FakeAdapter::new()));
+        Arc::new(registry)
+    }
+
+    fn fake_registry_with_cuda_and_cpu_only_adapter() -> Arc<EngineRegistry> {
+        let mut registry = EngineRegistry::default();
+        registry.register_runtime(Box::new(FakeRuntime::with_cuda()));
+        registry.register_adapter(Box::new(FakeAdapter::without_hardware_acceleration()));
         Arc::new(registry)
     }
 
@@ -2888,6 +2946,7 @@ mod tests {
     fn auto_acceleration_uses_available_gpu_accelerator() {
         assert!(super::resolve_use_gpu(
             RuntimeId::WhisperCpp,
+            ModelFamilyId::Whisper,
             AccelerationPreference::Auto,
             fake_registry_with_cuda().as_ref(),
         ));
@@ -2897,8 +2956,19 @@ mod tests {
     fn auto_acceleration_skips_when_only_cpu_available() {
         assert!(!super::resolve_use_gpu(
             RuntimeId::WhisperCpp,
+            ModelFamilyId::Whisper,
             AccelerationPreference::Auto,
             fake_registry().as_ref(),
+        ));
+    }
+
+    #[test]
+    fn auto_acceleration_skips_when_family_cannot_use_hardware_acceleration() {
+        assert!(!super::resolve_use_gpu(
+            RuntimeId::WhisperCpp,
+            ModelFamilyId::Whisper,
+            AccelerationPreference::Auto,
+            fake_registry_with_cuda_and_cpu_only_adapter().as_ref(),
         ));
     }
 
@@ -2906,6 +2976,7 @@ mod tests {
     fn cpu_only_acceleration_disables_gpu_even_when_available() {
         assert!(!super::resolve_use_gpu(
             RuntimeId::WhisperCpp,
+            ModelFamilyId::Whisper,
             AccelerationPreference::CpuOnly,
             fake_registry_with_cuda().as_ref(),
         ));
@@ -4068,6 +4139,7 @@ mod tests {
                 family_id: ModelFamilyId::Whisper,
                 task: ModelTask::Stt,
                 language_tags: vec!["en".to_string()],
+                translation_pairs: vec![],
                 supports_automatic_language_detection: false,
                 default_voice: None,
                 license_label: "MIT".to_string(),

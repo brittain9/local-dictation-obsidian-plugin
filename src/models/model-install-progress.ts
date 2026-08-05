@@ -12,6 +12,7 @@ export interface InstallProgressState
 
 interface InstallProgressViewModel {
   bytesLabel: string | null;
+  hasFailed: boolean;
   isCancelling: boolean;
   primaryLine: string;
   progressPercent: number | null;
@@ -40,13 +41,18 @@ export function buildInstallProgressViewModel(
 
   return {
     bytesLabel,
+    hasFailed: state.state === 'failed',
     isCancelling: state.isCancelling,
     primaryLine: resolvePrimaryLine(state.message, state.state),
     progressPercent,
+    // A failure spends its second line on the reason. Progress phases spend it
+    // on "File 2 of 5"; neither has anything useful to say in the other's state.
     secondaryLine:
-      state.state === 'downloading' || state.state === 'verifying'
-        ? localizeDetails(state.details)
-        : null,
+      state.state === 'failed'
+        ? normalizeOptionalLine(state.message)
+        : state.state === 'downloading' || state.state === 'verifying'
+          ? localizeDetails(state.details)
+          : null,
   };
 }
 
@@ -88,6 +94,7 @@ export function updateInstallProgressElement(
 
 function renderInstallProgress(root: HTMLDivElement, viewModel: InstallProgressViewModel): void {
   root.classList.toggle('local-stt-install-progress--cancelling', viewModel.isCancelling);
+  root.classList.toggle('local-stt-install-progress--failed', viewModel.hasFailed);
 
   const status = root.querySelector<HTMLElement>('.local-stt-install-progress__status');
   if (status) status.textContent = viewModel.primaryLine;

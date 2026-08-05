@@ -1,6 +1,6 @@
 # Third-Party Notices
 
-Local Dictation embeds or downloads the following model artifacts so speech
+Speech Kit embeds or downloads the following model artifacts so speech
 processing works offline. Downloaded catalog artifacts are verified against
 pinned sizes and SHA-256 hashes before activation.
 
@@ -155,6 +155,22 @@ The model catalog downloads the pinned Supertonic graphs and selected voice
 styles on demand for local read aloud. These artifacts are not covered by this
 project's MIT license; the catalog shows the model license before installation.
 No endorsement by Supertone is implied.
+
+## Firefox Translations models and Bergamot WebAssembly runtime
+
+- Work: Firefox Translations release models and Bergamot translator
+- Creators: Mozilla, the Bergamot project, and contributors
+- Model source: https://mozilla.github.io/translations/firefox-models/
+- Runtime source:
+  https://github.com/mozilla-firefox/firefox/tree/0e9cfbb4fca901314b1b18f871ae23d5adb16c0f/toolkit/components/translations/bergamot-translator
+- License: Mozilla Public License 2.0 (MPL-2.0)
+  https://www.mozilla.org/MPL/2.0/
+
+The model catalog downloads SHA-256-pinned translation models, vocabularies,
+lexicons, JavaScript glue, and the WebAssembly Bergamot runtime on demand.
+Translation then runs locally in an isolated worker. These files are not
+covered by this project's MIT license. The plugin does not modify the
+downloaded source-form JavaScript glue.
 
 ## FLEURS multilingual speech fixtures
 

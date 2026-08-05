@@ -1,4 +1,4 @@
-import type { App } from 'obsidian';
+import type { App, TextComponent } from 'obsidian';
 import { Modal, Setting } from 'obsidian';
 
 import { formatBytes } from '../shared/format-utils';
@@ -35,7 +35,7 @@ export class ExternalModelFileModal extends Modal {
   private engine: Pick<ExternalFileModelSelection, 'familyId' | 'runtimeId'>;
   private errorEl: HTMLParagraphElement | null = null;
   private guidanceEl: HTMLDivElement | null = null;
-  private inputEl: HTMLInputElement | null = null;
+  private input: TextComponent | null = null;
 
   constructor(
     app: App,
@@ -47,7 +47,7 @@ export class ExternalModelFileModal extends Modal {
   }
 
   override onOpen(): void {
-    this.titleEl.setText(t('models.external.title'));
+    this.setTitle(t('models.external.title'));
     this.contentEl.empty();
     this.contentEl.createEl('p', {
       text: t('models.external.intro'),
@@ -68,7 +68,7 @@ export class ExternalModelFileModal extends Modal {
           if (option !== undefined) {
             this.engine = option.selection;
             this.renderGuidance();
-            this.inputEl?.setAttr('placeholder', option.placeholder);
+            this.input?.setPlaceholder(option.placeholder);
             this.setValidationError(null);
           }
         });
@@ -84,18 +84,19 @@ export class ExternalModelFileModal extends Modal {
         const option = getExternalFileEngineOption(this.engine);
         text.setPlaceholder(option?.placeholder ?? '/absolute/path/to/model');
         text.setValue(this.currentPath);
-        this.inputEl = text.inputEl;
-        this.inputEl.addEventListener('input', () => {
+        this.input = text;
+        text.onChange(() => {
           this.setValidationError(null);
         });
       });
 
-    this.inputEl?.focus();
+    this.input?.inputEl.focus();
 
     this.errorEl = this.contentEl.createEl('p', {
       attr: { 'aria-live': 'polite' },
-      cls: 'local-stt-external-model-error local-stt-hidden',
+      cls: 'local-stt-external-model-error',
     });
+    this.errorEl.hide();
 
     let validating = false;
     new Setting(this.contentEl).addButton((button) => {
@@ -110,7 +111,7 @@ export class ExternalModelFileModal extends Modal {
           validating = true;
           button.setDisabled(true).setButtonText(t('models.external.validating'));
           this.setValidationError(null);
-          const nextPath = this.inputEl?.value.trim() ?? '';
+          const nextPath = this.input?.getValue().trim() ?? '';
 
           try {
             await this.dependencies.manager.validateAndSelectExternalFile(nextPath, this.engine);
@@ -160,7 +161,7 @@ export class ExternalModelFileModal extends Modal {
     }
 
     this.errorEl.setText(message ?? '');
-    this.errorEl.toggleClass('local-stt-hidden', message === null);
+    this.errorEl.toggle(message !== null);
   }
 
   private initialEngine(): Pick<ExternalFileModelSelection, 'familyId' | 'runtimeId'> {
@@ -194,7 +195,7 @@ export class ModelDetailsModal extends Modal {
 
   override onOpen(): void {
     const presentation = this.presentation;
-    this.titleEl.setText(presentation.displayName);
+    this.setTitle(presentation.displayName);
     this.contentEl.empty();
     this.contentEl.createEl('p', {
       text: presentation.summary,
@@ -233,15 +234,15 @@ export class ModelDetailsModal extends Modal {
     }
 
     if (presentation.tts !== null) {
-      appendDetailsList(dl, t('models.details.languages'), presentation.tts.languages);
-      appendDetailsList(
+      appendDetailsValues(dl, t('models.details.languages'), presentation.tts.languages);
+      appendDetailsValues(
         dl,
         t('models.details.availableVoices'),
         presentation.tts.availableVoices.map((voice) =>
           voice.isDefault ? t('models.details.defaultVoice', { voice: voice.label }) : voice.label,
         ),
       );
-      appendDetailsList(
+      appendDetailsValues(
         dl,
         t('models.details.installedVoices'),
         presentation.tts.installedVoices.map((voice) => voice.label),
@@ -311,13 +312,14 @@ export function openSelectedModelDetailsModal(
   openModelDetailsModal(app, state, selection);
 }
 
-function appendDetailsList(container: HTMLElement, label: string, values: readonly string[]): void {
+function appendDetailsValues(
+  container: HTMLElement,
+  label: string,
+  values: readonly string[],
+): void {
   if (values.length === 0) return;
   container.createEl('dt', { text: label });
-  const list = container.createEl('dd').createEl('ul');
-  for (const value of values) {
-    list.createEl('li', { text: value });
-  }
+  container.createEl('dd', { text: values.join(', '), cls: 'local-stt-details-values' });
 }
 
 function appendDetailsLink(

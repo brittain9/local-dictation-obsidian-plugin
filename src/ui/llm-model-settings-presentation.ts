@@ -1,10 +1,10 @@
+import { activeLlmProviderIds } from '../llm/routing-policy';
 import type { PluginSettings } from '../settings/plugin-settings';
 import { t } from '../shared/i18n';
 import { activePresetOverride } from './llm-preset-overrides';
 
 export interface ModelSettingsPresentation {
-  remoteThresholdChars: number | null;
-  remoteTimeoutSec: number | null;
+  networkTimeoutSec: number | null;
   temperature: {
     presetLabel: string | null;
     value: number;
@@ -19,31 +19,26 @@ export function resolveModelSettingsPresentation(
     typeof temperatureOverride?.value === 'number'
       ? { presetLabel: temperatureOverride.label, value: temperatureOverride.value }
       : { presetLabel: null, value: settings.llmPostprocessTemperature };
-  const remoteSettingsApply = settings.llmRemoteFeaturesEnabled;
+  const activeProviders = activeLlmProviderIds(settings.llmRoutingPolicy);
+  const networkSettingsApply = activeProviders.some(
+    (providerId) => providerId === 'openrouter' || providerId === 'openai_compatible',
+  );
 
   return {
-    remoteThresholdChars:
-      remoteSettingsApply && settings.llmRouting === 'auto'
-        ? settings.llmRemoteThresholdChars
-        : null,
-    remoteTimeoutSec:
-      remoteSettingsApply && settings.llmRouting !== 'local' ? settings.llmRemoteTimeoutSec : null,
+    networkTimeoutSec: networkSettingsApply ? settings.llmNetworkTimeoutSec : null,
     temperature,
   };
 }
 
-export function describeModelBehavior(settings: PluginSettings): string {
+export function describeAdvancedModelSettings(settings: PluginSettings): string {
   const presentation = resolveModelSettingsPresentation(settings);
-  const parts = [t('llm.model.summary.temperature', { value: presentation.temperature.value })];
-  if (presentation.remoteThresholdChars !== null) {
-    parts.push(
-      t('llm.model.summary.remoteThreshold', {
-        value: presentation.remoteThresholdChars.toLocaleString(),
-      }),
-    );
-  }
-  if (presentation.remoteTimeoutSec !== null) {
-    parts.push(t('llm.model.summary.timeout', { value: presentation.remoteTimeoutSec }));
+  const temperatureKey =
+    settings.llmRoutingPolicy?.kind === 'transcript_size'
+      ? 'llm.model.summary.temperatureShared'
+      : 'llm.model.summary.temperature';
+  const parts = [t(temperatureKey, { value: presentation.temperature.value })];
+  if (presentation.networkTimeoutSec !== null) {
+    parts.push(t('llm.model.summary.timeout', { value: presentation.networkTimeoutSec }));
   }
   return parts.join(' · ');
 }

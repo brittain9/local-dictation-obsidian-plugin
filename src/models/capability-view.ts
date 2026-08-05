@@ -10,6 +10,7 @@ import type {
 } from './model-management-types';
 
 const MODEL_FORMAT_LABELS: Record<ModelFormat, string> = {
+  bergamot: 'Bergamot',
   ggml: 'GGML',
   gguf: 'GGUF',
   onnx: 'ONNX',
@@ -41,7 +42,7 @@ export function buildCapabilityLabels(
   const labels: string[] = [];
 
   const accelerators =
-    caps.runtime.availableAccelerators.length > 0
+    caps.family.supportsHardwareAcceleration && caps.runtime.availableAccelerators.length > 0
       ? caps.runtime.availableAccelerators
       : (['cpu'] as const);
   for (const id of accelerators) {

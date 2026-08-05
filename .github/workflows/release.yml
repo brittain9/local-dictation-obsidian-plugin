@@ -26,7 +26,6 @@ jobs:
       node_version: ${{ steps.build-config.outputs.node-version }}
       rust_toolchain: ${{ steps.build-config.outputs.rust-toolchain }}
       ggml_native: ${{ steps.build-config.outputs.ggml-native }}
-      ort_cuda_version: ${{ steps.build-config.outputs.ort-cuda-version }}
       cuda_toolkit_version: ${{ steps.build-config.outputs.cuda-toolkit-version }}
       cuda_architectures: ${{ steps.build-config.outputs.cuda-architectures }}
       windows_cuda_subpackages_manifest: ${{ steps.build-config.outputs.windows-cuda-subpackages-manifest }}
@@ -101,7 +100,6 @@ jobs:
     env:
       # These values must exist before rust-cache computes its environment key.
       GGML_NATIVE: ${{ needs.metadata.outputs.ggml_native }}
-      ORT_CUDA_VERSION: ${{ needs.metadata.outputs.ort_cuda_version }}
       CUDA_TOOLKIT_VERSION: ${{ needs.metadata.outputs.cuda_toolkit_version }}
       # Only the CUDA matrix leg consumes this shared release target.
       CMAKE_CUDA_ARCHITECTURES: ${{ matrix.cuda && needs.metadata.outputs.cuda_architectures || '' }}
@@ -247,10 +245,8 @@ jobs:
         env:
           CUDA_TOOLKIT_VERSION_INPUT: ${{ needs.metadata.outputs.cuda_toolkit_version }}
           GGML_NATIVE_INPUT: ${{ needs.metadata.outputs.ggml_native }}
-          ORT_CUDA_VERSION_INPUT: ${{ needs.metadata.outputs.ort_cuda_version }}
         run: |
           "GGML_NATIVE=$env:GGML_NATIVE_INPUT" | Out-File -FilePath $env:GITHUB_ENV -Append
-          "ORT_CUDA_VERSION=$env:ORT_CUDA_VERSION_INPUT" | Out-File -FilePath $env:GITHUB_ENV -Append
           "CUDA_TOOLKIT_VERSION=$env:CUDA_TOOLKIT_VERSION_INPUT" | Out-File -FilePath $env:GITHUB_ENV -Append
 
       - name: Setup Node.js + npm
@@ -279,7 +275,6 @@ jobs:
           node-version: ${{ needs.metadata.outputs.node_version }}
           rust-toolchain: ${{ needs.metadata.outputs.rust_toolchain }}
           ggml-native: ${{ needs.metadata.outputs.ggml_native }}
-          ort-cuda-version: ${{ needs.metadata.outputs.ort_cuda_version }}
           cuda-toolkit-version: ${{ needs.metadata.outputs.cuda_toolkit_version }}
           cuda-architectures: ${{ needs.metadata.outputs.cuda_architectures }}
           windows-cuda-subpackages-manifest: ${{ needs.metadata.outputs.windows_cuda_subpackages_manifest }}

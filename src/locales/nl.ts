@@ -39,18 +39,18 @@ export const nl = {
   'notice.sidecarVersionDrift.cuda':
     'Bijgewerkt naar {version}, maar de geïnstalleerde CUDA-spraakengine is verouderd. Update nu om ze gesynchroniseerd te houden.',
   'notice.surfaceDesynchronized':
-    'Het dicteren is gestopt omdat de notitie veranderde op een manier die Local Dictation niet veilig kon volgen. Start het dicteren opnieuw om door te gaan.',
+    'Het dicteren is gestopt omdat de notitie veranderde op een manier die Speech Kit niet veilig kon volgen. Start het dicteren opnieuw om door te gaan.',
   'notice.targetNoteClosed':
     'Het dicteren is gestopt omdat de doelnotitie is gesloten of vervangen. Start het dicteren opnieuw om door te gaan.',
   'notice.targetNoteDeleted':
     'Het dicteren is gestopt omdat de doelnotitie is verwijderd. Herstel of maak de notitie opnieuw en begin vervolgens opnieuw met dicteren.',
   'notice.transcriptWriteFailed':
-    'Het dicteren is gestopt omdat Local Dictation niet veilig naar de notitie kon schrijven. Start het dicteren opnieuw om door te gaan.',
+    'Het dicteren is gestopt omdat Speech Kit niet veilig naar de notitie kon schrijven. Start het dicteren opnieuw om door te gaan.',
   'setup.sidecar.cpu.firstRun.body':
-    'Voor Local Dictation is een eenmalige download van de CPU spraak-naar-tekst-engine uit GitHub-releases vereist. Nadat deze is voltooid, wordt de transcriptie lokaal op uw machine uitgevoerd. U kunt de CUDA-versnelling later via de instellingen installeren.',
+    'Voor Speech Kit is een eenmalige download van de CPU spraak-naar-tekst-engine uit GitHub-releases vereist. Nadat deze is voltooid, wordt de transcriptie lokaal op uw machine uitgevoerd. U kunt de CUDA-versnelling later via de instellingen installeren.',
   'setup.sidecar.cpu.firstRun.primaryButton': 'CPU sidecar downloaden',
-  'setup.sidecar.cpu.firstRun.success': 'Local Dictation sidecar geïnstalleerd en gestart.',
-  'setup.sidecar.cpu.firstRun.title': 'Voltooi het instellen van Local Dictation',
+  'setup.sidecar.cpu.firstRun.success': 'Speech Kit sidecar geïnstalleerd en gestart.',
+  'setup.sidecar.cpu.firstRun.title': 'Voltooi het instellen van Speech Kit',
   'setup.sidecar.cpu.install.body':
     'Download de CPU spraak-naar-tekst-engine uit GitHub-releases. Nadat deze is voltooid, wordt de transcriptie lokaal op uw machine uitgevoerd.',
   'setup.sidecar.cpu.install.primaryButton': 'CPU sidecar downloaden',
@@ -61,16 +61,14 @@ export const nl = {
   'setup.sidecar.cpu.reinstall.primaryButton': 'CPU sidecar opnieuw downloaden',
   'setup.sidecar.cpu.reinstall.success': 'CPU sidecar opnieuw geïnstalleerd en opnieuw opgestart.',
   'setup.sidecar.cpu.reinstall.title': 'Installeer CPU sidecar opnieuw',
-  'setup.sidecar.cuda.install.body':
-    "Download de CUDA-versnelde sidecar voor NVIDIA GPU's. Dit vervangt de CPU sidecar terwijl deze actief is. De CPU sidecar blijft als reserve geïnstalleerd.",
   'setup.sidecar.cuda.install.primaryButton': 'CUDA sidecar downloaden',
   'setup.sidecar.cuda.install.success': 'CUDA sidecar geïnstalleerd en gestart.',
   'setup.sidecar.cuda.install.title': 'Installeer CUDA-versnelling',
   'setup.sidecar.mac.firstRun.body':
-    'Local Dictation heeft een eenmalige download nodig van de spraak-naar-tekst-engine uit GitHub-releases. Eenmaal geïnstalleerd, draait de transcriptie volledig op je Mac; audio verlaat nooit je machine.',
+    'Speech Kit heeft een eenmalige download nodig van de spraak-naar-tekst-engine uit GitHub-releases. Eenmaal geïnstalleerd, draait de transcriptie volledig op je Mac; audio verlaat nooit je machine.',
   'setup.sidecar.mac.firstRun.primaryButton': 'sidecar downloaden',
-  'setup.sidecar.mac.firstRun.success': 'Local Dictation sidecar geïnstalleerd en gestart.',
-  'setup.sidecar.mac.firstRun.title': 'Voltooi het instellen van Local Dictation',
+  'setup.sidecar.mac.firstRun.success': 'Speech Kit sidecar geïnstalleerd en gestart.',
+  'setup.sidecar.mac.firstRun.title': 'Voltooi het instellen van Speech Kit',
   'setup.sidecar.mac.install.body':
     'Download de spraak-naar-tekst-engine van GitHub-releases. De transcriptie wordt lokaal op uw Mac uitgevoerd nadat deze is voltooid.',
   'setup.sidecar.mac.install.primaryButton': 'sidecar downloaden',
@@ -82,15 +80,14 @@ export const nl = {
   'setup.sidecar.mac.reinstall.success': 'Sidecar opnieuw geïnstalleerd en opnieuw opgestart.',
   'setup.sidecar.mac.reinstall.title': 'Installeer sidecar opnieuw',
   'setup.sidecar.update.body':
-    'Download de huidige {engineLabel} zodat deze overeenkomt met deze versie van Local Dictation. Bestaande installaties worden op hun plaats vervangen.',
+    'Download de huidige {engineLabel} zodat deze overeenkomt met deze versie van Speech Kit. Bestaande installaties worden op hun plaats vervangen.',
   'setup.sidecar.update.engine.cpuAndCuda': 'CPU- en CUDA-spraakengines',
   'setup.sidecar.update.engine.cuda': 'CUDA spraakengine',
   'setup.sidecar.update.engine.default': 'spraakengine',
   'setup.sidecar.update.primaryButton_one': 'Spraakengine bijwerken',
   'setup.sidecar.update.primaryButton_other': 'Spraakengines bijwerken',
-  'setup.sidecar.update.success_one': 'Local Dictation-spraakengine bijgewerkt en opnieuw gestart.',
-  'setup.sidecar.update.success_other':
-    'Local Dictation-spraakengines bijgewerkt en opnieuw opgestart.',
+  'setup.sidecar.update.success_one': 'Speech Kit-spraakengine bijgewerkt en opnieuw gestart.',
+  'setup.sidecar.update.success_other': 'Speech Kit-spraakengines bijgewerkt en opnieuw opgestart.',
   'setup.sidecar.update.title_one': 'Spraakengine bijwerken',
   'setup.sidecar.update.title_other': 'Update spraakengines',
   'audio.microphone.permissionDeniedMac':
@@ -222,9 +219,6 @@ export const nl = {
   'settings.llm.enableFeatures.name': 'Schakel LLM-functies in',
   'settings.llm.enableFeatures.desc':
     'LLM-transformaties beschikbaar maken. Schakel transformatie in of uit in de zijbalk.',
-  'settings.llm.enableRemote.name': 'Schakel externe LLM in',
-  'settings.llm.enableRemote.desc':
-    'Toestaan ​​dat transcriptietekst en opgenomen notitiecontext naar OpenRouter worden verzonden. Audio wordt nooit verzonden.',
   'settings.llm.restoreDefaults.name': 'Herstel standaardinstellingen voor transformatie',
   'settings.llm.restoreDefaults.desc':
     'Reset preset, timing, context, minimum aantal woorden en temperatuur. Opgeslagen presets en modellen blijven behouden.',
@@ -244,11 +238,9 @@ export const nl = {
   'settings.hardwareAcceleration.name': 'Hardwareversnelling',
   'settings.hardwareAcceleration.desc': 'Voer gevolgtrekking uit op de GPU, indien beschikbaar.',
   'settings.hardwareAcceleration.busy':
-    'Kan de hardwareversnelling niet wijzigen tijdens het dicteren.',
+    'Kan de hardwareversnelling niet wijzigen terwijl dicteren of voorlezen actief is. Als het dicteren na het stoppen nog wordt verwerkt, voert u ‘Dicteren annuleren’ uit.',
   'settings.hardwareAcceleration.on': 'Hardwareversnelling ingeschakeld.',
   'settings.hardwareAcceleration.off': 'Hardwareversnelling uitgeschakeld.',
-  'settings.hardwareAcceleration.restartFailed':
-    'Hardwareversnelling werd opgeslagen, maar de spraakengine kon niet opnieuw opstarten. Start Obsidian opnieuw om het toe te passen.',
   'settings.noteContext.name': 'Gebruik notitie als context',
   'settings.noteContext.desc':
     'Stuur bij handmatig geselecteerd Engels onderscheidende termen uit de geopende notitie om de spelling te verbeteren.',
@@ -288,9 +280,9 @@ export const nl = {
   'settings.install.installingSidecarMac': 'sidecar installeren',
   'settings.install.cancelling': 'Annuleren...',
   'settings.install.cancel': 'Annuleren',
-  'settings.missingSidecar.name': 'Stel Local Dictation in',
+  'settings.missingSidecar.name': 'Stel Speech Kit in',
   'settings.missingSidecar.desc':
-    'Local Dictation is nog niet klaar. Voer de installatiewizard uit om de spraakengine en een model te installeren.',
+    'Speech Kit is nog niet klaar. Voer de installatiewizard uit om de spraakengine en een model te installeren.',
   'settings.sidecar.name': 'Sidecar',
   'settings.sidecar.genericName': 'sidecar',
   'settings.sidecar.variantName': '{variant} sidecar',
@@ -298,19 +290,14 @@ export const nl = {
   'settings.sidecar.cpuName': 'CPU sidecar',
   'settings.sidecar.cpuDesc': 'Spraak-naar-tekst-engine. Vereist.',
   'settings.sidecar.gpuName': 'GPU sidecar',
-  'settings.sidecar.cudaActive': 'CUDA-acceleratie actief.',
   'settings.sidecar.cudaLibraryPath.name': 'CUDA-bibliotheekpad',
   'settings.sidecar.cudaLibraryPath.desc':
     'Optioneel bibliotheekzoekpad voor de sidecar (Flatpak, aangepaste CUDA-installaties).',
   'settings.sidecar.installAnyway': 'Hoe dan ook installeren',
-  'settings.sidecar.installAnywayTooltip':
-    'Ga door met de installatie van CUDA, ook al is er geen NVIDIA-stuurprogramma gedetecteerd.',
   'settings.sidecar.stopBeforeInstall':
-    'Stop het dicteren voordat u een sidecar installeert: tijdens de installatie wordt de engine opnieuw gestart. Als een transcriptie nog steeds wordt verwerkt, voert u "Dicteren annuleren" uit om het nu te stoppen.',
-  'settings.sidecar.stopBeforeUpdate':
-    'Stop het dicteren voordat u de sidecars bijwerkt: de update start de engine opnieuw. Als een transcriptie nog steeds wordt verwerkt, voert u "Dicteren annuleren" uit om het nu te stoppen.',
+    'Stop met dicteren of voorlezen voordat u een sidecar installeert: tijdens de installatie wordt de engine opnieuw gestart. Als het dicteren nog wordt verwerkt, voert u ‘Dicteren annuleren’ uit om het nu te stoppen.',
   'settings.sidecar.stopBeforeUninstall':
-    'Stop met dicteren voordat u {sidecar} verwijdert. Als een transcriptie nog wordt verwerkt, voert u ‘Dicteren annuleren’ uit om deze nu te stoppen.',
+    'Stop met dicteren of voorlezen voordat u {sidecar} verwijdert. Als het dicteren nog wordt verwerkt, voert u ‘Dicteren annuleren’ uit om het nu te stoppen.',
   'settings.sidecar.uninstallFailed':
     'Kan {sidecar} niet verwijderen. Sluit andere installatievensters en probeer het opnieuw.',
   'settings.sidecar.uninstalled': 'Sidecar verwijderd.',
@@ -318,23 +305,10 @@ export const nl = {
   'settings.sidecar.cpuUninstalled': 'CPU sidecar verwijderd.',
   'settings.sidecar.restartFailed':
     'De spraakengine kon niet opnieuw opstarten. Start Obsidian opnieuw voordat u gaat dicteren.',
-  'settings.sidecar.becameActive':
-    'Het dicteren werd actief voordat de sidecar-bestanden konden worden gewijzigd. Stop of annuleer het dicteren en probeer het opnieuw.',
   'settings.sidecar.reinstall': 'Opnieuw installeren',
   'settings.sidecar.uninstall': 'Verwijderen',
   'settings.sidecar.install': 'Installeren',
-  'settings.sidecar.driver.present': 'NVIDIA GPU gedetecteerd — snellere transcriptie.',
-  'settings.sidecar.driver.presentTooltip':
-    'Downloadt het CUDA sidecar-archief van GitHub-releases.',
-  'settings.sidecar.driver.absent':
-    'Vereist een NVIDIA GPU. Installeer het toch als u weet dat het uwe wordt ondersteund.',
-  'settings.sidecar.driver.absentTooltip':
-    "nvidia-smi is niet gevonden op PATH. Gebruik 'Toch installeren' als u zeker weet dat uw systeem CUDA ondersteunt.",
-  'settings.sidecar.driver.unknown':
-    'Kan NVIDIA niet vinden. Installeer het alleen als u het zeker weet.',
-  'settings.sidecar.driver.unknownTooltip':
-    'Kan niet zoeken naar een NVIDIA-stuurprogramma. Ga alleen verder als u weet dat uw GPU CUDA ondersteunt.',
-  'plugin.name': 'Local Dictation',
+  'plugin.name': 'Speech Kit',
   'common.cancel': 'Annuleren',
   'common.delete': 'Verwijderen',
   'common.duplicate': 'Dupliceren',
@@ -344,11 +318,11 @@ export const nl = {
   'common.on': 'Aan',
   'common.save': 'Opslaan',
   'common.unavailable': 'Niet beschikbaar',
-  'ribbon.idle': 'Local Dictation — start het dicteren',
-  'ribbon.starting': 'Local Dictation — starten…',
-  'ribbon.listening': 'Local Dictation — luistert',
-  'ribbon.speechDetected': 'Local Dictation — spraak gedetecteerd',
-  'ribbon.error': 'Local Dictation — fout',
+  'ribbon.idle': 'Speech Kit — start het dicteren',
+  'ribbon.starting': 'Speech Kit — starten…',
+  'ribbon.listening': 'Speech Kit — luistert',
+  'ribbon.speechDetected': 'Speech Kit — spraak gedetecteerd',
+  'ribbon.error': 'Speech Kit — fout',
   'validation.wholeNumberRange': 'Voer een geheel getal in, van {min} tot {max}.',
   'validation.numberRange': 'Voer een getal in van {min} tot {max}.',
   'llm.managedByPreset':
@@ -375,15 +349,8 @@ export const nl = {
   'llm.model.temperature.name': 'Temperatuur',
   'llm.model.temperature.description':
     'Bemonsteringsvariatie. 0 is deterministisch; hogere waarden zijn gevarieerder.',
-  'llm.model.remoteThreshold.name': 'Drempel voor routering op afstand',
-  'llm.model.remoteThreshold.description':
-    'Transcriptlengte die automatische transformaties naar OpenRouter (tekens) verzendt.',
-  'llm.model.remoteTimeout.name': 'Time-out op afstand',
-  'llm.model.remoteTimeout.description':
-    'Wacht na zoveel seconden niet meer op OpenRouter. Het originele transcript wordt bewaard.',
   'llm.model.behavior.name': 'Modelgedrag',
   'llm.model.summary.temperature': 'Temperatuur {value}',
-  'llm.model.summary.remoteThreshold': 'Op afstand bij {value}+ tekens',
   'llm.model.summary.timeout': 'Time-out van {value}s',
   'llm.failure.authInvalid': '{provider} API-sleutel afgewezen. Controleer instellingen.',
   'llm.failure.rateLimited':
@@ -412,23 +379,11 @@ export const nl = {
     'Afhankelijk van de voorinstelling kunnen in één keer tijdstempels worden herschreven of verwijderd.',
   'llm.timing.option.perUtterance': 'Na elke zin',
   'llm.timing.option.batch': 'Alles tegelijk bij stoppen',
-  'llm.routing.local': 'Lokaal',
-  'llm.routing.remote': 'Op afstand',
-  'llm.routing.auto': 'Auto',
-  'llm.routing.ariaLabel': 'Voer transformaties uit met',
-  'llm.routing.localHint': 'Draait volledig op uw apparaat met Ollama.',
-  'llm.routing.remoteHint': 'Stuurt elk transcript naar OpenRouter voor transformatie.',
-  'llm.routing.autoHint':
-    'Blijft op het apparaat en overhandigt grote transcripties aan OpenRouter.',
-  'llm.routing.localLeg': 'Lokaal · Ollama',
-  'llm.routing.remoteLeg': 'Op afstand · OpenRouter',
   'llm.routing.priceTierTooltip': 'Geschatte prijsklasse',
   'llm.routing.providerModel': '{provider}-model',
   'llm.routing.ollamaModelDescription': 'Kies een lokaal Ollama-chatmodel.',
   'llm.routing.selectModel': 'Selecteer een model',
   'llm.routing.refreshModels': 'Ververs {provider}-modellen',
-  'llm.routing.apiKey.name': 'OpenRouter API-sleutel',
-  'llm.routing.apiKey.description': 'Veilig opgeslagen door Obsidian.',
   'llm.routing.openRouterModel.name': 'OpenRouter-model',
   'llm.routing.openRouterModel.description': 'Typ om naar OpenRouter-modellen te zoeken.',
   'llm.routing.testConnection': 'Test de API-sleutel en het model',
@@ -452,7 +407,7 @@ export const nl = {
   'llm.sidebar.activePreset': 'Actieve voorinstelling',
   'llm.sidebar.unavailable.title': 'LLM-functies zijn niet beschikbaar',
   'llm.sidebar.unavailable.description':
-    'Schakel LLM-functies in de Local Dictation-instellingen in om transformaties te configureren.',
+    'Schakel LLM-functies in de Speech Kit-instellingen in om transformaties te configureren.',
   'llm.sidebar.unavailable.summary': 'Schakel LLM-functies in de instellingen in',
   'llm.sidebar.off.title': 'Ruwe transcriptiemodus',
   'llm.sidebar.off.description':
@@ -566,8 +521,8 @@ export const nl = {
   'setup.ready.openMarkdownNote':
     'Open een Markdown-notitie in de bewerkingsmodus en probeer opnieuw te dicteren.',
   'setup.ready.completionFailed': 'Kan het instellen niet voltooien. Probeer het opnieuw.',
-  'setup.wizard.welcomeTitle': 'Welkom bij Local Dictation',
-  'setup.wizard.title': 'Stel Local Dictation in',
+  'setup.wizard.welcomeTitle': 'Welkom bij Speech Kit',
+  'setup.wizard.title': 'Stel Speech Kit in',
   'setup.wizard.engineReadyTitle': 'Spraakengine gereed',
   'setup.wizard.engineReadyDesc': 'De lokale spraak-naar-tekst-engine is geïnstalleerd en gereed.',
   'setup.wizard.intro':
@@ -577,8 +532,6 @@ export const nl = {
   'setup.wizard.pickModelStep': 'Kies een transcriptiemodel',
   'setup.wizard.startTalking':
     'Druk vervolgens op de microfoon in het lint (of op uw eigen sneltoets) en begin te praten.',
-  'setup.wizard.cpuBuildNote':
-    'Begint met de CPU-build. NVIDIA GPU? U kunt de CUDA-versnelde build later installeren via Instellingen.',
   'setup.wizard.downloadEngine': 'Engine downloaden',
   'setup.wizard.modelSelectedTitle': 'Model geselecteerd',
   'setup.wizard.pickModelTitle': 'Kies een transcriptiemodel',
@@ -587,9 +540,7 @@ export const nl = {
   'setup.wizard.modelIntro':
     'Installeer een transcriptiemodel om dicteren mogelijk te maken. U kunt er later meer installeren: kleinere modellen zijn sneller, grotere modellen zijn nauwkeuriger.',
   'setup.wizard.modelKinds':
-    'Er zijn twee soorten beschikbaar: streamingmodellen tonen woorden live terwijl u spreekt; standaardmodellen worden na elke pauze getranscribeerd. Voor handsfree dicteren begint u met het aanbevolen Moonshine Small-model. Nemotron 3.5 ASR is een experimentele streamingoptie met hogere bronnen.',
-  'setup.wizard.gpuNote':
-    'Grotere modellen werken veel sneller met GPU-versnelling. Als u een NVIDIA GPU hebt, kunt u de CUDA-versnelde build later installeren via Instellingen.',
+    'Er zijn twee soorten beschikbaar: streamingmodellen tonen woorden live terwijl u spreekt; standaardmodellen worden na elke pauze getranscribeerd. Voor handsfree dicteren begint u met het aanbevolen Moonshine Small-model. Nemotron 3.5 ASR is een streamingoptie die meer systeembronnen vereist.',
   'setup.wizard.openModelPicker': 'Modelkiezer openen',
   'setup.wizard.readyTitle': 'U bent klaar om te dicteren',
   'setup.wizard.readyDesc':
@@ -599,12 +550,12 @@ export const nl = {
     'Zoek dit pictogram in het Obsidian-lint. Klik erop om te beginnen met dicteren; klik nogmaals om te stoppen.',
   'setup.wizard.hotkeyTitle': 'Of bind een sneltoets',
   'setup.wizard.hotkeyDescBefore': 'Bind een snelkoppeling aan de',
-  'setup.wizard.toggleCommandName': 'Local Dictation: dicteren wisselen',
+  'setup.wizard.toggleCommandName': 'Speech Kit: dicteren wisselen',
   'setup.wizard.hotkeyDescAfter': 'opdracht om overal in Obsidian te starten en stoppen.',
   'setup.wizard.openHotkeySettings': 'Open sneltoetsinstellingen',
   'setup.wizard.tryDictationNow': 'Probeer nu dicteren',
   'setup.wizard.openHotkeySettingsFallback':
-    'Open Instellingen → Sneltoetsen en zoek naar "Local Dictation".',
+    'Open Instellingen → Sneltoetsen en zoek naar "Speech Kit".',
   'setup.sidecar.modal.download': 'Downloaden',
   'setup.sidecar.modal.variantDownload': '{variant} downloaden',
   'setup.sidecar.modal.version': 'Versie',
@@ -643,7 +594,7 @@ export const nl = {
   'models.manage.removedNotice': 'Model verwijderd.',
   'models.external.title': 'Gebruik extern bestand',
   'models.external.intro':
-    'Externe modellen zijn voor geavanceerd gebruik. Local Dictation downloadt, updatet of verifieert deze bestanden niet.',
+    'Externe modellen zijn voor geavanceerd gebruik. Speech Kit downloadt, updatet of verifieert deze bestanden niet.',
   'models.external.family.name': 'Modelfamilie',
   'models.external.family.desc':
     'Kies de lader die bij het model past. De familie wordt niet afgeleid uit de bestandsnaam.',
@@ -747,7 +698,7 @@ export const nl = {
   'sidecarError.no_active_session': 'Er is geen actieve dicteersessie.',
   'sidecarError.session_already_exists': 'Er bestaat al een dicteersessie met deze ID.',
   'sidecarError.session_capacity_exceeded':
-    'Local Dictation heeft al het maximale aantal actieve sessies.',
+    'Speech Kit heeft al het maximale aantal actieve sessies.',
   'sidecarError.system_audio_capture_failed': 'Kan systeemaudio-opname niet starten.',
   'sidecarError.system_audio_permission_denied':
     'Toestemming voor het opnemen van systeemaudio is uitgeschakeld voor Obsidian. Open Systeeminstellingen → Privacy en beveiliging → Scherm- en systeemaudio-opname, schakel Obsidian in en probeer het opnieuw.',
@@ -794,7 +745,7 @@ export const nl = {
   'catalog.family.moonshine.summary':
     'Toont woorden terwijl u spreekt. Tiny is voorstander van een lager gebruik van hulpbronnen, Small is voorstander van een evenwicht tussen snelheid en kwaliteit, en Medium is voorstander van kwaliteit.',
   'catalog.family.nemotron_asr.summary':
-    'Experimentele, zeer nauwkeurige meertalige streaming met een grotere download en hoger bronnengebruik. Moonshine Small blijft de aanbevolen standaard voor Engels live dicteren.',
+    'Zeer nauwkeurige meertalige streaming met een grotere download en meer resourcegebruik. Moonshine Small blijft de aanbevolen standaard voor Engels live dicteren.',
   'setup.sidecar.modal.unsupportedPlatform':
     'Deze spraakengine-build is niet beschikbaar voor uw platform of architectuur.',
   'setup.sidecar.modal.genericInstallError':
@@ -844,4 +795,45 @@ export const nl = {
     'Natuurlijk lokaal Engels voorlezen met een keuze uit samengestelde stemmen.',
   'catalog.family.pocket_tts.summary':
     'Leest notities lokaal voor in het Engels, Frans, Duits, Spaans, Portugees en Italiaans met selecteerbare stemmen en toonhoogtebehoudende snelheidsregeling.',
+  'commands.translateNote': 'Notitie vertalen',
+  'commands.translateSelection': 'Selectie vertalen',
+  'models.manage.translationModels': 'Vertaling',
+  'translation.modal.privacy': 'De vertaling wordt volledig op dit apparaat uitgevoerd.',
+  'translation.modal.from': 'Van',
+  'translation.modal.to': 'Naar',
+  'translation.modal.swap': 'Wisselen',
+  'translation.modal.largeNote': 'Grote notitie: vertalen kan enkele seconden duren.',
+  'translation.modal.sourceSelection': 'Bronselectie',
+  'translation.modal.sourceNote': 'Bronnotitie',
+  'translation.modal.previewAria': 'Vertaalvoorbeeld',
+  'translation.modal.preparing': 'Lokale vertaling voorbereiden…',
+  'translation.modal.loading': 'Lokaal model laden…',
+  'translation.modal.translating': 'Vertalen…',
+  'translation.modal.translatingProgress': 'Vertalen… {completed}/{total}',
+  'translation.modal.ready': 'Vertaling gereed.',
+  'translation.modal.readyPartial_one':
+    'Vertaling gereed. 1 blok is in de brontaal gebleven omdat de opmaak niet behouden kon blijven.',
+  'translation.modal.readyPartial_other':
+    'Vertaling gereed. {count} blokken zijn in de brontaal gebleven omdat de opmaak niet behouden kon blijven.',
+  'translation.modal.canceled': 'Vertaling geannuleerd.',
+  'translation.modal.failed': 'Vertalen mislukt.',
+  'translation.modal.missingModel':
+    'Installeer het lokale vertaalpakket om dit talenpaar te gebruiken.',
+  'translation.modal.incompleteModel':
+    'Er ontbreken bestanden in het vertaalmodel. Installeer het opnieuw om verder te gaan.',
+  'translation.modal.installModel': 'Vertaalmodel installeren',
+  'translation.modal.translateAgain': 'Opnieuw vertalen',
+  'translation.modal.cancel': 'Annuleren',
+  'translation.modal.replace': 'Vervangen',
+  'translation.modal.insertBelow': 'Hieronder invoegen',
+  'translation.modal.copy': 'Kopiëren',
+  'translation.modal.stale':
+    'De notitie is gewijzigd sinds deze vertaling begon. Kopieer in plaats daarvan de vertaling.',
+  'translation.notice.copied': 'Vertaling gekopieerd.',
+  'translation.notice.copyFailed': 'Kon de vertaling niet kopiëren.',
+  'translation.notice.tooLong': 'Vertaal maximaal {count} tekens per keer.',
+  'catalog.firefox_translations_release_2026_07.summary':
+    'Snelle lokale vertaling tussen Engels en zeven talen met modellen die in Firefox zijn uitgebracht.',
+  'catalog.family.firefox_translations.summary':
+    'Vertaalt notitietekst lokaal met de compacte Bergamot-engine en Firefox-modellen.',
 } as const satisfies TranslationCatalog;

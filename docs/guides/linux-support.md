@@ -1,6 +1,6 @@
 # Linux support
 
-Local Dictation supports desktop Obsidian on x86-64 GNU/Linux. The plugin UI runs inside Obsidian, while transcription runs in a native sidecar built for the `x86_64-unknown-linux-gnu` target.
+Speech Kit supports desktop Obsidian on x86-64 GNU/Linux. The plugin UI runs inside Obsidian, while transcription runs in a native sidecar built for the `x86_64-unknown-linux-gnu` target.
 
 ## What is supported
 
@@ -25,7 +25,7 @@ Other x86-64 glibc distributions should work when their audio service exposes th
 
 ## Native Obsidian packages
 
-AppImage, Debian-package, and tarball installs all run outside a Flatpak sandbox. Install Local Dictation normally, complete its setup wizard, and start with the CPU sidecar. The published sidecar loads `libpulse-simple.so.0` only when system audio is enabled, so microphone dictation does not require that library.
+AppImage, Debian-package, and tarball installs all run outside a Flatpak sandbox. Install Speech Kit normally, complete its setup wizard, and start with the CPU sidecar. The published sidecar loads `libpulse-simple.so.0` only when system audio is enabled, so microphone dictation does not require that library.
 
 For system audio, verify that the PulseAudio-compatible service is available and exposes a monitor source:
 
@@ -39,7 +39,7 @@ On a PipeWire desktop, `pactl info` should identify the PulseAudio compatibility
 
 ## Flatpak Obsidian
 
-The [Flathub package](https://github.com/flathub/md.obsidian.Obsidian) is verified by the Obsidian team but maintained outside Obsidian's supported installers. Its default permissions include home-directory and PulseAudio access, which are the permissions Local Dictation normally needs for a vault and audio capture. Flatpak's [`pulseaudio` socket permission](https://docs.flatpak.org/en/latest/sandbox-permissions.html) covers microphone, playback, and audio-device access.
+The [Flathub package](https://github.com/flathub/md.obsidian.Obsidian) is verified by the Obsidian team but maintained outside Obsidian's supported installers. Its default permissions include home-directory and PulseAudio access, which are the permissions Speech Kit normally needs for a vault and audio capture. Flatpak's [`pulseaudio` socket permission](https://docs.flatpak.org/en/latest/sandbox-permissions.html) covers microphone, playback, and audio-device access.
 
 If those permissions were tightened with Flatseal or `flatpak override`, inspect the effective configuration:
 
@@ -61,7 +61,7 @@ Do not set a global `LD_LIBRARY_PATH` Flatpak override. Electron can load incomp
 
 ### No microphone is detected
 
-Local Dictation obtains microphone audio through Obsidian/Electron, not through the sidecar. Confirm that the device is enabled in the desktop sound settings, then fully restart Obsidian after permission changes. For Flatpak, confirm that the `pulseaudio` socket has not been removed.
+Speech Kit obtains microphone audio through Obsidian/Electron, not through the sidecar. Confirm that the device is enabled in the desktop sound settings, then fully restart Obsidian after permission changes. For Flatpak, confirm that the `pulseaudio` socket has not been removed.
 
 If the error is `NotReadableError`, close other applications using the device and remove any global Flatpak `LD_LIBRARY_PATH` override before retrying.
 
@@ -69,11 +69,11 @@ If the error is `NotReadableError`, close other applications using the device an
 
 First turn off **Include system audio**. If microphone-only dictation works, the model and sidecar are healthy and the failure is limited to the output-monitor path.
 
-Then check `pactl info` and the monitor-source command above. Local Dictation records `@DEFAULT_MONITOR@`; a missing default sink, missing `libpulse-simple.so.0`, stopped PulseAudio compatibility service, or removed Flatpak audio permission will prevent that source from opening.
+Then check `pactl info` and the monitor-source command above. Speech Kit records `@DEFAULT_MONITOR@`; a missing default sink, missing `libpulse-simple.so.0`, stopped PulseAudio compatibility service, or removed Flatpak audio permission will prevent that source from opening.
 
 ### The sidecar does not start
 
-Run **Local Dictation: Check sidecar health** from the command palette. On an unsupported architecture, use a supported x86-64 machine; selecting a different model cannot change the sidecar architecture.
+Run **Speech Kit: Check sidecar health** from the command palette. On an unsupported architecture, use a supported x86-64 machine; selecting a different model cannot change the sidecar architecture.
 
 For a sandboxed install, avoid pointing **Sidecar path override** at a host path that is not visible inside the sandbox. The managed CPU sidecar is installed inside the plugin directory and should not need an override.
 
@@ -81,7 +81,7 @@ For a sandboxed install, avoid pointing **Sidecar path override** at a host path
 
 Open a bug report and include:
 
-- Local Dictation and Obsidian versions
+- Speech Kit and Obsidian versions
 - distribution and version, CPU architecture, and kernel
 - Obsidian package source (AppImage, Debian package, tarball, Flatpak, or other)
 - desktop and session (for example, KDE Plasma 6 on Wayland)
@@ -89,4 +89,4 @@ Open a bug report and include:
 - CPU or CUDA sidecar, selected model, and the exact error
 - whether microphone-only dictation works with system audio disabled
 
-Enable **Developer mode** in Local Dictation settings for verbose diagnostics. Review logs before posting them and remove unrelated local paths or note content.
+Enable **Developer mode** in Speech Kit settings for verbose diagnostics. Review logs before posting them and remove unrelated local paths or note content.

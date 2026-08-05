@@ -127,19 +127,19 @@ describe('DictationRibbonController a11y during hold', () => {
     const { controller, element } = makeController();
     controller.setState('listening');
     controller.setState('speech_detected');
-    expect(element.attributes['aria-label']).toBe('Local Dictation — hearing speech');
-    expect(element.title).toBe('Local Dictation — hearing speech');
+    expect(element.attributes['aria-label']).toBe('Speech Kit — hearing speech');
+    expect(element.title).toBe('Speech Kit — hearing speech');
 
     controller.setState('listening');
     // Visual still held on speech_detected — animation/CSS keeps drifting bars.
     expect(element.dataset.localSttState).toBe('speech_detected');
     // But a screen reader / tooltip must see truth right away.
-    expect(element.attributes['aria-label']).toBe('Local Dictation — listening');
-    expect(element.title).toBe('Local Dictation — listening');
+    expect(element.attributes['aria-label']).toBe('Speech Kit — listening');
+    expect(element.title).toBe('Speech Kit — listening');
 
     vi.advanceTimersByTime(5_000);
     expect(element.dataset.localSttState).toBe('listening');
-    expect(element.attributes['aria-label']).toBe('Local Dictation — listening');
+    expect(element.attributes['aria-label']).toBe('Speech Kit — listening');
   });
 });
 

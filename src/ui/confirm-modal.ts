@@ -22,7 +22,7 @@ export class ConfirmModal extends Modal {
   }
 
   override onOpen(): void {
-    this.titleEl.setText(this.options.title);
+    this.setTitle(this.options.title);
     this.contentEl.empty();
     this.contentEl.createEl('p', { text: this.options.message });
 

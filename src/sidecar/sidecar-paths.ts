@@ -1,6 +1,7 @@
 import { join } from 'node:path';
 
 import { assertAbsoluteExistingFilePath, getExistingPathKind } from '../filesystem/path-validation';
+import type { CudaSidecarLaunchPolicy } from './cuda-compatibility';
 import type { AccelerationPreference } from './protocol';
 import { variantDirectoryPath } from './sidecar-installer';
 
@@ -20,10 +21,13 @@ export interface ResolvedSidecarExecutable {
 
 export interface ResolveSidecarExecutablePathOptions {
   accelerationPreference: AccelerationPreference;
+  /** Whether CUDA is preferred, an inconclusive last resort, or unavailable. */
+  cudaLaunchPolicy: CudaSidecarLaunchPolicy;
   executableName: string;
   pluginDirectory: string;
   sidecarPathOverride: string;
   sidecarProjectDirectory: string;
+  /** This platform ships a CUDA build at all, so `bin/cuda` is a candidate. */
   supportsCuda: boolean;
 }
 
@@ -51,6 +55,7 @@ export async function resolveSidecarExecutablePath(
 
   const installed = await pickExistingVariant({
     accelerationPreference: options.accelerationPreference,
+    cudaLaunchPolicy: options.cudaLaunchPolicy,
     supportsCuda: options.supportsCuda,
     cpuPath: installedCpuPath,
     cudaPath: installedCudaPath,
@@ -72,6 +77,7 @@ export async function resolveSidecarExecutablePath(
 
   const dev = await pickExistingVariant({
     accelerationPreference: options.accelerationPreference,
+    cudaLaunchPolicy: options.cudaLaunchPolicy,
     supportsCuda: options.supportsCuda,
     cpuPath: devCpuPath,
     cudaPath: devCudaPath,
@@ -89,6 +95,7 @@ export async function resolveSidecarExecutablePath(
 
 interface PickExistingVariantOptions {
   accelerationPreference: AccelerationPreference;
+  cudaLaunchPolicy: CudaSidecarLaunchPolicy;
   supportsCuda: boolean;
   cpuPath: string;
   cudaPath: string | null;
@@ -110,12 +117,21 @@ async function pickExistingVariant(
     return hasCpu ? { path: options.cpuPath, variant: 'cpu' } : null;
   }
 
-  if (options.supportsCuda && hasCuda && options.cudaPath !== null) {
-    return { path: options.cudaPath, variant: 'cuda' };
+  const cudaPath = options.supportsCuda && hasCuda ? options.cudaPath : null;
+  if (cudaPath !== null && options.cudaLaunchPolicy === 'preferred') {
+    return { path: cudaPath, variant: 'cuda' };
   }
 
   if (hasCpu) {
     return { path: options.cpuPath, variant: 'cpu' };
+  }
+
+  // Unverified CUDA is still better than not starting: an inconclusive probe on
+  // a machine that only ever installed the CUDA sidecar would otherwise take a
+  // working setup offline. It may fail on the driver, which is a legible error;
+  // Settings separately offers CPU recovery when CUDA turns out to be unusable.
+  if (cudaPath !== null && options.cudaLaunchPolicy === 'fallback') {
+    return { path: cudaPath, variant: 'cuda' };
   }
 
   return null;

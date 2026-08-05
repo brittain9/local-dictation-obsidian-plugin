@@ -1,10 +1,10 @@
-const CALVER_PATTERN = /^(\d{4})\.(1[0-2]|[1-9])\.([1-9]\d*)$/;
+const CALVER_PATTERN = /^(\d{4})\.(1[0-2]|[1-9])\.(0|[1-9]\d*)$/;
 
 export function parseCalver(value, source = 'version') {
   const match = CALVER_PATTERN.exec(value);
   if (match === null) {
     throw new Error(
-      `${source} "${value}" must match YYYY.M.MICRO with an unpadded month and positive MICRO.`,
+      `${source} "${value}" must match YYYY.M.MICRO with an unpadded month and non-negative MICRO.`,
     );
   }
 

@@ -93,7 +93,7 @@ export class SetupWizardModal extends Modal {
   private render(): void {
     this.contentEl.empty();
     const isWelcome = this.currentStep === 'sidecar' && !this.sidecarReady;
-    this.titleEl.setText(isWelcome ? t('setup.wizard.welcomeTitle') : t('setup.wizard.title'));
+    this.setTitle(isWelcome ? t('setup.wizard.welcomeTitle') : t('setup.wizard.title'));
 
     this.renderProgress();
 
@@ -316,7 +316,7 @@ export class SetupWizardModal extends Modal {
   }
 
   private openHotkeySettings(): void {
-    openFilteredHotkeySettings(this.deps.app, 'Local Dictation', (error) => {
+    openFilteredHotkeySettings(this.deps.app, 'Speech Kit', (error) => {
       this.deps.feedback.show({
         cause: error,
         intent: 'warning',

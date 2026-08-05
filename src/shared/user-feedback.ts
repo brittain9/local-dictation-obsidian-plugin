@@ -30,6 +30,7 @@ export interface FeedbackPresenter {
 }
 
 export interface UserFeedback {
+  dismiss(key: string): void;
   dispose(): void;
   show(request: FeedbackRequest): void;
 }
@@ -68,6 +69,12 @@ export function createUserFeedback(dependencies: UserFeedbackDependencies): User
   };
 
   return {
+    dismiss(key) {
+      const active = activeByKey.get(key);
+      if (active !== undefined) {
+        release(key, active, true);
+      }
+    },
     dispose() {
       for (const [key, active] of activeByKey) {
         release(key, active, true);
@@ -107,9 +114,9 @@ export function createUserFeedback(dependencies: UserFeedbackDependencies): User
       handle = dependencies.presenter.present({
         ...(action === undefined ? {} : { action }),
         durationMs,
-        message: request.message.startsWith('Local Dictation')
+        message: request.message.startsWith('Speech Kit')
           ? request.message
-          : `Local Dictation: ${request.message}`,
+          : `Speech Kit: ${request.message}`,
       });
 
       if (request.key !== undefined) {

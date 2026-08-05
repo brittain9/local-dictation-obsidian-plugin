@@ -63,6 +63,7 @@ function capabilities(overrides: Partial<EngineCapabilitiesRecord['family']> = {
       maxAudioDurationSecs: null,
       outputSampleRate: 44_100,
       producesPunctuation: false,
+      supportsHardwareAcceleration: false,
       supportedLanguages: { kind: 'list' as const, tags: ['en', 'es', 'de', 'fr'] },
       supportsAutomaticLanguageDetection: false,
       supportsInitialPrompt: false,
@@ -153,7 +154,7 @@ describe('buildModelDetailsPresentation', () => {
     expect(presentation.sourceUrl).toBe('https://example.com/source');
   });
 
-  it('renders TTS facts as scan-friendly lists and keeps external links safe', () => {
+  it('renders TTS facts as comma-separated rows and keeps external links safe', () => {
     const modal = new ModelDetailsModal({} as never, ttsModel(), installed, capabilities());
     modal.open();
 
@@ -162,11 +163,11 @@ describe('buildModelDetailsPresentation', () => {
     expect(elementTexts(content)).toEqual(
       expect.arrayContaining([
         'Languages',
-        'English',
-        '日本語',
+        'English, 日本語',
         'Available voices',
-        'Alba (default)',
+        'Alba (default), Cosette',
         'Installed voices',
+        'Alba',
         'Speed control',
         '44.1 kHz',
         'Model card',
@@ -227,6 +228,7 @@ function detailsState(
         runtimeId: modelCapabilities.runtimeId,
       },
     ],
+    failedInstall: null,
     installedModels: [installed],
     loadError: null,
     loadStatus: 'ready',

@@ -35,6 +35,7 @@ static WHITESPACE_PATTERN: LazyLock<Regex> =
 static CAPABILITIES: LazyLock<ModelFamilyCapabilities> =
     LazyLock::new(|| ModelFamilyCapabilities {
         task: ModelTask::Tts,
+        supports_hardware_acceleration: false,
         available_voices: ["F1", "F2", "F3", "F4", "F5", "M1", "M2", "M3", "M4", "M5"]
             .into_iter()
             .map(str::to_string)

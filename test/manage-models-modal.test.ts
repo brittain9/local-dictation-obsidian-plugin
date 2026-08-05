@@ -12,7 +12,7 @@ import {
   searchQueryAfterTaskSwitch,
 } from '../src/models/manage-models-modal';
 import type { ModelInstallManager, ModelManagerState } from '../src/models/model-install-manager';
-import { ModelDetailsModal } from '../src/models/model-management-modals';
+import { ExternalModelFileModal, ModelDetailsModal } from '../src/models/model-management-modals';
 import type {
   CatalogModelRecord,
   ModelFamilyId,
@@ -87,6 +87,7 @@ function sttModel(
 function row(model: CatalogModelRecord): ModelRowState {
   return {
     allowedActions: ['install'],
+    failedInstall: null,
     installed: false,
     isCanceling: false,
     isInstalling: false,
@@ -95,9 +96,45 @@ function row(model: CatalogModelRecord): ModelRowState {
   };
 }
 
+describe('external model file modal', () => {
+  it('keeps external-model input updates on Obsidian components', async () => {
+    Setting.reset();
+    const validateAndSelectExternalFile = vi.fn(async () => {});
+    const onChanged = vi.fn(async () => {});
+    const modal = new ExternalModelFileModal({} as never, '/models/old.gguf', {
+      feedback: { show: vi.fn() },
+      manager: {
+        getState: () => ({ selectedModel: null }),
+        validateAndSelectExternalFile,
+      } as unknown as ModelInstallManager,
+      onChanged,
+    });
+
+    modal.onOpen();
+    const family = Setting.instances.find((setting) => setting.dropdownComponents.length === 1);
+    const path = Setting.instances.find((setting) => setting.textComponents.length === 1);
+    const pathInput = path?.onlyText();
+    expect(pathInput?.getValue()).toBe('/models/old.gguf');
+
+    family?.onlyDropdown().change('onnx_runtime:moonshine');
+    expect(pathInput?.inputEl.placeholder).toContain('frontend.ort');
+    pathInput?.change('  /models/frontend.ort  ');
+
+    const action = Setting.instances.flatMap((setting) => setting.buttonComponents).at(-1);
+    await action?.click();
+
+    expect(validateAndSelectExternalFile).toHaveBeenCalledExactlyOnceWith('/models/frontend.ort', {
+      familyId: 'moonshine',
+      runtimeId: 'onnx_runtime',
+    });
+    expect(onChanged).toHaveBeenCalledOnce();
+  });
+});
+
 describe('model browser', () => {
   it('deep-links to the requested task and defaults setup entry points to dictation', () => {
     expect(resolveInitialModelPickerTask({ initialTask: 'tts' })).toBe('tts');
+    expect(resolveInitialModelPickerTask({ initialTask: 'translation' })).toBe('translation');
     expect(resolveInitialModelPickerTask({})).toBe('stt');
   });
 
@@ -260,6 +297,7 @@ describe('model browser', () => {
             maxAudioDurationSecs: null,
             outputSampleRate: 24_000,
             producesPunctuation: false,
+            supportsHardwareAcceleration: false,
             supportedLanguages: { kind: 'all' as const },
             supportsAutomaticLanguageDetection: false,
             supportsInitialPrompt: false,
@@ -285,6 +323,7 @@ describe('model browser', () => {
           runtimeId: 'onnx_runtime' as const,
         },
       ],
+      failedInstall: null,
       installedModels: [
         {
           catalogVersion: 1,
@@ -334,6 +373,9 @@ describe('model browser', () => {
         onChanged: vi.fn(),
       });
       modal.open();
+      expect(
+        (modal.contentEl as unknown as TestElement).findByClass('search-input-clear-button'),
+      ).toBeDefined();
       const row = Setting.named('Pocket TTS en');
       expect(row.extraButtonComponents).toHaveLength(1);
       expect(row.extraButtonComponents[0]?.tooltip).toBe('Details');
@@ -359,6 +401,113 @@ describe('model browser', () => {
         'Speed control',
       ]),
     );
+  });
+
+  it('reports an install failure on the failed model row and reveals it across tasks', () => {
+    Setting.reset();
+    const elementPrototype = TestElement.prototype as TestElement & {
+      addEventListener?: () => void;
+    };
+    const originalAddEventListener = elementPrototype.addEventListener;
+    elementPrototype.addEventListener = () => {};
+    // The failed row builds a real progress element, which reaches for Obsidian's
+    // element helpers rather than the modal's own container methods.
+    const originalGlobals = {
+      createDiv: globalThis.createDiv,
+      createFragment: globalThis.createFragment,
+      createSpan: globalThis.createSpan,
+    };
+    globalThis.createDiv = () => new TestElement() as unknown as HTMLDivElement;
+    globalThis.createSpan = () => new TestElement() as unknown as HTMLSpanElement;
+    globalThis.createFragment = () => new TestElement() as unknown as DocumentFragment;
+    const failedModel = ttsModel('pocket-it', 'it');
+    const state: ModelManagerState = {
+      activeInstall: null,
+      catalog: {
+        catalogVersion: 1,
+        collections: [],
+        families: [
+          {
+            displayName: 'Pocket TTS',
+            familyId: 'pocket_tts',
+            runtimeId: 'onnx_runtime',
+            summary: '',
+            task: 'tts',
+          },
+        ],
+        models: [failedModel],
+      },
+      compiledAdapters: [
+        {
+          displayName: 'Pocket TTS',
+          familyCapabilities: null,
+          familyId: 'pocket_tts',
+          runtimeId: 'onnx_runtime',
+        },
+      ] as unknown as ModelManagerState['compiledAdapters'],
+      compiledRuntimes: [],
+      failedInstall: {
+        artifactIds: ['voice-alba'],
+        failureId: 'install-failed',
+        message: 'connection reset by peer',
+        selection: {
+          familyId: 'pocket_tts',
+          kind: 'catalog_model',
+          modelId: 'pocket-it',
+          runtimeId: 'onnx_runtime',
+        },
+      },
+      installedModels: [],
+      loadError: null,
+      loadStatus: 'ready',
+      modelStore: { overridePath: null, path: '/models', usingDefaultPath: true },
+      selectedModel: null,
+      selectedModelCapabilities: { status: 'none' },
+      selectedTtsModel: null,
+      selectedTtsModelCapabilities: { status: 'none' },
+    };
+    const manager = {
+      dismissFailedInstall: vi.fn(),
+      getDictationLanguage: () => 'en',
+      getState: () => state,
+      subscribe: () => () => {},
+    } as unknown as ModelInstallManager;
+    // Opens on dictation models by default; the failure lives on a read-aloud
+    // model, so revealing it has to override the requested initial task.
+    const modal = new ManageModelsModal({} as never, {
+      feedback: { show: vi.fn() },
+      initialTask: 'stt',
+      manager,
+      onChanged: vi.fn(),
+    });
+    (modal as unknown as { modalEl: TestElement }).modalEl = new TestElement();
+
+    try {
+      modal.open();
+      const content = modal.contentEl as unknown as TestElement;
+
+      // No separate banner anywhere in the modal.
+      expect(content.findByClass('local-stt-install-failure')).toBeUndefined();
+
+      const failedRow = Setting.named('Pocket TTS it');
+      const progress = failedRow.descEl.findByClass('local-stt-install-progress');
+      expect(progress?.className).toContain('local-stt-install-progress--failed');
+      expect(texts(failedRow.descEl)).toEqual(
+        expect.arrayContaining(['Model install failed', 'connection reset by peer']),
+      );
+      expect(Setting.buttonNamed('Retry')).toBeDefined();
+      expect(Setting.buttonNamed('Dismiss')).toBeDefined();
+    } finally {
+      modal.close();
+      globalThis.createDiv = originalGlobals.createDiv;
+      globalThis.createSpan = originalGlobals.createSpan;
+      globalThis.createFragment = originalGlobals.createFragment;
+      if (originalAddEventListener === undefined) {
+        Reflect.deleteProperty(elementPrototype, 'addEventListener');
+      } else {
+        elementPrototype.addEventListener = originalAddEventListener;
+      }
+    }
   });
 });
 
