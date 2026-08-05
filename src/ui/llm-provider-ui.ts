@@ -35,6 +35,8 @@ export function providerHealthFromError(error: unknown): ProviderHealth {
   switch (error.code) {
     case 'auth_invalid':
       return { kind: 'auth_invalid' };
+    case 'permission_denied':
+      return { kind: 'permission_denied' };
     case 'rate_limited':
       return { kind: 'rate_limited' };
     case 'connection_failed':
@@ -51,6 +53,8 @@ export function formatCleanupFailureBanner(failure: LlmCleanupFailure): string {
   switch (failure.code) {
     case 'auth_invalid':
       return t('llm.failure.authInvalid', { provider: providerName });
+    case 'permission_denied':
+      return t('llm.failure.permissionDenied', { provider: providerName });
     case 'rate_limited':
       return t('llm.failure.rateLimited', { provider: providerName });
     case 'connection_failed':

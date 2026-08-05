@@ -83,7 +83,7 @@ interface ActiveSessionSnapshot {
   dictationAnchor: PluginSettings['dictationAnchor'];
   listeningMode: PluginSettings['listeningMode'];
   llmFeaturesEnabled: PluginSettings['llmFeaturesEnabled'];
-  llmRouter: LlmRouter;
+  llmRouter: LlmRouter | null;
   llmPostprocessMode: LlmPostprocessMode;
   llmPostprocessNoteContextChars: PluginSettings['llmPostprocessNoteContextChars'];
   llmPostprocessOutput: LlmPresetOutput;
@@ -115,6 +115,9 @@ interface ManagedSession {
   // in final-event order. Partials bypass it and project immediately.
   cleanupChain: Promise<void>;
   cleanupAbortControllers: Set<AbortController>;
+  // Once the global LLM switch is turned off, this session remains raw even if
+  // the user turns it back on. Provider/routing snapshots only refresh next session.
+  llmDisabled: boolean;
   llmFailureLogged: boolean;
   pendingTranscriptWork: Set<Promise<void>>;
   phase: SessionPhase;
@@ -141,7 +144,7 @@ interface DictationSessionControllerDependencies {
     rendererOptions: TranscriptRenderOptions;
     sessionId: string;
   }) => ControllerSession;
-  createLlmRouter: (settings: PluginSettings) => LlmRouter;
+  createLlmRouter: (settings: PluginSettings) => LlmRouter | null;
   feedback: Pick<UserFeedback, 'show'>;
   getSettings: () => PluginSettings;
   hasDictationTarget: () => boolean;
@@ -221,6 +224,7 @@ export class DictationSessionController {
   private pendingSpeechLease: SidecarLifecycleLease | null = null;
   private readonly releaseSidecarSubscription: () => void;
   private readonly sessions = new Map<string, ManagedSession>();
+  private llmDisableRevision = 0;
   private startRevision = 0;
   private state: DictationControllerState = 'idle';
 
@@ -241,6 +245,14 @@ export class DictationSessionController {
 
   isCaptureActive(): boolean {
     return this.activeSessionId !== null || this.state === 'starting';
+  }
+
+  disableLlmForActiveSessions(): void {
+    this.llmDisableRevision += 1;
+    for (const entry of this.sessions.values()) {
+      entry.llmDisabled = true;
+      this.abortProviderCleanups(entry);
+    }
   }
 
   async cancelDictation(): Promise<void> {
@@ -330,6 +342,7 @@ export class DictationSessionController {
 
   private async startDictationWithLease(speechLease: SidecarLifecycleLease): Promise<void> {
     const startRevision = ++this.startRevision;
+    const llmDisableRevisionAtStart = this.llmDisableRevision;
     this.applyUiState('starting');
 
     const settings = this.dependencies.getSettings();
@@ -425,6 +438,11 @@ export class DictationSessionController {
       capabilityDropLogKeys: new Set(),
       cleanupChain: Promise.resolve(),
       cleanupAbortControllers: new Set(),
+      llmDisabled:
+        !snapshot.llmFeaturesEnabled ||
+        snapshot.llmRouter === null ||
+        llmDisableRevisionAtStart !== this.llmDisableRevision ||
+        !this.dependencies.getSettings().llmFeaturesEnabled,
       llmFailureLogged: false,
       pendingTranscriptWork: new Set(),
       phase: 'starting',
@@ -994,6 +1012,7 @@ export class DictationSessionController {
     // rendered and batch whole-session cleanup still applies. Single-speaker
     // utterances clean as before.
     if (
+      entry.llmDisabled ||
       !shouldRunProviderPerUtteranceCleanup(entry.snapshot, event) ||
       baseRevision.spans.length > 1
     ) {
@@ -1005,13 +1024,20 @@ export class DictationSessionController {
       this.buildProviderCleanupContextSources(entry),
       rawText,
     );
-    const providerId = entry.snapshot.llmRouter.selectProviderId(rawText.length);
+    const llmRouter = entry.snapshot.llmRouter;
+    if (llmRouter === null || entry.llmDisabled) {
+      return baseRevision;
+    }
+    const providerId = llmRouter.selectProviderId(rawText.length);
     const startedAt = Date.now();
     const abortController = new AbortController();
     entry.cleanupAbortControllers.add(abortController);
 
     try {
-      const result = await entry.snapshot.llmRouter.cleanup({
+      if (entry.llmDisabled) {
+        return baseRevision;
+      }
+      const result = await llmRouter.cleanup({
         abortSignal: abortController.signal,
         prompt: entry.snapshot.llmPostprocessPrompt,
         temperature: entry.snapshot.llmPostprocessTemperature,
@@ -1020,7 +1046,7 @@ export class DictationSessionController {
       });
 
       if (abortController.signal.aborted || !this.sessions.has(event.sessionId)) {
-        return null;
+        return entry.llmDisabled && this.sessions.has(event.sessionId) ? baseRevision : null;
       }
 
       const cleanedText = result.text.trim();
@@ -1054,7 +1080,7 @@ export class DictationSessionController {
       };
     } catch (error) {
       if (abortController.signal.aborted || !this.sessions.has(event.sessionId)) {
-        return null;
+        return entry.llmDisabled && this.sessions.has(event.sessionId) ? baseRevision : null;
       }
 
       const failedId = failedProviderId(error, providerId);
@@ -1164,7 +1190,7 @@ export class DictationSessionController {
       this.resetQueueTier();
     }
 
-    if (shouldRunBatchCleanup(entry.snapshot, event.reason)) {
+    if (shouldRunBatchCleanup(entry, event.reason)) {
       void this.runBatchCleanup(event.sessionId, entry);
       return;
     }
@@ -1209,6 +1235,11 @@ export class DictationSessionController {
       return;
     }
 
+    if (entry.llmDisabled || entry.snapshot.llmRouter === null) {
+      this.disposeLocalSession(sessionId);
+      return;
+    }
+
     const transcriptText = entry.session.readCurrentSessionText();
     if (this.stopTerminatedBatchCleanup(sessionId, entry)) {
       return;
@@ -1228,7 +1259,8 @@ export class DictationSessionController {
         ? (entry.session.readNoteText(entry.snapshot.llmPostprocessNoteContextChars)?.text ?? null)
         : null;
     const userMessage = renderBatchProviderUserMessage(noteContext, transcriptText);
-    const providerId = entry.snapshot.llmRouter.selectProviderId(transcriptText.length);
+    const llmRouter = entry.snapshot.llmRouter;
+    const providerId = llmRouter.selectProviderId(transcriptText.length);
 
     // The flashing processing range is now the "working" indicator, so the
     // cursor steps aside for the batch rewrite.
@@ -1245,7 +1277,12 @@ export class DictationSessionController {
     entry.cleanupAbortControllers.add(abortController);
 
     try {
-      const result = await entry.snapshot.llmRouter.cleanup({
+      if (entry.llmDisabled) {
+        entry.session.clearSessionProcessingMark();
+        this.disposeLocalSession(sessionId);
+        return;
+      }
+      const result = await llmRouter.cleanup({
         abortSignal: abortController.signal,
         prompt: entry.snapshot.llmPostprocessPrompt,
         temperature: entry.snapshot.llmPostprocessTemperature,
@@ -1628,7 +1665,7 @@ function createMicrophoneNotFoundError(): Error {
 function createSessionSnapshot(
   settings: PluginSettings,
   selectedModel: NonNullable<PluginSettings['selectedModel']>,
-  llmRouter: LlmRouter,
+  llmRouter: LlmRouter | null,
 ): ActiveSessionSnapshot {
   const activePreset = resolveActivePresetEntry(
     settings.llmPostprocessActivePresetRef,
@@ -1692,10 +1729,15 @@ function createSessionSnapshot(
 }
 
 function shouldRunBatchCleanup(
-  snapshot: ActiveSessionSnapshot,
+  entry: ManagedSession,
   reason: Extract<SidecarEvent, { type: 'session_stopped' }>['reason'],
 ): boolean {
-  if (!snapshot.llmFeaturesEnabled || snapshot.llmPostprocessMode !== 'batch') {
+  if (
+    entry.llmDisabled ||
+    entry.snapshot.llmRouter === null ||
+    !entry.snapshot.llmFeaturesEnabled ||
+    entry.snapshot.llmPostprocessMode !== 'batch'
+  ) {
     return false;
   }
 

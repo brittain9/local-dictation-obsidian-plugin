@@ -8,7 +8,7 @@ import type { TestElement } from './__mocks__/obsidian';
 it('announces the changing sidebar workflow summary as one atomic status', () => {
   const view = new LocalDictationView({ app: {} } as unknown as WorkspaceLeaf, {
     feedback: { show: vi.fn() },
-    getOpenRouterApiKey: () => '',
+    getSecret: () => '',
     getSettings: () => ({ ...DEFAULT_PLUGIN_SETTINGS, llmFeaturesEnabled: false }),
     mutatePresetState: vi.fn(async () => {}),
     saveSettings: vi.fn(async () => {}),
@@ -23,4 +23,23 @@ it('announces the changing sidebar workflow summary as one atomic status', () =>
   expect(status?.attributes.get('role')).toBe('status');
   expect(status?.attributes.get('aria-live')).toBe('polite');
   expect(status?.attributes.get('aria-atomic')).toBe('true');
+});
+
+it('preserves the sidebar scroll position across a settings rerender', () => {
+  const view = new LocalDictationView({ app: {} } as unknown as WorkspaceLeaf, {
+    feedback: { show: vi.fn() },
+    getSecret: () => '',
+    getSettings: () => ({ ...DEFAULT_PLUGIN_SETTINGS, llmFeaturesEnabled: false }),
+    mutatePresetState: vi.fn(async () => {}),
+    saveSettings: vi.fn(async () => {}),
+    synchronizePresets: vi.fn(async () => {}),
+  });
+
+  view.refresh();
+  const content = view.contentEl as unknown as TestElement;
+  content.scrollTop = 320;
+
+  view.requestRefresh();
+
+  expect(content.scrollTop).toBe(320);
 });

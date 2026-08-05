@@ -216,9 +216,6 @@ export const ja = {
   'settings.llm.enableFeatures.name': 'LLM 機能を有効にする',
   'settings.llm.enableFeatures.desc':
     'LLM 変換を利用可能にします。サイドバーで変換をオンまたはオフにします。',
-  'settings.llm.enableRemote.name': 'リモート LLM を有効にする',
-  'settings.llm.enableRemote.desc':
-    'トランスクリプト テキストと含まれるメモのコンテキストを OpenRouter に送信できるようにします。音声は送信されません。',
   'settings.llm.restoreDefaults.name': '変換のデフォルトを復元する',
   'settings.llm.restoreDefaults.desc':
     'プリセット、タイミング、コンテキスト、最小ワード、温度をリセットします。保存されたプリセットとモデルは保持されます。',
@@ -348,15 +345,8 @@ export const ja = {
   'llm.model.temperature.name': '温度',
   'llm.model.temperature.description':
     'サンプリングのバリエーション。 0 は決定的です。値が大きいほど変化が大きくなります。',
-  'llm.model.remoteThreshold.name': 'リモートルーティングのしきい値',
-  'llm.model.remoteThreshold.description':
-    '自動変換を OpenRouter (文字) に送信するトランスクリプトの長さ。',
-  'llm.model.remoteTimeout.name': 'リモートタイムアウト',
-  'llm.model.remoteTimeout.description':
-    'この秒数が経過したら、OpenRouter を待つのをやめます。オリジナルのトランスクリプトは保存されます。',
   'llm.model.behavior.name': 'モデルの動作',
   'llm.model.summary.temperature': '温度 {value}',
-  'llm.model.summary.remoteThreshold': '{value} 文字以上でリモート',
   'llm.model.summary.timeout': 'タイムアウト {value} 秒',
   'llm.failure.authInvalid': '{provider} API キーが拒否されました。設定を確認してください。',
   'llm.failure.rateLimited': '{provider} レート制限に達しました。生のテキストに戻ります。',
@@ -385,22 +375,11 @@ export const ja = {
     'すべてを一度に実行すると、プリセットに応じてタイムスタンプが書き換えられたり、削除されたりする場合があります。',
   'llm.timing.option.perUtterance': '各フレーズの後に',
   'llm.timing.option.batch': '停止時に一斉に',
-  'llm.routing.local': 'ローカル',
-  'llm.routing.remote': 'リモート',
-  'llm.routing.auto': '自動',
-  'llm.routing.ariaLabel': 'で変換を実行します',
-  'llm.routing.localHint': 'Ollama を使用すると、デバイス上で完全に実行できます。',
-  'llm.routing.remoteHint': '変換のために各トランスクリプトを OpenRouter に送信します。',
-  'llm.routing.autoHint': 'デバイス上に留まり、大きなトランスクリプトを OpenRouter に渡します。',
-  'llm.routing.localLeg': 'ローカル · Ollama',
-  'llm.routing.remoteLeg': 'リモート・OpenRouter',
   'llm.routing.priceTierTooltip': 'おおよその価格帯',
   'llm.routing.providerModel': '{provider}モデル',
   'llm.routing.ollamaModelDescription': 'ローカルの Ollama チャット モデルを選択します。',
   'llm.routing.selectModel': 'モデルを選択してください',
   'llm.routing.refreshModels': '{provider} モデルを更新する',
-  'llm.routing.apiKey.name': 'OpenRouter APIキー',
-  'llm.routing.apiKey.description': 'Obsidian によって安全に保管されます。',
   'llm.routing.openRouterModel.name': 'OpenRouterモデル',
   'llm.routing.openRouterModel.description': '入力して OpenRouter モデルを検索します。',
   'llm.routing.testConnection': 'API キーとモデルをテストする',

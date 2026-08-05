@@ -40,11 +40,18 @@ export function deriveInlineStatus(args: {
         text:
           args.providerId === 'ollama'
             ? t('llm.status.ollamaNotRunning')
-            : t('llm.status.unreachable', { provider: providerName }),
+            : args.providerId === 'openai_compatible'
+              ? t('llm.status.customModelsUnavailable')
+              : t('llm.status.unreachable', { provider: providerName }),
         variant: 'warning',
       };
     case 'auth_invalid':
       return { text: t('llm.status.authInvalid', { provider: providerName }), variant: 'warning' };
+    case 'permission_denied':
+      return {
+        text: t('llm.status.permissionDenied', { provider: providerName }),
+        variant: 'warning',
+      };
     case 'rate_limited':
       return { text: t('llm.status.rateLimited', { provider: providerName }), variant: 'warning' };
     case 'no_models':
@@ -67,7 +74,12 @@ export function deriveInlineStatus(args: {
 }
 
 function selectModelMessage(providerId: LlmProviderId): string {
-  return providerId === 'ollama'
-    ? t('llm.status.selectOllamaModel')
-    : t('llm.status.selectOpenRouterModel');
+  switch (providerId) {
+    case 'ollama':
+      return t('llm.status.selectOllamaModel');
+    case 'openrouter':
+      return t('llm.status.selectOpenRouterModel');
+    case 'openai_compatible':
+      return t('llm.status.selectCustomModel');
+  }
 }

@@ -19,7 +19,7 @@ flowchart LR
     subgraph Plugin ["Obsidian plugin (TypeScript)"]
         CAP["Audio capture<br/>(mic / system audio → PCM)"]
         CFG["Session config + commands"]
-        LLM["LLM transform<br/>(optional · Ollama / OpenRouter)"]
+        LLM["LLM transform<br/>(optional · Ollama / OpenRouter / custom)"]
         REND["Render + insert<br/>(timestamps, formatting, speaker labels)"]
         TEXT["Markdown extraction<br/>+ sentence chunks"]
         MT["Markdown segmentation<br/>+ Bergamot WASM worker"]
@@ -437,11 +437,20 @@ The plugin consumes every accepted `transcript_ready` revision:
 
 1. **LLM transform (optional, off by default).** Final revisions can be cleaned,
    rewritten, or summarized per utterance — or the whole session in batch —
-   through a local model
-   (Ollama) or OpenRouter. Routing is `local` by default; with remote enabled,
-   jobs over a configurable character threshold can auto-route to OpenRouter.
+   through Ollama, OpenRouter, or one user-configured OpenAI-compatible endpoint.
+   A provider must be chosen explicitly. Routing either uses one provider for
+   every transcript or sends transcripts above a configurable character
+   threshold to a second provider; provider failures never trigger failover.
    Audio is never sent; only the transcript text and any note context you opt in
    to. Lives in `src/llm/`.
+
+   Provider connections and routing policy are stored separately. The custom
+   adapter uses a validated user-supplied base URL, optional bearer key from
+   Obsidian Secret Storage, best-effort `GET /models` discovery, and
+   `POST /chat/completions`; manual model IDs remain usable when discovery is
+   unavailable. Provider/model choices are snapshotted when dictation starts,
+   while disabling LLM features is a live kill switch that aborts in-flight
+   cleanup and keeps the rest of that session raw.
 2. **Render.** The transcript renderer (`src/transcript/renderer.ts`) applies the
    user's formatting (`smart` / `space` / `new_line` / `new_paragraph`), optional
    elapsed- or wall-clock timestamps, and speaker labels. Timestamp frequency can
@@ -552,8 +561,9 @@ A representative slice of user-facing settings (full list and defaults in
 | `timestampClock` | `elapsed` | `elapsed` session time vs `wallclock` |
 | `timestampDensity` | `sparse` | `sparse` (interval), `every_utterance`, or `paragraph` |
 | `llmPostprocessMode` | `off` | LLM transform: `off` / `per_utterance` / `batch` |
-| `llmRouting` | `local` | `local` (Ollama) vs `remote` (OpenRouter) |
-| `llmRemoteThresholdChars` | `6000` | Size above which jobs auto-route to OpenRouter |
+| `llmRoutingPolicy` | `null` | Fixed provider or optional transcript-size split |
+| `llmProviderConfigurations` | Empty models | Ollama, OpenRouter, and OpenAI-compatible connection settings |
+| `llmNetworkTimeoutSec` | `60` | OpenRouter and custom-endpoint request timeout |
 | `sidecarRequestTimeoutSeconds` | `300` | Command/response timeout |
 | `sidecarStartupTimeoutSeconds` | `4` | Health-check timeout on launch |
 | `developerMode` | `false` | Verbose logging |
@@ -571,7 +581,7 @@ A representative slice of user-facing settings (full list and defaults in
 | **Silero VAD** | Speech probability per 32 ms window; drives boundary detection |
 | **Node.js child_process** | Spawns and manages the Rust sidecar |
 | **reqwest + sha2** | Downloads model files and verifies their SHA-256 |
-| **Ollama / OpenRouter** | Optional LLM transform (local / remote) on the plugin side |
+| **Ollama / OpenRouter / OpenAI-compatible APIs** | Optional provider-selected text transformation on the plugin side |
 
 ## Where Things Live
 
