@@ -128,7 +128,6 @@ export const de = {
   'settings.groups.model': 'Modelle',
   'settings.groups.capture': 'Aufnahme',
   'settings.groups.transcriptOutput': 'Transkriptausgabe',
-  'settings.groups.timestamps': 'Zeitstempel',
   'settings.groups.llmTransformation': 'LLM-Transformation',
   'settings.groups.engine': 'Engine',
   'settings.groups.advanced': 'Erweitert',

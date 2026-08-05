@@ -126,7 +126,6 @@ export const fr = {
   'settings.groups.model': 'Modèles',
   'settings.groups.capture': 'Capturer',
   'settings.groups.transcriptOutput': 'Sortie de transcription',
-  'settings.groups.timestamps': 'Horodatages',
   'settings.groups.llmTransformation': 'Transformation LLM',
   'settings.groups.engine': 'Moteur',
   'settings.groups.advanced': 'Avancé',

@@ -294,8 +294,6 @@ export class LocalSttSettingTab extends PluginSettingTab {
       isValid: isListeningMode,
     });
 
-    renderAutomaticCopyFinalizedUtterancesSetting(captureCard, this.access);
-
     const phraseFinalizationSetting = new Setting(captureCard)
       .setName(t('settings.phraseFinalization.name'))
       .setDesc(phraseFinalizationDescription(settings.speakingStyle));
@@ -321,6 +319,8 @@ export class LocalSttSettingTab extends PluginSettingTab {
       options: DICTATION_ANCHOR_OPTIONS,
       isValid: isDictationAnchor,
     });
+
+    renderAutomaticCopyFinalizedUtterancesSetting(outputCard, this.access);
 
     this.renderTranscriptFormattingSetting(outputCard);
 
@@ -354,8 +354,7 @@ export class LocalSttSettingTab extends PluginSettingTab {
       button.extraSettingsEl.setAttribute('aria-label', t('settings.speakerLabels.modal.title'));
     });
 
-    const timestampsCard = createSettingGroup(containerEl, t('settings.groups.timestamps'));
-    this.renderTimestampSettings(timestampsCard, settings);
+    this.renderTimestampSettings(outputCard, settings);
 
     // --- Read aloud ---
     const readAloudSection = createSettingGroup(containerEl, t('settings.groups.readAloud'));

@@ -127,7 +127,6 @@ export const nl = {
   'settings.groups.model': 'Modellen',
   'settings.groups.capture': 'Opname',
   'settings.groups.transcriptOutput': 'Transcriptuitvoer',
-  'settings.groups.timestamps': 'Tijdstempels',
   'settings.groups.llmTransformation': 'LLM-transformatie',
   'settings.groups.engine': 'Engine',
   'settings.groups.advanced': 'Geavanceerd',

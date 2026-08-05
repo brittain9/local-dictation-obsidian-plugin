@@ -173,7 +173,6 @@ export const en = {
   'settings.groups.translation': 'Translation',
   'settings.groups.capture': 'Capture',
   'settings.groups.transcriptOutput': 'Transcript output',
-  'settings.groups.timestamps': 'Timestamps',
   'settings.groups.llmTransformation': 'LLM transformation',
   'settings.groups.engine': 'Engine',
   'settings.groups.advanced': 'Advanced',
