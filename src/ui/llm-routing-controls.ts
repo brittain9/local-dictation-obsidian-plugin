@@ -8,6 +8,7 @@ import {
 } from 'obsidian';
 
 import { isLoopbackHostname, validateOpenAiCompatibleBaseUrl } from '../llm/openai-compatible-url';
+import { MIN_OUTPUT_TOKENS } from '../llm/output-budget';
 import {
   formatLlmProviderName,
   getProviderModel,
@@ -51,7 +52,6 @@ export interface LlmRoutingControlsDependencies {
 
 const SECRET_REFRESH_DEBOUNCE_MS = 500;
 const TEST_RESULT_ICON_MS = 2500;
-const CONNECTION_TEST_MAX_OUTPUT_TOKENS = 16;
 
 interface ProviderState {
   health: ProviderHealth;
@@ -116,7 +116,7 @@ export class LlmRoutingControls {
     openrouter: emptyProviderState(),
     openai_compatible: emptyProviderState(),
   };
-  private modelsRefreshInFlight: Partial<Record<LlmProviderId, boolean>> = {};
+  private modelsRefreshInFlight: Partial<Record<LlmProviderId, Promise<void>>> = {};
   private onModelInput: ((element: HTMLElement) => void) | null = null;
   private secretRefreshTimerId: number | null = null;
   private readonly testsInFlight = new Set<LlmProviderId>();
@@ -186,7 +186,9 @@ export class LlmRoutingControls {
 
     try {
       await this.createProvider(providerId, settings).cleanup({
-        maxOutputTokens: CONNECTION_TEST_MAX_OUTPUT_TOKENS,
+        // Reasoning models can spend hidden output tokens before their visible
+        // reply, so the normal budget floor is the smallest reliable probe.
+        maxOutputTokens: MIN_OUTPUT_TOKENS,
         model,
         prompt: 'Reply with the single word OK.',
         temperature: 0,
@@ -218,35 +220,38 @@ export class LlmRoutingControls {
         ? t('llm.routing.defaultProvider')
         : t('llm.routing.provider');
 
-    new Setting(parent).setName(name).addDropdown((dropdown) => {
-      dropdown.addOption('', t('llm.routing.chooseProvider'));
-      for (const providerId of LLM_PROVIDER_IDS) {
-        dropdown.addOption(providerId, providerLabel(providerId));
-      }
-      dropdown.setValue(selectedProvider);
-      dropdown.onChange(async (value) => {
-        if (value === '') {
-          await this.persistPolicy(null);
-          return;
+    new Setting(parent)
+      .setName(name)
+      .setDesc(t('llm.routing.audioPrivacy'))
+      .addDropdown((dropdown) => {
+        dropdown.addOption('', t('llm.routing.chooseProvider'));
+        for (const providerId of LLM_PROVIDER_IDS) {
+          dropdown.addOption(providerId, providerLabel(providerId));
         }
-        if (!LLM_PROVIDER_IDS.includes(value as LlmProviderId)) {
-          return;
-        }
-        const providerId = value as LlmProviderId;
-        if (policy?.kind !== 'transcript_size') {
-          await this.persistPolicy({ kind: 'fixed', providerId });
-          return;
-        }
-        await this.persistPolicy({
-          ...policy,
-          defaultProviderId: providerId,
-          largeTranscriptProviderId:
-            policy.largeTranscriptProviderId === providerId
-              ? firstOtherProvider(providerId)
-              : policy.largeTranscriptProviderId,
+        dropdown.setValue(selectedProvider);
+        dropdown.onChange(async (value) => {
+          if (value === '') {
+            await this.persistPolicy(null);
+            return;
+          }
+          if (!LLM_PROVIDER_IDS.includes(value as LlmProviderId)) {
+            return;
+          }
+          const providerId = value as LlmProviderId;
+          if (policy?.kind !== 'transcript_size') {
+            await this.persistPolicy({ kind: 'fixed', providerId });
+            return;
+          }
+          await this.persistPolicy({
+            ...policy,
+            defaultProviderId: providerId,
+            largeTranscriptProviderId:
+              policy.largeTranscriptProviderId === providerId
+                ? firstOtherProvider(providerId)
+                : policy.largeTranscriptProviderId,
+          });
         });
       });
-    });
 
     if (policy !== null) {
       new Setting(parent)
@@ -636,7 +641,7 @@ export class LlmRoutingControls {
 
   private warmModels(providerId: LlmProviderId): void {
     const state = this.providers[providerId];
-    if (state.modelsLoaded || this.modelsRefreshInFlight[providerId] === true) return;
+    if (state.modelsLoaded || this.modelsRefreshInFlight[providerId] !== undefined) return;
     if (
       providerId === 'openai_compatible' &&
       !validateOpenAiCompatibleBaseUrl(
@@ -648,17 +653,23 @@ export class LlmRoutingControls {
     void this.refreshModels(providerId);
   }
 
-  private async refreshModels(providerId: LlmProviderId): Promise<void> {
-    if (this.modelsRefreshInFlight[providerId] === true) return;
+  private refreshModels(providerId: LlmProviderId): Promise<void> {
+    const currentRefresh = this.modelsRefreshInFlight[providerId];
+    if (currentRefresh !== undefined) return currentRefresh;
     if (
       providerId === 'openai_compatible' &&
       !validateOpenAiCompatibleBaseUrl(
         this.dependencies.getSettings().llmProviderConfigurations.openai_compatible.baseUrl,
       ).valid
     ) {
-      return;
+      return Promise.resolve();
     }
-    this.modelsRefreshInFlight[providerId] = true;
+    const refresh = this.loadModels(providerId);
+    this.modelsRefreshInFlight[providerId] = refresh;
+    return refresh;
+  }
+
+  private async loadModels(providerId: LlmProviderId): Promise<void> {
     const state = this.providers[providerId];
     try {
       const models = await this.createProvider(providerId).listModels();
@@ -675,7 +686,7 @@ export class LlmRoutingControls {
       );
     } finally {
       state.modelsLoaded = true;
-      this.modelsRefreshInFlight[providerId] = false;
+      delete this.modelsRefreshInFlight[providerId];
     }
     this.dependencies.requestRerender();
   }
@@ -684,8 +695,28 @@ export class LlmRoutingControls {
     if (this.secretRefreshTimerId !== null) window.clearTimeout(this.secretRefreshTimerId);
     this.secretRefreshTimerId = window.setTimeout(() => {
       this.secretRefreshTimerId = null;
+      if (providerId === 'openrouter') {
+        const secretId =
+          this.dependencies.getSettings().llmProviderConfigurations.openrouter.secretId;
+        if (secretId.length === 0 || this.dependencies.getSecret(secretId).length === 0) {
+          this.dependencies.requestRerender();
+          return;
+        }
+        void this.refreshModels(providerId).then(() => this.refreshProviderHealth(providerId));
+        return;
+      }
       void this.refreshModels(providerId);
     }, SECRET_REFRESH_DEBOUNCE_MS);
+  }
+
+  private async refreshProviderHealth(providerId: 'openrouter'): Promise<void> {
+    const state = this.providers[providerId];
+    try {
+      state.health = await this.createProvider(providerId).probe();
+    } catch (error) {
+      state.health = providerHealthFromError(error);
+    }
+    this.dependencies.requestRerender();
   }
 
   private async runConnectionTest(

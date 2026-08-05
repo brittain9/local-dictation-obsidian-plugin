@@ -219,9 +219,6 @@ export const nl = {
   'settings.llm.enableFeatures.name': 'Schakel LLM-functies in',
   'settings.llm.enableFeatures.desc':
     'LLM-transformaties beschikbaar maken. Schakel transformatie in of uit in de zijbalk.',
-  'settings.llm.enableRemote.name': 'Schakel externe LLM in',
-  'settings.llm.enableRemote.desc':
-    'Toestaan ​​dat transcriptietekst en opgenomen notitiecontext naar OpenRouter worden verzonden. Audio wordt nooit verzonden.',
   'settings.llm.restoreDefaults.name': 'Herstel standaardinstellingen voor transformatie',
   'settings.llm.restoreDefaults.desc':
     'Reset preset, timing, context, minimum aantal woorden en temperatuur. Opgeslagen presets en modellen blijven behouden.',
@@ -352,15 +349,8 @@ export const nl = {
   'llm.model.temperature.name': 'Temperatuur',
   'llm.model.temperature.description':
     'Bemonsteringsvariatie. 0 is deterministisch; hogere waarden zijn gevarieerder.',
-  'llm.model.remoteThreshold.name': 'Drempel voor routering op afstand',
-  'llm.model.remoteThreshold.description':
-    'Transcriptlengte die automatische transformaties naar OpenRouter (tekens) verzendt.',
-  'llm.model.remoteTimeout.name': 'Time-out op afstand',
-  'llm.model.remoteTimeout.description':
-    'Wacht na zoveel seconden niet meer op OpenRouter. Het originele transcript wordt bewaard.',
   'llm.model.behavior.name': 'Modelgedrag',
   'llm.model.summary.temperature': 'Temperatuur {value}',
-  'llm.model.summary.remoteThreshold': 'Op afstand bij {value}+ tekens',
   'llm.model.summary.timeout': 'Time-out van {value}s',
   'llm.failure.authInvalid': '{provider} API-sleutel afgewezen. Controleer instellingen.',
   'llm.failure.rateLimited':
@@ -389,23 +379,11 @@ export const nl = {
     'Afhankelijk van de voorinstelling kunnen in één keer tijdstempels worden herschreven of verwijderd.',
   'llm.timing.option.perUtterance': 'Na elke zin',
   'llm.timing.option.batch': 'Alles tegelijk bij stoppen',
-  'llm.routing.local': 'Lokaal',
-  'llm.routing.remote': 'Op afstand',
-  'llm.routing.auto': 'Auto',
-  'llm.routing.ariaLabel': 'Voer transformaties uit met',
-  'llm.routing.localHint': 'Draait volledig op uw apparaat met Ollama.',
-  'llm.routing.remoteHint': 'Stuurt elk transcript naar OpenRouter voor transformatie.',
-  'llm.routing.autoHint':
-    'Blijft op het apparaat en overhandigt grote transcripties aan OpenRouter.',
-  'llm.routing.localLeg': 'Lokaal · Ollama',
-  'llm.routing.remoteLeg': 'Op afstand · OpenRouter',
   'llm.routing.priceTierTooltip': 'Geschatte prijsklasse',
   'llm.routing.providerModel': '{provider}-model',
   'llm.routing.ollamaModelDescription': 'Kies een lokaal Ollama-chatmodel.',
   'llm.routing.selectModel': 'Selecteer een model',
   'llm.routing.refreshModels': 'Ververs {provider}-modellen',
-  'llm.routing.apiKey.name': 'OpenRouter API-sleutel',
-  'llm.routing.apiKey.description': 'Veilig opgeslagen door Obsidian.',
   'llm.routing.openRouterModel.name': 'OpenRouter-model',
   'llm.routing.openRouterModel.description': 'Typ om naar OpenRouter-modellen te zoeken.',
   'llm.routing.testConnection': 'Test de API-sleutel en het model',

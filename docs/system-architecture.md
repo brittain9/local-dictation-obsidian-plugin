@@ -443,6 +443,14 @@ The plugin consumes every accepted `transcript_ready` revision:
    threshold to a second provider; provider failures never trigger failover.
    Audio is never sent; only the transcript text and any note context you opt in
    to. Lives in `src/llm/`.
+
+   Provider connections and routing policy are stored separately. The custom
+   adapter uses a validated user-supplied base URL, optional bearer key from
+   Obsidian Secret Storage, best-effort `GET /models` discovery, and
+   `POST /chat/completions`; manual model IDs remain usable when discovery is
+   unavailable. Provider/model choices are snapshotted when dictation starts,
+   while disabling LLM features is a live kill switch that aborts in-flight
+   cleanup and keeps the rest of that session raw.
 2. **Render.** The transcript renderer (`src/transcript/renderer.ts`) applies the
    user's formatting (`smart` / `space` / `new_line` / `new_paragraph`), optional
    elapsed- or wall-clock timestamps, and speaker labels. Timestamp frequency can

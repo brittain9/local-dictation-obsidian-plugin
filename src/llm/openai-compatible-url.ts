@@ -23,7 +23,12 @@ export function validateOpenAiCompatibleBaseUrl(value: string): OpenAiCompatible
   if (url.username.length > 0 || url.password.length > 0) {
     return { code: 'credentials', valid: false };
   }
-  if (url.search.length > 0 || url.hash.length > 0) {
+  if (
+    url.search.length > 0 ||
+    url.hash.length > 0 ||
+    trimmed.includes('?') ||
+    trimmed.includes('#')
+  ) {
     return { code: 'query_or_fragment', valid: false };
   }
   return { normalizedUrl: trimmed, valid: true };

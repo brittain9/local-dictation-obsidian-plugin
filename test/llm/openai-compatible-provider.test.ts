@@ -24,7 +24,9 @@ describe('validateOpenAiCompatibleBaseUrl', () => {
     ['ftp://localhost/v1', false],
     ['https://user:password@example.com/v1', false],
     ['https://example.com/v1?key=value', false],
+    ['https://example.com/v1?', false],
     ['https://example.com/v1#models', false],
+    ['https://example.com/v1#', false],
     ['http://localhost:1234/v1/', true],
   ] as const)('validates %s', (value, valid) => {
     expect(validateOpenAiCompatibleBaseUrl(value).valid).toBe(valid);

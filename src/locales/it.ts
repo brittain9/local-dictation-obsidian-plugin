@@ -222,9 +222,6 @@ export const it = {
   'settings.llm.enableFeatures.name': 'Abilita le funzionalità LLM',
   'settings.llm.enableFeatures.desc':
     'Rende disponibili le trasformazioni LLM. Attiva o disattiva la trasformazione nella barra laterale.',
-  'settings.llm.enableRemote.name': 'Abilita LLM remoto',
-  'settings.llm.enableRemote.desc':
-    'Consenti l’invio a OpenRouter del testo della trascrizione e del contesto della nota incluso. L’audio non viene mai inviato.',
   'settings.llm.restoreDefaults.name': 'Ripristina i valori predefiniti della trasformazione',
   'settings.llm.restoreDefaults.desc':
     'Ripristina preset, tempistica, contesto, numero minimo di parole e temperatura. I preset e i modelli salvati vengono mantenuti.',
@@ -356,15 +353,8 @@ export const it = {
   'llm.model.temperature.name': 'Temperatura',
   'llm.model.temperature.description':
     'Variabilità del campionamento. Con 0 il risultato è deterministico; valori più alti producono risultati più vari.',
-  'llm.model.remoteThreshold.name': 'Soglia di instradamento remoto',
-  'llm.model.remoteThreshold.description':
-    'Lunghezza della trascrizione oltre la quale le trasformazioni Auto vengono inviate a OpenRouter (in caratteri).',
-  'llm.model.remoteTimeout.name': 'Timeout remoto',
-  'llm.model.remoteTimeout.description':
-    'Interrompe l’attesa di OpenRouter dopo questo numero di secondi. La trascrizione originale viene mantenuta.',
   'llm.model.behavior.name': 'Comportamento del modello',
   'llm.model.summary.temperature': 'Temperatura {value}',
-  'llm.model.summary.remoteThreshold': 'Remoto da {value} caratteri in su',
   'llm.model.summary.timeout': 'Timeout di {value} s',
   'llm.failure.authInvalid': 'Chiave API di {provider} rifiutata. Controlla le impostazioni.',
   'llm.failure.rateLimited':
@@ -393,23 +383,11 @@ export const it = {
     'Tutto insieme può riscrivere o rimuovere i timestamp, a seconda del preset.',
   'llm.timing.option.perUtterance': 'Dopo ogni frase',
   'llm.timing.option.batch': 'Tutto insieme all’interruzione',
-  'llm.routing.local': 'Locale',
-  'llm.routing.remote': 'Remoto',
-  'llm.routing.auto': 'Auto',
-  'llm.routing.ariaLabel': 'Esegui le trasformazioni con',
-  'llm.routing.localHint': 'Vengono eseguite interamente sul dispositivo con Ollama.',
-  'llm.routing.remoteHint': 'Invia ogni trascrizione a OpenRouter per la trasformazione.',
-  'llm.routing.autoHint':
-    'Rimane sul dispositivo e affida le trascrizioni più lunghe a OpenRouter.',
-  'llm.routing.localLeg': 'Locale · Ollama',
-  'llm.routing.remoteLeg': 'Remoto · OpenRouter',
   'llm.routing.priceTierTooltip': 'Fascia di prezzo approssimativa',
   'llm.routing.providerModel': 'Modello {provider}',
   'llm.routing.ollamaModelDescription': 'Scegli un modello di chat Ollama locale.',
   'llm.routing.selectModel': 'Seleziona un modello',
   'llm.routing.refreshModels': 'Aggiorna i modelli di {provider}',
-  'llm.routing.apiKey.name': 'Chiave API OpenRouter',
-  'llm.routing.apiKey.description': 'Conservata in modo sicuro da Obsidian.',
   'llm.routing.openRouterModel.name': 'Modello OpenRouter',
   'llm.routing.openRouterModel.description': 'Digita per cercare tra i modelli OpenRouter.',
   'llm.routing.testConnection': 'Verifica la chiave API e il modello',

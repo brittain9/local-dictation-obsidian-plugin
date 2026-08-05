@@ -220,9 +220,6 @@ export const fr = {
   'settings.llm.enableFeatures.name': 'Activer les fonctionnalités du LLM',
   'settings.llm.enableFeatures.desc':
     'Rendre les transformations LLM disponibles. Activez ou désactivez la transformation dans la barre latérale.',
-  'settings.llm.enableRemote.name': 'Activer LLM à distance',
-  'settings.llm.enableRemote.desc':
-    "Autoriser l'envoi du texte de transcription et du contexte de note inclus à OpenRouter. L'audio n'est jamais envoyé.",
   'settings.llm.restoreDefaults.name': 'Restaurer les valeurs par défaut de la transformation',
   'settings.llm.restoreDefaults.desc':
     'Réinitialisez le préréglage, le timing, le contexte, le nombre minimum de mots et la température. Les préréglages et modèles enregistrés sont conservés.',
@@ -356,15 +353,8 @@ export const fr = {
   'llm.model.temperature.name': 'Température',
   'llm.model.temperature.description':
     "Variation d'échantillonnage. 0 est déterministe ; les valeurs plus élevées sont plus variées.",
-  'llm.model.remoteThreshold.name': 'Seuil de routage distant',
-  'llm.model.remoteThreshold.description':
-    'Longueur de transcription qui envoie des transformations automatiques à OpenRouter (caractères).',
-  'llm.model.remoteTimeout.name': "Délai d'expiration à distance",
-  'llm.model.remoteTimeout.description':
-    "Arrêtez d'attendre OpenRouter après ces nombreuses secondes. La transcription originale est conservée.",
   'llm.model.behavior.name': 'Comportement du modèle',
   'llm.model.summary.temperature': 'Température {value}',
-  'llm.model.summary.remoteThreshold': 'À distance à {value}+ caractères',
   'llm.model.summary.timeout': "Délai d'expiration de {value}s",
   'llm.failure.authInvalid': "Clé d'API {provider} rejetée. Vérifiez les paramètres.",
   'llm.failure.rateLimited': 'Limite de débit de {provider} atteinte. Retour au texte brut.',
@@ -393,23 +383,11 @@ export const fr = {
     'Tout à la fois peut réécrire ou supprimer les horodatages, en fonction du préréglage.',
   'llm.timing.option.perUtterance': 'Après chaque phrase',
   'llm.timing.option.batch': "Tout à la fois à l'arrêt de la dictée",
-  'llm.routing.local': 'Local',
-  'llm.routing.remote': 'Distant',
-  'llm.routing.auto': 'Auto',
-  'llm.routing.ariaLabel': 'Exécuter les transformations avec',
-  'llm.routing.localHint': 'Fonctionne entièrement sur votre appareil avec Ollama.',
-  'llm.routing.remoteHint': 'Envoie chaque transcription à OpenRouter pour transformation.',
-  'llm.routing.autoHint':
-    "Reste sur l'appareil et transmet de grandes transcriptions à OpenRouter.",
-  'llm.routing.localLeg': 'Local · Ollama',
-  'llm.routing.remoteLeg': 'À distance · OpenRouter',
   'llm.routing.priceTierTooltip': 'Niveau de prix approximatif',
   'llm.routing.providerModel': 'Modèle {provider}',
   'llm.routing.ollamaModelDescription': 'Choisissez un modèle de discussion local Ollama.',
   'llm.routing.selectModel': 'Sélectionnez un modèle',
   'llm.routing.refreshModels': 'Actualiser les modèles {provider}',
-  'llm.routing.apiKey.name': "Clé d'API OpenRouter",
-  'llm.routing.apiKey.description': 'Stocké en toute sécurité par Obsidian.',
   'llm.routing.openRouterModel.name': 'Modèle OpenRouter',
   'llm.routing.openRouterModel.description': 'Tapez pour rechercher des modèles OpenRouter.',
   'llm.routing.testConnection': "Tester la clé d'API et le modèle",

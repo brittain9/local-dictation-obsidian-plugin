@@ -22,4 +22,16 @@ describe('formatCleanupFailureBanner', () => {
       }),
     ).toBe('OpenRouter model not found. Choose another under Model.');
   });
+
+  it('explains the possible credential and access causes of a permission denial', () => {
+    expect(
+      formatCleanupFailureBanner({
+        code: 'permission_denied',
+        message: 'OpenAI-compatible endpoint denied access.',
+        providerId: 'openai_compatible',
+      }),
+    ).toBe(
+      'OpenAI-compatible denied access. Check credentials, account permissions, or model access.',
+    );
+  });
 });

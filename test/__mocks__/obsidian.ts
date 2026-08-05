@@ -758,14 +758,33 @@ export class ItemView {
 }
 
 export class SecretComponent {
+  static readonly instances: SecretComponent[] = [];
+  private changeHandler: (value: string) => unknown = () => {};
+  value = '';
+
   constructor(
     readonly app: unknown,
     readonly containerEl: HTMLElement,
-  ) {}
-  setValue(_value: string): this {
+  ) {
+    SecretComponent.instances.push(this);
+  }
+
+  async change(value: string): Promise<void> {
+    this.value = value;
+    await this.changeHandler(value);
+  }
+
+  onChange(callback: (value: string) => unknown): this {
+    this.changeHandler = callback;
     return this;
   }
-  onChange(_callback: (value: string) => unknown): this {
+
+  static reset(): void {
+    SecretComponent.instances.length = 0;
+  }
+
+  setValue(value: string): this {
+    this.value = value;
     return this;
   }
 }

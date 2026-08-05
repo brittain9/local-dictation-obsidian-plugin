@@ -1,5 +1,5 @@
 import type { App } from 'obsidian';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const { createProviderMock } = vi.hoisted(() => ({ createProviderMock: vi.fn() }));
 
@@ -7,9 +7,10 @@ vi.mock('../src/llm/provider-factory', () => {
   return { createProvider: createProviderMock };
 });
 
+import { MIN_OUTPUT_TOKENS } from '../src/llm/output-budget';
 import { DEFAULT_PLUGIN_SETTINGS, type PluginSettings } from '../src/settings/plugin-settings';
 import { LlmRoutingControls } from '../src/ui/llm-routing-controls';
-import { Setting as MockSetting, TestElement } from './__mocks__/obsidian';
+import { Setting as MockSetting, SecretComponent, TestElement } from './__mocks__/obsidian';
 import { createFakeLlmProvider } from './fixtures/llm';
 
 function createControls(overrides: Partial<PluginSettings> = {}, secret = '') {
@@ -30,7 +31,12 @@ function createControls(overrides: Partial<PluginSettings> = {}, secret = '') {
 
 beforeEach(() => {
   MockSetting.reset();
+  SecretComponent.reset();
   createProviderMock.mockReset();
+});
+
+afterEach(() => {
+  vi.useRealTimers();
 });
 
 describe('LlmRoutingControls.render', () => {
@@ -41,6 +47,7 @@ describe('LlmRoutingControls.render', () => {
 
     const provider = MockSetting.named('Provider').onlyDropdown();
     expect(provider.selectEl.value).toBe('');
+    expect(MockSetting.named('Provider').descEl.textContent).toContain('Audio is never sent.');
     expect(provider.selectEl.options.map((option) => option.label)).toEqual([
       'Choose a provider',
       'Ollama',
@@ -360,6 +367,44 @@ describe('LlmRoutingControls.refreshActiveProviders', () => {
     resolveModels?.([{ displayName: 'llama3', id: 'llama3' }]);
     await Promise.all([first, second]);
   });
+
+  it('rechecks OpenRouter key health after the selected secret changes', async () => {
+    vi.useFakeTimers();
+    let resolveModels: ((models: Array<{ displayName: string; id: string }>) => void) | undefined;
+    const listModels = vi.fn(
+      () =>
+        new Promise<Array<{ displayName: string; id: string }>>((resolve) => {
+          resolveModels = resolve;
+        }),
+    );
+    const probe = vi.fn(async () => ({ kind: 'auth_invalid' as const }));
+    createProviderMock.mockReturnValue(
+      createFakeLlmProvider({
+        id: 'openrouter',
+        listModels,
+        probe,
+      }),
+    );
+    const settings = {
+      ...DEFAULT_PLUGIN_SETTINGS,
+      llmProviderConfigurations: {
+        ...DEFAULT_PLUGIN_SETTINGS.llmProviderConfigurations,
+        openrouter: { model: 'model', secretId: 'openrouter-secret' },
+      },
+      llmRoutingPolicy: { kind: 'fixed' as const, providerId: 'openrouter' as const },
+    };
+    const { controls } = createControls(settings, 'stored-key');
+
+    controls.render(new TestElement() as unknown as HTMLElement, settings);
+    await SecretComponent.instances[0]?.change('replacement-secret');
+    await vi.advanceTimersByTimeAsync(500);
+
+    expect(probe).not.toHaveBeenCalled();
+    resolveModels?.([{ displayName: 'Model', id: 'model' }]);
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(probe).toHaveBeenCalledOnce();
+  });
 });
 
 describe('LlmRoutingControls.testProvider', () => {
@@ -386,7 +431,7 @@ describe('LlmRoutingControls.testProvider', () => {
       await expect(controls.testProvider(providerId)).resolves.toBeNull();
       expect(cleanup).toHaveBeenCalledWith(
         expect.objectContaining({
-          maxOutputTokens: 16,
+          maxOutputTokens: MIN_OUTPUT_TOKENS,
           model: configurations[providerId].model,
         }),
       );
