@@ -10,17 +10,22 @@ interface FinalizedUtteranceAutoCopyDependencies {
 }
 
 export class FinalizedUtteranceAutoCopy {
+  private disposed = false;
   private writeQueue: Promise<void> = Promise.resolve();
 
   constructor(private readonly dependencies: FinalizedUtteranceAutoCopyDependencies) {}
 
   copyAcceptedUtterance(text: string): Promise<boolean> {
     const normalized = text.trim();
-    if (!this.dependencies.getSettings().autoCopyFinalizedUtterances || normalized.length === 0) {
+    if (
+      this.disposed ||
+      !this.dependencies.getSettings().autoCopyFinalizedUtterances ||
+      normalized.length === 0
+    ) {
       return Promise.resolve(false);
     }
 
-    const copy = this.writeQueue.then(() => this.write(normalized));
+    const copy = this.writeQueue.then(() => (this.disposed ? false : this.write(normalized)));
     this.writeQueue = copy.then(
       () => {},
       () => {},
@@ -28,14 +33,23 @@ export class FinalizedUtteranceAutoCopy {
     return copy;
   }
 
+  dispose(): void {
+    this.disposed = true;
+  }
+
   private async write(text: string): Promise<boolean> {
     const copied = await tryWriteClipboardText(this.dependencies.getClipboard, text);
-    if (!copied) {
-      this.dependencies.feedback.show({
-        intent: 'error',
-        key: 'finalized-utterance-auto-copy-failed',
-        message: t('notice.finalizedUtteranceAutoCopyFailed'),
-      });
+    if (!copied && !this.disposed) {
+      try {
+        this.dependencies.feedback.show({
+          intent: 'error',
+          key: 'finalized-utterance-auto-copy-failed',
+          message: t('notice.finalizedUtteranceAutoCopyFailed'),
+        });
+      } catch {
+        // This runs in the background. A failing feedback presenter must not
+        // create an unhandled rejection or expose clipboard failure details.
+      }
     }
     return copied;
   }

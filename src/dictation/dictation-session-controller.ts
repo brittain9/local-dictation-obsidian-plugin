@@ -897,10 +897,13 @@ export class DictationSessionController {
 
   private async handleTranscriptReady(event: TranscriptReadyEvent): Promise<void> {
     const entry = this.sessions.get(event.sessionId);
-    if (entry === undefined || rejectsTranscriptWork(entry)) {
+    if (entry === undefined || entry.phase === 'stopped' || rejectsTranscriptWork(entry)) {
       return;
     }
 
+    // Work admitted before session_stopped is allowed to drain, but that event
+    // is the authoritative end of the native stream. Never admit a later final
+    // from the retained local entry while earlier cleanup is still finishing.
     const work = this.processTranscriptReady(entry, event);
     entry.pendingTranscriptWork.add(work);
     try {

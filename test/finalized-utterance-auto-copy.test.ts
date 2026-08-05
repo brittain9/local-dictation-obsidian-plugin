@@ -6,15 +6,18 @@ import type { ClipboardWriter } from '../src/shared/clipboard';
 
 interface Deferred {
   promise: Promise<void>;
+  reject(reason?: unknown): void;
   resolve(): void;
 }
 
 function deferred(): Deferred {
   let resolvePromise: () => void = () => {};
-  const promise = new Promise<void>((resolve) => {
+  let rejectPromise: (reason?: unknown) => void = () => {};
+  const promise = new Promise<void>((resolve, reject) => {
     resolvePromise = resolve;
+    rejectPromise = reject;
   });
-  return { promise, resolve: resolvePromise };
+  return { promise, reject: rejectPromise, resolve: resolvePromise };
 }
 
 function createHarness(
@@ -56,27 +59,18 @@ describe('FinalizedUtteranceAutoCopy', () => {
     expect(harness.feedback.show).not.toHaveBeenCalled();
   });
 
-  it.each(['always_on', 'one_sentence'] as const)(
-    'copies exact normalized text silently in %s mode',
-    async (listeningMode) => {
-      const writeText = vi.fn(async (_text: string) => {});
-      const harness = createHarness(
-        {
-          autoCopyFinalizedUtterances: true,
-          listeningMode,
-        },
-        { writeText },
-      );
+  it('copies exact normalized text silently', async () => {
+    const writeText = vi.fn(async (_text: string) => {});
+    const harness = createHarness({ autoCopyFinalizedUtterances: true }, { writeText });
 
-      await expect(
-        harness.autoCopy.copyAcceptedUtterance(' \n Finalized phrase. \t'),
-      ).resolves.toBe(true);
+    await expect(harness.autoCopy.copyAcceptedUtterance(' \n Finalized phrase. \t')).resolves.toBe(
+      true,
+    );
 
-      expect(writeText).toHaveBeenCalledOnce();
-      expect(writeText).toHaveBeenCalledWith('Finalized phrase.');
-      expect(harness.feedback.show).not.toHaveBeenCalled();
-    },
-  );
+    expect(writeText).toHaveBeenCalledOnce();
+    expect(writeText).toHaveBeenCalledWith('Finalized phrase.');
+    expect(harness.feedback.show).not.toHaveBeenCalled();
+  });
 
   it('remains enabled when last-utterance recovery retention is disabled', async () => {
     const writeText = vi.fn(async (_text: string) => {});
@@ -166,5 +160,46 @@ describe('FinalizedUtteranceAutoCopy', () => {
       key: 'finalized-utterance-auto-copy-failed',
       message: 'Could not automatically copy the finalized utterance.',
     });
+  });
+
+  it('drops queued phrases when the plugin is disposed', async () => {
+    const pending = deferred();
+    const writeText = vi.fn().mockReturnValueOnce(pending.promise).mockResolvedValueOnce(undefined);
+    const harness = createHarness({ autoCopyFinalizedUtterances: true }, { writeText });
+
+    const inFlight = harness.autoCopy.copyAcceptedUtterance('already writing');
+    const queued = harness.autoCopy.copyAcceptedUtterance('must not outlive the plugin');
+    await vi.waitFor(() => expect(writeText).toHaveBeenCalledOnce());
+
+    harness.autoCopy.dispose();
+    pending.resolve();
+
+    await expect(inFlight).resolves.toBe(true);
+    await expect(queued).resolves.toBe(false);
+    expect(writeText).toHaveBeenCalledTimes(1);
+    expect(harness.feedback.show).not.toHaveBeenCalled();
+  });
+
+  it('suppresses late failure feedback after disposal', async () => {
+    const pending = deferred();
+    const writeText = vi.fn(() => pending.promise);
+    const harness = createHarness({ autoCopyFinalizedUtterances: true }, { writeText });
+
+    const copy = harness.autoCopy.copyAcceptedUtterance('private phrase');
+    await vi.waitFor(() => expect(writeText).toHaveBeenCalledOnce());
+    harness.autoCopy.dispose();
+    pending.reject(new Error('clipboard failure containing private phrase'));
+
+    await expect(copy).resolves.toBe(false);
+    expect(harness.feedback.show).not.toHaveBeenCalled();
+  });
+
+  it('contains feedback presenter failures in the background queue', async () => {
+    const harness = createHarness({ autoCopyFinalizedUtterances: true }, null);
+    harness.feedback.show.mockImplementationOnce(() => {
+      throw new Error('presenter failed');
+    });
+
+    await expect(harness.autoCopy.copyAcceptedUtterance('private phrase')).resolves.toBe(false);
   });
 });

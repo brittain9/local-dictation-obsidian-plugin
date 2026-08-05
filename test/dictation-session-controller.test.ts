@@ -905,6 +905,45 @@ describe('DictationSessionController', () => {
     expect(onFinalizedUtteranceAccepted).toHaveBeenCalledTimes(1);
   });
 
+  it('drops finals received after session_stopped while admitted cleanup drains', async () => {
+    const sidecarConnection = new FakeSidecarConnection();
+    const onFinalizedUtteranceAccepted = vi.fn();
+    let resolveCleanup: ((value: LlmRouterCleanupResult) => void) | undefined;
+    const cleanup = vi.fn(
+      () =>
+        new Promise<LlmRouterCleanupResult>((resolve) => {
+          resolveCleanup = resolve;
+        }),
+    );
+    const controller = createController({
+      getSettings: () =>
+        createSettings({
+          llmFeaturesEnabled: true,
+          llmPostprocessMode: 'per_utterance',
+          llmPostprocessSkipMinWords: 0,
+          selectedModel: createExternalModelSelection(),
+        }),
+      llmRouter: createFakeLlmRouter({ cleanup }),
+      onFinalizedUtteranceAccepted,
+      sidecarConnection,
+    });
+
+    await controller.startDictation();
+    const sessionId = sidecarConnection.startSession.mock.calls[0]?.[0].sessionId ?? '';
+    sidecarConnection.emit(transcriptReady(sessionId, 'admitted before stop'));
+    await vi.waitFor(() => expect(cleanup).toHaveBeenCalledOnce());
+
+    sidecarConnection.emit({ reason: 'user_stop', sessionId, type: 'session_stopped' });
+    sidecarConnection.emit(transcriptReady(sessionId, 'late after stop'));
+
+    expect(cleanup).toHaveBeenCalledOnce();
+    resolveCleanup?.({ model: 'm', providerId: 'ollama', text: 'accepted before stop' });
+    await vi.waitFor(() => {
+      expect(onFinalizedUtteranceAccepted).toHaveBeenCalledOnce();
+    });
+    expect(onFinalizedUtteranceAccepted).toHaveBeenCalledWith('accepted before stop');
+  });
+
   it('keeps the accepted cleaned final as the last recoverable utterance', async () => {
     let lastRecoverableUtterance: string | null = null;
     const sidecarConnection = new FakeSidecarConnection();
@@ -960,6 +999,63 @@ describe('DictationSessionController', () => {
     });
 
     expect(lastRecoverableUtterance).toBe('Clean recovery text.');
+  });
+
+  it('offers plain diarized text without labels, timestamps, formatting, or LLM rewriting', async () => {
+    const sidecarConnection = new FakeSidecarConnection();
+    const cleanup = vi.fn(
+      async (): Promise<LlmRouterCleanupResult> => ({
+        model: 'm',
+        providerId: 'ollama',
+        text: 'must not replace attributed speech',
+      }),
+    );
+    const onFinalizedUtteranceAccepted = vi.fn();
+    const controller = createController({
+      getSettings: () =>
+        createSettings({
+          llmFeaturesEnabled: true,
+          llmPostprocessMode: 'per_utterance',
+          llmPostprocessSkipMinWords: 0,
+          selectedModel: createExternalModelSelection(),
+          timestampDensity: 'every_utterance',
+          timestampsEnabled: true,
+          transcriptFormatting: 'new_paragraph',
+        }),
+      llmRouter: createFakeLlmRouter({ cleanup }),
+      onFinalizedUtteranceAccepted,
+      sidecarConnection,
+    });
+
+    await controller.startDictation();
+    const sessionId = sidecarConnection.startSession.mock.calls[0]?.[0].sessionId ?? '';
+    sidecarConnection.emit(
+      transcriptReady(sessionId, 'Speaker one. Speaker two.', {
+        segments: [
+          {
+            endMs: 400,
+            speaker: 0,
+            startMs: 0,
+            text: 'Speaker one.',
+            timestampGranularity: 'segment',
+            timestampSource: 'engine',
+          },
+          {
+            endMs: 900,
+            speaker: 1,
+            startMs: 500,
+            text: 'Speaker two.',
+            timestampGranularity: 'segment',
+            timestampSource: 'engine',
+          },
+        ],
+      }),
+    );
+
+    await vi.waitFor(() => {
+      expect(onFinalizedUtteranceAccepted).toHaveBeenCalledWith('Speaker one. Speaker two.');
+    });
+    expect(cleanup).not.toHaveBeenCalled();
   });
 
   it('silently enforces the five-session active plus draining cap', async () => {
@@ -1837,6 +1933,7 @@ describe('DictationSessionController', () => {
   it('keeps raw transcript and reports a typed per-utterance cleanup failure', async () => {
     const sidecarConnection = new FakeSidecarConnection();
     const sessions: FakeSession[] = [];
+    const onFinalizedUtteranceAccepted = vi.fn();
     const onLlmCleanupFailure = vi.fn();
     const controller = createController({
       createSession: (session) => {
@@ -1857,6 +1954,7 @@ describe('DictationSessionController', () => {
         }),
         providerId: 'openrouter',
       }),
+      onFinalizedUtteranceAccepted,
       onLlmCleanupFailure,
       sidecarConnection,
     });
@@ -1874,6 +1972,7 @@ describe('DictationSessionController', () => {
         message: 'bad key',
         providerId: 'openrouter',
       });
+      expect(onFinalizedUtteranceAccepted).toHaveBeenCalledWith('raw transcript');
     });
   });
 
@@ -1988,6 +2087,7 @@ describe('DictationSessionController', () => {
     const sidecarConnection = new FakeSidecarConnection();
     const sessions: FakeSession[] = [];
     const logger = new FakeLogger();
+    const onFinalizedUtteranceAccepted = vi.fn();
     const onRawTranscriptRecoveryAvailable = vi.fn();
     const cleanup = vi.fn(
       async (): Promise<LlmRouterCleanupResult> => ({
@@ -2008,6 +2108,7 @@ describe('DictationSessionController', () => {
         }),
       llmRouter: createFakeLlmRouter({ cleanup }),
       logger,
+      onFinalizedUtteranceAccepted,
       onRawTranscriptRecoveryAvailable,
       sidecarConnection,
     });
@@ -2038,6 +2139,8 @@ describe('DictationSessionController', () => {
         transformedText: 'Clean batch.',
       }),
     );
+    expect(onFinalizedUtteranceAccepted).toHaveBeenCalledOnce();
+    expect(onFinalizedUtteranceAccepted).toHaveBeenCalledWith('raw transcript');
     const serializedLogs = JSON.stringify([
       logger.debug.mock.calls,
       logger.error.mock.calls,

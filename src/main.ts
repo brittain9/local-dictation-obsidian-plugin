@@ -554,6 +554,7 @@ export default class LocalSttPlugin extends Plugin {
   }
 
   private async disposeAll(): Promise<void> {
+    this.finalizedUtteranceAutoCopy.dispose();
     this.lastUtteranceRecovery.clear();
     this.rawTranscriptRecovery.clear();
     this.releaseReadAloudModelSubscription?.();
