@@ -2087,6 +2087,7 @@ describe('DictationSessionController', () => {
     const sidecarConnection = new FakeSidecarConnection();
     const sessions: FakeSession[] = [];
     const logger = new FakeLogger();
+    const onBatchTranscriptReplacementAccepted = vi.fn();
     const onFinalizedUtteranceAccepted = vi.fn();
     const onRawTranscriptRecoveryAvailable = vi.fn();
     const cleanup = vi.fn(
@@ -2108,6 +2109,7 @@ describe('DictationSessionController', () => {
         }),
       llmRouter: createFakeLlmRouter({ cleanup }),
       logger,
+      onBatchTranscriptReplacementAccepted,
       onFinalizedUtteranceAccepted,
       onRawTranscriptRecoveryAvailable,
       sidecarConnection,
@@ -2141,6 +2143,8 @@ describe('DictationSessionController', () => {
     );
     expect(onFinalizedUtteranceAccepted).toHaveBeenCalledOnce();
     expect(onFinalizedUtteranceAccepted).toHaveBeenCalledWith('raw transcript');
+    expect(onBatchTranscriptReplacementAccepted).toHaveBeenCalledOnce();
+    expect(onBatchTranscriptReplacementAccepted).toHaveBeenCalledWith('Clean batch.');
     const serializedLogs = JSON.stringify([
       logger.debug.mock.calls,
       logger.error.mock.calls,
@@ -2191,6 +2195,7 @@ describe('DictationSessionController', () => {
   it('does not capture raw recovery when the batch replacement is denied', async () => {
     const sidecarConnection = new FakeSidecarConnection();
     const sessions: FakeSession[] = [];
+    const onBatchTranscriptReplacementAccepted = vi.fn();
     const onRawTranscriptRecoveryAvailable = vi.fn();
     const controller = createController({
       createSession: (session) => {
@@ -2210,6 +2215,7 @@ describe('DictationSessionController', () => {
           text: 'Clean batch.',
         })),
       }),
+      onBatchTranscriptReplacementAccepted,
       onRawTranscriptRecoveryAvailable,
       sidecarConnection,
     });
@@ -2223,6 +2229,7 @@ describe('DictationSessionController', () => {
     await vi.waitFor(() => {
       expect(sessions[0]?.replaceSessionRangeWithCleaned).toHaveBeenCalledOnce();
     });
+    expect(onBatchTranscriptReplacementAccepted).not.toHaveBeenCalled();
     expect(onRawTranscriptRecoveryAvailable).not.toHaveBeenCalled();
   });
 
@@ -3228,6 +3235,7 @@ function createController({
   feedback = { show: vi.fn() },
   sidecarConnection = new FakeSidecarConnection(),
   sidecarLifecycleGate = new SidecarLifecycleGate(),
+  onBatchTranscriptReplacementAccepted,
   onLlmCleanupFailure,
   onLlmCleanupSuccess,
   onFinalizedUtteranceAccepted,
@@ -3244,6 +3252,7 @@ function createController({
   llmRouter?: LlmRouter | null;
   logger?: FakeLogger;
   feedback?: Pick<UserFeedback, 'show'>;
+  onBatchTranscriptReplacementAccepted?: (text: string) => void;
   onLlmCleanupFailure?: (failure: LlmCleanupFailure) => void;
   onLlmCleanupSuccess?: () => void;
   onFinalizedUtteranceAccepted?: (text: string) => void;
@@ -3267,6 +3276,9 @@ function createController({
     getSettings,
     hasDictationTarget,
     logger,
+    ...(onBatchTranscriptReplacementAccepted !== undefined
+      ? { onBatchTranscriptReplacementAccepted }
+      : {}),
     ...(onLlmCleanupFailure !== undefined ? { onLlmCleanupFailure } : {}),
     ...(onLlmCleanupSuccess !== undefined ? { onLlmCleanupSuccess } : {}),
     ...(onFinalizedUtteranceAccepted !== undefined ? { onFinalizedUtteranceAccepted } : {}),

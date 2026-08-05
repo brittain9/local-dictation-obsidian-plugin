@@ -246,6 +246,9 @@ export default class LocalSttPlugin extends Plugin {
       hasDictationTarget: () => Session.hasDictationTarget(this.app),
       feedback: this.feedback,
       logger: this.logger,
+      onBatchTranscriptReplacementAccepted: (text) => {
+        void this.finalizedUtteranceAutoCopy.copyAcceptedUtterance(text);
+      },
       onLlmCleanupFailure: (failure) => {
         this.llmCleanupFailure = failure;
         this.notifyLlmCleanupFailureSubscribers();

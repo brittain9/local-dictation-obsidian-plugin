@@ -149,6 +149,7 @@ interface DictationSessionControllerDependencies {
   getSettings: () => PluginSettings;
   hasDictationTarget: () => boolean;
   logger?: PluginLogger;
+  onBatchTranscriptReplacementAccepted?: (text: string) => void;
   onLlmCleanupFailure?: (failure: LlmCleanupFailure) => void;
   onLlmCleanupSuccess?: () => void;
   onFinalizedUtteranceAccepted?: (text: string) => void;
@@ -1372,6 +1373,7 @@ export class DictationSessionController {
         );
       } else {
         this.dependencies.onRawTranscriptRecoveryAvailable?.(replacement.recovery);
+        this.dependencies.onBatchTranscriptReplacementAccepted?.(cleanedText);
         this.dependencies.logger?.debug('llm', 'batch cleanup complete', {
           chars: cleanedText.length,
         });
