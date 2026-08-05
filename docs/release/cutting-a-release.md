@@ -119,31 +119,43 @@ Its exact 1.11.5 runtime row remains required while `manifest.json` declares
 
 ## Cut it
 
+### Time budget
+
+The primary metric is **release intent to published assets**. Feature completion
+and the duration shown on `release.yml` are not substitutes for that end-to-end
+lead time. When benchmarking a release, record when the release was requested
+alongside the published timestamp.
+
+The operating target is 30 minutes end to end when release notes are ready for
+review. Its machine-measurable service target is publication within 25 minutes
+of the tag-triggered workflow starting. Release preparation, PR checks, review,
+and the merge-to-tag interval still count toward the primary metric; do not hide
+them by reporting only the tagged workflow.
+
+The tagged workflow is the only production build. Default-branch Rust and CUDA
+toolkit caches may accelerate it, but release publication never waits for a separate
+full-build warmer.
+
+This architecture is based on measured end-to-end evidence from issue #306. For
+`2026.7.11`, the mandatory warmer consumed 23m20s and did not accelerate the
+already-running tagged build; merge-to-publication took 36m48s while the tagged
+workflow itself took 17m. For `2026.8.0`, the same two-stage path spent 18m35s
+warming before a 16m45s tagged release. Removing the gate eliminates that duplicate
+critical-path work while leaving the authoritative tagged build, five native assets,
+checksums, and provenance unchanged.
+
 ```bash
 # 1. Land all the bumps on main via a PR — main is protected, so direct
 #    pushes are rejected by branch-protection rules.
-# 2. Wait for the Windows CUDA cache warmer at that exact main commit. The
-#    release-metadata bump triggers it automatically; dispatch it on main if a
-#    retry is needed. Do not tag while this run is queued or in progress:
+# 2. Resolve and validate the exact main commit to release:
 git fetch origin
 main_sha=$(git rev-parse origin/main)
-gh run list --workflow windows-cuda-cache.yml --commit "$main_sha" --limit 1
-# If no run exists, or the matching run needs a clean retry:
-gh workflow run windows-cuda-cache.yml --ref main
-run_id=$(gh run list --workflow windows-cuda-cache.yml --commit "$main_sha" --limit 1 --json databaseId --jq '.[0].databaseId')
-test -n "$run_id"
-gh run watch "$run_id" --exit-status
-
-# 3. The successful exact-commit run above is the release gate. List the two
-#    default-branch cache families as a diagnostic; broad key prefixes alone do
-#    not prove that a cache matches the commit being tagged.
-gh cache list --ref refs/heads/main --limit 100 --json key,ref,createdAt,lastAccessedAt --jq \
-  '.[] | select(.key | startswith("cuda-Windows-") or contains("sidecar-windows-x86_64-cuda"))'
-
-# 4. Tag main HEAD with the bare version and push:
 npm run check:release
 node scripts/read-release-version.mjs --tag <version>   # final check against the merged main content
-git tag <version> origin/main
+test "$(git rev-parse origin/main)" = "$main_sha"         # main did not move during validation
+
+# 3. Tag that validated commit with the bare version and push immediately:
+git tag <version> "$main_sha"
 git push origin <version>                               # fires .github/workflows/release.yml
 ```
 
@@ -217,9 +229,8 @@ new one publishes so "Latest" is never broken.
   metadata gate checks JavaScript, Rust, both lockfiles, and `versions.json`.
 - **Never pipe `gh run watch` through `tail`/`head`.** A pipeline's exit status
   is the last command's, so a failed run looks like success.
-- **Wait for `windows-cuda-cache` before tagging.** GitHub lets a release tag
-  restore caches created on the default branch, but it cannot restore a cache
-  created by a different release tag. The warmer must finish successfully at
-  the exact `origin/main` commit being tagged.
-- **CUDA build legs are warm-cache fast** (~3 min) but cold runs are ~20+ min;
-  don't assume a hang.
+- **Do not add a full-build pre-release warmer.** The release workflow builds and
+  attests the authoritative tagged artifacts once. Default-branch caches are an
+  opportunistic optimization, never a gate.
+- **CUDA build legs are warm-cache fast** (~3 min) but cold runs can take 20+
+  minutes; don't assume a hang while the 25-minute workflow budget remains intact.

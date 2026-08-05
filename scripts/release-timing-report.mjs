@@ -10,8 +10,8 @@
 //
 // Required env: GITHUB_REPOSITORY, GITHUB_RUN_ID (and GH_TOKEN for the API call).
 // Optional env: GITHUB_STEP_SUMMARY (Actions sets it), REPORT_OUTPUT (default
-//               release-report.md). The job calling this excludes itself from
-//               the report since its own timing is still in flight.
+//               release-report.md), TARGET_RELEASE_SECONDS. The job calling this
+//               excludes itself from the report since its own timing is in flight.
 
 import { spawnSync } from 'node:child_process';
 import { appendFile, writeFile } from 'node:fs/promises';
@@ -24,14 +24,19 @@ const runId = requiredEnv('GITHUB_RUN_ID');
 const summaryPath = process.env.GITHUB_STEP_SUMMARY;
 const outputPath = process.env.REPORT_OUTPUT ?? 'release-report.md';
 const selfJob = process.env.GITHUB_JOB ?? 'release-report';
+const targetReleaseSeconds = optionalPositiveInteger(
+  process.env.TARGET_RELEASE_SECONDS,
+  'TARGET_RELEASE_SECONDS',
+);
 
 // Steps that are pure runner bookkeeping rather than build work. Keeping them in
 // the per-step tables only adds noise; the per-job total still includes them.
 const NOISE_STEPS = new Set(['Set up job', 'Complete job', 'Checkout']);
 
+const run = fetchRun(repo, runId);
 const jobs = fetchJobs(repo, runId).filter((job) => job.name !== selfJob);
 
-const report = buildReport(jobs);
+const report = buildReport(jobs, targetReleaseSeconds, run.created_at);
 
 if (summaryPath) {
   await appendFile(summaryPath, report);
@@ -60,7 +65,17 @@ function fetchJobs(repository, id) {
   return list;
 }
 
-function buildReport(jobList) {
+function fetchRun(repository, id) {
+  const result = spawnSync('gh', ['api', '-X', 'GET', `/repos/${repository}/actions/runs/${id}`], {
+    encoding: 'utf8',
+  });
+  if (result.status !== 0) {
+    throw new Error(`gh api run failed (${result.status}): ${result.stderr}`);
+  }
+  return JSON.parse(result.stdout);
+}
+
+function buildReport(jobList, targetSeconds, workflowCreatedAt) {
   const ranked = jobList
     .map((job) => ({
       name: job.name,
@@ -79,12 +94,20 @@ function buildReport(jobList) {
   const lines = [];
   lines.push('## Release timing', '');
 
-  const wall = wallClockSeconds(jobList);
+  const wall = wallClockSeconds(jobList, workflowCreatedAt);
   const billed = ranked.reduce((sum, job) => sum + (job.seconds ?? 0), 0);
   lines.push(
     `Wall clock: **${formatDuration(wall)}** · summed job time: **${formatDuration(billed)}**`,
     '',
   );
+
+  if (targetSeconds !== null) {
+    const targetStatus = wall !== null && wall <= targetSeconds ? 'met' : 'missed';
+    lines.push(
+      `Release workflow target: **${formatDuration(targetSeconds)}** · **${targetStatus}**`,
+      '',
+    );
+  }
 
   lines.push('### Jobs (slowest first)', '');
   lines.push('| Job | Result | Duration |', '| --- | --- | --- |');
@@ -129,6 +152,16 @@ function buildReport(jobList) {
   return `${lines.join('\n')}\n`;
 }
 
+function optionalPositiveInteger(value, name) {
+  if (value === undefined || value === '') {
+    return null;
+  }
+  if (!/^\d+$/.test(value) || Number(value) <= 0) {
+    throw new Error(`${name} must be a positive integer number of seconds.`);
+  }
+  return Number(value);
+}
+
 function durationSeconds(start, end) {
   if (!start || !end) {
     return null;
@@ -137,13 +170,13 @@ function durationSeconds(start, end) {
   return Number.isFinite(ms) && ms >= 0 ? Math.round(ms / 1000) : null;
 }
 
-function wallClockSeconds(jobList) {
-  const starts = jobList.map((job) => Date.parse(job.started_at)).filter(Number.isFinite);
+function wallClockSeconds(jobList, workflowCreatedAt) {
+  const start = Date.parse(workflowCreatedAt);
   const ends = jobList.map((job) => Date.parse(job.completed_at)).filter(Number.isFinite);
-  if (starts.length === 0 || ends.length === 0) {
+  if (!Number.isFinite(start) || ends.length === 0) {
     return null;
   }
-  return Math.round((Math.max(...ends) - Math.min(...starts)) / 1000);
+  return Math.round((Math.max(...ends) - start) / 1000);
 }
 
 function formatDuration(seconds) {
