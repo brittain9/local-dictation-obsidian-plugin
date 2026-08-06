@@ -11,6 +11,8 @@ export const DICTATION_LANGUAGE_OPTIONS = [
   { label: 'Italiano', value: 'it' },
   { label: 'Nederlands', value: 'nl' },
   { label: '日本語', value: 'ja' },
+  { label: 'Hrvatski', value: 'hr' },
+  { label: 'Српски', value: 'sr' },
 ] as const;
 
 export type DictationLanguage = (typeof DICTATION_LANGUAGE_OPTIONS)[number]['value'];
@@ -63,6 +65,34 @@ export function supportedDictationLanguageOptions(
   return DICTATION_LANGUAGE_OPTIONS.filter((option) =>
     languageSupportIncludes(support, option.value, supportsAutomaticLanguageDetection),
   );
+}
+
+export interface LanguageFeatureCoverage {
+  readAloud: boolean;
+  translation: boolean;
+}
+
+/// Coverage is per model, so a language can be transcribable without being
+/// speakable or translatable — Serbian ships on Whisper alone. Settings reads
+/// this to say so up front instead of letting the user discover it by failing.
+export function languageFeatureCoverage(
+  models: readonly Pick<CatalogModelRecord, 'languageTags' | 'task' | 'translationPairs'>[],
+  language: DictationLanguage,
+): LanguageFeatureCoverage {
+  // Automatic detection has no single language to report on.
+  if (language === 'auto') return { readAloud: true, translation: true };
+  return {
+    readAloud: models.some(
+      (model) => model.task === 'tts' && model.languageTags.includes(language),
+    ),
+    translation: models.some(
+      (model) =>
+        model.task === 'translation' &&
+        (model.translationPairs ?? []).some(
+          (pair) => pair.source === language || pair.target === language,
+        ),
+    ),
+  };
 }
 
 export function catalogModelSupportsLanguage(

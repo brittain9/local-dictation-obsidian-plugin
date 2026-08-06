@@ -77,6 +77,8 @@ const TTS_CATALOG = {
     {
       defaultVoice: 'alba',
       familyId: TTS_SELECTION.familyId,
+      // Read aloud only speaks a language the selected voice model declares.
+      languageTags: ['en', 'es', 'de', 'fr', 'pt', 'it', 'nl', 'ja', 'hr'],
       modelId: TTS_SELECTION.modelId,
       runtimeId: TTS_SELECTION.runtimeId,
     },
@@ -89,7 +91,7 @@ type StartSynthesisMock = ReturnType<
 
 function controllerHarness(options: {
   catalog?: ModelCatalogRecord;
-  dictationLanguage?: 'auto' | 'en';
+  dictationLanguage?: 'auto' | 'en' | 'sr';
   onModelMissing?: () => Promise<void> | void;
   selected: boolean;
   selectedVoice?: string | null;
@@ -253,6 +255,18 @@ describe('ReadAloudController', () => {
     expect(harness.startSynthesis).toHaveBeenCalledWith(
       expect.objectContaining({ language: 'na' }),
     );
+  });
+
+  it('refuses a language the voice model does not declare instead of speaking it neutrally', async () => {
+    const harness = controllerHarness({ dictationLanguage: 'sr', selected: true });
+
+    await harness.controller.read(editorFor('Speak this.', { ch: 0, line: 0 }));
+
+    expect(harness.startSynthesis).not.toHaveBeenCalled();
+    expect(harness.feedback.show).toHaveBeenCalledWith({
+      intent: 'warning',
+      message: 'The selected read-aloud model cannot speak Српски.',
+    });
   });
 
   it.each([

@@ -4,11 +4,13 @@ import { t, tPlural } from '../shared/i18n';
 import type { UserFeedback } from '../shared/user-feedback';
 import { TranslationCancelledError } from './bergamot-client';
 import {
+  isSupportedTranslationPair,
   isTranslationLanguage,
   resolveTranslationTarget,
-  TRANSLATION_LANGUAGES,
+  type TranslationDirections,
   type TranslationLanguage,
   translationLanguageLabel,
+  translationSourcesFor,
   translationTargetsFor,
 } from './languages';
 import { TranslationModelIncompleteError } from './translation-artifacts';
@@ -23,6 +25,7 @@ export interface TranslationSnapshot {
 }
 
 interface TranslationModalDependencies {
+  directions: TranslationDirections;
   editor: Editor;
   feedback: Pick<UserFeedback, 'show'>;
   initialSourceLanguage: TranslationLanguage;
@@ -145,32 +148,44 @@ export class TranslationModal extends Modal {
     if (container === null) return;
     container.empty();
 
+    const { directions } = this.dependencies;
     new Setting(container).setName(t('translation.modal.from')).addDropdown((dropdown) => {
-      for (const language of TRANSLATION_LANGUAGES) {
+      for (const language of translationSourcesFor(directions)) {
         dropdown.addOption(language, translationLanguageLabel(language));
       }
       dropdown.setValue(this.sourceLanguage);
       dropdown.onChange((value) => {
         if (!isTranslationLanguage(value)) return;
-        this.changeLanguages(value, resolveTranslationTarget(value, this.targetLanguage));
+        const target = resolveTranslationTarget(directions, value, this.targetLanguage);
+        if (target === null) return;
+        this.changeLanguages(value, target);
       });
     });
     new Setting(container).setName(t('translation.modal.to')).addDropdown((dropdown) => {
-      for (const language of translationTargetsFor(this.sourceLanguage)) {
+      for (const language of translationTargetsFor(directions, this.sourceLanguage)) {
         dropdown.addOption(language, translationLanguageLabel(language));
       }
       dropdown.setValue(this.targetLanguage);
       dropdown.onChange((value) => {
         if (!isTranslationLanguage(value)) return;
-        if (!translationTargetsFor(this.sourceLanguage).includes(value)) return;
+        if (!isSupportedTranslationPair(directions, this.sourceLanguage, value)) return;
         this.changeLanguages(this.sourceLanguage, value);
       });
     });
+    // A pair released in one direction is not automatically released in the
+    // other, so swapping is only offered when the reverse direction exists.
+    const canSwap = isSupportedTranslationPair(
+      directions,
+      this.targetLanguage,
+      this.sourceLanguage,
+    );
     new Setting(container).addButton((button) => {
       button
         .setButtonText(t('translation.modal.swap'))
         .setIcon('arrow-left-right')
+        .setDisabled(!canSwap)
         .onClick(() => {
+          if (!canSwap) return;
           this.changeLanguages(this.targetLanguage, this.sourceLanguage);
         });
     });

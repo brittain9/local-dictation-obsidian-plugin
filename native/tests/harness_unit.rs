@@ -43,6 +43,24 @@ fn word_error_rate_handles_empty_reference() {
     assert_eq!(text::word_error_rate("expected", ""), 1.0);
 }
 
+/// The Serbian fixture reference is Latin, but an engine may answer in Cyrillic.
+/// Scoring transliterates first so the gate measures recognition rather than
+/// which script came back — including the three digraph letters that expand to
+/// two Latin characters.
+#[test]
+fn serbian_cyrillic_transliterates_to_the_latin_reference() {
+    assert_eq!(
+        text::to_serbian_latin("то ми није изгледало да има смисла свакако није било фер"),
+        "to mi nije izgledalo da ima smisla svakako nije bilo fer"
+    );
+    assert_eq!(
+        text::to_serbian_latin("љубав њежан џеп ђак ћuп"),
+        "ljubav nježan džep đak ćup"
+    );
+    // Latin input is already in the scored form and must survive untouched.
+    assert_eq!(text::to_serbian_latin("nije bilo fer"), "nije bilo fer");
+}
+
 #[test]
 fn missing_anchors_reports_only_absent_words() {
     let anchors = vec!["country".to_string(), "moon".to_string()];

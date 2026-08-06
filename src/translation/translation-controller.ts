@@ -7,9 +7,11 @@ import type { PluginLogger } from '../shared/plugin-logger';
 import type { UserFeedback } from '../shared/user-feedback';
 import { TranslationCancelledError, translateWithBergamot } from './bergamot-client';
 import {
+  catalogTranslationDirections,
   findInstalledTranslationModel,
   type InstalledTranslationModel,
   resolveTranslationLanguages,
+  type TranslationDirections,
   type TranslationLanguage,
 } from './languages';
 import {
@@ -98,17 +100,28 @@ export class TranslationController {
 
     this.activeModal?.close();
     const settings = this.dependencies.getSettings();
-    const { sourceLanguage, targetLanguage } = resolveTranslationLanguages(
+    const directions = this.translationDirections();
+    const languages = resolveTranslationLanguages(
+      directions,
       settings.dictationLanguage,
       settings.translationSourceLanguage,
       settings.translationTargetLanguage,
     );
+    if (languages === null) {
+      this.dependencies.feedback.show({
+        intent: 'warning',
+        key: 'translation-no-pairs',
+        message: t('translation.notice.noLanguagePairs'),
+      });
+      return;
+    }
 
     const modal = new TranslationModal(this.dependencies.app, {
+      directions,
       editor,
       feedback: this.dependencies.feedback,
-      initialSourceLanguage: sourceLanguage,
-      initialTargetLanguage: targetLanguage,
+      initialSourceLanguage: languages.sourceLanguage,
+      initialTargetLanguage: languages.targetLanguage,
       onClosed: () => {
         if (this.activeModal === modal) this.activeModal = null;
       },
@@ -177,6 +190,10 @@ export class TranslationController {
       }
       throw error;
     }
+  }
+
+  private translationDirections(): TranslationDirections {
+    return catalogTranslationDirections(this.dependencies.modelManager.getState().catalog.models);
   }
 
   private findInstalledModel(

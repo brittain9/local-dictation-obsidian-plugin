@@ -51,7 +51,22 @@ describe('TranslationController', () => {
       logger: { error: vi.fn() } as never,
       modelManager: {
         getState: () => ({
-          catalog: { models: [] },
+          // Cataloged but not installed: the pair is offerable, so the modal
+          // opens and routes the user to the download.
+          catalog: {
+            models: [
+              {
+                familyId: 'firefox_translations',
+                modelId: 'firefox_translations_release_2026_07',
+                runtimeId: 'bergamot_wasm',
+                task: 'translation',
+                translationPairs: [
+                  { source: 'en', target: 'es' },
+                  { source: 'es', target: 'en' },
+                ],
+              },
+            ],
+          },
           installedModels: [],
         }),
       } as never,

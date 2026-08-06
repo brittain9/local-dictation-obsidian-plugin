@@ -11,8 +11,9 @@ use common::model::{
     require_nemotron_model,
 };
 use common::quality_report::{self, QualityMeasurement};
-use common::text::{character_error_rate, word_error_rate};
+use common::text::{self, character_error_rate, word_error_rate};
 use common::{audio, driver};
+use local_dictation_sidecar::catalog::ModelCatalog;
 use local_dictation_sidecar::engine::{ModelFamilyId, RuntimeId};
 use local_dictation_sidecar::protocol::SelectedModel;
 use local_dictation_sidecar::session::SpeakingStyle;
@@ -104,6 +105,21 @@ fn fixtures() -> Vec<Fixture> {
         }
     }));
     fixtures
+}
+
+/// Coverage differs per model — Serbian ships on Whisper only — so the corpus
+/// is filtered by what the catalog says the model under test can transcribe
+/// rather than by a list restated here.
+fn covers_language(model_id: &str, language: &str) -> bool {
+    ModelCatalog::load_bundled()
+        .expect("bundled catalog should load")
+        .models
+        .iter()
+        .find(|model| model.model_id == model_id)
+        .unwrap_or_else(|| panic!("{model_id} must be cataloged"))
+        .language_tags
+        .iter()
+        .any(|tag| tag == language)
 }
 
 #[test]
@@ -224,6 +240,13 @@ fn assess_quality(run: ModelRun<'_>, fixture: &Fixture, samples: usize) -> Vec<S
         "{} {}: {}\nquality processing={processing_secs:.3}s audio={audio_secs:.3}s rtf={rtf:.3}",
         run.engine, fixture.language, run.result.text,
     );
+    // Serbian may come back in either script; both are correct Serbian, so the
+    // hypothesis is transliterated to match the Latin reference before scoring.
+    let scored_text = if fixture.language == "sr" {
+        text::to_serbian_latin(&run.result.text)
+    } else {
+        run.result.text.clone()
+    };
     let (quality_metric, quality_error_rate, quality_budget, preserves_language) =
         if fixture.language == "ja" {
             let cer = character_error_rate(&fixture.reference, &run.result.text);
@@ -243,7 +266,7 @@ fn assess_quality(run: ModelRun<'_>, fixture: &Fixture, samples: usize) -> Vec<S
                 .count();
             ("cer", cer, MAX_JAPANESE_CER, japanese * 2 >= visible)
         } else {
-            let wer = word_error_rate(&fixture.reference, &run.result.text);
+            let wer = word_error_rate(&fixture.reference, &scored_text);
             let max_wer = if fixture.language == "en" {
                 MAX_ENGLISH_WORD_ERROR_RATE
             } else {
@@ -251,7 +274,7 @@ fn assess_quality(run: ModelRun<'_>, fixture: &Fixture, samples: usize) -> Vec<S
             };
             ("wer", wer, max_wer, true)
         };
-    let normalized = run.result.text.to_lowercase();
+    let normalized = scored_text.to_lowercase();
     let anchors_present = fixture
         .anchors
         .iter()
@@ -388,19 +411,24 @@ fn nemotron_and_whisper_transcribe_every_enabled_language_without_translation() 
 
     for fixture in fixtures() {
         let samples = audio::decode_wav_16k_mono(&fixture.path).expect("decode fixture");
-        let result = nemotron_transcribe(&nemotron, &fixture.language, &samples);
-        failures.extend(assess_quality(
-            ModelRun {
-                engine: "Nemotron",
-                model_id: NEMOTRON_MODEL_ID,
-                model_name: "NVIDIA Nemotron 3.5 ASR Streaming 0.6B Int8",
-                selection: "manual",
-                result: &result,
-                performance_budget: PerformanceBudget::RealTimeFactor(NEMOTRON_MAX_REALTIME_FACTOR),
-            },
-            &fixture,
-            samples.len(),
-        ));
+        let nemotron_covers = covers_language(NEMOTRON_MODEL_ID, &fixture.language);
+        if nemotron_covers {
+            let result = nemotron_transcribe(&nemotron, &fixture.language, &samples);
+            failures.extend(assess_quality(
+                ModelRun {
+                    engine: "Nemotron",
+                    model_id: NEMOTRON_MODEL_ID,
+                    model_name: "NVIDIA Nemotron 3.5 ASR Streaming 0.6B Int8",
+                    selection: "manual",
+                    result: &result,
+                    performance_budget: PerformanceBudget::RealTimeFactor(
+                        NEMOTRON_MAX_REALTIME_FACTOR,
+                    ),
+                },
+                &fixture,
+                samples.len(),
+            ));
+        }
         let result = whisper_transcribe(&whisper, &fixture.language, &samples);
         failures.extend(assess_quality(
             ModelRun {
@@ -419,19 +447,23 @@ fn nemotron_and_whisper_transcribe_every_enabled_language_without_translation() 
 
         // Automatic detection is a separate capability. Exercising every
         // language prevents a detector fixed to one language from passing.
-        let result = nemotron_transcribe(&nemotron, "auto", &samples);
-        failures.extend(assess_quality(
-            ModelRun {
-                engine: "Nemotron auto",
-                model_id: NEMOTRON_MODEL_ID,
-                model_name: "NVIDIA Nemotron 3.5 ASR Streaming 0.6B Int8",
-                selection: "auto",
-                result: &result,
-                performance_budget: PerformanceBudget::RealTimeFactor(NEMOTRON_MAX_REALTIME_FACTOR),
-            },
-            &fixture,
-            samples.len(),
-        ));
+        if nemotron_covers {
+            let result = nemotron_transcribe(&nemotron, "auto", &samples);
+            failures.extend(assess_quality(
+                ModelRun {
+                    engine: "Nemotron auto",
+                    model_id: NEMOTRON_MODEL_ID,
+                    model_name: "NVIDIA Nemotron 3.5 ASR Streaming 0.6B Int8",
+                    selection: "auto",
+                    result: &result,
+                    performance_budget: PerformanceBudget::RealTimeFactor(
+                        NEMOTRON_MAX_REALTIME_FACTOR,
+                    ),
+                },
+                &fixture,
+                samples.len(),
+            ));
+        }
         let result = whisper_transcribe(&whisper, "auto", &samples);
         failures.extend(assess_quality(
             ModelRun {

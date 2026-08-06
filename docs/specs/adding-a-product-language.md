@@ -84,11 +84,11 @@ fallback reads as English while bad Croatian reads as a broken product.
 "What do I get if I pick my language?" gets asked in three places, and all three
 need the same answer:
 
-| Where | Who is asking | Current state |
+| Where | Who is asking | State |
 | --- | --- | --- |
-| README | someone deciding whether to install | merged into one "eight languages" claim |
-| Settings | someone who already installed | nothing until a capability fails |
-| Issue replies | someone requesting a language | no canonical table to point at |
+| README | someone deciding whether to install | per-feature table under "Language support" |
+| Settings | someone who already installed | coverage sentences under the dictation language, derived from the catalog |
+| Issue replies | someone requesting a language | point at the matrix below |
 
 Three hand-maintained copies of one table will drift, and a drifted capability
 claim is exactly the overclaiming this document exists to prevent. So:
@@ -104,12 +104,11 @@ regenerates the table below and the README's language section, and fails
 exists, the table is hand-maintained and must be updated in the same PR that
 adds a language.
 
-The settings gap is the one worth closing for users rather than maintainers.
-Preflight (Step 2) prevents the *bad* outcome — no silent English fallback — but
-it is reactive: you discover Serbian has no read aloud by trying to use it.
-Showing coverage next to the selected language in settings turns "this is
-broken" into "transcription works, read aloud needs a model that speaks it." The
-data is already there; it is a presentation change, not new capability.
+Settings now closes the user-facing half of this: `languageFeatureCoverage` in
+`src/language/dictation-language.ts` reads the catalog and the dictation language
+row states which adjacent features the selection does not reach, so "this is
+broken" becomes "transcription works, read aloud needs a model that speaks it."
+It is derived, not restated, so it cannot drift.
 
 ## Current support matrix
 
@@ -127,8 +126,8 @@ per direction because Mozilla releases directions independently.
 | Italiano | `it` | Full | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | Nederlands | `nl` | Full | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | 日本語 | `ja` | Full | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Hrvatski | `hr` | Full | 🔜 | 🔜 | 🔜 | 🔜 | ⏸ | ❌ |
-| Српски | `sr` | Dictation | 🔜 | ❌ | ❌ | ❌ by rule | ⏸ | ❌ |
+| Hrvatski | `hr` | Full | ✅ | ✅ | ✅ | 🔜 | ⏸ | ❌ |
+| Српски | `sr` | Dictation | ✅ | ❌ | ❌ | ❌ by rule | ⏸ | ❌ |
 
 ✅ shipped · 🔜 planned, [#359](https://github.com/brittain9/speech-kit-obsidian-plugin/issues/359) · ⏸ available upstream, deferred · ❌ no released model
 

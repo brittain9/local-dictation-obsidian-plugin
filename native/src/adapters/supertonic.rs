@@ -21,7 +21,11 @@ use crate::transcription::{GpuConfig, TranscriptionError, validate_model_path};
 
 const SAMPLE_RATE: u32 = 44_100;
 const DEFAULT_TOTAL_STEPS: usize = 8;
-const SUPPORTED_LANGUAGES: [&str; 8] = ["en", "es", "de", "fr", "pt", "it", "nl", "ja"];
+/// Languages the pinned Supertonic 3 weights have a real voice path for.
+/// Upstream lists 31; a tag is added here only after a listening review. Serbian
+/// is absent from the upstream list entirely and must not fall through to the
+/// language-neutral `na` branch in `preprocess_text`.
+const SUPPORTED_LANGUAGES: [&str; 9] = ["en", "es", "de", "fr", "pt", "it", "nl", "ja", "hr"];
 
 static EMOJI_PATTERN: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(

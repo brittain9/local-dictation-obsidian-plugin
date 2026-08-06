@@ -5,6 +5,7 @@ import { formatSystemAudioProbeResultMessage } from '../audio/system-audio-permi
 import {
   dictationLanguageLabel,
   isDictationLanguage,
+  languageFeatureCoverage,
   supportedDictationLanguageOptions,
 } from '../language/dictation-language';
 import type { ModelPickerOptions } from '../models/manage-models-modal';
@@ -219,15 +220,26 @@ export class LocalSttSettingTab extends PluginSettingTab {
       supportsAutomaticLanguageDetection,
     );
     const selectedLanguage = settings.dictationLanguage;
+    const coverage = languageFeatureCoverage(modelState.catalog.models, selectedLanguage);
+    const languageLabel = dictationLanguageLabel(selectedLanguage);
+    const languageDesc = [
+      isSelectedModelEnglishOnly
+        ? t('settings.dictationLanguage.englishOnlyDesc', {
+            model: deriveCurrentModelDisplay(modelState).displayName,
+          })
+        : t('settings.dictationLanguage.desc'),
+      coverage.readAloud
+        ? null
+        : t('settings.dictationLanguage.noReadAloud', { language: languageLabel }),
+      coverage.translation
+        ? null
+        : t('settings.dictationLanguage.noTranslation', { language: languageLabel }),
+    ]
+      .filter((sentence): sentence is string => sentence !== null)
+      .join(' ');
     const languageSetting = new Setting(modelSection)
       .setName(t('settings.dictationLanguage.name'))
-      .setDesc(
-        isSelectedModelEnglishOnly
-          ? t('settings.dictationLanguage.englishOnlyDesc', {
-              model: deriveCurrentModelDisplay(modelState).displayName,
-            })
-          : t('settings.dictationLanguage.desc'),
-      );
+      .setDesc(languageDesc);
     languageSetting.addDropdown((dropdown) => {
       for (const option of languageOptions) {
         dropdown.addOption(option.value, option.label);

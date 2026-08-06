@@ -5,7 +5,7 @@ use anyhow::{Context, Result, ensure};
 use serde::{Deserialize, Serialize};
 
 use crate::engine::capabilities::{ModelFamilyId, ModelTask, RuntimeId};
-use crate::transcription::VERIFIED_MULTILINGUAL_LANGUAGE_TAGS;
+use crate::transcription::PRODUCT_LANGUAGE_TAGS;
 
 const BUNDLED_CATALOG_JSON: &str =
     include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/catalog.json"));
@@ -226,7 +226,7 @@ impl ModelCatalog {
             let mut language_tags = HashSet::new();
             for tag in &model.language_tags {
                 ensure!(
-                    VERIFIED_MULTILINGUAL_LANGUAGE_TAGS.contains(&tag.as_str()),
+                    PRODUCT_LANGUAGE_TAGS.contains(&tag.as_str()),
                     "model {} declares unsupported languageTag {}",
                     model.model_id,
                     tag
@@ -376,7 +376,7 @@ impl ModelCatalog {
                         );
                         for tag in [&pair.source, &pair.target] {
                             ensure!(
-                                VERIFIED_MULTILINGUAL_LANGUAGE_TAGS.contains(&tag.as_str()),
+                                PRODUCT_LANGUAGE_TAGS.contains(&tag.as_str()),
                                 "model {} declares unsupported translationPair language {}",
                                 model.model_id,
                                 tag
@@ -610,7 +610,7 @@ mod tests {
         assert_eq!(model.task, ModelTask::Tts);
         assert_eq!(
             model.language_tags,
-            ["en", "es", "de", "fr", "pt", "it", "nl", "ja"]
+            ["en", "es", "de", "fr", "pt", "it", "nl", "ja", "hr"]
         );
         assert_eq!(model.default_voice.as_deref(), Some("F1"));
         assert_eq!(model.license_label, "OpenRAIL-M");

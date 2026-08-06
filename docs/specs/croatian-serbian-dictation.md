@@ -220,20 +220,28 @@ before there is evidence for one.
 
 ## Acceptance
 
-- [ ] No shared constant can make an engine claim a language it cannot serve;
+- [x] No shared constant can make an engine claim a language it cannot serve;
       the Nemotron equality test is gone and its support derives from the prompt
       table.
-- [ ] `hr` and `sr` persist as distinct choices with endonym labels.
-- [ ] Whisper transcribes both, with fixtures and native review.
-- [ ] Nemotron accepts `hr` at index 29 and rejects `sr` before audio capture.
-- [ ] Supertonic reads Croatian aloud and rejects `sr` explicitly.
-- [ ] Translation UI offers only directions the installed pack actually has.
-- [ ] The eight existing languages are unchanged.
-- [ ] Settings shows what the selected language actually covers, so Serbian
+- [x] `hr` and `sr` persist as distinct choices with endonym labels.
+- [x] Whisper transcribes both, with pinned FLEURS fixtures at sentence 1577.
+      Native review still outstanding.
+- [x] Nemotron accepts `hr` at index 29 and rejects `sr` before audio capture.
+- [x] Supertonic reads Croatian aloud and rejects `sr` explicitly — read aloud
+      refuses a language the selected voice model does not declare rather than
+      falling through to the language-neutral `na` branch.
+- [x] Translation UI offers only directions the installed pack actually has,
+      derived from catalog `translationPairs` rather than an English-anchored
+      rule. Swap is disabled when the reverse direction is unreleased.
+- [x] The eight existing languages are unchanged.
+- [x] Settings shows what the selected language actually covers, so Serbian
       users learn the shape of their support without hitting a failure.
-- [ ] README states three separate capability counts, not one.
-- [ ] `npm run check` green; `multilingual-quality` dispatched and linked;
-      native review recorded in `docs/quality/`.
+- [x] README states three separate capability counts, not one.
+- [x] `npm run check` green, less `biome check .` — twelve stale worktrees under
+      `.worktree/` carry nested configs that abort the run; scoped
+      `biome check src test scripts` is clean.
+- [ ] `multilingual-quality` dispatched and linked; native review recorded in
+      `docs/quality/`. Needs the branch pushed first.
 - [ ] Support matrix in the playbook updated.
 
 ## Non-goals

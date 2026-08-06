@@ -6,6 +6,14 @@ import { DEFAULT_PLUGIN_SETTINGS } from '../src/settings/plugin-settings';
 import { renderTranslationSettings } from '../src/settings/translation-settings-section';
 import { Setting, TestElement } from './__mocks__/obsidian';
 
+// The real catalog pivots through English in both directions; the section only
+// offers a language once a direction for it exists, so the fixture has to carry
+// the real shape rather than a single pair.
+const TRANSLATION_PAIRS = ['es', 'de', 'fr', 'pt', 'it', 'nl', 'ja'].flatMap((language) => [
+  { source: 'en', target: language },
+  { source: language, target: 'en' },
+]);
+
 function state(installed: boolean): ModelManagerState {
   const model: CatalogModelRecord = {
     artifacts: [
@@ -33,7 +41,7 @@ function state(installed: boolean): ModelManagerState {
     summary: 'Fast local translation',
     supportsAutomaticLanguageDetection: false,
     task: 'translation',
-    translationPairs: [{ source: 'en', target: 'es' }],
+    translationPairs: TRANSLATION_PAIRS,
     uxTags: [],
   };
   return {

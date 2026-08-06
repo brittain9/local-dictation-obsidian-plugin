@@ -82,6 +82,51 @@ pub fn missing_anchors(hypothesis: &str, anchors: &[String]) -> Vec<String> {
         .collect()
 }
 
+/// Serbian is written in both Cyrillic and Gaj's Latin, and the mapping between
+/// them is 1:1 and lossless. Which script an engine emits is an orthographic
+/// choice, not a recognition result, so scoring transliterates to Latin first —
+/// otherwise a correct transcript in the other script would score as a total
+/// miss.
+pub fn to_serbian_latin(text: &str) -> String {
+    let mut latin = String::with_capacity(text.len());
+    for character in text.to_lowercase().chars() {
+        match character {
+            'а' => latin.push('a'),
+            'б' => latin.push('b'),
+            'в' => latin.push('v'),
+            'г' => latin.push('g'),
+            'д' => latin.push('d'),
+            'ђ' => latin.push('đ'),
+            'е' => latin.push('e'),
+            'ж' => latin.push('ž'),
+            'з' => latin.push('z'),
+            'и' => latin.push('i'),
+            'ј' => latin.push('j'),
+            'к' => latin.push('k'),
+            'л' => latin.push('l'),
+            'љ' => latin.push_str("lj"),
+            'м' => latin.push('m'),
+            'н' => latin.push('n'),
+            'њ' => latin.push_str("nj"),
+            'о' => latin.push('o'),
+            'п' => latin.push('p'),
+            'р' => latin.push('r'),
+            'с' => latin.push('s'),
+            'т' => latin.push('t'),
+            'ћ' => latin.push('ć'),
+            'у' => latin.push('u'),
+            'ф' => latin.push('f'),
+            'х' => latin.push('h'),
+            'ц' => latin.push('c'),
+            'ч' => latin.push('č'),
+            'џ' => latin.push_str("dž"),
+            'ш' => latin.push('š'),
+            other => latin.push(other),
+        }
+    }
+    latin
+}
+
 /// Classic two-row Levenshtein over token slices.
 fn edit_distance<T: PartialEq>(reference: &[T], hypothesis: &[T]) -> usize {
     let mut previous: Vec<usize> = (0..=hypothesis.len()).collect();

@@ -26,7 +26,7 @@ use crate::engine::traits::{
 use crate::protocol::{TimestampGranularity, TimestampSource, TranscriptSegment};
 use crate::runtimes::onnx::build_session;
 use crate::transcription::{
-    EngineTranscriptOutput, GpuConfig, TranscriptionError, VERIFIED_MULTILINGUAL_LANGUAGE_TAGS,
+    AUTOMATIC_LANGUAGE_TAG, EngineTranscriptOutput, GpuConfig, TranscriptionError,
     validate_model_path,
 };
 
@@ -113,7 +113,24 @@ const SUPPORTED_LANGUAGE_PROMPTS: &[LanguagePrompt] = &[
         metadata_key: "ja-JP",
         index: 10,
     },
+    LanguagePrompt {
+        product_tag: "hr",
+        metadata_key: "hr-HR",
+        index: 29,
+    },
 ];
+
+/// The prompt table is the authority on what this model can transcribe: an
+/// index here is a real entry in the pinned `processor_config.json`
+/// `prompt_dictionary`. Deriving advertised support from it means the two can
+/// never disagree.
+fn supported_language_tags() -> Vec<String> {
+    SUPPORTED_LANGUAGE_PROMPTS
+        .iter()
+        .filter(|prompt| prompt.product_tag != AUTOMATIC_LANGUAGE_TAG)
+        .map(|prompt| prompt.product_tag.to_string())
+        .collect()
+}
 
 static CAPABILITIES: LazyLock<ModelFamilyCapabilities> =
     LazyLock::new(|| ModelFamilyCapabilities {
@@ -131,10 +148,7 @@ static CAPABILITIES: LazyLock<ModelFamilyCapabilities> =
         supports_language_selection: true,
         supports_automatic_language_detection: true,
         supported_languages: LanguageSupport::List {
-            tags: VERIFIED_MULTILINGUAL_LANGUAGE_TAGS
-                .iter()
-                .map(|tag| (*tag).to_string())
-                .collect(),
+            tags: supported_language_tags(),
         },
         max_audio_duration_secs: None,
         produces_punctuation: true,
@@ -1692,14 +1706,6 @@ mod tests {
 }
 #[test]
 fn supported_languages_map_to_the_pinned_prompt_indices() {
-    assert_eq!(
-        SUPPORTED_LANGUAGE_PROMPTS
-            .iter()
-            .filter(|prompt| prompt.product_tag != "auto")
-            .map(|prompt| prompt.product_tag)
-            .collect::<Vec<_>>(),
-        VERIFIED_MULTILINGUAL_LANGUAGE_TAGS
-    );
     assert_eq!(prompt_index_for_language("en"), Some(0));
     assert_eq!(prompt_index_for_language("es"), Some(3));
     assert_eq!(prompt_index_for_language("de"), Some(9));
@@ -1708,8 +1714,38 @@ fn supported_languages_map_to_the_pinned_prompt_indices() {
     assert_eq!(prompt_index_for_language("it"), Some(15));
     assert_eq!(prompt_index_for_language("nl"), Some(16));
     assert_eq!(prompt_index_for_language("ja"), Some(10));
+    assert_eq!(prompt_index_for_language("hr"), Some(29));
     assert_eq!(prompt_index_for_language("auto"), Some(101));
     assert_eq!(prompt_index_for_language("xx"), None);
+}
+
+/// Serbian is absent from the pinned `prompt_dictionary` entirely, so there is
+/// no index to map it to and no neighbouring Slavic language it may fall back
+/// to. Croatian shipping alongside it makes that an easy mistake to make later.
+#[test]
+fn languages_without_a_pinned_prompt_are_rejected() {
+    for tag in ["sr", "sr-RS", "bs", "sl", "sk", "bg"] {
+        assert_eq!(
+            prompt_index_for_language(tag),
+            None,
+            "unexpected prompt for {tag}"
+        );
+    }
+}
+
+/// Advertised support is derived from the prompt table rather than restated, so
+/// the adapter cannot claim a language it has no prompt index for.
+#[test]
+fn advertised_languages_match_the_prompt_table() {
+    let tags = supported_language_tags();
+    assert!(tags.contains(&"hr".to_string()));
+    assert!(!tags.contains(&AUTOMATIC_LANGUAGE_TAG.to_string()));
+    for tag in &tags {
+        assert!(
+            prompt_index_for_language(tag).is_some(),
+            "advertised {tag} has no pinned prompt index"
+        );
+    }
 }
 
 #[test]

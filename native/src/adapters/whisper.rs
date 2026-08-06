@@ -12,9 +12,17 @@ use crate::engine::traits::{LoadedModel, ModelFamilyAdapter};
 use crate::protocol::{TimestampGranularity, TimestampSource, TranscriptSegment, TranscriptWord};
 use crate::transcription::{
     AUTOMATIC_LANGUAGE_TAG, EngineTranscriptOutput, GpuConfig, SegmentDiagnostics,
-    TranscriptionError, TranscriptionRequest, VERIFIED_MULTILINGUAL_LANGUAGE_TAGS,
-    validate_audio_samples, validate_model_path,
+    TranscriptionError, TranscriptionRequest, validate_audio_samples, validate_model_path,
 };
+
+/// Languages this release has verified against the multilingual Whisper
+/// artifacts. Whisper's own tokenizer covers far more; a tag earns a place here
+/// only once it has a pinned fixture and native-language review.
+///
+/// `.en` artifacts are English-only regardless of this list — see
+/// `language_support_for_context`.
+const MULTILINGUAL_LANGUAGE_TAGS: &[&str] =
+    &["en", "es", "de", "fr", "pt", "it", "nl", "ja", "hr", "sr"];
 
 #[derive(Default)]
 pub struct WhisperAdapter;
@@ -39,7 +47,7 @@ static CAPABILITIES: LazyLock<ModelFamilyCapabilities> =
 
 fn verified_multilingual_language_support() -> LanguageSupport {
     LanguageSupport::List {
-        tags: VERIFIED_MULTILINGUAL_LANGUAGE_TAGS
+        tags: MULTILINGUAL_LANGUAGE_TAGS
             .iter()
             .map(|tag| (*tag).to_string())
             .collect(),
@@ -103,7 +111,7 @@ impl LoadedModel for LoadedWhisperModel {
         request: &TranscriptionRequest,
     ) -> Result<EngineTranscriptOutput, TranscriptionError> {
         if request.language != AUTOMATIC_LANGUAGE_TAG
-            && !VERIFIED_MULTILINGUAL_LANGUAGE_TAGS.contains(&request.language.as_str())
+            && !MULTILINGUAL_LANGUAGE_TAGS.contains(&request.language.as_str())
         {
             return Err(TranscriptionError::unsupported_language(
                 &request.language,

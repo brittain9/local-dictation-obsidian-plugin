@@ -6,13 +6,14 @@ import { type CatalogModelRecord, matchesModelTriple } from '../models/model-man
 import { formatBytes } from '../shared/format-utils';
 import { t } from '../shared/i18n';
 import {
+  catalogTranslationDirections,
   isSupportedTranslationPair,
   isTranslationLanguage,
   resolveTranslationLanguages,
   resolveTranslationTarget,
-  TRANSLATION_LANGUAGES,
   type TranslationLanguage,
   translationLanguageLabel,
+  translationSourcesFor,
   translationTargetsFor,
 } from '../translation/languages';
 import type { PluginSettings } from './plugin-settings';
@@ -92,23 +93,29 @@ export function renderTranslationSettings(
       });
 
     const settings = dependencies.getSettings();
+    const directions = catalogTranslationDirections(state.catalog.models);
     const pair = resolveTranslationLanguages(
+      directions,
       settings.dictationLanguage,
       settings.translationSourceLanguage,
       settings.translationTargetLanguage,
     );
+    // Without a cataloged direction there is no pair to configure; the model row
+    // above already tells the user what is missing.
+    if (pair === null) return;
 
     new Setting(container)
       .setName(t('settings.translation.source.name'))
       .setDesc(t('settings.translation.source.desc'))
       .addDropdown((dropdown) => {
-        for (const language of TRANSLATION_LANGUAGES) {
+        for (const language of translationSourcesFor(directions)) {
           dropdown.addOption(language, translationLanguageLabel(language));
         }
         dropdown.setValue(pair.sourceLanguage);
         dropdown.onChange(async (value) => {
           if (!isTranslationLanguage(value)) return;
-          const targetLanguage = resolveTranslationTarget(value, pair.targetLanguage);
+          const targetLanguage = resolveTranslationTarget(directions, value, pair.targetLanguage);
+          if (targetLanguage === null) return;
           await dependencies.persistLanguages(value, targetLanguage);
           render();
         });
@@ -118,13 +125,13 @@ export function renderTranslationSettings(
       .setName(t('settings.translation.target.name'))
       .setDesc(t('settings.translation.target.desc'))
       .addDropdown((dropdown) => {
-        for (const language of translationTargetsFor(pair.sourceLanguage)) {
+        for (const language of translationTargetsFor(directions, pair.sourceLanguage)) {
           dropdown.addOption(language, translationLanguageLabel(language));
         }
         dropdown.setValue(pair.targetLanguage);
         dropdown.onChange(async (value) => {
           if (!isTranslationLanguage(value)) return;
-          if (!isSupportedTranslationPair(pair.sourceLanguage, value)) return;
+          if (!isSupportedTranslationPair(directions, pair.sourceLanguage, value)) return;
           await dependencies.persistLanguages(pair.sourceLanguage, value);
           render();
         });

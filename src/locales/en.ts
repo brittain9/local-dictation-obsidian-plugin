@@ -155,6 +155,8 @@ export const en = {
   'translation.notice.copyFailed': 'Could not copy the translation.',
   'translation.notice.tooLong': 'Translate up to {count} characters at a time.',
   'translation.notice.noText': 'There is no text to translate in this note.',
+  'translation.notice.noLanguagePairs':
+    'No local translation model is available for any language pair yet.',
   'common.reset': 'Reset',
   'settings.acceleration.active': 'Configured acceleration: {accelerator}',
   'settings.acceleration.pending': 'pending (sidecar not ready)',
@@ -167,6 +169,8 @@ export const en = {
   'settings.dictationLanguage.desc':
     'Choose the language you will speak. Manual selection gives the most predictable cleanup. Auto detect may start more slowly and chooses one language per utterance.',
   'settings.dictationLanguage.unsupported': '{language} (unsupported)',
+  'settings.dictationLanguage.noReadAloud': 'Read aloud does not cover {language} yet.',
+  'settings.dictationLanguage.noTranslation': 'Local translation does not cover {language} yet.',
   'settings.engine.named': '{engine} engine',
   'settings.groups.model': 'Models',
   'settings.groups.readAloud': 'Read aloud',
@@ -230,6 +234,7 @@ export const en = {
   'tts.notice.noText': 'There is no speakable text here.',
   'tts.notice.modelRequired': 'Install and select a read-aloud model first.',
   'tts.notice.voiceRequired': 'Select an installed voice first.',
+  'tts.notice.languageUnsupported': 'The selected read-aloud model cannot speak {language}.',
   'tts.notice.startFailed': 'Could not start reading.',
   'tts.notice.playbackFailed': 'Audio playback failed.',
   'tts.notice.sidecarExited': 'Reading stopped because the sidecar exited unexpectedly.',

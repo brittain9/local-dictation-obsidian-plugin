@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
   catalogModelSupportsLanguage,
   DICTATION_LANGUAGE_OPTIONS,
+  languageFeatureCoverage,
   languageSupportIncludes,
   supportedDictationLanguageOptions,
 } from '../src/language/dictation-language';
@@ -32,6 +33,28 @@ describe('dictation language eligibility', () => {
     expect(supportedDictationLanguageOptions({ kind: 'all' }, true)).toEqual(
       DICTATION_LANGUAGE_OPTIONS,
     );
+  });
+
+  it('reports the adjacent features a dictation language does not reach', () => {
+    const models = [
+      { languageTags: ['en', 'hr', 'sr'], task: 'stt' as const },
+      { languageTags: ['en', 'hr'], task: 'tts' as const },
+      {
+        languageTags: ['en', 'es'],
+        task: 'translation' as const,
+        translationPairs: [
+          { source: 'en', target: 'es' },
+          { source: 'es', target: 'en' },
+        ],
+      },
+    ];
+
+    expect(languageFeatureCoverage(models, 'es')).toEqual({ readAloud: false, translation: true });
+    // Croatian is speakable but has no released translation direction.
+    expect(languageFeatureCoverage(models, 'hr')).toEqual({ readAloud: true, translation: false });
+    // Serbian is transcription only, which is what Settings has to say out loud.
+    expect(languageFeatureCoverage(models, 'sr')).toEqual({ readAloud: false, translation: false });
+    expect(languageFeatureCoverage(models, 'auto')).toEqual({ readAloud: true, translation: true });
   });
 
   it('keeps exact model language tags separate from automatic detection', () => {

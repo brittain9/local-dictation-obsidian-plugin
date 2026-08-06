@@ -103,6 +103,7 @@ function createModal({
   runTranslation: ConstructorParameters<typeof TranslationModal>[1]['runTranslation'];
 }): TranslationModal {
   return new TranslationModal({} as never, {
+    directions: new Set(['en>es', 'es>en']),
     editor: editor as never,
     feedback: { show: vi.fn() },
     initialSourceLanguage: 'en',
