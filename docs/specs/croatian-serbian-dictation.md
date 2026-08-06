@@ -162,12 +162,42 @@ to close the gap.
 
 ## Serbian script
 
-FLEURS `sr_rs` is Cyrillic; Whisper's `sr` output script is not guaranteed and
-depends on the audio. Policy for this delivery: one `sr` option, model output
-passed through unmodified, no transliteration in either direction. Record the
-script the fixture actually produces in the quality report. If users ask for
-Latin output specifically, `sr-Latn` is a later, separate decision with its own
-evidence — not something to guess at now.
+Serbian is written in two alphabets in active everyday use — Cyrillic
+(ћирилица) and Latin (latinica). Cyrillic is the official script; Latin
+dominates online, in business, and in a lot of casual writing. Readers handle
+both, but writers usually have a firm personal preference, and receiving the
+wrong one is jarring. Croatian is Latin-only, so none of this applies to it.
+
+The awkward part for a dictation product is that Whisper emits *text*, so it
+picks a script for us. Its training data contains both, and its choice for `sr`
+is not guaranteed or necessarily stable across utterances. A user who writes
+their vault in Latin and gets Cyrillic transcripts has a product they cannot
+use.
+
+One property makes this tractable: **Serbian digraphia is a 1:1 lossless
+mapping.** Each Cyrillic letter has exactly one Latin counterpart, so
+transliteration is mechanical and reversible — unlike most script conversions
+(simplified/traditional Chinese, for instance), where it is lossy and
+context-dependent. Normalizing the output is therefore a safe option here, which
+is unusual and worth knowing before ruling it out.
+
+Two unknowns to resolve before deciding, in this order:
+
+1. **What does Whisper actually emit for `sr`?** The FLEURS `sr_rs` fixture is
+   Cyrillic, so it will tell us what the model does with Cyrillic-sourced read
+   speech, but not whether the choice is stable across speakers and topics.
+2. **What do Serbian users write in?** Asked on
+   [#359](https://github.com/brittain9/speech-kit-obsidian-plugin/issues/359).
+
+If Whisper turns out to be consistent and matches what people want, pass the
+output through unchanged and this stays a footnote. If it is inconsistent, or
+consistently the less-wanted script, the fix is two dictation options —
+`Српски (ћирилица)` and `Srpski (latinica)` — with transliteration to match the
+selection.
+
+Ship the first release with pass-through and no transliteration. Record the
+observed script in the quality report. Do not guess at a normalization policy
+before there is evidence for one.
 
 ## Acceptance
 
