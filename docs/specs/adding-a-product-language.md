@@ -30,54 +30,118 @@ can be answered in minutes instead of re-litigating scope every time. A tier is 
 *description* of the derived matrix, never a switch in code — nothing reads a
 tier at runtime.
 
-| Tier | Batch dictation | Live dictation | Read aloud | Translation | UI |
+| Tier | Batch dictation | Live dictation | Read aloud | UI catalog | Translation |
 | --- | --- | --- | --- | --- | --- |
-| **Full** | ✅ | ✅ | ✅ | ✅ to/from English | ✅ localized |
-| **Dictation** | ✅ | where the streaming model supports it | where the TTS model supports it | ❌ | English |
+| **Full** | ✅ | ✅ | ✅ | ✅ localized | when released |
+| **Dictation** | ✅ | if the model has it | if the model has it | English | when released |
 | **Deferred** | — | — | — | — | — |
 
-- **Full** is the current eight: `en`, `es`, `de`, `fr`, `pt`, `it`, `nl`, `ja`.
-  Promotion into this tier is expensive — it needs a translation direction in the
-  model pack, a TTS voice path, and a native-reviewed UI catalog. It is not the
-  default answer to a request.
-- **Dictation** is the default answer. It solves the request that people
-  actually file ("I want to dictate in my language") using models we already
-  ship, and it costs one fixture plus a handful of list entries.
-- **Deferred** is a real answer, recorded with its reason. A request we cannot
-  serve is data, not a failure — see [When to add a new
-  model](#when-to-add-a-new-model).
+**Full** means all three speech capabilities. That is the tier's definition, and
+it is what earns a UI catalog — see [The localization
+rule](#the-localization-rule). The current eight are Full: `en`, `es`, `de`,
+`fr`, `pt`, `it`, `nl`, `ja`.
 
-Live dictation and read aloud are deliberately *conditional* inside the
-Dictation tier rather than promoted to their own tiers. Whether Nemotron or
-Supertonic happens to cover a given language is a property of those artifacts,
-not a product decision worth a name.
+**Dictation** is the default answer to a request. It solves what people actually
+ask for ("let me dictate in my language") using models we already ship, and
+costs one fixture plus a handful of list entries. Live dictation and read aloud
+are *conditional* here rather than tiers of their own — whether Nemotron or
+Supertonic happens to cover a language is a property of those artifacts, not a
+product decision worth naming.
+
+**Deferred** is a real answer, recorded with its reason. A request we cannot
+serve is data, not a failure — see [When to add a new
+model](#when-to-add-a-new-model).
+
+Translation sits outside the tiers deliberately. It depends on Mozilla releasing
+both directions, which is independent of anything we control, so it is recorded
+per direction in the matrix and never used to define a tier.
+
+### The localization rule
+
+**A language earns a UI catalog when it has full speech coverage.** Batch, live,
+and read aloud — all three.
+
+The reasoning is maintenance, not gatekeeping. A locale catalog is a permanent
+cost: every new user-facing string needs a translation and a reviewer, forever.
+Paying that for a language where the product can only transcribe means the
+interface is fully localized around a feature set that mostly says "not
+available with your installed models." The localization would be advertising
+capability the product doesn't have.
+
+If we fully support a language, we localize it. If all we have is Whisper, the
+English interface is the honest presentation, and dictation still works
+perfectly well.
+
+This is a gate, not an obligation. Full speech coverage makes a catalog
+*eligible*; it does not produce a native reviewer. A Full-tier language without
+a catalog is a normal state — record it in the matrix and treat it as an open
+call for contributors rather than authoring one speculatively. An unreviewed
+machine-translated catalog is worse than the English fallback, because English
+fallback reads as English while bad Croatian reads as a broken product.
+
+## Tracking coverage
+
+"What do I get if I pick my language?" gets asked in three places, and all three
+need the same answer:
+
+| Where | Who is asking | Current state |
+| --- | --- | --- |
+| README | someone deciding whether to install | merged into one "eight languages" claim |
+| Settings | someone who already installed | nothing until a capability fails |
+| Issue replies | someone requesting a language | no canonical table to point at |
+
+Three hand-maintained copies of one table will drift, and a drifted capability
+claim is exactly the overclaiming this document exists to prevent. So:
+
+**The catalog is the source of truth.** `languageTags` across the models in
+`native/catalog.json`, plus the catalogs present in `src/locales/`, already
+encode the entire matrix. Everything else is derived.
+
+The intended shape, following the existing `scripts/*-report.mjs` pattern, is a
+`scripts/language-matrix.mjs` that reads the catalog and the locale directory,
+regenerates the table below and the README's language section, and fails
+`npm run check` when a committed table disagrees with the catalog. Until that
+exists, the table is hand-maintained and must be updated in the same PR that
+adds a language.
+
+The settings gap is the one worth closing for users rather than maintainers.
+Preflight (Step 2) prevents the *bad* outcome — no silent English fallback — but
+it is reactive: you discover Serbian has no read aloud by trying to use it.
+Showing coverage next to the selected language in settings turns "this is
+broken" into "transcription works, read aloud needs a model that speaks it." The
+data is already there; it is a presentation change, not new capability.
 
 ## Current support matrix
 
-Update this table in the same PR that adds a language. It is the living record;
-routine additions do not need their own spec document.
+Speech columns are the exact models: batch is Whisper Large V3 Turbo, live is
+Nemotron 3.5 ASR Streaming, read aloud is Supertonic 3. Translation is recorded
+per direction because Mozilla releases directions independently.
 
-| Language | Tag | Tier | Whisper LV3T | Nemotron live | Supertonic | Translation | UI |
-| --- | --- | --- | --- | --- | --- | --- | --- |
-| English | `en` | Full | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Español | `es` | Full | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Deutsch | `de` | Full | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Français | `fr` | Full | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Português | `pt` | Full | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Italiano | `it` | Full | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Nederlands | `nl` | Full | ✅ | ✅ | ✅ | ✅ | ✅ |
-| 日本語 | `ja` | Full | ✅ | ✅ | ✅ | ✅ | ✅ |
-
-Translation is recorded per direction because the upstream registry releases
-directions independently — see [croatian-serbian-dictation.md](croatian-serbian-dictation.md).
-The eight above have a `Release` model both ways.
-
-Pending:
-
-| Language | Tag | Tier | Whisper LV3T | Nemotron live | Supertonic | en→ | →en | UI |
+| Language | Tag | Tier | Batch | Live | Read aloud | UI | en→ | →en |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| Hrvatski | `hr` | Full | ✅ | ✅ (prompt 29) | ✅ | deferred | deferred | possible |
-| Српски | `sr` | Dictation | ✅ | ❌ | ❌ | deferred | deferred | possible |
+| English | `en` | Full | ✅ | ✅ | ✅ | ✅ | — | — |
+| Español | `es` | Full | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Deutsch | `de` | Full | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Français | `fr` | Full | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Português | `pt` | Full | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Italiano | `it` | Full | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Nederlands | `nl` | Full | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| 日本語 | `ja` | Full | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Hrvatski | `hr` | Full | 🔜 | 🔜 | 🔜 | 🔜 | ⏸ | ❌ |
+| Српски | `sr` | Dictation | 🔜 | ❌ | ❌ | ❌ by rule | ⏸ | ❌ |
+
+✅ shipped · 🔜 planned, [#359](https://github.com/brittain9/speech-kit-obsidian-plugin/issues/359) · ⏸ available upstream, deferred · ❌ no released model
+
+Notes on the two pending rows:
+
+- Croatian is Full tier and gets a UI catalog under [the localization
+  rule](#the-localization-rule), pending a native reviewer.
+- Serbian has no live or read-aloud model upstream — `sr` is absent from
+  Nemotron's prompt dictionary and Supertonic's language list entirely. It
+  therefore does not earn a catalog, even though Obsidian ships an `sr` locale
+  and one would be technically selectable.
+- Translation is deferred for both: only the `en→` directions are released. See
+  [croatian-serbian-dictation.md](croatian-serbian-dictation.md).
 
 Translation is deferred for both: only the `en→` directions are released
 upstream, and shipping a one-way language is not worth the pack-size and UI cost

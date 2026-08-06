@@ -11,13 +11,14 @@ Croatian (`hr`) and Serbian (`sr`) are separate product choices; neither is a
 proxy for the other, nor for Bosnian or Montenegrin. Their matrices are very
 different, and that difference is the whole reason the tier system exists.
 
-| | Batch (Whisper LV3T) | Live (Nemotron) | Read aloud (Supertonic) | en→ | →en | UI |
+| | Batch (Whisper LV3T) | Live (Nemotron) | Read aloud (Supertonic) | UI | en→ | →en |
 | --- | --- | --- | --- | --- | --- | --- |
-| **Hrvatski** `hr` | ✅ | ✅ prompt 29 | ✅ | ✅ Release | ❌ unreleased | possible |
-| **Српски** `sr` | ✅ | ❌ absent | ❌ absent | ✅ Release | ❌ unreleased | possible |
+| **Hrvatski** `hr` | ✅ | ✅ prompt 29 | ✅ | ✅ | deferred | ❌ unreleased |
+| **Српски** `sr` | ✅ | ❌ absent | ❌ absent | ❌ by rule | deferred | ❌ unreleased |
 
-**Croatian is a Full-tier language.** Every speech capability we ship covers it.
-**Serbian is Dictation tier** — batch transcription, and nothing else in speech.
+**Croatian is a Full-tier language** — every speech capability we ship covers
+it, so it also earns a UI catalog. **Serbian is Dictation tier**: batch
+transcription, nothing else in speech, English interface.
 
 Every cell was checked against the pinned artifact, not inferred:
 
@@ -105,8 +106,9 @@ Following the recipe in [adding-a-product-language.md](adding-a-product-language
   `supertonic_3_multilingual_2026_05.languageTags` gain `hr` only. `sr` must be
   rejected explicitly rather than falling through to the `na` branch in
   `preprocess_text`.
-- **2f, 2g** Deferred — see [Translation and UI](#translation-and-ui). Neither
-  blocks the speech work above.
+- **2f** No translation pairs — see [Translation and UI](#translation-and-ui).
+- **2g** `src/locales/hr.ts` plus its `catalogs` registration, gated on a native
+  reviewer and shipped separately. No `sr.ts`. Neither blocks the speech work.
 - **3** FLEURS fixtures for `hr_hr` and `sr_rs` at sentence 1577.
 - **4** README claims split into interface / translation / dictation counts.
 
@@ -141,11 +143,22 @@ Revisit when `hr-en` or `sr-en` reaches `Release` in the registry. The
 `isSupportedTranslationPair` fix is still worth doing on its own merits, since
 the product layer overstating the installed pack is a latent bug either way.
 
-**UI localization — open.** Obsidian ships both locales, so `src/locales/hr.ts` and
-`src/locales/sr.ts` are viable. The blocker is a native reviewer — an unreviewed
-machine-translated catalog is worse than the English fallback, because English
-fallback is obviously English while bad Croatian looks like a broken product.
-Worth opening as a call for contributors rather than authoring speculatively.
+**UI localization — Croatian yes, Serbian no.** This follows [the localization
+rule](adding-a-product-language.md#the-localization-rule): full speech coverage
+earns a catalog.
+
+Croatian has batch, live, and read aloud, so `src/locales/hr.ts` is in scope.
+Serbian has only transcription. Obsidian ships a complete `sr` app locale and a
+catalog would be technically selectable, so this is a deliberate product call
+rather than a platform limit: localizing the whole interface around a feature
+set that mostly reports "not available with your installed models" advertises
+capability the product does not have. English is the honest presentation, and
+Serbian dictation still works.
+
+The remaining Croatian blocker is a native reviewer. Ship the speech work
+without waiting — a Full-tier language with no catalog is a normal state, and
+the catalog can land whenever a reviewer appears. Do not machine-translate one
+to close the gap.
 
 ## Serbian script
 
@@ -167,6 +180,8 @@ evidence — not something to guess at now.
 - [ ] Supertonic reads Croatian aloud and rejects `sr` explicitly.
 - [ ] Translation UI offers only directions the installed pack actually has.
 - [ ] The eight existing languages are unchanged.
+- [ ] Settings shows what the selected language actually covers, so Serbian
+      users learn the shape of their support without hitting a failure.
 - [ ] README states three separate capability counts, not one.
 - [ ] `npm run check` green; `multilingual-quality` dispatched and linked;
       native review recorded in `docs/quality/`.
@@ -177,6 +192,7 @@ evidence — not something to guess at now.
 - Any new ASR, TTS, or translation runtime.
 - Serbian live dictation or read aloud — no shipped model serves them, and one
   request is not a business case for finding one.
+- A Serbian UI catalog, now or later, unless Serbian gains those capabilities.
 - Bosnian or Montenegrin, despite `hbs` making them nearly free on the
   translation side. Nobody asked, and free is not a reason.
 - A blanket "all Whisper languages" setting. The point of the tier system is
