@@ -190,10 +190,29 @@ Two unknowns to resolve before deciding, in this order:
    [#359](https://github.com/brittain9/speech-kit-obsidian-plugin/issues/359).
 
 If Whisper turns out to be consistent and matches what people want, pass the
-output through unchanged and this stays a footnote. If it is inconsistent, or
-consistently the less-wanted script, the fix is two dictation options —
-`Српски (ћирилица)` and `Srpski (latinica)` — with transliteration to match the
-selection.
+output through unchanged and this stays a footnote.
+
+If it is inconsistent, or consistently the less-wanted script, the fix is **two
+rows in the existing language dropdown** — `Српски (ћирилица)` and
+`Srpski (latinica)` — persisting `sr-Cyrl` and `sr-Latn`. Both are valid BCP 47,
+so the existing tag machinery carries them without change.
+
+Deliberately *not* a conditional "this language has multiple alphabets, pick
+one" sub-control. That would add persisted state, a setting most users never
+see, and a "script" concept the rest of the product does not have. Two dropdown
+rows introduce nothing: the user picks their language the way they already do.
+
+The complexity is a layer down, and that is where review should focus. Whisper
+has no script parameter, so both options send `sr` to the model and the
+selection becomes an **output transform** applied after transcription. This
+would be the first dictation language option that means "model language plus
+post-processing" rather than just "model language" — a small precedent, but a
+real one. It is only safe because the mapping is lossless; do not generalize the
+pattern to script pairs where it is not.
+
+Note this is also the first case where the persisted dictation tag is not the
+tag sent to the engine. Keep the mapping explicit at the seam rather than
+letting `sr-Cyrl` leak into an adapter that only knows `sr`.
 
 Ship the first release with pass-through and no transliteration. Record the
 observed script in the quality report. Do not guess at a normalization policy
