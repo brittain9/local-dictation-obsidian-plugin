@@ -76,8 +76,12 @@ Pending:
 
 | Language | Tag | Tier | Whisper LV3T | Nemotron live | Supertonic | en→ | →en | UI |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| Hrvatski | `hr` | Full | ✅ | ✅ (prompt 29) | ✅ | ✅ | ❌ | possible |
-| Српски | `sr` | Dictation | ✅ | ❌ | ❌ | ✅ | ❌ | possible |
+| Hrvatski | `hr` | Full | ✅ | ✅ (prompt 29) | ✅ | deferred | deferred | possible |
+| Српски | `sr` | Dictation | ✅ | ❌ | ❌ | deferred | deferred | possible |
+
+Translation is deferred for both: only the `en→` directions are released
+upstream, and shipping a one-way language is not worth the pack-size and UI cost
+while every existing translation language works both ways.
 
 "Possible" UI means Obsidian ships the app locale, so a plugin catalog would be
 selectable — the remaining cost is authoring it and finding a native reviewer.

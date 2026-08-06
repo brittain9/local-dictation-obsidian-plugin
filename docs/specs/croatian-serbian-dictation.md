@@ -105,8 +105,8 @@ Following the recipe in [adding-a-product-language.md](adding-a-product-language
   `supertonic_3_multilingual_2026_05.languageTags` gain `hr` only. `sr` must be
   rejected explicitly rather than falling through to the `na` branch in
   `preprocess_text`.
-- **2f, 2g** Deferred — see [Open decisions](#open-decisions). Neither blocks
-  the speech work above.
+- **2f, 2g** Deferred — see [Translation and UI](#translation-and-ui). Neither
+  blocks the speech work above.
 - **3** FLEURS fixtures for `hr_hr` and `sr_rs` at sentence 1577.
 - **4** README claims split into interface / translation / dictation counts.
 
@@ -116,28 +116,32 @@ dictation or read aloud must explain the gap *before* capture or playback
 starts. Silent English fallback is the failure mode this whole design exists to
 prevent.
 
-## Open decisions
+## Translation and UI
 
-Both are genuine product calls, and neither blocks shipping the speech
-capabilities. They are what stands between Croatian and a complete Full-tier
-claim.
+Neither blocks the speech work above. Together they are what stands between
+Croatian and a complete Full-tier claim.
 
-**Translation.** Only the `en→` directions are released. Three options:
+**Translation — decided: skip.** Only the `en→` directions are released, and
+Croatian and Serbian translation is deferred until Mozilla releases the reverse.
 
-1. **Skip both.** Keeps the current invariant that every language translates
-   both ways, and keeps the pack size flat. Costs a capability Croatian could
-   otherwise have.
-2. **Ship one-way** `en→hr` (and possibly `en→sr`). Requires fixing
-   `isSupportedTranslationPair` (`src/translation/languages.ts:44`) to consult
-   installed directions instead of approving any English-anchored pair, plus UI
-   that explains why the reverse is missing. Adds ~32 MB per direction to a pack
-   every user downloads.
-3. **Ship the `tiny` reverse.** Gets bidirectional coverage, but `tiny` is a
-   different architecture from everything currently shipped and carries no
-   release status. It would need its own quality evaluation against
-   `docs/quality/translation-model-comparison.md` before it could be promised.
+The reasoning is worth keeping. Shipping one-way would have meant ~32 MB per
+direction added to a pack every user downloads regardless of the languages they
+translate, a UI that has to explain a missing reverse, and a fix to
+`isSupportedTranslationPair` (`src/translation/languages.ts:44`) so the product
+layer stops approving English-anchored pairs the installed pack cannot serve.
+The alternative — the unreleased `tiny` builds — is a different architecture
+from anything currently shipped and would need its own evaluation against
+`docs/quality/translation-model-comparison.md` before it could be promised.
 
-**UI localization.** Obsidian ships both locales, so `src/locales/hr.ts` and
+Neither cost is worth paying to half-deliver a capability. Every translation
+language works both ways today; that invariant is worth more than a partial
+Croatian entry, and Croatian is already Full-tier on speech without it.
+
+Revisit when `hr-en` or `sr-en` reaches `Release` in the registry. The
+`isSupportedTranslationPair` fix is still worth doing on its own merits, since
+the product layer overstating the installed pack is a latent bug either way.
+
+**UI localization — open.** Obsidian ships both locales, so `src/locales/hr.ts` and
 `src/locales/sr.ts` are viable. The blocker is a native reviewer — an unreviewed
 machine-translated catalog is worse than the English fallback, because English
 fallback is obviously English while bad Croatian looks like a broken product.
