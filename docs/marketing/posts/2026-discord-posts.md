@@ -1,4 +1,4 @@
-# Discord posts: May-July 2026
+# Discord posts: May-August 2026
 
 ## May 20, 2026 at 7:13 PM
 
@@ -321,3 +321,29 @@ Why Speech Kit?
 If you already use Local Dictation, your settings, hotkeys, and installed models carry over automatically.
 
 ⬇️ [Install Speech Kit](https://obsidian.md/plugins?id=local-dictation) • 📝 [Release notes](https://github.com/brittain9/speech-kit-obsidian-plugin/releases/latest) • 💻 [GitHub](https://github.com/brittain9/speech-kit-obsidian-plugin) • 💜 [Support the project](https://buymeacoffee.com/alexbrittaq)
+
+## August 5, 2026
+
+**Reactions:** Not yet recorded.
+
+🎙️ **Speech Kit 2026.8.1: turn your voice into a clipboard**
+
+Thank you for 1,000 downloads. This release adds an OpenAI-compatible LLM provider requested by a community member, along with a new voice clipboard workflow.
+
+For anyone new, Speech Kit (formerly Local Dictation) is a free speech and language toolkit for Obsidian. Dictate into notes, transcribe meetings, translate text, and listen to notes using models that run on your own device.
+
+📋 **Speak in Obsidian, paste anywhere**
+
+The new voice clipboard automatically copies each completed phrase while Speech Kit keeps listening. You can dictate in Obsidian, then paste directly into an email, chat, document, form, or any other app without stopping to select and copy text.
+
+If you use optional writing cleanup, your words are copied immediately and the clipboard updates with the polished version when it is ready. Just speak, let Speech Kit clean it up, and paste the finished result wherever you need it.
+
+🧠 **Connect your own language model**
+
+Speech Kit can now connect to OpenAI-compatible providers such as LM Studio. This means you can use a local or self-hosted language model to clean up rough dictation while keeping control over the provider and model you use.
+
+🔒 Speech recognition still runs locally on your computer. Writing cleanup is optional and only uses the provider you configure.
+
+Try it out and let me know what you would like to see next.
+
+[Install Speech Kit](https://obsidian.md/plugins?id=local-dictation) • [Release notes](https://github.com/brittain9/speech-kit-obsidian-plugin/releases/tag/2026.8.1) • [GitHub](https://github.com/brittain9/speech-kit-obsidian-plugin) • [Support the project](https://buymeacoffee.com/alexbrittaq)
