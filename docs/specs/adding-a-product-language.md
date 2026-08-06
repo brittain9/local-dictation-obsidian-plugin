@@ -68,12 +68,19 @@ routine additions do not need their own spec document.
 | Nederlands | `nl` | Full | ✅ | ✅ | ✅ | ✅ | ✅ |
 | 日本語 | `ja` | Full | ✅ | ✅ | ✅ | ✅ | ✅ |
 
-Pending, from [croatian-serbian-dictation.md](croatian-serbian-dictation.md):
+Translation is recorded per direction because the upstream registry releases
+directions independently — see [croatian-serbian-dictation.md](croatian-serbian-dictation.md).
+The eight above have a `Release` model both ways.
 
-| Language | Tag | Tier | Whisper LV3T | Nemotron live | Supertonic | Translation | UI |
-| --- | --- | --- | --- | --- | --- | --- | --- |
-| Hrvatski | `hr` | Dictation | ✅ | ✅ (prompt 29) | verify | ❌ | ❌ |
-| Српски | `sr` | Dictation | ✅ | ❌ (absent upstream) | ❌ | ❌ | ❌ |
+Pending:
+
+| Language | Tag | Tier | Whisper LV3T | Nemotron live | Supertonic | en→ | →en | UI |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| Hrvatski | `hr` | Full | ✅ | ✅ (prompt 29) | ✅ | ✅ | ❌ | possible |
+| Српски | `sr` | Dictation | ✅ | ❌ | ❌ | ✅ | ❌ | possible |
+
+"Possible" UI means Obsidian ships the app locale, so a plugin catalog would be
+selectable — the remaining cost is authoring it and finding a native reviewer.
 
 ## The recipe
 
@@ -108,7 +115,7 @@ artifact. These are the four checks, with the authoritative source for each:
 | Whisper Large V3 Turbo | [whisper.cpp language map](https://github.com/ggml-org/whisper.cpp/blob/master/src/whisper.cpp#L2707-L2753) | tag present in the map, artifact is not `.en` |
 | Nemotron 3.5 ASR Streaming | `prompt_dictionary` in the pinned [`processor_config.json`](https://huggingface.co/nvidia/nemotron-3.5-asr-streaming-0.6b/blob/f3d333391852ba876df169dcc9ba902d25b6ab0b/processor_config.json) | tag present; record its integer index |
 | Supertonic 3 | [model card supported languages](https://huggingface.co/Supertone/supertonic-3#supported-languages) | an explicit language path, not the `na` fallback |
-| Firefox Translations | [Mozilla model registry](https://storage.googleapis.com/moz-fx-translations-data--303e-prod-translations-data/db/models.json) | a *released* direction, both ways, to/from English |
+| Firefox Translations | [Mozilla model registry](https://storage.googleapis.com/moz-fx-translations-data--303e-prod-translations-data/db/models.json) | `releaseStatus: "Release"` on the direction — **check each direction separately** |
 
 Cohere Transcribe, Moonshine, and Pocket TTS are English-only by artifact. They
 are not part of this check and should not be touched by a language PR.
@@ -154,17 +161,34 @@ Add the tag to `languageTags` on `nemotron_asr_0_6b_int8_streaming_560ms`.
 `native/src/adapters/supertonic.rs` and to `languageTags` on
 `supertonic_3_multilingual_2026_05`.
 
-**2f. Translation** (rarely) — add both directions to `translationPairs` on
-`firefox_translations_release_2026_07`. Note the cost: the translation pack is a
-single download, so every added pair grows it for every user regardless of the
-languages they use. This is a Full-tier promotion, not part of a dictation
-request.
+**2f. Translation** (rarely) — add the released directions to
+`translationPairs` on `firefox_translations_release_2026_07`, pinning each
+model, vocab, and lexical-shortlist artifact by SHA-256 as the existing entries
+do.
+
+Two things to get right. First, **directions release independently** — Mozilla
+ships `en→hr` at `Release` while `hr→en` exists only as an unreleased `tiny`
+build. The catalog's `translationPairs` is directional and handles this
+correctly, but `isSupportedTranslationPair` in `src/translation/languages.ts:44`
+approves any English-anchored pair from a product-level list, so a one-way
+language would be offered in the UI and then fail the model-level check at line
+85. That is the same class of bug as the shared-tag constant: a product list
+overstating a model. Fix the product layer to consult installed directions.
+
+Second, **the pack is one download**, so every added direction grows it for
+every user regardless of the languages they translate.
 
 **2g. UI locale** (separate track) — a new `src/locales/*.ts` catalog needs a
-native reviewer and passes the existing parity checks. It is independent of
-dictation support in both directions: a UI catalog must never widen model
-eligibility, and dictation support does not imply a catalog is owed. Do not
-bundle it into a dictation PR.
+native reviewer and passes the existing parity checks. Check that Obsidian ships
+the app locale first ([obsidian-translations](https://github.com/obsidianmd/obsidian-translations#existing-languages)),
+since the plugin locale follows the app language — without it the catalog can
+never be selected.
+
+Localization is independent of dictation in both directions: a UI catalog must
+never widen model eligibility, and dictation support does not imply a catalog is
+owed. Partial catalogs fall back to English per key and are safe to ship, but
+"localized UI" is only claimable for a reviewed complete catalog. Do not bundle
+this into a dictation PR.
 
 The invariant that makes all of this safe: **no shared list may be the reason a
 model appears eligible.** If adding one tag in one place changes what two

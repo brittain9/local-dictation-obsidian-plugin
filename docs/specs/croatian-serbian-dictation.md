@@ -7,29 +7,51 @@ carries the one-time refactor that makes later requests cheap.
 
 ## Decision
 
-Croatian (`hr`) and Serbian (`sr`) ship at the **Dictation** tier. They are
-separate product choices; neither is a proxy for the other, nor for Bosnian or
-Montenegrin.
+Croatian (`hr`) and Serbian (`sr`) are separate product choices; neither is a
+proxy for the other, nor for Bosnian or Montenegrin. Their matrices are very
+different, and that difference is the whole reason the tier system exists.
 
-| | Batch (Whisper LV3T) | Live (Nemotron) | Read aloud (Supertonic) | Translation | UI |
-| --- | --- | --- | --- | --- | --- |
-| **Hrvatski** `hr` | ✅ | ✅ prompt index 29 | verify, then ✅ or ❌ | ❌ | ❌ |
-| **Српски** `sr` | ✅ | ❌ | ❌ | ❌ | ❌ |
+| | Batch (Whisper LV3T) | Live (Nemotron) | Read aloud (Supertonic) | en→ | →en | UI |
+| --- | --- | --- | --- | --- | --- | --- |
+| **Hrvatski** `hr` | ✅ | ✅ prompt 29 | ✅ | ✅ Release | ❌ unreleased | possible |
+| **Српски** `sr` | ✅ | ❌ absent | ❌ absent | ✅ Release | ❌ unreleased | possible |
 
-Verified during planning, not inferred:
+**Croatian is a Full-tier language.** Every speech capability we ship covers it.
+**Serbian is Dictation tier** — batch transcription, and nothing else in speech.
 
-- Nemotron's pinned `processor_config.json` (`f3d3333`) `prompt_dictionary`
-  contains `hr` and `hr-HR` at index **29**. It contains **no** `sr`, `sr-RS`,
-  or `bs` — Serbian live dictation is not available and must be rejected, not
-  approximated. (It does carry `sl`, `sk`, `bg`, and other Slavic tags, which is
-  why "Nemotron supports Slavic languages" is not a usable claim.)
-- Whisper's language map carries both `hr` and `sr` on the multilingual
+Every cell was checked against the pinned artifact, not inferred:
+
+- **Nemotron** — the pinned `processor_config.json` (`f3d3333`)
+  `prompt_dictionary` has `hr` and `hr-HR` at index **29**, and no `sr`,
+  `sr-RS`, or `bs` at all. It *does* carry `sl`, `sk`, and `bg`, which is why
+  "Nemotron supports Slavic languages" is not a usable claim.
+- **Whisper** — the language map carries both `hr` and `sr` on the multilingual
   artifacts. `.en` artifacts are unaffected.
-- Supertonic and Firefox Translations still need their Step 1 checks; the
-  catalog entries currently list exactly the eight Full-tier tags.
+- **Supertonic 3** — the model card lists 31 languages including `hr`. `sr` is
+  absent, as are `bs` and `sr-Latn`; the adapter must reject Serbian rather than
+  fall through to its `na` branch.
+- **Firefox Translations** — `en-hr` and `en-sr` both have `releaseStatus:
+  "Release"` (`base-memory`, ~31.6 MB each). `hr-en` and `sr-en` exist **only**
+  as `tiny` builds with no release status, below the bar the catalog documents
+  ("the current Firefox release model for each of the 14 directions").
+- **Obsidian locales** — `hr` is listed work-in-progress, `sr` complete. Both
+  are selectable app languages, so a plugin catalog for either would work; the
+  cost is authoring it and finding a native reviewer, not platform support.
 
-Serbian therefore gets batch dictation and nothing else. That is the honest
-answer to the issue, which asked for Whisper.
+### The Serbo-Croatian translation model
+
+The `en-hr`, `en-sr`, and `en-bs` Release models are all exports of the same
+`hbs-topk10` training run — `hbs` being the ISO 639-3 code for the
+Serbo-Croatian macrolanguage. Mozilla trained one model and published it under
+three tags.
+
+This is worth knowing before promising anything: our stated policy is that we do
+not serve one language from another's model, and here the upstream vendor has
+effectively done that for us. Adding both `en→hr` and `en→sr` means shipping the
+same weights twice under two names, and it is unclear without testing whether
+the `en-sr` export produces Cyrillic, Latin, or whatever the input suggests.
+Ship at most one direction from this family until someone has looked at real
+output.
 
 ## The refactor this unblocks
 
@@ -79,10 +101,12 @@ Following the recipe in [adding-a-product-language.md](adding-a-product-language
 - **2d** Nemotron gains one `LanguagePrompt { product_tag: "hr", metadata_key:
   "hr-HR", index: 29 }`; `nemotron_asr_0_6b_int8_streaming_560ms.languageTags`
   gains `hr` only.
-- **2e** Supertonic gains `hr` only if Step 1 confirms a real voice path. It
-  must reject `sr` rather than fall through to the `na` branch in
+- **2e** Supertonic's `SUPPORTED_LANGUAGES` and
+  `supertonic_3_multilingual_2026_05.languageTags` gain `hr` only. `sr` must be
+  rejected explicitly rather than falling through to the `na` branch in
   `preprocess_text`.
-- **2f, 2g** Not in scope. No translation pairs, no UI catalogs.
+- **2f, 2g** Deferred — see [Open decisions](#open-decisions). Neither blocks
+  the speech work above.
 - **3** FLEURS fixtures for `hr_hr` and `sr_rs` at sentence 1577.
 - **4** README claims split into interface / translation / dictation counts.
 
@@ -91,6 +115,33 @@ picker must show Whisper as the only eligible engine, and choosing live
 dictation or read aloud must explain the gap *before* capture or playback
 starts. Silent English fallback is the failure mode this whole design exists to
 prevent.
+
+## Open decisions
+
+Both are genuine product calls, and neither blocks shipping the speech
+capabilities. They are what stands between Croatian and a complete Full-tier
+claim.
+
+**Translation.** Only the `en→` directions are released. Three options:
+
+1. **Skip both.** Keeps the current invariant that every language translates
+   both ways, and keeps the pack size flat. Costs a capability Croatian could
+   otherwise have.
+2. **Ship one-way** `en→hr` (and possibly `en→sr`). Requires fixing
+   `isSupportedTranslationPair` (`src/translation/languages.ts:44`) to consult
+   installed directions instead of approving any English-anchored pair, plus UI
+   that explains why the reverse is missing. Adds ~32 MB per direction to a pack
+   every user downloads.
+3. **Ship the `tiny` reverse.** Gets bidirectional coverage, but `tiny` is a
+   different architecture from everything currently shipped and carries no
+   release status. It would need its own quality evaluation against
+   `docs/quality/translation-model-comparison.md` before it could be promised.
+
+**UI localization.** Obsidian ships both locales, so `src/locales/hr.ts` and
+`src/locales/sr.ts` are viable. The blocker is a native reviewer — an unreviewed
+machine-translated catalog is worse than the English fallback, because English
+fallback is obviously English while bad Croatian looks like a broken product.
+Worth opening as a call for contributors rather than authoring speculatively.
 
 ## Serbian script
 
@@ -109,8 +160,8 @@ evidence — not something to guess at now.
 - [ ] `hr` and `sr` persist as distinct choices with endonym labels.
 - [ ] Whisper transcribes both, with fixtures and native review.
 - [ ] Nemotron accepts `hr` at index 29 and rejects `sr` before audio capture.
-- [ ] Supertonic accepts `hr` only if verified, and rejects `sr` explicitly.
-- [ ] Translation UI never offers an `hr` or `sr` pair.
+- [ ] Supertonic reads Croatian aloud and rejects `sr` explicitly.
+- [ ] Translation UI offers only directions the installed pack actually has.
 - [ ] The eight existing languages are unchanged.
 - [ ] README states three separate capability counts, not one.
 - [ ] `npm run check` green; `multilingual-quality` dispatched and linked;
@@ -122,7 +173,7 @@ evidence — not something to guess at now.
 - Any new ASR, TTS, or translation runtime.
 - Serbian live dictation or read aloud — no shipped model serves them, and one
   request is not a business case for finding one.
-- Croatian or Serbian translation directions or UI catalogs.
-- Bosnian, Montenegrin, or any language nobody asked for.
+- Bosnian or Montenegrin, despite `hbs` making them nearly free on the
+  translation side. Nobody asked, and free is not a reason.
 - A blanket "all Whisper languages" setting. The point of the tier system is
   that each language carries verified evidence.
