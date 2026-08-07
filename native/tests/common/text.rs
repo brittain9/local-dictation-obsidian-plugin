@@ -133,32 +133,10 @@ pub fn serbian_cyrillic_share(text: &str) -> f64 {
     let mut latin = 0_usize;
 
     for character in text.chars() {
-        if matches!(
-            character,
-            'А'..='И'
-                | 'Ј'
-                | 'К'..='Ш'
-                | 'а'..='и'
-                | 'ј'
-                | 'к'..='ш'
-                | 'Ђ'
-                | 'Љ'
-                | 'Њ'
-                | 'Ћ'
-                | 'Џ'
-                | 'ђ'
-                | 'љ'
-                | 'њ'
-                | 'ћ'
-                | 'џ'
-        ) {
-            cyrillic += 1;
-        } else if character.is_ascii_alphabetic()
-            || matches!(
-                character,
-                'Č' | 'Ć' | 'Đ' | 'Š' | 'Ž' | 'č' | 'ć' | 'đ' | 'š' | 'ž'
-            )
+        if "АБВГДЂЕЖЗИЈКЛЉМНЊОПРСТЋУФХЦЧЏШабвгдђежзијклљмнњопрстћуфхцчџш".contains(character)
         {
+            cyrillic += 1;
+        } else if character.is_ascii_alphabetic() || "ČĆĐŠŽčćđšž".contains(character) {
             latin += 1;
         }
     }

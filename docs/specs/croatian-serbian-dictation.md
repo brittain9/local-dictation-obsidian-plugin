@@ -139,9 +139,9 @@ Neither cost is worth paying to half-deliver a capability. Every translation
 language works both ways today; that invariant is worth more than a partial
 Croatian entry, and Croatian is already Full-tier on speech without it.
 
-Revisit when `hr-en` or `sr-en` reaches `Release` in the registry. The
-`isSupportedTranslationPair` fix is still worth doing on its own merits, since
-the product layer overstating the installed pack is a latent bug either way.
+Revisit when `hr-en` or `sr-en` reaches `Release` in the registry. Catalog-driven
+translation-direction validation is useful, but it is a separate behavior
+change and stays outside this language PR.
 
 **UI localization — Croatian yes, Serbian no.** This follows [the localization
 rule](adding-a-product-language.md#the-localization-rule): full speech coverage
@@ -195,9 +195,7 @@ when its prompt would need to be selected.
 - [x] Supertonic reads Croatian aloud and rejects `sr` explicitly — read aloud
       refuses a language the selected voice model does not declare rather than
       falling through to the language-neutral `na` branch.
-- [x] Translation UI offers only directions the installed pack actually has,
-      derived from catalog `translationPairs` rather than an English-anchored
-      rule. Swap is disabled when the reverse direction is unreleased.
+- [x] Translation UI remains unchanged and offers neither Croatian nor Serbian.
 - [x] The eight existing languages are unchanged.
 - [x] Settings shows what the selected language actually covers, so Serbian
       users learn the shape of their support without hitting a failure.
@@ -207,7 +205,7 @@ when its prompt would need to be selected.
       `biome check src test scripts` is clean.
 - [ ] `multilingual-quality` dispatched and linked; native review recorded in
       `docs/quality/`. Needs the branch pushed first.
-- [ ] Support matrix in the playbook updated.
+- [x] Support matrix in the playbook updated.
 
 ## Non-goals
 

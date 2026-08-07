@@ -37,75 +37,28 @@ export function translationLanguageLabel(language: TranslationLanguage): string 
   return LANGUAGE_LABELS[language];
 }
 
-/// The directed pairs the catalog ships a model for, keyed `source>target`.
-///
-/// Mozilla publishes the two halves of a pair independently, so availability is
-/// per direction and cannot be inferred from a language list. Deriving the set
-/// from `translationPairs` means the UI can only offer a direction some model
-/// actually serves.
-export type TranslationDirections = ReadonlySet<string>;
-
-function directionKey(
-  sourceLanguage: TranslationLanguage,
-  targetLanguage: TranslationLanguage,
-): string {
-  return `${sourceLanguage}>${targetLanguage}`;
-}
-
-export function catalogTranslationDirections(
-  models: readonly Pick<CatalogModelRecord, 'task' | 'translationPairs'>[],
-): TranslationDirections {
-  const directions = new Set<string>();
-  for (const model of models) {
-    if (model.task !== 'translation') continue;
-    for (const pair of model.translationPairs ?? []) {
-      if (!isTranslationLanguage(pair.source) || !isTranslationLanguage(pair.target)) continue;
-      directions.add(directionKey(pair.source, pair.target));
-    }
-  }
-  return directions;
-}
-
 export function isSupportedTranslationPair(
-  directions: TranslationDirections,
   sourceLanguage: TranslationLanguage,
   targetLanguage: TranslationLanguage,
 ): boolean {
-  return (
-    sourceLanguage !== targetLanguage &&
-    directions.has(directionKey(sourceLanguage, targetLanguage))
-  );
+  return sourceLanguage !== targetLanguage && (sourceLanguage === 'en' || targetLanguage === 'en');
 }
 
-export function translationTargetsFor(
-  directions: TranslationDirections,
-  sourceLanguage: TranslationLanguage,
-): TranslationLanguage[] {
+export function translationTargetsFor(sourceLanguage: TranslationLanguage): TranslationLanguage[] {
   return TRANSLATION_LANGUAGES.filter((language) =>
-    isSupportedTranslationPair(directions, sourceLanguage, language),
-  );
-}
-
-export function translationSourcesFor(directions: TranslationDirections): TranslationLanguage[] {
-  return TRANSLATION_LANGUAGES.filter(
-    (language) => translationTargetsFor(directions, language).length > 0,
+    isSupportedTranslationPair(sourceLanguage, language),
   );
 }
 
 export function resolveTranslationTarget(
-  directions: TranslationDirections,
   sourceLanguage: TranslationLanguage,
   preferredTarget: TranslationLanguage | null,
-): TranslationLanguage | null {
-  if (
-    preferredTarget !== null &&
-    isSupportedTranslationPair(directions, sourceLanguage, preferredTarget)
-  ) {
-    return preferredTarget;
-  }
-  // `TRANSLATION_LANGUAGES` leads with English, so a non-English source defaults
-  // back to English and English defaults to the first other language available.
-  return translationTargetsFor(directions, sourceLanguage)[0] ?? null;
+): TranslationLanguage {
+  return preferredTarget !== null && isSupportedTranslationPair(sourceLanguage, preferredTarget)
+    ? preferredTarget
+    : sourceLanguage === 'en'
+      ? 'es'
+      : 'en';
 }
 
 export interface InstalledTranslationModel {
@@ -143,26 +96,23 @@ export function findInstalledTranslationModel(
   return installedModel === undefined ? null : { catalogModel, installedModel };
 }
 
-/// Returns null when no cataloged model serves any direction, which is the only
-/// honest answer: there is no pair to preselect and nothing to offer.
+export function defaultTranslationLanguages(dictationLanguage: string): {
+  sourceLanguage: TranslationLanguage;
+  targetLanguage: TranslationLanguage;
+} {
+  const sourceLanguage = isTranslationLanguage(dictationLanguage) ? dictationLanguage : 'en';
+  return sourceLanguage === 'en'
+    ? { sourceLanguage, targetLanguage: 'es' }
+    : { sourceLanguage, targetLanguage: 'en' };
+}
+
 export function resolveTranslationLanguages(
-  directions: TranslationDirections,
   dictationLanguage: string,
   preferredSource: TranslationLanguage | null,
   preferredTarget: TranslationLanguage | null,
-): TranslationLanguagePair | null {
-  const sources = translationSourcesFor(directions);
-  const [firstSource] = sources;
-  if (firstSource === undefined) return null;
-
-  const preferred =
-    preferredSource ?? (isTranslationLanguage(dictationLanguage) ? dictationLanguage : null);
-  const sourceLanguage =
-    preferred !== null && sources.includes(preferred)
-      ? preferred
-      : sources.includes('en')
-        ? 'en'
-        : firstSource;
-  const targetLanguage = resolveTranslationTarget(directions, sourceLanguage, preferredTarget);
-  return targetLanguage === null ? null : { sourceLanguage, targetLanguage };
+): TranslationLanguagePair {
+  const defaults = defaultTranslationLanguages(dictationLanguage);
+  const sourceLanguage = preferredSource ?? defaults.sourceLanguage;
+  const targetLanguage = resolveTranslationTarget(sourceLanguage, preferredTarget);
+  return { sourceLanguage, targetLanguage };
 }

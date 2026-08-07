@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::path::Path;
 use std::sync::LazyLock;
 
@@ -31,11 +32,15 @@ const MULTILINGUAL_LANGUAGE_TAGS: &[&str] =
 const SERBIAN_CYRILLIC_PROMPT: &str =
     "Ово је транскрипт на српском језику, написан српском ћирилицом.";
 
-fn initial_prompt_for_language<'a>(language: &str, context: Option<&'a str>) -> Option<&'a str> {
-    if language == "sr" {
-        Some(SERBIAN_CYRILLIC_PROMPT)
-    } else {
-        context
+fn initial_prompt_for_language<'a>(
+    language: &str,
+    context: Option<&'a str>,
+) -> Option<Cow<'a, str>> {
+    match (language, context) {
+        ("sr", Some(context)) => Some(Cow::Owned(format!("{SERBIAN_CYRILLIC_PROMPT} {context}"))),
+        ("sr", None) => Some(Cow::Borrowed(SERBIAN_CYRILLIC_PROMPT)),
+        (_, Some(context)) => Some(Cow::Borrowed(context)),
+        (_, None) => None,
     }
 }
 
@@ -160,13 +165,14 @@ impl LoadedModel for LoadedWhisperModel {
         params.set_print_timestamps(false);
         params.set_token_timestamps(request.detailed_timestamps_enabled);
 
-        if let Some(prompt) = initial_prompt_for_language(
+        let initial_prompt = initial_prompt_for_language(
             &request.language,
             request
                 .context
                 .as_ref()
                 .map(|context| context.text.as_str()),
-        ) {
+        );
+        if let Some(prompt) = initial_prompt.as_deref() {
             params.set_initial_prompt(prompt);
         }
 
@@ -425,14 +431,15 @@ mod tests {
 
     #[test]
     fn explicit_serbian_requests_cyrillic_output() {
+        let expected = format!("{SERBIAN_CYRILLIC_PROMPT} Obsidian OpenAI");
         assert_eq!(
-            initial_prompt_for_language("sr", Some("Obsidian OpenAI")),
-            Some(SERBIAN_CYRILLIC_PROMPT),
+            initial_prompt_for_language("sr", Some("Obsidian OpenAI")).as_deref(),
+            Some(expected.as_str()),
         );
         assert_eq!(
-            initial_prompt_for_language("en", Some("Obsidian OpenAI")),
+            initial_prompt_for_language("en", Some("Obsidian OpenAI")).as_deref(),
             Some("Obsidian OpenAI"),
         );
-        assert_eq!(initial_prompt_for_language("hr", None), None);
+        assert_eq!(initial_prompt_for_language("hr", None).as_deref(), None);
     }
 }

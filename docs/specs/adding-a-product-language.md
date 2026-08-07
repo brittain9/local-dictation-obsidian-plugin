@@ -139,12 +139,10 @@ Notes on the two pending rows:
   Nemotron's prompt dictionary and Supertonic's language list entirely. It
   therefore does not earn a catalog, even though Obsidian ships an `sr` locale
   and one would be technically selectable.
-- Translation is deferred for both: only the `en→` directions are released. See
+- Translation is deferred for both: only the `en→` directions are released
+  upstream, and shipping a one-way language is not worth the pack-size and UI
+  cost while every existing translation language works both ways. See
   [croatian-serbian-dictation.md](croatian-serbian-dictation.md).
-
-Translation is deferred for both: only the `en→` directions are released
-upstream, and shipping a one-way language is not worth the pack-size and UI cost
-while every existing translation language works both ways.
 
 "Possible" UI means Obsidian ships the app locale, so a plugin catalog would be
 selectable — the remaining cost is authoring it and finding a native reviewer.
@@ -200,13 +198,6 @@ Step 1 answers.
 Add the tag to `PRODUCT_LANGUAGE_TAGS`. This list is the set of tags the product
 can persist and that catalog entries are allowed to name. It grants no
 capability; it is a spelling check.
-
-> Until the refactor in
-> [croatian-serbian-dictation.md](croatian-serbian-dictation.md) lands, this
-> constant is `VERIFIED_MULTILINGUAL_LANGUAGE_TAGS` and is also wired directly
-> into Whisper's and Nemotron's advertised support. Adding a tag to it in that
-> state silently claims both engines support the language. Do the refactor
-> first.
 
 **2b. User-facing option** — `src/language/dictation-language.ts`
 

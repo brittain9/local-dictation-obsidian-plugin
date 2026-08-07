@@ -155,8 +155,6 @@ export const en = {
   'translation.notice.copyFailed': 'Could not copy the translation.',
   'translation.notice.tooLong': 'Translate up to {count} characters at a time.',
   'translation.notice.noText': 'There is no text to translate in this note.',
-  'translation.notice.noLanguagePairs':
-    'No local translation model is available for any language pair yet.',
   'common.reset': 'Reset',
   'settings.acceleration.active': 'Configured acceleration: {accelerator}',
   'settings.acceleration.pending': 'pending (sidecar not ready)',
