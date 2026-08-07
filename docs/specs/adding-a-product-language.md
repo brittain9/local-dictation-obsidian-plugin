@@ -144,9 +144,6 @@ Notes on the two pending rows:
   cost while every existing translation language works both ways. See
   [croatian-serbian-dictation.md](croatian-serbian-dictation.md).
 
-"Possible" UI means Obsidian ships the app locale, so a plugin catalog would be
-selectable — the remaining cost is authoring it and finding a native reviewer.
-
 ## The recipe
 
 ### Step 0 — Identify the language
