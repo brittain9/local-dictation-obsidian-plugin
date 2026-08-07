@@ -11,8 +11,9 @@ use common::model::{
     require_nemotron_model,
 };
 use common::quality_report::{self, QualityMeasurement};
-use common::text::{character_error_rate, word_error_rate};
+use common::text::{self, character_error_rate, word_error_rate};
 use common::{audio, driver};
+use local_dictation_sidecar::catalog::ModelCatalog;
 use local_dictation_sidecar::engine::{ModelFamilyId, RuntimeId};
 use local_dictation_sidecar::protocol::SelectedModel;
 use local_dictation_sidecar::session::SpeakingStyle;
@@ -24,6 +25,7 @@ const MAX_WORD_ERROR_RATE: f64 = 0.45;
 /// budget than the newly verified languages.
 const MAX_ENGLISH_WORD_ERROR_RATE: f64 = 0.20;
 const MAX_JAPANESE_CER: f64 = 0.45;
+const MIN_SERBIAN_CYRILLIC_SHARE: f64 = 0.80;
 const NEMOTRON_MAX_REALTIME_FACTOR: f64 = 1.0;
 /// Whisper Large V3 Turbo is catalogued as a GPU-oriented accuracy model. The
 /// hosted CPU runner is deliberately retained as a portable correctness path,
@@ -106,6 +108,21 @@ fn fixtures() -> Vec<Fixture> {
     fixtures
 }
 
+/// Coverage differs per model — Serbian ships on Whisper only — so the corpus
+/// is filtered by what the catalog says the model under test can transcribe
+/// rather than by a list restated here.
+fn covers_language(model_id: &str, language: &str) -> bool {
+    ModelCatalog::load_bundled()
+        .expect("bundled catalog should load")
+        .models
+        .iter()
+        .find(|model| model.model_id == model_id)
+        .unwrap_or_else(|| panic!("{model_id} must be cataloged"))
+        .language_tags
+        .iter()
+        .any(|tag| tag == language)
+}
+
 #[test]
 fn multilingual_fixtures_are_pinned_16khz_audio() {
     for fixture in fixtures() {
@@ -180,6 +197,52 @@ fn quality_assessment_accumulates_session_and_performance_failures() {
     );
 }
 
+#[test]
+fn manually_selected_serbian_requires_predominantly_cyrillic_output() {
+    let fixture = Fixture {
+        id: "sr-fixture".to_string(),
+        language: "sr".to_string(),
+        path: PathBuf::new(),
+        reference: "ovo je srpski tekst".to_string(),
+        anchors: vec!["srpski".to_string()],
+        sha256: String::new(),
+    };
+    let assess = |text: &str| {
+        let result = TranscriptionRun {
+            text: text.to_string(),
+            processing_ms: 100,
+            first_partial_audio_ms: None,
+            utterance_count: Some(1),
+            partial_count: None,
+            stopped: true,
+            errors: Vec::new(),
+        };
+        assess_quality(
+            ModelRun {
+                engine: "Whisper",
+                model_id: MULTILINGUAL_WHISPER_MODEL_ID,
+                model_name: "Whisper Large V3 Turbo Q8",
+                selection: "manual",
+                result: &result,
+                performance_budget: PerformanceBudget::ProcessingDurationMs(1_000),
+            },
+            &fixture,
+            16_000,
+        )
+    };
+
+    assert!(
+        assess("Ово је српски текст").is_empty(),
+        "Cyrillic Serbian should satisfy the output contract",
+    );
+    assert!(
+        assess("Ovo je srpski tekst")
+            .iter()
+            .any(|failure| failure.contains("not predominantly Cyrillic")),
+        "Latin Serbian must fail the explicit-script gate",
+    );
+}
+
 struct ModelRun<'a> {
     engine: &'a str,
     model_id: &'a str,
@@ -224,6 +287,14 @@ fn assess_quality(run: ModelRun<'_>, fixture: &Fixture, samples: usize) -> Vec<S
         "{} {}: {}\nquality processing={processing_secs:.3}s audio={audio_secs:.3}s rtf={rtf:.3}",
         run.engine, fixture.language, run.result.text,
     );
+    // Script and recognition are independent gates. Transliterate Cyrillic to
+    // the Latin reference for WER, then separately require the product's
+    // promised Cyrillic default below.
+    let scored_text = if fixture.language == "sr" {
+        text::to_serbian_latin(&run.result.text)
+    } else {
+        run.result.text.clone()
+    };
     let (quality_metric, quality_error_rate, quality_budget, preserves_language) =
         if fixture.language == "ja" {
             let cer = character_error_rate(&fixture.reference, &run.result.text);
@@ -243,15 +314,18 @@ fn assess_quality(run: ModelRun<'_>, fixture: &Fixture, samples: usize) -> Vec<S
                 .count();
             ("cer", cer, MAX_JAPANESE_CER, japanese * 2 >= visible)
         } else {
-            let wer = word_error_rate(&fixture.reference, &run.result.text);
+            let wer = word_error_rate(&fixture.reference, &scored_text);
             let max_wer = if fixture.language == "en" {
                 MAX_ENGLISH_WORD_ERROR_RATE
             } else {
                 MAX_WORD_ERROR_RATE
             };
-            ("wer", wer, max_wer, true)
+            let preserves_language = fixture.language != "sr"
+                || run.selection == "auto"
+                || text::serbian_cyrillic_share(&run.result.text) >= MIN_SERBIAN_CYRILLIC_SHARE;
+            ("wer", wer, max_wer, preserves_language)
         };
-    let normalized = run.result.text.to_lowercase();
+    let normalized = scored_text.to_lowercase();
     let anchors_present = fixture
         .anchors
         .iter()
@@ -299,10 +373,17 @@ fn assess_quality(run: ModelRun<'_>, fixture: &Fixture, samples: usize) -> Vec<S
         ));
     }
     if !preserves_language {
-        failures.push(format!(
-            "{} translated {} instead of transcribing it: {}",
-            run.engine, fixture.language, run.result.text,
-        ));
+        failures.push(if fixture.language == "sr" && run.selection != "auto" {
+            format!(
+                "{} Serbian output was not predominantly Cyrillic: {}",
+                run.engine, run.result.text,
+            )
+        } else {
+            format!(
+                "{} translated {} instead of transcribing it: {}",
+                run.engine, fixture.language, run.result.text,
+            )
+        });
     }
     if !anchors_present {
         failures.push(format!(
@@ -388,19 +469,24 @@ fn nemotron_and_whisper_transcribe_every_enabled_language_without_translation() 
 
     for fixture in fixtures() {
         let samples = audio::decode_wav_16k_mono(&fixture.path).expect("decode fixture");
-        let result = nemotron_transcribe(&nemotron, &fixture.language, &samples);
-        failures.extend(assess_quality(
-            ModelRun {
-                engine: "Nemotron",
-                model_id: NEMOTRON_MODEL_ID,
-                model_name: "NVIDIA Nemotron 3.5 ASR Streaming 0.6B Int8",
-                selection: "manual",
-                result: &result,
-                performance_budget: PerformanceBudget::RealTimeFactor(NEMOTRON_MAX_REALTIME_FACTOR),
-            },
-            &fixture,
-            samples.len(),
-        ));
+        let nemotron_covers = covers_language(NEMOTRON_MODEL_ID, &fixture.language);
+        if nemotron_covers {
+            let result = nemotron_transcribe(&nemotron, &fixture.language, &samples);
+            failures.extend(assess_quality(
+                ModelRun {
+                    engine: "Nemotron",
+                    model_id: NEMOTRON_MODEL_ID,
+                    model_name: "NVIDIA Nemotron 3.5 ASR Streaming 0.6B Int8",
+                    selection: "manual",
+                    result: &result,
+                    performance_budget: PerformanceBudget::RealTimeFactor(
+                        NEMOTRON_MAX_REALTIME_FACTOR,
+                    ),
+                },
+                &fixture,
+                samples.len(),
+            ));
+        }
         let result = whisper_transcribe(&whisper, &fixture.language, &samples);
         failures.extend(assess_quality(
             ModelRun {
@@ -419,19 +505,23 @@ fn nemotron_and_whisper_transcribe_every_enabled_language_without_translation() 
 
         // Automatic detection is a separate capability. Exercising every
         // language prevents a detector fixed to one language from passing.
-        let result = nemotron_transcribe(&nemotron, "auto", &samples);
-        failures.extend(assess_quality(
-            ModelRun {
-                engine: "Nemotron auto",
-                model_id: NEMOTRON_MODEL_ID,
-                model_name: "NVIDIA Nemotron 3.5 ASR Streaming 0.6B Int8",
-                selection: "auto",
-                result: &result,
-                performance_budget: PerformanceBudget::RealTimeFactor(NEMOTRON_MAX_REALTIME_FACTOR),
-            },
-            &fixture,
-            samples.len(),
-        ));
+        if nemotron_covers {
+            let result = nemotron_transcribe(&nemotron, "auto", &samples);
+            failures.extend(assess_quality(
+                ModelRun {
+                    engine: "Nemotron auto",
+                    model_id: NEMOTRON_MODEL_ID,
+                    model_name: "NVIDIA Nemotron 3.5 ASR Streaming 0.6B Int8",
+                    selection: "auto",
+                    result: &result,
+                    performance_budget: PerformanceBudget::RealTimeFactor(
+                        NEMOTRON_MAX_REALTIME_FACTOR,
+                    ),
+                },
+                &fixture,
+                samples.len(),
+            ));
+        }
         let result = whisper_transcribe(&whisper, "auto", &samples);
         failures.extend(assess_quality(
             ModelRun {

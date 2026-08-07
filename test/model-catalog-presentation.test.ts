@@ -36,6 +36,8 @@ describe('model catalog presentation', () => {
       'it',
       'nl',
       'ja',
+      'hr',
+      'sr',
     ]);
     expect(whisperModels[4]?.supportsAutomaticLanguageDetection).toBe(true);
   });

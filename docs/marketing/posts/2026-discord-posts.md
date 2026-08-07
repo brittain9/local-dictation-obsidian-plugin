@@ -347,3 +347,13 @@ Speech Kit can now connect to OpenAI-compatible providers such as LM Studio. Thi
 Try it out and let me know what you would like to see next.
 
 [Install Speech Kit](https://obsidian.md/plugins?id=local-dictation) • [Release notes](https://github.com/brittain9/speech-kit-obsidian-plugin/releases/tag/2026.8.1) • [GitHub](https://github.com/brittain9/speech-kit-obsidian-plugin) • [Support the project](https://buymeacoffee.com/alexbrittaq)
+
+## August 7, 2026
+
+**Reactions:** Not yet recorded.
+
+Speech Kit now supports Croatian and Serbian dictation 🎙️
+
+Croatian works with Whisper and Nemotron. Serbian works with Whisper and defaults to Cyrillic. Everything stays local.
+
+[Install Speech Kit](https://obsidian.md/plugins?id=local-dictation) • [GitHub](https://github.com/brittain9/speech-kit-obsidian-plugin)

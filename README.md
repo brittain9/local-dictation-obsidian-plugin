@@ -13,7 +13,7 @@ Dictate live. Transcribe meetings. Translate text. Listen to notes. One plugin i
 
 - 🎤 **Speech:** Dictate with live streaming text, or capture higher-accuracy transcripts from meetings, calls, and other audio.
 - 🔊 **Voice:** Listen to your notes with natural voices.
-- 🌍 **Language:** Translate notes locally across eight languages.
+- 🌍 **Language:** Dictate in ten languages and translate notes locally across eight.
 - 🧠 **Models:** Choose from a managed catalog of speech, voice, and translation models, with optional LLM text tools.
 
 <p align="center">
@@ -78,9 +78,17 @@ Optional LLM text tools are separate. You can connect a local or remote provider
 
 ## Language support
 
-The complete interface is available in English, Spanish, German, French, Portuguese, Italian, Dutch, and Japanese.
+Each feature is served by a different model, so coverage is tracked per feature rather than as a single list.
 
-Local translation supports English in either direction with each of the other seven languages. Transcription language support depends on the selected model. Multilingual models cover the full verified set, while some smaller or specialized models are English-only.
+| Language | Transcription | Live dictation | Read aloud | Translation | Interface |
+| --- | :-: | :-: | :-: | :-: | :-: |
+| English, Spanish, German, French, Portuguese, Italian, Dutch, Japanese | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Croatian | ✅ | ✅ | ✅ | — | — |
+| Serbian | ✅ | — | — | — | — |
+
+✅ supported · — not yet available
+
+Transcription coverage also depends on the model you select: multilingual models cover the full set above, while some smaller or specialized models are English-only. Translation runs through English in either direction, so every supported pair has English on one side.
 
 ## Local-first, private by default
 

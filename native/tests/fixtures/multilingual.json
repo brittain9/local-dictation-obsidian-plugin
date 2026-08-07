@@ -80,6 +80,26 @@
       "sha256": "c70eb0626213760ef684f869bd8020b59d82353da8a0709d3be9f72ed4ab338b",
       "reference": "意味があるように思えませんでしたし 確かに不公平でした",
       "anchors": ["思えません", "不公平"]
+    },
+    {
+      "language": "hr",
+      "config": "hr_hr",
+      "row": 194,
+      "recordingId": "2342803449057226092",
+      "audioPath": "audio/hr-fleurs-1577.wav",
+      "sha256": "e95ce32462bec378de806127cf520de6a6cca1aa7c387525becf06fe626a0e85",
+      "reference": "to mi nije imalo smisla svakako nije bilo pošteno",
+      "anchors": ["smisla", "pošteno"]
+    },
+    {
+      "language": "sr",
+      "config": "sr_rs",
+      "row": 5,
+      "recordingId": "10232938459371004419",
+      "audioPath": "audio/sr-fleurs-1577.wav",
+      "sha256": "7b9d43e86e1d01038863bbfbb70df31bccb3bc9627755235e84a741e31cde22f",
+      "reference": "to mi nije izgledalo da ima smisla svakako nije bilo fer",
+      "anchors": ["smisla", "fer"]
     }
   ],
   "englishRegression": {

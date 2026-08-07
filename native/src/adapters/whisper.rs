@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::path::Path;
 use std::sync::LazyLock;
 
@@ -12,9 +13,36 @@ use crate::engine::traits::{LoadedModel, ModelFamilyAdapter};
 use crate::protocol::{TimestampGranularity, TimestampSource, TranscriptSegment, TranscriptWord};
 use crate::transcription::{
     AUTOMATIC_LANGUAGE_TAG, EngineTranscriptOutput, GpuConfig, SegmentDiagnostics,
-    TranscriptionError, TranscriptionRequest, VERIFIED_MULTILINGUAL_LANGUAGE_TAGS,
-    validate_audio_samples, validate_model_path,
+    TranscriptionError, TranscriptionRequest, validate_audio_samples, validate_model_path,
 };
+
+/// Languages this release has verified against the multilingual Whisper
+/// artifacts. Whisper's own tokenizer covers far more; a tag earns a place here
+/// only once it has a pinned fixture and native-language review.
+///
+/// `.en` artifacts are English-only regardless of this list — see
+/// `language_support_for_context`.
+const MULTILINGUAL_LANGUAGE_TAGS: &[&str] =
+    &["en", "es", "de", "fr", "pt", "it", "nl", "ja", "hr", "sr"];
+
+/// Whisper has Serbian speech in both scripts in its training data, so the
+/// language token alone does not make the output script deterministic. A short
+/// Cyrillic prefix steers decoding toward the product's Serbian output script
+/// without rewriting names, acronyms, or ambiguous Latin digraphs afterward.
+const SERBIAN_CYRILLIC_PROMPT: &str =
+    "Ово је транскрипт на српском језику, написан српском ћирилицом.";
+
+fn initial_prompt_for_language<'a>(
+    language: &str,
+    context: Option<&'a str>,
+) -> Option<Cow<'a, str>> {
+    match (language, context) {
+        ("sr", Some(context)) => Some(Cow::Owned(format!("{SERBIAN_CYRILLIC_PROMPT} {context}"))),
+        ("sr", None) => Some(Cow::Borrowed(SERBIAN_CYRILLIC_PROMPT)),
+        (_, Some(context)) => Some(Cow::Borrowed(context)),
+        (_, None) => None,
+    }
+}
 
 #[derive(Default)]
 pub struct WhisperAdapter;
@@ -39,7 +67,7 @@ static CAPABILITIES: LazyLock<ModelFamilyCapabilities> =
 
 fn verified_multilingual_language_support() -> LanguageSupport {
     LanguageSupport::List {
-        tags: VERIFIED_MULTILINGUAL_LANGUAGE_TAGS
+        tags: MULTILINGUAL_LANGUAGE_TAGS
             .iter()
             .map(|tag| (*tag).to_string())
             .collect(),
@@ -103,7 +131,7 @@ impl LoadedModel for LoadedWhisperModel {
         request: &TranscriptionRequest,
     ) -> Result<EngineTranscriptOutput, TranscriptionError> {
         if request.language != AUTOMATIC_LANGUAGE_TAG
-            && !VERIFIED_MULTILINGUAL_LANGUAGE_TAGS.contains(&request.language.as_str())
+            && !MULTILINGUAL_LANGUAGE_TAGS.contains(&request.language.as_str())
         {
             return Err(TranscriptionError::unsupported_language(
                 &request.language,
@@ -137,8 +165,15 @@ impl LoadedModel for LoadedWhisperModel {
         params.set_print_timestamps(false);
         params.set_token_timestamps(request.detailed_timestamps_enabled);
 
-        if let Some(context) = request.context.as_ref() {
-            params.set_initial_prompt(&context.text);
+        let initial_prompt = initial_prompt_for_language(
+            &request.language,
+            request
+                .context
+                .as_ref()
+                .map(|context| context.text.as_str()),
+        );
+        if let Some(prompt) = initial_prompt.as_deref() {
+            params.set_initial_prompt(prompt);
         }
 
         state
@@ -339,7 +374,10 @@ fn whisper_timestamp_to_millis(timestamp: i64) -> u64 {
 
 #[cfg(test)]
 mod tests {
-    use super::{TimedToken, WhisperAdapter, assemble_words};
+    use super::{
+        SERBIAN_CYRILLIC_PROMPT, TimedToken, WhisperAdapter, assemble_words,
+        initial_prompt_for_language,
+    };
     use crate::engine::traits::ModelFamilyAdapter;
 
     fn token(text: &str, start_ms: u64, end_ms: u64) -> TimedToken {
@@ -389,5 +427,19 @@ mod tests {
 
         assert!(capabilities.supports_segment_timestamps);
         assert!(capabilities.supports_word_timestamps);
+    }
+
+    #[test]
+    fn explicit_serbian_requests_cyrillic_output() {
+        let expected = format!("{SERBIAN_CYRILLIC_PROMPT} Obsidian OpenAI");
+        assert_eq!(
+            initial_prompt_for_language("sr", Some("Obsidian OpenAI")).as_deref(),
+            Some(expected.as_str()),
+        );
+        assert_eq!(
+            initial_prompt_for_language("en", Some("Obsidian OpenAI")).as_deref(),
+            Some("Obsidian OpenAI"),
+        );
+        assert_eq!(initial_prompt_for_language("hr", None).as_deref(), None);
     }
 }

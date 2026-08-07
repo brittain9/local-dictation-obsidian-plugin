@@ -1,6 +1,7 @@
 import type { Editor } from 'obsidian';
 
 import { PcmPlaybackQueue } from '../audio/pcm-playback-queue';
+import { type DictationLanguage, dictationLanguageLabel } from '../language/dictation-language';
 import {
   type CatalogModelSelection,
   type ModelCatalogRecord,
@@ -10,11 +11,12 @@ import type { PluginSettings } from '../settings/plugin-settings';
 import { t } from '../shared/i18n';
 import type { PluginLogger } from '../shared/plugin-logger';
 import type { UserFeedback } from '../shared/user-feedback';
-import type {
-  SidecarEvent,
-  SynthesisAudioFrame,
-  SynthesisLanguage,
-  SynthesisTextChunk,
+import {
+  type SidecarEvent,
+  SYNTHESIS_LANGUAGES,
+  type SynthesisAudioFrame,
+  type SynthesisLanguage,
+  type SynthesisTextChunk,
 } from '../sidecar/protocol';
 import type { SidecarConnection } from '../sidecar/sidecar-connection';
 import { localizeKnownSidecarEventCode } from '../sidecar/sidecar-event-localization';
@@ -27,6 +29,23 @@ import { extractAndSegmentMarkdown } from './markdown-extractor';
 import { resolveReadAloudVoiceId } from './read-aloud-selection';
 
 export type ReadAloudState = 'idle' | 'paused' | 'reading';
+
+/// Read aloud speaks the dictation language, but only when the selected voice
+/// model declares it. An unlisted tag would otherwise fall through to the
+/// language-neutral synthesis branch and produce mispronounced audio instead of
+/// an honest failure — Serbian, which no voice model covers, is the live case.
+function resolveSynthesisLanguage(
+  dictationLanguage: DictationLanguage,
+  modelLanguageTags: readonly string[],
+): SynthesisLanguage | null {
+  if (dictationLanguage === 'auto') return 'na';
+  if (!modelLanguageTags.includes(dictationLanguage)) return null;
+  return (
+    SYNTHESIS_LANGUAGES.find(
+      (language): language is SynthesisLanguage => language === dictationLanguage,
+    ) ?? null
+  );
+}
 
 interface SynthesisConfiguration {
   language: SynthesisLanguage;
@@ -256,8 +275,22 @@ export class ReadAloudController {
       this.stop();
       return null;
     }
+    const language = resolveSynthesisLanguage(
+      settings.dictationLanguage,
+      catalogModel.languageTags,
+    );
+    if (language === null) {
+      this.deps.feedback.show({
+        intent: 'warning',
+        message: t('tts.notice.languageUnsupported', {
+          language: dictationLanguageLabel(settings.dictationLanguage),
+        }),
+      });
+      this.stop();
+      return null;
+    }
     return {
-      language: settings.dictationLanguage === 'auto' ? 'na' : settings.dictationLanguage,
+      language,
       modelSelection: selection,
       ...(settings.modelStorePathOverride.length > 0
         ? { modelStorePathOverride: settings.modelStorePathOverride }

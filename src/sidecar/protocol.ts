@@ -182,7 +182,23 @@ export interface SynthesisTextChunk {
   text: string;
 }
 
-export type SynthesisLanguage = 'de' | 'en' | 'es' | 'fr' | 'it' | 'ja' | 'na' | 'nl' | 'pt';
+/// Languages a synthesis command may name. `na` is the language-neutral branch
+/// used for auto-detected dictation; every other tag must be one a voice model
+/// declares in its catalog `languageTags`, checked at the call site.
+export const SYNTHESIS_LANGUAGES = [
+  'de',
+  'en',
+  'es',
+  'fr',
+  'hr',
+  'it',
+  'ja',
+  'na',
+  'nl',
+  'pt',
+] as const;
+
+export type SynthesisLanguage = (typeof SYNTHESIS_LANGUAGES)[number];
 
 export interface StartSynthesisCommand extends EnvelopeBase<'start_synthesis'> {
   chunks: SynthesisTextChunk[];
