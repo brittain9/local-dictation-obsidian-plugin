@@ -62,6 +62,14 @@ fn serbian_cyrillic_transliterates_to_the_latin_reference() {
 }
 
 #[test]
+fn serbian_script_score_measures_the_output_alphabet() {
+    assert_eq!(text::serbian_cyrillic_share("Ово је српски текст."), 1.0);
+    assert_eq!(text::serbian_cyrillic_share("Ovo je srpski tekst."), 0.0);
+    assert!((text::serbian_cyrillic_share("Ово је Obsidian 1.0.") - 5.0 / 13.0).abs() < 1e-9);
+    assert_eq!(text::serbian_cyrillic_share("123!?"), 0.0);
+}
+
+#[test]
 fn missing_anchors_reports_only_absent_words() {
     let anchors = vec!["country".to_string(), "moon".to_string()];
     let missing = text::missing_anchors("ask what you can do for your Country", &anchors);

@@ -24,6 +24,21 @@ use crate::transcription::{
 const MULTILINGUAL_LANGUAGE_TAGS: &[&str] =
     &["en", "es", "de", "fr", "pt", "it", "nl", "ja", "hr", "sr"];
 
+/// Whisper has Serbian speech in both scripts in its training data, so the
+/// language token alone does not make the output script deterministic. A short
+/// Cyrillic prefix steers decoding toward the product's Serbian output script
+/// without rewriting names, acronyms, or ambiguous Latin digraphs afterward.
+const SERBIAN_CYRILLIC_PROMPT: &str =
+    "Ово је транскрипт на српском језику, написан српском ћирилицом.";
+
+fn initial_prompt_for_language<'a>(language: &str, context: Option<&'a str>) -> Option<&'a str> {
+    if language == "sr" {
+        Some(SERBIAN_CYRILLIC_PROMPT)
+    } else {
+        context
+    }
+}
+
 #[derive(Default)]
 pub struct WhisperAdapter;
 
@@ -145,8 +160,14 @@ impl LoadedModel for LoadedWhisperModel {
         params.set_print_timestamps(false);
         params.set_token_timestamps(request.detailed_timestamps_enabled);
 
-        if let Some(context) = request.context.as_ref() {
-            params.set_initial_prompt(&context.text);
+        if let Some(prompt) = initial_prompt_for_language(
+            &request.language,
+            request
+                .context
+                .as_ref()
+                .map(|context| context.text.as_str()),
+        ) {
+            params.set_initial_prompt(prompt);
         }
 
         state
@@ -347,7 +368,10 @@ fn whisper_timestamp_to_millis(timestamp: i64) -> u64 {
 
 #[cfg(test)]
 mod tests {
-    use super::{TimedToken, WhisperAdapter, assemble_words};
+    use super::{
+        SERBIAN_CYRILLIC_PROMPT, TimedToken, WhisperAdapter, assemble_words,
+        initial_prompt_for_language,
+    };
     use crate::engine::traits::ModelFamilyAdapter;
 
     fn token(text: &str, start_ms: u64, end_ms: u64) -> TimedToken {
@@ -397,5 +421,18 @@ mod tests {
 
         assert!(capabilities.supports_segment_timestamps);
         assert!(capabilities.supports_word_timestamps);
+    }
+
+    #[test]
+    fn explicit_serbian_requests_cyrillic_output() {
+        assert_eq!(
+            initial_prompt_for_language("sr", Some("Obsidian OpenAI")),
+            Some(SERBIAN_CYRILLIC_PROMPT),
+        );
+        assert_eq!(
+            initial_prompt_for_language("en", Some("Obsidian OpenAI")),
+            Some("Obsidian OpenAI"),
+        );
+        assert_eq!(initial_prompt_for_language("hr", None), None);
     }
 }

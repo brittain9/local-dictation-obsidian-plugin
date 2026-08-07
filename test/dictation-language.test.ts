@@ -9,6 +9,12 @@ import {
 } from '../src/language/dictation-language';
 
 describe('dictation language eligibility', () => {
+  it('presents Serbian as one option', () => {
+    expect(DICTATION_LANGUAGE_OPTIONS.filter((option) => option.value === 'sr')).toEqual([
+      { label: 'Српски', value: 'sr' },
+    ]);
+  });
+
   it('keeps unknown and English-only models on the safe English default', () => {
     expect(supportedDictationLanguageOptions({ kind: 'unknown' })).toEqual([
       { label: 'English', value: 'en' },

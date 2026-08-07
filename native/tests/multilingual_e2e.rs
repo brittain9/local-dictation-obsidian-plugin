@@ -25,6 +25,7 @@ const MAX_WORD_ERROR_RATE: f64 = 0.45;
 /// budget than the newly verified languages.
 const MAX_ENGLISH_WORD_ERROR_RATE: f64 = 0.20;
 const MAX_JAPANESE_CER: f64 = 0.45;
+const MIN_SERBIAN_CYRILLIC_SHARE: f64 = 0.80;
 const NEMOTRON_MAX_REALTIME_FACTOR: f64 = 1.0;
 /// Whisper Large V3 Turbo is catalogued as a GPU-oriented accuracy model. The
 /// hosted CPU runner is deliberately retained as a portable correctness path,
@@ -196,6 +197,52 @@ fn quality_assessment_accumulates_session_and_performance_failures() {
     );
 }
 
+#[test]
+fn manually_selected_serbian_requires_predominantly_cyrillic_output() {
+    let fixture = Fixture {
+        id: "sr-fixture".to_string(),
+        language: "sr".to_string(),
+        path: PathBuf::new(),
+        reference: "ovo je srpski tekst".to_string(),
+        anchors: vec!["srpski".to_string()],
+        sha256: String::new(),
+    };
+    let assess = |text: &str| {
+        let result = TranscriptionRun {
+            text: text.to_string(),
+            processing_ms: 100,
+            first_partial_audio_ms: None,
+            utterance_count: Some(1),
+            partial_count: None,
+            stopped: true,
+            errors: Vec::new(),
+        };
+        assess_quality(
+            ModelRun {
+                engine: "Whisper",
+                model_id: MULTILINGUAL_WHISPER_MODEL_ID,
+                model_name: "Whisper Large V3 Turbo Q8",
+                selection: "manual",
+                result: &result,
+                performance_budget: PerformanceBudget::ProcessingDurationMs(1_000),
+            },
+            &fixture,
+            16_000,
+        )
+    };
+
+    assert!(
+        assess("Ово је српски текст").is_empty(),
+        "Cyrillic Serbian should satisfy the output contract",
+    );
+    assert!(
+        assess("Ovo je srpski tekst")
+            .iter()
+            .any(|failure| failure.contains("not predominantly Cyrillic")),
+        "Latin Serbian must fail the explicit-script gate",
+    );
+}
+
 struct ModelRun<'a> {
     engine: &'a str,
     model_id: &'a str,
@@ -240,8 +287,9 @@ fn assess_quality(run: ModelRun<'_>, fixture: &Fixture, samples: usize) -> Vec<S
         "{} {}: {}\nquality processing={processing_secs:.3}s audio={audio_secs:.3}s rtf={rtf:.3}",
         run.engine, fixture.language, run.result.text,
     );
-    // Serbian may come back in either script; both are correct Serbian, so the
-    // hypothesis is transliterated to match the Latin reference before scoring.
+    // Script and recognition are independent gates. Transliterate Cyrillic to
+    // the Latin reference for WER, then separately require the product's
+    // promised Cyrillic default below.
     let scored_text = if fixture.language == "sr" {
         text::to_serbian_latin(&run.result.text)
     } else {
@@ -272,7 +320,10 @@ fn assess_quality(run: ModelRun<'_>, fixture: &Fixture, samples: usize) -> Vec<S
             } else {
                 MAX_WORD_ERROR_RATE
             };
-            ("wer", wer, max_wer, true)
+            let preserves_language = fixture.language != "sr"
+                || run.selection == "auto"
+                || text::serbian_cyrillic_share(&run.result.text) >= MIN_SERBIAN_CYRILLIC_SHARE;
+            ("wer", wer, max_wer, preserves_language)
         };
     let normalized = scored_text.to_lowercase();
     let anchors_present = fixture
@@ -322,10 +373,17 @@ fn assess_quality(run: ModelRun<'_>, fixture: &Fixture, samples: usize) -> Vec<S
         ));
     }
     if !preserves_language {
-        failures.push(format!(
-            "{} translated {} instead of transcribing it: {}",
-            run.engine, fixture.language, run.result.text,
-        ));
+        failures.push(if fixture.language == "sr" && run.selection != "auto" {
+            format!(
+                "{} Serbian output was not predominantly Cyrillic: {}",
+                run.engine, run.result.text,
+            )
+        } else {
+            format!(
+                "{} translated {} instead of transcribing it: {}",
+                run.engine, fixture.language, run.result.text,
+            )
+        });
     }
     if !anchors_present {
         failures.push(format!(

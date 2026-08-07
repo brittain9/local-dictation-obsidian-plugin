@@ -162,68 +162,33 @@ to close the gap.
 
 ## Serbian script
 
-Serbian is written in two alphabets in active everyday use — Cyrillic
-(ћирилица) and Latin (latinica). Cyrillic is the official script; Latin
-dominates online, in business, and in a lot of casual writing. Readers handle
-both, but writers usually have a firm personal preference, and receiving the
-wrong one is jarring. Croatian is Latin-only, so none of this applies to it.
+Serbian is written in both Cyrillic and Latin. The requester answered the open
+question in [#359](https://github.com/brittain9/speech-kit-obsidian-plugin/issues/359):
+Cyrillic should be the default because it is the country's official script.
+The product therefore exposes one Serbian option labeled `Српски` and keeps
+the canonical `sr` tag. The Cyrillic label already communicates the script;
+there is no redundant qualifier, script selector, or second Latin option.
 
-The awkward part for a dictation product is that Whisper emits *text*, so it
-picks a script for us. Its training data contains both, and its choice for `sr`
-is not guaranteed or necessarily stable across utterances. A user who writes
-their vault in Latin and gets Cyrillic transcripts has a product they cannot
-use.
+Whisper has no script parameter, but it does support an initial prompt. Explicit
+Serbian requests receive a short Serbian Cyrillic prefix before decoding. This
+steers the model toward Cyrillic directly while preserving names and acronyms;
+the product does not rewrite the transcript afterward.
 
-One property makes this tractable: **Serbian digraphia is a 1:1 lossless
-mapping.** Each Cyrillic letter has exactly one Latin counterpart, so
-transliteration is mechanical and reversible — unlike most script conversions
-(simplified/traditional Chinese, for instance), where it is lossy and
-context-dependent. Normalizing the output is therefore a safe option here, which
-is unusual and worth knowing before ruling it out.
-
-Two unknowns to resolve before deciding, in this order:
-
-1. **What does Whisper actually emit for `sr`?** The FLEURS `sr_rs` fixture is
-   Cyrillic, so it will tell us what the model does with Cyrillic-sourced read
-   speech, but not whether the choice is stable across speakers and topics.
-2. **What do Serbian users write in?** Asked on
-   [#359](https://github.com/brittain9/speech-kit-obsidian-plugin/issues/359).
-
-If Whisper turns out to be consistent and matches what people want, pass the
-output through unchanged and this stays a footnote.
-
-If it is inconsistent, or consistently the less-wanted script, the fix is **two
-rows in the existing language dropdown** — `Српски (ћирилица)` and
-`Srpski (latinica)` — persisting `sr-Cyrl` and `sr-Latn`. Both are valid BCP 47,
-so the existing tag machinery carries them without change.
-
-Deliberately *not* a conditional "this language has multiple alphabets, pick
-one" sub-control. That would add persisted state, a setting most users never
-see, and a "script" concept the rest of the product does not have. Two dropdown
-rows introduce nothing: the user picks their language the way they already do.
-
-The complexity is a layer down, and that is where review should focus. Whisper
-has no script parameter, so both options send `sr` to the model and the
-selection becomes an **output transform** applied after transcription. This
-would be the first dictation language option that means "model language plus
-post-processing" rather than just "model language" — a small precedent, but a
-real one. It is only safe because the mapping is lossless; do not generalize the
-pattern to script pairs where it is not.
-
-Note this is also the first case where the persisted dictation tag is not the
-tag sent to the engine. Keep the mapping explicit at the seam rather than
-letting `sr-Cyrl` leak into an adapter that only knows `sr`.
-
-Ship the first release with pass-through and no transliteration. Record the
-observed script in the quality report. Do not guess at a normalization policy
-before there is evidence for one.
+Blind Latin-to-Cyrillic conversion is deliberately avoided. Cyrillic-to-Latin
+is deterministic, but the reverse direction is context-sensitive: Latin `nj`,
+`lj`, and `dž` sometimes represent one Cyrillic letter and sometimes two. The
+quality gate therefore checks recognition independently and requires at least
+80% of alphabetic output from manually selected Serbian to be Cyrillic.
+Automatic detection remains script-neutral because the language is not known
+when its prompt would need to be selected.
 
 ## Acceptance
 
 - [x] No shared constant can make an engine claim a language it cannot serve;
       the Nemotron equality test is gone and its support derives from the prompt
       table.
-- [x] `hr` and `sr` persist as distinct choices with endonym labels.
+- [x] `hr` and `sr` persist as distinct choices with endonym labels; Serbian is
+      explicitly Cyrillic and has no second script option.
 - [x] Whisper transcribes both, with pinned FLEURS fixtures at sentence 1577.
       Native review still outstanding.
 - [x] Nemotron accepts `hr` at index 29 and rejects `sr` before audio capture.

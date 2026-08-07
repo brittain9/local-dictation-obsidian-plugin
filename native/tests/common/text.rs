@@ -82,11 +82,9 @@ pub fn missing_anchors(hypothesis: &str, anchors: &[String]) -> Vec<String> {
         .collect()
 }
 
-/// Serbian is written in both Cyrillic and Gaj's Latin, and the mapping between
-/// them is 1:1 and lossless. Which script an engine emits is an orthographic
-/// choice, not a recognition result, so scoring transliterates to Latin first —
-/// otherwise a correct transcript in the other script would score as a total
-/// miss.
+/// Normalize Serbian Cyrillic to Latin for recognition scoring only. The
+/// reverse mapping is context-sensitive (`nj`, `lj`, and `dž` can be one letter
+/// or two), so production output must never use this scorer as a transliterator.
 pub fn to_serbian_latin(text: &str) -> String {
     let mut latin = String::with_capacity(text.len());
     for character in text.to_lowercase().chars() {
@@ -125,6 +123,52 @@ pub fn to_serbian_latin(text: &str) -> String {
         }
     }
     latin
+}
+
+/// Share of Serbian Cyrillic and Latin alphabetic output written in Cyrillic.
+/// Numbers, punctuation, and unrelated scripts are ignored. Latin product names
+/// still count, so the real-model gate allows a small amount of mixed output.
+pub fn serbian_cyrillic_share(text: &str) -> f64 {
+    let mut cyrillic = 0_usize;
+    let mut latin = 0_usize;
+
+    for character in text.chars() {
+        if matches!(
+            character,
+            'А'..='И'
+                | 'Ј'
+                | 'К'..='Ш'
+                | 'а'..='и'
+                | 'ј'
+                | 'к'..='ш'
+                | 'Ђ'
+                | 'Љ'
+                | 'Њ'
+                | 'Ћ'
+                | 'Џ'
+                | 'ђ'
+                | 'љ'
+                | 'њ'
+                | 'ћ'
+                | 'џ'
+        ) {
+            cyrillic += 1;
+        } else if character.is_ascii_alphabetic()
+            || matches!(
+                character,
+                'Č' | 'Ć' | 'Đ' | 'Š' | 'Ž' | 'č' | 'ć' | 'đ' | 'š' | 'ž'
+            )
+        {
+            latin += 1;
+        }
+    }
+
+    let total = cyrillic + latin;
+    if total == 0 {
+        0.0
+    } else {
+        cyrillic as f64 / total as f64
+    }
 }
 
 /// Classic two-row Levenshtein over token slices.
