@@ -2,6 +2,7 @@ import { de } from './de';
 import { en, type TranslationKey } from './en';
 import { es } from './es';
 import { fr } from './fr';
+import { hr } from './hr';
 import { it } from './it';
 import { ja } from './ja';
 import { nl } from './nl';
@@ -14,6 +15,7 @@ export const catalogs: Readonly<Record<string, TranslationCatalog>> = {
   en,
   es,
   fr,
+  hr,
   it,
   ja,
   nl,

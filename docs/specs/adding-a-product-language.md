@@ -126,15 +126,16 @@ per direction because Mozilla releases directions independently.
 | Italiano | `it` | Full | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | Nederlands | `nl` | Full | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | 日本語 | `ja` | Full | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Hrvatski | `hr` | Full | ✅ | ✅ | ✅ | 🔜 | ⏸ | ❌ |
+| Hrvatski | `hr` | Full | ✅ | ✅ | ✅ | ✅ | ⏸ | ❌ |
 | Српски | `sr` | Dictation | ✅ | ❌ | ❌ | ❌ by rule | ⏸ | ❌ |
 
 ✅ shipped · 🔜 planned, [#359](https://github.com/brittain9/speech-kit-obsidian-plugin/issues/359) · ⏸ available upstream, deferred · ❌ no released model
 
-Notes on the two pending rows:
+Notes on the two most recent rows:
 
-- Croatian is Full tier and gets a UI catalog under [the localization
-  rule](#the-localization-rule), pending a native reviewer.
+- Croatian is Full tier and earned its UI catalog under [the localization
+  rule](#the-localization-rule). `src/locales/hr.ts` ships complete; it has not
+  yet been signed off by a native reviewer.
 - Serbian has no live or read-aloud model upstream — `sr` is absent from
   Nemotron's prompt dictionary and Supertonic's language list entirely. It
   therefore does not earn a catalog, even though Obsidian ships an `sr` locale

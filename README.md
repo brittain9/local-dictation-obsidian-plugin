@@ -83,7 +83,7 @@ Each feature is served by a different model, so coverage is tracked per feature 
 | Language | Transcription | Live dictation | Read aloud | Translation | Interface |
 | --- | :-: | :-: | :-: | :-: | :-: |
 | English, Spanish, German, French, Portuguese, Italian, Dutch, Japanese | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Croatian | ✅ | ✅ | ✅ | — | — |
+| Croatian | ✅ | ✅ | ✅ | — | ✅ |
 | Serbian | ✅ | — | — | — | — |
 
 ✅ supported · — not yet available

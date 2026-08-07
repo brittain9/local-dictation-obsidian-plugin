@@ -11,7 +11,17 @@ function placeholders(value: string): string[] {
 
 describe('locale catalog parity', () => {
   it('registers every shipped locale', () => {
-    expect(Object.keys(catalogs).sort()).toEqual(['de', 'en', 'es', 'fr', 'it', 'ja', 'nl', 'pt']);
+    expect(Object.keys(catalogs).sort()).toEqual([
+      'de',
+      'en',
+      'es',
+      'fr',
+      'hr',
+      'it',
+      'ja',
+      'nl',
+      'pt',
+    ]);
   });
 
   for (const [locale, catalog] of Object.entries(catalogs)) {

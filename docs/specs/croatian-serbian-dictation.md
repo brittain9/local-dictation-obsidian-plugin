@@ -107,8 +107,8 @@ Following the recipe in [adding-a-product-language.md](adding-a-product-language
   rejected explicitly rather than falling through to the `na` branch in
   `preprocess_text`.
 - **2f** No translation pairs — see [Translation and UI](#translation-and-ui).
-- **2g** `src/locales/hr.ts` plus its `catalogs` registration, gated on a native
-  reviewer and shipped separately. No `sr.ts`. Neither blocks the speech work.
+- **2g** `src/locales/hr.ts` plus its `catalogs` registration, shipped
+  separately so it never blocks the speech work. No `sr.ts`.
 - **3** FLEURS fixtures for `hr_hr` and `sr_rs` at sentence 1577.
 - **4** README claims split into interface / translation / dictation counts.
 
@@ -155,10 +155,14 @@ set that mostly reports "not available with your installed models" advertises
 capability the product does not have. English is the honest presentation, and
 Serbian dictation still works.
 
-The remaining Croatian blocker is a native reviewer. Ship the speech work
-without waiting — a Full-tier language with no catalog is a normal state, and
-the catalog can land whenever a reviewer appears. Do not machine-translate one
-to close the gap.
+The Croatian catalog shipped in a follow-up PR, so the speech work never waited
+on it — a Full-tier language with no catalog is a normal state. It is authored
+the same way the existing seven were (D7 in
+[ui-localization.md](ui-localization.md)): drafted in full, then reviewed
+independently against English for meaning, grammar, register, and terminology.
+That process is not a substitute for native sign-off, which remains open. What
+it rules out is the actual failure mode — pasting raw machine-translation output
+into a locale nobody has read.
 
 ## Serbian script
 
