@@ -17,7 +17,7 @@ When Obsidian's UI language is one of the languages this plugin can transcribe, 
 
 ## Locale policy
 
-- Shipped locales are exactly the verified dictation languages: `en`, `es`, `de`, `fr`, `pt`, `it`, `nl`, `ja` — mirroring `VERIFIED_MULTILINGUAL_LANGUAGE_TAGS` in `native/src/transcription.rs`. All eight are also Obsidian UI languages, so users in the target audience really do run Obsidian in these locales.
+- Shipped locales are `en`, `es`, `de`, `fr`, `pt`, `it`, `nl`, `ja`, `hr`. All nine are Obsidian UI languages, so users in the target audience really do run Obsidian in these locales. The original eight mirrored `VERIFIED_MULTILINGUAL_LANGUAGE_TAGS`; that constant is gone — [adding-a-product-language.md](adding-a-product-language.md#the-localization-rule) now governs which languages earn a catalog, and it is full speech coverage rather than dictation support that qualifies one. Serbian is the first language deliberately shipped with dictation and no catalog.
 - The coupling is policy, not code: locale resolution supports whatever catalogs are registered under `src/locales/`, with no reference to the dictation-language constant. A community-contributed catalog for any other Obsidian locale (e.g. `zh`) only needs its catalog module and an entry in `src/locales/index.ts`; dictation code remains untouched.
 - Locale is resolved once at plugin load via `getLanguage()` from `'obsidian'` (API ≥ 1.8.7; our `minAppVersion` is 1.11.5). Obsidian relaunches when the user changes language, so no live re-render path is needed.
 - Regional tags match on the base subtag: `pt-BR` → `pt`, `de-AT` → `de`. Anything else (`ru`, `zh`, …) → `en`.
