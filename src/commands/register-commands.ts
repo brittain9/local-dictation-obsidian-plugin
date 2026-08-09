@@ -26,6 +26,7 @@ interface CommandDependencies {
   restartSidecar: () => Promise<void>;
   readAloud: (editor: Editor) => Promise<void>;
   stopReadAloud: () => void;
+  translateCurrentParagraph: (editor: Editor) => void;
   translateNote: (editor: Editor) => void;
   translateSelection: (editor: Editor) => void;
   toggleReadAloudPaused: () => Promise<void>;
@@ -43,6 +44,12 @@ export function registerCommands(dependencies: CommandDependencies): void {
       if (!checking) dependencies.translateSelection(editor);
       return true;
     },
+  });
+
+  dependencies.plugin.addCommand({
+    id: 'translate-current-paragraph',
+    name: t('commands.translateCurrentParagraph'),
+    editorCallback: (editor) => dependencies.translateCurrentParagraph(editor),
   });
 
   dependencies.plugin.addCommand({

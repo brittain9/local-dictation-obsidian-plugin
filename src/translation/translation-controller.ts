@@ -79,6 +79,36 @@ export class TranslationController {
     });
   }
 
+  translateCurrentParagraph(editor: Editor): void {
+    const cursor = editor.getCursor('head');
+    if (editor.getLine(cursor.line).trim().length === 0) {
+      this.dependencies.feedback.show({
+        intent: 'warning',
+        key: 'translation-no-paragraph',
+        message: t('translation.notice.noParagraph'),
+      });
+      return;
+    }
+
+    let startLine = cursor.line;
+    while (startLine > 0 && editor.getLine(startLine - 1).trim().length > 0) {
+      startLine -= 1;
+    }
+    let endLine = cursor.line;
+    while (endLine + 1 < editor.lineCount() && editor.getLine(endLine + 1).trim().length > 0) {
+      endLine += 1;
+    }
+
+    const from = { line: startLine, ch: 0 };
+    const to = { line: endLine, ch: editor.getLine(endLine).length };
+    this.open(editor, {
+      from,
+      kind: 'paragraph',
+      source: editor.getRange(from, to),
+      to,
+    });
+  }
+
   dispose(): void {
     this.activeModal?.close();
     this.activeModal = null;

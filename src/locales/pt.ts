@@ -797,6 +797,7 @@ export const pt = {
     'Leitura natural local em inglês com uma seleção de vozes escolhidas.',
   'catalog.family.pocket_tts.summary':
     'Lê notas localmente em inglês, francês, alemão, espanhol, português e italiano com vozes selecionáveis e controlo de velocidade que preserva o tom.',
+  'commands.translateCurrentParagraph': 'Traduzir parágrafo atual',
   'commands.translateNote': 'Traduzir nota',
   'commands.translateSelection': 'Traduzir seleção',
   'models.manage.translationModels': 'Tradução',
@@ -807,6 +808,7 @@ export const pt = {
   'translation.modal.largeNote': 'Nota grande: a tradução pode levar alguns segundos.',
   'translation.modal.sourceSelection': 'Seleção de origem',
   'translation.modal.sourceNote': 'Nota de origem',
+  'translation.modal.sourceParagraph': 'Parágrafo de origem',
   'translation.modal.previewAria': 'Prévia da tradução',
   'translation.modal.preparing': 'Preparando a tradução local…',
   'translation.modal.loading': 'Carregando o modelo local…',
@@ -834,6 +836,7 @@ export const pt = {
   'translation.notice.copied': 'Tradução copiada.',
   'translation.notice.copyFailed': 'Não foi possível copiar a tradução.',
   'translation.notice.tooLong': 'Traduza até {count} caracteres por vez.',
+  'translation.notice.noParagraph': 'Posicione o cursor em um parágrafo para traduzi-lo.',
   'catalog.firefox_translations_release_2026_07.summary':
     'Tradução local rápida entre inglês e sete idiomas com modelos publicados no Firefox.',
   'catalog.family.firefox_translations.summary':

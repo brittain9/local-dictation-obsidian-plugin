@@ -808,6 +808,7 @@ export const de = {
     'Natürliches lokales Vorlesen auf Englisch mit auswählbaren Stimmen.',
   'catalog.family.pocket_tts.summary':
     'Liest Notizen lokal auf Englisch, Französisch, Deutsch, Spanisch, Portugiesisch und Italienisch mit auswählbaren Stimmen und tonhöhentreuer Geschwindigkeitssteuerung vor.',
+  'commands.translateCurrentParagraph': 'Aktuellen Absatz übersetzen',
   'commands.translateNote': 'Notiz übersetzen',
   'commands.translateSelection': 'Auswahl übersetzen',
   'models.manage.translationModels': 'Übersetzung',
@@ -818,6 +819,7 @@ export const de = {
   'translation.modal.largeNote': 'Große Notiz: Die Übersetzung kann einige Sekunden dauern.',
   'translation.modal.sourceSelection': 'Quellauswahl',
   'translation.modal.sourceNote': 'Quellnotiz',
+  'translation.modal.sourceParagraph': 'Quellabsatz',
   'translation.modal.previewAria': 'Übersetzungsvorschau',
   'translation.modal.preparing': 'Lokale Übersetzung wird vorbereitet…',
   'translation.modal.loading': 'Lokales Modell wird geladen…',
@@ -845,6 +847,7 @@ export const de = {
   'translation.notice.copied': 'Übersetzung kopiert.',
   'translation.notice.copyFailed': 'Übersetzung konnte nicht kopiert werden.',
   'translation.notice.tooLong': 'Übersetze höchstens {count} Zeichen auf einmal.',
+  'translation.notice.noParagraph': 'Setze den Cursor in einen Absatz, um ihn zu übersetzen.',
   'catalog.firefox_translations_release_2026_07.summary':
     'Schnelle lokale Übersetzung zwischen Englisch und sieben Sprachen mit in Firefox veröffentlichten Modellen.',
   'catalog.family.firefox_translations.summary':

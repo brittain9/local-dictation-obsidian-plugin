@@ -6,7 +6,7 @@ vi.mock('virtual:bergamot-worker-source', () => ({
 
 import { DEFAULT_PLUGIN_SETTINGS } from '../src/settings/plugin-settings';
 import { TranslationController } from '../src/translation/translation-controller';
-import { Modal, Setting } from './__mocks__/obsidian';
+import { Modal, Setting, type TestElement } from './__mocks__/obsidian';
 
 describe('TranslationController', () => {
   afterEach(() => {
@@ -72,5 +72,66 @@ describe('TranslationController', () => {
     expect(worker).not.toHaveBeenCalled();
     expect(replaceRange).not.toHaveBeenCalled();
     expect(openModelPicker).not.toHaveBeenCalled();
+  });
+
+  it('opens only the blank-line-delimited paragraph at the cursor', async () => {
+    Modal.instances.length = 0;
+    Setting.reset();
+    const source = 'First paragraph.\n\nSecond paragraph\ncontinues here.\n\nThird paragraph.';
+    const lines = source.split('\n');
+    const controller = new TranslationController({
+      app: {} as never,
+      feedback: { show: vi.fn() },
+      getSettings: () => DEFAULT_PLUGIN_SETTINGS,
+      logger: { error: vi.fn() } as never,
+      modelManager: {
+        getState: () => ({ catalog: { models: [] }, installedModels: [] }),
+      } as never,
+      openModelPicker: vi.fn(async () => {}),
+      saveSettings: vi.fn(async () => {}),
+    });
+    const editor = {
+      getCursor: () => ({ line: 3, ch: 4 }),
+      getLine: (line: number) => lines[line] ?? '',
+      getRange: (from: { line: number; ch: number }, to: { line: number; ch: number }) =>
+        lines
+          .slice(from.line, to.line + 1)
+          .join('\n')
+          .slice(from.ch, undefined),
+      lineCount: () => lines.length,
+    };
+
+    controller.translateCurrentParagraph(editor as never);
+
+    await vi.waitFor(() => {
+      const content = Modal.instances[0]?.contentEl as unknown as TestElement;
+      expect(content.findByText('Source paragraph')).toBeDefined();
+      expect(content.findByText('Second paragraph\ncontinues here.')).toBeDefined();
+    });
+  });
+
+  it('explains that the cursor must be inside a paragraph', () => {
+    const show = vi.fn();
+    const controller = new TranslationController({
+      app: {} as never,
+      feedback: { show },
+      getSettings: () => DEFAULT_PLUGIN_SETTINGS,
+      logger: { error: vi.fn() } as never,
+      modelManager: {} as never,
+      openModelPicker: vi.fn(async () => {}),
+      saveSettings: vi.fn(async () => {}),
+    });
+    const editor = {
+      getCursor: () => ({ line: 1, ch: 0 }),
+      getLine: () => '  ',
+    };
+
+    controller.translateCurrentParagraph(editor as never);
+
+    expect(show).toHaveBeenCalledExactlyOnceWith({
+      intent: 'warning',
+      key: 'translation-no-paragraph',
+      message: 'Place the cursor in a paragraph to translate it.',
+    });
   });
 });

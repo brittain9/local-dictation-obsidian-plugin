@@ -371,6 +371,8 @@ export default class LocalSttPlugin extends Plugin {
       startDictation: async () => this.requireDictationController().startDictation(),
       stopReadAloud: () => this.requireReadAloudController().stop(),
       stopDictation: async () => this.requireDictationController().stopDictation(),
+      translateCurrentParagraph: (editor) =>
+        this.requireTranslationController().translateCurrentParagraph(editor),
       translateNote: (editor) => this.requireTranslationController().translateNote(editor),
       translateSelection: (editor) =>
         this.requireTranslationController().translateSelection(editor),

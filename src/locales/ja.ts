@@ -792,6 +792,7 @@ export const ja = {
     '厳選された音声を選べる、自然なローカル英語読み上げです。',
   'catalog.family.pocket_tts.summary':
     '英語、フランス語、ドイツ語、スペイン語、ポルトガル語、イタリア語のノートを、選択可能な音声と音程を保つ速度調整でローカルに読み上げます。',
+  'commands.translateCurrentParagraph': '現在の段落を翻訳',
   'commands.translateNote': 'ノートを翻訳',
   'commands.translateSelection': '選択範囲を翻訳',
   'models.manage.translationModels': '翻訳',
@@ -802,6 +803,7 @@ export const ja = {
   'translation.modal.largeNote': '大きなノートです。翻訳に数秒かかる場合があります。',
   'translation.modal.sourceSelection': '翻訳元の選択範囲',
   'translation.modal.sourceNote': '翻訳元のノート',
+  'translation.modal.sourceParagraph': '翻訳元の段落',
   'translation.modal.previewAria': '翻訳プレビュー',
   'translation.modal.preparing': 'ローカル翻訳を準備しています…',
   'translation.modal.loading': 'ローカルモデルを読み込んでいます…',
@@ -829,6 +831,7 @@ export const ja = {
   'translation.notice.copied': '翻訳をコピーしました。',
   'translation.notice.copyFailed': '翻訳をコピーできませんでした。',
   'translation.notice.tooLong': '一度に翻訳できるのは最大 {count} 文字です。',
+  'translation.notice.noParagraph': '翻訳する段落内にカーソルを置いてください。',
   'catalog.firefox_translations_release_2026_07.summary':
     'Firefox で公開されたモデルを使用した、英語と7言語間の高速なローカル翻訳です。',
   'catalog.family.firefox_translations.summary':

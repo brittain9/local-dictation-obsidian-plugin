@@ -33,6 +33,7 @@ describe('registerCommands', () => {
       startDictation: vi.fn(async () => {}),
       stopReadAloud: vi.fn(),
       stopDictation: vi.fn(async () => {}),
+      translateCurrentParagraph: vi.fn(),
       translateNote: vi.fn(),
       translateSelection: vi.fn(),
       toggleDictation: vi.fn(async () => {}),
@@ -96,6 +97,7 @@ describe('registerCommands', () => {
       startDictation: vi.fn(async () => {}),
       stopReadAloud: vi.fn(),
       stopDictation: vi.fn(async () => {}),
+      translateCurrentParagraph: vi.fn(),
       translateNote: vi.fn(),
       translateSelection: vi.fn(),
       toggleDictation: vi.fn(async () => {}),
@@ -154,6 +156,7 @@ describe('registerCommands', () => {
       startDictation: vi.fn(async () => {}),
       stopReadAloud: vi.fn(),
       stopDictation: vi.fn(async () => {}),
+      translateCurrentParagraph: vi.fn(),
       translateNote: vi.fn(),
       translateSelection: vi.fn(),
       toggleDictation: vi.fn(async () => {}),
@@ -162,5 +165,44 @@ describe('registerCommands', () => {
 
     expect(commands.filter(({ id }) => id === 'read-aloud')).toHaveLength(1);
     expect(commands.some(({ id }) => id === 'read-entire-note')).toBe(false);
+  });
+
+  it('registers translation for the paragraph at the cursor', () => {
+    const commands: Command[] = [];
+    const plugin = {
+      addCommand: vi.fn((command: Command) => {
+        commands.push(command);
+      }),
+    } as unknown as Plugin;
+    const translateCurrentParagraph = vi.fn();
+    registerCommands({
+      cancelDictation: vi.fn(async () => {}),
+      clearLastUtterance: vi.fn(),
+      clearRawTranscriptRecovery: vi.fn(),
+      checkSidecarHealth: vi.fn(async () => {}),
+      copyRawTranscript: vi.fn(),
+      hasLastUtterance: () => false,
+      hasRawTranscriptRecovery: () => false,
+      isReadAloudActive: () => false,
+      plugin,
+      readAloud: vi.fn(async () => {}),
+      reinsertLastUtterance: vi.fn(),
+      restoreRawTranscript: vi.fn(),
+      restartSidecar: vi.fn(async () => {}),
+      startDictation: vi.fn(async () => {}),
+      stopReadAloud: vi.fn(),
+      stopDictation: vi.fn(async () => {}),
+      translateCurrentParagraph,
+      translateNote: vi.fn(),
+      translateSelection: vi.fn(),
+      toggleDictation: vi.fn(async () => {}),
+      toggleReadAloudPaused: vi.fn(async () => {}),
+    });
+    const command = commands.find(({ id }) => id === 'translate-current-paragraph');
+    const editor = {} as Editor;
+
+    expect(command?.name).toBe('Translate current paragraph');
+    command?.editorCallback?.(editor, {} as never);
+    expect(translateCurrentParagraph).toHaveBeenCalledExactlyOnceWith(editor);
   });
 });

@@ -794,6 +794,7 @@ export const nl = {
     'Natuurlijk lokaal Engels voorlezen met een keuze uit samengestelde stemmen.',
   'catalog.family.pocket_tts.summary':
     'Leest notities lokaal voor in het Engels, Frans, Duits, Spaans, Portugees en Italiaans met selecteerbare stemmen en toonhoogtebehoudende snelheidsregeling.',
+  'commands.translateCurrentParagraph': 'Huidige alinea vertalen',
   'commands.translateNote': 'Notitie vertalen',
   'commands.translateSelection': 'Selectie vertalen',
   'models.manage.translationModels': 'Vertaling',
@@ -804,6 +805,7 @@ export const nl = {
   'translation.modal.largeNote': 'Grote notitie: vertalen kan enkele seconden duren.',
   'translation.modal.sourceSelection': 'Bronselectie',
   'translation.modal.sourceNote': 'Bronnotitie',
+  'translation.modal.sourceParagraph': 'Bronalinea',
   'translation.modal.previewAria': 'Vertaalvoorbeeld',
   'translation.modal.preparing': 'Lokale vertaling voorbereiden…',
   'translation.modal.loading': 'Lokaal model laden…',
@@ -831,6 +833,7 @@ export const nl = {
   'translation.notice.copied': 'Vertaling gekopieerd.',
   'translation.notice.copyFailed': 'Kon de vertaling niet kopiëren.',
   'translation.notice.tooLong': 'Vertaal maximaal {count} tekens per keer.',
+  'translation.notice.noParagraph': 'Plaats de cursor in een alinea om deze te vertalen.',
   'catalog.firefox_translations_release_2026_07.summary':
     'Snelle lokale vertaling tussen Engels en zeven talen met modellen die in Firefox zijn uitgebracht.',
   'catalog.family.firefox_translations.summary':

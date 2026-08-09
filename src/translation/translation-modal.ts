@@ -17,7 +17,7 @@ const LARGE_SOURCE_CHARACTERS = 10_000;
 
 export interface TranslationSnapshot {
   from: EditorPosition;
-  kind: 'note' | 'selection';
+  kind: 'note' | 'paragraph' | 'selection';
   source: string;
   to: EditorPosition;
 }
@@ -107,7 +107,9 @@ export class TranslationModal extends Modal {
       text:
         this.dependencies.snapshot.kind === 'selection'
           ? t('translation.modal.sourceSelection')
-          : t('translation.modal.sourceNote'),
+          : this.dependencies.snapshot.kind === 'paragraph'
+            ? t('translation.modal.sourceParagraph')
+            : t('translation.modal.sourceNote'),
     });
     sourceDetails.createEl('pre', {
       cls: 'local-stt-translation-modal__preview',
