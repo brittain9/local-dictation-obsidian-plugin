@@ -1275,8 +1275,16 @@ export class DictationSessionController {
     if (this.stopTerminatedBatchCleanup(sessionId, entry)) {
       return;
     }
-    entry.session.markSessionRangeAsProcessing();
+    const markedForProcessing = entry.session.markSessionRangeAsProcessing();
     if (this.stopTerminatedBatchCleanup(sessionId, entry)) {
+      return;
+    }
+    if (!markedForProcessing) {
+      this.dependencies.logger?.warn(
+        'llm',
+        'batch cleanup skipped: session range no longer available',
+      );
+      this.disposeLocalSession(sessionId);
       return;
     }
 
