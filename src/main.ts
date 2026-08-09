@@ -104,7 +104,10 @@ export default class LocalSttPlugin extends Plugin {
     getSettings: () => this.settings,
   });
   private llmCleanupFailure: LlmCleanupFailure | null = null;
-  private readonly lastUtteranceRecovery = new LastUtteranceRecovery(this.feedback);
+  private readonly lastUtteranceRecovery = new LastUtteranceRecovery({
+    feedback: this.feedback,
+    getClipboard: () => window.navigator.clipboard,
+  });
   private readonly llmCleanupFailureSubscribers = new Set<() => void>();
   private modelInstallManager: ModelInstallManager | null = null;
   private presetStateStore: LlmPresetStateStore | null = null;
@@ -355,6 +358,9 @@ export default class LocalSttPlugin extends Plugin {
       checkSidecarHealth: async () => this.checkSidecarHealth(),
       copyRawTranscript: () => {
         void this.rawTranscriptRecovery.copyRawTranscript();
+      },
+      copyLastUtterance: () => {
+        void this.lastUtteranceRecovery.copy();
       },
       hasLastUtterance: () => this.lastUtteranceRecovery.hasUtterance(),
       hasRawTranscriptRecovery: () => this.rawTranscriptRecovery.hasRecovery(),
