@@ -54,6 +54,12 @@ describe('resolvePluginSettings', () => {
     expect(resolvePluginSettings({ dictationLanguage: 'xx' }).dictationLanguage).toBe('en');
   });
 
+  it('keeps the reading language independent and defaults it to the model', () => {
+    expect(resolvePluginSettings({ dictationLanguage: 'es' }).readAloudLanguage).toBe('auto');
+    expect(resolvePluginSettings({ readAloudLanguage: 'fr' }).readAloudLanguage).toBe('fr');
+    expect(resolvePluginSettings({ readAloudLanguage: 'xx' }).readAloudLanguage).toBe('auto');
+  });
+
   it('tolerantly reads supported translation language preferences', () => {
     expect(
       resolvePluginSettings({

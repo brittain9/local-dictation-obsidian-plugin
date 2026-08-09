@@ -157,13 +157,15 @@ describe('Read Aloud settings incremental refresh', () => {
         manager,
         openSelectedModelDetails: vi.fn(),
         openModelPicker: vi.fn(async () => {}),
+        persistLanguage: vi.fn(async () => {}),
         persistVoice: vi.fn(async () => {}),
       },
     );
     const originalFirstControl = modelControls.children[0];
     expect(modelControls.children).toEqual([originalFirstControl, modelBefore]);
-    expect(readAloudControls.children[1]).toBe(readAloudBefore);
+    expect(readAloudControls.children[2]).toBe(readAloudBefore);
     expect(Setting.named('Text-to-speech model').descEl.textContent).toBe('No model selected');
+    expect(Setting.named('Reading language')).toBeDefined();
     expect(Setting.named('Voice')).toBeDefined();
 
     currentState = state(['alba'], 90);
@@ -214,6 +216,7 @@ describe('Read Aloud settings incremental refresh', () => {
         manager,
         openSelectedModelDetails: details,
         openModelPicker: vi.fn(async () => {}),
+        persistLanguage: vi.fn(async () => {}),
         persistVoice: vi.fn(async () => {}),
       },
     );

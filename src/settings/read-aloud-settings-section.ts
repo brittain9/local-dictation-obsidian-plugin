@@ -1,6 +1,11 @@
 import type { SliderComponent } from 'obsidian';
 import { Setting } from 'obsidian';
 
+import {
+  DICTATION_LANGUAGE_OPTIONS,
+  type DictationLanguage,
+  dictationLanguageLabel,
+} from '../language/dictation-language';
 import type { ModelPickerOptions } from '../models/manage-models-modal';
 import type { ModelInstallManager, ModelManagerState } from '../models/model-install-manager';
 import { matchesModelTriple } from '../models/model-management-types';
@@ -14,6 +19,7 @@ interface ReadAloudSettingsSectionDependencies {
   manager: ModelInstallManager;
   openSelectedModelDetails: () => void;
   openModelPicker: (options?: ModelPickerOptions) => Promise<void>;
+  persistLanguage: (language: DictationLanguage) => Promise<void>;
   persistVoice: (voice: string | null) => Promise<void>;
 }
 
@@ -60,11 +66,13 @@ export function renderTextToSpeechSettings(
   dependencies: ReadAloudSettingsSectionDependencies,
 ): () => void {
   let fingerprint = readAloudControlsFingerprint(dependencies.manager.getState());
+  let languageSettingEl: HTMLElement | null = null;
   let modelSettingEl: HTMLElement | null = null;
   let voiceSettingEl: HTMLElement | null = null;
 
   const render = (): void => {
     if (modelSettingEl !== null) modelContainer.removeChild(modelSettingEl);
+    if (languageSettingEl !== null) readAloudContainer.removeChild(languageSettingEl);
     if (voiceSettingEl !== null) readAloudContainer.removeChild(voiceSettingEl);
     const settings = dependencies.getSettings();
     const state = dependencies.manager.getState();
@@ -112,6 +120,41 @@ export function renderTextToSpeechSettings(
             ),
           ) ?? null);
     const installedVoices = installed?.installedVoiceIds ?? [];
+    const languageSetting = new Setting(readAloudContainer)
+      .setName(t('settings.readAloud.language'))
+      .setDesc(t('settings.readAloud.languageDesc'))
+      .addDropdown((dropdown) => {
+        dropdown.addOption('auto', t('settings.readAloud.modelDefault'));
+        if (catalogModel !== null) {
+          for (const option of DICTATION_LANGUAGE_OPTIONS) {
+            if (option.value === 'auto' || !catalogModel.languageTags.includes(option.value)) {
+              continue;
+            }
+            dropdown.addOption(option.value, dictationLanguageLabel(option.value));
+          }
+          if (
+            settings.readAloudLanguage !== 'auto' &&
+            !catalogModel.languageTags.includes(settings.readAloudLanguage)
+          ) {
+            dropdown.addOption(
+              settings.readAloudLanguage,
+              t('settings.dictationLanguage.unsupported', {
+                language: dictationLanguageLabel(settings.readAloudLanguage),
+              }),
+            );
+          }
+        }
+        dropdown.setValue(settings.readAloudLanguage);
+        dropdown.setDisabled(catalogModel === null);
+        dropdown.onChange(async (language) => {
+          const option = DICTATION_LANGUAGE_OPTIONS.find(({ value }) => value === language);
+          if (option === undefined) return;
+          await dependencies.persistLanguage(option.value);
+        });
+      });
+    languageSettingEl = languageSetting.settingEl;
+    readAloudContainer.insertBefore(languageSettingEl, readAloudBefore);
+
     const voiceSetting = new Setting(readAloudContainer)
       .setName(t('settings.readAloud.voice'))
       .setDesc(t('settings.readAloud.voiceDesc'))

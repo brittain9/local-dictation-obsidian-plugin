@@ -415,6 +415,7 @@ export class LocalSttSettingTab extends PluginSettingTab {
         manager,
         openSelectedModelDetails: this.buildModelInfoCallback(manager, 'tts'),
         openModelPicker: (options) => this.dependencies.openModelPicker(options),
+        persistLanguage: (language) => this.access.persistOne('readAloudLanguage', language),
         persistVoice: (voice) => this.access.persistOne('selectedTtsVoice', voice),
       },
     );
