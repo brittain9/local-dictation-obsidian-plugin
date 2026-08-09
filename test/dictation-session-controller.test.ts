@@ -2607,6 +2607,53 @@ describe('DictationSessionController', () => {
     },
   );
 
+  it('does not send transcript text when the batch range cannot be marked', async () => {
+    const logger = new FakeLogger();
+    const sidecarConnection = new FakeSidecarConnection();
+    const sessions: FakeSession[] = [];
+    const cleanup = vi.fn(
+      async (): Promise<LlmRouterCleanupResult> => ({
+        model: 'm',
+        providerId: 'ollama',
+        text: 'must not run',
+      }),
+    );
+    const controller = createController({
+      createSession: (session) => {
+        sessions.push(session);
+        session.markSessionRangeAsProcessing.mockReturnValue(false);
+      },
+      getSettings: () =>
+        createSettings({
+          llmFeaturesEnabled: true,
+          llmPostprocessMode: 'batch',
+          selectedModel: createExternalModelSelection(),
+        }),
+      llmRouter: createFakeLlmRouter({ cleanup }),
+      logger,
+      sidecarConnection,
+    });
+
+    await controller.startDictation();
+    const sessionId = sidecarConnection.startSession.mock.calls[0]?.[0].sessionId ?? '';
+    sidecarConnection.emit(transcriptReady(sessionId, 'private transcript'));
+    await vi.waitFor(() => {
+      expect(sessions[0]?.acceptTranscript).toHaveBeenCalledOnce();
+    });
+    await controller.stopDictation();
+    sidecarConnection.emit({ reason: 'user_stop', sessionId, type: 'session_stopped' });
+
+    await vi.waitFor(() => {
+      expect(sessions[0]?.dispose).toHaveBeenCalledOnce();
+    });
+    expect(cleanup).not.toHaveBeenCalled();
+    expect(logger.warn).toHaveBeenCalledWith(
+      'llm',
+      'batch cleanup skipped: session range no longer available',
+    );
+    expect(JSON.stringify(logger.warn.mock.calls)).not.toContain('private transcript');
+  });
+
   it('does not apply a batch result after clearing its processing mark reports a fatal failure', async () => {
     const sidecarConnection = new FakeSidecarConnection();
     const sessions: FakeSession[] = [];
