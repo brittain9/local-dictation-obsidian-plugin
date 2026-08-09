@@ -40,6 +40,7 @@ import { deriveModelFamilyTabs, deriveModelRowStates, type ModelRowState } from 
 // ---------------------------------------------------------------------------
 
 export type ModelPickerTask = 'stt' | 'translation' | 'tts';
+const MODEL_PICKER_TASKS: readonly ModelPickerTask[] = ['stt', 'tts', 'translation'];
 
 export interface ModelPickerOptions {
   initialTask?: ModelPickerTask;
@@ -238,11 +239,12 @@ export class ManageModelsModal extends Modal {
       attr: { 'aria-label': t('models.manage.taskLabel'), role: 'tablist' },
       cls: 'local-stt-task-switcher',
     });
-    for (const task of ['stt', 'tts', 'translation'] as const) {
+    for (const [index, task] of MODEL_PICKER_TASKS.entries()) {
       const button = taskSwitcher.createEl('button', {
         attr: {
           'aria-selected': String(task === this.activeTask),
           role: 'tab',
+          tabindex: task === this.activeTask ? '0' : '-1',
           type: 'button',
         },
         cls: 'local-stt-task-switcher__button',
@@ -250,6 +252,15 @@ export class ManageModelsModal extends Modal {
       });
       button.toggleClass('is-active', task === this.activeTask);
       button.addEventListener('click', () => this.switchTask(task));
+      button.addEventListener('keydown', (event) => {
+        const nextIndex = resolveTabNavigationIndex(index, event.key, MODEL_PICKER_TASKS.length);
+        if (nextIndex === null) return;
+        event.preventDefault();
+        const nextTask = MODEL_PICKER_TASKS[nextIndex];
+        if (nextTask === undefined) return;
+        this.switchTask(nextTask);
+        this.taskButtons.get(nextTask)?.focus();
+      });
       this.taskButtons.set(task, button);
     }
     const searchLabel = t('models.manage.searchPlaceholder', {
@@ -345,6 +356,7 @@ export class ManageModelsModal extends Modal {
     for (const [candidate, button] of this.taskButtons) {
       button.toggleClass('is-active', candidate === task);
       button.setAttribute('aria-selected', String(candidate === task));
+      button.setAttribute('tabindex', candidate === task ? '0' : '-1');
     }
   }
 

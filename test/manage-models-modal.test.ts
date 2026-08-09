@@ -247,6 +247,58 @@ describe('model browser', () => {
     expect(resolveTabNavigationIndex(0, 'ArrowRight', 0)).toBeNull();
   });
 
+  it('moves roving focus across task tabs with Arrow, Home, and End keys', () => {
+    const state = {
+      activeInstall: null,
+      catalog: { catalogVersion: 1, collections: [], families: [], models: [] },
+      compiledAdapters: [],
+      compiledRuntimes: [],
+      failedInstall: null,
+      installedModels: [],
+      loadError: null,
+      loadStatus: 'loading',
+      modelStore: { overridePath: null, path: '/models', usingDefaultPath: true },
+      selectedModel: null,
+      selectedModelCapabilities: { status: 'none' },
+      selectedTtsModel: null,
+      selectedTtsModelCapabilities: { status: 'none' },
+    } satisfies ModelManagerState;
+    const modal = new ManageModelsModal({} as never, {
+      feedback: { show: vi.fn() },
+      manager: {
+        getState: () => state,
+        subscribe: () => () => {},
+      } as unknown as ModelInstallManager,
+      onChanged: vi.fn(),
+    });
+    modal.open();
+
+    const content = modal.contentEl as unknown as TestElement;
+    const tabs = content.querySelectorAll('.local-stt-task-switcher__button');
+    const [dictation, readAloud, translation] = tabs;
+    const preventDefault = vi.fn();
+
+    expect(tabs.map((tab) => tab.getAttribute('tabindex'))).toEqual(['0', '-1', '-1']);
+
+    dictation?.dispatchEvent({ key: 'ArrowLeft', preventDefault, type: 'keydown' });
+    expect(translation?.getAttribute('aria-selected')).toBe('true');
+    expect(translation?.ownerDocument.activeElement).toBe(translation);
+
+    translation?.dispatchEvent({ key: 'Home', preventDefault, type: 'keydown' });
+    expect(dictation?.ownerDocument.activeElement).toBe(dictation);
+
+    dictation?.dispatchEvent({ key: 'End', preventDefault, type: 'keydown' });
+    expect(translation?.ownerDocument.activeElement).toBe(translation);
+
+    translation?.dispatchEvent({ key: 'ArrowRight', preventDefault, type: 'keydown' });
+    expect(dictation?.ownerDocument.activeElement).toBe(dictation);
+    expect(tabs.map((tab) => tab.getAttribute('tabindex'))).toEqual(['0', '-1', '-1']);
+    expect(readAloud?.getAttribute('aria-selected')).toBe('false');
+    expect(preventDefault).toHaveBeenCalledTimes(4);
+
+    modal.close();
+  });
+
   it('turns French performance tags into warnings and install confirmation', () => {
     const policy = resolveModelPresentationPolicy(
       ttsModel('pocket_tts_french_24l_int8', 'fr', ['high-cpu', 'may-buffer'], 504_324_300),
