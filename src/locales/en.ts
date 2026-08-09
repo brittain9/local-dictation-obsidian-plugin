@@ -208,6 +208,8 @@ export const en = {
   'models.manage.readAloudModels': 'Text to speech',
   'models.manage.translationModels': 'Translation',
   'models.manage.allLanguages': 'All languages',
+  'models.manage.installedOnly': 'Installed only',
+  'models.manage.noneInstalled': 'No installed models match the current filters.',
   'models.manage.familiesLabel': 'Model families',
   'models.manage.noneForLanguage': 'No models are available for this task and language.',
   'models.manage.installAllVoices': 'Install all voices',

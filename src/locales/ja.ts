@@ -768,6 +768,8 @@ export const ja = {
   'models.manage.dictationModels': '音声からテキスト',
   'models.manage.readAloudModels': 'テキストから音声',
   'models.manage.allLanguages': 'すべての言語',
+  'models.manage.installedOnly': 'インストール済みのみ',
+  'models.manage.noneInstalled': '現在のフィルターに一致するインストール済みモデルはありません。',
   'models.manage.familiesLabel': 'モデルファミリー',
   'models.manage.noneForLanguage': 'このタスクと言語で利用できるモデルはありません。',
   'models.manage.optionalVoice': '追加のローカル音声',

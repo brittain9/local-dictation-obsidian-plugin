@@ -118,6 +118,7 @@ export function filterModelRowsForPicker(
   rows: readonly ModelRowState[],
   options: {
     activeFamily: AdapterTabKey | null;
+    installedOnly?: boolean;
     language: ModelLanguageFilter;
     query: string;
     task: ModelPickerTask;
@@ -126,6 +127,7 @@ export function filterModelRowsForPicker(
   const query = options.query.trim().toLocaleLowerCase();
   return rows.filter((row) => {
     if (row.model.task !== options.task) return false;
+    if (options.installedOnly === true && !row.installed) return false;
     if (
       options.activeFamily === null ||
       row.model.runtimeId !== options.activeFamily.runtimeId ||
@@ -181,6 +183,8 @@ export class ManageModelsModal extends Modal {
   private activeTask: ModelPickerTask;
   private activeLanguage: ModelLanguageFilter = ALL_MODEL_LANGUAGES;
   private browserEl: HTMLDivElement | null = null;
+  private installedOnly = false;
+  private installedOnlyButtonEl: HTMLButtonElement | null = null;
   private navigationEl: HTMLDivElement | null = null;
   private navigationSignature = '';
   private listContainer: HTMLDivElement | null = null;
@@ -220,6 +224,7 @@ export class ManageModelsModal extends Modal {
     this.tabBarEl = null;
     this.listContainer = null;
     this.search = null;
+    this.installedOnlyButtonEl = null;
     this.tabButtons.clear();
     this.taskButtons.clear();
 
@@ -266,7 +271,8 @@ export class ManageModelsModal extends Modal {
     const searchLabel = t('models.manage.searchPlaceholder', {
       task: taskLabel(this.activeTask),
     });
-    const searchHost = toolbar.createDiv({ cls: 'local-stt-model-search' });
+    const filterControls = toolbar.createDiv({ cls: 'local-stt-model-filter-controls' });
+    const searchHost = filterControls.createDiv({ cls: 'local-stt-model-search' });
     this.search = new SearchComponent(searchHost)
       .setPlaceholder(searchLabel)
       .setValue(this.searchQuery)
@@ -275,6 +281,18 @@ export class ManageModelsModal extends Modal {
         this.renderModelList();
       });
     this.search.inputEl.setAttribute('aria-label', searchLabel);
+    this.installedOnlyButtonEl = filterControls.createEl('button', {
+      attr: { type: 'button' },
+      cls: 'local-stt-model-installed-filter',
+      text: t('models.manage.installedOnly'),
+    });
+    this.installedOnlyButtonEl.addEventListener('click', () => {
+      this.installedOnly = !this.installedOnly;
+      this.updateInstalledOnlyButton();
+      this.renderNavigation();
+      this.renderModelList();
+    });
+    this.updateInstalledOnlyButton();
 
     this.browserEl = this.contentEl.createDiv({ cls: 'local-stt-model-browser' });
     this.navigationEl = this.browserEl.createDiv({
@@ -320,6 +338,7 @@ export class ManageModelsModal extends Modal {
     this.listContainer = null;
     this.tabBarEl = null;
     this.search = null;
+    this.installedOnlyButtonEl = null;
     this.tabButtons.clear();
     this.taskButtons.clear();
     this.progressElements.clear();
@@ -373,7 +392,7 @@ export class ManageModelsModal extends Modal {
     this.navigationEl.addClass('local-stt-language-rail');
     this.navigationEl.setAttribute('role', 'tablist');
     this.navigationEl.setAttribute('aria-label', t('models.manage.languagesLabel'));
-    const options = deriveModelLanguageOptions(this.getRunnableRows().map((row) => row.model));
+    const options = deriveModelLanguageOptions(this.getNavigationRows().map((row) => row.model));
     for (const [index, language] of options.entries()) {
       const selected = languageFiltersEqual(language.filter, this.activeLanguage);
       const button = this.navigationEl.createEl('button', {
@@ -422,7 +441,7 @@ export class ManageModelsModal extends Modal {
     this.tabButtons.clear();
 
     const state = this.deps.manager.getState();
-    const rows = this.getRunnableRows();
+    const rows = this.getNavigationRows();
 
     // Only show adapter tabs for (runtime, family) pairs present in both the
     // compiled sidecar AND the catalog — compiled alone doesn't guarantee any
@@ -536,8 +555,9 @@ export class ManageModelsModal extends Modal {
     if (activeTab === null) {
       this.listContainer.createEl('p', {
         cls: 'local-stt-empty-state',
-        text:
-          this.activeLanguage.kind === 'all'
+        text: this.installedOnly
+          ? t('models.manage.noneInstalled')
+          : this.activeLanguage.kind === 'all'
             ? t('models.manage.noneAvailable')
             : t('models.manage.noneForLanguage'),
       });
@@ -560,6 +580,7 @@ export class ManageModelsModal extends Modal {
     const rows = this.getRunnableRows();
     const tabRows = filterModelRowsForPicker(rows, {
       activeFamily: activeTab,
+      installedOnly: this.installedOnly,
       language: this.activeLanguage,
       query: this.searchQuery,
       task: this.activeTask,
@@ -568,7 +589,9 @@ export class ManageModelsModal extends Modal {
     if (tabRows.length === 0) {
       this.listContainer.createEl('p', {
         cls: 'local-stt-empty-state',
-        text: t('models.manage.noneAvailable'),
+        text: this.installedOnly
+          ? t('models.manage.noneInstalled')
+          : t('models.manage.noneAvailable'),
       });
       return;
     }
@@ -1041,6 +1064,13 @@ export class ManageModelsModal extends Modal {
       this.searchQuery = '';
       this.search?.setValue('');
     }
+    const failedModelIsInstalled = state.installedModels.some((installed) =>
+      matchesModelTriple(installed, model.runtimeId, model.familyId, model.modelId),
+    );
+    if (!failedModelIsInstalled) {
+      this.installedOnly = false;
+      this.updateInstalledOnlyButton();
+    }
   }
 
   private getActiveTab(): AdapterTabKey | null {
@@ -1056,6 +1086,7 @@ export class ManageModelsModal extends Modal {
           model.familyId,
           model.modelId,
           model.task,
+          String(row.installed),
           ...model.languageTags,
         ].join(':');
       })
@@ -1070,6 +1101,16 @@ export class ManageModelsModal extends Modal {
           adapter.runtimeId === row.model.runtimeId && adapter.familyId === row.model.familyId,
       ),
     );
+  }
+
+  private getNavigationRows(): ModelRowState[] {
+    const rows = this.getRunnableRows();
+    return this.installedOnly ? rows.filter((row) => row.installed) : rows;
+  }
+
+  private updateInstalledOnlyButton(): void {
+    this.installedOnlyButtonEl?.setAttribute('aria-pressed', String(this.installedOnly));
+    this.installedOnlyButtonEl?.toggleClass('is-active', this.installedOnly);
   }
 
   private buildProgressState(row: ModelRowState): InstallProgressState | null {

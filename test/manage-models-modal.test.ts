@@ -190,6 +190,16 @@ describe('model browser', () => {
         task: 'stt',
       }),
     ).toEqual([english, multilingual]);
+
+    expect(
+      filterModelRowsForPicker([{ ...english, installed: true }, multilingual], {
+        activeFamily: { familyId: 'whisper', runtimeId: 'whisper_cpp' },
+        installedOnly: true,
+        language: ALL_MODEL_LANGUAGES,
+        query: '',
+        task: 'stt',
+      }),
+    ).toEqual([{ ...english, installed: true }]);
   });
 
   it('filters family tabs before filtering models within the selected family', () => {
@@ -296,6 +306,45 @@ describe('model browser', () => {
     expect(readAloud?.getAttribute('aria-selected')).toBe('false');
     expect(preventDefault).toHaveBeenCalledTimes(4);
 
+    modal.close();
+  });
+
+  it('exposes the installed-only model filter as a pressed toggle', async () => {
+    const state = {
+      activeInstall: null,
+      catalog: { catalogVersion: 1, collections: [], families: [], models: [] },
+      compiledAdapters: [],
+      compiledRuntimes: [],
+      failedInstall: null,
+      installedModels: [],
+      loadError: null,
+      loadStatus: 'ready',
+      modelStore: { overridePath: null, path: '/models', usingDefaultPath: true },
+      selectedModel: null,
+      selectedModelCapabilities: { status: 'none' },
+      selectedTtsModel: null,
+      selectedTtsModelCapabilities: { status: 'none' },
+    } satisfies ModelManagerState;
+    const modal = new ManageModelsModal({} as never, {
+      feedback: { show: vi.fn() },
+      manager: {
+        getState: () => state,
+        subscribe: () => () => {},
+      } as unknown as ModelInstallManager,
+      onChanged: vi.fn(),
+    });
+    modal.open();
+
+    const content = modal.contentEl as unknown as TestElement;
+    const toggle = content.querySelector('.local-stt-model-installed-filter');
+    expect(toggle?.textContent).toBe('Installed only');
+    expect(toggle?.getAttribute('aria-pressed')).toBe('false');
+
+    await toggle?.click();
+
+    expect(toggle?.getAttribute('aria-pressed')).toBe('true');
+    expect(toggle?.classList.contains('is-active')).toBe(true);
+    expect(content.findByText('No installed models match the current filters.')).toBeDefined();
     modal.close();
   });
 

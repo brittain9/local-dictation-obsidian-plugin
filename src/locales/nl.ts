@@ -769,6 +769,9 @@ export const nl = {
   'models.manage.dictationModels': 'Spraak naar tekst',
   'models.manage.readAloudModels': 'Tekst naar spraak',
   'models.manage.allLanguages': 'Alle talen',
+  'models.manage.installedOnly': 'Alleen geïnstalleerd',
+  'models.manage.noneInstalled':
+    'Geen geïnstalleerde modellen komen overeen met de huidige filters.',
   'models.manage.familiesLabel': 'Modelfamilies',
   'models.manage.noneForLanguage': 'Er zijn geen modellen voor deze taak en taal beschikbaar.',
   'models.manage.optionalVoice': 'Optionele lokale stem',

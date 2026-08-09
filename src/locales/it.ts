@@ -781,6 +781,8 @@ export const it = {
   'models.manage.dictationModels': 'Da voce a testo',
   'models.manage.readAloudModels': 'Da testo a voce',
   'models.manage.allLanguages': 'Tutte le lingue',
+  'models.manage.installedOnly': 'Solo installati',
+  'models.manage.noneInstalled': 'Nessun modello installato corrisponde ai filtri attuali.',
   'models.manage.familiesLabel': 'Famiglie di modelli',
   'models.manage.noneForLanguage': 'Nessun modello disponibile per questa attività e lingua.',
   'models.manage.optionalVoice': 'Voce locale facoltativa',

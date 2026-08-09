@@ -117,8 +117,26 @@
 }
 
 .local-stt-model-search {
-  width: min(240px, 42%);
+  flex: 1;
   min-width: 140px;
+}
+
+.local-stt-model-filter-controls {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  width: min(360px, 52%);
+}
+
+.local-stt-model-installed-filter {
+  min-height: 30px;
+  white-space: nowrap;
+}
+
+.local-stt-model-installed-filter.is-active {
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
 }
 
 .local-stt-model-browser {
@@ -504,7 +522,7 @@
     gap: 8px;
   }
 
-  .local-stt-model-search {
+  .local-stt-model-filter-controls {
     width: 100%;
   }
 

@@ -774,6 +774,8 @@ export const es = {
   'models.manage.dictationModels': 'Voz a texto',
   'models.manage.readAloudModels': 'Texto a voz',
   'models.manage.allLanguages': 'Todos los idiomas',
+  'models.manage.installedOnly': 'Solo instalados',
+  'models.manage.noneInstalled': 'Ningún modelo instalado coincide con los filtros actuales.',
   'models.manage.familiesLabel': 'Familias de modelos',
   'models.manage.noneForLanguage': 'No hay modelos disponibles para esta tarea e idioma.',
   'models.manage.optionalVoice': 'Voz local opcional',

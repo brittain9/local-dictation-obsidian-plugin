@@ -205,6 +205,8 @@ export const hr = {
   'models.manage.readAloudModels': 'Tekst u govor',
   'models.manage.translationModels': 'Prijevod',
   'models.manage.allLanguages': 'Svi jezici',
+  'models.manage.installedOnly': 'Samo instalirani',
+  'models.manage.noneInstalled': 'Nijedan instalirani model ne odgovara trenutačnim filtrima.',
   'models.manage.familiesLabel': 'Obitelji modela',
   'models.manage.noneForLanguage': 'Nema dostupnih modela za ovaj zadatak i jezik.',
   'models.manage.installAllVoices': 'Instaliraj sve glasove',

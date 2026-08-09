@@ -776,6 +776,8 @@ export const fr = {
   'models.manage.dictationModels': 'Reconnaissance vocale',
   'models.manage.readAloudModels': 'Synthèse vocale',
   'models.manage.allLanguages': 'Toutes les langues',
+  'models.manage.installedOnly': 'Installés uniquement',
+  'models.manage.noneInstalled': 'Aucun modèle installé ne correspond aux filtres actuels.',
   'models.manage.familiesLabel': 'Familles de modèles',
   'models.manage.noneForLanguage': 'Aucun modèle disponible pour cette tâche et cette langue.',
   'models.manage.optionalVoice': 'Voix locale facultative',
