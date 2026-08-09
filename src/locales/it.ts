@@ -763,6 +763,7 @@ export const it = {
   'setup.sidecar.modal.genericInstallError':
     'Impossibile installare il motore di riconoscimento vocale. Controlla i log del plugin per i dettagli, quindi riprova.',
   'commands.readAloud': 'Leggi ad alta voce',
+  'commands.readCurrentSection': 'Leggi ad alta voce la sezione corrente',
   'commands.pauseResumeReadAloud': 'Metti in pausa o riprendi la lettura',
   'commands.stopReadAloud': 'Interrompi la lettura',
   'settings.groups.readAloud': 'Lettura ad alta voce',

@@ -27,6 +27,7 @@ describe('registerCommands', () => {
       isReadAloudActive: () => false,
       plugin,
       readAloud: vi.fn(async () => {}),
+      readCurrentSection: vi.fn(async () => {}),
       readEntireNote: vi.fn(async () => {}),
       readFromCursor: vi.fn(async () => {}),
       reinsertLastUtterance,
@@ -92,6 +93,7 @@ describe('registerCommands', () => {
       isReadAloudActive: () => false,
       plugin,
       readAloud: vi.fn(async () => {}),
+      readCurrentSection: vi.fn(async () => {}),
       readEntireNote: vi.fn(async () => {}),
       readFromCursor: vi.fn(async () => {}),
       reinsertLastUtterance: vi.fn(),
@@ -142,6 +144,7 @@ describe('registerCommands', () => {
     } as unknown as Plugin;
 
     const readEntireNote = vi.fn(async () => {});
+    const readCurrentSection = vi.fn(async () => {});
     const readFromCursor = vi.fn(async () => {});
     registerCommands({
       cancelDictation: vi.fn(async () => {}),
@@ -154,6 +157,7 @@ describe('registerCommands', () => {
       isReadAloudActive: () => false,
       plugin,
       readAloud: vi.fn(async () => {}),
+      readCurrentSection,
       readEntireNote,
       readFromCursor,
       reinsertLastUtterance: vi.fn(),
@@ -174,6 +178,10 @@ describe('registerCommands', () => {
     const editor = {} as Editor;
     await entireNoteCommand?.editorCallback?.(editor, {} as never);
     expect(readEntireNote).toHaveBeenCalledWith(editor);
+    const currentSectionCommand = commands.find(({ id }) => id === 'read-current-section');
+    expect(currentSectionCommand?.name).toBe('Read current section aloud');
+    await currentSectionCommand?.editorCallback?.(editor, {} as never);
+    expect(readCurrentSection).toHaveBeenCalledWith(editor);
     const fromCursorCommand = commands.find(({ id }) => id === 'read-from-cursor');
     expect(fromCursorCommand?.name).toBe('Read aloud from cursor');
     await fromCursorCommand?.editorCallback?.(editor, {} as never);

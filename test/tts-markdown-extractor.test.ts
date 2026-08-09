@@ -47,6 +47,12 @@ describe('extractSpeakableMarkdown', () => {
     ).toBe('world');
   });
 
+  it('speaks setext heading text without speaking its underline', () => {
+    const source = 'Introduction\n============\nRead this.';
+
+    expect(extractSpeakableMarkdown(source).text).toBe('Introduction Read this.');
+  });
+
   it('drops same-line and multiline display math without dropping surrounding prose', () => {
     const source = ['Before $$E = mc^2$$ after.', '$$', 'hidden + formula', '$$', 'Finish.'].join(
       '\n',

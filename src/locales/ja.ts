@@ -751,6 +751,7 @@ export const ja = {
   'setup.sidecar.modal.genericInstallError':
     '音声エンジンをインストールできませんでした。プラグインのログで詳細を確認し、再試行してください。',
   'commands.readAloud': '読み上げ',
+  'commands.readCurrentSection': '現在のセクションを読み上げ',
   'commands.pauseResumeReadAloud': '読み上げを一時停止または再開',
   'commands.stopReadAloud': '読み上げを停止',
   'settings.groups.readAloud': '読み上げ',

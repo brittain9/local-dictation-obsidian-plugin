@@ -116,6 +116,7 @@ export const en = {
   'commands.checkSidecarHealth': 'Check sidecar health',
   'commands.restartSidecar': 'Restart sidecar',
   'commands.readAloud': 'Read aloud',
+  'commands.readCurrentSection': 'Read current section aloud',
   'commands.readEntireNote': 'Read entire note aloud',
   'commands.readFromCursor': 'Read aloud from cursor',
   'commands.pauseResumeReadAloud': 'Pause or resume reading',

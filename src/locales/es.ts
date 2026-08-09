@@ -756,6 +756,7 @@ export const es = {
   'setup.sidecar.modal.genericInstallError':
     'No se pudo instalar el motor de voz. Consulte los registros del complemento para obtener más detalles y vuelva a intentarlo.',
   'commands.readAloud': 'Leer en voz alta',
+  'commands.readCurrentSection': 'Leer la sección actual en voz alta',
   'commands.pauseResumeReadAloud': 'Pausar o reanudar la lectura',
   'commands.stopReadAloud': 'Detener la lectura',
   'settings.groups.readAloud': 'Lectura en voz alta',

@@ -754,6 +754,7 @@ export const pt = {
   'setup.sidecar.modal.genericInstallError':
     'Não foi possível instalar o motor de voz. Consulte os registos do plugin para obter detalhes e tente novamente.',
   'commands.readAloud': 'Ler em voz alta',
+  'commands.readCurrentSection': 'Ler a secção atual em voz alta',
   'commands.pauseResumeReadAloud': 'Pausar ou retomar a leitura',
   'commands.stopReadAloud': 'Parar a leitura',
   'settings.groups.readAloud': 'Leitura em voz alta',

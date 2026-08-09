@@ -7,6 +7,7 @@ interface MappedText {
 
 const FENCE_PATTERN = /^\s*(```|~~~)/u;
 const HEADING_PATTERN = /^\s{0,3}#{1,6}\s+/u;
+const HEADING_UNDERLINE_PATTERN = /^\s{0,3}(?:=+|-+)\s*$/u;
 const LIST_MARKER_PATTERN = /^\s*(?:[-+*]|\d+[.)])\s+/u;
 const BLOCKQUOTE_PATTERN = /^\s*>\s?/u;
 const TABLE_DIVIDER_PATTERN = /^\s*\|?(?:\s*:?-{3,}:?\s*\|)+\s*:?-{3,}:?\s*\|?\s*$/u;
@@ -46,7 +47,7 @@ export function extractSpeakableMarkdown(source: string): MappedText {
       continue;
     }
 
-    if (TABLE_DIVIDER_PATTERN.test(line)) {
+    if (HEADING_UNDERLINE_PATTERN.test(line) || TABLE_DIVIDER_PATTERN.test(line)) {
       offset += lineWithEnding.length;
       continue;
     }

@@ -26,10 +26,15 @@ import {
   type SidecarLifecycleLease,
 } from '../sidecar/sidecar-lifecycle-gate';
 import { extractAndSegmentMarkdown } from './markdown-extractor';
+import { resolveCurrentSectionRange } from './markdown-section';
 import { resolveReadAloudVoiceId } from './read-aloud-selection';
 
 export type ReadAloudState = 'idle' | 'paused' | 'reading';
-export type ReadAloudScope = 'entire_note' | 'from_cursor' | 'selection_or_note';
+export type ReadAloudScope =
+  | 'current_section'
+  | 'entire_note'
+  | 'from_cursor'
+  | 'selection_or_note';
 export interface ReadAloudProgress {
   current: number;
   total: number;
@@ -420,6 +425,9 @@ export function resolveReadRange(
   source: string,
   scope: ReadAloudScope = 'selection_or_note',
 ): { from: number; to: number } {
+  if (scope === 'current_section') {
+    return resolveCurrentSectionRange(source, editor.posToOffset(editor.getCursor('head')));
+  }
   if (scope === 'from_cursor') {
     return { from: editor.posToOffset(editor.getCursor('head')), to: source.length };
   }

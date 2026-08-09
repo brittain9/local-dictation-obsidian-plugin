@@ -8,6 +8,7 @@ import {
   SidecarLifecycleConflictError,
   SidecarLifecycleGate,
 } from '../src/sidecar/sidecar-lifecycle-gate';
+import { resolveCurrentSectionRange } from '../src/tts/markdown-section';
 
 const playback = vi.hoisted(() => ({
   enqueue: vi.fn(),
@@ -183,6 +184,95 @@ describe('resolveReadRange', () => {
 
     expect(resolveReadRange(editor, source, 'from_cursor')).toEqual({
       from: source.indexOf('Start here.'),
+      to: source.length,
+    });
+  });
+
+  it('reads the cursor heading, its descendants, and stops at the next peer', () => {
+    const source = [
+      '# Guide',
+      'Overview.',
+      '## Setup',
+      'Install it.',
+      '### macOS',
+      'Allow access.',
+      '## Usage',
+      'Start here.',
+    ].join('\n');
+    const selectionStart = source.indexOf('Install it.');
+    const editor = editorFor(source, { ch: 2, line: 3 }, [selectionStart + 4, selectionStart]);
+
+    expect(resolveReadRange(editor, source, 'current_section')).toEqual({
+      from: source.indexOf('## Setup'),
+      to: source.indexOf('## Usage'),
+    });
+  });
+});
+
+describe('resolveCurrentSectionRange', () => {
+  it('treats content before the first heading as a preamble', () => {
+    const source = 'Summary before the outline.\n\n# First section\nDetails.';
+
+    expect(resolveCurrentSectionRange(source, source.indexOf('Summary'))).toEqual({
+      from: 0,
+      to: source.indexOf('# First section'),
+    });
+  });
+
+  it('reads a child section only through its next peer or ancestor', () => {
+    const source = [
+      '# One',
+      '## Child',
+      '### Detail',
+      'Text.',
+      '### Next detail',
+      'More.',
+      '# Two',
+    ].join('\n');
+
+    expect(resolveCurrentSectionRange(source, source.indexOf('Text.'))).toEqual({
+      from: source.indexOf('### Detail'),
+      to: source.indexOf('### Next detail'),
+    });
+    expect(resolveCurrentSectionRange(source, source.indexOf('More.'))).toEqual({
+      from: source.indexOf('### Next detail'),
+      to: source.indexOf('# Two'),
+    });
+  });
+
+  it('recognizes setext headings and CRLF offsets', () => {
+    const source = 'Long\r\nintroduction\r\n============\r\nOpening.\r\n\r\nNext\r\n====\r\nLater.';
+
+    expect(resolveCurrentSectionRange(source, source.indexOf('Opening.'))).toEqual({
+      from: 0,
+      to: source.indexOf('Next'),
+    });
+  });
+
+  it('ignores heading-like lines in frontmatter and fenced code blocks', () => {
+    const source = [
+      '---',
+      'title: "# Not a heading"',
+      '---',
+      'Preamble.',
+      '```md',
+      '# Example',
+      '```',
+      '# Real heading',
+      'Content.',
+    ].join('\n');
+
+    expect(resolveCurrentSectionRange(source, source.indexOf('Preamble.'))).toEqual({
+      from: 0,
+      to: source.indexOf('# Real heading'),
+    });
+  });
+
+  it('returns the whole note when there are no headings', () => {
+    const source = 'Only paragraphs.\n\nStill the same section.';
+
+    expect(resolveCurrentSectionRange(source, source.length + 10)).toEqual({
+      from: 0,
       to: source.length,
     });
   });

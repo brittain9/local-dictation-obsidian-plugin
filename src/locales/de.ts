@@ -764,6 +764,7 @@ export const de = {
   'setup.sidecar.modal.genericInstallError':
     'Die Sprach-Engine konnte nicht installiert werden. Überprüfen Sie die Plugin-Protokolle auf Details und versuchen Sie es dann erneut.',
   'commands.readAloud': 'Vorlesen',
+  'commands.readCurrentSection': 'Aktuellen Abschnitt vorlesen',
   'commands.pauseResumeReadAloud': 'Vorlesen pausieren oder fortsetzen',
   'commands.stopReadAloud': 'Vorlesen beenden',
   'settings.groups.readAloud': 'Vorlesen',
