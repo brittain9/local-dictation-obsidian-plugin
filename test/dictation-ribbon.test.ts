@@ -223,6 +223,29 @@ describe('DictationRibbonController hold lifecycle interactions', () => {
     expect(element.innerHTML).toBe(snapshot);
   });
 
+  it('surfaces processing pressure without repainting the live icon', () => {
+    const { controller, element } = makeController();
+    controller.setState('listening');
+    const snapshot = element.innerHTML;
+
+    controller.setQueueTier('catching_up');
+    expect(element.dataset.localSttQueueTier).toBe('catching_up');
+    expect(element.attributes['aria-label']).toBe(
+      'Speech Kit — listening — processing is catching up',
+    );
+
+    controller.setQueueTier('falling_behind');
+    expect(element.attributes['aria-label']).toBe(
+      'Speech Kit — listening — processing is falling behind; pause briefly',
+    );
+
+    controller.setQueueTier('saturated');
+    expect(element.attributes['aria-label']).toBe(
+      'Speech Kit — listening — processing backlog is full; pause speaking',
+    );
+    expect(element.innerHTML).toBe(snapshot);
+  });
+
   it('cancels the hold immediately when reduced-motion turns on mid-hold', () => {
     const { controller, element } = makeController();
     controller.setState('listening');

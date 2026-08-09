@@ -633,6 +633,18 @@
   opacity: 0.45;
 }
 
+.side-dock-ribbon-action[data-local-stt-queue-tier="catching_up"] {
+  color: var(--text-accent);
+}
+
+.side-dock-ribbon-action[data-local-stt-queue-tier="falling_behind"] {
+  color: var(--text-warning);
+}
+
+.side-dock-ribbon-action[data-local-stt-queue-tier="saturated"] {
+  color: var(--text-error);
+}
+
 /* Live per-band FFT amplitude scales each bar via --local-stt-bar-N (1..6),
    written by DictationRibbonController on every animation frame while VAD
    reports speech. The listening state shares the same transform rules with a

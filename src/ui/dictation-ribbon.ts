@@ -78,11 +78,10 @@ export class DictationRibbonController {
       return;
     }
     this.queueTier = tier;
-    // queueTier is not currently surfaced in the label or icon. Intentionally
-    // do not call render() here — re-running paintIcon while speech_detected is
-    // active would replace the live <svg> element, killing the in-flight
-    // transform/opacity transitions. If a future revision starts reflecting the
-    // tier, route it through renderLabel() (label-only), not render().
+    this.element.dataset.localSttQueueTier = tier;
+    // Keep this label-only. Repainting while speech is active would replace the
+    // live SVG whose paths are being animated by the audio visualizer.
+    this.renderLabel();
   }
 
   setVisualizer(bandReader: AudioBandReader | null): void {
@@ -100,6 +99,7 @@ export class DictationRibbonController {
   private render(): void {
     this.paintIcon(this.visualState);
     this.element.dataset.localSttState = this.visualState;
+    this.element.dataset.localSttQueueTier = this.queueTier;
     this.renderLabel();
   }
 
@@ -107,7 +107,7 @@ export class DictationRibbonController {
     // aria-label and title follow this.state, not visualState — a screen reader
     // or tooltip must announce the real controller state, even during the
     // speech-tail visual hold where visualState lags by up to SPEECH_TAIL_HOLD_MS.
-    const label = buildRibbonLabel(this.state);
+    const label = buildRibbonLabel(this.state, this.queueTier);
     this.element.setAttribute('aria-label', label);
     this.element.setAttribute('data-tooltip-position', 'top');
     this.element.title = label;
@@ -240,20 +240,38 @@ function iconForState(state: DictationControllerState): RibbonIcon {
   }
 }
 
-function buildRibbonLabel(state: DictationControllerState): string {
-  switch (state) {
-    case 'idle':
-      return t('ribbon.idle');
-    case 'starting':
-      return t('ribbon.starting');
-    case 'listening':
-      return t('ribbon.listening');
-    case 'speech_detected':
-      return t('ribbon.speechDetected');
-    case 'error':
-      return t('ribbon.error');
+function buildRibbonLabel(
+  state: DictationControllerState,
+  queueTier: QueueBackpressureTier,
+): string {
+  const stateLabel = (() => {
+    switch (state) {
+      case 'idle':
+        return t('ribbon.idle');
+      case 'starting':
+        return t('ribbon.starting');
+      case 'listening':
+        return t('ribbon.listening');
+      case 'speech_detected':
+        return t('ribbon.speechDetected');
+      case 'error':
+        return t('ribbon.error');
+      default:
+        return assertNever(state);
+    }
+  })();
+  if (state !== 'listening' && state !== 'speech_detected') return stateLabel;
+  switch (queueTier) {
+    case 'normal':
+      return stateLabel;
+    case 'catching_up':
+      return t('ribbon.queueCatchingUp', { state: stateLabel });
+    case 'falling_behind':
+      return t('ribbon.queueFallingBehind', { state: stateLabel });
+    case 'saturated':
+      return t('ribbon.queueSaturated', { state: stateLabel });
     default:
-      return assertNever(state);
+      return assertNever(queueTier);
   }
 }
 
