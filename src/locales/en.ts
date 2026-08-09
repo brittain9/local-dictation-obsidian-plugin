@@ -156,6 +156,7 @@ export const en = {
   'translation.notice.tooLong': 'Translate up to {count} characters at a time.',
   'translation.notice.noText': 'There is no text to translate in this note.',
   'common.reset': 'Reset',
+  'common.actionFailed': 'Could not complete this action. Try again.',
   'settings.acceleration.active': 'Configured acceleration: {accelerator}',
   'settings.acceleration.pending': 'pending (sidecar not ready)',
   'settings.acceleration.unavailable': 'CPU ({accelerator} unavailable)',

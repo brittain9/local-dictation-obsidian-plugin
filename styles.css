@@ -795,6 +795,11 @@
   margin: var(--size-2-2) 0;
 }
 
+.local-stt-confirm-modal__error {
+  color: var(--text-error);
+  margin: var(--size-2-2) 0;
+}
+
 /* --- Batch LLM processing pulse ----------------------------------- */
 
 .local-stt-transcript-provisional {
