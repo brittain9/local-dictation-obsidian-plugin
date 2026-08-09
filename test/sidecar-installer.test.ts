@@ -440,6 +440,88 @@ describe('installSidecar', () => {
     ).rejects.toMatchObject({ name: 'AbortError' });
   });
 
+  it.each(['verify', 'extract'] as const)(
+    'honors cancellation before the %s phase starts',
+    async (phase) => {
+      const pluginDirectory = await createTempDirectory();
+      const controller = new AbortController();
+      const archive = buildTarGz([
+        { content: Buffer.from('new-binary'), name: 'local-dictation-sidecar' },
+      ]);
+      const archiveSha256 = sha256Hex(archive);
+      const assetName = 'sidecar-linux-x86_64-cpu.tar.gz';
+
+      stubHttps({
+        [`https://releases.test/2026.4.21/${assetName}`]: archive,
+        'https://releases.test/2026.4.21/checksums.txt': Buffer.from(
+          `${archiveSha256}  ${assetName}\n`,
+        ),
+      });
+
+      await expect(
+        installSidecar({
+          onProgress: (progress) => {
+            if (progress.phase === phase) controller.abort();
+          },
+          pluginDirectory,
+          releaseBaseUrl: 'https://releases.test',
+          signal: controller.signal,
+          variant: 'cpu',
+          version: '2026.4.21',
+        }),
+      ).rejects.toMatchObject({ name: 'AbortError' });
+
+      await expect(
+        readInstallManifest(variantDirectoryPath(pluginDirectory, 'cpu')),
+      ).resolves.toBeNull();
+      await expect(
+        readInstallManifest(join(pluginDirectory, 'bin', '.cpu-staging')),
+      ).resolves.toBeNull();
+    },
+  );
+
+  it('honors cancellation after preparation without replacing the existing install', async () => {
+    const pluginDirectory = await createTempDirectory();
+    const variantDir = variantDirectoryPath(pluginDirectory, 'cpu');
+    await mkdir(variantDir, { recursive: true });
+    await writeFile(join(variantDir, 'local-dictation-sidecar'), 'old-binary');
+
+    const controller = new AbortController();
+    const archive = buildTarGz([
+      { content: Buffer.from('new-binary'), name: 'local-dictation-sidecar' },
+    ]);
+    const archiveSha256 = sha256Hex(archive);
+    const assetName = 'sidecar-linux-x86_64-cpu.tar.gz';
+
+    stubHttps({
+      [`https://releases.test/2026.4.21/${assetName}`]: archive,
+      'https://releases.test/2026.4.21/checksums.txt': Buffer.from(
+        `${archiveSha256}  ${assetName}\n`,
+      ),
+    });
+
+    await expect(
+      installSidecar({
+        beforeReplace: async () => {
+          controller.abort();
+        },
+        pluginDirectory,
+        releaseBaseUrl: 'https://releases.test',
+        signal: controller.signal,
+        variant: 'cpu',
+        version: '2026.4.21',
+      }),
+    ).rejects.toMatchObject({ name: 'AbortError' });
+
+    await expect(readFile(join(variantDir, 'local-dictation-sidecar'), 'utf8')).resolves.toBe(
+      'old-binary',
+    );
+    await expect(readInstallManifest(join(pluginDirectory, 'bin', '.cpu-staging'))).resolves.toBe(
+      null,
+    );
+    await expect(readInstallManifest(`${variantDir}.old`)).resolves.toBeNull();
+  });
+
   it('follows a single HTTP redirect to the final asset URL', async () => {
     const pluginDirectory = await createTempDirectory();
     const archive = buildTarGz([
