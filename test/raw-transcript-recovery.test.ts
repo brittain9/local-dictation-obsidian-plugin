@@ -181,6 +181,19 @@ describe('RawTranscriptRecovery', () => {
     });
   });
 
+  it('restores after the same open note is renamed', () => {
+    const harness = createHarness('clean');
+    const receipt = harness.receipt({ rawText: 'raw' });
+    harness.recovery.record(receipt);
+    Object.assign(receipt.file, { path: 'renamed.md' });
+
+    expect(harness.recovery.restoreRawTranscript()).toBe(true);
+
+    expect(harness.view.state.doc.toString()).toBe('raw');
+    expect(harness.view.dispatch).toHaveBeenCalledOnce();
+    expect(harness.recovery.hasRecovery()).toBe(false);
+  });
+
   it('clears explicitly and hides recovery availability', () => {
     const harness = createHarness('clean');
     harness.recovery.record(harness.receipt({ rawText: 'raw' }));
