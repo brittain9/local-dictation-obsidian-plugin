@@ -43,7 +43,10 @@ export class DictationRibbonController {
   private queueTier: QueueBackpressureTier = 'normal';
   private currentIcon: RibbonIcon | null = null;
 
-  constructor(private readonly element: HTMLElement) {
+  constructor(
+    private readonly element: HTMLElement,
+    private readonly hasLanguageMenu = false,
+  ) {
     this.reducedMotion = matchMedia(REDUCED_MOTION_QUERY);
     this.reducedMotionListener = (): void => this.onReducedMotionChange();
     this.reducedMotion.addEventListener('change', this.reducedMotionListener);
@@ -107,7 +110,11 @@ export class DictationRibbonController {
     // aria-label and title follow this.state, not visualState — a screen reader
     // or tooltip must announce the real controller state, even during the
     // speech-tail visual hold where visualState lags by up to SPEECH_TAIL_HOLD_MS.
-    const label = buildRibbonLabel(this.state, this.queueTier);
+    const stateLabel = buildRibbonLabel(this.state, this.queueTier);
+    const label =
+      this.hasLanguageMenu && this.state === 'idle'
+        ? t('ribbon.languageMenuHint', { state: stateLabel })
+        : stateLabel;
     this.element.setAttribute('aria-label', label);
     this.element.setAttribute('data-tooltip-position', 'top');
     this.element.title = label;

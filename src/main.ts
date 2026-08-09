@@ -14,6 +14,10 @@ import { provisionalTranscriptExtension } from './editor/provisional-transcript-
 import { RawTranscriptRecovery } from './editor/raw-transcript-recovery';
 import { sessionProcessingExtension } from './editor/session-processing-extension';
 import { TemporaryLeafPinLeaseManager } from './editor/temporary-leaf-pin';
+import {
+  type DictationLanguage,
+  dictationLanguageOptionsForSelection,
+} from './language/dictation-language';
 import { syncDictationLanguageWithObsidian } from './language/dictation-language-sync';
 import type { LlmCleanupFailure } from './llm/provider';
 import { createConfiguredLlmRouter } from './llm/runtime';
@@ -30,6 +34,7 @@ import {
 } from './models/model-picker-routing';
 import { Session } from './session/session';
 import { logAccelerationFallbacks } from './settings/acceleration-info';
+import { applyDictationLanguageChange } from './settings/dictation-language-setting';
 import { LlmPresetStateStore } from './settings/llm-preset-state';
 import { restoreLlmTransformationDefaults } from './settings/llm-transformation-reset';
 import { handleMicrophoneDeviceFallback } from './settings/microphone-fallback';
@@ -79,6 +84,7 @@ import { TranslationController } from './translation/translation-controller';
 import { READ_ALOUD_SPEED_PRESETS, readAloudControlLabels } from './tts/read-aloud-control-labels';
 import { ReadAloudController, type ReadAloudState } from './tts/read-aloud-controller';
 import { didReadAloudSettingsChange, resolveReadAloudVoiceId } from './tts/read-aloud-selection';
+import { buildDictationLanguageMenuItems } from './ui/dictation-language-menu';
 import { DictationRibbonController } from './ui/dictation-ribbon';
 import { LOCAL_DICTATION_VIEW_TYPE, LocalDictationView } from './ui/local-dictation-view';
 
@@ -229,8 +235,13 @@ export default class LocalSttPlugin extends Plugin {
     const ribbonElement = this.addRibbonIcon('mic', t('ribbon.idle'), () => {
       void this.requireDictationController().toggleDictation();
     });
-    this.ribbonController = new DictationRibbonController(ribbonElement);
+    this.ribbonController = new DictationRibbonController(ribbonElement, true);
+    ribbonElement.setAttribute('aria-haspopup', 'menu');
     this.ribbonController.setVisualizer(this.audioLevelMeter);
+    this.registerDomEvent(ribbonElement, 'contextmenu', (event) => {
+      event.preventDefault();
+      this.openDictationLanguageMenu(event);
+    });
     this.dictationController = new DictationSessionController({
       audioLevelMeter: this.audioLevelMeter,
       captureStream: this.audioCaptureStream,
@@ -865,6 +876,74 @@ export default class LocalSttPlugin extends Plugin {
     });
     setIcon(stop, 'square');
     stop.addEventListener('click', () => this.requireReadAloudController().stop());
+  }
+
+  private openDictationLanguageMenu(event: MouseEvent): void {
+    const state = this.requireModelInstallManager().getState();
+    const capabilities = state.selectedModelCapabilities;
+    const hasSelectedModel = this.settings.selectedModel !== null;
+    const languageSupport =
+      capabilities.status === 'ready'
+        ? capabilities.capabilities.family.supportedLanguages
+        : ({ kind: 'english_only' } as const);
+    const supportsAutomaticLanguageDetection =
+      capabilities.status === 'ready' &&
+      capabilities.capabilities.family.supportsAutomaticLanguageDetection;
+    const active = this.requireDictationController().isCaptureActive();
+    const languages = dictationLanguageOptionsForSelection(
+      hasSelectedModel,
+      languageSupport,
+      supportsAutomaticLanguageDetection,
+    ).map(({ value }) => value);
+    const menu = new Menu();
+    menu.addItem((item) => {
+      item.setTitle(t('settings.dictationLanguage.name')).setDisabled(true);
+    });
+    menu.addSeparator();
+    if (active) {
+      menu.addItem((item) => {
+        item.setTitle(t('ribbon.stopToChangeLanguage')).setDisabled(true);
+      });
+      menu.addSeparator();
+    }
+    for (const item of buildDictationLanguageMenuItems(
+      languages,
+      this.settings.dictationLanguage,
+      active,
+    )) {
+      menu.addItem((menuItem) => {
+        menuItem
+          .setTitle(item.label)
+          .setChecked(item.selected)
+          .setDisabled(item.disabled)
+          .onClick(() => {
+            void this.selectDictationLanguageFromRibbon(item.language);
+          });
+      });
+    }
+    menu.showAtMouseEvent(event);
+  }
+
+  private async selectDictationLanguageFromRibbon(language: DictationLanguage): Promise<void> {
+    try {
+      await applyDictationLanguageChange(language, {
+        feedback: this.feedback,
+        hasSelectedModel: this.settings.selectedModel !== null,
+        onModelChanged: () => {},
+        openModelPicker: (options) => this.openModelPicker(options),
+        persist: async (nextLanguage) => {
+          await this.updateSettings({ ...this.settings, dictationLanguage: nextLanguage });
+        },
+      });
+    } catch (error) {
+      this.logger.error('settings', 'failed to change dictation language from ribbon', error);
+      this.feedback.show({
+        cause: error,
+        intent: 'error',
+        key: 'ribbon-language-change-failed',
+        message: t('ribbon.languageSaveFailed'),
+      });
+    }
   }
 
   private installedReadAloudModels(): CatalogModelRecord[] {

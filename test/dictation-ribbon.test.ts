@@ -61,6 +61,16 @@ function makeController(): { controller: DictationRibbonController; element: Fak
   return { controller, element };
 }
 
+it('advertises the optional language menu while idle', () => {
+  const element = new FakeElement();
+  new DictationRibbonController(element as unknown as HTMLElement, true);
+
+  expect(element.attributes['aria-label']).toBe(
+    'Speech Kit — start dictation. Right-click to choose language.',
+  );
+  expect(element.title).toBe('Speech Kit — start dictation. Right-click to choose language.');
+});
+
 describe('DictationRibbonController speech tail hold', () => {
   it('keeps the speech_detected look for 5s after VAD drops, then flips to listening', () => {
     const { controller, element } = makeController();
