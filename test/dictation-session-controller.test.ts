@@ -2651,7 +2651,13 @@ describe('DictationSessionController', () => {
       'llm',
       'batch cleanup skipped: session range no longer available',
     );
-    expect(JSON.stringify(logger.warn.mock.calls)).not.toContain('private transcript');
+    expect(
+      JSON.stringify([
+        ...logger.debug.mock.calls,
+        ...logger.warn.mock.calls,
+        ...logger.error.mock.calls,
+      ]),
+    ).not.toContain('private transcript');
   });
 
   it('does not apply a batch result after clearing its processing mark reports a fatal failure', async () => {
