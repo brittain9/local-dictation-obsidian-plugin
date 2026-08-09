@@ -2,7 +2,7 @@ use std::fs::{self, File};
 use std::future::Future;
 use std::io::{self, Write};
 use std::panic::AssertUnwindSafe;
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 use std::pin::Pin;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -449,6 +449,7 @@ async fn install_model_with_downloader(
     downloader: &dyn DownloadSource,
     model_probe: &ModelProbe,
 ) -> Result<(), InstallError> {
+    validate_install_id(&request.install_id).map_err(|error| fail_install(0, error.to_string()))?;
     let family_root = request
         .store_root
         .join(request.runtime_id.as_str())
@@ -746,6 +747,21 @@ async fn install_model_with_downloader(
     Ok(())
 }
 
+fn validate_install_id(install_id: &str) -> Result<()> {
+    let mut components = Path::new(install_id).components();
+    let is_single_normal_component = !install_id.contains('/')
+        && !install_id.contains('\\')
+        && !install_id.contains(':')
+        && matches!(components.next(), Some(Component::Normal(_)))
+        && components.next().is_none();
+
+    anyhow::ensure!(
+        is_single_normal_component,
+        "invalid model install id: {install_id:?}"
+    );
+    Ok(())
+}
+
 fn clone_install_tree(source: &Path, target: &Path) -> Result<()> {
     for entry in
         fs::read_dir(source).with_context(|| format!("failed to read {}", source.display()))?
@@ -988,6 +1004,53 @@ mod tests {
                 .join(".staging-small-install-1")
                 .exists()
         );
+    }
+
+    #[test]
+    fn install_rejects_unsafe_install_ids_without_touching_paths_outside_the_store() {
+        let workspace = sample_request()
+            .store_root
+            .with_extension("unsafe-install-id-workspace");
+        let outside_dir = workspace.join("outside");
+        fs::create_dir_all(&outside_dir).expect("outside directory should create");
+        fs::write(outside_dir.join("keep.txt"), b"keep").expect("marker should write");
+
+        for unsafe_install_id in [
+            "x/../../../../outside",
+            "../outside",
+            "a/b",
+            "a\\b",
+            "/tmp/outside",
+            "C:\\outside",
+            "..",
+            ".",
+            "",
+        ] {
+            let mut request = sample_request();
+            request.store_root = workspace.join("store");
+            request.install_id = unsafe_install_id.to_string();
+            let (tx, _rx) = mpsc::channel();
+            let reporter = sample_reporter(&request, tx);
+            let downloader = MemoryDownloadSource::new([(
+                "https://example.com/model.bin".to_string(),
+                b"test".to_vec(),
+            )]);
+
+            let error = run_install_test(
+                &request,
+                Arc::new(InstallCancellation::new()),
+                &reporter,
+                &downloader,
+                &test_probe,
+            )
+            .expect_err("unsafe install id should fail");
+
+            assert!(matches!(error, InstallError::Failed { .. }));
+            assert!(
+                outside_dir.join("keep.txt").is_file(),
+                "outside marker should survive {unsafe_install_id:?}"
+            );
+        }
     }
 
     #[test]
