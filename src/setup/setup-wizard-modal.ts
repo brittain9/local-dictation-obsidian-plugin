@@ -40,6 +40,7 @@ export class SetupWizardModal extends Modal {
   private sidecarReady = false;
   private modelReady = false;
   private modelManagerUnsub: (() => void) | null = null;
+  private openGeneration = 0;
   private readonly readyActions: SetupReadyActions;
 
   constructor(private readonly deps: WizardDependencies) {
@@ -55,12 +56,16 @@ export class SetupWizardModal extends Modal {
   }
 
   override onOpen(): void {
-    void this.openAsync();
+    const generation = ++this.openGeneration;
+    void this.openAsync(generation);
   }
 
-  private async openAsync(): Promise<void> {
+  private async openAsync(generation: number): Promise<void> {
     this.modalEl.addClass('local-stt-setup-wizard');
     this.sidecarReady = await this.deps.isSidecarInstalled();
+    if (generation !== this.openGeneration) {
+      return;
+    }
     this.modelReady = this.deps.hasSelectedModel();
 
     if (!this.sidecarReady) {
@@ -85,6 +90,9 @@ export class SetupWizardModal extends Modal {
   }
 
   override onClose(): void {
+    // Invalidate a prerequisite check that may still be awaiting the filesystem.
+    // Without this guard, its continuation can subscribe and render after close.
+    this.openGeneration += 1;
     this.modelManagerUnsub?.();
     this.modelManagerUnsub = null;
     this.contentEl.empty();
