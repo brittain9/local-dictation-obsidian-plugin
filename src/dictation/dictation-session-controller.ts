@@ -1169,6 +1169,9 @@ export class DictationSessionController {
     if (entry === undefined) {
       return;
     }
+    if (entry.phase === 'stopped') {
+      return;
+    }
 
     this.dependencies.logger?.debug(
       'session',

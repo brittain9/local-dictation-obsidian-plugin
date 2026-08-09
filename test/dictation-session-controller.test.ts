@@ -2192,6 +2192,42 @@ describe('DictationSessionController', () => {
     completeCleanup?.({ model: 'llama3.2:latest', providerId: 'ollama', text: 'Clean batch.' });
   });
 
+  it('starts batch cleanup only once when session_stopped is repeated', async () => {
+    const sidecarConnection = new FakeSidecarConnection();
+    let completeCleanup: ((result: LlmRouterCleanupResult) => void) | undefined;
+    const cleanup = vi.fn(
+      async () =>
+        new Promise<LlmRouterCleanupResult>((resolve) => {
+          completeCleanup = resolve;
+        }),
+    );
+    const controller = createController({
+      getSettings: () =>
+        createSettings({
+          llmFeaturesEnabled: true,
+          llmPostprocessMode: 'batch',
+          selectedModel: createExternalModelSelection(),
+        }),
+      llmRouter: createFakeLlmRouter({ cleanup }),
+      sidecarConnection,
+    });
+
+    await controller.startDictation();
+    const sessionId = sidecarConnection.startSession.mock.calls[0]?.[0].sessionId ?? '';
+    sidecarConnection.emit(transcriptReady(sessionId, 'raw transcript'));
+    await controller.stopDictation();
+
+    const stopped = { reason: 'user_stop' as const, sessionId, type: 'session_stopped' as const };
+    sidecarConnection.emit(stopped);
+    await vi.waitFor(() => expect(cleanup).toHaveBeenCalledOnce());
+    sidecarConnection.emit(stopped);
+
+    await Promise.resolve();
+    expect(cleanup).toHaveBeenCalledOnce();
+
+    completeCleanup?.({ model: 'llama3.2:latest', providerId: 'ollama', text: 'Clean batch.' });
+  });
+
   it('does not capture raw recovery when the batch replacement is denied', async () => {
     const sidecarConnection = new FakeSidecarConnection();
     const sessions: FakeSession[] = [];
