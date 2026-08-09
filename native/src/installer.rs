@@ -564,6 +564,18 @@ async fn install_model_with_downloader(
                 fail_install(downloaded_total + artifact_downloaded, format!("{error:#}"))
             })?;
 
+            let chunk_size = chunk.len() as u64;
+            if chunk_size > artifact.size_bytes.saturating_sub(artifact_downloaded) {
+                cleanup_stage_dir(&stage_dir);
+                return Err(fail_install(
+                    downloaded_total + artifact_downloaded,
+                    format!(
+                        "Download for {} exceeded the catalog size of {} bytes.",
+                        artifact.filename, artifact.size_bytes
+                    ),
+                ));
+            }
+
             output.write_all(&chunk).map_err(|error| {
                 cleanup_stage_dir(&stage_dir);
                 fail_install(
@@ -572,7 +584,7 @@ async fn install_model_with_downloader(
                 )
             })?;
             hasher.update(&chunk);
-            artifact_downloaded += chunk.len() as u64;
+            artifact_downloaded += chunk_size;
 
             reporter
                 .send(
@@ -1077,6 +1089,65 @@ mod tests {
             }
             InstallError::Cancelled => panic!("install should not cancel"),
         }
+    }
+
+    #[test]
+    fn install_rejects_excess_download_bytes_before_writing_them() {
+        let request = sample_request();
+        let cancel_handle = Arc::new(InstallCancellation::new());
+        let (tx, rx) = mpsc::channel();
+        let reporter = sample_reporter(&request, tx);
+        let downloader = MemoryDownloadSource {
+            payloads: HashMap::from([(
+                "https://example.com/model.bin".to_string(),
+                vec![b"te".to_vec(), b"st".to_vec(), b"overflow".to_vec()],
+            )]),
+        };
+
+        let error = run_install_test(&request, cancel_handle, &reporter, &downloader, &test_probe)
+            .expect_err("oversized download should fail");
+
+        match error {
+            InstallError::Failed {
+                downloaded_bytes,
+                message,
+            } => {
+                assert_eq!(
+                    downloaded_bytes, 4,
+                    "only catalog-bounded bytes should be written"
+                );
+                assert!(message.contains("exceeded the catalog size of 4 bytes"));
+            }
+            InstallError::Cancelled => panic!("install should not cancel"),
+        }
+
+        let stage_dir = request
+            .store_root
+            .join("whisper_cpp")
+            .join("whisper")
+            .join(".staging-small-install-1");
+        assert!(
+            !stage_dir.exists(),
+            "failed staging directory should be removed"
+        );
+        assert!(
+            !request
+                .store_root
+                .join("whisper_cpp")
+                .join("whisper")
+                .join("small")
+                .exists(),
+            "an oversized artifact must not be promoted"
+        );
+
+        let events = collect_install_events(rx);
+        assert!(events.iter().all(|event| !matches!(
+            event,
+            Event::ModelInstallUpdate {
+                downloaded_bytes: Some(downloaded_bytes),
+                ..
+            } if *downloaded_bytes > 4
+        )));
     }
 
     #[test]
