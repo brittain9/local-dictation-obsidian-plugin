@@ -841,10 +841,16 @@ export const it = {
   'translation.modal.replace': 'Sostituisci',
   'translation.modal.insertBelow': 'Inserisci sotto',
   'translation.modal.copy': 'Copia',
+  'translation.modal.createNote': 'Crea nota',
+  'translation.modal.creatingNote': 'Creazione della nota…',
   'translation.modal.stale':
-    'La nota è cambiata da quando è iniziata questa traduzione. Copia invece la traduzione.',
+    'La nota è cambiata da quando è iniziata questa traduzione. Copia la traduzione o crea una nuova nota.',
   'translation.notice.copied': 'Traduzione copiata.',
   'translation.notice.copyFailed': 'Impossibile copiare la traduzione.',
+  'translation.notice.noteCreated': '{note} è stata creata e aperta.',
+  'translation.notice.noteCreatedOpenFailed':
+    '{note} è stata creata, ma non è stato possibile aprirla.',
+  'translation.notice.noteCreateFailed': 'Non è stato possibile creare la nota tradotta.',
   'translation.notice.tooLong': 'Traduci fino a {count} caratteri alla volta.',
   'translation.notice.noParagraph': 'Posiziona il cursore in un paragrafo per tradurlo.',
   'catalog.firefox_translations_release_2026_07.summary':

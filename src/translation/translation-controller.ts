@@ -1,4 +1,4 @@
-import type { App, Editor, EditorPosition } from 'obsidian';
+import type { App, Editor, EditorPosition, TFile } from 'obsidian';
 
 import type { ModelInstallManager } from '../models/model-install-manager';
 import type { PluginSettings } from '../settings/plugin-settings';
@@ -11,6 +11,7 @@ import {
   type InstalledTranslationModel,
   resolveTranslationLanguages,
   type TranslationLanguage,
+  translationLanguageLabel,
 } from './languages';
 import {
   protectedMarkerModeForLanguages,
@@ -19,6 +20,7 @@ import {
   translatableTexts,
 } from './markdown-segmentation';
 import { TranslationModal, type TranslationSnapshot } from './translation-modal';
+import { createTranslationSiblingNote, type TranslationSourceNote } from './translation-note';
 
 const MAX_TRANSLATION_CHARACTERS = 50_000;
 
@@ -53,12 +55,16 @@ export class TranslationController {
     if (!editor.somethingSelected()) return;
     const from = editor.getCursor('from');
     const to = editor.getCursor('to');
-    this.open(editor, {
-      from,
-      kind: 'selection',
-      source: editor.getRange(from, to),
-      to,
-    });
+    this.open(
+      editor,
+      {
+        from,
+        kind: 'selection',
+        source: editor.getRange(from, to),
+        to,
+      },
+      sourceFileForEditor(this.dependencies.app, editor),
+    );
   }
 
   translateNote(editor: Editor): void {
@@ -71,12 +77,16 @@ export class TranslationController {
       });
       return;
     }
-    this.open(editor, {
-      from: { line: 0, ch: 0 },
-      kind: 'note',
-      source,
-      to: endPosition(source),
-    });
+    this.open(
+      editor,
+      {
+        from: { line: 0, ch: 0 },
+        kind: 'note',
+        source,
+        to: endPosition(source),
+      },
+      sourceFileForEditor(this.dependencies.app, editor),
+    );
   }
 
   translateCurrentParagraph(editor: Editor): void {
@@ -101,12 +111,16 @@ export class TranslationController {
 
     const from = { line: startLine, ch: 0 };
     const to = { line: endLine, ch: editor.getLine(endLine).length };
-    this.open(editor, {
-      from,
-      kind: 'paragraph',
-      source: editor.getRange(from, to),
-      to,
-    });
+    this.open(
+      editor,
+      {
+        from,
+        kind: 'paragraph',
+        source: editor.getRange(from, to),
+        to,
+      },
+      sourceFileForEditor(this.dependencies.app, editor),
+    );
   }
 
   dispose(): void {
@@ -114,7 +128,7 @@ export class TranslationController {
     this.activeModal = null;
   }
 
-  private open(editor: Editor, snapshot: TranslationSnapshot): void {
+  private open(editor: Editor, snapshot: TranslationSnapshot, sourceFile: TFile | null): void {
     if (snapshot.source.length > MAX_TRANSLATION_CHARACTERS) {
       this.dependencies.feedback.show({
         intent: 'warning',
@@ -142,6 +156,10 @@ export class TranslationController {
       onClosed: () => {
         if (this.activeModal === modal) this.activeModal = null;
       },
+      onCreateNote:
+        sourceFile === null
+          ? null
+          : (text, targetLanguage) => this.createNote(sourceFile, text, targetLanguage),
       // Closing the loop: once the pack is installed, come straight back to the
       // preview instead of making the user re-run the command.
       onInstallModel: async () => {
@@ -149,7 +167,7 @@ export class TranslationController {
         modal.close();
         await this.dependencies.openModelPicker();
         if (this.findInstalledModel(languages.sourceLanguage, languages.targetLanguage) !== null) {
-          this.open(editor, snapshot);
+          this.open(editor, snapshot, sourceFile);
         }
       },
       persistLanguages: async (nextSource, nextTarget) => {
@@ -209,6 +227,48 @@ export class TranslationController {
     }
   }
 
+  private async createNote(
+    sourceFile: TFile,
+    text: string,
+    targetLanguage: TranslationLanguage,
+  ): Promise<boolean> {
+    try {
+      const sourceNote = currentSourceNote(this.dependencies.app, sourceFile);
+      if (sourceNote === null) throw new Error('Translation source note is no longer in the vault');
+      const result = await createTranslationSiblingNote(
+        this.dependencies.app,
+        sourceNote,
+        translationLanguageLabel(targetLanguage),
+        text,
+      );
+      if (result.openError !== undefined) {
+        this.dependencies.feedback.show({
+          cause: result.openError,
+          intent: 'warning',
+          key: 'translation-note-created',
+          message: t('translation.notice.noteCreatedOpenFailed', {
+            note: result.file.basename,
+          }),
+        });
+      } else {
+        this.dependencies.feedback.show({
+          intent: 'success',
+          key: 'translation-note-created',
+          message: t('translation.notice.noteCreated', { note: result.file.basename }),
+        });
+      }
+      return true;
+    } catch (error) {
+      this.dependencies.feedback.show({
+        cause: error,
+        intent: 'error',
+        key: 'translation-note-created',
+        message: t('translation.notice.noteCreateFailed'),
+      });
+      return false;
+    }
+  }
+
   private findInstalledModel(
     sourceLanguage: TranslationLanguage,
     targetLanguage: TranslationLanguage,
@@ -227,5 +287,22 @@ function endPosition(text: string): EditorPosition {
   return {
     line: lines.length - 1,
     ch: lines.at(-1)?.length ?? 0,
+  };
+}
+
+function sourceFileForEditor(app: Pick<App, 'workspace'>, editor: Editor): TFile | null {
+  const activeEditor = app.workspace.activeEditor;
+  return activeEditor?.editor === editor ? activeEditor.file : null;
+}
+
+function currentSourceNote(
+  app: Pick<App, 'vault'>,
+  sourceFile: TFile,
+): TranslationSourceNote | null {
+  if (app.vault.getAbstractFileByPath(sourceFile.path) !== sourceFile) return null;
+  return {
+    basename: sourceFile.basename,
+    parentPath:
+      sourceFile.parent === null || sourceFile.parent.isRoot() ? '' : sourceFile.parent.path,
   };
 }

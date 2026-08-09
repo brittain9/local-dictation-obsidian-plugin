@@ -835,10 +835,15 @@ export const fr = {
   'translation.modal.replace': 'Remplacer',
   'translation.modal.insertBelow': 'Insérer en dessous',
   'translation.modal.copy': 'Copier',
+  'translation.modal.createNote': 'Créer une note',
+  'translation.modal.creatingNote': 'Création de la note…',
   'translation.modal.stale':
-    'La note a changé depuis le début de cette traduction. Copiez plutôt la traduction.',
+    'La note a changé depuis le début de cette traduction. Copiez la traduction ou créez plutôt une nouvelle note.',
   'translation.notice.copied': 'Traduction copiée.',
   'translation.notice.copyFailed': 'Impossible de copier la traduction.',
+  'translation.notice.noteCreated': '{note} a été créée et ouverte.',
+  'translation.notice.noteCreatedOpenFailed': '{note} a été créée, mais n’a pas pu être ouverte.',
+  'translation.notice.noteCreateFailed': 'Impossible de créer la note traduite.',
   'translation.notice.tooLong': 'Traduisez jusqu’à {count} caractères à la fois.',
   'translation.notice.noParagraph': 'Placez le curseur dans un paragraphe pour le traduire.',
   'catalog.firefox_translations_release_2026_07.summary':

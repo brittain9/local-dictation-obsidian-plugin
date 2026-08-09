@@ -62,9 +62,76 @@ describe('TranslationModal mutation safety', () => {
       expect(Setting.buttonNamed('Replace').disabled).toBe(true);
     });
     expect(Setting.buttonNamed('Insert below').disabled).toBe(true);
+    expect(Setting.buttonNamed('Create note').disabled).toBe(false);
     await Setting.buttonNamed('Replace').click();
     await Setting.buttonNamed('Insert below').click();
     expect(replaceRange).not.toHaveBeenCalled();
+  });
+
+  it('creates a sibling note only after preview succeeds, using the final target language', async () => {
+    Setting.reset();
+    const onCreateNote = vi.fn(async () => true);
+    const onClosed = vi.fn();
+    const modal = createModal({
+      editor: {
+        getValue: () => SNAPSHOT.source,
+        replaceRange: vi.fn(),
+      },
+      onClosed,
+      onCreateNote,
+      runTranslation: vi.fn(async () => ({
+        kind: 'translated' as const,
+        sourceUnitsKept: 0,
+        text: 'Traduzca esto.',
+      })),
+    });
+
+    modal.open();
+    await vi.waitFor(() => {
+      expect(Setting.buttonNamed('Create note')).toBeDefined();
+    });
+    await Setting.buttonNamed('Create note').click();
+
+    expect(onCreateNote).toHaveBeenCalledExactlyOnceWith('Traduzca esto.', 'es');
+    expect(onClosed).toHaveBeenCalledOnce();
+  });
+
+  it('keeps the preview available when note creation fails', async () => {
+    Setting.reset();
+    const show = vi.fn();
+    const onClosed = vi.fn();
+    const error = new Error('Vault is read-only');
+    const modal = createModal({
+      editor: {
+        getValue: () => SNAPSHOT.source,
+        replaceRange: vi.fn(),
+      },
+      feedback: { show },
+      onClosed,
+      onCreateNote: vi.fn(async () => {
+        throw error;
+      }),
+      runTranslation: vi.fn(async () => ({
+        kind: 'translated' as const,
+        sourceUnitsKept: 0,
+        text: 'Traduzca esto.',
+      })),
+    });
+
+    modal.open();
+    await vi.waitFor(() => {
+      expect(Setting.buttonNamed('Create note')).toBeDefined();
+    });
+    await Setting.buttonNamed('Create note').click();
+
+    expect(Setting.buttonNamed('Create note').disabled).toBe(false);
+    expect(onClosed).not.toHaveBeenCalled();
+    expect(show).toHaveBeenCalledWith({
+      cause: error,
+      intent: 'error',
+      key: 'translation-note-created',
+      message: 'Could not create the translated note.',
+    });
   });
 
   it('reports how many blocks kept their original language', async () => {
@@ -124,20 +191,27 @@ describe('TranslationModal mutation safety', () => {
 
 function createModal({
   editor,
+  feedback = { show: vi.fn() },
+  onClosed = vi.fn(),
+  onCreateNote = vi.fn(async () => true),
   runTranslation,
 }: {
   editor: {
     getValue: () => string;
     replaceRange: ReturnType<typeof vi.fn>;
   };
+  feedback?: ConstructorParameters<typeof TranslationModal>[1]['feedback'];
+  onClosed?: () => void;
+  onCreateNote?: ConstructorParameters<typeof TranslationModal>[1]['onCreateNote'];
   runTranslation: ConstructorParameters<typeof TranslationModal>[1]['runTranslation'];
 }): TranslationModal {
   return new TranslationModal({} as never, {
     editor: editor as never,
-    feedback: { show: vi.fn() },
+    feedback,
     initialSourceLanguage: 'en',
     initialTargetLanguage: 'es',
-    onClosed: vi.fn(),
+    onClosed,
+    onCreateNote,
     onInstallModel: vi.fn(async () => {}),
     persistLanguages: vi.fn(async () => {}),
     runTranslation,

@@ -28,6 +28,7 @@ interface TranslationModalDependencies {
   initialSourceLanguage: TranslationLanguage;
   initialTargetLanguage: TranslationLanguage;
   onClosed: () => void;
+  onCreateNote: ((text: string, targetLanguage: TranslationLanguage) => Promise<boolean>) | null;
   onInstallModel: () => Promise<void>;
   persistLanguages: (
     sourceLanguage: TranslationLanguage,
@@ -50,6 +51,7 @@ export class TranslationModal extends Modal {
   private actionsEl: HTMLElement | null = null;
   private headingEl: HTMLElement | null = null;
   private languagesEl: HTMLElement | null = null;
+  private creatingNote = false;
   private missingModel = false;
   private output: string | null = null;
   private outputEl: HTMLTextAreaElement | null = null;
@@ -197,6 +199,7 @@ export class TranslationModal extends Modal {
         button
           .setButtonText(t('translation.modal.translateAgain'))
           .setCta()
+          .setDisabled(this.creatingNote)
           .onClick(() => {
             void this.translate();
           });
@@ -224,7 +227,7 @@ export class TranslationModal extends Modal {
       button
         .setButtonText(t('translation.modal.replace'))
         .setCta()
-        .setDisabled(!sourceIsCurrent)
+        .setDisabled(!sourceIsCurrent || this.creatingNote)
         .onClick(() => {
           this.replace();
         });
@@ -232,16 +235,31 @@ export class TranslationModal extends Modal {
     actions.addButton((button) => {
       button
         .setButtonText(t('translation.modal.insertBelow'))
-        .setDisabled(!sourceIsCurrent)
+        .setDisabled(!sourceIsCurrent || this.creatingNote)
         .onClick(() => {
           this.insertBelow();
         });
     });
     actions.addButton((button) => {
-      button.setButtonText(t('translation.modal.copy')).onClick(() => {
-        void this.copy();
-      });
+      button
+        .setButtonText(t('translation.modal.copy'))
+        .setDisabled(this.creatingNote)
+        .onClick(() => {
+          void this.copy();
+        });
     });
+    if (this.dependencies.onCreateNote !== null) {
+      actions.addButton((button) => {
+        button
+          .setButtonText(
+            this.creatingNote
+              ? t('translation.modal.creatingNote')
+              : t('translation.modal.createNote'),
+          )
+          .setDisabled(this.creatingNote)
+          .onClick(() => this.createNote());
+      });
+    }
     if (!sourceIsCurrent) this.setStatus(t('translation.modal.stale'));
   }
 
@@ -360,6 +378,31 @@ export class TranslationModal extends Modal {
         message: t('translation.notice.copyFailed'),
       });
     }
+  }
+
+  private async createNote(): Promise<void> {
+    const onCreateNote = this.dependencies.onCreateNote;
+    if (this.output === null || onCreateNote === null || this.creatingNote) return;
+
+    this.creatingNote = true;
+    this.renderActions();
+    let created = false;
+    try {
+      created = await onCreateNote(this.output, this.targetLanguage);
+    } catch (error) {
+      this.dependencies.feedback.show({
+        cause: error,
+        intent: 'error',
+        key: 'translation-note-created',
+        message: t('translation.notice.noteCreateFailed'),
+      });
+    }
+    if (created) {
+      this.close();
+      return;
+    }
+    this.creatingNote = false;
+    this.renderActions();
   }
 
   private replace(): void {

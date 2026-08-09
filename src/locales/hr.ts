@@ -154,10 +154,16 @@ export const hr = {
   'translation.modal.replace': 'Zamijeni',
   'translation.modal.insertBelow': 'Umetni ispod',
   'translation.modal.copy': 'Kopiraj',
+  'translation.modal.createNote': 'Izradi bilješku',
+  'translation.modal.creatingNote': 'Izrada bilješke…',
   'translation.modal.stale':
-    'Bilješka se promijenila otkako je prijevod započeo. Umjesto zamjene kopirajte prijevod.',
+    'Bilješka se promijenila otkako je prijevod započeo. Umjesto zamjene kopirajte prijevod ili izradite novu bilješku.',
   'translation.notice.copied': 'Prijevod je kopiran.',
   'translation.notice.copyFailed': 'Nije moguće kopirati prijevod.',
+  'translation.notice.noteCreated': 'Bilješka {note} je izrađena i otvorena.',
+  'translation.notice.noteCreatedOpenFailed':
+    'Bilješka {note} je izrađena, ali se nije mogla otvoriti.',
+  'translation.notice.noteCreateFailed': 'Prevedena bilješka nije se mogla izraditi.',
   'translation.notice.tooLong': 'Najveći broj znakova koji se može prevesti odjednom: {count}.',
   'translation.notice.noText': 'U ovoj bilješci nema teksta za prijevod.',
   'translation.notice.noParagraph': 'Postavite pokazivač u odlomak koji želite prevesti.',

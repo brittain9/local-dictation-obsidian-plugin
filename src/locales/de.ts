@@ -842,10 +842,16 @@ export const de = {
   'translation.modal.replace': 'Ersetzen',
   'translation.modal.insertBelow': 'Darunter einfügen',
   'translation.modal.copy': 'Kopieren',
+  'translation.modal.createNote': 'Notiz erstellen',
+  'translation.modal.creatingNote': 'Notiz wird erstellt…',
   'translation.modal.stale':
-    'Die Notiz hat sich seit dem Start dieser Übersetzung geändert. Kopiere stattdessen die Übersetzung.',
+    'Die Notiz hat sich seit dem Start dieser Übersetzung geändert. Kopiere die Übersetzung oder erstelle stattdessen eine neue Notiz.',
   'translation.notice.copied': 'Übersetzung kopiert.',
   'translation.notice.copyFailed': 'Übersetzung konnte nicht kopiert werden.',
+  'translation.notice.noteCreated': '{note} wurde erstellt und geöffnet.',
+  'translation.notice.noteCreatedOpenFailed':
+    '{note} wurde erstellt, konnte aber nicht geöffnet werden.',
+  'translation.notice.noteCreateFailed': 'Die übersetzte Notiz konnte nicht erstellt werden.',
   'translation.notice.tooLong': 'Übersetze höchstens {count} Zeichen auf einmal.',
   'translation.notice.noParagraph': 'Setze den Cursor in einen Absatz, um ihn zu übersetzen.',
   'catalog.firefox_translations_release_2026_07.summary':

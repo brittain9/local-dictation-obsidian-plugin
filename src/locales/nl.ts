@@ -828,10 +828,15 @@ export const nl = {
   'translation.modal.replace': 'Vervangen',
   'translation.modal.insertBelow': 'Hieronder invoegen',
   'translation.modal.copy': 'Kopiëren',
+  'translation.modal.createNote': 'Notitie maken',
+  'translation.modal.creatingNote': 'Notitie wordt gemaakt…',
   'translation.modal.stale':
-    'De notitie is gewijzigd sinds deze vertaling begon. Kopieer in plaats daarvan de vertaling.',
+    'De notitie is gewijzigd sinds deze vertaling begon. Kopieer de vertaling of maak in plaats daarvan een nieuwe notitie.',
   'translation.notice.copied': 'Vertaling gekopieerd.',
   'translation.notice.copyFailed': 'Kon de vertaling niet kopiëren.',
+  'translation.notice.noteCreated': '{note} is gemaakt en geopend.',
+  'translation.notice.noteCreatedOpenFailed': '{note} is gemaakt, maar kon niet worden geopend.',
+  'translation.notice.noteCreateFailed': 'De vertaalde notitie kon niet worden gemaakt.',
   'translation.notice.tooLong': 'Vertaal maximaal {count} tekens per keer.',
   'translation.notice.noParagraph': 'Plaats de cursor in een alinea om deze te vertalen.',
   'catalog.firefox_translations_release_2026_07.summary':

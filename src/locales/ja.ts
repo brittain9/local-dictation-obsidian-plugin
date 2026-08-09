@@ -826,10 +826,15 @@ export const ja = {
   'translation.modal.replace': '置き換え',
   'translation.modal.insertBelow': '下に挿入',
   'translation.modal.copy': 'コピー',
+  'translation.modal.createNote': 'ノートを作成',
+  'translation.modal.creatingNote': 'ノートを作成中…',
   'translation.modal.stale':
-    'この翻訳を開始してからノートが変更されました。代わりに翻訳をコピーしてください。',
+    'この翻訳を開始してからノートが変更されました。代わりに翻訳をコピーするか、新しいノートを作成してください。',
   'translation.notice.copied': '翻訳をコピーしました。',
   'translation.notice.copyFailed': '翻訳をコピーできませんでした。',
+  'translation.notice.noteCreated': '{note} を作成して開きました。',
+  'translation.notice.noteCreatedOpenFailed': '{note} を作成しましたが、開けませんでした。',
+  'translation.notice.noteCreateFailed': '翻訳したノートを作成できませんでした。',
   'translation.notice.tooLong': '一度に翻訳できるのは最大 {count} 文字です。',
   'translation.notice.noParagraph': '翻訳する段落内にカーソルを置いてください。',
   'catalog.firefox_translations_release_2026_07.summary':
