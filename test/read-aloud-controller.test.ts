@@ -173,6 +173,16 @@ describe('resolveReadRange', () => {
       to: source.length,
     });
   });
+
+  it('can start at the cursor and continue through the rest of the note', () => {
+    const source = 'First paragraph.\n\nStart here. Keep going.';
+    const editor = editorFor(source, { ch: 0, line: 2 });
+
+    expect(resolveReadRange(editor, source, 'from_cursor')).toEqual({
+      from: source.indexOf('Start here.'),
+      to: source.length,
+    });
+  });
 });
 
 describe('ReadAloudController', () => {

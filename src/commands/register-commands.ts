@@ -26,6 +26,7 @@ interface CommandDependencies {
   restartSidecar: () => Promise<void>;
   readAloud: (editor: Editor) => Promise<void>;
   readEntireNote: (editor: Editor) => Promise<void>;
+  readFromCursor: (editor: Editor) => Promise<void>;
   stopReadAloud: () => void;
   translateNote: (editor: Editor) => void;
   translateSelection: (editor: Editor) => void;
@@ -62,6 +63,12 @@ export function registerCommands(dependencies: CommandDependencies): void {
     id: 'read-entire-note',
     name: t('commands.readEntireNote'),
     editorCallback: async (editor) => dependencies.readEntireNote(editor),
+  });
+
+  dependencies.plugin.addCommand({
+    id: 'read-from-cursor',
+    name: t('commands.readFromCursor'),
+    editorCallback: async (editor) => dependencies.readFromCursor(editor),
   });
 
   dependencies.plugin.addCommand({

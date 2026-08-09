@@ -29,7 +29,7 @@ import { extractAndSegmentMarkdown } from './markdown-extractor';
 import { resolveReadAloudVoiceId } from './read-aloud-selection';
 
 export type ReadAloudState = 'idle' | 'paused' | 'reading';
-export type ReadAloudScope = 'entire_note' | 'selection_or_note';
+export type ReadAloudScope = 'entire_note' | 'from_cursor' | 'selection_or_note';
 
 /// Read aloud uses its own language preference, independently of the language
 /// used for microphone transcription. An unlisted tag would otherwise fall
@@ -400,6 +400,9 @@ export function resolveReadRange(
   source: string,
   scope: ReadAloudScope = 'selection_or_note',
 ): { from: number; to: number } {
+  if (scope === 'from_cursor') {
+    return { from: editor.posToOffset(editor.getCursor('head')), to: source.length };
+  }
   if (scope === 'selection_or_note' && editor.somethingSelected()) {
     const anchor = editor.posToOffset(editor.getCursor('anchor'));
     const head = editor.posToOffset(editor.getCursor('head'));
