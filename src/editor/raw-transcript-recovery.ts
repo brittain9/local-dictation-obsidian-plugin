@@ -180,10 +180,8 @@ export class RawTranscriptRecovery {
   }
 
   private isExactTargetOpen(receipt: RawTranscriptRecoveryReceipt): boolean {
-    if (receipt.file.path !== receipt.filePath) {
-      return false;
-    }
-
+    // TFile identity survives a vault rename while its path changes. Match the
+    // live file and editor objects so a safe rename does not invalidate recovery.
     let matchingLeaves = 0;
     for (const leaf of this.dependencies.workspace.getLeavesOfType(
       'markdown',
