@@ -1,10 +1,11 @@
-import type { Editor, Plugin } from 'obsidian';
+import type { Editor, MarkdownFileInfo, Plugin } from 'obsidian';
 import { t } from '../shared/i18n';
 
 const START_DICTATION_COMMAND_ID = 'start-dictation-session';
 const STOP_DICTATION_COMMAND_ID = 'stop-dictation-session';
 const CANCEL_DICTATION_COMMAND_ID = 'cancel-dictation-session';
 const TOGGLE_DICTATION_COMMAND_ID = 'toggle-dictation-session';
+const DICTATE_UNDER_HEADING_COMMAND_ID = 'dictate-under-heading';
 const REINSERT_LAST_UTTERANCE_COMMAND_ID = 'reinsert-last-utterance';
 const CLEAR_LAST_UTTERANCE_COMMAND_ID = 'clear-last-utterance';
 const RESTORE_RAW_TRANSCRIPT_COMMAND_ID = 'restore-raw-transcript';
@@ -18,6 +19,7 @@ interface CommandDependencies {
   checkSidecarHealth: () => Promise<void>;
   copyLastUtterance: () => void;
   copyRawTranscript: () => void;
+  dictateUnderHeading: (editor: Editor, view: MarkdownFileInfo) => void;
   hasRawTranscriptRecovery: () => boolean;
   isReadAloudActive: () => boolean;
   plugin: Plugin;
@@ -91,6 +93,14 @@ export function registerCommands(dependencies: CommandDependencies): void {
     name: t('commands.startDictation'),
     callback: async () => {
       await dependencies.startDictation();
+    },
+  });
+
+  dependencies.plugin.addCommand({
+    id: DICTATE_UNDER_HEADING_COMMAND_ID,
+    name: t('commands.dictateUnderHeading'),
+    editorCallback: (editor, view) => {
+      dependencies.dictateUnderHeading(editor, view);
     },
   });
 

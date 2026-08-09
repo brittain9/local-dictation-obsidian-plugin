@@ -302,6 +302,66 @@ describe('DictationSessionController', () => {
     expect(controller.getState()).toBe('idle');
   });
 
+  it('starts with an explicit captured target and section placement', async () => {
+    const ordinaryCreateSession = vi.fn();
+    const hasDictationTarget = vi.fn(() => false);
+    const sidecarConnection = new FakeSidecarConnection();
+    const targetSession = new FakeSession();
+    const targetCreateSession = vi.fn((_options: CreateSessionOptions) => targetSession);
+    const targetAvailable = vi.fn(() => true);
+    const controller = createController({
+      createSession: ordinaryCreateSession,
+      hasDictationTarget,
+      sidecarConnection,
+    });
+    const placement: NotePlacementOptions = { anchor: 'section_end', position: 42 };
+
+    await controller.startDictation({
+      placement,
+      target: { createSession: targetCreateSession, isAvailable: targetAvailable },
+    });
+
+    expect(hasDictationTarget).not.toHaveBeenCalled();
+    expect(ordinaryCreateSession).not.toHaveBeenCalled();
+    expect(targetAvailable).toHaveBeenCalledTimes(2);
+    expect(targetCreateSession).toHaveBeenCalledWith(expect.objectContaining({ placement }));
+    expect(sidecarConnection.startSession).toHaveBeenCalledOnce();
+    expect(controller.getState()).toBe('listening');
+  });
+
+  it('aborts a captured target that changes while speech prerequisites start', async () => {
+    const sidecarConnection = new FakeSidecarConnection();
+    let completeEnsureStarted: (() => void) | undefined;
+    sidecarConnection.ensureStarted.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          completeEnsureStarted = resolve;
+        }),
+    );
+    const feedback = { show: vi.fn() };
+    const targetCreateSession = vi.fn((_options: CreateSessionOptions) => new FakeSession());
+    const targetAvailable = vi.fn().mockReturnValueOnce(true).mockReturnValue(false);
+    const controller = createController({ feedback, sidecarConnection });
+
+    const starting = controller.startDictation({
+      placement: { anchor: 'section_end', position: 42 },
+      target: { createSession: targetCreateSession, isAvailable: targetAvailable },
+    });
+    await vi.waitFor(() => expect(sidecarConnection.ensureStarted).toHaveBeenCalledOnce());
+    completeEnsureStarted?.();
+    await starting;
+
+    expect(targetCreateSession).not.toHaveBeenCalled();
+    expect(sidecarConnection.startSession).not.toHaveBeenCalled();
+    expect(feedback.show).toHaveBeenCalledWith({
+      intent: 'warning',
+      key: 'dictate-under-heading-target-changed',
+      message:
+        'The selected note changed or closed before dictation started. Run Dictate under heading again.',
+    });
+    expect(controller.getState()).toBe('idle');
+  });
+
   it('opens the model picker before checking the target when no model is selected', async () => {
     const feedback = { show: vi.fn() };
     const hasDictationTarget = vi.fn(() => false);

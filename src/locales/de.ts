@@ -104,6 +104,7 @@ export const de = {
     '{message} Ihr Obsidian-Installationsprogramm ist älter als die System-Audio-Berechtigung macOS. Laden Sie ein neues Installationsprogramm von obsidian.md herunter, installieren Sie es erneut und versuchen Sie es dann erneut.',
   'commands.toggleDictation': 'Diktat umschalten',
   'commands.startDictation': 'Diktat starten',
+  'commands.dictateUnderHeading': 'Unter Überschrift diktieren',
   'commands.stopDictation': 'Diktat stoppen',
   'commands.cancelDictation': 'Diktat abbrechen',
   'commands.reinsertLastUtterance': 'Letzte Äußerung erneut einfügen',
@@ -113,6 +114,14 @@ export const de = {
   'commands.clearRawRecovery': 'Rohtranskript-Wiederherstellung löschen',
   'commands.checkSidecarHealth': 'Sidecar-Zustand prüfen',
   'commands.restartSidecar': 'Sidecar neu starten',
+  'dictateUnderHeading.searchPlaceholder': 'Überschrift auswählen',
+  'dictateUnderHeading.pickerItem': '{heading} · H{level} · Zeile {line}',
+  'dictateUnderHeading.untitled': 'Unbenannte Überschrift',
+  'dictateUnderHeading.noHeadings': 'Diese Notiz enthält keine Markdown-Überschriften.',
+  'dictateUnderHeading.headingChanged':
+    'Diese Überschrift wurde geändert, während die Auswahl geöffnet war. Führen Sie „Unter Überschrift diktieren“ erneut aus.',
+  'dictateUnderHeading.targetChanged':
+    'Die ausgewählte Notiz wurde geändert oder geschlossen, bevor das Diktat begann. Führen Sie „Unter Überschrift diktieren“ erneut aus.',
   'common.reset': 'Zurücksetzen',
   'settings.acceleration.pending': 'ausstehend (sidecar nicht bereit)',
   'settings.acceleration.unavailable': 'CPU ({accelerator} nicht verfügbar)',

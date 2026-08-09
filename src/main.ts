@@ -1,11 +1,24 @@
 import { dirname, join } from 'node:path';
 import { IS_PRODUCTION_BUILD } from 'virtual:build-mode';
-import { FileSystemAdapter, getLanguage, Menu, Platform, Plugin, setIcon } from 'obsidian';
+import {
+  type Editor,
+  FileSystemAdapter,
+  getLanguage,
+  type MarkdownFileInfo,
+  Menu,
+  Platform,
+  Plugin,
+  setIcon,
+} from 'obsidian';
 
 import { AudioCaptureStream } from './audio/audio-capture-stream';
 import { SidecarAudioLevelMeter } from './audio/sidecar-audio-level-meter';
 import { registerCommands } from './commands/register-commands';
-import { DictationSessionController } from './dictation/dictation-session-controller';
+import { openDictateUnderHeadingPicker } from './dictation/dictate-under-heading';
+import {
+  DictationSessionController,
+  type DictationSessionCreateOptions,
+} from './dictation/dictation-session-controller';
 import { FinalizedUtteranceAutoCopy } from './dictation/finalized-utterance-auto-copy';
 import { LastUtteranceRecovery } from './dictation/last-utterance-recovery';
 import { dictationAnchorExtension } from './editor/dictation-anchor-extension';
@@ -32,7 +45,7 @@ import {
   openModelPickerWithSetup,
   READ_ALOUD_MODEL_PICKER_OPTIONS,
 } from './models/model-picker-routing';
-import { Session } from './session/session';
+import { type CapturedDictationTarget, Session } from './session/session';
 import { logAccelerationFallbacks } from './settings/acceleration-info';
 import { applyDictationLanguageChange } from './settings/dictation-language-setting';
 import { LlmPresetStateStore } from './settings/llm-preset-state';
@@ -245,15 +258,7 @@ export default class LocalSttPlugin extends Plugin {
     this.dictationController = new DictationSessionController({
       audioLevelMeter: this.audioLevelMeter,
       captureStream: this.audioCaptureStream,
-      createSession: ({ callbacks, placement, rendererOptions, sessionId }) =>
-        Session.createFromActiveEditor(this.app, {
-          callbacks,
-          leafPinManager: this.temporaryLeafPinLeaseManager,
-          logger: this.logger,
-          placement,
-          rendererOptions,
-          sessionId,
-        }),
+      createSession: (options) => this.createDictationSession(options),
       createLlmRouter: (settings) =>
         createConfiguredLlmRouter(settings, (secretId) => this.getSecret(secretId)),
       getSettings: () => this.settings,
@@ -373,6 +378,7 @@ export default class LocalSttPlugin extends Plugin {
       copyLastUtterance: () => {
         void this.lastUtteranceRecovery.copy();
       },
+      dictateUnderHeading: (editor, view) => this.openDictateUnderHeading(editor, view),
       hasLastUtterance: () => this.lastUtteranceRecovery.hasUtterance(),
       hasRawTranscriptRecovery: () => this.rawTranscriptRecovery.hasRecovery(),
       isReadAloudActive: () => this.requireReadAloudController().isActive(),
@@ -428,6 +434,45 @@ export default class LocalSttPlugin extends Plugin {
       }
       this.logger.error('model', 'model install manager init failed', error);
     });
+  }
+
+  private openDictateUnderHeading(editor: Editor, view: MarkdownFileInfo): void {
+    openDictateUnderHeadingPicker(this.app, editor, {
+      feedback: this.feedback,
+      onChoose: async ({ documentText, placement }) => {
+        const target = Session.captureEditorTarget(this.app, view.file, editor, documentText);
+        if (target === null) {
+          this.feedback.show({
+            intent: 'warning',
+            key: 'dictate-under-heading-target-changed',
+            message: t('dictateUnderHeading.targetChanged'),
+          });
+          return;
+        }
+
+        await this.requireDictationController().startDictation({
+          placement,
+          target: {
+            createSession: (options) => this.createDictationSession(options, target),
+            isAvailable: () => Session.isCapturedTargetAvailable(this.app, target),
+          },
+        });
+      },
+    });
+  }
+
+  private createDictationSession(
+    options: DictationSessionCreateOptions,
+    target?: CapturedDictationTarget,
+  ): Session {
+    const sessionOptions = {
+      ...options,
+      leafPinManager: this.temporaryLeafPinLeaseManager,
+      logger: this.logger,
+    };
+    return target === undefined
+      ? Session.createFromActiveEditor(this.app, sessionOptions)
+      : Session.createFromCapturedTarget(this.app, target, sessionOptions);
   }
 
   private async runPostLayoutStartup(): Promise<void> {

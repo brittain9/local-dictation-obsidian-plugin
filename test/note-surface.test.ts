@@ -591,6 +591,34 @@ describe('NoteSurface', () => {
     expect(doc(view)).toBe('alpha');
   });
 
+  it('keeps section dictation before the following heading with valid line boundaries', () => {
+    const documentText = '## Notes\n## Next';
+    const position = documentText.indexOf('\n## Next');
+    const view = new FakeEditorView(documentText, 0);
+    const surface = new NoteSurface(view as unknown as EditorView, {
+      anchor: 'section_end',
+      position,
+    });
+
+    expect(doc(view)).toBe('## Notes\n\n## Next');
+    expect(append(surface, 'u1', 'captured thought').kind).toBe('appended');
+    expect(doc(view)).toBe('## Notes\ncaptured thought\n## Next');
+  });
+
+  it('removes an unused section boundary when startup ends before any transcript', () => {
+    const documentText = '## Notes\n## Next';
+    const position = documentText.indexOf('\n## Next');
+    const view = new FakeEditorView(documentText, 0);
+    const surface = new NoteSurface(view as unknown as EditorView, {
+      anchor: 'section_end',
+      position,
+    });
+
+    surface.dispose();
+
+    expect(doc(view)).toBe(documentText);
+  });
+
   it('maps spans when text is inserted before them', () => {
     const { surface, view } = createSurface({ doc: 'tail', selectionHead: 4 });
 

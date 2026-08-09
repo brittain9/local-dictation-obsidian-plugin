@@ -74,6 +74,27 @@ type ControllerSession = Pick<
   | 'setAnchorMode'
 >;
 
+export interface DictationSessionCreateOptions {
+  callbacks: {
+    onLockedNoteClosed: () => void;
+    onLockedNoteDeleted: () => void;
+    onSurfaceDesynchronized: (failure: SurfaceDesynchronization) => void;
+  };
+  placement: NotePlacementOptions;
+  rendererOptions: TranscriptRenderOptions;
+  sessionId: string;
+}
+
+export interface DictationStartTarget {
+  createSession: (options: DictationSessionCreateOptions) => ControllerSession;
+  isAvailable: () => boolean;
+}
+
+export interface DictationStartOptions {
+  placement: NotePlacementOptions;
+  target: DictationStartTarget;
+}
+
 interface ActiveSessionSnapshot {
   accelerationPreference: PluginSettings['accelerationPreference'];
   diarizationEnabled: PluginSettings['diarizationEnabled'];
@@ -134,16 +155,7 @@ function rejectsTranscriptWork(entry: ManagedSession): boolean {
 interface DictationSessionControllerDependencies {
   audioLevelMeter: Pick<SidecarAudioLevelMeter, 'bindSession' | 'clearSession' | 'update'>;
   captureStream: Pick<AudioCaptureStream, 'isCapturing' | 'start' | 'stop'>;
-  createSession: (options: {
-    callbacks: {
-      onLockedNoteClosed: () => void;
-      onLockedNoteDeleted: () => void;
-      onSurfaceDesynchronized: (failure: SurfaceDesynchronization) => void;
-    };
-    placement: NotePlacementOptions;
-    rendererOptions: TranscriptRenderOptions;
-    sessionId: string;
-  }) => ControllerSession;
+  createSession: (options: DictationSessionCreateOptions) => ControllerSession;
   createLlmRouter: (settings: PluginSettings) => LlmRouter | null;
   feedback: Pick<UserFeedback, 'show'>;
   getSettings: () => PluginSettings;
@@ -310,7 +322,7 @@ export class DictationSessionController {
     await this.startDictation();
   }
 
-  async startDictation(): Promise<void> {
+  async startDictation(options?: DictationStartOptions): Promise<void> {
     if (this.isCaptureActive() || this.sessions.size >= MAX_CONTROLLER_SESSIONS) {
       return;
     }
@@ -331,7 +343,7 @@ export class DictationSessionController {
     const releaseStartOperation = speechLease.retain();
     this.pendingSpeechLease = speechLease;
     try {
-      await this.startDictationWithLease(speechLease);
+      await this.startDictationWithLease(speechLease, options);
     } finally {
       if (this.pendingSpeechLease === speechLease) {
         this.pendingSpeechLease = null;
@@ -341,7 +353,10 @@ export class DictationSessionController {
     }
   }
 
-  private async startDictationWithLease(speechLease: SidecarLifecycleLease): Promise<void> {
+  private async startDictationWithLease(
+    speechLease: SidecarLifecycleLease,
+    options?: DictationStartOptions,
+  ): Promise<void> {
     const startRevision = ++this.startRevision;
     const llmDisableRevisionAtStart = this.llmDisableRevision;
     this.applyUiState('starting');
@@ -354,11 +369,19 @@ export class DictationSessionController {
       return;
     }
 
-    if (!this.dependencies.hasDictationTarget()) {
+    const targetAvailable =
+      options === undefined ? this.dependencies.hasDictationTarget() : options.target.isAvailable();
+    if (!targetAvailable) {
       this.dependencies.feedback.show({
         intent: 'warning',
-        key: 'dictation-target-unavailable',
-        message: t('setup.ready.openMarkdownNote'),
+        key:
+          options === undefined
+            ? 'dictation-target-unavailable'
+            : 'dictate-under-heading-target-changed',
+        message:
+          options === undefined
+            ? t('setup.ready.openMarkdownNote')
+            : t('dictateUnderHeading.targetChanged'),
       });
       this.applyUiState('idle');
       return;
@@ -396,6 +419,16 @@ export class DictationSessionController {
     }
     if (startRevision !== this.startRevision) return;
 
+    if (options !== undefined && !options.target.isAvailable()) {
+      this.dependencies.feedback.show({
+        intent: 'warning',
+        key: 'dictate-under-heading-target-changed',
+        message: t('dictateUnderHeading.targetChanged'),
+      });
+      this.applyUiState('idle');
+      return;
+    }
+
     const sessionId = createSessionId();
     const snapshot = createSessionSnapshot(
       settings,
@@ -405,7 +438,8 @@ export class DictationSessionController {
     let session: ControllerSession;
 
     try {
-      session = this.dependencies.createSession({
+      const createSession = options?.target.createSession ?? this.dependencies.createSession;
+      session = createSession({
         callbacks: {
           onLockedNoteClosed: () => {
             this.cancelOnLockedNoteEvent(sessionId, 'closed');
@@ -421,7 +455,7 @@ export class DictationSessionController {
             );
           },
         },
-        placement: { anchor: snapshot.dictationAnchor },
+        placement: options?.placement ?? { anchor: snapshot.dictationAnchor },
         rendererOptions: {
           smartParagraphPauses: snapshot.smartParagraphPauses,
           timestamps: snapshot.timestamps,

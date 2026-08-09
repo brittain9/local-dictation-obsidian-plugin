@@ -42,6 +42,12 @@ interface MarkdownLeafLike extends PinnableLeaf {
   view?: MarkdownFileInfoLike;
 }
 
+export interface CapturedDictationTarget {
+  readonly documentToken: unknown;
+  readonly file: TFile;
+  readonly view: EditorView;
+}
+
 type ProjectionState =
   | { kind: 'unprojected' }
   | {
@@ -136,6 +142,62 @@ export class Session {
     return resolveDictationTarget(app) !== null;
   }
 
+  static captureEditorTarget(
+    app: Pick<App, 'workspace'>,
+    file: TFile | null,
+    editor: Editor,
+    expectedDocumentText: string,
+  ): CapturedDictationTarget | null {
+    const view = (editor as EditorWithCm).cm ?? null;
+    if (file === null || view === null || view.state.doc.toString() !== expectedDocumentText) {
+      return null;
+    }
+
+    const leaf = findOpenMarkdownLeafForEditor(app, view);
+    if (leaf?.view?.file !== file) {
+      return null;
+    }
+
+    return { documentToken: view.state.doc, file, view };
+  }
+
+  static isCapturedTargetAvailable(
+    app: Pick<App, 'workspace'>,
+    target: CapturedDictationTarget,
+  ): boolean {
+    const leaf = findOpenMarkdownLeafForEditor(app, target.view);
+    return leaf?.view?.file === target.file && target.view.state.doc === target.documentToken;
+  }
+
+  static createFromCapturedTarget(
+    app: Pick<App, 'vault' | 'workspace'>,
+    target: CapturedDictationTarget,
+    options: {
+      callbacks: SessionLifecycleCallbacks;
+      leafPinManager: Pick<TemporaryLeafPinLeaseManager, 'acquire'>;
+      logger?: PluginLogger;
+      placement: NotePlacementOptions;
+      rendererOptions: TranscriptRenderOptions;
+      sessionId: string;
+    },
+  ): Session {
+    if (!Session.isCapturedTargetAvailable(app, target)) {
+      throw new Error('The captured Markdown editor is no longer available.');
+    }
+
+    return new Session({
+      app,
+      callbacks: options.callbacks,
+      leafPinManager: options.leafPinManager,
+      lockedFile: target.file,
+      placement: options.placement,
+      rendererOptions: options.rendererOptions,
+      sessionId: options.sessionId,
+      view: target.view,
+      ...(options.logger !== undefined ? { logger: options.logger } : {}),
+    });
+  }
+
   static createFromActiveEditor(
     app: Pick<App, 'vault' | 'workspace'>,
     options: {
@@ -155,9 +217,7 @@ export class Session {
 
     // No cursor available — append to end of the open note rather than blocking on a popup.
     const placement: NotePlacementOptions =
-      target.kind === 'fallback'
-        ? { ...options.placement, anchor: 'end_of_note' }
-        : options.placement;
+      target.kind === 'fallback' ? { anchor: 'end_of_note' } : options.placement;
 
     return new Session({
       app,

@@ -1,4 +1,4 @@
-import type { Command, Editor, Plugin } from 'obsidian';
+import type { Command, Editor, MarkdownView, Plugin } from 'obsidian';
 import { describe, expect, it, vi } from 'vitest';
 
 import { registerCommands } from '../src/commands/register-commands';
@@ -24,6 +24,7 @@ describe('registerCommands', () => {
       checkSidecarHealth: vi.fn(async () => {}),
       copyLastUtterance,
       copyRawTranscript: vi.fn(),
+      dictateUnderHeading: vi.fn(),
       hasLastUtterance: () => available,
       hasRawTranscriptRecovery: () => false,
       isReadAloudActive: () => false,
@@ -94,6 +95,7 @@ describe('registerCommands', () => {
       checkSidecarHealth: vi.fn(async () => {}),
       copyLastUtterance: vi.fn(),
       copyRawTranscript,
+      dictateUnderHeading: vi.fn(),
       hasLastUtterance: () => false,
       hasRawTranscriptRecovery: () => available,
       isReadAloudActive: () => false,
@@ -146,6 +148,7 @@ describe('registerCommands', () => {
       }),
     } as unknown as Plugin;
 
+    const dictateUnderHeading = vi.fn();
     registerCommands({
       cancelDictation: vi.fn(async () => {}),
       clearLastUtterance: vi.fn(),
@@ -153,6 +156,7 @@ describe('registerCommands', () => {
       checkSidecarHealth: vi.fn(async () => {}),
       copyLastUtterance: vi.fn(),
       copyRawTranscript: vi.fn(),
+      dictateUnderHeading,
       hasLastUtterance: () => false,
       hasRawTranscriptRecovery: () => false,
       isReadAloudActive: () => false,
@@ -172,5 +176,12 @@ describe('registerCommands', () => {
 
     expect(commands.filter(({ id }) => id === 'read-aloud')).toHaveLength(1);
     expect(commands.some(({ id }) => id === 'read-entire-note')).toBe(false);
+
+    const headingCommand = commands.find(({ id }) => id === 'dictate-under-heading');
+    const editor = {} as Editor;
+    const view = {} as MarkdownView;
+    headingCommand?.editorCallback?.(editor, view);
+    expect(headingCommand?.name).toBe('Dictate under heading');
+    expect(dictateUnderHeading).toHaveBeenCalledWith(editor, view);
   });
 });

@@ -102,6 +102,7 @@ export const ja = {
     '{message} Obsidian インストーラーは、macOS システムオーディオ権限よりも古いものです。 obsidian.md から新しいインストーラーをダウンロードして再インストールし、もう一度試してください。',
   'commands.toggleDictation': 'ディクテーションの切り替え',
   'commands.startDictation': 'ディクテーションを開始する',
+  'commands.dictateUnderHeading': '見出しの下にディクテーション',
   'commands.stopDictation': 'ディクテーションを停止する',
   'commands.cancelDictation': 'ディクテーションをキャンセルする',
   'commands.reinsertLastUtterance': '最後の発話を再挿入',
@@ -111,6 +112,14 @@ export const ja = {
   'commands.clearRawRecovery': '未加工テキストの復元データを消去',
   'commands.checkSidecarHealth': 'sidecar の状態をチェックする',
   'commands.restartSidecar': 'sidecarを再起動します',
+  'dictateUnderHeading.searchPlaceholder': '見出しを選択',
+  'dictateUnderHeading.pickerItem': '{heading} · H{level} · {line} 行目',
+  'dictateUnderHeading.untitled': '無題の見出し',
+  'dictateUnderHeading.noHeadings': 'このノートには Markdown の見出しがありません。',
+  'dictateUnderHeading.headingChanged':
+    '選択画面を開いている間に見出しが変更されました。「見出しの下にディクテーション」をもう一度実行してください。',
+  'dictateUnderHeading.targetChanged':
+    'ディクテーションを開始する前に、選択したノートが変更または閉じられました。「見出しの下にディクテーション」をもう一度実行してください。',
   'common.reset': 'リセット',
   'settings.acceleration.pending': '保留中 (sidecar の準備ができていません)',
   'settings.acceleration.unavailable': 'CPU ({accelerator} は使用不可)',

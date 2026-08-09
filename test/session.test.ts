@@ -1,5 +1,5 @@
 import type { EditorView } from '@codemirror/view';
-import type { App, EventRef, TFile } from 'obsidian';
+import type { App, Editor, EventRef, TFile } from 'obsidian';
 import { describe, expect, it, vi } from 'vitest';
 
 import { dictationAnchorExtension } from '../src/editor/dictation-anchor-extension';
@@ -206,6 +206,47 @@ describe('Session', () => {
         },
       } as unknown as Pick<App, 'workspace'>),
     ).toBe(false);
+  });
+
+  it('captures one exact editor document and invalidates it after an edit', () => {
+    const file = fakeFile('sectioned.md');
+    const view = new StateBackedEditorView('# Notes\nbody') as unknown as EditorView;
+    const leaf = new FakeMarkdownLeaf(file, view);
+    const app = {
+      workspace: {
+        getLeavesOfType: () => [leaf],
+      },
+    } as unknown as Pick<App, 'workspace'>;
+    const editor = { cm: view } as unknown as Editor;
+
+    const target = Session.captureEditorTarget(app, file, editor, '# Notes\nbody');
+
+    expect(target).not.toBeNull();
+    if (target === null) throw new Error('expected captured target fixture');
+    expect(Session.isCapturedTargetAvailable(app, target)).toBe(true);
+
+    (view as unknown as StateBackedEditorView).dispatch({
+      changes: { from: view.state.doc.length, insert: '\nchanged' },
+    });
+
+    expect(Session.isCapturedTargetAvailable(app, target)).toBe(false);
+  });
+
+  it('does not capture an editor that is detached or differs from the chosen snapshot', () => {
+    const file = fakeFile('sectioned.md');
+    const view = new StateBackedEditorView('# Notes') as unknown as EditorView;
+    const editor = { cm: view } as unknown as Editor;
+    const detachedApp = {
+      workspace: { getLeavesOfType: () => [] },
+    } as unknown as Pick<App, 'workspace'>;
+
+    expect(Session.captureEditorTarget(detachedApp, file, editor, '# Notes')).toBeNull();
+
+    const leaf = new FakeMarkdownLeaf(file, view);
+    const app = {
+      workspace: { getLeavesOfType: () => [leaf] },
+    } as unknown as Pick<App, 'workspace'>;
+    expect(Session.captureEditorTarget(app, file, editor, '# Different')).toBeNull();
   });
 
   it('replaces a partial in place when its final revision arrives', () => {

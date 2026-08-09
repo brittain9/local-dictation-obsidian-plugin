@@ -108,6 +108,7 @@ export const en = {
     '{message} Your Obsidian installer predates the macOS system-audio permission. Download a fresh installer from obsidian.md and reinstall, then try again.',
   'commands.toggleDictation': 'Toggle dictation',
   'commands.startDictation': 'Start dictation',
+  'commands.dictateUnderHeading': 'Dictate under heading',
   'commands.stopDictation': 'Stop dictation',
   'commands.cancelDictation': 'Cancel dictation',
   'commands.reinsertLastUtterance': 'Reinsert last utterance',
@@ -123,6 +124,14 @@ export const en = {
   'commands.stopReadAloud': 'Stop reading',
   'commands.translateNote': 'Translate note',
   'commands.translateSelection': 'Translate selection',
+  'dictateUnderHeading.searchPlaceholder': 'Choose a heading',
+  'dictateUnderHeading.pickerItem': '{heading} · H{level} · line {line}',
+  'dictateUnderHeading.untitled': 'Untitled heading',
+  'dictateUnderHeading.noHeadings': 'This note has no Markdown headings.',
+  'dictateUnderHeading.headingChanged':
+    'That heading changed while the picker was open. Run Dictate under heading again.',
+  'dictateUnderHeading.targetChanged':
+    'The selected note changed or closed before dictation started. Run Dictate under heading again.',
   'translation.modal.titleWithPair': 'Translate: {source} → {target}',
   'translation.modal.privacy': 'Translation runs entirely on this device.',
   'translation.modal.from': 'From',

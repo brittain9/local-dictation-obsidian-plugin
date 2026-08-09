@@ -23,9 +23,9 @@ import {
 } from './session-processing-extension';
 import { computeFirstPhrasePrefix } from './transcript-placement';
 
-export interface NotePlacementOptions {
-  anchor: DictationAnchor;
-}
+export type NotePlacementOptions =
+  | { anchor: DictationAnchor }
+  | { anchor: 'section_end'; position: number };
 
 export interface NoteProjectionContext {
   readonly tailContent: string;
@@ -610,7 +610,7 @@ export class NoteSurface {
         ? this.view.state.doc.sliceString(this.initialAnchorPos - 1, this.initialAnchorPos)
         : null;
     const prefix = computeFirstPhrasePrefix({
-      anchor: this.placement.anchor,
+      anchor: this.placement.anchor === 'section_end' ? 'end_of_note' : this.placement.anchor,
       charBeforeAnchor,
     });
 
@@ -625,6 +625,17 @@ export class NoteSurface {
   }
 
   private computePinPosition(): number {
+    if (this.placement.anchor === 'section_end') {
+      if (
+        !Number.isInteger(this.placement.position) ||
+        this.placement.position < 0 ||
+        this.placement.position > this.view.state.doc.length
+      ) {
+        throw new RangeError('Section dictation position is outside the note.');
+      }
+      return this.placement.position;
+    }
+
     if (this.placement.anchor === 'end_of_note') {
       return this.view.state.doc.length;
     }

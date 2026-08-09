@@ -103,6 +103,7 @@ export const es = {
     '{message} Su instalador Obsidian es anterior al permiso de audio del sistema macOS. Descargue un instalador nuevo desde obsidian.md y reinstálelo, luego intente nuevamente.',
   'commands.toggleDictation': 'Alternar dictado',
   'commands.startDictation': 'Iniciar dictado',
+  'commands.dictateUnderHeading': 'Dictar bajo un encabezado',
   'commands.stopDictation': 'Detener dictado',
   'commands.cancelDictation': 'Cancelar dictado',
   'commands.reinsertLastUtterance': 'Reinsertar la última frase',
@@ -112,6 +113,14 @@ export const es = {
   'commands.clearRawRecovery': 'Borrar recuperación sin procesar',
   'commands.checkSidecarHealth': 'Comprobar el estado de sidecar',
   'commands.restartSidecar': 'Reiniciar sidecar',
+  'dictateUnderHeading.searchPlaceholder': 'Elegir un encabezado',
+  'dictateUnderHeading.pickerItem': '{heading} · H{level} · línea {line}',
+  'dictateUnderHeading.untitled': 'Encabezado sin título',
+  'dictateUnderHeading.noHeadings': 'Esta nota no tiene encabezados de Markdown.',
+  'dictateUnderHeading.headingChanged':
+    'Ese encabezado cambió mientras el selector estaba abierto. Ejecuta «Dictar bajo un encabezado» de nuevo.',
+  'dictateUnderHeading.targetChanged':
+    'La nota seleccionada cambió o se cerró antes de que empezara el dictado. Ejecuta «Dictar bajo un encabezado» de nuevo.',
   'common.reset': 'Restablecer',
   'settings.acceleration.pending': 'pendiente (sidecar no está listo)',
   'settings.acceleration.unavailable': 'CPU ({accelerator} no disponible)',

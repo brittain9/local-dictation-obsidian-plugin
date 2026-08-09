@@ -108,6 +108,7 @@ export const hr = {
     '{message} Vaša je instalacija Obsidiana starija od macOS dopuštenja za snimanje zvuka sustava. Preuzmite novi instalacijski program s obsidian.md i ponovno instalirajte Obsidian, zatim pokušajte ponovno.',
   'commands.toggleDictation': 'Uključi ili isključi diktiranje',
   'commands.startDictation': 'Pokreni diktiranje',
+  'commands.dictateUnderHeading': 'Diktiraj ispod naslova',
   'commands.stopDictation': 'Zaustavi diktiranje',
   'commands.cancelDictation': 'Odustani od diktiranja',
   'commands.reinsertLastUtterance': 'Ponovno umetni zadnji iskaz',
@@ -117,6 +118,14 @@ export const hr = {
   'commands.clearRawRecovery': 'Obriši oporavak izvornog transkripta',
   'commands.checkSidecarHealth': 'Provjeri stanje sidecara',
   'commands.restartSidecar': 'Ponovno pokreni sidecar',
+  'dictateUnderHeading.searchPlaceholder': 'Odaberite naslov',
+  'dictateUnderHeading.pickerItem': '{heading} · H{level} · redak {line}',
+  'dictateUnderHeading.untitled': 'Naslov bez naziva',
+  'dictateUnderHeading.noHeadings': 'Ova bilješka nema Markdown naslova.',
+  'dictateUnderHeading.headingChanged':
+    'Taj je naslov promijenjen dok je odabir bio otvoren. Ponovno pokrenite naredbu „Diktiraj ispod naslova”.',
+  'dictateUnderHeading.targetChanged':
+    'Odabrana bilješka promijenjena je ili zatvorena prije početka diktiranja. Ponovno pokrenite naredbu „Diktiraj ispod naslova”.',
   'commands.readAloud': 'Čitaj naglas',
   'commands.pauseResumeReadAloud': 'Pauziraj ili nastavi čitanje',
   'commands.stopReadAloud': 'Zaustavi čitanje',

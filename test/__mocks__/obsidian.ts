@@ -737,6 +737,23 @@ export class Modal {
   }
 }
 
+export abstract class FuzzySuggestModal<T> extends Modal {
+  placeholder = '';
+
+  abstract getItems(): T[];
+  abstract getItemText(item: T): string;
+  abstract onChooseItem(item: T): void;
+
+  choose(item: T): void {
+    this.onChooseItem(item);
+  }
+
+  setPlaceholder(placeholder: string): this {
+    this.placeholder = placeholder;
+    return this;
+  }
+}
+
 export class PluginSettingTab {
   readonly containerEl = new TestElement();
 

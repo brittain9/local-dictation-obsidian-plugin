@@ -103,6 +103,7 @@ export const nl = {
     '{message} Uw Obsidian-installatieprogramma dateert van vóór de macOS-systeemaudiotoestemming. Download een nieuw installatieprogramma van obsidian.md, installeer het opnieuw en probeer het opnieuw.',
   'commands.toggleDictation': 'Dicteren in-/uitschakelen',
   'commands.startDictation': 'Begin met dicteren',
+  'commands.dictateUnderHeading': 'Dicteren onder een kop',
   'commands.stopDictation': 'Stop met dicteren',
   'commands.cancelDictation': 'Dicteren annuleren',
   'commands.reinsertLastUtterance': 'Laatste uiting opnieuw invoegen',
@@ -112,6 +113,14 @@ export const nl = {
   'commands.clearRawRecovery': 'Hersteltekst wissen',
   'commands.checkSidecarHealth': 'Controleer de status van de sidecar',
   'commands.restartSidecar': 'Start sidecar opnieuw',
+  'dictateUnderHeading.searchPlaceholder': 'Kies een kop',
+  'dictateUnderHeading.pickerItem': '{heading} · H{level} · regel {line}',
+  'dictateUnderHeading.untitled': 'Naamloze kop',
+  'dictateUnderHeading.noHeadings': 'Deze notitie bevat geen Markdown-koppen.',
+  'dictateUnderHeading.headingChanged':
+    'Die kop is gewijzigd terwijl de kiezer openstond. Voer ‘Dicteren onder een kop’ opnieuw uit.',
+  'dictateUnderHeading.targetChanged':
+    'De geselecteerde notitie is gewijzigd of gesloten voordat het dicteren begon. Voer ‘Dicteren onder een kop’ opnieuw uit.',
   'common.reset': 'Opnieuw instellen',
   'settings.acceleration.pending': 'in behandeling (sidecar niet gereed)',
   'settings.acceleration.unavailable': 'CPU ({accelerator} niet beschikbaar)',
