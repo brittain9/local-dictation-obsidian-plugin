@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
   catalogModelSupportsLanguage,
   DICTATION_LANGUAGE_OPTIONS,
+  dictationLanguageOptionsForSelection,
   languageFeatureCoverage,
   languageSupportIncludes,
   supportedDictationLanguageOptions,
@@ -20,6 +21,21 @@ describe('dictation language eligibility', () => {
       { label: 'English', value: 'en' },
     ]);
     expect(languageSupportIncludes({ kind: 'english_only' }, 'ja')).toBe(false);
+  });
+
+  it('offers every product language before a transcription model is selected', () => {
+    expect(dictationLanguageOptionsForSelection(false, { kind: 'unknown' })).toEqual(
+      DICTATION_LANGUAGE_OPTIONS,
+    );
+  });
+
+  it('continues to restrict languages to verified capabilities after selection', () => {
+    expect(
+      dictationLanguageOptionsForSelection(true, { kind: 'list', tags: ['en', 'hr'] }, false),
+    ).toEqual([
+      { label: 'English', value: 'en' },
+      { label: 'Hrvatski', value: 'hr' },
+    ]);
   });
 
   it('shows only the verified intersection advertised by the exact model', () => {
