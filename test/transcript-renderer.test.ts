@@ -626,6 +626,12 @@ describe('buildSpeakerSpans', () => {
       { speakerIndex: null, text: 'a' },
     ]);
   });
+
+  it('ignores empty segments when deciding whether an utterance has multiple speakers', () => {
+    expect(
+      buildSpeakerSpans([segment(0, 'raw words'), segment(1, '   ')], 'Cleaned words.', 0),
+    ).toEqual([{ speakerIndex: 0, text: 'Cleaned words.' }]);
+  });
 });
 
 function planAndCommit(renderer: TranscriptRenderer, input: PlanAndCommitInput, tailContent = '') {
