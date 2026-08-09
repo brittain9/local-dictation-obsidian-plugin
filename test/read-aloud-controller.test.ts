@@ -102,6 +102,7 @@ function controllerHarness(options: {
   const stopDictation = vi.fn(async (): Promise<void> => undefined);
   const cancelSynthesis = vi.fn();
   const onModelMissing = options.onModelMissing ?? vi.fn();
+  const onProgressChange = vi.fn();
   const startSynthesis =
     options.startSynthesis ??
     vi.fn(async (_payload: Omit<StartSynthesisCommand, 'type'>) => undefined);
@@ -121,6 +122,7 @@ function controllerHarness(options: {
     }),
     isDictationBusy: () => true,
     onModelMissing,
+    onProgressChange,
     onStateChange: vi.fn(),
     sidecarConnection: {
       cancelSynthesis,
@@ -137,6 +139,7 @@ function controllerHarness(options: {
     controller,
     feedback,
     onModelMissing,
+    onProgressChange,
     startSynthesis,
     stopDictation,
   };
@@ -265,6 +268,21 @@ describe('ReadAloudController', () => {
       language: 'na',
       speed: 1.5,
     });
+  });
+
+  it('reports the current sentence and clears progress when reading stops', async () => {
+    const harness = controllerHarness({ selected: true });
+
+    await harness.controller.read(
+      editorFor('First sentence. Second sentence. Third sentence.', { ch: 0, line: 0 }),
+    );
+    expect(harness.onProgressChange).toHaveBeenLastCalledWith({ current: 1, total: 3 });
+
+    playback.playThrough(0);
+    expect(harness.onProgressChange).toHaveBeenLastCalledWith({ current: 2, total: 3 });
+
+    harness.controller.stop();
+    expect(harness.onProgressChange).toHaveBeenLastCalledWith(null);
   });
 
   it('maps the model-default reading language to the neutral synthesis tag', async () => {

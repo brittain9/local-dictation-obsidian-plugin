@@ -233,6 +233,8 @@ export const en = {
   'models.tag.mayBuffer': 'May buffer',
   'tts.status.reading': 'Reading…',
   'tts.status.paused': 'Reading paused',
+  'tts.status.progress': 'Reading {current} of {total}',
+  'tts.status.progressPaused': 'Paused at {current} of {total}',
   'tts.control.model': 'Model: {model}',
   'tts.control.speed': 'Speed: {speed}',
   'tts.control.voice': 'Voice: {voice}',

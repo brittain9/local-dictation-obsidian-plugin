@@ -44,4 +44,18 @@ describe('read-aloud status controls', () => {
       voice: 'Voice: Cosette',
     });
   });
+
+  it('shows sentence progress while reading and paused', () => {
+    const selection = {
+      modelName: 'Pocket TTS English',
+      speed: 1,
+      voiceId: 'alba',
+    };
+    expect(readAloudControlLabels('reading', selection, { current: 2, total: 8 }).state).toBe(
+      'Reading 2 of 8',
+    );
+    expect(readAloudControlLabels('paused', selection, { current: 2, total: 8 }).state).toBe(
+      'Paused at 2 of 8',
+    );
+  });
 });

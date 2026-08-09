@@ -30,6 +30,10 @@ import { resolveReadAloudVoiceId } from './read-aloud-selection';
 
 export type ReadAloudState = 'idle' | 'paused' | 'reading';
 export type ReadAloudScope = 'entire_note' | 'from_cursor' | 'selection_or_note';
+export interface ReadAloudProgress {
+  current: number;
+  total: number;
+}
 
 /// Read aloud uses its own language preference, independently of the language
 /// used for microphone transcription. An unlisted tag would otherwise fall
@@ -62,6 +66,7 @@ interface ReadAloudControllerDependencies {
   isDictationBusy: () => boolean;
   logger?: PluginLogger;
   onModelMissing: () => Promise<void> | void;
+  onProgressChange: (progress: ReadAloudProgress | null) => void;
   onStateChange: (state: ReadAloudState) => void;
   sidecarConnection: Pick<
     SidecarConnection,
@@ -94,6 +99,7 @@ export class ReadAloudController {
       onDrained: () => this.finish(),
       onPlayedThrough: (sequence) => {
         this.lastPlayedSequence = Math.max(this.lastPlayedSequence, sequence);
+        this.reportProgress();
         if (this.activeSynthesisId !== null) {
           this.deps.sidecarConnection.reportSynthesisPlaybackPosition(
             this.activeSynthesisId,
@@ -227,6 +233,7 @@ export class ReadAloudController {
     this.sampleRate = null;
     this.playback.start();
     this.setState('reading');
+    this.reportProgress();
     try {
       await this.deps.sidecarConnection.startSynthesis({
         chunks,
@@ -379,7 +386,20 @@ export class ReadAloudController {
     this.sampleRate = null;
     this.playback.stop();
     this.setState('idle');
+    this.deps.onProgressChange(null);
     speechLease?.release();
+  }
+
+  private reportProgress(): void {
+    const total = this.activeChunks.length;
+    if (total === 0) {
+      this.deps.onProgressChange(null);
+      return;
+    }
+    this.deps.onProgressChange({
+      current: Math.min(this.lastPlayedSequence + 2, total),
+      total,
+    });
   }
 
   private setState(state: ReadAloudState): void {

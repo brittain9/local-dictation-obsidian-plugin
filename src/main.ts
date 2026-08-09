@@ -77,7 +77,11 @@ import {
 } from './sidecar/sidecar-version-drift';
 import { TranslationController } from './translation/translation-controller';
 import { READ_ALOUD_SPEED_PRESETS, readAloudControlLabels } from './tts/read-aloud-control-labels';
-import { ReadAloudController, type ReadAloudState } from './tts/read-aloud-controller';
+import {
+  ReadAloudController,
+  type ReadAloudProgress,
+  type ReadAloudState,
+} from './tts/read-aloud-controller';
 import { didReadAloudSettingsChange, resolveReadAloudVoiceId } from './tts/read-aloud-selection';
 import { DictationRibbonController } from './ui/dictation-ribbon';
 import { LOCAL_DICTATION_VIEW_TYPE, LocalDictationView } from './ui/local-dictation-view';
@@ -115,6 +119,7 @@ export default class LocalSttPlugin extends Plugin {
   });
   private ribbonController: DictationRibbonController | null = null;
   private readAloudController: ReadAloudController | null = null;
+  private readAloudProgress: ReadAloudProgress | null = null;
   private releaseReadAloudModelSubscription: (() => void) | null = null;
   private readAloudStatus: HTMLElement | null = null;
   override settings: PluginSettings = DEFAULT_PLUGIN_SETTINGS;
@@ -293,6 +298,10 @@ export default class LocalSttPlugin extends Plugin {
       isDictationBusy: () => this.requireDictationController().isCaptureActive(),
       logger: this.logger,
       onModelMissing: () => this.openModelPicker(READ_ALOUD_MODEL_PICKER_OPTIONS),
+      onProgressChange: (progress) => {
+        this.readAloudProgress = progress;
+        this.renderReadAloudStatus(this.readAloudController?.getState() ?? 'idle');
+      },
       onStateChange: (state) => this.renderReadAloudStatus(state),
       sidecarConnection: this.sidecarConnection,
       sidecarLifecycleGate: this.sidecarLifecycleGate,
@@ -766,11 +775,15 @@ export default class LocalSttPlugin extends Plugin {
     const installedVoices = this.installedReadAloudVoices();
     const selectedVoice =
       resolveReadAloudVoiceId(this.settings.selectedTtsVoice, selectedModel?.defaultVoice) ?? '';
-    const labels = readAloudControlLabels(state, {
-      modelName: selectedModel?.displayName ?? t('settings.model.noModelSelected'),
-      speed: this.settings.ttsSpeed,
-      voiceId: selectedVoice,
-    });
+    const labels = readAloudControlLabels(
+      state,
+      {
+        modelName: selectedModel?.displayName ?? t('settings.model.noModelSelected'),
+        speed: this.settings.ttsSpeed,
+        voiceId: selectedVoice,
+      },
+      this.readAloudProgress,
+    );
     status.createSpan({
       text: labels.state,
     });
