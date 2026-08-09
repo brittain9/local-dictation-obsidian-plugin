@@ -316,6 +316,9 @@ export function buildSpeakerSpans(
 ): TranscriptSpan[] {
   const distinct = new Set<number>();
   for (const segment of segments) {
+    if (segment.text.trim().length === 0) {
+      continue;
+    }
     const speakerIndex = normalizeSpeakerIndex(segment.speaker);
     if (speakerIndex !== null) {
       distinct.add(speakerIndex);
