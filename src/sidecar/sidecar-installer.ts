@@ -154,8 +154,10 @@ export async function installSidecar(
       },
       options.signal,
     );
+    options.signal?.throwIfAborted();
 
     options.onProgress?.({ bytesDownloaded: 0, totalBytes: null, phase: 'verify' });
+    options.signal?.throwIfAborted();
 
     if (actualSha256 !== expectedSha256) {
       throw new Error(
@@ -164,12 +166,16 @@ export async function installSidecar(
     }
 
     options.onProgress?.({ bytesDownloaded: 0, totalBytes: null, phase: 'extract' });
-    await extractTarGz(archivePath, stagingDirectory);
+    options.signal?.throwIfAborted();
+    await extractTarGz(archivePath, stagingDirectory, options.signal);
+    options.signal?.throwIfAborted();
 
     await rm(archivePath, { force: true });
+    options.signal?.throwIfAborted();
 
     const executableName = resolveSidecarExecutableName();
     await markExecutable(join(stagingDirectory, executableName));
+    options.signal?.throwIfAborted();
 
     const manifest: InstallManifest = {
       installedAt: new Date().toISOString(),
@@ -182,8 +188,10 @@ export async function installSidecar(
       `${JSON.stringify(manifest, null, 2)}\n`,
       'utf8',
     );
+    options.signal?.throwIfAborted();
 
     await options.beforeReplace?.();
+    options.signal?.throwIfAborted();
 
     // Atomic-ish promotion: move the existing install aside before we move
     // the new one in, so a crash between the two renames leaves a recoverable
@@ -198,6 +206,7 @@ export async function installSidecar(
     }
 
     try {
+      options.signal?.throwIfAborted();
       await rename(stagingDirectory, destinationDirectory);
     } catch (renameError) {
       if (destExists) {
@@ -464,7 +473,11 @@ function resolveSidecarExecutableName(): string {
   return formatSidecarExecutableName(process.platform === 'win32');
 }
 
-async function extractTarGz(archivePath: string, destDir: string): Promise<void> {
+async function extractTarGz(
+  archivePath: string,
+  destDir: string,
+  signal?: AbortSignal,
+): Promise<void> {
   // Stream the gunzip so the event loop is not blocked while decompressing
   // (matters for the CUDA bundle). Memory is still O(archive) but no longer
   // O(archive) of synchronous CPU on the main thread.
@@ -478,12 +491,15 @@ async function extractTarGz(archivePath: string, destDir: string): Promise<void>
         callback();
       },
     }),
+    { signal },
   );
+  signal?.throwIfAborted();
   const decompressed = Buffer.concat(chunks);
   const blockSize = 512;
   let offset = 0;
 
   while (offset + blockSize <= decompressed.length) {
+    signal?.throwIfAborted();
     const header = decompressed.subarray(offset, offset + blockSize);
     offset += blockSize;
 
@@ -524,7 +540,8 @@ async function extractTarGz(archivePath: string, destDir: string): Promise<void>
       await mkdir(resolvedPath, { recursive: true });
     } else {
       await mkdir(dirname(resolvedPath), { recursive: true });
-      await writeFile(resolvedPath, decompressed.subarray(offset, dataEnd));
+      signal?.throwIfAborted();
+      await writeFile(resolvedPath, decompressed.subarray(offset, dataEnd), { signal });
     }
 
     offset += Math.ceil(size / blockSize) * blockSize;
