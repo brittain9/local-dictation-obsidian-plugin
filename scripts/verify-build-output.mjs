@@ -1,23 +1,21 @@
 import { access, readFile } from 'node:fs/promises';
+import { join, resolve } from 'node:path';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 import { listCudaArtifacts } from './lib/cuda-artifacts.mjs';
 
-const args = new Set(process.argv.slice(2));
-const profile = args.has('--release') ? 'release' : 'debug';
 const SIDECAR_BINARY_SUFFIX = process.platform === 'win32' ? '.exe' : '';
 
 const MAIN_BUNDLE_PATH = 'main.js';
-const SIDECAR_BINARY_PATH = `native/target/${profile}/local-dictation-sidecar${SIDECAR_BINARY_SUFFIX}`;
-const CUDA_SIDECAR_BINARY_PATH = `native/target-cuda/${profile}/local-dictation-sidecar${SIDECAR_BINARY_SUFFIX}`;
-const CUDA_RUNTIME_PATHS =
+const CUDA_RUNTIME_FILENAMES =
   process.platform === 'linux' || process.platform === 'win32'
-    ? (await listCudaArtifacts(process.platform)).map(
-        (name) => `native/target-cuda/${profile}/${name}`,
-      )
+    ? await listCudaArtifacts(process.platform)
     : [];
 
-async function main() {
-  const mainBundle = await readFile(MAIN_BUNDLE_PATH, 'utf8');
+export async function verifyFrontendBuildOutput(options = {}) {
+  const rootDir = resolve(options.rootDir ?? '.');
+  const mainBundlePath = join(rootDir, MAIN_BUNDLE_PATH);
+  const mainBundle = await readFile(mainBundlePath, 'utf8');
 
   if (/\bimport\((['"])node:/.test(mainBundle)) {
     throw new Error(
@@ -38,30 +36,62 @@ async function main() {
       `Build output regression: ${MAIN_BUNDLE_PATH} is missing the inlined recorder worklet source (registerProcessor name marker).`,
     );
   }
-
-  await access(SIDECAR_BINARY_PATH);
-
-  const cudaBuildVerified = await verifyOptionalCudaBuild();
-  console.log(
-    `[verify-build-output] ${profile} profile: main bundle, inlined recorder worklet, sidecar executable, and ${cudaBuildVerified ? 'CUDA runtime artifacts' : 'optional CUDA build path'} look valid`,
-  );
 }
 
-async function verifyOptionalCudaBuild() {
+export async function verifySidecarBuildOutput(options = {}) {
+  const profile = options.profile ?? 'debug';
+  const rootDir = resolve(options.rootDir ?? '.');
+  const sidecarBinaryPath = join(
+    rootDir,
+    `native/target/${profile}/local-dictation-sidecar${SIDECAR_BINARY_SUFFIX}`,
+  );
+  await access(sidecarBinaryPath);
+
+  return await verifyOptionalCudaBuild(rootDir, profile);
+}
+
+async function verifyOptionalCudaBuild(rootDir, profile) {
+  const cudaSidecarBinaryPath = join(
+    rootDir,
+    `native/target-cuda/${profile}/local-dictation-sidecar${SIDECAR_BINARY_SUFFIX}`,
+  );
   try {
-    await access(CUDA_SIDECAR_BINARY_PATH);
+    await access(cudaSidecarBinaryPath);
   } catch {
     return false;
   }
 
-  for (const runtimePath of CUDA_RUNTIME_PATHS) {
-    await access(runtimePath);
+  for (const runtimeFilename of CUDA_RUNTIME_FILENAMES) {
+    await access(join(rootDir, 'native', 'target-cuda', profile, runtimeFilename));
   }
 
   return true;
 }
 
-main().catch((error) => {
-  console.error(error);
-  process.exitCode = 1;
-});
+async function main() {
+  const args = new Set(process.argv.slice(2));
+  const profile = args.has('--release') ? 'release' : 'debug';
+  await verifyFrontendBuildOutput();
+
+  if (args.has('--frontend-only')) {
+    console.log('[verify-build-output] main bundle and inlined recorder worklet look valid');
+    return;
+  }
+
+  const cudaBuildVerified = await verifySidecarBuildOutput({ profile });
+  console.log(
+    `[verify-build-output] ${profile} profile: main bundle, inlined recorder worklet, sidecar executable, and ${cudaBuildVerified ? 'CUDA runtime artifacts' : 'optional CUDA build path'} look valid`,
+  );
+}
+
+const isDirectInvocation =
+  process.argv[1] !== undefined &&
+  pathToFileURL(resolve(process.argv[1])).href ===
+    pathToFileURL(fileURLToPath(import.meta.url)).href;
+
+if (isDirectInvocation) {
+  main().catch((error) => {
+    console.error(error);
+    process.exitCode = 1;
+  });
+}

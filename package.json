@@ -32,6 +32,7 @@
     "stats:downloads": "node scripts/download-stats.mjs",
     "report:transcription-quality": "node scripts/transcription-quality-report.mjs",
     "verify:build-output": "node scripts/verify-build-output.mjs",
+    "verify:frontend-output": "node scripts/verify-build-output.mjs --frontend-only",
     "verify:build-output:release": "node scripts/verify-build-output.mjs --release",
     "check:frontend": "npm run typecheck && npm run typecheck:obsidian-floor && npm run lint && npm run lint:obsidian && npm run test && npm run build:frontend",
     "check:release": "node scripts/check-release.mjs",
