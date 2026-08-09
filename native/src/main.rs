@@ -8,7 +8,7 @@ use anyhow::{Context, Result};
 use local_dictation_sidecar::app::{AppState, ControlFlow};
 use local_dictation_sidecar::catalog::ModelCatalog;
 use local_dictation_sidecar::protocol::{
-    AudioFrame, Command, Event, IncomingFrame, read_frame, write_event_frame,
+    AudioFrame, Command, Event, IncomingFrame, is_fatal_frame_error, read_frame, write_event_frame,
     write_synthesis_audio_frame,
 };
 #[cfg(feature = "engine-whisper")]
@@ -17,7 +17,7 @@ use whisper_rs::install_logging_hooks;
 enum InputMessage {
     Eof,
     Frame(IncomingFrame),
-    ProtocolError(String),
+    ProtocolError { details: String, fatal: bool },
     SystemAudio(AudioFrame),
     SystemAudioProbeResult(Box<Event>),
 }
@@ -80,7 +80,7 @@ fn run_stdio(catalog: ModelCatalog, sidecar_version: String) -> Result<()> {
             Ok(InputMessage::SystemAudioProbeResult(event)) => {
                 write_events(&mut writer, vec![*event])?;
             }
-            Ok(InputMessage::ProtocolError(details)) => {
+            Ok(InputMessage::ProtocolError { details, fatal }) => {
                 write_events(
                     &mut writer,
                     vec![Event::Error {
@@ -90,6 +90,9 @@ fn run_stdio(catalog: ModelCatalog, sidecar_version: String) -> Result<()> {
                         session_id: None,
                     }],
                 )?;
+                if fatal {
+                    break;
+                }
             }
             Ok(InputMessage::Eof) => break,
             Err(mpsc::RecvTimeoutError::Timeout) => continue,
@@ -105,28 +108,39 @@ fn spawn_input_reader(tx: Sender<InputMessage>) {
         let stdin = io::stdin();
         let mut reader = stdin.lock();
 
-        loop {
-            match read_frame(&mut reader) {
-                Ok(Some(frame)) => {
-                    if tx.send(InputMessage::Frame(frame)).is_err() {
-                        break;
-                    }
-                }
-                Ok(None) => {
-                    let _ = tx.send(InputMessage::Eof);
+        read_inputs(&mut reader, &tx);
+    });
+}
+
+fn read_inputs(reader: &mut impl io::Read, tx: &Sender<InputMessage>) {
+    loop {
+        match read_frame(reader) {
+            Ok(Some(frame)) => {
+                if tx.send(InputMessage::Frame(frame)).is_err() {
                     break;
                 }
-                Err(error) => {
-                    if tx
-                        .send(InputMessage::ProtocolError(format!("{error:#}")))
-                        .is_err()
-                    {
-                        break;
-                    }
+            }
+            Ok(None) => {
+                let _ = tx.send(InputMessage::Eof);
+                break;
+            }
+            Err(error) => {
+                let fatal = is_fatal_frame_error(&error);
+                if tx
+                    .send(InputMessage::ProtocolError {
+                        details: format!("{error:#}"),
+                        fatal,
+                    })
+                    .is_err()
+                {
+                    break;
+                }
+                if fatal {
+                    break;
                 }
             }
         }
-    });
+    }
 }
 
 fn spawn_system_audio_probe(tx: Sender<InputMessage>) {
@@ -162,4 +176,35 @@ fn write_events(writer: &mut impl Write, events: Vec<Event>) -> Result<()> {
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use std::io::Cursor;
+    use std::sync::mpsc;
+
+    use super::{InputMessage, read_inputs};
+
+    #[test]
+    fn oversized_frame_terminates_the_reader_without_parsing_payload_bytes() {
+        let mut input = Vec::new();
+        input.push(0x01);
+        input.extend_from_slice(&((16 * 1024 * 1024 + 1) as u32).to_le_bytes());
+        input.extend_from_slice(&[0x01, 0x02, 0x03, 0x04, 0x05]);
+        input.extend_from_slice(br#"{"type":"health"}"#);
+        let (tx, rx) = mpsc::channel();
+
+        read_inputs(&mut Cursor::new(input), &tx);
+        drop(tx);
+
+        let messages = rx.into_iter().collect::<Vec<_>>();
+        assert_eq!(messages.len(), 1, "payload bytes must not be reparsed");
+        assert!(matches!(
+            &messages[0],
+            InputMessage::ProtocolError {
+                details,
+                fatal: true,
+            } if details.contains("frame payload exceeds maximum supported size")
+        ));
+    }
 }
