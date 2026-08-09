@@ -1,3 +1,4 @@
+use std::fmt;
 use std::io::{ErrorKind, Read, Write};
 
 use anyhow::{Context, Result, anyhow, bail, ensure};
@@ -22,6 +23,23 @@ const FRAME_HEADER_LENGTH: usize = 5;
 const MAX_FRAME_PAYLOAD: usize = 16 * 1024 * 1024;
 const SESSION_ID_BYTES: usize = 16;
 const SYNTHESIS_AUDIO_HEADER_BYTES: usize = 8;
+
+#[derive(Debug)]
+struct OversizedFramePayload {
+    payload_length: usize,
+}
+
+impl fmt::Display for OversizedFramePayload {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            formatter,
+            "frame payload exceeds maximum supported size: {} > {}",
+            self.payload_length, MAX_FRAME_PAYLOAD
+        )
+    }
+}
+
+impl std::error::Error for OversizedFramePayload {}
 
 pub const PCM_SAMPLE_RATE_HZ: usize = 16_000;
 pub const PCM_CHANNEL_COUNT: usize = 1;
@@ -584,10 +602,9 @@ pub fn read_frame<R: Read>(reader: &mut R) -> Result<Option<IncomingFrame>> {
 
     let frame_kind = header[0];
     let payload_length = u32::from_le_bytes([header[1], header[2], header[3], header[4]]) as usize;
-    ensure!(
-        payload_length <= MAX_FRAME_PAYLOAD,
-        "frame payload exceeds maximum supported size: {payload_length} > {MAX_FRAME_PAYLOAD}"
-    );
+    if payload_length > MAX_FRAME_PAYLOAD {
+        return Err(OversizedFramePayload { payload_length }.into());
+    }
     let mut payload = vec![0_u8; payload_length];
     reader
         .read_exact(&mut payload)
@@ -602,6 +619,10 @@ pub fn read_frame<R: Read>(reader: &mut R) -> Result<Option<IncomingFrame>> {
         )?))),
         _ => Err(anyhow!("unsupported frame kind {frame_kind}")),
     }
+}
+
+pub fn is_fatal_frame_error(error: &anyhow::Error) -> bool {
+    error.downcast_ref::<OversizedFramePayload>().is_some()
 }
 
 pub fn encode_audio_frame_envelope(session_id: &str, frame_bytes: &[u8]) -> Result<Vec<u8>> {
