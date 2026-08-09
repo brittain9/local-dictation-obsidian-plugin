@@ -417,7 +417,7 @@ export class Session {
       return;
     }
 
-    const projection = this.renderer.planAppend(
+    const plannedProjection = this.renderer.planAppend(
       {
         pauseMsBeforeUtterance: revision.pauseMsBeforeUtterance,
         spans: revision.spans,
@@ -426,6 +426,17 @@ export class Session {
       },
       context,
     );
+    const callout = this.rawPostprocessCalloutText(revision);
+    const calloutSuffix = callout === null ? '' : `\n\n${callout}`;
+    const projection: TranscriptInsertProjection =
+      calloutSuffix.length === 0
+        ? plannedProjection
+        : {
+            ...plannedProjection,
+            insertedText: `${plannedProjection.insertedText}${calloutSuffix}`,
+            projectedText: `${plannedProjection.projectedText}${calloutSuffix}`,
+            textEndOffset: plannedProjection.textEndOffset + calloutSuffix.length,
+          };
     const result = this.surface?.appendProjection(revision.utteranceId, projection);
 
     if (result === undefined) {
@@ -444,7 +455,6 @@ export class Session {
       }
       this.recordRawSessionAppend(revision, projection);
       this.renderer.commitAppend(projection);
-      this.applyRawPostprocessCallout(revision);
       return;
     }
 
@@ -471,42 +481,6 @@ export class Session {
     }
 
     return formatRawPostprocessCallout(rawText);
-  }
-
-  private applyRawPostprocessCallout(revision: TranscriptRevision): void {
-    const callout = this.rawPostprocessCalloutText(revision);
-    if (callout === null) {
-      return;
-    }
-
-    const context = this.surface?.readProjectionContext();
-    if (context === undefined) {
-      return;
-    }
-
-    const boundary = missingNewlines(context.tailContent, 2);
-    const projection: TranscriptInsertProjection = {
-      emittedSpeakerIndex: null,
-      emittedTimestamp: null,
-      insertedText: callout,
-      precedingSpeakerIndex: null,
-      projectedText: `${boundary}${callout}`,
-      replacementPrefix: boundary,
-      textEndOffset: boundary.length + callout.length,
-      textStartOffset: boundary.length,
-    };
-    const result = this.surface?.appendProjection(`${revision.utteranceId}:llm_raw`, projection);
-
-    if (result?.kind === 'denied') {
-      if (result.reason.kind === 'surface_desynchronized') {
-        this.handleSurfaceDesynchronization(result.reason);
-        return;
-      }
-      this.dependencies.logger?.debug(
-        'session',
-        `raw LLM postprocess callout append denied (${callout.length} chars): ${result.reason.kind}`,
-      );
-    }
   }
 
   private applyReplace(
@@ -900,17 +874,4 @@ function formatRawPostprocessCallout(rawText: string): string {
     .join('\n');
 
   return `> [!note]- raw\n${quoted}`;
-}
-
-function missingNewlines(tailContent: string, requiredTrailingNewlines: number): string {
-  let existing = 0;
-
-  for (let index = tailContent.length - 1; index >= 0; index -= 1) {
-    if (tailContent.charAt(index) !== '\n') {
-      break;
-    }
-    existing += 1;
-  }
-
-  return '\n'.repeat(Math.max(0, requiredTrailingNewlines - existing));
 }
