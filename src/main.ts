@@ -361,6 +361,7 @@ export default class LocalSttPlugin extends Plugin {
       isReadAloudActive: () => this.requireReadAloudController().isActive(),
       plugin: this,
       readAloud: (editor) => this.requireReadAloudController().read(editor),
+      readEntireNote: (editor) => this.requireReadAloudController().read(editor, 'entire_note'),
       reinsertLastUtterance: (editor) => {
         this.lastUtteranceRecovery.reinsert(editor);
       },

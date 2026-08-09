@@ -27,6 +27,7 @@ describe('registerCommands', () => {
       isReadAloudActive: () => false,
       plugin,
       readAloud: vi.fn(async () => {}),
+      readEntireNote: vi.fn(async () => {}),
       reinsertLastUtterance,
       restoreRawTranscript: vi.fn(),
       restartSidecar: vi.fn(async () => {}),
@@ -90,6 +91,7 @@ describe('registerCommands', () => {
       isReadAloudActive: () => false,
       plugin,
       readAloud: vi.fn(async () => {}),
+      readEntireNote: vi.fn(async () => {}),
       reinsertLastUtterance: vi.fn(),
       restoreRawTranscript,
       restartSidecar: vi.fn(async () => {}),
@@ -129,7 +131,7 @@ describe('registerCommands', () => {
     expect(restoreCommand?.checkCallback?.(true)).toBe(false);
   });
 
-  it('registers one read-aloud start command', () => {
+  it('registers selection-aware and entire-note read-aloud commands', async () => {
     const commands: Command[] = [];
     const plugin = {
       addCommand: vi.fn((command: Command) => {
@@ -137,6 +139,7 @@ describe('registerCommands', () => {
       }),
     } as unknown as Plugin;
 
+    const readEntireNote = vi.fn(async () => {});
     registerCommands({
       cancelDictation: vi.fn(async () => {}),
       clearLastUtterance: vi.fn(),
@@ -148,6 +151,7 @@ describe('registerCommands', () => {
       isReadAloudActive: () => false,
       plugin,
       readAloud: vi.fn(async () => {}),
+      readEntireNote,
       reinsertLastUtterance: vi.fn(),
       restoreRawTranscript: vi.fn(),
       restartSidecar: vi.fn(async () => {}),
@@ -161,6 +165,10 @@ describe('registerCommands', () => {
     });
 
     expect(commands.filter(({ id }) => id === 'read-aloud')).toHaveLength(1);
-    expect(commands.some(({ id }) => id === 'read-entire-note')).toBe(false);
+    const entireNoteCommand = commands.find(({ id }) => id === 'read-entire-note');
+    expect(entireNoteCommand?.name).toBe('Read entire note aloud');
+    const editor = {} as Editor;
+    await entireNoteCommand?.editorCallback?.(editor, {} as never);
+    expect(readEntireNote).toHaveBeenCalledWith(editor);
   });
 });

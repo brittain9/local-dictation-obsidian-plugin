@@ -163,6 +163,16 @@ describe('resolveReadRange', () => {
       to: source.length,
     });
   });
+
+  it('can explicitly read the entire note even while text is selected', () => {
+    const source = 'First sentence. Second sentence.';
+    const editor = editorFor(source, { ch: 0, line: 0 }, [0, 15]);
+
+    expect(resolveReadRange(editor, source, 'entire_note')).toEqual({
+      from: 0,
+      to: source.length,
+    });
+  });
 });
 
 describe('ReadAloudController', () => {
