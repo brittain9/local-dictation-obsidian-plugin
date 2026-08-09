@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import type { EventEmitter } from 'node:events';
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { gzipSync } from 'node:zlib';
@@ -479,6 +479,43 @@ describe('installSidecar', () => {
       ).resolves.toBeNull();
     },
   );
+
+  it('honors cancellation after extraction has started', async () => {
+    const pluginDirectory = await createTempDirectory();
+    const controller = new AbortController();
+    const archive = buildTarGz([
+      { content: Buffer.alloc(8 * 1024 * 1024, 0x61), name: 'local-dictation-sidecar' },
+    ]);
+    const archiveSha256 = sha256Hex(archive);
+    const assetName = 'sidecar-linux-x86_64-cpu.tar.gz';
+
+    stubHttps({
+      [`https://releases.test/2026.4.21/${assetName}`]: archive,
+      'https://releases.test/2026.4.21/checksums.txt': Buffer.from(
+        `${archiveSha256}  ${assetName}\n`,
+      ),
+    });
+
+    await expect(
+      installSidecar({
+        onProgress: (progress) => {
+          if (progress.phase === 'extract') {
+            queueMicrotask(() => controller.abort());
+          }
+        },
+        pluginDirectory,
+        releaseBaseUrl: 'https://releases.test',
+        signal: controller.signal,
+        variant: 'cpu',
+        version: '2026.4.21',
+      }),
+    ).rejects.toMatchObject({ name: 'AbortError' });
+
+    await expect(
+      readInstallManifest(variantDirectoryPath(pluginDirectory, 'cpu')),
+    ).resolves.toBeNull();
+    await expect(readdir(join(pluginDirectory, 'bin'))).resolves.not.toContain('.cpu-staging');
+  });
 
   it('honors cancellation after preparation without replacing the existing install', async () => {
     const pluginDirectory = await createTempDirectory();

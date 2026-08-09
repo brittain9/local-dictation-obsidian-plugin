@@ -540,7 +540,8 @@ async function extractTarGz(
       await mkdir(resolvedPath, { recursive: true });
     } else {
       await mkdir(dirname(resolvedPath), { recursive: true });
-      await writeFile(resolvedPath, decompressed.subarray(offset, dataEnd));
+      signal?.throwIfAborted();
+      await writeFile(resolvedPath, decompressed.subarray(offset, dataEnd), { signal });
     }
 
     offset += Math.ceil(size / blockSize) * blockSize;
