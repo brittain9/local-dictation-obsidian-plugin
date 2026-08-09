@@ -1008,7 +1008,9 @@ mod tests {
 
     #[test]
     fn install_rejects_unsafe_install_ids_without_touching_paths_outside_the_store() {
-        let workspace = tempfile_dir("unsafe-install-id");
+        let workspace = sample_request()
+            .store_root
+            .with_extension("unsafe-install-id-workspace");
         let outside_dir = workspace.join("outside");
         fs::create_dir_all(&outside_dir).expect("outside directory should create");
         fs::write(outside_dir.join("keep.txt"), b"keep").expect("marker should write");
