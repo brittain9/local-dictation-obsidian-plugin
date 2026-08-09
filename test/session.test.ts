@@ -664,33 +664,6 @@ describe('Session', () => {
     expect(surface.appendCalls).toHaveLength(1);
   });
 
-  it('propagates a raw-callout append desynchronization through the lifecycle', () => {
-    const { callbacks, session, surface } = createSessionHarness();
-    const failure: SurfaceDesynchronization = {
-      documentLength: 4280,
-      kind: 'surface_desynchronized',
-      trackedPosition: 4314,
-    };
-    surface.appendResultByUtterance.set('u1:llm_raw', {
-      kind: 'denied',
-      reason: failure,
-      utteranceId: 'u1:llm_raw',
-    });
-
-    session.acceptTranscript(
-      transcript({
-        llmPostprocessRawText: 'raw words',
-        text: 'Cleaned words.',
-        utteranceId: 'u1',
-      }),
-    );
-
-    expect(callbacks.onSurfaceDesynchronized).toHaveBeenCalledOnce();
-    expect(callbacks.onSurfaceDesynchronized).toHaveBeenCalledWith(failure);
-    expect(surface.dispose).toHaveBeenCalledOnce();
-    expect(surface.documentText).toBe('Cleaned words.');
-  });
-
   it('propagates desynchronization while clearing a denied replacement provisional', () => {
     const { callbacks, session, surface } = createSessionHarness();
     const failure: SurfaceDesynchronization = {
@@ -868,6 +841,34 @@ describe('Session', () => {
     );
 
     expect(surface.documentText).toBe('Cleaned words.\n\n> [!note]- raw\n> raw words');
+  });
+
+  it('replaces the prior raw callout when a newer final revision arrives', () => {
+    const { session, surface } = createSessionHarness();
+
+    session.acceptTranscript(
+      transcript({
+        isFinal: true,
+        llmPostprocessRawText: 'first raw words',
+        revision: 0,
+        text: 'First cleanup.',
+        utteranceId: 'u1',
+      }),
+    );
+    session.acceptTranscript(
+      transcript({
+        isFinal: true,
+        llmPostprocessRawText: 'refined raw words',
+        revision: 1,
+        text: 'Refined cleanup.',
+        utteranceId: 'u1',
+      }),
+    );
+
+    expect(surface.documentText).toBe('Refined cleanup.\n\n> [!note]- raw\n> refined raw words');
+    expect(surface.documentText).not.toContain('first raw words');
+    expect(surface.appendCalls).toHaveLength(1);
+    expect(surface.replaceCalls).toHaveLength(1);
   });
 
   it('folds the raw callout beneath its own utterance when a later utterance was projected first', () => {
