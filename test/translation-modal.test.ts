@@ -90,6 +90,36 @@ describe('TranslationModal mutation safety', () => {
       ).toBeDefined();
     });
   });
+
+  it('applies edits made in the translation preview', async () => {
+    Setting.reset();
+    const replaceRange = vi.fn();
+    const modal = createModal({
+      editor: {
+        getValue: () => SNAPSHOT.source,
+        replaceRange,
+      },
+      runTranslation: vi.fn(async () => ({
+        kind: 'translated' as const,
+        sourceUnitsKept: 0,
+        text: 'Traduzca esto.',
+      })),
+    });
+
+    modal.open();
+    await vi.waitFor(() => {
+      expect(Setting.buttonNamed('Replace').disabled).toBe(false);
+    });
+    const output = (modal.contentEl as unknown as TestElement).querySelector('textarea');
+    expect(output).not.toBeNull();
+    const editableOutput = output as unknown as HTMLTextAreaElement;
+    editableOutput.value = 'Traduzca este texto.';
+    output?.dispatchEvent({ type: 'input' });
+
+    await Setting.buttonNamed('Replace').click();
+
+    expect(replaceRange).toHaveBeenCalledWith('Traduzca este texto.', SNAPSHOT.from, SNAPSHOT.to);
+  });
 });
 
 function createModal({

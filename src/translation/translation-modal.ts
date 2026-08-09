@@ -122,9 +122,11 @@ export class TranslationModal extends Modal {
     this.outputEl = contentEl.createEl('textarea', {
       attr: {
         'aria-label': t('translation.modal.previewAria'),
-        readonly: '',
       },
       cls: 'local-stt-translation-modal__output',
+    });
+    this.outputEl.addEventListener('input', () => {
+      if (this.outputEl !== null) this.output = this.outputEl.value;
     });
     this.actionsEl = contentEl.createDiv();
 
