@@ -4,9 +4,9 @@ import { Platform, PluginSettingTab, Setting } from 'obsidian';
 import { formatSystemAudioProbeResultMessage } from '../audio/system-audio-permission-message';
 import {
   dictationLanguageLabel,
+  dictationLanguageOptionsForSelection,
   isDictationLanguage,
   languageFeatureCoverage,
-  supportedDictationLanguageOptions,
 } from '../language/dictation-language';
 import type { ModelPickerOptions } from '../models/manage-models-modal';
 import type { ModelInstallManager } from '../models/model-install-manager';
@@ -26,6 +26,7 @@ import { ConfirmModal } from '../ui/confirm-modal';
 import { styleDestructiveButton } from '../ui/destructive-button';
 import { diarizationSettingDescription } from './diarization-setting';
 import { DiarizationSettingsModal } from './diarization-settings-modal';
+import { applyDictationLanguageChange } from './dictation-language-setting';
 import { changeHardwareAcceleration } from './hardware-acceleration-action';
 import { renderHardwareAccelerationSetting } from './hardware-acceleration-setting';
 import { renderMicrophonePicker } from './microphone-picker';
@@ -215,7 +216,9 @@ export class LocalSttSettingTab extends PluginSettingTab {
     const supportsAutomaticLanguageDetection =
       selectedCapabilities.status === 'ready' &&
       selectedCapabilities.capabilities.family.supportsAutomaticLanguageDetection;
-    const languageOptions = supportedDictationLanguageOptions(
+    const hasSelectedModel = settings.selectedModel !== null;
+    const languageOptions = dictationLanguageOptionsForSelection(
+      hasSelectedModel,
       languageSupport,
       supportsAutomaticLanguageDetection,
     );
@@ -259,7 +262,15 @@ export class LocalSttSettingTab extends PluginSettingTab {
       );
       dropdown.onChange(async (value) => {
         if (!isDictationLanguage(value)) return;
-        await this.access.persistOne('dictationLanguage', value);
+        await applyDictationLanguageChange(value, {
+          feedback: this.dependencies.feedback,
+          hasSelectedModel,
+          onModelChanged: () => {
+            this.refreshSettingsTab();
+          },
+          openModelPicker: this.dependencies.openModelPicker,
+          persist: (language) => this.access.persistOne('dictationLanguage', language),
+        });
       });
     });
 

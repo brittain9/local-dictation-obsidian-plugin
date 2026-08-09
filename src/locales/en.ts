@@ -169,6 +169,10 @@ export const en = {
   'settings.dictationLanguage.unsupported': '{language} (unsupported)',
   'settings.dictationLanguage.noReadAloud': 'Read aloud does not cover {language} yet.',
   'settings.dictationLanguage.noTranslation': 'Local translation does not cover {language} yet.',
+  'settings.dictationLanguage.modelRequired':
+    'Choose a transcription model that supports {language} before starting dictation.',
+  'settings.dictationLanguage.chooseModel': 'Choose compatible model',
+  'settings.dictationLanguage.openModelPickerFailed': 'Could not open the model picker.',
   'settings.engine.named': '{engine} engine',
   'settings.groups.model': 'Models',
   'settings.groups.readAloud': 'Read aloud',

@@ -67,6 +67,16 @@ export function supportedDictationLanguageOptions(
   );
 }
 
+export function dictationLanguageOptionsForSelection(
+  hasSelectedModel: boolean,
+  support: LanguageSupport,
+  supportsAutomaticLanguageDetection = false,
+) {
+  return hasSelectedModel
+    ? supportedDictationLanguageOptions(support, supportsAutomaticLanguageDetection)
+    : DICTATION_LANGUAGE_OPTIONS;
+}
+
 export interface LanguageFeatureCoverage {
   readAloud: boolean;
   translation: boolean;
