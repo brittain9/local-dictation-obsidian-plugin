@@ -5,9 +5,11 @@ export const en = {
   'notice.finalizedUtteranceAutoCopyFailed':
     'Could not automatically copy the finalized utterance.',
   'notice.lastUtteranceCleared': 'Cleared the last retained utterance.',
+  'notice.lastUtteranceCopied': 'Copied the last finalized utterance.',
+  'notice.lastUtteranceCopyFailed': 'Could not copy the last finalized utterance.',
   'notice.lastUtteranceReinsertFailed': 'Could not reinsert the last finalized utterance.',
   'notice.lastUtteranceReinserted': 'Reinserted the last finalized utterance.',
-  'notice.lastUtteranceUnavailable': 'No finalized utterance is available to reinsert.',
+  'notice.lastUtteranceUnavailable': 'No finalized utterance is available.',
   'notice.llmTransformEmpty': 'LLM transform returned nothing to add.',
   'notice.microphoneDisconnected':
     'Microphone disconnected. Dictation stopped and will finish processing audio already captured. Reconnect the microphone, then start dictation again.',
@@ -109,6 +111,7 @@ export const en = {
   'commands.stopDictation': 'Stop dictation',
   'commands.cancelDictation': 'Cancel dictation',
   'commands.reinsertLastUtterance': 'Reinsert last utterance',
+  'commands.copyLastUtterance': 'Copy last utterance',
   'commands.clearLastUtterance': 'Clear last utterance',
   'commands.restoreRawTranscript': 'Restore raw transcript',
   'commands.copyRawTranscript': 'Copy raw transcript',

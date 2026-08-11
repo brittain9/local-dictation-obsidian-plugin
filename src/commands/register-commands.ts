@@ -16,6 +16,7 @@ interface CommandDependencies {
   clearLastUtterance: () => void;
   clearRawTranscriptRecovery: () => void;
   checkSidecarHealth: () => Promise<void>;
+  copyLastUtterance: () => void;
   copyRawTranscript: () => void;
   hasRawTranscriptRecovery: () => boolean;
   isReadAloudActive: () => boolean;
@@ -135,6 +136,13 @@ export function registerCommands(dependencies: CommandDependencies): void {
       }
       return true;
     },
+  });
+
+  dependencies.plugin.addCommand({
+    id: 'copy-last-utterance',
+    name: t('commands.copyLastUtterance'),
+    checkCallback: (checking) =>
+      runAvailableCommand(checking, dependencies.hasLastUtterance, dependencies.copyLastUtterance),
   });
 
   dependencies.plugin.addCommand({

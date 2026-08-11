@@ -17,8 +17,41 @@ describe('LastUtteranceRecovery', () => {
     expect(feedback.show).toHaveBeenCalledWith({
       intent: 'information',
       key: 'last-utterance-unavailable',
-      message: 'No finalized utterance is available to reinsert.',
+      message: 'No finalized utterance is available.',
     });
+  });
+
+  it('copies the retained utterance without enabling automatic clipboard replacement', async () => {
+    const { feedback, recovery, writeText } = createRecoveryHarness();
+    recovery.recordFinalizedUtterance('  Copy this phrase.  ');
+
+    await expect(recovery.copy()).resolves.toBe(true);
+
+    expect(writeText).toHaveBeenCalledExactlyOnceWith('Copy this phrase.');
+    expect(feedback.show).toHaveBeenCalledWith({
+      intent: 'success',
+      key: 'last-utterance-copied',
+      message: 'Copied the last finalized utterance.',
+    });
+  });
+
+  it('contains clipboard failures without exposing the retained text', async () => {
+    const privateText = 'private retained phrase';
+    const { feedback, recovery } = createRecoveryHarness({
+      writeText: vi.fn(async (text: string) => {
+        throw new Error(`clipboard rejected: ${text}`);
+      }),
+    });
+    recovery.recordFinalizedUtterance(privateText);
+
+    await expect(recovery.copy()).resolves.toBe(false);
+
+    expect(feedback.show).toHaveBeenCalledWith({
+      intent: 'error',
+      key: 'last-utterance-copy-failed',
+      message: 'Could not copy the last finalized utterance.',
+    });
+    expect(JSON.stringify(feedback.show.mock.calls)).not.toContain(privateText);
   });
 
   it('clears the in-memory utterance explicitly', () => {
@@ -133,12 +166,23 @@ describe('LastUtteranceRecovery', () => {
   });
 });
 
-function createRecoveryHarness(): {
+function createRecoveryHarness(
+  options: { writeText?: ReturnType<typeof vi.fn<(text: string) => Promise<void>>> } = {},
+): {
   feedback: { show: ReturnType<typeof vi.fn> };
   recovery: LastUtteranceRecovery;
+  writeText: ReturnType<typeof vi.fn<(text: string) => Promise<void>>>;
 } {
   const feedback = { show: vi.fn() };
-  return { feedback, recovery: new LastUtteranceRecovery(feedback) };
+  const writeText = options.writeText ?? vi.fn(async (_text: string) => {});
+  return {
+    feedback,
+    recovery: new LastUtteranceRecovery({
+      feedback,
+      getClipboard: () => ({ writeText }),
+    }),
+    writeText,
+  };
 }
 
 function createEditorHarness(line: string, cursor: EditorPosition = { ch: 0, line: 0 }) {
