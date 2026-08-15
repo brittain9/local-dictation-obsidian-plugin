@@ -118,6 +118,7 @@ export const hr = {
   'commands.checkSidecarHealth': 'Provjeri stanje sidecara',
   'commands.restartSidecar': 'Ponovno pokreni sidecar',
   'commands.readAloud': 'Čitaj naglas',
+  'commands.readAloudFromCursor': 'Čitaj naglas od kursora',
   'commands.pauseResumeReadAloud': 'Pauziraj ili nastavi čitanje',
   'commands.stopReadAloud': 'Zaustavi čitanje',
   'commands.translateNote': 'Prevedi bilješku',

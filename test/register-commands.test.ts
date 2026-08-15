@@ -29,6 +29,7 @@ describe('registerCommands', () => {
       isReadAloudActive: () => false,
       plugin,
       readAloud: vi.fn(async () => {}),
+      readAloudFromCursor: vi.fn(async () => {}),
       reinsertLastUtterance,
       restoreRawTranscript: vi.fn(),
       restartSidecar: vi.fn(async () => {}),
@@ -99,6 +100,7 @@ describe('registerCommands', () => {
       isReadAloudActive: () => false,
       plugin,
       readAloud: vi.fn(async () => {}),
+      readAloudFromCursor: vi.fn(async () => {}),
       reinsertLastUtterance: vi.fn(),
       restoreRawTranscript,
       restartSidecar: vi.fn(async () => {}),
@@ -138,7 +140,7 @@ describe('registerCommands', () => {
     expect(restoreCommand?.checkCallback?.(true)).toBe(false);
   });
 
-  it('registers one read-aloud start command', () => {
+  it('registers both read-aloud start commands', async () => {
     const commands: Command[] = [];
     const plugin = {
       addCommand: vi.fn((command: Command) => {
@@ -146,6 +148,8 @@ describe('registerCommands', () => {
       }),
     } as unknown as Plugin;
 
+    const readAloud = vi.fn(async () => {});
+    const readAloudFromCursor = vi.fn(async () => {});
     registerCommands({
       cancelDictation: vi.fn(async () => {}),
       clearLastUtterance: vi.fn(),
@@ -157,7 +161,8 @@ describe('registerCommands', () => {
       hasRawTranscriptRecovery: () => false,
       isReadAloudActive: () => false,
       plugin,
-      readAloud: vi.fn(async () => {}),
+      readAloud,
+      readAloudFromCursor,
       reinsertLastUtterance: vi.fn(),
       restoreRawTranscript: vi.fn(),
       restartSidecar: vi.fn(async () => {}),
@@ -170,7 +175,18 @@ describe('registerCommands', () => {
       toggleReadAloudPaused: vi.fn(async () => {}),
     });
 
-    expect(commands.filter(({ id }) => id === 'read-aloud')).toHaveLength(1);
+    const readAloudCommand = commands.find(({ id }) => id === 'read-aloud');
+    const readFromCursorCommand = commands.find(({ id }) => id === 'read-aloud-from-cursor');
+    const editor = {} as Editor;
+
+    expect(readAloudCommand).toBeDefined();
+    expect(readFromCursorCommand).toBeDefined();
     expect(commands.some(({ id }) => id === 'read-entire-note')).toBe(false);
+
+    await readAloudCommand?.editorCallback?.(editor, {} as never);
+    await readFromCursorCommand?.editorCallback?.(editor, {} as never);
+
+    expect(readAloud).toHaveBeenCalledWith(editor);
+    expect(readAloudFromCursor).toHaveBeenCalledWith(editor);
   });
 });
