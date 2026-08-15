@@ -1,6 +1,6 @@
 {
   "name": "local-dictation",
-  "version": "2026.8.2",
+  "version": "2026.8.3",
   "description": "Local speech and language toolkit for notes. Dictate, transcribe meetings, translate text, and read notes aloud with on-device models.",
   "private": true,
   "license": "MIT",
