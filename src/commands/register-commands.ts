@@ -20,6 +20,7 @@ interface CommandDependencies {
   copyRawTranscript: () => void;
   hasRawTranscriptRecovery: () => boolean;
   isReadAloudActive: () => boolean;
+  isDeveloperMode?: () => boolean;
   plugin: Plugin;
   hasLastUtterance: () => boolean;
   reinsertLastUtterance: (editor: Editor) => void;
@@ -29,6 +30,8 @@ interface CommandDependencies {
   stopReadAloud: () => void;
   translateNote: (editor: Editor) => void;
   translateSelection: (editor: Editor) => void;
+  translateNoteWithTencentPrototype?: (editor: Editor) => void;
+  translateSelectionWithTencentPrototype?: (editor: Editor) => void;
   toggleReadAloudPaused: () => Promise<void>;
   startDictation: () => Promise<void>;
   stopDictation: () => Promise<void>;
@@ -45,6 +48,35 @@ export function registerCommands(dependencies: CommandDependencies): void {
       return true;
     },
   });
+
+  if (
+    dependencies.isDeveloperMode !== undefined &&
+    dependencies.translateNoteWithTencentPrototype !== undefined &&
+    dependencies.translateSelectionWithTencentPrototype !== undefined
+  ) {
+    const isDeveloperMode = dependencies.isDeveloperMode;
+    const translateNote = dependencies.translateNoteWithTencentPrototype;
+    const translateSelection = dependencies.translateSelectionWithTencentPrototype;
+    dependencies.plugin.addCommand({
+      id: 'prototype-translate-selection-tencent-hy-mt',
+      name: 'Prototype: Translate selection with Tencent HY-MT',
+      editorCheckCallback: (checking, editor) => {
+        if (!isDeveloperMode() || !editor.somethingSelected()) return false;
+        if (!checking) translateSelection(editor);
+        return true;
+      },
+    });
+
+    dependencies.plugin.addCommand({
+      id: 'prototype-translate-note-tencent-hy-mt',
+      name: 'Prototype: Translate note with Tencent HY-MT',
+      editorCheckCallback: (checking, editor) => {
+        if (!isDeveloperMode()) return false;
+        if (!checking) translateNote(editor);
+        return true;
+      },
+    });
+  }
 
   dependencies.plugin.addCommand({
     id: 'translate-note',

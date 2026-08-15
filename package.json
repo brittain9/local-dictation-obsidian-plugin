@@ -29,6 +29,7 @@
     "install:dev": "node scripts/install-dev-plugin.mjs",
     "install:dev:cuda": "node scripts/install-dev-cuda.mjs",
     "release:prepare": "node scripts/prepare-release.mjs",
+    "prototype:tencent-translation": "node scripts/run-tencent-hy-mt-prototype.mjs",
     "stats:downloads": "node scripts/download-stats.mjs",
     "report:transcription-quality": "node scripts/transcription-quality-report.mjs",
     "verify:build-output": "node scripts/verify-build-output.mjs",

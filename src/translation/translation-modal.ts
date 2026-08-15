@@ -33,6 +33,7 @@ interface TranslationModalDependencies {
     sourceLanguage: TranslationLanguage,
     targetLanguage: TranslationLanguage,
   ) => Promise<void>;
+  prototypeLabel?: string | undefined;
   runTranslation: (options: {
     onProgress: (completed: number, total: number) => void;
     onReady: () => void;
@@ -93,6 +94,12 @@ export class TranslationModal extends Modal {
       cls: 'local-stt-translation-modal__privacy',
       text: t('translation.modal.privacy'),
     });
+    if (this.dependencies.prototypeLabel !== undefined) {
+      contentEl.createEl('p', {
+        cls: 'local-stt-translation-modal__warning',
+        text: this.dependencies.prototypeLabel,
+      });
+    }
     this.languagesEl = contentEl.createDiv({ cls: 'local-stt-translation-modal__languages' });
 
     if (this.dependencies.snapshot.source.length > LARGE_SOURCE_CHARACTERS) {

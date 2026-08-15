@@ -365,6 +365,7 @@ export default class LocalSttPlugin extends Plugin {
       hasLastUtterance: () => this.lastUtteranceRecovery.hasUtterance(),
       hasRawTranscriptRecovery: () => this.rawTranscriptRecovery.hasRecovery(),
       isReadAloudActive: () => this.requireReadAloudController().isActive(),
+      isDeveloperMode: () => this.settings.developerMode,
       plugin: this,
       readAloud: (editor) => this.requireReadAloudController().read(editor),
       reinsertLastUtterance: (editor) => {
@@ -380,6 +381,10 @@ export default class LocalSttPlugin extends Plugin {
       translateNote: (editor) => this.requireTranslationController().translateNote(editor),
       translateSelection: (editor) =>
         this.requireTranslationController().translateSelection(editor),
+      translateNoteWithTencentPrototype: (editor) =>
+        this.requireTranslationController().translateNoteWithTencentPrototype(editor),
+      translateSelectionWithTencentPrototype: (editor) =>
+        this.requireTranslationController().translateSelectionWithTencentPrototype(editor),
       toggleDictation: async () => this.requireDictationController().toggleDictation(),
       toggleReadAloudPaused: () => this.requireReadAloudController().togglePaused(),
     });

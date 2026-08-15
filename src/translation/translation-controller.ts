@@ -18,9 +18,12 @@ import {
   segmentMarkdownForTranslation,
   translatableTexts,
 } from './markdown-segmentation';
+import { translateWithTencentHyMtPrototype } from './tencent-hy-mt-prototype';
 import { TranslationModal, type TranslationSnapshot } from './translation-modal';
 
 const MAX_TRANSLATION_CHARACTERS = 50_000;
+
+type TranslationEngine = 'bergamot' | 'tencent_hy_mt_prototype';
 
 export interface TranslationRunOptions {
   onProgress: (completed: number, total: number) => void;
@@ -53,12 +56,27 @@ export class TranslationController {
     if (!editor.somethingSelected()) return;
     const from = editor.getCursor('from');
     const to = editor.getCursor('to');
-    this.open(editor, {
-      from,
-      kind: 'selection',
-      source: editor.getRange(from, to),
-      to,
-    });
+    this.open(
+      editor,
+      {
+        from,
+        kind: 'selection',
+        source: editor.getRange(from, to),
+        to,
+      },
+      'bergamot',
+    );
+  }
+
+  translateSelectionWithTencentPrototype(editor: Editor): void {
+    if (!editor.somethingSelected()) return;
+    const from = editor.getCursor('from');
+    const to = editor.getCursor('to');
+    this.open(
+      editor,
+      { from, kind: 'selection', source: editor.getRange(from, to), to },
+      'tencent_hy_mt_prototype',
+    );
   }
 
   translateNote(editor: Editor): void {
@@ -71,12 +89,26 @@ export class TranslationController {
       });
       return;
     }
-    this.open(editor, {
-      from: { line: 0, ch: 0 },
-      kind: 'note',
-      source,
-      to: endPosition(source),
-    });
+    this.open(
+      editor,
+      {
+        from: { line: 0, ch: 0 },
+        kind: 'note',
+        source,
+        to: endPosition(source),
+      },
+      'bergamot',
+    );
+  }
+
+  translateNoteWithTencentPrototype(editor: Editor): void {
+    const source = editor.getValue();
+    if (source.trim().length === 0) return;
+    this.open(
+      editor,
+      { from: { line: 0, ch: 0 }, kind: 'note', source, to: endPosition(source) },
+      'tencent_hy_mt_prototype',
+    );
   }
 
   dispose(): void {
@@ -84,7 +116,7 @@ export class TranslationController {
     this.activeModal = null;
   }
 
-  private open(editor: Editor, snapshot: TranslationSnapshot): void {
+  private open(editor: Editor, snapshot: TranslationSnapshot, engine: TranslationEngine): void {
     if (snapshot.source.length > MAX_TRANSLATION_CHARACTERS) {
       this.dependencies.feedback.show({
         intent: 'warning',
@@ -119,7 +151,7 @@ export class TranslationController {
         modal.close();
         await this.dependencies.openModelPicker();
         if (this.findInstalledModel(languages.sourceLanguage, languages.targetLanguage) !== null) {
-          this.open(editor, snapshot);
+          this.open(editor, snapshot, engine);
         }
       },
       persistLanguages: async (nextSource, nextTarget) => {
@@ -130,7 +162,11 @@ export class TranslationController {
           translationTargetLanguage: nextTarget,
         });
       },
-      runTranslation: (options) => this.runTranslation(snapshot.source, options),
+      prototypeLabel:
+        engine === 'tencent_hy_mt_prototype'
+          ? 'Prototype: Tencent HY-MT through a manually started local llama.cpp server.'
+          : undefined,
+      runTranslation: (options) => this.runTranslation(snapshot.source, engine, options),
       snapshot,
     });
     this.activeModal = modal;
@@ -139,11 +175,9 @@ export class TranslationController {
 
   private async runTranslation(
     source: string,
+    engine: TranslationEngine,
     options: TranslationRunOptions,
   ): Promise<TranslationRunResult> {
-    const installed = this.findInstalledModel(options.sourceLanguage, options.targetLanguage);
-    if (installed === null) return { kind: 'missing_model' };
-
     const segments = segmentMarkdownForTranslation(source, {
       protectedMarkerMode: protectedMarkerModeForLanguages(
         options.sourceLanguage,
@@ -154,15 +188,28 @@ export class TranslationController {
     if (texts.length === 0) return { kind: 'translated', sourceUnitsKept: 0, text: source };
 
     try {
-      const translations = await translateWithBergamot({
-        ...installed,
-        onProgress: options.onProgress,
-        onReady: options.onReady,
-        signal: options.signal,
-        sourceLanguage: options.sourceLanguage,
-        targetLanguage: options.targetLanguage,
-        texts,
-      });
+      let translations: string[];
+      if (engine === 'tencent_hy_mt_prototype') {
+        translations = await translateWithTencentHyMtPrototype({
+          onProgress: options.onProgress,
+          onReady: options.onReady,
+          signal: options.signal,
+          targetLanguage: options.targetLanguage,
+          texts,
+        });
+      } else {
+        const installed = this.findInstalledModel(options.sourceLanguage, options.targetLanguage);
+        if (installed === null) return { kind: 'missing_model' };
+        translations = await translateWithBergamot({
+          ...installed,
+          onProgress: options.onProgress,
+          onReady: options.onReady,
+          signal: options.signal,
+          sourceLanguage: options.sourceLanguage,
+          targetLanguage: options.targetLanguage,
+          texts,
+        });
+      }
       const rebuilt = rebuildTranslatedMarkdown(segments, translations);
       if (rebuilt.sourceUnitsKept > 0) {
         this.dependencies.logger.warn(
