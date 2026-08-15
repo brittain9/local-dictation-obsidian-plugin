@@ -5,6 +5,6 @@
       "obsidian": ["./node_modules/obsidian-floor"]
     }
   },
-  "include": ["src/**/*.ts", "compat/obsidian-floor.d.ts", "scripts/**/*.d.mts"],
+  "include": ["src/**/*.ts", "scripts/**/*.d.mts"],
   "exclude": ["test/**/*.ts", "vitest.config.ts"]
 }
