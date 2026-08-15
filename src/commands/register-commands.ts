@@ -26,6 +26,7 @@ interface CommandDependencies {
   restoreRawTranscript: () => void;
   restartSidecar: () => Promise<void>;
   readAloud: (editor: Editor) => Promise<void>;
+  readAloudFromCursor: (editor: Editor) => Promise<void>;
   stopReadAloud: () => void;
   translateNote: (editor: Editor) => void;
   translateSelection: (editor: Editor) => void;
@@ -56,6 +57,12 @@ export function registerCommands(dependencies: CommandDependencies): void {
     id: 'read-aloud',
     name: t('commands.readAloud'),
     editorCallback: async (editor) => dependencies.readAloud(editor),
+  });
+
+  dependencies.plugin.addCommand({
+    id: 'read-aloud-from-cursor',
+    name: t('commands.readAloudFromCursor'),
+    editorCallback: async (editor) => dependencies.readAloudFromCursor(editor),
   });
 
   dependencies.plugin.addCommand({

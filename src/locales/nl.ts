@@ -750,6 +750,7 @@ export const nl = {
   'setup.sidecar.modal.genericInstallError':
     'De spraakengine kan niet worden geïnstalleerd. Controleer de plug-inlogboeken voor meer informatie en probeer het vervolgens opnieuw.',
   'commands.readAloud': 'Voorlezen',
+  'commands.readAloudFromCursor': 'Voorlezen vanaf cursor',
   'commands.pauseResumeReadAloud': 'Voorlezen pauzeren of hervatten',
   'commands.stopReadAloud': 'Voorlezen stoppen',
   'settings.groups.readAloud': 'Voorlezen',

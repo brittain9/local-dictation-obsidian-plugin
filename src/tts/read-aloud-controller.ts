@@ -29,6 +29,7 @@ import { extractAndSegmentMarkdown } from './markdown-extractor';
 import { resolveReadAloudVoiceId } from './read-aloud-selection';
 
 export type ReadAloudState = 'idle' | 'paused' | 'reading';
+export type ReadAloudFallbackRange = 'entire_note' | 'from_cursor';
 
 /// Read aloud speaks the dictation language, but only when the selected voice
 /// model declares it. An unlisted tag would otherwise fall through to the
@@ -117,9 +118,9 @@ export class ReadAloudController {
     return this.state !== 'idle';
   }
 
-  async read(editor: Editor): Promise<void> {
+  async read(editor: Editor, fallbackRange: ReadAloudFallbackRange = 'entire_note'): Promise<void> {
     const source = editor.getValue();
-    const range = resolveReadRange(editor, source);
+    const range = resolveReadRange(editor, source, fallbackRange);
     const chunks = extractAndSegmentMarkdown(source, range);
     if (chunks.length === 0) {
       this.deps.feedback.show({ intent: 'warning', message: t('tts.notice.noText') });
@@ -394,12 +395,19 @@ export class ReadAloudController {
   }
 }
 
-export function resolveReadRange(editor: Editor, source: string): { from: number; to: number } {
+export function resolveReadRange(
+  editor: Editor,
+  source: string,
+  fallbackRange: ReadAloudFallbackRange = 'entire_note',
+): { from: number; to: number } {
   if (editor.somethingSelected()) {
     const anchor = editor.posToOffset(editor.getCursor('anchor'));
     const head = editor.posToOffset(editor.getCursor('head'));
     return { from: Math.min(anchor, head), to: Math.max(anchor, head) };
   }
 
-  return { from: 0, to: source.length };
+  return {
+    from: fallbackRange === 'from_cursor' ? editor.posToOffset(editor.getCursor()) : 0,
+    to: source.length,
+  };
 }

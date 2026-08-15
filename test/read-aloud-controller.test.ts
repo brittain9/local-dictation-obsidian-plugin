@@ -163,6 +163,22 @@ describe('resolveReadRange', () => {
       to: source.length,
     });
   });
+
+  it('reads from the cursor to the end when requested and there is no selection', () => {
+    const source = 'First block\ncontinues\n\nCurrent block\ncontinues\n\nLast';
+    const editor = editorFor(source, { ch: 3, line: 4 });
+    expect(resolveReadRange(editor, source, 'from_cursor')).toEqual({
+      from: source.indexOf('continues', source.indexOf('Current block')) + 3,
+      to: source.length,
+    });
+  });
+
+  it('keeps a selection when reading from the cursor is requested', () => {
+    const source = 'Before selected after';
+    expect(
+      resolveReadRange(editorFor(source, { ch: 0, line: 0 }, [15, 7]), source, 'from_cursor'),
+    ).toEqual({ from: 7, to: 15 });
+  });
 });
 
 describe('ReadAloudController', () => {
