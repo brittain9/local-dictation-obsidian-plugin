@@ -2,10 +2,11 @@ import {
   EditorSelection,
   EditorState,
   type Extension,
+  type StateEffectType,
   Transaction,
   type TransactionSpec,
 } from '@codemirror/state';
-import type { EditorView, ViewUpdate } from '@codemirror/view';
+import { EditorView, type ViewUpdate } from '@codemirror/view';
 import { describe, expect, it, vi } from 'vitest';
 import {
   dictationAnchorExtension,
@@ -178,6 +179,18 @@ function appendWithRenderer(
 
 function doc(view: FakeEditorView): string {
   return view.state.doc.toString();
+}
+
+const scrollIntoViewEffectType = (
+  EditorView.scrollIntoView(0) as unknown as { readonly type: StateEffectType<unknown> }
+).type;
+
+function requestedEditorScroll(view: FakeEditorView): boolean {
+  return (
+    view.lastUpdate?.transactions.some((transaction) =>
+      transaction.effects.some((effect) => effect.is(scrollIntoViewEffectType)),
+    ) ?? false
+  );
 }
 
 describe('NoteSurface', () => {
@@ -414,12 +427,12 @@ describe('NoteSurface', () => {
       });
 
       expect(append(surface, 'u1', 'live words').kind).toBe('appended');
-      expect(view.lastUpdate?.transactions[0]?.effects).toHaveLength(1);
-      expect(view.lastUpdate?.transactions[0]?.effects[0]?.is(setAnchorEffect)).toBe(true);
+      expect(doc(view)).toContain('live words');
+      expect(requestedEditorScroll(view)).toBe(false);
 
       expect(surface.replaceAnchor('u1', 'final words', 'live words').kind).toBe('replaced');
-      expect(view.lastUpdate?.transactions[0]?.effects).toHaveLength(1);
-      expect(view.lastUpdate?.transactions[0]?.effects[0]?.is(setAnchorEffect)).toBe(true);
+      expect(doc(view)).toContain('final words');
+      expect(requestedEditorScroll(view)).toBe(false);
     },
   );
 
