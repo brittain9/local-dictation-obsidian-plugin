@@ -1,10 +1,15 @@
 {
-  "catalogVersion": 6,
+  "catalogVersion": 7,
   "runtimes": [
     {
       "runtimeId": "bergamot_wasm",
       "displayName": "Bergamot WebAssembly",
       "summary": "Cross-platform CPU translation in an isolated WebAssembly worker."
+    },
+    {
+      "runtimeId": "llama_cpp",
+      "displayName": "llama.cpp",
+      "summary": "Local GGUF inference in the packaged HY-MT translation helper."
     },
     {
       "runtimeId": "whisper_cpp",
@@ -24,6 +29,13 @@
       "runtimeId": "bergamot_wasm",
       "displayName": "Firefox Translations",
       "summary": "Fast, compact local translation using the same Bergamot engine and released models as Firefox."
+    },
+    {
+      "familyId": "tencent_hy_mt",
+      "task": "translation",
+      "runtimeId": "llama_cpp",
+      "displayName": "Tencent HY-MT",
+      "summary": "Natural, prose-oriented local translation across all supported HY-MT languages."
     },
     {
       "familyId": "whisper",
@@ -73,6 +85,11 @@
       "collectionId": "firefox_local_translation",
       "displayName": "Local Translation",
       "summary": "Offline English-anchored translation for the eight verified product languages."
+    },
+    {
+      "collectionId": "tencent_hy_mt_translation",
+      "displayName": "Natural Translation",
+      "summary": "Optional local multilingual translation with Tencent HY-MT."
     },
     {
       "collectionId": "english_cpu_first",
@@ -1791,7 +1808,7 @@
       "displayName": "Firefox Translations",
       "summary": "Fast local translation between English and seven other languages using the models released in Firefox.",
       "languageTags": ["en", "es", "de", "fr", "pt", "it", "nl", "ja"],
-      "translationPairs": [
+      "translationSupport": { "kind": "pairs", "pairs": [
         {
           "source": "en",
           "target": "es"
@@ -1848,7 +1865,7 @@
           "source": "ja",
           "target": "en"
         }
-      ],
+      ] },
       "uxTags": ["fast", "cpu"],
       "licenseLabel": "MPL-2.0",
       "licenseUrl": "https://github.com/mozilla/firefox-translations-models/blob/e7957fc407441a5e3e35bbcbf9d60d9b35764618/LICENSE",
@@ -2264,6 +2281,38 @@
           "downloadUrl": "https://raw.githubusercontent.com/mozilla-firefox/firefox/0e9cfbb4fca901314b1b18f871ae23d5adb16c0f/toolkit/components/translations/bergamot-translator/bergamot-translator.js",
           "sha256": "faff1ef6285b0d26f01787776fd49299dfb756ecb9688aa990c250e66797b47d",
           "sizeBytes": 100187
+        }
+      ]
+    },
+    {
+      "runtimeId": "llama_cpp",
+      "familyId": "tencent_hy_mt",
+      "task": "translation",
+      "modelId": "tencent_hy_mt_1_5_1_8b_q4_k_m",
+      "collectionId": "tencent_hy_mt_translation",
+      "displayName": "Tencent HY-MT 1.5 1.8B (Q4_K_M)",
+      "summary": "Natural, paraphrastic local translation across 38 languages and language varieties.",
+      "languageTags": ["zh", "en", "fr", "pt", "es", "ja", "tr", "ru", "ar", "ko", "th", "it", "de", "vi", "ms", "id", "tl", "hi", "zh-Hant", "pl", "cs", "nl", "km", "my", "fa", "gu", "ur", "te", "mr", "he", "bn", "ta", "uk", "bo", "kk", "mn", "ug", "yue"],
+      "translationSupport": { "kind": "all_to_all", "languages": ["zh", "en", "fr", "pt", "es", "ja", "tr", "ru", "ar", "ko", "th", "it", "de", "vi", "ms", "id", "tl", "hi", "zh-Hant", "pl", "cs", "nl", "km", "my", "fa", "gu", "ur", "te", "mr", "he", "bn", "ta", "uk", "bo", "kk", "mn", "ug", "yue"] },
+      "uxTags": ["natural", "multilingual", "optional"],
+      "licenseLabel": "Tencent HY-MT Model License",
+      "licenseUrl": "https://huggingface.co/tencent/HY-MT1.5-1.8B-GGUF/blob/265b2e615a7dc9b06c435dc878829ad99a512ba2/LICENSE",
+      "sourceUrl": "https://huggingface.co/tencent/HY-MT1.5-1.8B-GGUF/tree/265b2e615a7dc9b06c435dc878829ad99a512ba2",
+      "modelCardUrl": "https://huggingface.co/tencent/HY-MT1.5-1.8B-GGUF/tree/265b2e615a7dc9b06c435dc878829ad99a512ba2",
+      "notes": [
+        "Downloaded directly from Tencent only when the user explicitly installs it; model bytes are not distributed with the plugin.",
+        "Use is subject to Tencent's upstream model license and required notices.",
+        "Natural mode may paraphrase or change wording; review the preview before applying it."
+      ],
+      "artifacts": [
+        {
+          "artifactId": "model",
+          "role": "translation_model",
+          "required": true,
+          "filename": "HY-MT1.5-1.8B-Q4_K_M.gguf",
+          "downloadUrl": "https://huggingface.co/tencent/HY-MT1.5-1.8B-GGUF/resolve/265b2e615a7dc9b06c435dc878829ad99a512ba2/HY-MT1.5-1.8B-Q4_K_M.gguf",
+          "sha256": "4383ac0c3c8e476de98ff979c2a3f069f8c4fb385e7860cf2d28da896cc477c7",
+          "sizeBytes": 1133080512
         }
       ]
     }

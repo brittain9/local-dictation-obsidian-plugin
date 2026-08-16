@@ -9,18 +9,22 @@ import {
   isSupportedTranslationPair,
   isTranslationLanguage,
   resolveTranslationLanguages,
+  resolveTranslationEngine,
   resolveTranslationTarget,
   TRANSLATION_LANGUAGES,
+  type TranslationEngineId,
   type TranslationLanguage,
   translationLanguageLabel,
   translationTargetsFor,
 } from '../translation/languages';
+import { TRANSLATION_ENGINES } from '../translation/translation-engines';
 import type { PluginSettings } from './plugin-settings';
 
 interface TranslationSettingsDependencies {
   getSettings: () => PluginSettings;
   manager: ModelInstallManager;
   openModelPicker: (options?: ModelPickerOptions) => Promise<void>;
+  persistEngine: (engineId: TranslationEngineId) => Promise<void>;
   persistLanguages: (
     sourceLanguage: TranslationLanguage,
     targetLanguage: TranslationLanguage,
@@ -92,11 +96,37 @@ export function renderTranslationSettings(
       });
 
     const settings = dependencies.getSettings();
-    const pair = resolveTranslationLanguages(
+    let pair = resolveTranslationLanguages(
       settings.dictationLanguage,
       settings.translationSourceLanguage,
       settings.translationTargetLanguage,
+      'tencent_hy_mt',
     );
+    const effectiveEngine = resolveTranslationEngine(
+      settings.translationEngineId,
+      pair.sourceLanguage,
+      pair.targetLanguage,
+    );
+
+    new Setting(container)
+      .setName(t('settings.translation.engine.name'))
+      .setDesc(t('settings.translation.engine.desc'))
+      .addDropdown((dropdown) => {
+        for (const engine of TRANSLATION_ENGINES) {
+          dropdown.addOption(engine.id, engine.label());
+        }
+        dropdown.setValue(effectiveEngine);
+        dropdown.onChange(async (value) => {
+          if (value !== 'bergamot' && value !== 'tencent_hy_mt') return;
+          const nextEngine = resolveTranslationEngine(
+            value,
+            pair.sourceLanguage,
+            pair.targetLanguage,
+          );
+          await dependencies.persistEngine(nextEngine);
+          render();
+        });
+      });
 
     new Setting(container)
       .setName(t('settings.translation.source.name'))
@@ -108,7 +138,8 @@ export function renderTranslationSettings(
         dropdown.setValue(pair.sourceLanguage);
         dropdown.onChange(async (value) => {
           if (!isTranslationLanguage(value)) return;
-          const targetLanguage = resolveTranslationTarget(value, pair.targetLanguage);
+          const targetLanguage = resolveTranslationTarget(value, pair.targetLanguage, 'tencent_hy_mt');
+          await dependencies.persistEngine(resolveTranslationEngine(settings.translationEngineId, value, targetLanguage));
           await dependencies.persistLanguages(value, targetLanguage);
           render();
         });
@@ -118,13 +149,14 @@ export function renderTranslationSettings(
       .setName(t('settings.translation.target.name'))
       .setDesc(t('settings.translation.target.desc'))
       .addDropdown((dropdown) => {
-        for (const language of translationTargetsFor(pair.sourceLanguage)) {
+        for (const language of translationTargetsFor(pair.sourceLanguage, 'tencent_hy_mt')) {
           dropdown.addOption(language, translationLanguageLabel(language));
         }
         dropdown.setValue(pair.targetLanguage);
         dropdown.onChange(async (value) => {
           if (!isTranslationLanguage(value)) return;
-          if (!isSupportedTranslationPair(pair.sourceLanguage, value)) return;
+          if (!isSupportedTranslationPair(pair.sourceLanguage, value, 'tencent_hy_mt')) return;
+          await dependencies.persistEngine(resolveTranslationEngine(settings.translationEngineId, pair.sourceLanguage, value));
           await dependencies.persistLanguages(pair.sourceLanguage, value);
           render();
         });

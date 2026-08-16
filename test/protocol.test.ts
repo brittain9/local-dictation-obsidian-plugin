@@ -6,10 +6,12 @@ import {
   bytesToSessionId,
   type ContextWindow,
   createCancelSessionCommand,
+  createCancelTranslationCommand,
   createContextResponseCommand,
   createHealthCommand,
   createProbeSystemAudioCommand,
   createStartSessionCommand,
+  createStartTranslationCommand,
   createStopSessionCommand,
   decodeAudioFrameEnvelope,
   encodeAudioFrame,
@@ -152,6 +154,73 @@ describe('framing', () => {
         synthesisId: 0x1020_3040,
       },
     ]);
+  });
+});
+
+describe('translation protocol', () => {
+  it('encodes start and cancel commands with stable job ids and ordered text units', () => {
+    const modelSelection = {
+      familyId: 'tencent_hy_mt',
+      kind: 'catalog_model',
+      modelId: 'tencent-hy-mt-1.5-1.8b-q4-k-m',
+      runtimeId: 'llama_cpp',
+    } as const;
+
+    expect(
+      readPayload(
+        encodeJsonFrame(
+          createStartTranslationCommand({
+            accelerationPreference: 'auto',
+            modelSelection,
+            sourceLanguage: 'zh-Hant',
+            targetLanguage: 'en',
+            texts: ['first', 'second'],
+            translationId: 'translation-1',
+          }),
+        ),
+      ),
+    ).toEqual({
+      accelerationPreference: 'auto',
+      modelSelection,
+      sourceLanguage: 'zh-Hant',
+      targetLanguage: 'en',
+      texts: ['first', 'second'],
+      translationId: 'translation-1',
+      type: 'start_translation',
+    });
+    expect(readPayload(encodeJsonFrame(createCancelTranslationCommand('translation-1')))).toEqual({
+      translationId: 'translation-1',
+      type: 'cancel_translation',
+    });
+  });
+
+  it('accepts structured translation lifecycle events', () => {
+    expect(
+      parseEventFrame(
+        JSON.stringify({
+          completed: 2,
+          total: 3,
+          translationId: 'translation-1',
+          type: 'translation_progress',
+        }),
+      ),
+    ).toMatchObject({ type: 'translation_progress', completed: 2, total: 3 });
+    expect(
+      parseEventFrame(
+        JSON.stringify({
+          code: 'helper_crashed',
+          message: 'Translation helper stopped unexpectedly.',
+          translationId: 'translation-1',
+          type: 'translation_error',
+        }),
+      ),
+    ).toMatchObject({ type: 'translation_error', code: 'helper_crashed' });
+  });
+
+  it('rejects malformed translation lifecycle events', () => {
+    expect(() => parseEventFrame(JSON.stringify({ type: 'translation_progress', translationId: 'job', completed: 3, total: 2 }))).toThrow(/translation_progress/u);
+    expect(() => parseEventFrame(JSON.stringify({ type: 'translation_complete', translationId: 'job', translations: ['ok', 4] }))).toThrow(/translation_complete/u);
+    expect(() => parseEventFrame(JSON.stringify({ type: 'translation_cancelled', translationId: '' }))).toThrow(/translation_cancelled/u);
   });
 });
 

@@ -3,8 +3,8 @@
 Speech Kit is an Obsidian plugin that handles voice and language workflows
 entirely on-device. Dictation audio crosses a binary protocol into a native
 Rust sidecar and returns as text. Read-aloud text takes the inverse path and
-returns as audio for playback in Obsidian. Text translation runs inside an
-isolated WebAssembly worker in the plugin process.
+returns as audio for playback in Obsidian. Fast translation runs inside an
+isolated WebAssembly worker; Natural translation uses a packaged native helper.
 
 The split is deliberate:
 
@@ -22,7 +22,7 @@ flowchart LR
         LLM["LLM transform<br/>(optional · Ollama / OpenRouter / custom)"]
         REND["Render + insert<br/>(timestamps, formatting, speaker labels)"]
         TEXT["Markdown extraction<br/>+ sentence chunks"]
-        MT["Markdown segmentation<br/>+ Bergamot WASM worker"]
+        MT["Translation job registry<br/>+ Bergamot adapter"]
         PLAY["Web Audio playback"]
     end
 
@@ -32,6 +32,7 @@ flowchart LR
         STAGE["Post-engine stages<br/>(hallucination filter)"]
         DIA["Diarization<br/>(optional)"]
         SYNTH["Pocket TTS / Supertonic synthesis<br/>+ time stretch"]
+        HYMT["HY-MT helper supervisor<br/>(framed stdio)"]
         VAD --> INF --> STAGE --> DIA
     end
 
@@ -41,6 +42,7 @@ flowchart LR
     TEXT -->|"stdin: start_synthesis"| SYNTH
     SYNTH -->|"stdout: model-native PCM"| PLAY
     REND -->|"explicit translate command"| MT -->|"preview + atomic edit"| REND
+    MT -->|"start_translation / cancel_translation"| HYMT -->|"progress / completion"| MT
 ```
 
 The plugin and sidecar talk over a single framed byte stream on the sidecar's
@@ -490,23 +492,26 @@ and verified by their pinned size and SHA-256 before activation.
 
 ### Stage 9: Local Translation
 
-Translation is independent from the sidecar inference protocol:
+Translation has one controller-owned job and two engine adapters:
 
 1. `TranslationController` captures a selection or whole-note snapshot.
 2. A pure TypeScript segmentation pass protects Markdown structure, code,
    math, links, tags, frontmatter, and whitespace while extracting prose.
-3. The plugin resolves the exact installed Firefox Translations artifacts for
-   the explicit language pair and transfers their buffers to a Blob-backed Web
-   Worker.
-4. Bergamot WebAssembly translates all prose spans locally in one batch.
-5. The worker terminates after completion or immediately on cancellation.
-6. The modal previews the rebuilt Markdown. Replace is allowed only if the
-   original source is unchanged; insert and copy remain available otherwise.
+3. Fast mode resolves an exact Firefox direction and runs Bergamot in a
+   Blob-backed Web Worker. Natural mode sends ordered text units to the sidecar,
+   which supervises the sibling HY-MT helper over bounded framed stdio.
+4. HY-MT loads lazily, handles one inference job, remains warm for five idle
+   minutes, and uses the GGUF's embedded chat template exactly once.
+5. Closing the modal detaches it from the job; the translation status item can
+   reopen active progress or a completed preview. Explicit Cancel stops work.
+6. Marker restoration and a Markdown topology signature are validated per
+   unit. Unsafe output keeps the original unit. Note-writing still requires an
+   unchanged source snapshot.
 
-The sidecar catalog still owns SHA-256-pinned installation and removal. Its
-`bergamot_wasm` runtime and `firefox_translations` family describe capability
-and probe the managed install, but native inference is intentionally refused.
-No note text crosses the sidecar or network during translation.
+The sidecar catalog owns SHA-256-pinned installation and removal for both
+engines. Translation support is either exact directed pairs or an all-to-all
+language set. Note text never crosses the network; HY-MT protocol and logs do
+not record source or translated text.
 
 ---
 

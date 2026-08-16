@@ -1,11 +1,12 @@
 import { isRecord } from '../shared/type-guards';
 
-export const RUNTIME_IDS = ['bergamot_wasm', 'onnx_runtime', 'whisper_cpp'] as const;
+export const RUNTIME_IDS = ['bergamot_wasm', 'llama_cpp', 'onnx_runtime', 'whisper_cpp'] as const;
 
 export type RuntimeId = (typeof RUNTIME_IDS)[number];
 
 export const MODEL_FAMILY_IDS = [
   'firefox_translations',
+  'tencent_hy_mt',
   'cohere_transcribe',
   'moonshine',
   'nemotron_asr',
@@ -130,14 +131,15 @@ export interface CatalogModelRecord {
   notes: string[];
   runtimeId: RuntimeId;
   task: ModelTask;
-  translationPairs?: {
-    source: string;
-    target: string;
-  }[];
+  translationSupport?: TranslationSupportRecord;
   sourceUrl: string;
   summary: string;
   uxTags: string[];
 }
+
+export type TranslationSupportRecord =
+  | { kind: 'all_to_all'; languages: string[] }
+  | { kind: 'pairs'; pairs: { source: string; target: string }[] };
 
 export interface ModelCatalogRecord {
   catalogVersion: number;

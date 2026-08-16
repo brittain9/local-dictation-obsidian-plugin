@@ -1,5 +1,5 @@
 ---
-status: accepted
+status: superseded by 0005
 ---
 
 # Use Bergamot WebAssembly for production translation

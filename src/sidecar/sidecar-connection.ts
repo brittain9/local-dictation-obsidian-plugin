@@ -6,6 +6,7 @@ import {
   createCancelModelInstallCommand,
   createCancelSessionCommand,
   createCancelSynthesisCommand,
+  createCancelTranslationCommand,
   createContextResponseCommand,
   createGetModelStoreCommand,
   createGetSystemInfoCommand,
@@ -18,6 +19,7 @@ import {
   createRemoveModelCommand,
   createStartSessionCommand,
   createStartSynthesisCommand,
+  createStartTranslationCommand,
   createStopSessionCommand,
   createSynthesisPlaybackPositionCommand,
   type ErrorEvent,
@@ -39,6 +41,7 @@ import {
   type SidecarEvent,
   type StartSessionCommand,
   type StartSynthesisCommand,
+  type StartTranslationCommand,
   SYNTHESIS_AUDIO_FRAME_KIND,
   type SynthesisAudioFrame,
   type SystemAudioProbeResultEvent,
@@ -284,6 +287,17 @@ export class SidecarConnection {
   cancelSynthesis(synthesisId: number): void {
     if (this.process.isRunning()) {
       this.process.write(encodeJsonFrame(createCancelSynthesisCommand(synthesisId)));
+    }
+  }
+
+  async startTranslation(payload: Omit<StartTranslationCommand, 'type'>): Promise<void> {
+    await this.ensureStarted();
+    this.process.write(encodeJsonFrame(createStartTranslationCommand(payload)));
+  }
+
+  cancelTranslation(translationId: string): void {
+    if (this.process.isRunning()) {
+      this.process.write(encodeJsonFrame(createCancelTranslationCommand(translationId)));
     }
   }
 

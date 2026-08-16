@@ -75,6 +75,16 @@ describe('resolvePluginSettings', () => {
     });
   });
 
+  it('defaults translation to Fast and remembers a valid engine choice', () => {
+    expect(resolvePluginSettings({}).translationEngineId).toBe('bergamot');
+    expect(resolvePluginSettings({ translationEngineId: 'tencent_hy_mt' }).translationEngineId).toBe(
+      'tencent_hy_mt',
+    );
+    expect(resolvePluginSettings({ translationEngineId: 'unknown' }).translationEngineId).toBe(
+      'bergamot',
+    );
+  });
+
   it('normalizes a remembered Obsidian language to its base tag', () => {
     expect(resolvePluginSettings({ lastObsidianLanguage: ' PT_br ' }).lastObsidianLanguage).toBe(
       'pt',

@@ -175,6 +175,10 @@ export async function installSidecar(
 
     const executableName = resolveSidecarExecutableName();
     await markExecutable(join(stagingDirectory, executableName));
+    const helperName = process.platform === 'win32'
+      ? 'local-dictation-translation-helper.exe'
+      : 'local-dictation-translation-helper';
+    await markExecutable(join(stagingDirectory, helperName));
     options.signal?.throwIfAborted();
 
     const manifest: InstallManifest = {

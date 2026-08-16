@@ -826,6 +826,11 @@ export const nl = {
   'translation.modal.replace': 'Vervangen',
   'translation.modal.insertBelow': 'Hieronder invoegen',
   'translation.modal.copy': 'Kopiëren',
+  'translation.modal.dismiss': 'Verwerpen',
+  'settings.translation.engine.name': 'Standaard vertaalstijl',
+  'settings.translation.engine.desc': 'Snel is letterlijker; Natuurlijk gebruikt het optionele Tencent HY-MT-model.',
+  'translation.engine.bergamot': 'Snel en letterlijk — Firefox Translations',
+  'translation.engine.tencentHyMt': 'Natuurlijk — Tencent HY-MT',
   'translation.modal.stale':
     'De notitie is gewijzigd sinds deze vertaling begon. Kopieer in plaats daarvan de vertaling.',
   'translation.notice.copied': 'Vertaling gekopieerd.',

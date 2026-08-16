@@ -5,6 +5,7 @@ const MODEL_SUMMARY_KEYS = {
   cohere_transcribe_int8: 'catalog.cohere_transcribe_int8.summary',
   cohere_transcribe_q4: 'catalog.cohere_transcribe_q4.summary',
   firefox_translations_release_2026_07: 'catalog.firefox_translations_release_2026_07.summary',
+  tencent_hy_mt_1_5_1_8b_q4_k_m: 'catalog.tencent_hy_mt_1_5_1_8b_q4_k_m.summary',
   moonshine_medium_streaming_en: 'catalog.moonshine_medium_streaming_en.summary',
   moonshine_small_streaming_en: 'catalog.moonshine_small_streaming_en.summary',
   moonshine_tiny_streaming_en: 'catalog.moonshine_tiny_streaming_en.summary',
@@ -26,6 +27,7 @@ const MODEL_SUMMARY_KEYS = {
 const FAMILY_SUMMARY_KEYS = {
   cohere_transcribe: 'catalog.family.cohere_transcribe.summary',
   firefox_translations: 'catalog.family.firefox_translations.summary',
+  tencent_hy_mt: 'catalog.family.tencent_hy_mt.summary',
   moonshine: 'catalog.family.moonshine.summary',
   nemotron_asr: 'catalog.family.nemotron_asr.summary',
   pocket_tts: 'catalog.family.pocket_tts.summary',

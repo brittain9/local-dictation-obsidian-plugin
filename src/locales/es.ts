@@ -831,6 +831,11 @@ export const es = {
   'translation.modal.replace': 'Reemplazar',
   'translation.modal.insertBelow': 'Insertar debajo',
   'translation.modal.copy': 'Copiar',
+  'translation.modal.dismiss': 'Descartar',
+  'settings.translation.engine.name': 'Estilo de traducción predeterminado',
+  'settings.translation.engine.desc': 'Rápido es más literal; Natural usa el modelo opcional Tencent HY-MT.',
+  'translation.engine.bergamot': 'Rápida y literal — Firefox Translations',
+  'translation.engine.tencentHyMt': 'Natural — Tencent HY-MT',
   'translation.modal.stale':
     'La nota cambió desde que empezó esta traducción. Copia la traducción en su lugar.',
   'translation.notice.copied': 'Se copió la traducción.',

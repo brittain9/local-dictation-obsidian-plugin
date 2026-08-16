@@ -1,388 +1,131 @@
 import { type App, type Editor, type EditorPosition, Modal, Setting } from 'obsidian';
-
 import { t, tPlural } from '../shared/i18n';
 import type { UserFeedback } from '../shared/user-feedback';
-import { TranslationCancelledError } from './bergamot-client';
-import {
-  isTranslationLanguage,
-  resolveTranslationTarget,
-  TRANSLATION_LANGUAGES,
-  type TranslationLanguage,
-  translationLanguageLabel,
-  translationTargetsFor,
-} from './languages';
 import { TranslationModelIncompleteError } from './translation-artifacts';
+import { TRANSLATION_ENGINES, translationEngineLabel } from './translation-engines';
+import { type TranslationJob, type TranslationJobState } from './translation-job';
+import { isTranslationLanguage, resolveTranslationTarget, TRANSLATION_LANGUAGES, type TranslationEngineId, type TranslationLanguage, translationLanguageLabel, translationTargetsFor } from './languages';
 
 const LARGE_SOURCE_CHARACTERS = 10_000;
-
-export interface TranslationSnapshot {
-  from: EditorPosition;
-  kind: 'note' | 'selection';
-  source: string;
-  to: EditorPosition;
-}
-
+export interface TranslationSnapshot { from: EditorPosition; kind: 'note' | 'selection'; source: string; to: EditorPosition }
 interface TranslationModalDependencies {
-  editor: Editor;
-  feedback: Pick<UserFeedback, 'show'>;
-  initialSourceLanguage: TranslationLanguage;
-  initialTargetLanguage: TranslationLanguage;
-  onClosed: () => void;
+  editor: Editor; feedback: Pick<UserFeedback, 'show'>; job: TranslationJob;
+  onApplied: () => void; onClosed: () => void; onDismissed: () => void;
   onInstallModel: () => Promise<void>;
-  persistLanguages: (
-    sourceLanguage: TranslationLanguage,
-    targetLanguage: TranslationLanguage,
-  ) => Promise<void>;
-  runTranslation: (options: {
-    onProgress: (completed: number, total: number) => void;
-    onReady: () => void;
-    signal: AbortSignal;
-    sourceLanguage: TranslationLanguage;
-    targetLanguage: TranslationLanguage;
-  }) => Promise<
-    { kind: 'missing_model' } | { kind: 'translated'; sourceUnitsKept: number; text: string }
-  >;
+  onRestart: (engineId: TranslationEngineId, source: TranslationLanguage, target: TranslationLanguage) => void;
   snapshot: TranslationSnapshot;
 }
 
 export class TranslationModal extends Modal {
-  private abortController: AbortController | null = null;
   private actionsEl: HTMLElement | null = null;
   private headingEl: HTMLElement | null = null;
-  private languagesEl: HTMLElement | null = null;
-  private missingModel = false;
-  private output: string | null = null;
+  private selectorsEl: HTMLElement | null = null;
   private outputEl: HTMLTextAreaElement | null = null;
-  private sourceLanguage: TranslationLanguage;
+  private releaseJob: (() => void) | null = null;
+  private state: TranslationJobState;
   private statusEl: HTMLElement | null = null;
-  private targetLanguage: TranslationLanguage;
 
-  constructor(
-    app: App,
-    private readonly dependencies: TranslationModalDependencies,
-  ) {
-    super(app);
-    this.sourceLanguage = dependencies.initialSourceLanguage;
-    this.targetLanguage = dependencies.initialTargetLanguage;
+  constructor(app: App, private readonly dependencies: TranslationModalDependencies) {
+    super(app); this.state = dependencies.job.state();
   }
-
-  languages(): { sourceLanguage: TranslationLanguage; targetLanguage: TranslationLanguage } {
-    return { sourceLanguage: this.sourceLanguage, targetLanguage: this.targetLanguage };
-  }
-
   override onOpen(): void {
-    this.modalEl.addClass('local-stt-translation-modal');
-    this.renderShell();
-    void this.translate();
+    this.modalEl.addClass('local-stt-translation-modal'); this.renderShell();
+    this.releaseJob = this.dependencies.job.subscribe((state) => { this.state = state; this.renderState(); });
+    this.dependencies.job.start();
   }
-
   override onClose(): void {
-    this.abortController?.abort();
-    this.abortController = null;
-    this.contentEl.empty();
-    this.dependencies.onClosed();
+    this.releaseJob?.(); this.releaseJob = null; this.contentEl.empty(); this.dependencies.onClosed();
   }
-
-  // The shell is built once so the source disclosure, the preview's scroll
-  // position, and focus survive every status change.
   private renderShell(): void {
-    const { contentEl } = this;
-    contentEl.empty();
-    this.headingEl = contentEl.createEl('h2');
-    contentEl.createEl('p', {
-      cls: 'local-stt-translation-modal__privacy',
-      text: t('translation.modal.privacy'),
-    });
-    this.languagesEl = contentEl.createDiv({ cls: 'local-stt-translation-modal__languages' });
-
-    if (this.dependencies.snapshot.source.length > LARGE_SOURCE_CHARACTERS) {
-      contentEl.createEl('p', {
-        cls: 'local-stt-translation-modal__warning',
-        text: t('translation.modal.largeNote'),
-      });
-    }
-
-    const sourceDetails = contentEl.createEl('details');
-    sourceDetails.createEl('summary', {
-      text:
-        this.dependencies.snapshot.kind === 'selection'
-          ? t('translation.modal.sourceSelection')
-          : t('translation.modal.sourceNote'),
-    });
-    sourceDetails.createEl('pre', {
-      cls: 'local-stt-translation-modal__preview',
-      text: this.dependencies.snapshot.source,
-    });
-
-    this.statusEl = contentEl.createDiv({
-      attr: { 'aria-live': 'polite', role: 'status' },
-      cls: 'local-stt-translation-modal__status',
-      text: t('translation.modal.preparing'),
-    });
-    this.outputEl = contentEl.createEl('textarea', {
-      attr: {
-        'aria-label': t('translation.modal.previewAria'),
-        readonly: '',
-      },
-      cls: 'local-stt-translation-modal__output',
-    });
-    this.actionsEl = contentEl.createDiv();
-
-    this.renderHeading();
-    this.renderLanguages();
+    this.contentEl.empty(); this.headingEl = this.contentEl.createEl('h2');
+    this.contentEl.createEl('p', { cls: 'local-stt-translation-modal__privacy', text: t('translation.modal.privacy') });
+    this.selectorsEl = this.contentEl.createDiv({ cls: 'local-stt-translation-modal__languages' });
+    if (this.dependencies.snapshot.source.length > LARGE_SOURCE_CHARACTERS) this.contentEl.createEl('p', { cls: 'local-stt-translation-modal__warning', text: t('translation.modal.largeNote') });
+    const details = this.contentEl.createEl('details');
+    details.createEl('summary', { text: this.dependencies.snapshot.kind === 'selection' ? t('translation.modal.sourceSelection') : t('translation.modal.sourceNote') });
+    details.createEl('pre', { cls: 'local-stt-translation-modal__preview', text: this.dependencies.snapshot.source });
+    this.statusEl = this.contentEl.createDiv({ attr: { 'aria-live': 'polite', role: 'status' }, cls: 'local-stt-translation-modal__status' });
+    this.outputEl = this.contentEl.createEl('textarea', { attr: { 'aria-label': t('translation.modal.previewAria'), readonly: '' }, cls: 'local-stt-translation-modal__output' });
+    this.actionsEl = this.contentEl.createDiv(); this.renderHeading(); this.renderSelectors(); this.renderState();
   }
-
   private renderHeading(): void {
-    if (this.headingEl === null) return;
-    this.headingEl.textContent = t('translation.modal.titleWithPair', {
-      source: translationLanguageLabel(this.sourceLanguage),
-      target: translationLanguageLabel(this.targetLanguage),
+    if (this.headingEl !== null) this.headingEl.textContent = t('translation.modal.titleWithPair', { source: translationLanguageLabel(this.dependencies.job.sourceLanguage), target: translationLanguageLabel(this.dependencies.job.targetLanguage) });
+  }
+  private renderSelectors(): void {
+    if (this.selectorsEl === null) return; this.selectorsEl.empty();
+    const active = this.state.phase === 'loading' || this.state.phase === 'translating';
+    new Setting(this.selectorsEl).setName(t('settings.translation.engine.name')).addDropdown((dropdown) => {
+      for (const engine of TRANSLATION_ENGINES) dropdown.addOption(engine.id, translationEngineLabel(engine.id));
+      dropdown.setValue(this.dependencies.job.engineId).setDisabled(active).onChange((value) => {
+        if (value === 'bergamot' || value === 'tencent_hy_mt') this.restart(value, this.dependencies.job.sourceLanguage, this.dependencies.job.targetLanguage);
+      });
+    });
+    new Setting(this.selectorsEl).setName(t('translation.modal.from')).addDropdown((dropdown) => {
+      for (const language of TRANSLATION_LANGUAGES) dropdown.addOption(language, translationLanguageLabel(language));
+      dropdown.setValue(this.dependencies.job.sourceLanguage).setDisabled(active).onChange((value) => {
+        if (isTranslationLanguage(value)) this.restart(this.dependencies.job.engineId, value, resolveTranslationTarget(value, this.dependencies.job.targetLanguage, this.dependencies.job.engineId));
+      });
+    });
+    new Setting(this.selectorsEl).setName(t('translation.modal.to')).addDropdown((dropdown) => {
+      for (const language of translationTargetsFor(this.dependencies.job.sourceLanguage, this.dependencies.job.engineId)) dropdown.addOption(language, translationLanguageLabel(language));
+      dropdown.setValue(this.dependencies.job.targetLanguage).setDisabled(active).onChange((value) => {
+        if (isTranslationLanguage(value)) this.restart(this.dependencies.job.engineId, this.dependencies.job.sourceLanguage, value);
+      });
     });
   }
-
-  private renderLanguages(): void {
-    const container = this.languagesEl;
-    if (container === null) return;
-    container.empty();
-
-    new Setting(container).setName(t('translation.modal.from')).addDropdown((dropdown) => {
-      for (const language of TRANSLATION_LANGUAGES) {
-        dropdown.addOption(language, translationLanguageLabel(language));
-      }
-      dropdown.setValue(this.sourceLanguage);
-      dropdown.onChange((value) => {
-        if (!isTranslationLanguage(value)) return;
-        this.changeLanguages(value, resolveTranslationTarget(value, this.targetLanguage));
-      });
-    });
-    new Setting(container).setName(t('translation.modal.to')).addDropdown((dropdown) => {
-      for (const language of translationTargetsFor(this.sourceLanguage)) {
-        dropdown.addOption(language, translationLanguageLabel(language));
-      }
-      dropdown.setValue(this.targetLanguage);
-      dropdown.onChange((value) => {
-        if (!isTranslationLanguage(value)) return;
-        if (!translationTargetsFor(this.sourceLanguage).includes(value)) return;
-        this.changeLanguages(this.sourceLanguage, value);
-      });
-    });
-    new Setting(container).addButton((button) => {
-      button
-        .setButtonText(t('translation.modal.swap'))
-        .setIcon('arrow-left-right')
-        .onClick(() => {
-          this.changeLanguages(this.targetLanguage, this.sourceLanguage);
-        });
-    });
-  }
-
-  private renderActions(): void {
-    const container = this.actionsEl;
-    if (container === null) return;
-    container.empty();
-
-    const actions = new Setting(container).setClass('local-stt-translation-modal__actions');
-    if (this.abortController !== null) {
-      actions.addButton((button) => {
-        button.setButtonText(t('translation.modal.cancel')).onClick(() => {
-          this.cancelTranslation();
-        });
-      });
-    } else {
-      actions.addButton((button) => {
-        button
-          .setButtonText(t('translation.modal.translateAgain'))
-          .setCta()
-          .onClick(() => {
-            void this.translate();
-          });
-      });
+  private renderState(): void {
+    if (this.outputEl !== null) this.outputEl.value = this.state.phase === 'completed' ? this.state.text : '';
+    let status: string;
+    switch (this.state.phase) {
+      case 'idle': case 'loading': status = t('translation.modal.loading'); break;
+      case 'translating': status = this.state.total > 1 ? t('translation.modal.translatingProgress', { completed: this.state.completed, total: this.state.total }) : t('translation.modal.translating'); break;
+      case 'missing_model': status = t('translation.modal.missingModel'); break;
+      case 'cancelled': status = t('translation.modal.canceled'); break;
+      case 'failed': status = translationFailureMessage(this.state.error); break;
+      case 'completed': status = this.state.sourceUnitsKept > 0 ? tPlural(this.state.sourceUnitsKept, { one: 'translation.modal.readyPartial_one', other: 'translation.modal.readyPartial_other' }, { count: this.state.sourceUnitsKept }) : t('translation.modal.ready'); break;
     }
-
-    if (this.missingModel) {
-      actions.addButton((button) => {
-        button
-          .setButtonText(t('translation.modal.installModel'))
-          .setCta()
-          .onClick(() => {
-            void this.dependencies.onInstallModel();
-          });
-      });
-      return;
-    }
-
-    if (this.output === null) return;
-
-    // Both write into the note at the captured range, so both need that range
-    // to still hold the text we translated.
-    const sourceIsCurrent = this.sourceIsCurrent();
-    actions.addButton((button) => {
-      button
-        .setButtonText(t('translation.modal.replace'))
-        .setCta()
-        .setDisabled(!sourceIsCurrent)
-        .onClick(() => {
-          this.replace();
-        });
-    });
-    actions.addButton((button) => {
-      button
-        .setButtonText(t('translation.modal.insertBelow'))
-        .setDisabled(!sourceIsCurrent)
-        .onClick(() => {
-          this.insertBelow();
-        });
-    });
-    actions.addButton((button) => {
-      button.setButtonText(t('translation.modal.copy')).onClick(() => {
-        void this.copy();
-      });
-    });
-    if (!sourceIsCurrent) this.setStatus(t('translation.modal.stale'));
-  }
-
-  private setStatus(status: string): void {
     if (this.statusEl !== null) this.statusEl.textContent = status;
+    this.renderSelectors(); this.renderActions();
   }
-
-  private setOutput(output: string | null): void {
-    this.output = output;
-    if (this.outputEl !== null) this.outputEl.value = output ?? '';
-  }
-
-  private changeLanguages(
-    sourceLanguage: TranslationLanguage,
-    targetLanguage: TranslationLanguage,
-  ): void {
-    if (sourceLanguage === this.sourceLanguage && targetLanguage === this.targetLanguage) return;
-    this.sourceLanguage = sourceLanguage;
-    this.targetLanguage = targetLanguage;
-    void this.dependencies.persistLanguages(sourceLanguage, targetLanguage);
-    this.renderHeading();
-    this.renderLanguages();
-    this.restart();
-  }
-
-  private restart(): void {
-    this.abortController?.abort();
-    this.abortController = null;
-    void this.translate();
-  }
-
-  private cancelTranslation(): void {
-    this.abortController?.abort();
-    this.abortController = null;
-    this.setStatus(t('translation.modal.canceled'));
-    this.renderActions();
-  }
-
-  private async translate(): Promise<void> {
-    if (this.abortController !== null) return;
-    const abortController = new AbortController();
-    this.abortController = abortController;
-    this.missingModel = false;
-    this.setOutput(null);
-    this.setStatus(t('translation.modal.loading'));
-    this.renderActions();
-    try {
-      const result = await this.dependencies.runTranslation({
-        onProgress: (completed, total) => {
-          if (this.isCurrent(abortController) && total > 1) {
-            this.setStatus(t('translation.modal.translatingProgress', { completed, total }));
-          }
-        },
-        onReady: () => {
-          if (this.isCurrent(abortController)) this.setStatus(t('translation.modal.translating'));
-        },
-        signal: abortController.signal,
-        sourceLanguage: this.sourceLanguage,
-        targetLanguage: this.targetLanguage,
-      });
-      if (!this.isCurrent(abortController)) return;
-      this.abortController = null;
-      if (result.kind === 'missing_model') {
-        this.missingModel = true;
-        this.setStatus(t('translation.modal.missingModel'));
-        this.renderActions();
-        return;
-      }
-      this.setOutput(result.text);
-      this.setStatus(
-        result.sourceUnitsKept > 0
-          ? tPlural(
-              result.sourceUnitsKept,
-              {
-                one: 'translation.modal.readyPartial_one',
-                other: 'translation.modal.readyPartial_other',
-              },
-              { count: result.sourceUnitsKept },
-            )
-          : t('translation.modal.ready'),
-      );
-      this.renderActions();
-    } catch (error) {
-      if (this.abortController !== abortController) return;
-      this.abortController = null;
-      this.setStatus(translationFailureMessage(error));
-      this.renderActions();
+  private renderActions(): void {
+    if (this.actionsEl === null) return; this.actionsEl.empty();
+    const actions = new Setting(this.actionsEl).setClass('local-stt-translation-modal__actions');
+    if (this.state.phase === 'loading' || this.state.phase === 'translating') {
+      actions.addButton((button) => button.setButtonText(t('translation.modal.cancel')).onClick(() => this.dependencies.job.cancel())); return;
     }
+    if (this.state.phase === 'missing_model') {
+      actions.addButton((button) => button.setButtonText(t('translation.modal.installModel')).setCta().onClick(() => void this.dependencies.onInstallModel())); return;
+    }
+    if (this.state.phase !== 'completed') return;
+    const current = this.sourceIsCurrent();
+    actions.addButton((button) => button.setButtonText(t('translation.modal.replace')).setCta().setDisabled(!current).onClick(() => this.replace()));
+    actions.addButton((button) => button.setButtonText(t('translation.modal.insertBelow')).setDisabled(!current).onClick(() => this.insertBelow()));
+    actions.addButton((button) => button.setButtonText(t('translation.modal.copy')).onClick(() => void this.copy()));
+    actions.addButton((button) => button.setButtonText(t('translation.modal.dismiss')).onClick(() => { this.dependencies.onDismissed(); this.close(); }));
+    if (!current && this.statusEl !== null) this.statusEl.textContent = t('translation.modal.stale');
   }
-
-  private isCurrent(abortController: AbortController): boolean {
-    return this.abortController === abortController && !abortController.signal.aborted;
+  private restart(engineId: TranslationEngineId, source: TranslationLanguage, target: TranslationLanguage): void {
+    if (this.state.phase === 'loading' || this.state.phase === 'translating') return;
+    this.close(); this.dependencies.onRestart(engineId, source, target);
   }
-
   private sourceIsCurrent(): boolean {
     const { editor, snapshot } = this.dependencies;
-    return snapshot.kind === 'note'
-      ? editor.getValue() === snapshot.source
-      : editor.getRange(snapshot.from, snapshot.to) === snapshot.source;
+    return snapshot.kind === 'note' ? editor.getValue() === snapshot.source : editor.getRange(snapshot.from, snapshot.to) === snapshot.source;
   }
-
   private async copy(): Promise<void> {
-    if (this.output === null) return;
-    try {
-      await navigator.clipboard.writeText(this.output);
-      this.dependencies.feedback.show({
-        intent: 'success',
-        key: 'translation-copied',
-        message: t('translation.notice.copied'),
-      });
-    } catch (error) {
-      this.dependencies.feedback.show({
-        cause: error,
-        intent: 'error',
-        key: 'translation-copied',
-        message: t('translation.notice.copyFailed'),
-      });
-    }
+    if (this.state.phase !== 'completed') return;
+    try { await navigator.clipboard.writeText(this.state.text); this.dependencies.feedback.show({ intent: 'success', key: 'translation-copied', message: t('translation.notice.copied') }); }
+    catch (error) { this.dependencies.feedback.show({ cause: error, intent: 'error', key: 'translation-copied', message: t('translation.notice.copyFailed') }); }
   }
-
   private replace(): void {
-    if (this.output === null || !this.sourceIsCurrent()) {
-      this.renderActions();
-      return;
-    }
-    const { editor, snapshot } = this.dependencies;
-    editor.replaceRange(this.output, snapshot.from, snapshot.to);
-    this.close();
+    if (this.state.phase !== 'completed' || !this.sourceIsCurrent()) return;
+    this.dependencies.editor.replaceRange(this.state.text, this.dependencies.snapshot.from, this.dependencies.snapshot.to); this.dependencies.onApplied(); this.close();
   }
-
   private insertBelow(): void {
-    if (this.output === null || !this.sourceIsCurrent()) {
-      this.renderActions();
-      return;
-    }
-    const { editor, snapshot } = this.dependencies;
-    editor.replaceRange(`\n\n${this.output}`, snapshot.to);
-    this.close();
+    if (this.state.phase !== 'completed' || !this.sourceIsCurrent()) return;
+    this.dependencies.editor.replaceRange(`\n\n${this.state.text}`, this.dependencies.snapshot.to); this.dependencies.onApplied(); this.close();
   }
 }
-
 function translationFailureMessage(error: unknown): string {
-  if (error instanceof TranslationCancelledError) return t('translation.modal.canceled');
-  if (error instanceof TranslationModelIncompleteError) {
-    return t('translation.modal.incompleteModel');
-  }
-  return t('translation.modal.failed');
+  return error instanceof TranslationModelIncompleteError ? t('translation.modal.incompleteModel') : t('translation.modal.failed');
 }

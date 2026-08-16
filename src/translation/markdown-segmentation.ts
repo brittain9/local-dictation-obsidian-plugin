@@ -1,6 +1,6 @@
 export type TranslationSegment =
   | { kind: 'protected'; text: string }
-  | { kind: 'translatable'; protectedSlots: ProtectedSlot[]; text: string };
+  | { kind: 'translatable'; protectedSlots: ProtectedSlot[]; text: string; topology: string };
 
 export interface TranslationRebuildResult {
   /** Units left in the source language because their protected Markdown was lost. */
@@ -84,6 +84,8 @@ export function segmentMarkdownForTranslation(
         pushProtected(segments, line);
       } else if (isBlank || HORIZONTAL_RULE.test(line)) {
         pushProtected(segments, line);
+      } else if (isMarkdownTableRow(line)) {
+        segmentTableRow(line, segments, markerMode);
       } else if (
         indentWidth(quoted) >= listContentIndent + INDENTED_CODE_INDENT &&
         (inIndentedCode || previousLineIsBlank)
@@ -140,7 +142,12 @@ export function rebuildTranslatedMarkdown(
         sourceUnitsKept += 1;
         return restoreProtectedSlots(segment.text, segment.protectedSlots);
       }
-      return restoreProtectedSlots(translation, segment.protectedSlots);
+      const restored = restoreProtectedSlots(translation, segment.protectedSlots);
+      if (markdownTopologySignature(restored) !== segment.topology) {
+        sourceUnitsKept += 1;
+        return restoreProtectedSlots(segment.text, segment.protectedSlots);
+      }
+      return restored;
     })
     .join('');
   if (translationIndex !== translations.length) {
@@ -275,7 +282,46 @@ function pushTranslationUnit(
       return marker;
     })
     .join('');
-  segments.push({ kind: 'translatable', protectedSlots, text });
+  segments.push({ kind: 'translatable', protectedSlots, text, topology: markdownTopologySignature(sourceText) });
+}
+
+function isMarkdownTableRow(line: string): boolean {
+  const cells = splitTableRow(line);
+  return cells.length > 1 && line.includes('|');
+}
+
+function segmentTableRow(line: string, segments: TranslationSegment[], markerMode: ProtectedMarkerMode): void {
+  const pieces = splitTableRow(line);
+  for (const piece of pieces) {
+    if (piece.separator) { pushProtected(segments, piece.text); continue; }
+    const leading = piece.text.match(/^\s*/u)?.[0] ?? '';
+    const trailing = piece.text.match(/\s*$/u)?.[0] ?? '';
+    const body = piece.text.slice(leading.length, piece.text.length - trailing.length);
+    if (/^:?-{3,}:?$/u.test(body)) { pushProtected(segments, piece.text); continue; }
+    pushProtected(segments, leading);
+    for (const unit of chunkInlineParts(tokenizeInlineMarkdown(body), markerMode)) pushTranslationUnit(segments, unit, markerMode);
+    pushProtected(segments, trailing);
+  }
+}
+
+function splitTableRow(line: string): { separator: boolean; text: string }[] {
+  const pieces: { separator: boolean; text: string }[] = [];
+  let start = 0; let backticks = 0;
+  for (let index = 0; index < line.length; index += 1) {
+    const character = line[index];
+    if (character === '`' && line[index - 1] !== '\\') backticks = backticks === 0 ? 1 : 0;
+    if (character === '|' && backticks === 0 && line[index - 1] !== '\\') {
+      pieces.push({ separator: false, text: line.slice(start, index) });
+      pieces.push({ separator: true, text: '|' }); start = index + 1;
+    }
+  }
+  pieces.push({ separator: false, text: line.slice(start) });
+  return pieces;
+}
+
+function markdownTopologySignature(value: string): string {
+  const tokens = value.match(/^(?:\s*(?:>\s*)*(?:#{1,6}|[-*+]|\d+[.)])\s+)|!?(?:\[\[|\[[^\]]*\]\([^)]*\))|`+|\$\$?|\*\*|__|~~|==|\|/gmu) ?? [];
+  return tokens.map((token) => token.replace(/[\p{L}\p{N}\s]/gu, '')).join(',');
 }
 
 function hasIntactProtectedSlots(

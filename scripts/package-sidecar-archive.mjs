@@ -27,6 +27,8 @@ const isLinux = process.platform === 'linux';
 
 const platformKey = isWindows ? 'win32' : 'linux';
 const binaryName = isWindows ? 'local-dictation-sidecar.exe' : 'local-dictation-sidecar';
+const helperName = isWindows ? 'local-dictation-translation-helper.exe' : 'local-dictation-translation-helper';
+const helperPath = join(dirname(binaryPath), helperName);
 const distDir = 'dist';
 const artifactDir = join(distDir, assetName);
 
@@ -34,6 +36,8 @@ await stageSidecarBaseFiles({
   artifactDirectory: artifactDir,
   binaryName,
   binaryPath,
+  helperName,
+  helperPath,
 });
 
 if (isCuda) {
@@ -72,6 +76,7 @@ if (isLinux) {
   // codesigned earlier in the workflow; do not strip them (both signature
   // and `strip` semantics differ).
   runStrip(join(artifactDir, binaryName));
+  runStrip(join(artifactDir, helperName));
 }
 
 await createArchive(artifactDir, join(distDir, archiveName));

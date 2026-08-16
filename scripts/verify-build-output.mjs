@@ -46,6 +46,7 @@ export async function verifySidecarBuildOutput(options = {}) {
     `native/target/${profile}/local-dictation-sidecar${SIDECAR_BINARY_SUFFIX}`,
   );
   await access(sidecarBinaryPath);
+  await access(join(rootDir, `native/target/${profile}/local-dictation-translation-helper${SIDECAR_BINARY_SUFFIX}`));
 
   return await verifyOptionalCudaBuild(rootDir, profile);
 }
@@ -57,6 +58,7 @@ async function verifyOptionalCudaBuild(rootDir, profile) {
   );
   try {
     await access(cudaSidecarBinaryPath);
+    await access(join(rootDir, `native/target-cuda/${profile}/local-dictation-translation-helper${SIDECAR_BINARY_SUFFIX}`));
   } catch {
     return false;
   }

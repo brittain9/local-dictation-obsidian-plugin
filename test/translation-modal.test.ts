@@ -5,6 +5,7 @@ vi.mock('virtual:bergamot-worker-source', () => ({
 }));
 
 import { TranslationCancelledError } from '../src/translation/bergamot-client';
+import { TranslationJob, type TranslationJobResult, type TranslationJobRunOptions } from '../src/translation/translation-job';
 import { TranslationModal, type TranslationSnapshot } from '../src/translation/translation-modal';
 import { Setting, type TestElement } from './__mocks__/obsidian';
 
@@ -100,17 +101,23 @@ function createModal({
     getValue: () => string;
     replaceRange: ReturnType<typeof vi.fn>;
   };
-  runTranslation: ConstructorParameters<typeof TranslationModal>[1]['runTranslation'];
+  runTranslation: (options: TranslationJobRunOptions) => Promise<TranslationJobResult>;
 }): TranslationModal {
+  const job = new TranslationJob({
+    engineId: 'bergamot',
+    run: runTranslation,
+    sourceLanguage: 'en',
+    targetLanguage: 'es',
+  });
   return new TranslationModal({} as never, {
     editor: editor as never,
     feedback: { show: vi.fn() },
-    initialSourceLanguage: 'en',
-    initialTargetLanguage: 'es',
+    job,
+    onApplied: vi.fn(),
     onClosed: vi.fn(),
+    onDismissed: vi.fn(),
     onInstallModel: vi.fn(async () => {}),
-    persistLanguages: vi.fn(async () => {}),
-    runTranslation,
+    onRestart: vi.fn(),
     snapshot: SNAPSHOT,
   });
 }

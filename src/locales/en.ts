@@ -152,6 +152,7 @@ export const en = {
   'translation.modal.replace': 'Replace',
   'translation.modal.insertBelow': 'Insert below',
   'translation.modal.copy': 'Copy',
+  'translation.modal.dismiss': 'Dismiss',
   'translation.modal.stale':
     'The note changed since this translation started. Copy the translation instead.',
   'translation.notice.copied': 'Copied the translation.',
@@ -201,6 +202,11 @@ export const en = {
   'settings.translation.model.unavailable': 'No translation model is available.',
   'settings.translation.model.download': 'Download translation model',
   'settings.translation.model.manage': 'Manage translation models',
+  'settings.translation.engine.name': 'Default translation style',
+  'settings.translation.engine.desc':
+    'Fast is compact and literal. Natural produces more fluent prose and supports more language pairs.',
+  'translation.engine.bergamot': 'Fast & literal — Firefox Translations',
+  'translation.engine.tencentHyMt': 'Natural — Tencent HY-MT',
   'settings.translation.source.name': 'Default source language',
   'settings.translation.source.desc':
     'Preselected when you translate a note or selection. You can change it before translating.',
@@ -967,6 +973,18 @@ export const en = {
     'Fast local translation between English and seven product languages using models released in Firefox.',
   'catalog.family.firefox_translations.summary':
     'Translates note text locally with the compact Bergamot engine and released Firefox models.',
+  'catalog.tencent_hy_mt_1_5_1_8b_q4_k_m.summary':
+    'Natural, paraphrastic local translation across 38 languages and language varieties.',
+  'catalog.family.tencent_hy_mt.summary':
+    'Translates locally with the optional Tencent HY-MT model in an isolated native helper.',
+  'sidecarError.helper_protocol_error': 'The Natural translation helper returned invalid data.',
+  'sidecarError.helper_unavailable': 'The packaged Natural translation helper could not be started.',
+  'sidecarError.helper_write_failed': 'The Natural translation helper stopped unexpectedly.',
+  'sidecarError.inference_failed': 'Natural translation failed.',
+  'sidecarError.model_load_failed': 'The Natural translation model could not be loaded.',
+  'sidecarError.invalid_translation_request': 'Natural translation could not be started.',
+  'sidecarError.translation_busy': 'Another Natural translation is already running.',
+  'sidecarError.translation_worker_unavailable': 'The Natural translation worker is unavailable.',
   'setup.sidecar.modal.unsupportedPlatform':
     'This speech engine build is not available for your platform or architecture.',
   'setup.sidecar.modal.genericInstallError':

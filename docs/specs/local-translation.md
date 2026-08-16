@@ -8,11 +8,11 @@ local language workflow alongside speech to text and text to speech:
 speech → transcription → optional cleanup → optional translation → optional
 read aloud.
 
-The v1 runtime is **Bergamot WebAssembly with the current models released in
-Firefox**, not TranslateGemma ONNX. Translation runs in an isolated Obsidian
-Web Worker. The native sidecar remains responsible for the existing managed
-model catalog, verified downloads, and install records; it does not perform
-translation inference.
+The fast default is **Bergamot WebAssembly with the current models released in
+Firefox**. An optional **Tencent HY-MT 1.5 1.8B GGUF** engine adds natural,
+all-to-all translation across its documented 38 languages. Bergamot runs in an
+isolated Obsidian Web Worker; HY-MT runs in a version-matched helper supervised
+by the native sidecar over framed standard input/output.
 
 This decision supersedes the original TranslateGemma recommendation after a
 local feasibility spike on 2026-07-27. The owner explicitly rejected its
@@ -157,23 +157,26 @@ The existing cross-language contracts gain:
 
 - `ModelTask::Translation` / `"translation"`;
 - `RuntimeId::BergamotWasm` / `"bergamot_wasm"`;
+- `RuntimeId::LlamaCpp` / `"llama_cpp"`;
 - `ModelFamilyId::FirefoxTranslations` / `"firefox_translations"`;
+- `ModelFamilyId::TencentHyMt` / `"tencent_hy_mt"`;
 - `ModelFormat::Bergamot` / `"bergamot"`;
 - `ArtifactRole::TranslationModel` / `"translation_model"`;
-- catalog `translationPairs: [{ source, target }]`.
+- catalog `translationSupport`, either exact directed `pairs` or an
+  `all_to_all` language set.
 
-Catalog validation requires a translation primary artifact, at least one
-unique non-identity pair, and pair languages present in `languageTags`.
-Non-translation models may not declare translation pairs.
+Catalog validation requires a translation primary artifact and valid,
+non-identity support metadata whose languages also appear in `languageTags`.
+Non-translation models may not declare translation support.
 
-One optional managed pack contains the released artifacts for all fourteen
-directions plus the pinned runtime and glue. This keeps the first UX simple:
-one install makes the whole advertised translation workflow available.
+Firefox remains one managed pack for all fourteen directions. HY-MT is one
+managed row and one pinned GGUF, not one row per language.
 
 ### Inference boundary
 
-`TranslationController` owns editor snapshots, model resolution, settings,
-segmentation, cancellation, and modal lifecycle. `translateWithBergamot`:
+`TranslationController` owns editor snapshots, model resolution, settings, and
+a detachable `TranslationJob`. Engine adapters keep modal job logic independent
+from the inference implementation. `translateWithBergamot`:
 
 1. resolves exact artifacts from catalog metadata and the verified install
    record;
@@ -188,10 +191,13 @@ Per-operation loading is intentional. Measured model initialization is tens of
 milliseconds, so caching a several-hundred-megabyte worker would add lifecycle
 complexity without a meaningful UX win.
 
-The native adapter exists only so the catalog, capabilities, installation, and
-model probe remain consistent with STT/TTS. Its `load` method refuses native
-inference with a clear message. No translation protocol frames, Rust inference
-worker, Python runtime, C++ library, or new release artifact are introduced.
+The HY-MT adapter sends ordered prose units through `start_translation` and
+receives job-keyed progress and completion events. The main sidecar validates
+the managed model path and launches an exact sibling helper. The helper uses a
+pinned llama.cpp Rust binding, applies the GGUF chat template once, and enforces
+Tencent's prompt and sampling profile. Keeping it outside the main executable
+avoids Whisper/llama.cpp GGML symbol collisions. It exits on pipe or parent
+shutdown and is released after five idle minutes.
 
 ## Quality policy
 

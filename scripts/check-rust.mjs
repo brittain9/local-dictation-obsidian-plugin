@@ -3,7 +3,7 @@ import { resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const ALL_ENGINE_FEATURES =
-  'engine-cohere-transcribe,engine-moonshine,engine-nemotron-asr,engine-pocket-tts,engine-supertonic,engine-whisper';
+  'engine-cohere-transcribe,engine-hy-mt,engine-moonshine,engine-nemotron-asr,engine-pocket-tts,engine-supertonic,engine-whisper';
 
 export function buildRustQualityCommands(environment = process.env) {
   return [

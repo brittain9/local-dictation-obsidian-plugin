@@ -84,6 +84,23 @@ The value $$x + y$$ stays literal.
     expect(rebuildTranslatedMarkdown(segments, translatableTexts(segments)).text).toBe(source);
   });
 
+  it('translates table cells independently and preserves table topology exactly', () => {
+    const source = '| Name | Value |\n| :--- | ---: |\n| Hello **world** | `code | stays` |\n';
+    const segments = segmentMarkdownForTranslation(source);
+    const texts = translatableTexts(segments);
+
+    expect(texts).toHaveLength(3);
+    expect(texts).not.toContain('|');
+    expect(rebuildTranslatedMarkdown(segments, texts.map((text) => text.replace('Hello', 'Hola'))).text)
+      .toBe('| Name | Value |\n| :--- | ---: |\n| Hola **world** | `code | stays` |\n');
+  });
+
+  it('keeps the source unit when generated Markdown changes its topology', () => {
+    const segments = segmentMarkdownForTranslation('Plain paragraph.');
+    const rebuilt = rebuildTranslatedMarkdown(segments, ['# Generated heading']);
+    expect(rebuilt).toEqual({ sourceUnitsKept: 1, text: 'Plain paragraph.' });
+  });
+
   it('bounds long translation units without changing the source structure', () => {
     const source = `${'word '.repeat(1_000).trim()}\n`;
     const segments = segmentMarkdownForTranslation(source);
