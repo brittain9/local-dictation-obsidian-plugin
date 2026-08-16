@@ -573,7 +573,7 @@ export class NoteSurface {
       return [];
     }
 
-    return [setAnchorEffect.of(pos), EditorView.scrollIntoView(pos, { y: 'nearest' })];
+    return [setAnchorEffect.of(pos)];
   }
 
   getSpan(utteranceId: UtteranceId): ProjectedSpan | undefined {

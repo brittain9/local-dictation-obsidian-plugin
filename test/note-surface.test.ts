@@ -400,6 +400,29 @@ describe('NoteSurface', () => {
     expect(doc(view)).toBe('start first USER second');
   });
 
+  it.each([
+    ['at_cursor', 'Earlier note', 7],
+    ['end_of_note', 'Earlier note', 0],
+  ] as const)(
+    'keeps the viewport independent of live dictation updates when inserting %s',
+    (anchor, initialDocument, selectionHead) => {
+      const { surface, view } = createSurface({
+        anchor,
+        doc: initialDocument,
+        extensions: dictationAnchorExtension(),
+        selectionHead,
+      });
+
+      expect(append(surface, 'u1', 'live words').kind).toBe('appended');
+      expect(view.lastUpdate?.transactions[0]?.effects).toHaveLength(1);
+      expect(view.lastUpdate?.transactions[0]?.effects[0]?.is(setAnchorEffect)).toBe(true);
+
+      expect(surface.replaceAnchor('u1', 'final words', 'live words').kind).toBe('replaced');
+      expect(view.lastUpdate?.transactions[0]?.effects).toHaveLength(1);
+      expect(view.lastUpdate?.transactions[0]?.effects[0]?.is(setAnchorEffect)).toBe(true);
+    },
+  );
+
   it('inserts paragraph boundaries as prefixes without dangling trailing separators', () => {
     const { surface, view } = createSurface();
     const renderer = new TranscriptRenderer({
