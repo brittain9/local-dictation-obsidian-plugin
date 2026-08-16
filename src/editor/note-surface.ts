@@ -568,7 +568,7 @@ export class NoteSurface {
     return false;
   }
 
-  private ownerAnchorEffects(pos: number): StateEffect<unknown>[] {
+  private ownerAnchorEffects(pos: number): StateEffect<number>[] {
     if (!this.isAnchorOwner()) {
       return [];
     }
