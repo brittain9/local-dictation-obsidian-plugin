@@ -23,6 +23,7 @@ describe('resolveReadAloudVoiceId', () => {
 describe('didReadAloudSettingsChange', () => {
   it.each([
     ['speed', { ttsSpeed: 1.5 }],
+    ['language', { readAloudLanguage: 'fr' as const }],
     ['voice', { selectedTtsVoice: 'cosette' }],
     [
       'model',

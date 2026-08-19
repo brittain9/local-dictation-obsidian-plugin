@@ -31,19 +31,19 @@ import { resolveReadAloudVoiceId } from './read-aloud-selection';
 export type ReadAloudState = 'idle' | 'paused' | 'reading';
 export type ReadAloudFallbackRange = 'entire_note' | 'from_cursor';
 
-/// Read aloud speaks the dictation language, but only when the selected voice
-/// model declares it. An unlisted tag would otherwise fall through to the
-/// language-neutral synthesis branch and produce mispronounced audio instead of
-/// an honest failure — Serbian, which no voice model covers, is the live case.
+/// Read aloud uses its own language preference, independently of the language
+/// used for microphone transcription. An unlisted tag would otherwise fall
+/// through to the language-neutral synthesis branch and produce mispronounced
+/// audio instead of an honest failure.
 function resolveSynthesisLanguage(
-  dictationLanguage: DictationLanguage,
+  readAloudLanguage: DictationLanguage,
   modelLanguageTags: readonly string[],
 ): SynthesisLanguage | null {
-  if (dictationLanguage === 'auto') return 'na';
-  if (!modelLanguageTags.includes(dictationLanguage)) return null;
+  if (readAloudLanguage === 'auto') return 'na';
+  if (!modelLanguageTags.includes(readAloudLanguage)) return null;
   return (
     SYNTHESIS_LANGUAGES.find(
-      (language): language is SynthesisLanguage => language === dictationLanguage,
+      (language): language is SynthesisLanguage => language === readAloudLanguage,
     ) ?? null
   );
 }
@@ -277,14 +277,14 @@ export class ReadAloudController {
       return null;
     }
     const language = resolveSynthesisLanguage(
-      settings.dictationLanguage,
+      settings.readAloudLanguage,
       catalogModel.languageTags,
     );
     if (language === null) {
       this.deps.feedback.show({
         intent: 'warning',
         message: t('tts.notice.languageUnsupported', {
-          language: dictationLanguageLabel(settings.dictationLanguage),
+          language: dictationLanguageLabel(settings.readAloudLanguage),
         }),
       });
       this.stop();

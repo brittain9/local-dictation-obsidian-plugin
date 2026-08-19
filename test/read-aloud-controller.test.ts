@@ -91,7 +91,7 @@ type StartSynthesisMock = ReturnType<
 
 function controllerHarness(options: {
   catalog?: ModelCatalogRecord;
-  dictationLanguage?: 'auto' | 'en' | 'sr';
+  readAloudLanguage?: 'auto' | 'en' | 'sr';
   onModelMissing?: () => Promise<void> | void;
   selected: boolean;
   selectedVoice?: string | null;
@@ -110,7 +110,7 @@ function controllerHarness(options: {
     getCatalog: () => options.catalog ?? TTS_CATALOG,
     getSettings: () => ({
       ...DEFAULT_PLUGIN_SETTINGS,
-      dictationLanguage: options.dictationLanguage ?? DEFAULT_PLUGIN_SETTINGS.dictationLanguage,
+      readAloudLanguage: options.readAloudLanguage ?? DEFAULT_PLUGIN_SETTINGS.readAloudLanguage,
       selectedTtsModel: options.selected ? TTS_SELECTION : null,
       selectedTtsVoice:
         options.selectedVoice === undefined
@@ -258,13 +258,13 @@ describe('ReadAloudController', () => {
     expect(harness.startSynthesis).toHaveBeenCalledTimes(2);
     expect(harness.startSynthesis.mock.calls[1]?.[0]).toMatchObject({
       chunks: [{ text: 'Second sentence.' }, { text: 'Third sentence.' }],
-      language: 'en',
+      language: 'na',
       speed: 1.5,
     });
   });
 
-  it('uses the dictation language and maps automatic detection to the model-neutral tag', async () => {
-    const harness = controllerHarness({ dictationLanguage: 'auto', selected: true });
+  it('maps the model-default reading language to the neutral synthesis tag', async () => {
+    const harness = controllerHarness({ readAloudLanguage: 'auto', selected: true });
 
     await harness.controller.read(editorFor('Speak this.', { ch: 0, line: 0 }));
 
@@ -274,7 +274,7 @@ describe('ReadAloudController', () => {
   });
 
   it('refuses a language the voice model does not declare instead of speaking it neutrally', async () => {
-    const harness = controllerHarness({ dictationLanguage: 'sr', selected: true });
+    const harness = controllerHarness({ readAloudLanguage: 'sr', selected: true });
 
     await harness.controller.read(editorFor('Speak this.', { ch: 0, line: 0 }));
 

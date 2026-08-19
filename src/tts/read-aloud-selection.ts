@@ -7,6 +7,7 @@ export function didReadAloudSettingsChange(
 ): boolean {
   return (
     previous.ttsSpeed !== next.ttsSpeed ||
+    previous.readAloudLanguage !== next.readAloudLanguage ||
     previous.selectedTtsVoice !== next.selectedTtsVoice ||
     !nullableSelectionsEqual(previous.selectedTtsModel, next.selectedTtsModel)
   );

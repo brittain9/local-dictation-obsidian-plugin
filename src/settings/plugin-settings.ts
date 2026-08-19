@@ -176,6 +176,7 @@ export interface PluginSettings {
   lastObsidianLanguage: string | null;
   localTranscriptSidebarBootstrapped: boolean;
   modelStorePathOverride: string;
+  readAloudLanguage: DictationLanguage;
   retainLastUtterance: boolean;
   schemaVersion: 7;
   selectedModel: SelectedModel | null;
@@ -243,6 +244,7 @@ export const DEFAULT_PLUGIN_SETTINGS: PluginSettings = {
   lastObsidianLanguage: null,
   localTranscriptSidebarBootstrapped: false,
   modelStorePathOverride: '',
+  readAloudLanguage: 'auto',
   retainLastUtterance: true,
   schemaVersion: 7,
   selectedModel: null,
@@ -367,6 +369,9 @@ export function resolvePluginSettings(data: unknown): PluginSettings {
       raw.modelStorePathOverride,
       DEFAULT_PLUGIN_SETTINGS.modelStorePathOverride,
     ),
+    readAloudLanguage: isDictationLanguage(raw.readAloudLanguage)
+      ? raw.readAloudLanguage
+      : DEFAULT_PLUGIN_SETTINGS.readAloudLanguage,
     retainLastUtterance: readBoolean(
       raw.retainLastUtterance,
       DEFAULT_PLUGIN_SETTINGS.retainLastUtterance,
