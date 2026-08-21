@@ -33,7 +33,7 @@ function state(installed: boolean): ModelManagerState {
     summary: 'Fast local translation',
     supportsAutomaticLanguageDetection: false,
     task: 'translation',
-    translationPairs: [{ source: 'en', target: 'es' }],
+    translationSupport: { kind: 'pairs', pairs: [{ source: 'en', target: 'es' }] },
     uxTags: [],
   };
   return {
@@ -77,6 +77,7 @@ describe('Translation settings', () => {
     Setting.reset();
     const openModelPicker = vi.fn(async () => {});
     const container = new TestElement();
+    const persistEngine = vi.fn(async () => {});
     const manager = {
       getState: () => state(true),
       subscribe: () => () => {},
@@ -86,6 +87,7 @@ describe('Translation settings', () => {
       getSettings: () => DEFAULT_PLUGIN_SETTINGS,
       manager,
       openModelPicker,
+      persistEngine,
       persistLanguages: vi.fn(async () => {}),
     });
 
@@ -100,6 +102,7 @@ describe('Translation settings', () => {
 
   it('shows the effective language pair and keeps it valid when source changes', async () => {
     Setting.reset();
+    const persistEngine = vi.fn(async () => {});
     let settings = {
       ...DEFAULT_PLUGIN_SETTINGS,
       dictationLanguage: 'en' as const,
@@ -121,6 +124,7 @@ describe('Translation settings', () => {
       getSettings: () => settings,
       manager,
       openModelPicker: vi.fn(async () => {}),
+      persistEngine,
       persistLanguages,
     });
 
@@ -133,7 +137,33 @@ describe('Translation settings', () => {
 
     Setting.named('Default source language').dropdownComponents[0]?.change('fr');
     await vi.waitFor(() => {
-      expect(persistLanguages).toHaveBeenCalledExactlyOnceWith('fr', 'en');
+      expect(persistLanguages).toHaveBeenCalledExactlyOnceWith('fr', 'es');
+      expect(persistEngine).toHaveBeenCalledExactlyOnceWith('tencent_hy_mt');
+    });
+  });
+
+  it('lets users remember Natural translation without adding per-language model rows', async () => {
+    Setting.reset();
+    const persistEngine = vi.fn(async () => {});
+    const container = new TestElement();
+    const manager = {
+      getState: () => state(false),
+      subscribe: () => () => {},
+    } as unknown as ModelInstallManager;
+
+    renderTranslationSettings(container as unknown as HTMLDivElement, {
+      getSettings: () => DEFAULT_PLUGIN_SETTINGS,
+      manager,
+      openModelPicker: vi.fn(async () => {}),
+      persistEngine,
+      persistLanguages: vi.fn(async () => {}),
+    });
+
+    const engine = Setting.named('Default translation style').dropdownComponents[0];
+    expect(engine?.selectEl.value).toBe('bergamot');
+    engine?.change('tencent_hy_mt');
+    await vi.waitFor(() => {
+      expect(persistEngine).toHaveBeenCalledExactlyOnceWith('tencent_hy_mt');
     });
   });
 });

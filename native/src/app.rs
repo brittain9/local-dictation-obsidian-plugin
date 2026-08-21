@@ -7,7 +7,7 @@ use tokio::sync::watch;
 use uuid::Uuid;
 
 use crate::audio_mixer::{AudioMixer, AudioMixerError, MixedAudioFrame};
-use crate::catalog::{ArtifactRole, ModelCatalog};
+use crate::catalog::{ArtifactRole, ModelCatalog, TranslationSupport};
 use crate::engine::capabilities::{
     AcceleratorId, LanguageSupport, ModelFamilyId, ModelTask, RuntimeId,
 };
@@ -33,6 +33,7 @@ use crate::synthesis_worker::{
 };
 use crate::system_audio::{AudioFrameSink, SystemAudioCapture, SystemAudioController};
 use crate::transcription::{ENGLISH_LANGUAGE_TAG, GpuConfig};
+use crate::translation_worker::{StartTranslation as WorkerStartTranslation, TranslationWorker};
 use crate::worker::{SessionMetadata, TranscriptionWorker, WorkerCommand, WorkerEvent};
 
 /// Queue depth that marks a session as `saturated` and triggers an overload
@@ -70,6 +71,7 @@ pub struct AppState {
     sidecar_version: String,
     system_audio: Box<dyn SystemAudioCapture>,
     synthesis_worker: SynthesisWorker,
+    translation_worker: TranslationWorker,
     transcription_worker: TranscriptionWorker,
 }
 
@@ -174,6 +176,7 @@ impl AppState {
             sidecar_version: sidecar_version.into(),
             system_audio,
             synthesis_worker,
+            translation_worker: TranslationWorker::spawn(),
             transcription_worker: TranscriptionWorker::spawn(Arc::clone(&registry)),
         }
     }
@@ -210,6 +213,10 @@ impl AppState {
 
         while let Some(synthesis_event) = self.synthesis_worker.poll_event() {
             events.push(synthesis_event);
+        }
+
+        while let Some(translation_event) = self.translation_worker.poll_event() {
+            events.push(translation_event);
         }
 
         events
@@ -652,6 +659,107 @@ impl AppState {
             }
             Command::CancelSynthesis { synthesis_id } => {
                 self.synthesis_worker.cancel(synthesis_id);
+                (ControlFlow::Continue, events)
+            }
+            Command::StartTranslation {
+                translation_id,
+                model_selection,
+                source_language,
+                target_language,
+                texts,
+                acceleration_preference,
+                model_store_path_override,
+            } => {
+                let result = (|| -> anyhow::Result<WorkerStartTranslation> {
+                    anyhow::ensure!(
+                        !translation_id.trim().is_empty(),
+                        "translationId must not be empty"
+                    );
+                    anyhow::ensure!(
+                        !texts.is_empty() && texts.len() <= 4096,
+                        "translation text unit count is invalid"
+                    );
+                    anyhow::ensure!(
+                        texts.iter().all(|text| text.len() <= 50_000),
+                        "a translation text unit exceeds the size limit"
+                    );
+                    let SelectedModel::CatalogModel {
+                        runtime_id,
+                        family_id,
+                        model_id,
+                    } = &model_selection
+                    else {
+                        anyhow::bail!("Natural translation requires an installed catalog model");
+                    };
+                    anyhow::ensure!(
+                        *runtime_id == RuntimeId::LlamaCpp
+                            && *family_id == ModelFamilyId::TencentHyMt,
+                        "the selected model is not Tencent HY-MT"
+                    );
+                    let model = self
+                        .catalog
+                        .find_model(*runtime_id, *family_id, model_id)
+                        .ok_or_else(|| {
+                            anyhow::anyhow!("the selected translation model is not in the catalog")
+                        })?;
+                    anyhow::ensure!(
+                        model.task == ModelTask::Translation,
+                        "the selected model is not a translation model"
+                    );
+                    let supports_pair = match model.translation_support.as_ref() {
+                        Some(TranslationSupport::Pairs { pairs }) => pairs.iter().any(|pair| {
+                            pair.source == source_language && pair.target == target_language
+                        }),
+                        Some(TranslationSupport::AllToAll { languages }) => {
+                            source_language != target_language
+                                && languages.contains(&source_language)
+                                && languages.contains(&target_language)
+                        }
+                        None => false,
+                    };
+                    anyhow::ensure!(
+                        supports_pair,
+                        "the selected model does not support this language pair"
+                    );
+                    let store = resolve_model_store_info(model_store_path_override.as_deref())?;
+                    let model_path = resolve_catalog_model_runtime_path(
+                        &self.catalog,
+                        &store.path,
+                        *runtime_id,
+                        *family_id,
+                        model_id,
+                    )?;
+                    Ok(WorkerStartTranslation {
+                        translation_id: translation_id.clone(),
+                        model_path,
+                        source_language,
+                        target_language,
+                        texts,
+                        use_gpu: acceleration_preference == AccelerationPreference::Auto,
+                    })
+                })();
+                match result {
+                    Ok(request) => {
+                        if let Err(message) = self.translation_worker.start(request) {
+                            events.push(Event::TranslationError {
+                                translation_id,
+                                code: "translation_worker_unavailable".into(),
+                                message,
+                                details: None,
+                            });
+                        }
+                    }
+                    Err(error) => events.push(Event::TranslationError {
+                        translation_id,
+                        code: "invalid_translation_request".into(),
+                        message: "Natural translation could not be started.".into(),
+                        details: Some(format!("{error:#}")),
+                    }),
+                }
+                (ControlFlow::Continue, events)
+            }
+            Command::CancelTranslation { translation_id } => {
+                self.translation_worker.cancel(&translation_id);
                 (ControlFlow::Continue, events)
             }
             Command::SynthesisPlaybackPosition {
@@ -4139,7 +4247,7 @@ mod tests {
                 family_id: ModelFamilyId::Whisper,
                 task: ModelTask::Stt,
                 language_tags: vec!["en".to_string()],
-                translation_pairs: vec![],
+                translation_support: None,
                 supports_automatic_language_detection: false,
                 default_voice: None,
                 license_label: "MIT".to_string(),

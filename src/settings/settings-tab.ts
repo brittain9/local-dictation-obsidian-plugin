@@ -425,6 +425,8 @@ export class LocalSttSettingTab extends PluginSettingTab {
       getSettings: () => this.dependencies.getSettings(),
       manager,
       openModelPicker: (options) => this.dependencies.openModelPicker(options),
+      persistEngine: (translationEngineId) =>
+        this.access.persistOne('translationEngineId', translationEngineId),
       persistLanguages: async (sourceLanguage, targetLanguage) => {
         await this.dependencies.saveSettings({
           ...this.dependencies.getSettings(),

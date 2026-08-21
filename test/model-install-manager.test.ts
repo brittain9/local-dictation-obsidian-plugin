@@ -1948,7 +1948,7 @@ function sampleTranslationCatalogModel(): CatalogModelRecord {
     summary: 'Local translation',
     supportsAutomaticLanguageDetection: false,
     task: 'translation',
-    translationPairs: [{ source: 'en', target: 'es' }],
+    translationSupport: { kind: 'pairs', pairs: [{ source: 'en', target: 'es' }] },
     uxTags: ['fast'],
   };
 }

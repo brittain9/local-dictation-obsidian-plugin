@@ -340,6 +340,8 @@ function resolveFamilyDisplayName(
       return 'Cohere Transcribe';
     case 'firefox_translations':
       return 'Firefox Translations';
+    case 'tencent_hy_mt':
+      return 'Tencent HY-MT';
     case 'moonshine':
       return 'Moonshine';
     case 'nemotron_asr':

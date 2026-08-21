@@ -36,7 +36,12 @@ import {
   type ListeningMode,
   type SpeakingStyle,
 } from '../sidecar/protocol';
-import { normalizeTranslationLanguage, type TranslationLanguage } from '../translation/languages';
+import {
+  normalizeTranslationEngine,
+  normalizeTranslationLanguage,
+  type TranslationEngineId,
+  type TranslationLanguage,
+} from '../translation/languages';
 
 export const DICTATION_ANCHORS = ['at_cursor', 'end_of_note'] as const;
 
@@ -198,6 +203,7 @@ export interface PluginSettings {
   timestampsEnabled: boolean;
   timestampSessionHeader: boolean;
   timestampSparseIntervalMs: number;
+  translationEngineId: TranslationEngineId;
   translationSourceLanguage: TranslationLanguage | null;
   translationTargetLanguage: TranslationLanguage | null;
   transcriptFormatting: TranscriptFormattingMode;
@@ -262,6 +268,7 @@ export const DEFAULT_PLUGIN_SETTINGS: PluginSettings = {
   timestampsEnabled: false,
   timestampSessionHeader: true,
   timestampSparseIntervalMs: DEFAULT_TIMESTAMP_SPARSE_INTERVAL_MS,
+  translationEngineId: 'bergamot',
   translationSourceLanguage: null,
   translationTargetLanguage: null,
   transcriptFormatting: 'smart',
@@ -434,6 +441,7 @@ export function resolvePluginSettings(data: unknown): PluginSettings {
       MIN_TIMESTAMP_SPARSE_INTERVAL_MS,
       MAX_TIMESTAMP_SPARSE_INTERVAL_MS,
     ),
+    translationEngineId: normalizeTranslationEngine(raw.translationEngineId),
     translationSourceLanguage: normalizeTranslationLanguage(raw.translationSourceLanguage),
     translationTargetLanguage: normalizeTranslationLanguage(raw.translationTargetLanguage),
     transcriptFormatting: isTranscriptFormattingMode(raw.transcriptFormatting)

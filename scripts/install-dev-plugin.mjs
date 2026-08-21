@@ -10,6 +10,7 @@ const PLUGIN_FILES = ['manifest.json', 'main.js', 'styles.css'];
 const SIDECAR_BASENAME = 'local-dictation-sidecar';
 const SIDECAR_SUFFIX = process.platform === 'win32' ? '.exe' : '';
 const SIDECAR_EXECUTABLE = `${SIDECAR_BASENAME}${SIDECAR_SUFFIX}`;
+const TRANSLATION_HELPER_EXECUTABLE = `local-dictation-translation-helper${SIDECAR_SUFFIX}`;
 
 const args = parseArgs(process.argv.slice(2));
 
@@ -34,7 +35,7 @@ async function main(options) {
 
   if (options.sidecars) {
     await installSidecarVariant({
-      artifacts: [SIDECAR_EXECUTABLE],
+      artifacts: [SIDECAR_EXECUTABLE, TRANSLATION_HELPER_EXECUTABLE],
       destination: join(pluginDirectory, 'bin', 'cpu'),
       profile,
       sourceDirectory: join('native', 'target', profile),
@@ -43,7 +44,7 @@ async function main(options) {
 
     await installSidecarVariant({
       allowMissingArtifacts: true,
-      artifacts: [SIDECAR_EXECUTABLE, ...(await getCudaArtifacts())],
+      artifacts: [SIDECAR_EXECUTABLE, TRANSLATION_HELPER_EXECUTABLE, ...(await getCudaArtifacts())],
       destination: join(pluginDirectory, 'bin', 'cuda'),
       optional: true,
       profile,

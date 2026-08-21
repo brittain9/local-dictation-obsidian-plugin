@@ -1,6 +1,6 @@
 {
   "name": "local-dictation",
-  "version": "2026.8.2",
+  "version": "2026.8.4",
   "description": "Local speech and language toolkit for notes. Dictate, transcribe meetings, translate text, and read notes aloud with on-device models.",
   "private": true,
   "license": "MIT",
@@ -46,24 +46,25 @@
     "test:sidecar:pocket-tts:certify": "cargo test --manifest-path native/Cargo.toml --release --no-default-features --features engine-pocket-tts,engine-whisper --test pocket_tts_e2e pinned_multilingual_models_meet_quality_and_throughput_gates -- --ignored --nocapture --test-threads=1",
     "test:sidecar:supertonic:smoke": "cargo test --manifest-path native/Cargo.toml --release --no-default-features --features engine-supertonic --test supertonic_e2e pinned_model_loads_and_synthesizes_all_catalog_languages -- --ignored --nocapture --test-threads=1",
     "test:translation:e2e": "node scripts/translation-real-model-e2e.mjs es && node scripts/translation-real-model-e2e.mjs ja",
+    "test:translation:natural:e2e": "node scripts/translation-natural-model-e2e.mjs",
     "check": "npm run check:js && npm run check:rust"
   },
   "devDependencies": {
-    "@biomejs/biome": "2.5.6",
+    "@biomejs/biome": "2.5.8",
     "@codemirror/state": "6.5.0",
     "@codemirror/view": "6.38.6",
     "@eslint/js": "^10.0.1",
     "@eslint/json": "^2.0.1",
-    "@types/node": "26.1.2",
-    "@typescript-eslint/parser": "^8.65.0",
-    "esbuild": "0.28.1",
-    "eslint": "^10.8.0",
+    "@types/node": "26.2.0",
+    "@typescript-eslint/parser": "^8.67.0",
+    "esbuild": "0.28.2",
+    "eslint": "^10.8.1",
     "eslint-plugin-obsidianmd": "^0.4.1",
     "obsidian": "1.13.1",
     "obsidian-floor": "npm:obsidian@1.11.4",
     "tslib": "2.8.1",
     "typescript": "6.0.3",
-    "typescript-eslint": "^8.65.0",
+    "typescript-eslint": "^8.67.0",
     "vitest": "4.1.10"
   }
 }

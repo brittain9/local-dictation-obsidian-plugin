@@ -764,6 +764,7 @@ export const de = {
   'setup.sidecar.modal.genericInstallError':
     'Die Sprach-Engine konnte nicht installiert werden. Überprüfen Sie die Plugin-Protokolle auf Details und versuchen Sie es dann erneut.',
   'commands.readAloud': 'Vorlesen',
+  'commands.readAloudFromCursor': 'Ab Cursor vorlesen',
   'commands.pauseResumeReadAloud': 'Vorlesen pausieren oder fortsetzen',
   'commands.stopReadAloud': 'Vorlesen beenden',
   'settings.groups.readAloud': 'Vorlesen',
@@ -840,8 +841,14 @@ export const de = {
   'translation.modal.replace': 'Ersetzen',
   'translation.modal.insertBelow': 'Darunter einfügen',
   'translation.modal.copy': 'Kopieren',
+  'translation.modal.dismiss': 'Verwerfen',
+  'settings.translation.engine.name': 'Standard-Übersetzungsstil',
+  'settings.translation.engine.desc':
+    'Schnell ist wörtlicher; Natürlich verwendet das optionale Tencent-HY-MT-Modell.',
+  'translation.engine.bergamot': 'Schnell & wörtlich — Firefox Translations',
+  'translation.engine.tencentHyMt': 'Natürlich — Tencent HY-MT',
   'translation.modal.stale':
-    'Die Notiz hat sich seit dem Start dieser Übersetzung geändert. Kopiere stattdessen die Übersetzung.',
+    'Die Notiz hat sich seit dem Start dieser Übersetzung geändert. Starte eine neue Übersetzung oder kopiere diese.',
   'translation.notice.copied': 'Übersetzung kopiert.',
   'translation.notice.copyFailed': 'Übersetzung konnte nicht kopiert werden.',
   'translation.notice.tooLong': 'Übersetze höchstens {count} Zeichen auf einmal.',

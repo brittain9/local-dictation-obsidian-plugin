@@ -29,6 +29,14 @@ impl EngineRegistry {
             crate::adapters::firefox_translations::FirefoxTranslationsAdapter,
         ));
 
+        #[cfg(feature = "engine-hy-mt")]
+        {
+            registry.register_runtime(Box::new(
+                crate::runtimes::llama_cpp::LlamaCppRuntime::probe(),
+            ));
+            registry.register_adapter(Box::new(crate::adapters::tencent_hy_mt::TencentHyMtAdapter));
+        }
+
         #[cfg(feature = "engine-whisper")]
         {
             registry.register_runtime(Box::new(

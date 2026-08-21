@@ -750,6 +750,7 @@ export const nl = {
   'setup.sidecar.modal.genericInstallError':
     'De spraakengine kan niet worden geïnstalleerd. Controleer de plug-inlogboeken voor meer informatie en probeer het vervolgens opnieuw.',
   'commands.readAloud': 'Voorlezen',
+  'commands.readAloudFromCursor': 'Voorlezen vanaf cursor',
   'commands.pauseResumeReadAloud': 'Voorlezen pauzeren of hervatten',
   'commands.stopReadAloud': 'Voorlezen stoppen',
   'settings.groups.readAloud': 'Voorlezen',
@@ -826,8 +827,14 @@ export const nl = {
   'translation.modal.replace': 'Vervangen',
   'translation.modal.insertBelow': 'Hieronder invoegen',
   'translation.modal.copy': 'Kopiëren',
+  'translation.modal.dismiss': 'Verwerpen',
+  'settings.translation.engine.name': 'Standaard vertaalstijl',
+  'settings.translation.engine.desc':
+    'Snel is letterlijker; Natuurlijk gebruikt het optionele Tencent HY-MT-model.',
+  'translation.engine.bergamot': 'Snel en letterlijk — Firefox Translations',
+  'translation.engine.tencentHyMt': 'Natuurlijk — Tencent HY-MT',
   'translation.modal.stale':
-    'De notitie is gewijzigd sinds deze vertaling begon. Kopieer in plaats daarvan de vertaling.',
+    'De notitie is gewijzigd sinds deze vertaling begon. Start een nieuwe vertaling of kopieer deze.',
   'translation.notice.copied': 'Vertaling gekopieerd.',
   'translation.notice.copyFailed': 'Kon de vertaling niet kopiëren.',
   'translation.notice.tooLong': 'Vertaal maximaal {count} tekens per keer.',

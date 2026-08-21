@@ -763,6 +763,7 @@ export const it = {
   'setup.sidecar.modal.genericInstallError':
     'Impossibile installare il motore di riconoscimento vocale. Controlla i log del plugin per i dettagli, quindi riprova.',
   'commands.readAloud': 'Leggi ad alta voce',
+  'commands.readAloudFromCursor': 'Leggi ad alta voce dal cursore',
   'commands.pauseResumeReadAloud': 'Metti in pausa o riprendi la lettura',
   'commands.stopReadAloud': 'Interrompi la lettura',
   'settings.groups.readAloud': 'Lettura ad alta voce',
@@ -839,8 +840,14 @@ export const it = {
   'translation.modal.replace': 'Sostituisci',
   'translation.modal.insertBelow': 'Inserisci sotto',
   'translation.modal.copy': 'Copia',
+  'translation.modal.dismiss': 'Ignora',
+  'settings.translation.engine.name': 'Stile di traduzione predefinito',
+  'settings.translation.engine.desc':
+    'Veloce è più letterale; Naturale usa il modello Tencent HY-MT facoltativo.',
+  'translation.engine.bergamot': 'Veloce e letterale — Firefox Translations',
+  'translation.engine.tencentHyMt': 'Naturale — Tencent HY-MT',
   'translation.modal.stale':
-    'La nota è cambiata da quando è iniziata questa traduzione. Copia invece la traduzione.',
+    'La nota è cambiata da quando è iniziata questa traduzione. Avvia una nuova traduzione o copia questa.',
   'translation.notice.copied': 'Traduzione copiata.',
   'translation.notice.copyFailed': 'Impossibile copiare la traduzione.',
   'translation.notice.tooLong': 'Traduci fino a {count} caratteri alla volta.',

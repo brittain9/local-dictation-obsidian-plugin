@@ -1771,7 +1771,7 @@ mod tests {
             family_id: ModelFamilyId::Whisper,
             task: ModelTask::Stt,
             language_tags: vec!["en".to_string()],
-            translation_pairs: vec![],
+            translation_support: None,
             supports_automatic_language_detection: false,
             default_voice: None,
             license_label: "MIT".to_string(),

@@ -756,6 +756,7 @@ export const es = {
   'setup.sidecar.modal.genericInstallError':
     'No se pudo instalar el motor de voz. Consulte los registros del complemento para obtener más detalles y vuelva a intentarlo.',
   'commands.readAloud': 'Leer en voz alta',
+  'commands.readAloudFromCursor': 'Leer en voz alta desde el cursor',
   'commands.pauseResumeReadAloud': 'Pausar o reanudar la lectura',
   'commands.stopReadAloud': 'Detener la lectura',
   'settings.groups.readAloud': 'Lectura en voz alta',
@@ -831,8 +832,14 @@ export const es = {
   'translation.modal.replace': 'Reemplazar',
   'translation.modal.insertBelow': 'Insertar debajo',
   'translation.modal.copy': 'Copiar',
+  'translation.modal.dismiss': 'Descartar',
+  'settings.translation.engine.name': 'Estilo de traducción predeterminado',
+  'settings.translation.engine.desc':
+    'Rápido es más literal; Natural usa el modelo opcional Tencent HY-MT.',
+  'translation.engine.bergamot': 'Rápida y literal — Firefox Translations',
+  'translation.engine.tencentHyMt': 'Natural — Tencent HY-MT',
   'translation.modal.stale':
-    'La nota cambió desde que empezó esta traducción. Copia la traducción en su lugar.',
+    'La nota cambió desde que empezó esta traducción. Inicia una nueva traducción o copia esta.',
   'translation.notice.copied': 'Se copió la traducción.',
   'translation.notice.copyFailed': 'No se pudo copiar la traducción.',
   'translation.notice.tooLong': 'Traduce hasta {count} caracteres a la vez.',

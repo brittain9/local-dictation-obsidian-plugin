@@ -64,10 +64,13 @@ describe('dictation language eligibility', () => {
       {
         languageTags: ['en', 'es'],
         task: 'translation' as const,
-        translationPairs: [
-          { source: 'en', target: 'es' },
-          { source: 'es', target: 'en' },
-        ],
+        translationSupport: {
+          kind: 'pairs' as const,
+          pairs: [
+            { source: 'en', target: 'es' },
+            { source: 'es', target: 'en' },
+          ],
+        },
       },
     ];
 

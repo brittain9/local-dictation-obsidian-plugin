@@ -568,12 +568,12 @@ export class NoteSurface {
     return false;
   }
 
-  private ownerAnchorEffects(pos: number): StateEffect<unknown>[] {
+  private ownerAnchorEffects(pos: number): StateEffect<number>[] {
     if (!this.isAnchorOwner()) {
       return [];
     }
 
-    return [setAnchorEffect.of(pos), EditorView.scrollIntoView(pos, { y: 'nearest' })];
+    return [setAnchorEffect.of(pos)];
   }
 
   getSpan(utteranceId: UtteranceId): ProjectedSpan | undefined {

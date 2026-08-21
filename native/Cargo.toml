@@ -1,6 +1,6 @@
 [package]
 name = "local-dictation-sidecar"
-version = "2026.8.2"
+version = "2026.8.4"
 edition = "2024"
 license = "MIT"
 rust-version = "1.94.1"
@@ -12,6 +12,11 @@ path = "src/lib.rs"
 [[bin]]
 name = "local-dictation-sidecar"
 path = "src/main.rs"
+
+[[bin]]
+name = "local-dictation-translation-helper"
+path = "src/bin/translation_helper.rs"
+required-features = ["engine-hy-mt"]
 
 [dependencies]
 anyhow = "1.0"
@@ -32,6 +37,8 @@ tokio = { version = "1.52", features = ["macros", "rt", "sync"] }
 unicode-normalization = { version = "0.1", optional = true }
 uuid = { version = "1", features = ["v4", "serde"] }
 whisper-rs = { version = "0.16.0", optional = true }
+llama-cpp-2 = { version = "=0.1.152", default-features = false, optional = true }
+llama-cpp-sys-2 = { version = "=0.1.152", default-features = false, optional = true }
 
 [features]
 default = ["engine-whisper"]
@@ -41,8 +48,9 @@ engine-moonshine = []
 engine-nemotron-asr = []
 engine-pocket-tts = ["dep:safetensors", "dep:sentencepiece-rs"]
 engine-supertonic = ["dep:regex", "dep:unicode-normalization"]
-gpu-metal = ["whisper-rs/metal"]
-gpu-cuda = ["whisper-rs/cuda"]
+engine-hy-mt = ["dep:llama-cpp-2", "dep:llama-cpp-sys-2"]
+gpu-metal = ["whisper-rs/metal", "llama-cpp-2/metal"]
+gpu-cuda = ["whisper-rs/cuda", "llama-cpp-2/cuda"]
 
 # Test/bench-only dependencies for the end-to-end quality suite under `tests/`
 # and `benches/`. Runtime `[dependencies]` above (serde, serde_json, sha2, uuid,
@@ -80,7 +88,7 @@ codegen-units = 1
 strip = "symbols"
 
 [target."cfg(windows)".dependencies]
-wasapi = "0.23.0"
+wasapi = "0.24.0"
 
 # libpulse is dlopen'd at runtime (see system_audio/linux.rs), so this is the
 # only Linux capture dependency — no libpulse-dev / pkg-config at build time.

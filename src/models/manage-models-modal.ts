@@ -85,7 +85,9 @@ const MODEL_LANGUAGE_ORDER = ['en', 'fr', 'de', 'es', 'pt', 'it', 'nl', 'ja'] as
 export function deriveModelLanguageOptions(
   models: readonly CatalogModelRecord[],
 ): ModelLanguageOption[] {
-  const languageTags = new Set(models.flatMap((model) => model.languageTags));
+  const languageTags = new Set(
+    models.filter((model) => model.task === 'stt').flatMap((model) => model.languageTags),
+  );
   const knownTags = MODEL_LANGUAGE_ORDER.filter((tag) => languageTags.delete(tag));
   const remainingTags = [...languageTags].sort((left, right) => left.localeCompare(right));
 
@@ -879,7 +881,8 @@ export class ManageModelsModal extends Modal {
       return;
     }
     new ConfirmModal(this.app, {
-      confirmLabel: t('common.install'),
+      confirmLabel: confirmation.confirmLabel,
+      ...(confirmation.link === null ? {} : { link: confirmation.link }),
       message: confirmation.message,
       onConfirm: install,
       title: confirmation.title,
