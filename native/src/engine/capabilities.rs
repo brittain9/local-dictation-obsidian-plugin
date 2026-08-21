@@ -7,6 +7,7 @@ use serde::{Deserialize, Serialize};
 #[serde(rename_all = "snake_case")]
 pub enum RuntimeId {
     BergamotWasm,
+    LlamaCpp,
     OnnxRuntime,
     WhisperCpp,
 }
@@ -15,6 +16,7 @@ impl RuntimeId {
     pub fn as_str(self) -> &'static str {
         match self {
             Self::BergamotWasm => "bergamot_wasm",
+            Self::LlamaCpp => "llama_cpp",
             Self::OnnxRuntime => "onnx_runtime",
             Self::WhisperCpp => "whisper_cpp",
         }
@@ -23,6 +25,7 @@ impl RuntimeId {
     pub fn display_name(self) -> &'static str {
         match self {
             Self::BergamotWasm => "Bergamot WebAssembly",
+            Self::LlamaCpp => "llama.cpp",
             Self::OnnxRuntime => "ONNX Runtime",
             Self::WhisperCpp => "whisper.cpp",
         }
@@ -34,6 +37,7 @@ impl RuntimeId {
 #[serde(rename_all = "snake_case")]
 pub enum ModelFamilyId {
     FirefoxTranslations,
+    TencentHyMt,
     CohereTranscribe,
     Moonshine,
     NemotronAsr,
@@ -46,6 +50,7 @@ impl ModelFamilyId {
     pub fn as_str(self) -> &'static str {
         match self {
             Self::FirefoxTranslations => "firefox_translations",
+            Self::TencentHyMt => "tencent_hy_mt",
             Self::CohereTranscribe => "cohere_transcribe",
             Self::Moonshine => "moonshine",
             Self::NemotronAsr => "nemotron_asr",
@@ -58,6 +63,7 @@ impl ModelFamilyId {
     pub fn display_name(self) -> &'static str {
         match self {
             Self::FirefoxTranslations => "Firefox Translations",
+            Self::TencentHyMt => "Tencent HY-MT",
             Self::CohereTranscribe => "Cohere Transcribe",
             Self::Moonshine => "Moonshine",
             Self::NemotronAsr => "NVIDIA Nemotron 3.5 ASR",

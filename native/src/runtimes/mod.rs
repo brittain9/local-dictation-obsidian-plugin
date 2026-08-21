@@ -1,5 +1,8 @@
 pub mod bergamot_wasm;
 
+#[cfg(feature = "engine-hy-mt")]
+pub mod llama_cpp;
+
 #[cfg(any(
     feature = "engine-cohere-transcribe",
     feature = "engine-moonshine",

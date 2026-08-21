@@ -174,7 +174,9 @@ jobs:
 
       - name: Ad-hoc sign macOS binary
         if: runner.os == 'macOS'
-        run: codesign --force --sign - ${{ matrix.binary_path }}
+        run: |
+          codesign --force --sign - ${{ matrix.binary_path }}
+          codesign --force --sign - native/target/release/local-dictation-translation-helper
 
       - name: Package release archive
         env:

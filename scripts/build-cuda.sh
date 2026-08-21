@@ -191,7 +191,8 @@ args=(
   --locked
   --manifest-path "$MANIFEST"
   --target-dir "$target_dir"
-  --features engine-whisper,engine-cohere-transcribe,engine-moonshine,engine-nemotron-asr,engine-pocket-tts,engine-supertonic,gpu-cuda
+  --features engine-whisper,engine-cohere-transcribe,engine-hy-mt,engine-moonshine,engine-nemotron-asr,engine-pocket-tts,engine-supertonic,gpu-cuda
+  --bins
   -j "$jobs"
   --config "host.linker=\"${CC}\""
   --config "host.rustflags=[\"-C\",\"link-arg=-fuse-ld=bfd\"]"
@@ -209,6 +210,8 @@ cargo "${args[@]}"
 
 binary="$target_dir/$profile/local-dictation-sidecar"
 [[ -f "$binary" ]] || die "build completed but binary not found at $binary"
+helper="$target_dir/$profile/local-dictation-translation-helper"
+[[ -f "$helper" ]] || die "build completed but helper not found at $helper"
 
 while IFS= read -r runtime; do
   copy_resolved_artifact "$cuda_lib/$runtime" "$target_dir/$profile/$runtime"

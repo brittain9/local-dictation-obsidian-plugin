@@ -59,7 +59,8 @@ $cargoArgs = @(
   '--locked',
   '--manifest-path', 'native/Cargo.toml',
   '--target-dir', 'native/target-cuda',
-  '--features', 'engine-whisper,engine-cohere-transcribe,engine-moonshine,engine-nemotron-asr,engine-pocket-tts,engine-supertonic,gpu-cuda',
+  '--features', 'engine-whisper,engine-cohere-transcribe,engine-hy-mt,engine-moonshine,engine-nemotron-asr,engine-pocket-tts,engine-supertonic,gpu-cuda',
+  '--bins',
   '-j', "$jobs"
 )
 if ($Release) { $cargoArgs += '--release' }
@@ -112,7 +113,7 @@ Invoke-TimedStep "Stage CUDA runtime libraries" {
   }
 }
 
-$expected = @("$outDir/local-dictation-sidecar.exe") +
+$expected = @("$outDir/local-dictation-sidecar.exe", "$outDir/local-dictation-translation-helper.exe") +
   ($runtimeFiles | ForEach-Object { Join-Path $outDir $_ })
 Invoke-TimedStep "Verify CUDA sidecar artifacts" {
   foreach ($path in $expected) {

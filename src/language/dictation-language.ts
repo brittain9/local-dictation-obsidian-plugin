@@ -86,7 +86,7 @@ export interface LanguageFeatureCoverage {
 /// speakable or translatable — Serbian ships on Whisper alone. Settings reads
 /// this to say so up front instead of letting the user discover it by failing.
 export function languageFeatureCoverage(
-  models: readonly Pick<CatalogModelRecord, 'languageTags' | 'task' | 'translationPairs'>[],
+  models: readonly Pick<CatalogModelRecord, 'languageTags' | 'task' | 'translationSupport'>[],
   language: DictationLanguage,
 ): LanguageFeatureCoverage {
   // Automatic detection has no single language to report on.
@@ -98,9 +98,11 @@ export function languageFeatureCoverage(
     translation: models.some(
       (model) =>
         model.task === 'translation' &&
-        (model.translationPairs ?? []).some(
-          (pair) => pair.source === language || pair.target === language,
-        ),
+        (model.translationSupport?.kind === 'all_to_all'
+          ? model.translationSupport.languages.includes(language)
+          : (model.translationSupport?.pairs ?? []).some(
+              (pair) => pair.source === language || pair.target === language,
+            )),
     ),
   };
 }

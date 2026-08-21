@@ -8,6 +8,7 @@ export interface ConfirmModalOptions {
   cancelLabel?: string;
   confirmLabel: string;
   destructive?: boolean;
+  link?: { href: string; text: string };
   message: string;
   onConfirm: () => Promise<void> | void;
   title: string;
@@ -30,6 +31,12 @@ export class ConfirmModal extends Modal {
     this.setTitle(this.options.title);
     this.contentEl.empty();
     this.contentEl.createEl('p', { text: this.options.message });
+    if (this.options.link !== undefined) {
+      this.contentEl.createEl('a', {
+        attr: { href: this.options.link.href, rel: 'noopener', target: '_blank' },
+        text: this.options.link.text,
+      });
+    }
     this.errorEl = this.contentEl.createEl('p', {
       attr: { role: 'alert' },
       cls: 'local-stt-confirm-modal__error',

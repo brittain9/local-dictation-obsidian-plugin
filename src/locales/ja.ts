@@ -825,8 +825,14 @@ export const ja = {
   'translation.modal.replace': '置き換え',
   'translation.modal.insertBelow': '下に挿入',
   'translation.modal.copy': 'コピー',
+  'translation.modal.dismiss': '破棄',
+  'settings.translation.engine.name': '既定の翻訳スタイル',
+  'settings.translation.engine.desc':
+    '高速は直訳寄りです。自然は任意の Tencent HY-MT モデルを使用します。',
+  'translation.engine.bergamot': '高速・直訳 — Firefox Translations',
+  'translation.engine.tencentHyMt': '自然 — Tencent HY-MT',
   'translation.modal.stale':
-    'この翻訳を開始してからノートが変更されました。代わりに翻訳をコピーしてください。',
+    '翻訳開始後にノートが変更されました。もう一度翻訳するか、この翻訳をコピーしてください。',
   'translation.notice.copied': '翻訳をコピーしました。',
   'translation.notice.copyFailed': '翻訳をコピーできませんでした。',
   'translation.notice.tooLong': '一度に翻訳できるのは最大 {count} 文字です。',

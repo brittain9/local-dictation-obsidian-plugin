@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   protectedMarkerModeForLanguages,
+  protectedMarkerModeForTranslation,
   rebuildTranslatedMarkdown,
   segmentMarkdownForTranslation,
   translatableTexts,
@@ -12,6 +13,11 @@ describe('Markdown translation segmentation', () => {
     expect(protectedMarkerModeForLanguages('en', 'ja')).toBe('synthetic-url');
     expect(protectedMarkerModeForLanguages('ja', 'en')).toBe('synthetic-url');
     expect(protectedMarkerModeForLanguages('en', 'es')).toBe('private-use');
+  });
+
+  it('uses URL-shaped markers for Natural translation', () => {
+    expect(protectedMarkerModeForTranslation('tencent_hy_mt', 'en', 'es')).toBe('synthetic-url');
+    expect(protectedMarkerModeForTranslation('bergamot', 'en', 'es')).toBe('private-use');
   });
 
   it('preserves note structure and protected content exactly', () => {
@@ -32,10 +38,10 @@ const greeting = "Hello";
     const segments = segmentMarkdownForTranslation(source);
     const texts = translatableTexts(segments);
 
-    expect(texts).toHaveLength(4);
-    expect(texts[3]).toContain('Keep');
-    expect(texts[3]).toContain('and');
-    expect(texts[3]).toContain('unchanged.');
+    expect(texts).toHaveLength(5);
+    expect(texts[4]).toContain('Keep');
+    expect(texts[4]).toContain('and');
+    expect(texts[4]).toContain('unchanged.');
 
     const { text: translated } = rebuildTranslatedMarkdown(segments, texts);
     expect(translated).toContain('[[Speech Kit]]');
@@ -55,6 +61,20 @@ const greeting = "Hello";
     expect(texts[0]).toContain('Keep');
     expect(texts[0]).toContain('and');
     expect(texts[0]).toContain('unchanged.');
+  });
+
+  it('keeps Markdown link labels free of model placeholders', () => {
+    const source = 'Read [the specification](https://example.com/spec).';
+    const segments = segmentMarkdownForTranslation(source, {
+      protectedMarkerMode: 'synthetic-url',
+    });
+    const texts = translatableTexts(segments);
+
+    expect(texts).toEqual(['Read ', 'the specification']);
+    expect(texts.join('')).not.toContain('https://0.invalid');
+    expect(rebuildTranslatedMarkdown(segments, ['Lea ', 'la especificación']).text).toBe(
+      'Lea [la especificación](https://example.com/spec).',
+    );
   });
 
   it('protects longer fenced blocks and inline double-dollar math', () => {
@@ -82,6 +102,27 @@ The value $$x + y$$ stays literal.
     const segments = segmentMarkdownForTranslation(source);
 
     expect(rebuildTranslatedMarkdown(segments, translatableTexts(segments)).text).toBe(source);
+  });
+
+  it('translates table cells independently and preserves table topology exactly', () => {
+    const source = '| Name | Value |\n| :--- | ---: |\n| Hello **world** | `code | stays` |\n';
+    const segments = segmentMarkdownForTranslation(source);
+    const texts = translatableTexts(segments);
+
+    expect(texts).toHaveLength(3);
+    expect(texts).not.toContain('|');
+    expect(
+      rebuildTranslatedMarkdown(
+        segments,
+        texts.map((text) => text.replace('Hello', 'Hola')),
+      ).text,
+    ).toBe('| Name | Value |\n| :--- | ---: |\n| Hola **world** | `code | stays` |\n');
+  });
+
+  it('keeps the source unit when generated Markdown changes its topology', () => {
+    const segments = segmentMarkdownForTranslation('Plain paragraph.');
+    const rebuilt = rebuildTranslatedMarkdown(segments, ['# Generated heading']);
+    expect(rebuilt).toEqual({ sourceUnitsKept: 1, text: 'Plain paragraph.' });
   });
 
   it('bounds long translation units without changing the source structure', () => {

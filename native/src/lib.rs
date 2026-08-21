@@ -5,6 +5,7 @@ pub mod audio_mixer;
 pub mod catalog;
 pub mod diarize;
 pub mod engine;
+pub mod hy_mt;
 pub mod installer;
 #[cfg(feature = "engine-cohere-transcribe")]
 pub mod mel;
@@ -18,5 +19,7 @@ pub mod synthesis;
 pub mod synthesis_worker;
 pub mod system_audio;
 pub mod transcription;
+pub mod translation_helper_protocol;
+pub mod translation_worker;
 pub mod vad;
 pub mod worker;

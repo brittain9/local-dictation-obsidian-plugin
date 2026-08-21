@@ -10,6 +10,12 @@ use crate::transcription::PRODUCT_LANGUAGE_TAGS;
 const BUNDLED_CATALOG_JSON: &str =
     include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/catalog.json"));
 
+pub const TRANSLATION_LANGUAGE_TAGS: [&str; 38] = [
+    "zh", "en", "fr", "pt", "es", "ja", "tr", "ru", "ar", "ko", "th", "it", "de", "vi", "ms", "id",
+    "tl", "hi", "zh-Hant", "pl", "cs", "nl", "km", "my", "fa", "gu", "ur", "te", "mr", "he", "bn",
+    "ta", "uk", "bo", "kk", "mn", "ug", "yue",
+];
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ModelCatalog {
     #[serde(rename = "catalogVersion")]
@@ -64,8 +70,8 @@ pub struct CatalogModel {
     pub task: ModelTask,
     #[serde(rename = "languageTags")]
     pub language_tags: Vec<String>,
-    #[serde(default, rename = "translationPairs")]
-    pub translation_pairs: Vec<TranslationPair>,
+    #[serde(default, rename = "translationSupport")]
+    pub translation_support: Option<TranslationSupport>,
     #[serde(default, rename = "supportsAutomaticLanguageDetection")]
     pub supports_automatic_language_detection: bool,
     #[serde(default, rename = "defaultVoice")]
@@ -116,6 +122,13 @@ pub enum ArtifactRole {
 pub struct TranslationPair {
     pub source: String,
     pub target: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum TranslationSupport {
+    Pairs { pairs: Vec<TranslationPair> },
+    AllToAll { languages: Vec<String> },
 }
 
 impl ModelCatalog {
@@ -225,8 +238,13 @@ impl ModelCatalog {
             );
             let mut language_tags = HashSet::new();
             for tag in &model.language_tags {
+                let supported_tags: &[&str] = if model.task == ModelTask::Translation {
+                    &TRANSLATION_LANGUAGE_TAGS
+                } else {
+                    PRODUCT_LANGUAGE_TAGS
+                };
                 ensure!(
-                    PRODUCT_LANGUAGE_TAGS.contains(&tag.as_str()),
+                    supported_tags.contains(&tag.as_str()),
                     "model {} declares unsupported languageTag {}",
                     model.model_id,
                     tag
@@ -339,8 +357,8 @@ impl ModelCatalog {
                         model.model_id
                     );
                     ensure!(
-                        model.translation_pairs.is_empty(),
-                        "STT model {} must not declare translationPairs",
+                        model.translation_support.is_none(),
+                        "STT model {} must not declare translationSupport",
                         model.model_id
                     );
                 }
@@ -356,39 +374,11 @@ impl ModelCatalog {
                         model.model_id
                     );
                     ensure!(
-                        !model.translation_pairs.is_empty(),
-                        "translation model {} must declare translationPairs",
+                        model.translation_support.is_some(),
+                        "translation model {} must declare translationSupport",
                         model.model_id
                     );
-                    let mut pairs = HashSet::new();
-                    for pair in &model.translation_pairs {
-                        ensure!(
-                            pair.source != pair.target,
-                            "translation model {} must use different source and target languages",
-                            model.model_id
-                        );
-                        ensure!(
-                            pairs.insert((&pair.source, &pair.target)),
-                            "translation model {} declares duplicate translation pair {} -> {}",
-                            model.model_id,
-                            pair.source,
-                            pair.target
-                        );
-                        for tag in [&pair.source, &pair.target] {
-                            ensure!(
-                                PRODUCT_LANGUAGE_TAGS.contains(&tag.as_str()),
-                                "model {} declares unsupported translationPair language {}",
-                                model.model_id,
-                                tag
-                            );
-                            ensure!(
-                                model.language_tags.contains(tag),
-                                "model {} translationPair language {} must appear in languageTags",
-                                model.model_id,
-                                tag
-                            );
-                        }
-                    }
+                    validate_translation_support(model)?;
                 }
                 ModelTask::Tts => {
                     ensure!(
@@ -406,8 +396,8 @@ impl ModelCatalog {
                         default_voice
                     );
                     ensure!(
-                        model.translation_pairs.is_empty(),
-                        "TTS model {} must not declare translationPairs",
+                        model.translation_support.is_none(),
+                        "TTS model {} must not declare translationSupport",
                         model.model_id
                     );
                 }
@@ -416,6 +406,65 @@ impl ModelCatalog {
 
         Ok(())
     }
+}
+
+fn validate_translation_support(model: &CatalogModel) -> Result<()> {
+    let declared = |tag: &String| -> Result<()> {
+        ensure!(
+            TRANSLATION_LANGUAGE_TAGS.contains(&tag.as_str()),
+            "model {} declares unsupported translation language {}",
+            model.model_id,
+            tag
+        );
+        ensure!(
+            model.language_tags.contains(tag),
+            "model {} translation language {} must appear in languageTags",
+            model.model_id,
+            tag
+        );
+        Ok(())
+    };
+    match model.translation_support.as_ref().expect("checked above") {
+        TranslationSupport::Pairs { pairs } => {
+            ensure!(
+                !pairs.is_empty(),
+                "translation model {} must declare pairs",
+                model.model_id
+            );
+            let mut seen = HashSet::new();
+            for pair in pairs {
+                ensure!(
+                    pair.source != pair.target,
+                    "translation model {} must use different source and target languages",
+                    model.model_id
+                );
+                ensure!(
+                    seen.insert((&pair.source, &pair.target)),
+                    "translation model {} declares a duplicate pair",
+                    model.model_id
+                );
+                declared(&pair.source)?;
+                declared(&pair.target)?;
+            }
+        }
+        TranslationSupport::AllToAll { languages } => {
+            ensure!(
+                languages.len() >= 2,
+                "translation model {} all-to-all support needs at least two languages",
+                model.model_id
+            );
+            let mut seen = HashSet::new();
+            for language in languages {
+                ensure!(
+                    seen.insert(language),
+                    "translation model {} declares a duplicate all-to-all language",
+                    model.model_id
+                );
+                declared(language)?;
+            }
+        }
+    }
+    Ok(())
 }
 
 impl CatalogModel {
@@ -489,7 +538,10 @@ mod tests {
 
         assert_eq!(model.task, ModelTask::Translation);
         assert_eq!(model.license_label, "MPL-2.0");
-        assert_eq!(model.translation_pairs.len(), 14);
+        assert!(matches!(
+            &model.translation_support,
+            Some(super::TranslationSupport::Pairs { pairs }) if pairs.len() == 14
+        ));
         assert_eq!(
             model
                 .artifacts
@@ -824,7 +876,7 @@ mod tests {
             family_id: ModelFamilyId::Whisper,
             task: ModelTask::Stt,
             language_tags: vec!["en".to_string()],
-            translation_pairs: Vec::new(),
+            translation_support: None,
             supports_automatic_language_detection: false,
             default_voice: None,
             license_label: "MIT".to_string(),

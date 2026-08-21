@@ -143,7 +143,7 @@ describe('model browser', () => {
     expect(searchQueryAfterTaskSwitch('tts', 'tts', 'french')).toBe('french');
   });
 
-  it('derives an All-first language rail from every task in stable native-label order', () => {
+  it('derives an All-first language rail from speech-to-text models in stable native-label order', () => {
     const models = [
       sttModel('english', 'moonshine', ['en']),
       sttModel('multilingual', 'nemotron_asr', ['ja', 'nl', 'es']),
@@ -157,14 +157,9 @@ describe('model browser', () => {
     expect(deriveModelLanguageOptions(models).map(({ code, label }) => ({ code, label }))).toEqual([
       { code: null, label: 'All languages' },
       { code: 'EN', label: 'English' },
-      { code: 'FR', label: 'Français' },
-      { code: 'DE', label: 'Deutsch' },
       { code: 'ES', label: 'Español' },
-      { code: 'PT', label: 'Português' },
-      { code: 'IT', label: 'Italiano' },
       { code: 'NL', label: 'Nederlands' },
       { code: 'JA', label: '日本語' },
-      { code: 'SV', label: 'svenska' },
     ]);
   });
 
@@ -306,6 +301,24 @@ describe('model browser', () => {
     expect(policy.badges.map((badge) => badge.label)).toEqual(['High CPU', 'May buffer']);
     expect(policy.warning).toContain('buffer');
     expect(policy.installConfirmation?.message).toContain('481.0 MiB');
+  });
+
+  it('requires a review of model terms before downloading a restricted model', () => {
+    const policy = resolveModelPresentationPolicy(
+      ttsModel('restricted-model', 'en', ['requires-terms-review'], 1_133_080_512),
+    );
+
+    expect(policy.badges).toEqual([]);
+    expect(policy.installConfirmation).toMatchObject({
+      confirmLabel: 'I confirm and install',
+      link: { href: 'https://example.com/license', text: 'Open model license' },
+      title: 'Review model terms',
+    });
+    expect(policy.installConfirmation?.message).toContain('1.06 GiB');
+    expect(policy.installConfirmation?.message).toContain('CC-BY-4.0');
+    expect(policy.installConfirmation?.message).toContain('European Union');
+    expect(policy.installConfirmation?.message).toContain('United Kingdom');
+    expect(policy.installConfirmation?.message).toContain('South Korea');
   });
 
   it('opens task-aware TTS details when the rendered row details button is clicked', async () => {

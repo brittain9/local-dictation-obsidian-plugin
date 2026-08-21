@@ -1,5 +1,8 @@
 pub mod firefox_translations;
 
+#[cfg(feature = "engine-hy-mt")]
+pub mod tencent_hy_mt;
+
 #[cfg(feature = "engine-cohere-transcribe")]
 pub mod cohere_transcribe;
 

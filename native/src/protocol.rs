@@ -371,6 +371,20 @@ pub enum Command {
     CancelSynthesis {
         synthesis_id: u32,
     },
+    StartTranslation {
+        translation_id: String,
+        model_selection: SelectedModel,
+        source_language: String,
+        target_language: String,
+        texts: Vec<String>,
+        #[serde(default)]
+        acceleration_preference: AccelerationPreference,
+        #[serde(default)]
+        model_store_path_override: Option<String>,
+    },
+    CancelTranslation {
+        translation_id: String,
+    },
     SynthesisPlaybackPosition {
         synthesis_id: u32,
         played_through_seq: u32,
@@ -463,6 +477,29 @@ pub enum Event {
     },
     SynthesisError {
         synthesis_id: u32,
+        code: String,
+        message: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        details: Option<String>,
+    },
+    TranslationStarted {
+        translation_id: String,
+        total: usize,
+    },
+    TranslationProgress {
+        translation_id: String,
+        completed: usize,
+        total: usize,
+    },
+    TranslationComplete {
+        translation_id: String,
+        translations: Vec<String>,
+    },
+    TranslationCancelled {
+        translation_id: String,
+    },
+    TranslationError {
+        translation_id: String,
         code: String,
         message: String,
         #[serde(skip_serializing_if = "Option::is_none")]
@@ -707,6 +744,35 @@ fn write_frame<W: Write>(writer: &mut W, frame_kind: u8, payload: &[u8]) -> Resu
     writer.flush().context("failed to flush frame payload")?;
 
     Ok(())
+}
+
+pub fn read_json_frame<R: Read, T: for<'de> Deserialize<'de>>(reader: &mut R) -> Result<Option<T>> {
+    let mut header = [0_u8; FRAME_HEADER_LENGTH];
+    if read_exact_or_eof(reader, &mut header)? == 0 {
+        return Ok(None);
+    }
+    ensure!(header[0] == JSON_FRAME_KIND, "expected a JSON frame");
+    let payload_length = u32::from_le_bytes(header[1..].try_into().expect("four bytes")) as usize;
+    ensure!(
+        payload_length <= MAX_FRAME_PAYLOAD,
+        "frame payload exceeds maximum supported size"
+    );
+    let mut payload = vec![0; payload_length];
+    reader
+        .read_exact(&mut payload)
+        .context("failed to read frame payload")?;
+    serde_json::from_slice(&payload)
+        .context("failed to parse JSON frame")
+        .map(Some)
+}
+
+pub fn write_json_frame<W: Write, T: Serialize>(writer: &mut W, value: &T) -> Result<()> {
+    let payload = serde_json::to_vec(value).context("failed to serialize JSON frame")?;
+    ensure!(
+        payload.len() <= MAX_FRAME_PAYLOAD,
+        "frame payload exceeds maximum supported size"
+    );
+    write_frame(writer, JSON_FRAME_KIND, &payload)
 }
 
 /// Collect system info from all compiled engines into a single string.

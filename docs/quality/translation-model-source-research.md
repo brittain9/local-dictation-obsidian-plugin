@@ -8,6 +8,12 @@ immutable revisions are recorded below.
 
 ## Bottom line
 
+Update 2026-08-21: the unrestricted global model entry rejected below remains
+out of scope. The production implementation does not redistribute model bytes
+and gates the direct Tencent download behind an explicit confirmation that the
+user is outside the excluded territories and accepts the upstream terms. This
+is an engineering distribution boundary, not legal advice.
+
 - **HY-MT1.5 is source-level viable with llama.cpp and Metal, but its license is
   not globally shippable.** Tencent publishes the GGUF itself, documents a
   `llama-cli` invocation, and current llama.cpp recognizes Hunyuan Dense. On
