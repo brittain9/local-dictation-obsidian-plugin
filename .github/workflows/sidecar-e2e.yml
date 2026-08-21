@@ -168,11 +168,6 @@ jobs:
 
   pocket-tts-certification:
     runs-on: ubuntu-latest
-    # This job caches `native/target` across hosted CPUs. Keep Whisper's test
-    # binary portable so an artifact compiled with one runner's SIMD features
-    # cannot fault with SIGILL when restored on another runner.
-    env:
-      GGML_NATIVE: 'OFF'
 
     steps:
       - name: Checkout
