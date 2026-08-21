@@ -16,6 +16,36 @@ const SNAPSHOT: TranslationSnapshot = {
 };
 
 describe('TranslationModal mutation safety', () => {
+  it('keeps the preview read-only until a translation succeeds', async () => {
+    Setting.reset();
+    let resolveTranslation:
+      | ((result: { kind: 'translated'; sourceUnitsKept: number; text: string }) => void)
+      | undefined;
+    const modal = createModal({
+      editor: {
+        getValue: () => SNAPSHOT.source,
+        replaceRange: vi.fn(),
+      },
+      runTranslation: () =>
+        new Promise((resolve) => {
+          resolveTranslation = resolve;
+        }),
+    });
+
+    modal.open();
+    const output = (modal.contentEl as unknown as TestElement).querySelector('textarea');
+    expect(output?.attributes.has('readonly')).toBe(true);
+
+    resolveTranslation?.({
+      kind: 'translated',
+      sourceUnitsKept: 0,
+      text: 'Traduzca esto.',
+    });
+    await vi.waitFor(() => {
+      expect(output?.attributes.has('readonly')).toBe(false);
+    });
+  });
+
   it('does not write partial output when translation is canceled', async () => {
     Setting.reset();
     const replaceRange = vi.fn();
@@ -39,7 +69,42 @@ describe('TranslationModal mutation safety', () => {
         (modal.contentEl as unknown as TestElement).findByText('Translation canceled.'),
       ).toBeDefined();
     });
+    const output = (modal.contentEl as unknown as TestElement).querySelector('textarea');
+    expect(output?.attributes.has('readonly')).toBe(true);
     expect(replaceRange).not.toHaveBeenCalled();
+  });
+
+  it('relocks and clears the preview while translating again', async () => {
+    Setting.reset();
+    let attempt = 0;
+    const modal = createModal({
+      editor: {
+        getValue: () => SNAPSHOT.source,
+        replaceRange: vi.fn(),
+      },
+      runTranslation: () => {
+        attempt += 1;
+        return attempt === 1
+          ? Promise.resolve({
+              kind: 'translated' as const,
+              sourceUnitsKept: 0,
+              text: 'Traduzca esto.',
+            })
+          : new Promise(() => {});
+      },
+    });
+
+    modal.open();
+    await vi.waitFor(() => {
+      expect(Setting.buttonNamed('Replace').disabled).toBe(false);
+    });
+    const output = (modal.contentEl as unknown as TestElement).querySelector('textarea');
+    expect(output?.attributes.has('readonly')).toBe(false);
+
+    await Setting.buttonNamed('Translate again').click();
+
+    expect(output?.attributes.has('readonly')).toBe(true);
+    expect((output as unknown as HTMLTextAreaElement).value).toBe('');
   });
 
   it('disables both note-writing actions when the source changed during translation', async () => {

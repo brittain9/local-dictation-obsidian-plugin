@@ -122,11 +122,12 @@ export class TranslationModal extends Modal {
     this.outputEl = contentEl.createEl('textarea', {
       attr: {
         'aria-label': t('translation.modal.previewAria'),
+        readonly: '',
       },
       cls: 'local-stt-translation-modal__output',
     });
     this.outputEl.addEventListener('input', () => {
-      if (this.outputEl !== null) this.output = this.outputEl.value;
+      if (this.outputEl !== null && this.output !== null) this.output = this.outputEl.value;
     });
     this.actionsEl = contentEl.createDiv();
 
@@ -249,7 +250,13 @@ export class TranslationModal extends Modal {
 
   private setOutput(output: string | null): void {
     this.output = output;
-    if (this.outputEl !== null) this.outputEl.value = output ?? '';
+    if (this.outputEl === null) return;
+    this.outputEl.value = output ?? '';
+    if (output === null) {
+      this.outputEl.setAttribute('readonly', '');
+    } else {
+      this.outputEl.removeAttribute('readonly');
+    }
   }
 
   private changeLanguages(
