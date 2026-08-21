@@ -21,7 +21,7 @@ const SNAPSHOT: TranslationSnapshot = {
 };
 
 describe('TranslationModal mutation safety', () => {
-  it('shows an active progress treatment instead of an empty preview while translating', () => {
+  it('shows a dedicated in-progress panel instead of an empty preview while translating', () => {
     Setting.reset();
     const modal = createModal({
       editor: {
@@ -34,10 +34,15 @@ describe('TranslationModal mutation safety', () => {
     modal.open();
 
     const content = modal.contentEl as unknown as TestElement;
+    expect(
+      content
+        .querySelector('.local-stt-translation-modal__status')
+        ?.classList.contains('is-active'),
+    ).toBe(true);
     expect(content.querySelector('.local-stt-translation-modal__spinner')).not.toBeNull();
     expect(
       content
-        .querySelector('.local-stt-translation-modal__output')
+        .querySelector('.local-stt-translation-modal__output-surface')
         ?.classList.contains('is-hidden'),
     ).toBe(true);
     modal.close();

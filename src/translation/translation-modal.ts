@@ -43,6 +43,7 @@ export class TranslationModal extends Modal {
   private headingEl: HTMLElement | null = null;
   private selectorsEl: HTMLElement | null = null;
   private outputEl: HTMLTextAreaElement | null = null;
+  private outputSurfaceEl: HTMLElement | null = null;
   private releaseJob: (() => void) | null = null;
   private state: TranslationJobState;
   private statusEl: HTMLElement | null = null;
@@ -85,7 +86,9 @@ export class TranslationModal extends Modal {
         cls: 'local-stt-translation-modal__warning',
         text: t('translation.modal.largeNote'),
       });
-    const details = this.contentEl.createEl('details');
+    const details = this.contentEl.createEl('details', {
+      cls: 'local-stt-translation-modal__source',
+    });
     details.createEl('summary', {
       text:
         this.dependencies.snapshot.kind === 'selection'
@@ -100,7 +103,14 @@ export class TranslationModal extends Modal {
       attr: { 'aria-live': 'polite', role: 'status' },
       cls: 'local-stt-translation-modal__status',
     });
-    this.outputEl = this.contentEl.createEl('textarea', {
+    this.outputSurfaceEl = this.contentEl.createDiv({
+      cls: 'local-stt-translation-modal__output-surface',
+    });
+    this.outputSurfaceEl.createDiv({
+      cls: 'local-stt-translation-modal__output-label',
+      text: t('translation.modal.previewAria'),
+    });
+    this.outputEl = this.outputSurfaceEl.createEl('textarea', {
       attr: { 'aria-label': t('translation.modal.previewAria'), readonly: '' },
       cls: 'local-stt-translation-modal__output',
     });
@@ -120,24 +130,31 @@ export class TranslationModal extends Modal {
     if (this.selectorsEl === null) return;
     this.selectorsEl.empty();
     const active = this.state.phase === 'loading' || this.state.phase === 'translating';
-    new Setting(this.selectorsEl)
-      .setName(t('settings.translation.engine.name'))
-      .addDropdown((dropdown) => {
-        for (const engine of TRANSLATION_ENGINES)
-          dropdown.addOption(engine.id, translationEngineLabel(engine.id));
-        dropdown
-          .setValue(this.dependencies.job.engineId)
-          .setDisabled(active)
-          .onChange((value) => {
-            if (value === 'bergamot' || value === 'tencent_hy_mt')
-              this.restart(
-                value,
-                this.dependencies.job.sourceLanguage,
-                this.dependencies.job.targetLanguage,
-              );
-          });
-      });
-    new Setting(this.selectorsEl).setName(t('translation.modal.from')).addDropdown((dropdown) => {
+    const style = this.selectorsEl.createDiv({
+      cls: 'local-stt-translation-modal__translation-style',
+    });
+    new Setting(style).setName(t('settings.translation.engine.name')).addDropdown((dropdown) => {
+      for (const engine of TRANSLATION_ENGINES)
+        dropdown.addOption(engine.id, translationEngineLabel(engine.id));
+      dropdown
+        .setValue(this.dependencies.job.engineId)
+        .setDisabled(active)
+        .onChange((value) => {
+          if (value === 'bergamot' || value === 'tencent_hy_mt')
+            this.restart(
+              value,
+              this.dependencies.job.sourceLanguage,
+              this.dependencies.job.targetLanguage,
+            );
+        });
+    });
+    const languagePair = this.selectorsEl.createDiv({
+      cls: 'local-stt-translation-modal__language-pair',
+    });
+    const source = languagePair.createDiv({
+      cls: 'local-stt-translation-modal__language-control',
+    });
+    new Setting(source).setName(t('translation.modal.from')).addDropdown((dropdown) => {
       for (const language of TRANSLATION_LANGUAGES)
         dropdown.addOption(language, translationLanguageLabel(language));
       dropdown
@@ -156,7 +173,15 @@ export class TranslationModal extends Modal {
             );
         });
     });
-    new Setting(this.selectorsEl).setName(t('translation.modal.to')).addDropdown((dropdown) => {
+    languagePair.createSpan({
+      attr: { 'aria-hidden': 'true' },
+      cls: 'local-stt-translation-modal__direction',
+      text: '→',
+    });
+    const target = languagePair.createDiv({
+      cls: 'local-stt-translation-modal__language-control',
+    });
+    new Setting(target).setName(t('translation.modal.to')).addDropdown((dropdown) => {
       for (const language of translationTargetsFor(
         this.dependencies.job.sourceLanguage,
         this.dependencies.job.engineId,
@@ -179,12 +204,11 @@ export class TranslationModal extends Modal {
     if (this.outputEl !== null) {
       if (this.state.phase === 'completed') {
         this.outputEl.value = this.state.text;
-        this.outputEl.removeClass('is-hidden');
       } else {
         this.outputEl.value = '';
-        this.outputEl.addClass('is-hidden');
       }
     }
+    this.outputSurfaceEl?.toggleClass('is-hidden', this.state.phase !== 'completed');
     this.renderStatus(this.statusText());
     this.renderSelectors();
     this.renderActions();
@@ -223,16 +247,28 @@ export class TranslationModal extends Modal {
   private renderStatus(status: string): void {
     if (this.statusEl === null) return;
     this.statusEl.empty();
+    this.statusEl.removeClass('is-active');
     const startedAt =
       this.state.phase === 'loading' || this.state.phase === 'translating'
         ? this.state.startedAt
         : null;
     if (startedAt !== null) {
+      this.statusEl.addClass('is-active');
       this.statusEl.createSpan({
         attr: { 'aria-hidden': 'true' },
         cls: 'local-stt-translation-modal__spinner',
       });
-      status = `${status} · ${formatElapsed(Date.now() - startedAt)}`;
+      const copy = this.statusEl.createDiv({ cls: 'local-stt-translation-modal__status-copy' });
+      copy.createSpan({ cls: 'local-stt-translation-modal__status-text', text: status });
+      copy.createSpan({
+        cls: 'local-stt-translation-modal__status-detail',
+        text: t('translation.modal.privacy'),
+      });
+      this.statusEl.createSpan({
+        cls: 'local-stt-translation-modal__elapsed',
+        text: formatElapsed(Date.now() - startedAt),
+      });
+      return;
     }
     this.statusEl.createSpan({ cls: 'local-stt-translation-modal__status-text', text: status });
   }
