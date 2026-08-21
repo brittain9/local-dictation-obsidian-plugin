@@ -88,7 +88,7 @@ codegen-units = 1
 strip = "symbols"
 
 [target."cfg(windows)".dependencies]
-wasapi = "0.23.0"
+wasapi = "0.24.0"
 
 # libpulse is dlopen'd at runtime (see system_audio/linux.rs), so this is the
 # only Linux capture dependency — no libpulse-dev / pkg-config at build time.
