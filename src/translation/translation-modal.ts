@@ -29,6 +29,7 @@ interface TranslationModalDependencies {
   onClosed: () => void;
   onDismissed: () => void;
   onInstallModel: () => Promise<void>;
+  onTranslateCurrent: () => void;
   onRestart: (
     engineId: TranslationEngineId,
     source: TranslationLanguage,
@@ -45,6 +46,7 @@ export class TranslationModal extends Modal {
   private releaseJob: (() => void) | null = null;
   private state: TranslationJobState;
   private statusEl: HTMLElement | null = null;
+  private elapsedTimer: number | null = null;
 
   constructor(
     app: App,
@@ -58,6 +60,7 @@ export class TranslationModal extends Modal {
     this.renderShell();
     this.releaseJob = this.dependencies.job.subscribe((state) => {
       this.state = state;
+      this.syncElapsedTimer();
       this.renderState();
     });
     this.dependencies.job.start();
@@ -65,6 +68,7 @@ export class TranslationModal extends Modal {
   override onClose(): void {
     this.releaseJob?.();
     this.releaseJob = null;
+    this.stopElapsedTimer();
     this.contentEl.empty();
     this.dependencies.onClosed();
   }
@@ -172,49 +176,78 @@ export class TranslationModal extends Modal {
     });
   }
   private renderState(): void {
-    if (this.outputEl !== null)
-      this.outputEl.value = this.state.phase === 'completed' ? this.state.text : '';
-    let status: string;
+    if (this.outputEl !== null) {
+      if (this.state.phase === 'completed') {
+        this.outputEl.value = this.state.text;
+        this.outputEl.removeClass('is-hidden');
+      } else {
+        this.outputEl.value = '';
+        this.outputEl.addClass('is-hidden');
+      }
+    }
+    this.renderStatus(this.statusText());
+    this.renderSelectors();
+    this.renderActions();
+  }
+  private statusText(): string {
     switch (this.state.phase) {
       case 'idle':
       case 'loading':
-        status = t('translation.modal.loading');
-        break;
+        return t('translation.modal.loading');
       case 'translating':
-        status =
-          this.state.total > 1
-            ? t('translation.modal.translatingProgress', {
-                completed: this.state.completed,
-                total: this.state.total,
-              })
-            : t('translation.modal.translating');
-        break;
+        return this.state.total > 1
+          ? t('translation.modal.translatingProgress', {
+              completed: this.state.completed,
+              total: this.state.total,
+            })
+          : t('translation.modal.translating');
       case 'missing_model':
-        status = t('translation.modal.missingModel');
-        break;
+        return t('translation.modal.missingModel');
       case 'cancelled':
-        status = t('translation.modal.canceled');
-        break;
+        return t('translation.modal.canceled');
       case 'failed':
-        status = translationFailureMessage(this.state.error);
-        break;
+        return translationFailureMessage(this.state.error);
       case 'completed':
-        status =
-          this.state.sourceUnitsKept > 0
-            ? tPlural(
-                this.state.sourceUnitsKept,
-                {
-                  one: 'translation.modal.readyPartial_one',
-                  other: 'translation.modal.readyPartial_other',
-                },
-                { count: this.state.sourceUnitsKept },
-              )
-            : t('translation.modal.ready');
-        break;
+        return this.state.sourceUnitsKept > 0
+          ? tPlural(
+              this.state.sourceUnitsKept,
+              {
+                one: 'translation.modal.readyPartial_one',
+                other: 'translation.modal.readyPartial_other',
+              },
+              { count: this.state.sourceUnitsKept },
+            )
+          : t('translation.modal.ready');
     }
-    if (this.statusEl !== null) this.statusEl.textContent = status;
-    this.renderSelectors();
-    this.renderActions();
+  }
+  private renderStatus(status: string): void {
+    if (this.statusEl === null) return;
+    this.statusEl.empty();
+    const startedAt =
+      this.state.phase === 'loading' || this.state.phase === 'translating'
+        ? this.state.startedAt
+        : null;
+    if (startedAt !== null) {
+      this.statusEl.createSpan({
+        attr: { 'aria-hidden': 'true' },
+        cls: 'local-stt-translation-modal__spinner',
+      });
+      status = `${status} · ${formatElapsed(Date.now() - startedAt)}`;
+    }
+    this.statusEl.createSpan({ cls: 'local-stt-translation-modal__status-text', text: status });
+  }
+  private syncElapsedTimer(): void {
+    if (this.state.phase === 'loading' || this.state.phase === 'translating') {
+      if (this.elapsedTimer === null)
+        this.elapsedTimer = window.setInterval(() => this.renderStatus(this.statusText()), 1_000);
+      return;
+    }
+    this.stopElapsedTimer();
+  }
+  private stopElapsedTimer(): void {
+    if (this.elapsedTimer === null) return;
+    window.clearInterval(this.elapsedTimer);
+    this.elapsedTimer = null;
   }
   private renderActions(): void {
     if (this.actionsEl === null) return;
@@ -239,7 +272,29 @@ export class TranslationModal extends Modal {
     }
     if (this.state.phase !== 'completed') return;
     const current = this.sourceIsCurrent();
-    const canApply = current && this.state.sourceUnitsKept === 0;
+    if (!current) {
+      actions.addButton((button) =>
+        button
+          .setButtonText(t('translation.modal.translateAgain'))
+          .setCta()
+          .onClick(() => {
+            this.close();
+            this.dependencies.onTranslateCurrent();
+          }),
+      );
+      actions.addButton((button) =>
+        button.setButtonText(t('translation.modal.copy')).onClick(() => void this.copy()),
+      );
+      actions.addButton((button) =>
+        button.setButtonText(t('translation.modal.dismiss')).onClick(() => {
+          this.dependencies.onDismissed();
+          this.close();
+        }),
+      );
+      this.renderStatus(t('translation.modal.stale'));
+      return;
+    }
+    const canApply = this.state.sourceUnitsKept === 0;
     actions.addButton((button) =>
       button
         .setButtonText(t('translation.modal.replace'))
@@ -262,8 +317,6 @@ export class TranslationModal extends Modal {
         this.close();
       }),
     );
-    if (!current && this.statusEl !== null)
-      this.statusEl.textContent = t('translation.modal.stale');
   }
   private restart(
     engineId: TranslationEngineId,
@@ -329,4 +382,9 @@ function translationFailureMessage(error: unknown): string {
   return error instanceof TranslationModelIncompleteError
     ? t('translation.modal.incompleteModel')
     : t('translation.modal.failed');
+}
+
+function formatElapsed(durationMs: number): string {
+  const seconds = Math.max(0, Math.floor(durationMs / 1_000));
+  return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`;
 }

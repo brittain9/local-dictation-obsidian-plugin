@@ -154,7 +154,7 @@ export const en = {
   'translation.modal.copy': 'Copy',
   'translation.modal.dismiss': 'Dismiss',
   'translation.modal.stale':
-    'The note changed since this translation started. Copy the translation instead.',
+    'The note changed since this translation started. Start a new translation or copy this one.',
   'translation.notice.copied': 'Copied the translation.',
   'translation.notice.copyFailed': 'Could not copy the translation.',
   'translation.notice.tooLong': 'Translate up to {count} characters at a time.',

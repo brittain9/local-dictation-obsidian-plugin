@@ -143,7 +143,7 @@ describe('model browser', () => {
     expect(searchQueryAfterTaskSwitch('tts', 'tts', 'french')).toBe('french');
   });
 
-  it('derives an All-first language rail from every task in stable native-label order', () => {
+  it('derives an All-first language rail from speech-to-text models in stable native-label order', () => {
     const models = [
       sttModel('english', 'moonshine', ['en']),
       sttModel('multilingual', 'nemotron_asr', ['ja', 'nl', 'es']),
@@ -157,14 +157,9 @@ describe('model browser', () => {
     expect(deriveModelLanguageOptions(models).map(({ code, label }) => ({ code, label }))).toEqual([
       { code: null, label: 'All languages' },
       { code: 'EN', label: 'English' },
-      { code: 'FR', label: 'Français' },
-      { code: 'DE', label: 'Deutsch' },
       { code: 'ES', label: 'Español' },
-      { code: 'PT', label: 'Português' },
-      { code: 'IT', label: 'Italiano' },
       { code: 'NL', label: 'Nederlands' },
       { code: 'JA', label: '日本語' },
-      { code: 'SV', label: 'svenska' },
     ]);
   });
 
@@ -313,7 +308,7 @@ describe('model browser', () => {
       ttsModel('restricted-model', 'en', ['requires-terms-review'], 1_133_080_512),
     );
 
-    expect(policy.badges.map((badge) => badge.label)).toEqual(['Terms apply']);
+    expect(policy.badges).toEqual([]);
     expect(policy.installConfirmation).toMatchObject({
       link: { href: 'https://example.com/license', text: 'Open model license' },
       title: 'Review model terms',

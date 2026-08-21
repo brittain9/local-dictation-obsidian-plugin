@@ -168,6 +168,23 @@ export class TranslationController {
             active.job.targetLanguage,
           );
       },
+      onTranslateCurrent: () => {
+        const source =
+          active.snapshot.kind === 'note'
+            ? active.editor.getValue()
+            : active.editor.getRange(active.snapshot.from, active.snapshot.to);
+        this.begin(
+          active.editor,
+          {
+            ...active.snapshot,
+            source,
+            ...(active.snapshot.kind === 'note' ? { to: endPosition(source) } : {}),
+          },
+          active.job.engineId,
+          active.job.sourceLanguage,
+          active.job.targetLanguage,
+        );
+      },
       onRestart: (engineId, source, target) => {
         const current = this.dependencies.getSettings();
         void this.dependencies.saveSettings({

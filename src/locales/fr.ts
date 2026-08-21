@@ -840,7 +840,7 @@ export const fr = {
   'translation.engine.bergamot': 'Rapide et littéral — Firefox Translations',
   'translation.engine.tencentHyMt': 'Naturel — Tencent HY-MT',
   'translation.modal.stale':
-    'La note a changé depuis le début de cette traduction. Copiez plutôt la traduction.',
+    'La note a changé depuis le début de cette traduction. Lancez une nouvelle traduction ou copiez celle-ci.',
   'translation.notice.copied': 'Traduction copiée.',
   'translation.notice.copyFailed': 'Impossible de copier la traduction.',
   'translation.notice.tooLong': 'Traduisez jusqu’à {count} caractères à la fois.',

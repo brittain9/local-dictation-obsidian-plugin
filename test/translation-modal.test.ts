@@ -21,6 +21,28 @@ const SNAPSHOT: TranslationSnapshot = {
 };
 
 describe('TranslationModal mutation safety', () => {
+  it('shows an active progress treatment instead of an empty preview while translating', () => {
+    Setting.reset();
+    const modal = createModal({
+      editor: {
+        getValue: () => SNAPSHOT.source,
+        replaceRange: vi.fn(),
+      },
+      runTranslation: () => new Promise(() => {}),
+    });
+
+    modal.open();
+
+    const content = modal.contentEl as unknown as TestElement;
+    expect(content.querySelector('.local-stt-translation-modal__spinner')).not.toBeNull();
+    expect(
+      content
+        .querySelector('.local-stt-translation-modal__output')
+        ?.classList.contains('is-hidden'),
+    ).toBe(true);
+    modal.close();
+  });
+
   it('does not write partial output when translation is canceled', async () => {
     Setting.reset();
     const replaceRange = vi.fn();
@@ -47,14 +69,16 @@ describe('TranslationModal mutation safety', () => {
     expect(replaceRange).not.toHaveBeenCalled();
   });
 
-  it('disables both note-writing actions when the source changed during translation', async () => {
+  it('offers a new translation when the source changed during translation', async () => {
     Setting.reset();
     const replaceRange = vi.fn();
+    const onTranslateCurrent = vi.fn();
     const modal = createModal({
       editor: {
         getValue: () => 'The note changed.',
         replaceRange,
       },
+      onTranslateCurrent,
       runTranslation: vi.fn(async () => ({
         kind: 'translated' as const,
         sourceUnitsKept: 0,
@@ -64,11 +88,10 @@ describe('TranslationModal mutation safety', () => {
 
     modal.open();
     await vi.waitFor(() => {
-      expect(Setting.buttonNamed('Replace').disabled).toBe(true);
+      expect(Setting.buttonNamed('Translate again')).toBeDefined();
     });
-    expect(Setting.buttonNamed('Insert below').disabled).toBe(true);
-    await Setting.buttonNamed('Replace').click();
-    await Setting.buttonNamed('Insert below').click();
+    await Setting.buttonNamed('Translate again').click();
+    expect(onTranslateCurrent).toHaveBeenCalledOnce();
     expect(replaceRange).not.toHaveBeenCalled();
   });
 
@@ -105,12 +128,14 @@ describe('TranslationModal mutation safety', () => {
 
 function createModal({
   editor,
+  onTranslateCurrent = vi.fn(),
   runTranslation,
 }: {
   editor: {
     getValue: () => string;
     replaceRange: ReturnType<typeof vi.fn>;
   };
+  onTranslateCurrent?: () => void;
   runTranslation: (options: TranslationJobRunOptions) => Promise<TranslationJobResult>;
 }): TranslationModal {
   const job = new TranslationJob({
@@ -127,6 +152,7 @@ function createModal({
     onClosed: vi.fn(),
     onDismissed: vi.fn(),
     onInstallModel: vi.fn(async () => {}),
+    onTranslateCurrent,
     onRestart: vi.fn(),
     snapshot: SNAPSHOT,
   });

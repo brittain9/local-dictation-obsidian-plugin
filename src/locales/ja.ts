@@ -831,7 +831,7 @@ export const ja = {
   'translation.engine.bergamot': '高速・直訳 — Firefox Translations',
   'translation.engine.tencentHyMt': '自然 — Tencent HY-MT',
   'translation.modal.stale':
-    'この翻訳を開始してからノートが変更されました。代わりに翻訳をコピーしてください。',
+    '翻訳開始後にノートが変更されました。もう一度翻訳するか、この翻訳をコピーしてください。',
   'translation.notice.copied': '翻訳をコピーしました。',
   'translation.notice.copyFailed': '翻訳をコピーできませんでした。',
   'translation.notice.tooLong': '一度に翻訳できるのは最大 {count} 文字です。',

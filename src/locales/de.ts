@@ -847,7 +847,7 @@ export const de = {
   'translation.engine.bergamot': 'Schnell & wörtlich — Firefox Translations',
   'translation.engine.tencentHyMt': 'Natürlich — Tencent HY-MT',
   'translation.modal.stale':
-    'Die Notiz hat sich seit dem Start dieser Übersetzung geändert. Kopiere stattdessen die Übersetzung.',
+    'Die Notiz hat sich seit dem Start dieser Übersetzung geändert. Starte eine neue Übersetzung oder kopiere diese.',
   'translation.notice.copied': 'Übersetzung kopiert.',
   'translation.notice.copyFailed': 'Übersetzung konnte nicht kopiert werden.',
   'translation.notice.tooLong': 'Übersetze höchstens {count} Zeichen auf einmal.',

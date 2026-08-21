@@ -20,7 +20,7 @@ export interface ModelPresentationPolicy {
   warning: string | null;
 }
 
-const POLICY_TAGS = new Set(['high-cpu', 'may-buffer', 'requires-terms-review']);
+const POLICY_TAGS = new Set(['high-cpu', 'may-buffer']);
 
 export function resolveModelPresentationPolicy(model: CatalogModelRecord): ModelPresentationPolicy {
   const highCpu = model.uxTags.includes('high-cpu');
@@ -34,12 +34,7 @@ export function resolveModelPresentationPolicy(model: CatalogModelRecord): Model
   const badges = model.uxTags
     .filter((tag) => POLICY_TAGS.has(tag))
     .map((tag) => ({
-      label:
-        tag === 'high-cpu'
-          ? t('models.tag.highCpu')
-          : tag === 'may-buffer'
-            ? t('models.tag.mayBuffer')
-            : t('models.tag.termsApply'),
+      label: tag === 'high-cpu' ? t('models.tag.highCpu') : t('models.tag.mayBuffer'),
       tag,
       tone: 'warning' as const,
     }));

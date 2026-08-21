@@ -6,8 +6,8 @@ export type TranslationJobResult =
 
 export type TranslationJobState =
   | { phase: 'idle' }
-  | { phase: 'loading' }
-  | { completed: number; phase: 'translating'; total: number }
+  | { phase: 'loading'; startedAt: number }
+  | { completed: number; phase: 'translating'; startedAt: number; total: number }
   | { phase: 'missing_model' }
   | { phase: 'completed'; sourceUnitsKept: number; text: string }
   | { phase: 'cancelled' }
@@ -55,18 +55,19 @@ export class TranslationJob {
   start(): void {
     if (this.currentState.phase !== 'idle') return;
     const abortController = new AbortController();
+    const startedAt = Date.now();
     this.abortController = abortController;
-    this.setState({ phase: 'loading' });
+    this.setState({ phase: 'loading', startedAt });
     void this.options
       .run({
         onProgress: (completed, total) => {
           if (!abortController.signal.aborted) {
-            this.setState({ completed, phase: 'translating', total });
+            this.setState({ completed, phase: 'translating', startedAt, total });
           }
         },
         onReady: () => {
           if (!abortController.signal.aborted) {
-            this.setState({ completed: 0, phase: 'translating', total: 0 });
+            this.setState({ completed: 0, phase: 'translating', startedAt, total: 0 });
           }
         },
         signal: abortController.signal,

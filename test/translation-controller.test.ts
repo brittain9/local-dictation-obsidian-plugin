@@ -140,4 +140,68 @@ describe('TranslationController', () => {
     });
     await vi.waitFor(() => expect(Setting.buttonNamed('Replace')).toBeDefined());
   });
+
+  it('starts a fresh Natural translation from the current note after it changed', async () => {
+    Modal.instances.length = 0;
+    Setting.reset();
+    const listeners: ((event: SidecarEvent) => void)[] = [];
+    const startTranslation = vi.fn(
+      async (_payload: { texts: string[]; translationId: string }) => {},
+    );
+    const settings = { ...DEFAULT_PLUGIN_SETTINGS, translationEngineId: 'tencent_hy_mt' as const };
+    const controller = new TranslationController({
+      app: {} as never,
+      feedback: { show: vi.fn() },
+      getSettings: () => settings,
+      logger: { error: vi.fn(), warn: vi.fn() } as never,
+      modelManager: {
+        getState: () => ({
+          catalog: {
+            models: [
+              {
+                familyId: 'tencent_hy_mt',
+                modelId: 'hy-mt',
+                runtimeId: 'llama_cpp',
+                task: 'translation',
+                translationSupport: { kind: 'all_to_all', languages: ['en', 'es'] },
+              },
+            ],
+          },
+          installedModels: [
+            { familyId: 'tencent_hy_mt', modelId: 'hy-mt', runtimeId: 'llama_cpp' },
+          ],
+        }),
+      } as never,
+      openModelPicker: vi.fn(async () => {}),
+      saveSettings: vi.fn(async () => {}),
+      sidecarConnection: {
+        cancelTranslation: vi.fn(),
+        startTranslation,
+        subscribe: (next: (event: SidecarEvent) => void) => {
+          listeners.push(next);
+          return () => {};
+        },
+      } as never,
+    });
+    let note = 'First version.';
+    const editor = { getValue: () => note, replaceRange: vi.fn() };
+
+    controller.translateNote(editor as never);
+    await vi.waitFor(() => expect(startTranslation).toHaveBeenCalledTimes(1));
+    const firstTranslationId = startTranslation.mock.calls[0]?.[0].translationId;
+    if (firstTranslationId === undefined)
+      throw new Error('Expected the first translation to start.');
+    note = 'Updated version.';
+    listeners[0]?.({
+      type: 'translation_complete',
+      translationId: firstTranslationId,
+      translations: ['Versión inicial.'],
+    });
+    await vi.waitFor(() => expect(Setting.buttonNamed('Translate again')).toBeDefined());
+
+    await Setting.buttonNamed('Translate again').click();
+
+    await vi.waitFor(() => expect(startTranslation).toHaveBeenCalledTimes(2));
+    expect(startTranslation.mock.calls[1]?.[0].texts).toEqual(['Updated version.']);
+  });
 });
