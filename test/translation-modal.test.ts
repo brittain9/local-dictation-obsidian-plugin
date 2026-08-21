@@ -22,6 +22,36 @@ const SNAPSHOT: TranslationSnapshot = {
 };
 
 describe('TranslationModal mutation safety', () => {
+  it('keeps the preview read-only until a translation succeeds', async () => {
+    Setting.reset();
+    let resolveTranslation:
+      | ((result: { kind: 'translated'; sourceUnitsKept: number; text: string }) => void)
+      | undefined;
+    const modal = createModal({
+      editor: {
+        getValue: () => SNAPSHOT.source,
+        replaceRange: vi.fn(),
+      },
+      runTranslation: () =>
+        new Promise((resolve) => {
+          resolveTranslation = resolve;
+        }),
+    });
+
+    modal.open();
+    const output = (modal.contentEl as unknown as TestElement).querySelector('textarea');
+    expect(output?.attributes.has('readonly')).toBe(true);
+
+    resolveTranslation?.({
+      kind: 'translated',
+      sourceUnitsKept: 0,
+      text: 'Traduzca esto.',
+    });
+    await vi.waitFor(() => {
+      expect(output?.attributes.has('readonly')).toBe(false);
+    });
+  });
+
   it('shows an actionable Natural translation failure', async () => {
     Setting.reset();
     const modal = createModal({
@@ -97,6 +127,8 @@ describe('TranslationModal mutation safety', () => {
         (modal.contentEl as unknown as TestElement).findByText('Translation canceled.'),
       ).toBeDefined();
     });
+    const output = (modal.contentEl as unknown as TestElement).querySelector('textarea');
+    expect(output?.attributes.has('readonly')).toBe(true);
     await Setting.buttonNamed('Translate again').click();
     expect(onRestart).toHaveBeenCalledExactlyOnceWith('bergamot', 'en', 'es');
     expect(replaceRange).not.toHaveBeenCalled();
@@ -156,6 +188,36 @@ describe('TranslationModal mutation safety', () => {
     await Setting.buttonNamed('Replace').click();
     await Setting.buttonNamed('Insert below').click();
     expect(replaceRange).not.toHaveBeenCalled();
+  });
+
+  it('applies edits made in the translation preview', async () => {
+    Setting.reset();
+    const replaceRange = vi.fn();
+    const modal = createModal({
+      editor: {
+        getValue: () => SNAPSHOT.source,
+        replaceRange,
+      },
+      runTranslation: vi.fn(async () => ({
+        kind: 'translated' as const,
+        sourceUnitsKept: 0,
+        text: 'Traduzca esto.',
+      })),
+    });
+
+    modal.open();
+    await vi.waitFor(() => {
+      expect(Setting.buttonNamed('Replace').disabled).toBe(false);
+    });
+    const output = (modal.contentEl as unknown as TestElement).querySelector('textarea');
+    expect(output).not.toBeNull();
+    const editableOutput = output as unknown as HTMLTextAreaElement;
+    editableOutput.value = 'Traduzca este texto.';
+    output?.dispatchEvent({ type: 'input' });
+
+    await Setting.buttonNamed('Replace').click();
+
+    expect(replaceRange).toHaveBeenCalledWith('Traduzca este texto.', SNAPSHOT.from, SNAPSHOT.to);
   });
 });
 

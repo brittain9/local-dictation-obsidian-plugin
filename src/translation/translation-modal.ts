@@ -46,6 +46,7 @@ export class TranslationModal extends Modal {
   private selectorsEl: HTMLElement | null = null;
   private outputEl: HTMLTextAreaElement | null = null;
   private outputSurfaceEl: HTMLElement | null = null;
+  private reviewedOutput: string | null = null;
   private releaseJob: (() => void) | null = null;
   private state: TranslationJobState;
   private statusEl: HTMLElement | null = null;
@@ -115,6 +116,10 @@ export class TranslationModal extends Modal {
     this.outputEl = this.outputSurfaceEl.createEl('textarea', {
       attr: { 'aria-label': t('translation.modal.previewAria'), readonly: '' },
       cls: 'local-stt-translation-modal__output',
+    });
+    this.outputEl.addEventListener('input', () => {
+      if (this.outputEl !== null && this.reviewedOutput !== null)
+        this.reviewedOutput = this.outputEl.value;
     });
     this.actionsEl = this.contentEl.createDiv();
     this.renderHeading();
@@ -205,9 +210,13 @@ export class TranslationModal extends Modal {
   private renderState(): void {
     if (this.outputEl !== null) {
       if (this.state.phase === 'completed') {
-        this.outputEl.value = this.state.text;
+        this.reviewedOutput ??= this.state.text;
+        this.outputEl.value = this.reviewedOutput;
+        this.outputEl.removeAttribute('readonly');
       } else {
+        this.reviewedOutput = null;
         this.outputEl.value = '';
+        this.outputEl.setAttribute('readonly', '');
       }
     }
     this.outputSurfaceEl?.toggleClass('is-hidden', this.state.phase !== 'completed');
@@ -393,9 +402,9 @@ export class TranslationModal extends Modal {
       : editor.getRange(snapshot.from, snapshot.to) === snapshot.source;
   }
   private async copy(): Promise<void> {
-    if (this.state.phase !== 'completed') return;
+    if (this.state.phase !== 'completed' || this.reviewedOutput === null) return;
     try {
-      await navigator.clipboard.writeText(this.state.text);
+      await navigator.clipboard.writeText(this.reviewedOutput);
       this.dependencies.feedback.show({
         intent: 'success',
         key: 'translation-copied',
@@ -413,12 +422,13 @@ export class TranslationModal extends Modal {
   private replace(): void {
     if (
       this.state.phase !== 'completed' ||
+      this.reviewedOutput === null ||
       this.state.sourceUnitsKept > 0 ||
       !this.sourceIsCurrent()
     )
       return;
     this.dependencies.editor.replaceRange(
-      this.state.text,
+      this.reviewedOutput,
       this.dependencies.snapshot.from,
       this.dependencies.snapshot.to,
     );
@@ -428,11 +438,15 @@ export class TranslationModal extends Modal {
   private insertBelow(): void {
     if (
       this.state.phase !== 'completed' ||
+      this.reviewedOutput === null ||
       this.state.sourceUnitsKept > 0 ||
       !this.sourceIsCurrent()
     )
       return;
-    this.dependencies.editor.replaceRange(`\n\n${this.state.text}`, this.dependencies.snapshot.to);
+    this.dependencies.editor.replaceRange(
+      `\n\n${this.reviewedOutput}`,
+      this.dependencies.snapshot.to,
+    );
     this.dependencies.onApplied();
     this.close();
   }
