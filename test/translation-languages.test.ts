@@ -24,10 +24,13 @@ describe('translation language capabilities', () => {
     expect(isSupportedTranslationPair('ja', 'ko', 'tencent_hy_mt')).toBe(true);
     expect(isSupportedTranslationPair('ja', 'ko', 'bergamot')).toBe(false);
     expect(isSupportedTranslationPair('ja', 'en', 'bergamot')).toBe(true);
+    expect(isSupportedTranslationPair('en', 'ar', 'bergamot')).toBe(false);
+    expect(isSupportedTranslationPair('ar', 'en', 'bergamot')).toBe(false);
   });
 
   it('keeps the preferred engine when compatible and selects Natural otherwise', () => {
     expect(resolveTranslationEngine('bergamot', 'en', 'es')).toBe('bergamot');
+    expect(resolveTranslationEngine('bergamot', 'en', 'ar')).toBe('tencent_hy_mt');
     expect(resolveTranslationEngine('bergamot', 'ja', 'ko')).toBe('tencent_hy_mt');
     expect(resolveTranslationEngine('tencent_hy_mt', 'en', 'es')).toBe('tencent_hy_mt');
   });

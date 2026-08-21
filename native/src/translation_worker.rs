@@ -296,10 +296,17 @@ fn worker_main(commands: Receiver<WorkerCommand>, events: Sender<Event>) {
                 }
             }
             Ok(WorkerCommand::Cancel(translation_id)) => {
-                if active.as_deref() == Some(translation_id.as_str())
-                    && let Some(process) = helper.as_mut()
-                {
-                    let _ = process.send(&HelperCommand::Cancel { translation_id });
+                if active.as_deref() == Some(translation_id.as_str()) {
+                    // Model loading is synchronous inside the helper and cannot observe a
+                    // cooperative cancellation flag. Terminating the isolated helper makes
+                    // Cancel immediate during both model loading and token generation. The
+                    // next translation starts a clean helper and cannot inherit stale work.
+                    if let Some(mut process) = helper.take() {
+                        process.stop();
+                    }
+                    active = None;
+                    idle_since = None;
+                    let _ = events.send(Event::TranslationCancelled { translation_id });
                 }
             }
             Ok(WorkerCommand::Shutdown) | Err(mpsc::RecvTimeoutError::Disconnected) => break,

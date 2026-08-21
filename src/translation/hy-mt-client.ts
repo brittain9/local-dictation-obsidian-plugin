@@ -47,7 +47,7 @@ export async function translateWithHyMt(options: HyMtTranslationOptions): Promis
       finish(() => reject(new DOMException('Translation canceled.', 'AbortError')));
     };
     const release = options.sidecarConnection.subscribe((event) => {
-      if (event.type === 'error') {
+      if (event.type === 'error' && event.code === 'sidecar_exited') {
         finish(() => reject(new Error(event.message)));
         return;
       }

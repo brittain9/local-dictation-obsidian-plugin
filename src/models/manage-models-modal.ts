@@ -881,7 +881,7 @@ export class ManageModelsModal extends Modal {
       return;
     }
     new ConfirmModal(this.app, {
-      confirmLabel: t('common.install'),
+      confirmLabel: confirmation.confirmLabel,
       ...(confirmation.link === null ? {} : { link: confirmation.link }),
       message: confirmation.message,
       onConfirm: install,

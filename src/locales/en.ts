@@ -234,7 +234,8 @@ export const en = {
     '{model} downloads approximately {size} and uses substantially more CPU. Higher reading speeds may buffer.',
   'models.manage.installTermsTitle': 'Review model terms',
   'models.manage.installTermsMessage':
-    '{model} is a direct {size} download from its publisher. It is governed by {license}; terms and territorial restrictions apply. Review the license before installing. Install only if you agree.',
+    '{model} is a direct {size} download from its publisher and is governed by {license}. That license does not permit use in the European Union, United Kingdom, or South Korea. Review it before installing. Continue only if you are outside those territories and agree to its terms.',
+  'models.manage.installTermsConfirm': 'I confirm and install',
   'models.manage.installTermsLink': 'Open model license',
   'models.tag.highCpu': 'High CPU',
   'models.tag.mayBuffer': 'May buffer',

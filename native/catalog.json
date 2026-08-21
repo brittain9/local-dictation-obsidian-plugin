@@ -2380,7 +2380,7 @@
       },
       "uxTags": ["natural", "multilingual", "optional", "requires-terms-review"],
       "licenseLabel": "Tencent HY-MT Model License",
-      "licenseUrl": "https://huggingface.co/tencent/HY-MT1.5-1.8B-GGUF/blob/265b2e615a7dc9b06c435dc878829ad99a512ba2/LICENSE",
+      "licenseUrl": "https://huggingface.co/tencent/HY-MT1.5-1.8B-GGUF/blob/265b2e615a7dc9b06c435dc878829ad99a512ba2/License.txt",
       "sourceUrl": "https://huggingface.co/tencent/HY-MT1.5-1.8B-GGUF/tree/265b2e615a7dc9b06c435dc878829ad99a512ba2",
       "modelCardUrl": "https://huggingface.co/tencent/HY-MT1.5-1.8B-GGUF/tree/265b2e615a7dc9b06c435dc878829ad99a512ba2",
       "notes": [

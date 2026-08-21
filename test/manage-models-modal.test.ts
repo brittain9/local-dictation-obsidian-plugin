@@ -310,11 +310,15 @@ describe('model browser', () => {
 
     expect(policy.badges).toEqual([]);
     expect(policy.installConfirmation).toMatchObject({
+      confirmLabel: 'I confirm and install',
       link: { href: 'https://example.com/license', text: 'Open model license' },
       title: 'Review model terms',
     });
     expect(policy.installConfirmation?.message).toContain('1.06 GiB');
     expect(policy.installConfirmation?.message).toContain('CC-BY-4.0');
+    expect(policy.installConfirmation?.message).toContain('European Union');
+    expect(policy.installConfirmation?.message).toContain('United Kingdom');
+    expect(policy.installConfirmation?.message).toContain('South Korea');
   });
 
   it('opens task-aware TTS details when the rendered row details button is clicked', async () => {

@@ -295,7 +295,7 @@ export class TranslationController {
 }
 function createTranslationId(): string {
   return (
-    globalThis.crypto?.randomUUID?.() ??
+    window.crypto?.randomUUID?.() ??
     `translation-${Date.now()}-${Math.random().toString(16).slice(2)}`
   );
 }

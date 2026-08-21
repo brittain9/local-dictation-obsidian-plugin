@@ -13,6 +13,7 @@ export interface ModelPresentationBadge {
 export interface ModelPresentationPolicy {
   badges: ModelPresentationBadge[];
   installConfirmation: {
+    confirmLabel: string;
     link: { href: string; text: string } | null;
     message: string;
     title: string;
@@ -44,6 +45,7 @@ export function resolveModelPresentationPolicy(model: CatalogModelRecord): Model
     badges,
     installConfirmation: requiresTermsReview
       ? {
+          confirmLabel: t('models.manage.installTermsConfirm'),
           link: { href: model.licenseUrl, text: t('models.manage.installTermsLink') },
           message: t('models.manage.installTermsMessage', {
             license: model.licenseLabel,
@@ -54,6 +56,7 @@ export function resolveModelPresentationPolicy(model: CatalogModelRecord): Model
         }
       : highCpu || mayBuffer
         ? {
+            confirmLabel: t('common.install'),
             link: null,
             message: t('models.manage.installWarningMessage', {
               model: model.displayName,

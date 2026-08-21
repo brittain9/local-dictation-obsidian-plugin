@@ -51,6 +51,17 @@ export const TRANSLATION_ENGINE_IDS = ['bergamot', 'tencent_hy_mt'] as const;
 
 export type TranslationEngineId = (typeof TRANSLATION_ENGINE_IDS)[number];
 
+const BERGAMOT_TRANSLATION_LANGUAGES = new Set<TranslationLanguage>([
+  'en',
+  'es',
+  'de',
+  'fr',
+  'pt',
+  'it',
+  'nl',
+  'ja',
+]);
+
 export function normalizeTranslationEngine(value: unknown): TranslationEngineId {
   return value === 'tencent_hy_mt' ? 'tencent_hy_mt' : 'bergamot';
 }
@@ -116,7 +127,12 @@ export function isSupportedTranslationPair(
   engine: TranslationEngineId = 'bergamot',
 ): boolean {
   if (sourceLanguage === targetLanguage) return false;
-  return engine === 'tencent_hy_mt' || sourceLanguage === 'en' || targetLanguage === 'en';
+  if (engine === 'tencent_hy_mt') return true;
+  return (
+    BERGAMOT_TRANSLATION_LANGUAGES.has(sourceLanguage) &&
+    BERGAMOT_TRANSLATION_LANGUAGES.has(targetLanguage) &&
+    (sourceLanguage === 'en' || targetLanguage === 'en')
+  );
 }
 
 export function translationTargetsFor(

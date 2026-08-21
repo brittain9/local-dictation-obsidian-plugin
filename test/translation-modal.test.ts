@@ -5,6 +5,7 @@ vi.mock('virtual:bergamot-worker-source', () => ({
 }));
 
 import { TranslationCancelledError } from '../src/translation/bergamot-client';
+import { HyMtTranslationError } from '../src/translation/hy-mt-client';
 import {
   TranslationJob,
   type TranslationJobResult,
@@ -21,6 +22,29 @@ const SNAPSHOT: TranslationSnapshot = {
 };
 
 describe('TranslationModal mutation safety', () => {
+  it('shows an actionable Natural translation failure', async () => {
+    Setting.reset();
+    const modal = createModal({
+      editor: {
+        getValue: () => SNAPSHOT.source,
+        replaceRange: vi.fn(),
+      },
+      runTranslation: vi.fn(async () => {
+        throw new HyMtTranslationError('translation_busy', 'raw sidecar message');
+      }),
+    });
+
+    modal.open();
+
+    await vi.waitFor(() => {
+      expect(
+        (modal.contentEl as unknown as TestElement).findByText(
+          'Another Natural translation is already running.',
+        ),
+      ).toBeDefined();
+    });
+  });
+
   it('shows a dedicated in-progress panel instead of an empty preview while translating', () => {
     Setting.reset();
     const modal = createModal({
@@ -51,11 +75,13 @@ describe('TranslationModal mutation safety', () => {
   it('does not write partial output when translation is canceled', async () => {
     Setting.reset();
     const replaceRange = vi.fn();
+    const onRestart = vi.fn();
     const modal = createModal({
       editor: {
         getValue: () => SNAPSHOT.source,
         replaceRange,
       },
+      onRestart,
       runTranslation: ({ signal }) =>
         new Promise((_resolve, reject) => {
           signal.addEventListener('abort', () => reject(new TranslationCancelledError()), {
@@ -71,6 +97,8 @@ describe('TranslationModal mutation safety', () => {
         (modal.contentEl as unknown as TestElement).findByText('Translation canceled.'),
       ).toBeDefined();
     });
+    await Setting.buttonNamed('Translate again').click();
+    expect(onRestart).toHaveBeenCalledExactlyOnceWith('bergamot', 'en', 'es');
     expect(replaceRange).not.toHaveBeenCalled();
   });
 
@@ -133,6 +161,7 @@ describe('TranslationModal mutation safety', () => {
 
 function createModal({
   editor,
+  onRestart = vi.fn(),
   onTranslateCurrent = vi.fn(),
   runTranslation,
 }: {
@@ -140,6 +169,7 @@ function createModal({
     getValue: () => string;
     replaceRange: ReturnType<typeof vi.fn>;
   };
+  onRestart?: ConstructorParameters<typeof TranslationModal>[1]['onRestart'];
   onTranslateCurrent?: () => void;
   runTranslation: (options: TranslationJobRunOptions) => Promise<TranslationJobResult>;
 }): TranslationModal {
@@ -158,7 +188,7 @@ function createModal({
     onDismissed: vi.fn(),
     onInstallModel: vi.fn(async () => {}),
     onTranslateCurrent,
-    onRestart: vi.fn(),
+    onRestart,
     snapshot: SNAPSHOT,
   });
 }

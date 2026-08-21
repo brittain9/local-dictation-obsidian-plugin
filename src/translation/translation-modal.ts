@@ -1,6 +1,8 @@
 import { type App, type Editor, type EditorPosition, Modal, Setting } from 'obsidian';
 import { t, tPlural } from '../shared/i18n';
 import type { UserFeedback } from '../shared/user-feedback';
+import { localizeKnownSidecarEventCode } from '../sidecar/sidecar-event-localization';
+import { HyMtTranslationError } from './hy-mt-client';
 import {
   isTranslationLanguage,
   resolveTranslationTarget,
@@ -306,6 +308,27 @@ export class TranslationModal extends Modal {
       );
       return;
     }
+    if (this.state.phase === 'cancelled' || this.state.phase === 'failed') {
+      actions.addButton((button) =>
+        button
+          .setButtonText(t('translation.modal.translateAgain'))
+          .setCta()
+          .onClick(() =>
+            this.restart(
+              this.dependencies.job.engineId,
+              this.dependencies.job.sourceLanguage,
+              this.dependencies.job.targetLanguage,
+            ),
+          ),
+      );
+      actions.addButton((button) =>
+        button.setButtonText(t('translation.modal.dismiss')).onClick(() => {
+          this.dependencies.onDismissed();
+          this.close();
+        }),
+      );
+      return;
+    }
     if (this.state.phase !== 'completed') return;
     const current = this.sourceIsCurrent();
     if (!current) {
@@ -415,9 +438,13 @@ export class TranslationModal extends Modal {
   }
 }
 function translationFailureMessage(error: unknown): string {
-  return error instanceof TranslationModelIncompleteError
-    ? t('translation.modal.incompleteModel')
-    : t('translation.modal.failed');
+  if (error instanceof TranslationModelIncompleteError) {
+    return t('translation.modal.incompleteModel');
+  }
+  if (error instanceof HyMtTranslationError) {
+    return localizeKnownSidecarEventCode(error.code) ?? t('translation.modal.failed');
+  }
+  return t('translation.modal.failed');
 }
 
 function formatElapsed(durationMs: number): string {

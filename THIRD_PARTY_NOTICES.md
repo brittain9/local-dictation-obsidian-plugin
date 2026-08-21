@@ -47,7 +47,7 @@ The optional Tencent HY-MT model is not distributed in plugin or sidecar
 archives. When the user chooses Install, it is downloaded directly from the
 pinned upstream Tencent repository. Use of the downloaded model is subject to
 the Tencent HY-MT Model License and required notices:
-https://huggingface.co/tencent/HY-MT1.5-1.8B-GGUF/blob/265b2e615a7dc9b06c435dc878829ad99a512ba2/LICENSE
+https://huggingface.co/tencent/HY-MT1.5-1.8B-GGUF/blob/265b2e615a7dc9b06c435dc878829ad99a512ba2/License.txt
 
 No endorsement by Tencent, llama.cpp, or llama-cpp-2 contributors is implied.
 

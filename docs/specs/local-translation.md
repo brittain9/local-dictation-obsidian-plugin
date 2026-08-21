@@ -23,7 +23,14 @@ measured latency as too slow to ship.
 HY-MT is an optional, direct user-initiated upstream download. Model bytes are
 not included in the plugin release archives. Before installation, the plugin
 links to Tencent's pinned model license and presents its required notice,
-including the stated territorial restrictions.
+including the stated territorial restrictions. Installation requires an
+explicit confirmation that the user is outside the European Union, United
+Kingdom, and South Korea and accepts the upstream terms. The model remains a
+direct upstream download; Speech Kit does not redistribute its bytes.
+
+Natural is a behavior choice, not a claim of higher accuracy. It is more
+paraphrastic than Fast and can change wording or meaning, so preview remains
+mandatory before any note mutation.
 
 ## Why Bergamot
 

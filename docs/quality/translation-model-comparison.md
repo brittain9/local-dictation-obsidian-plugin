@@ -34,6 +34,21 @@ continue evaluating a **natural, paraphrastic** sidecar mode. A future
 candidate needs a permissive/global license and a structure-safe translation
 pipeline before it is exposed to users.
 
+### Production reassessment (2026-08-21)
+
+The benchmark above remains the quality record; HY-MT is not a quality upgrade
+over Bergamot. The production implementation instead treats it as an optional,
+more paraphrastic behavior choice for language pairs Fast does not cover. It
+translates parsed prose units and table cells, rejects unsafe reconstruction,
+keeps preview mandatory, and never silently replaces source text.
+
+Speech Kit does not redistribute the model. Its installer downloads the pinned
+artifact directly from Tencent only after the user opens the upstream license
+and explicitly confirms that they are outside the European Union, United
+Kingdom, and South Korea and accept the terms. This is a restricted opt-in
+catalog entry, not the unrestricted global distribution rejected by the
+2026-07-27 gate.
+
 ## How the comparison was judged
 
 There is no honest one-number answer because the engines offer different
@@ -295,8 +310,8 @@ Recommended shape:
    guard, show any units retained in the source language, and never overwrite
    the source silently after validation fails.
 7. Record the exact model revision, hash, prompt profile, seed, language locale,
-   and license in the catalog. Do not add HY-MT to the global catalog unless
-   separate licensing resolves its territorial restriction.
+   and license in the catalog. Do not redistribute HY-MT, and require explicit
+   territory eligibility confirmation before its direct upstream download.
 
 For future model selection, use a profile rather than a single score:
 semantic adequacy (COMET), literal/reference overlap (chrF++), native-speaker
