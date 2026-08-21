@@ -97,15 +97,21 @@ impl HyMtInference for LlamaInference<'_> {
         if tokens.len() >= context_size.get() as usize {
             bail!("translation unit exceeds model context");
         }
-        let mut context = self.model.model.new_context(
-            &self.model.backend,
-            LlamaContextParams::default()
-                .with_n_ctx(Some(context_size))
-                .with_n_batch(4096),
-        )?;
+        let mut context = self
+            .model
+            .model
+            .new_context(
+                &self.model.backend,
+                context_params_for_acceleration(context_size, self.model.use_gpu),
+            )
+            .context("unable to create HY-MT inference context")?;
         let mut batch = LlamaBatch::new(4096, 1);
-        batch.add_sequence(&tokens, 0, false)?;
-        context.decode(&mut batch)?;
+        batch
+            .add_sequence(&tokens, 0, false)
+            .context("unable to prepare HY-MT prompt tokens")?;
+        context
+            .decode(&mut batch)
+            .context("unable to decode the HY-MT prompt")?;
         let mut sampler = LlamaSampler::chain_simple([
             LlamaSampler::penalties(-1, 1.05, 0.0, 0.0),
             LlamaSampler::top_k(20),
@@ -142,8 +148,12 @@ impl HyMtInference for LlamaInference<'_> {
                 Err(error) => return Err(error.into()),
             }
             batch.clear();
-            batch.add(token, position, &[0], true)?;
-            context.decode(&mut batch)?;
+            batch
+                .add(token, position, &[0], true)
+                .context("unable to prepare an HY-MT output token")?;
+            context
+                .decode(&mut batch)
+                .context("unable to decode an HY-MT output token")?;
             position += 1;
         }
         Ok(String::from_utf8(output)?.trim().to_string())
@@ -282,10 +292,10 @@ fn spawn_reader(
                     }
                 }
                 Ok(Some(HelperCommand::Cancel { translation_id })) => {
-                    if let Ok(map) = cancellations.lock() {
-                        if let Some(flag) = map.get(&translation_id) {
-                            flag.store(true, Ordering::Relaxed);
-                        }
+                    if let Ok(map) = cancellations.lock()
+                        && let Some(flag) = map.get(&translation_id)
+                    {
+                        flag.store(true, Ordering::Relaxed);
                     }
                 }
                 Ok(Some(HelperCommand::Shutdown)) | Ok(None) | Err(_) => {
@@ -304,13 +314,7 @@ fn spawn_reader(
 
 fn load_model(path: &Path, use_gpu: bool) -> Result<CachedModel> {
     let backend = LlamaBackend::init()?;
-    let params = LlamaModelParams::default();
-    #[cfg(any(feature = "gpu-metal", feature = "gpu-cuda"))]
-    let params = if use_gpu {
-        params.with_n_gpu_layers(1000)
-    } else {
-        params
-    };
+    let params = model_params_for_acceleration(use_gpu)?;
     let model = LlamaModel::load_from_file(&backend, path, &params)
         .context("unable to load HY-MT model")?;
     Ok(CachedModel {
@@ -319,4 +323,58 @@ fn load_model(path: &Path, use_gpu: bool) -> Result<CachedModel> {
         backend,
         model,
     })
+}
+
+fn model_params_for_acceleration(use_gpu: bool) -> Result<LlamaModelParams> {
+    let params = LlamaModelParams::default().with_n_gpu_layers(0);
+    #[cfg(any(feature = "gpu-metal", feature = "gpu-cuda"))]
+    {
+        if use_gpu {
+            return Ok(params.with_n_gpu_layers(1000));
+        }
+    }
+    #[cfg(not(any(feature = "gpu-metal", feature = "gpu-cuda")))]
+    let _ = use_gpu;
+    // llama.cpp otherwise selects the first compiled GPU device for the model,
+    // even when no model layers are offloaded. An explicit empty list keeps a
+    // CPU-only translation from initializing a GPU backend at all.
+    Ok(params.with_devices(&[])?)
+}
+
+fn context_params_for_acceleration(context_size: NonZeroU32, use_gpu: bool) -> LlamaContextParams {
+    LlamaContextParams::default()
+        .with_n_ctx(Some(context_size))
+        .with_n_batch(4096)
+        .with_offload_kqv(use_gpu)
+        .with_op_offload(use_gpu)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn cpu_only_model_params_disable_gpu_layers() {
+        assert_eq!(
+            model_params_for_acceleration(false).unwrap().n_gpu_layers(),
+            0
+        );
+    }
+
+    #[cfg(any(feature = "gpu-metal", feature = "gpu-cuda"))]
+    #[test]
+    fn auto_model_params_offload_to_the_accelerator() {
+        assert_eq!(
+            model_params_for_acceleration(true).unwrap().n_gpu_layers(),
+            1000
+        );
+    }
+
+    #[test]
+    fn cpu_only_context_params_disable_gpu_operations() {
+        let params = context_params_for_acceleration(NonZeroU32::new(4096).unwrap(), false);
+
+        assert!(!params.offload_kqv());
+        assert!(!params.op_offload());
+    }
 }

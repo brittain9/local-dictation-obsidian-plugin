@@ -35,9 +35,12 @@ describe('TranslationJob', () => {
   });
 
   it('propagates explicit cancellation only once', () => {
-    const run = vi.fn(({ signal }: { signal: AbortSignal }) => new Promise<never>((_, reject) => {
-      signal.addEventListener('abort', () => reject(new DOMException('Aborted', 'AbortError')));
-    }));
+    const run = vi.fn(
+      ({ signal }: { signal: AbortSignal }) =>
+        new Promise<never>((_, reject) => {
+          signal.addEventListener('abort', () => reject(new DOMException('Aborted', 'AbortError')));
+        }),
+    );
     const job = new TranslationJob({
       engineId: 'tencent_hy_mt',
       run,

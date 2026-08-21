@@ -1808,64 +1808,67 @@
       "displayName": "Firefox Translations",
       "summary": "Fast local translation between English and seven other languages using the models released in Firefox.",
       "languageTags": ["en", "es", "de", "fr", "pt", "it", "nl", "ja"],
-      "translationSupport": { "kind": "pairs", "pairs": [
-        {
-          "source": "en",
-          "target": "es"
-        },
-        {
-          "source": "es",
-          "target": "en"
-        },
-        {
-          "source": "en",
-          "target": "de"
-        },
-        {
-          "source": "de",
-          "target": "en"
-        },
-        {
-          "source": "en",
-          "target": "fr"
-        },
-        {
-          "source": "fr",
-          "target": "en"
-        },
-        {
-          "source": "en",
-          "target": "pt"
-        },
-        {
-          "source": "pt",
-          "target": "en"
-        },
-        {
-          "source": "en",
-          "target": "it"
-        },
-        {
-          "source": "it",
-          "target": "en"
-        },
-        {
-          "source": "en",
-          "target": "nl"
-        },
-        {
-          "source": "nl",
-          "target": "en"
-        },
-        {
-          "source": "en",
-          "target": "ja"
-        },
-        {
-          "source": "ja",
-          "target": "en"
-        }
-      ] },
+      "translationSupport": {
+        "kind": "pairs",
+        "pairs": [
+          {
+            "source": "en",
+            "target": "es"
+          },
+          {
+            "source": "es",
+            "target": "en"
+          },
+          {
+            "source": "en",
+            "target": "de"
+          },
+          {
+            "source": "de",
+            "target": "en"
+          },
+          {
+            "source": "en",
+            "target": "fr"
+          },
+          {
+            "source": "fr",
+            "target": "en"
+          },
+          {
+            "source": "en",
+            "target": "pt"
+          },
+          {
+            "source": "pt",
+            "target": "en"
+          },
+          {
+            "source": "en",
+            "target": "it"
+          },
+          {
+            "source": "it",
+            "target": "en"
+          },
+          {
+            "source": "en",
+            "target": "nl"
+          },
+          {
+            "source": "nl",
+            "target": "en"
+          },
+          {
+            "source": "en",
+            "target": "ja"
+          },
+          {
+            "source": "ja",
+            "target": "en"
+          }
+        ]
+      },
       "uxTags": ["fast", "cpu"],
       "licenseLabel": "MPL-2.0",
       "licenseUrl": "https://github.com/mozilla/firefox-translations-models/blob/e7957fc407441a5e3e35bbcbf9d60d9b35764618/LICENSE",
@@ -2292,9 +2295,90 @@
       "collectionId": "tencent_hy_mt_translation",
       "displayName": "Tencent HY-MT 1.5 1.8B (Q4_K_M)",
       "summary": "Natural, paraphrastic local translation across 38 languages and language varieties.",
-      "languageTags": ["zh", "en", "fr", "pt", "es", "ja", "tr", "ru", "ar", "ko", "th", "it", "de", "vi", "ms", "id", "tl", "hi", "zh-Hant", "pl", "cs", "nl", "km", "my", "fa", "gu", "ur", "te", "mr", "he", "bn", "ta", "uk", "bo", "kk", "mn", "ug", "yue"],
-      "translationSupport": { "kind": "all_to_all", "languages": ["zh", "en", "fr", "pt", "es", "ja", "tr", "ru", "ar", "ko", "th", "it", "de", "vi", "ms", "id", "tl", "hi", "zh-Hant", "pl", "cs", "nl", "km", "my", "fa", "gu", "ur", "te", "mr", "he", "bn", "ta", "uk", "bo", "kk", "mn", "ug", "yue"] },
-      "uxTags": ["natural", "multilingual", "optional"],
+      "languageTags": [
+        "zh",
+        "en",
+        "fr",
+        "pt",
+        "es",
+        "ja",
+        "tr",
+        "ru",
+        "ar",
+        "ko",
+        "th",
+        "it",
+        "de",
+        "vi",
+        "ms",
+        "id",
+        "tl",
+        "hi",
+        "zh-Hant",
+        "pl",
+        "cs",
+        "nl",
+        "km",
+        "my",
+        "fa",
+        "gu",
+        "ur",
+        "te",
+        "mr",
+        "he",
+        "bn",
+        "ta",
+        "uk",
+        "bo",
+        "kk",
+        "mn",
+        "ug",
+        "yue"
+      ],
+      "translationSupport": {
+        "kind": "all_to_all",
+        "languages": [
+          "zh",
+          "en",
+          "fr",
+          "pt",
+          "es",
+          "ja",
+          "tr",
+          "ru",
+          "ar",
+          "ko",
+          "th",
+          "it",
+          "de",
+          "vi",
+          "ms",
+          "id",
+          "tl",
+          "hi",
+          "zh-Hant",
+          "pl",
+          "cs",
+          "nl",
+          "km",
+          "my",
+          "fa",
+          "gu",
+          "ur",
+          "te",
+          "mr",
+          "he",
+          "bn",
+          "ta",
+          "uk",
+          "bo",
+          "kk",
+          "mn",
+          "ug",
+          "yue"
+        ]
+      },
+      "uxTags": ["natural", "multilingual", "optional", "requires-terms-review"],
       "licenseLabel": "Tencent HY-MT Model License",
       "licenseUrl": "https://huggingface.co/tencent/HY-MT1.5-1.8B-GGUF/blob/265b2e615a7dc9b06c435dc878829ad99a512ba2/LICENSE",
       "sourceUrl": "https://huggingface.co/tencent/HY-MT1.5-1.8B-GGUF/tree/265b2e615a7dc9b06c435dc878829ad99a512ba2",

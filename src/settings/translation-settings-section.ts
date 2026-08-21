@@ -8,8 +8,8 @@ import { t } from '../shared/i18n';
 import {
   isSupportedTranslationPair,
   isTranslationLanguage,
-  resolveTranslationLanguages,
   resolveTranslationEngine,
+  resolveTranslationLanguages,
   resolveTranslationTarget,
   TRANSLATION_LANGUAGES,
   type TranslationEngineId,
@@ -96,7 +96,7 @@ export function renderTranslationSettings(
       });
 
     const settings = dependencies.getSettings();
-    let pair = resolveTranslationLanguages(
+    const pair = resolveTranslationLanguages(
       settings.dictationLanguage,
       settings.translationSourceLanguage,
       settings.translationTargetLanguage,
@@ -138,8 +138,14 @@ export function renderTranslationSettings(
         dropdown.setValue(pair.sourceLanguage);
         dropdown.onChange(async (value) => {
           if (!isTranslationLanguage(value)) return;
-          const targetLanguage = resolveTranslationTarget(value, pair.targetLanguage, 'tencent_hy_mt');
-          await dependencies.persistEngine(resolveTranslationEngine(settings.translationEngineId, value, targetLanguage));
+          const targetLanguage = resolveTranslationTarget(
+            value,
+            pair.targetLanguage,
+            'tencent_hy_mt',
+          );
+          await dependencies.persistEngine(
+            resolveTranslationEngine(settings.translationEngineId, value, targetLanguage),
+          );
           await dependencies.persistLanguages(value, targetLanguage);
           render();
         });
@@ -156,7 +162,9 @@ export function renderTranslationSettings(
         dropdown.onChange(async (value) => {
           if (!isTranslationLanguage(value)) return;
           if (!isSupportedTranslationPair(pair.sourceLanguage, value, 'tencent_hy_mt')) return;
-          await dependencies.persistEngine(resolveTranslationEngine(settings.translationEngineId, pair.sourceLanguage, value));
+          await dependencies.persistEngine(
+            resolveTranslationEngine(settings.translationEngineId, pair.sourceLanguage, value),
+          );
           await dependencies.persistLanguages(pair.sourceLanguage, value);
           render();
         });

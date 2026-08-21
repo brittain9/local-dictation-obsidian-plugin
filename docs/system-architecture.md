@@ -505,7 +505,8 @@ Translation has one controller-owned job and two engine adapters:
 5. Closing the modal detaches it from the job; the translation status item can
    reopen active progress or a completed preview. Explicit Cancel stops work.
 6. Marker restoration and a Markdown topology signature are validated per
-   unit. Unsafe output keeps the original unit. Note-writing still requires an
+   unit. Unsafe output keeps the original unit in a copyable partial preview;
+   Replace and Insert below stay disabled. Note-writing also requires an
    unchanged source snapshot.
 
 The sidecar catalog owns SHA-256-pinned installation and removal for both

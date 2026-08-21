@@ -77,9 +77,9 @@ describe('resolvePluginSettings', () => {
 
   it('defaults translation to Fast and remembers a valid engine choice', () => {
     expect(resolvePluginSettings({}).translationEngineId).toBe('bergamot');
-    expect(resolvePluginSettings({ translationEngineId: 'tencent_hy_mt' }).translationEngineId).toBe(
-      'tencent_hy_mt',
-    );
+    expect(
+      resolvePluginSettings({ translationEngineId: 'tencent_hy_mt' }).translationEngineId,
+    ).toBe('tencent_hy_mt');
     expect(resolvePluginSettings({ translationEngineId: 'unknown' }).translationEngineId).toBe(
       'bergamot',
     );

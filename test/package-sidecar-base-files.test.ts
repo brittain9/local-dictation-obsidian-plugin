@@ -35,7 +35,9 @@ describe('stageSidecarBaseFiles', () => {
     await expect(
       readFile(join(artifactDirectory, 'local-dictation-sidecar'), 'utf8'),
     ).resolves.toBe('binary');
-    await expect(readFile(join(artifactDirectory, 'local-dictation-translation-helper'), 'utf8')).resolves.toBe('helper');
+    await expect(
+      readFile(join(artifactDirectory, 'local-dictation-translation-helper'), 'utf8'),
+    ).resolves.toBe('helper');
     const notices = await readFile(join(artifactDirectory, 'THIRD_PARTY_NOTICES.md'), 'utf8');
     expect(notices).toContain('WeSpeaker');
     expect(notices).toContain('CC BY 4.0');

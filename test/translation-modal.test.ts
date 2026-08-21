@@ -5,7 +5,11 @@ vi.mock('virtual:bergamot-worker-source', () => ({
 }));
 
 import { TranslationCancelledError } from '../src/translation/bergamot-client';
-import { TranslationJob, type TranslationJobResult, type TranslationJobRunOptions } from '../src/translation/translation-job';
+import {
+  TranslationJob,
+  type TranslationJobResult,
+  type TranslationJobRunOptions,
+} from '../src/translation/translation-job';
 import { TranslationModal, type TranslationSnapshot } from '../src/translation/translation-modal';
 import { Setting, type TestElement } from './__mocks__/obsidian';
 
@@ -68,12 +72,13 @@ describe('TranslationModal mutation safety', () => {
     expect(replaceRange).not.toHaveBeenCalled();
   });
 
-  it('reports how many blocks kept their original language', async () => {
+  it('reports partial results but never writes them into the note', async () => {
     Setting.reset();
+    const replaceRange = vi.fn();
     const modal = createModal({
       editor: {
         getValue: () => SNAPSHOT.source,
-        replaceRange: vi.fn(),
+        replaceRange,
       },
       runTranslation: vi.fn(async () => ({
         kind: 'translated' as const,
@@ -90,6 +95,11 @@ describe('TranslationModal mutation safety', () => {
         ),
       ).toBeDefined();
     });
+    expect(Setting.buttonNamed('Replace').disabled).toBe(true);
+    expect(Setting.buttonNamed('Insert below').disabled).toBe(true);
+    await Setting.buttonNamed('Replace').click();
+    await Setting.buttonNamed('Insert below').click();
+    expect(replaceRange).not.toHaveBeenCalled();
   });
 });
 

@@ -97,19 +97,13 @@ const LANGUAGE_LABELS: Readonly<Record<TranslationLanguage, string>> = {
 };
 
 export function isTranslationLanguage(value: unknown): value is TranslationLanguage {
-  return (
-    typeof value === 'string' &&
-    value === value.toLowerCase() &&
-    (TRANSLATION_LANGUAGES as readonly string[]).includes(value)
-  );
+  return typeof value === 'string' && (TRANSLATION_LANGUAGES as readonly string[]).includes(value);
 }
 
 export function normalizeTranslationLanguage(value: unknown): TranslationLanguage | null {
   if (typeof value !== 'string') return null;
   const normalized = value.trim().toLowerCase();
-  return (
-    TRANSLATION_LANGUAGES.find((language) => language.toLowerCase() === normalized) ?? null
-  );
+  return TRANSLATION_LANGUAGES.find((language) => language.toLowerCase() === normalized) ?? null;
 }
 
 export function translationLanguageLabel(language: TranslationLanguage): string {
@@ -149,7 +143,8 @@ export function resolveTranslationTarget(
   preferredTarget: TranslationLanguage | null,
   engine: TranslationEngineId = 'bergamot',
 ): TranslationLanguage {
-  return preferredTarget !== null && isSupportedTranslationPair(sourceLanguage, preferredTarget, engine)
+  return preferredTarget !== null &&
+    isSupportedTranslationPair(sourceLanguage, preferredTarget, engine)
     ? preferredTarget
     : sourceLanguage === 'en'
       ? 'es'

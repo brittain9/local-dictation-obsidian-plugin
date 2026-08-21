@@ -1,5 +1,4 @@
 import type { DictationLanguage } from '../language/dictation-language';
-import type { TranslationLanguage } from '../translation/languages';
 import type {
   InstalledModelRecord,
   ModelCatalogRecord,
@@ -17,6 +16,7 @@ import type {
 import type { StageOutcome, UtteranceId } from '../session/session-journal';
 import { PCM_BYTES_PER_FRAME } from '../shared/pcm-format';
 import { isRecord } from '../shared/type-guards';
+import type { TranslationLanguage } from '../translation/languages';
 
 export const JSON_FRAME_KIND = 0x01;
 export const AUDIO_FRAME_KIND = 0x02;
@@ -812,16 +812,34 @@ export function parseEventFrame(jsonText: string): SidecarEvent {
 
 function validateTranslationEvent(event: Record<string, unknown>): void {
   const type = String(event.type);
-  const invalid = (): never => { throw new Error(`Invalid ${type} sidecar event.`); };
+  const invalid = (): never => {
+    throw new Error(`Invalid ${type} sidecar event.`);
+  };
   if (typeof event.translationId !== 'string' || event.translationId.length === 0) invalid();
   if (type === 'translation_started') {
     if (!Number.isSafeInteger(event.total) || (event.total as number) < 0) invalid();
   } else if (type === 'translation_progress') {
-    if (!Number.isSafeInteger(event.completed) || !Number.isSafeInteger(event.total) || (event.completed as number) < 0 || (event.total as number) < 0 || (event.completed as number) > (event.total as number)) invalid();
+    if (
+      !Number.isSafeInteger(event.completed) ||
+      !Number.isSafeInteger(event.total) ||
+      (event.completed as number) < 0 ||
+      (event.total as number) < 0 ||
+      (event.completed as number) > (event.total as number)
+    )
+      invalid();
   } else if (type === 'translation_complete') {
-    if (!Array.isArray(event.translations) || !event.translations.every((value) => typeof value === 'string')) invalid();
+    if (
+      !Array.isArray(event.translations) ||
+      !event.translations.every((value) => typeof value === 'string')
+    )
+      invalid();
   } else if (type === 'translation_error') {
-    if (typeof event.code !== 'string' || event.code.length === 0 || typeof event.message !== 'string') invalid();
+    if (
+      typeof event.code !== 'string' ||
+      event.code.length === 0 ||
+      typeof event.message !== 'string'
+    )
+      invalid();
   }
 }
 

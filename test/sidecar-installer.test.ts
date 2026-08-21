@@ -711,10 +711,11 @@ interface TarEntry {
 
 function buildTarGz(entries: TarEntry[]): Buffer {
   const blocks: Buffer[] = [];
-  const completeEntries = entries.some((entry) => entry.name === 'local-dictation-sidecar') &&
-      !entries.some((entry) => entry.name === 'local-dictation-translation-helper')
-    ? [...entries, { content: Buffer.from('helper'), name: 'local-dictation-translation-helper' }]
-    : entries;
+  const completeEntries =
+    entries.some((entry) => entry.name === 'local-dictation-sidecar') &&
+    !entries.some((entry) => entry.name === 'local-dictation-translation-helper')
+      ? [...entries, { content: Buffer.from('helper'), name: 'local-dictation-translation-helper' }]
+      : entries;
 
   for (const entry of completeEntries) {
     blocks.push(buildTarHeader(entry.name, entry.content.length, entry.typeflag ?? '0'));

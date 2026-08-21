@@ -842,7 +842,8 @@ export const de = {
   'translation.modal.copy': 'Kopieren',
   'translation.modal.dismiss': 'Verwerfen',
   'settings.translation.engine.name': 'Standard-Übersetzungsstil',
-  'settings.translation.engine.desc': 'Schnell ist wörtlicher; Natürlich verwendet das optionale Tencent-HY-MT-Modell.',
+  'settings.translation.engine.desc':
+    'Schnell ist wörtlicher; Natürlich verwendet das optionale Tencent-HY-MT-Modell.',
   'translation.engine.bergamot': 'Schnell & wörtlich — Firefox Translations',
   'translation.engine.tencentHyMt': 'Natürlich — Tencent HY-MT',
   'translation.modal.stale':

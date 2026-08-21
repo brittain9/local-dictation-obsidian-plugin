@@ -218,9 +218,28 @@ describe('translation protocol', () => {
   });
 
   it('rejects malformed translation lifecycle events', () => {
-    expect(() => parseEventFrame(JSON.stringify({ type: 'translation_progress', translationId: 'job', completed: 3, total: 2 }))).toThrow(/translation_progress/u);
-    expect(() => parseEventFrame(JSON.stringify({ type: 'translation_complete', translationId: 'job', translations: ['ok', 4] }))).toThrow(/translation_complete/u);
-    expect(() => parseEventFrame(JSON.stringify({ type: 'translation_cancelled', translationId: '' }))).toThrow(/translation_cancelled/u);
+    expect(() =>
+      parseEventFrame(
+        JSON.stringify({
+          type: 'translation_progress',
+          translationId: 'job',
+          completed: 3,
+          total: 2,
+        }),
+      ),
+    ).toThrow(/translation_progress/u);
+    expect(() =>
+      parseEventFrame(
+        JSON.stringify({
+          type: 'translation_complete',
+          translationId: 'job',
+          translations: ['ok', 4],
+        }),
+      ),
+    ).toThrow(/translation_complete/u);
+    expect(() =>
+      parseEventFrame(JSON.stringify({ type: 'translation_cancelled', translationId: '' })),
+    ).toThrow(/translation_cancelled/u);
   });
 });
 

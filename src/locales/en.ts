@@ -232,8 +232,13 @@ export const en = {
   'models.manage.installWarningTitle': 'Install a high-resource model?',
   'models.manage.installWarningMessage':
     '{model} downloads approximately {size} and uses substantially more CPU. Higher reading speeds may buffer.',
+  'models.manage.installTermsTitle': 'Review model terms',
+  'models.manage.installTermsMessage':
+    '{model} is a direct {size} download from its publisher. It is governed by {license}; terms and territorial restrictions apply. Review the license before installing. Install only if you agree.',
+  'models.manage.installTermsLink': 'Open model license',
   'models.tag.highCpu': 'High CPU',
   'models.tag.mayBuffer': 'May buffer',
+  'models.tag.termsApply': 'Terms apply',
   'tts.status.reading': 'Reading…',
   'tts.status.paused': 'Reading paused',
   'tts.control.model': 'Model: {model}',
@@ -978,7 +983,8 @@ export const en = {
   'catalog.family.tencent_hy_mt.summary':
     'Translates locally with the optional Tencent HY-MT model in an isolated native helper.',
   'sidecarError.helper_protocol_error': 'The Natural translation helper returned invalid data.',
-  'sidecarError.helper_unavailable': 'The packaged Natural translation helper could not be started.',
+  'sidecarError.helper_unavailable':
+    'The packaged Natural translation helper could not be started.',
   'sidecarError.helper_write_failed': 'The Natural translation helper stopped unexpectedly.',
   'sidecarError.inference_failed': 'Natural translation failed.',
   'sidecarError.model_load_failed': 'The Natural translation model could not be loaded.',

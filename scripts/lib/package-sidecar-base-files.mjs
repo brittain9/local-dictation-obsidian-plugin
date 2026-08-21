@@ -6,7 +6,13 @@ const THIRD_PARTY_NOTICES_PATH = fileURLToPath(
   new URL('../../THIRD_PARTY_NOTICES.md', import.meta.url),
 );
 
-export async function stageSidecarBaseFiles({ artifactDirectory, binaryName, binaryPath, helperName, helperPath }) {
+export async function stageSidecarBaseFiles({
+  artifactDirectory,
+  binaryName,
+  binaryPath,
+  helperName,
+  helperPath,
+}) {
   await mkdir(artifactDirectory, { recursive: true });
   await Promise.all([
     copyFile(binaryPath, join(artifactDirectory, binaryName)),

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   isSupportedTranslationPair,
+  isTranslationLanguage,
   normalizeTranslationLanguage,
   resolveTranslationEngine,
   TRANSLATION_LANGUAGES,
@@ -15,6 +16,7 @@ describe('translation language capabilities', () => {
       expect.arrayContaining(['zh', 'zh-Hant', 'yue', 'bo', 'ug', 'en', 'ja']),
     );
     expect(normalizeTranslationLanguage(' ZH-hant ')).toBe('zh-Hant');
+    expect(isTranslationLanguage('zh-Hant')).toBe(true);
   });
 
   it('allows HY-MT to translate every non-identity pair without widening Bergamot', () => {

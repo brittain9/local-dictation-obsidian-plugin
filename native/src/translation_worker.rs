@@ -171,34 +171,58 @@ fn worker_main(commands: Receiver<WorkerCommand>, events: Sender<Event>) {
     let mut active: Option<String> = None;
     let mut idle_since: Option<Instant> = None;
     loop {
+        let mut helper_failed = false;
         if let Some(process) = helper.as_mut() {
-            while let Ok(result) = process.event_rx.try_recv() {
-                match result {
-                    Ok(event) => {
-                        let terminal = matches!(
-                            event,
-                            HelperEvent::Complete { .. }
-                                | HelperEvent::Cancelled { .. }
-                                | HelperEvent::Error { .. }
-                        );
-                        let _ = events.send(map_helper_event(event));
-                        if terminal {
-                            active = None;
-                            idle_since = Some(Instant::now());
+            loop {
+                match process.event_rx.try_recv() {
+                    Ok(event) => match event {
+                        Ok(event) => {
+                            let terminal = matches!(
+                                event,
+                                HelperEvent::Complete { .. }
+                                    | HelperEvent::Cancelled { .. }
+                                    | HelperEvent::Error { .. }
+                            );
+                            let _ = events.send(map_helper_event(event));
+                            if terminal {
+                                active = None;
+                                idle_since = Some(Instant::now());
+                            }
                         }
-                    }
-                    Err(error) => {
+                        Err(error) => {
+                            if let Some(translation_id) = active.take() {
+                                let _ = events.send(Event::TranslationError {
+                                    translation_id,
+                                    code: "helper_protocol_error".into(),
+                                    message: "The translation helper returned invalid data.".into(),
+                                    details: Some(format!("{error:#}")),
+                                });
+                            }
+                            helper_failed = true;
+                            break;
+                        }
+                    },
+                    Err(mpsc::TryRecvError::Empty) => break,
+                    Err(mpsc::TryRecvError::Disconnected) => {
                         if let Some(translation_id) = active.take() {
                             let _ = events.send(Event::TranslationError {
                                 translation_id,
-                                code: "helper_protocol_error".into(),
-                                message: "The translation helper returned invalid data.".into(),
-                                details: Some(format!("{error:#}")),
+                                code: "helper_unavailable".into(),
+                                message: "The translation helper stopped unexpectedly.".into(),
+                                details: None,
                             });
                         }
+                        helper_failed = true;
+                        break;
                     }
                 }
             }
+        }
+        if helper_failed {
+            if let Some(mut process) = helper.take() {
+                process.stop();
+            }
+            idle_since = None;
         }
         let helper_exited = helper
             .as_mut()
@@ -272,10 +296,10 @@ fn worker_main(commands: Receiver<WorkerCommand>, events: Sender<Event>) {
                 }
             }
             Ok(WorkerCommand::Cancel(translation_id)) => {
-                if active.as_deref() == Some(translation_id.as_str()) {
-                    if let Some(process) = helper.as_mut() {
-                        let _ = process.send(&HelperCommand::Cancel { translation_id });
-                    }
+                if active.as_deref() == Some(translation_id.as_str())
+                    && let Some(process) = helper.as_mut()
+                {
+                    let _ = process.send(&HelperCommand::Cancel { translation_id });
                 }
             }
             Ok(WorkerCommand::Shutdown) | Err(mpsc::RecvTimeoutError::Disconnected) => break,

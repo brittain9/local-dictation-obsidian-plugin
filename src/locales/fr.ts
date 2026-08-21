@@ -835,7 +835,8 @@ export const fr = {
   'translation.modal.copy': 'Copier',
   'translation.modal.dismiss': 'Ignorer',
   'settings.translation.engine.name': 'Style de traduction par défaut',
-  'settings.translation.engine.desc': 'Rapide est plus littéral ; Naturel utilise le modèle Tencent HY-MT facultatif.',
+  'settings.translation.engine.desc':
+    'Rapide est plus littéral ; Naturel utilise le modèle Tencent HY-MT facultatif.',
   'translation.engine.bergamot': 'Rapide et littéral — Firefox Translations',
   'translation.engine.tencentHyMt': 'Naturel — Tencent HY-MT',
   'translation.modal.stale':

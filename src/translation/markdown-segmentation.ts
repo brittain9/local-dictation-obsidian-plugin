@@ -1,3 +1,5 @@
+import type { TranslationEngineId } from './languages';
+
 export type TranslationSegment =
   | { kind: 'protected'; text: string }
   | { kind: 'translatable'; protectedSlots: ProtectedSlot[]; text: string; topology: string };
@@ -14,10 +16,12 @@ interface MarkdownTranslationOptions {
   protectedMarkerMode?: ProtectedMarkerMode;
 }
 
-interface InlinePart {
+interface TextInlinePart {
   kind: 'protected' | 'translatable';
   text: string;
 }
+
+type InlinePart = TextInlinePart | { kind: 'boundary' };
 
 interface ProtectedSlot {
   marker: string;
@@ -121,6 +125,19 @@ export function protectedMarkerModeForLanguages(
   return sourceLanguage === 'ja' || targetLanguage === 'ja' ? 'synthetic-url' : 'private-use';
 }
 
+export function protectedMarkerModeForTranslation(
+  engineId: TranslationEngineId,
+  sourceLanguage: string,
+  targetLanguage: string,
+): ProtectedMarkerMode {
+  // HY-MT preserves URL-shaped placeholders more reliably than Unicode private
+  // use characters. Bergamot keeps its compact marker form except for Japanese,
+  // whose tokenization also benefits from URL-shaped placeholders.
+  return engineId === 'tencent_hy_mt'
+    ? 'synthetic-url'
+    : protectedMarkerModeForLanguages(sourceLanguage, targetLanguage);
+}
+
 export function rebuildTranslatedMarkdown(
   segments: readonly TranslationSegment[],
   translations: readonly string[],
@@ -184,9 +201,17 @@ function tokenizeInlineMarkdown(value: string): InlinePart[] {
       const imageMarker = link[1] ?? '';
       const label = link[2] ?? '';
       const destination = link[3] ?? '';
+      // Keep link labels as their own units. A placeholder next to label text
+      // can be parsed as part of the placeholder URL by a translation model.
+      // Splitting on the Markdown delimiters means reconstruction does not
+      // depend on the model returning those delimiters at all.
+      pushBoundary(parts);
       pushPart(parts, 'protected', `${imageMarker}[`);
+      pushBoundary(parts);
       pushPart(parts, imageMarker.length > 0 ? 'protected' : 'translatable', label);
+      pushBoundary(parts);
       pushPart(parts, 'protected', `](${destination})`);
+      pushBoundary(parts);
       remaining = remaining.slice(whole.length);
       continue;
     }
@@ -209,9 +234,9 @@ function tokenizeInlineMarkdown(value: string): InlinePart[] {
 function chunkInlineParts(
   parts: readonly InlinePart[],
   markerMode: ProtectedMarkerMode,
-): InlinePart[][] {
-  const chunks: InlinePart[][] = [];
-  let current: InlinePart[] = [];
+): TextInlinePart[][] {
+  const chunks: TextInlinePart[][] = [];
+  let current: TextInlinePart[] = [];
   let currentCharacters = 0;
   let currentProtectedSlots = 0;
 
@@ -223,6 +248,10 @@ function chunkInlineParts(
   };
 
   for (const part of parts) {
+    if (part.kind === 'boundary') {
+      flush();
+      continue;
+    }
     if (part.kind === 'protected') {
       if (
         currentProtectedSlots >= MAX_PROTECTED_SLOTS_PER_UNIT ||
@@ -262,7 +291,7 @@ function chunkInlineParts(
 
 function pushTranslationUnit(
   segments: TranslationSegment[],
-  parts: readonly InlinePart[],
+  parts: readonly TextInlinePart[],
   markerMode: ProtectedMarkerMode,
 ): void {
   if (!parts.some((part) => part.kind === 'translatable' && /[\p{L}\p{N}]/u.test(part.text))) {
@@ -282,7 +311,12 @@ function pushTranslationUnit(
       return marker;
     })
     .join('');
-  segments.push({ kind: 'translatable', protectedSlots, text, topology: markdownTopologySignature(sourceText) });
+  segments.push({
+    kind: 'translatable',
+    protectedSlots,
+    text,
+    topology: markdownTopologySignature(sourceText),
+  });
 }
 
 function isMarkdownTableRow(line: string): boolean {
@@ -290,29 +324,42 @@ function isMarkdownTableRow(line: string): boolean {
   return cells.length > 1 && line.includes('|');
 }
 
-function segmentTableRow(line: string, segments: TranslationSegment[], markerMode: ProtectedMarkerMode): void {
+function segmentTableRow(
+  line: string,
+  segments: TranslationSegment[],
+  markerMode: ProtectedMarkerMode,
+): void {
   const pieces = splitTableRow(line);
   for (const piece of pieces) {
-    if (piece.separator) { pushProtected(segments, piece.text); continue; }
+    if (piece.separator) {
+      pushProtected(segments, piece.text);
+      continue;
+    }
     const leading = piece.text.match(/^\s*/u)?.[0] ?? '';
     const trailing = piece.text.match(/\s*$/u)?.[0] ?? '';
     const body = piece.text.slice(leading.length, piece.text.length - trailing.length);
-    if (/^:?-{3,}:?$/u.test(body)) { pushProtected(segments, piece.text); continue; }
+    if (/^:?-{3,}:?$/u.test(body)) {
+      pushProtected(segments, piece.text);
+      continue;
+    }
     pushProtected(segments, leading);
-    for (const unit of chunkInlineParts(tokenizeInlineMarkdown(body), markerMode)) pushTranslationUnit(segments, unit, markerMode);
+    for (const unit of chunkInlineParts(tokenizeInlineMarkdown(body), markerMode))
+      pushTranslationUnit(segments, unit, markerMode);
     pushProtected(segments, trailing);
   }
 }
 
 function splitTableRow(line: string): { separator: boolean; text: string }[] {
   const pieces: { separator: boolean; text: string }[] = [];
-  let start = 0; let backticks = 0;
+  let start = 0;
+  let backticks = 0;
   for (let index = 0; index < line.length; index += 1) {
     const character = line[index];
     if (character === '`' && line[index - 1] !== '\\') backticks = backticks === 0 ? 1 : 0;
     if (character === '|' && backticks === 0 && line[index - 1] !== '\\') {
       pieces.push({ separator: false, text: line.slice(start, index) });
-      pieces.push({ separator: true, text: '|' }); start = index + 1;
+      pieces.push({ separator: true, text: '|' });
+      start = index + 1;
     }
   }
   pieces.push({ separator: false, text: line.slice(start) });
@@ -320,7 +367,10 @@ function splitTableRow(line: string): { separator: boolean; text: string }[] {
 }
 
 function markdownTopologySignature(value: string): string {
-  const tokens = value.match(/^(?:\s*(?:>\s*)*(?:#{1,6}|[-*+]|\d+[.)])\s+)|!?(?:\[\[|\[[^\]]*\]\([^)]*\))|`+|\$\$?|\*\*|__|~~|==|\|/gmu) ?? [];
+  const tokens =
+    value.match(
+      /^(?:\s*(?:>\s*)*(?:#{1,6}|[-*+]|\d+[.)])\s+)|!?(?:\[\[|\[[^\]]*\]\([^)]*\))|`+|\$\$?|\*\*|__|~~|==|\|/gmu,
+    ) ?? [];
   return tokens.map((token) => token.replace(/[\p{L}\p{N}\s]/gu, '')).join(',');
 }
 
@@ -451,7 +501,7 @@ function nextProtectedMarker(
   throw new Error('The source text uses every available protected Markdown marker.');
 }
 
-function pushPart(parts: InlinePart[], kind: InlinePart['kind'], text: string): void {
+function pushPart(parts: InlinePart[], kind: TextInlinePart['kind'], text: string): void {
   if (text.length === 0) return;
   const previous = parts.at(-1);
   if (previous?.kind === kind) {
@@ -459,6 +509,10 @@ function pushPart(parts: InlinePart[], kind: InlinePart['kind'], text: string): 
   } else {
     parts.push({ kind, text });
   }
+}
+
+function pushBoundary(parts: InlinePart[]): void {
+  if (parts.at(-1)?.kind !== 'boundary') parts.push({ kind: 'boundary' });
 }
 
 function pushProtected(segments: TranslationSegment[], text: string): void {

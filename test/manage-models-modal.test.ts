@@ -308,6 +308,20 @@ describe('model browser', () => {
     expect(policy.installConfirmation?.message).toContain('481.0 MiB');
   });
 
+  it('requires a review of model terms before downloading a restricted model', () => {
+    const policy = resolveModelPresentationPolicy(
+      ttsModel('restricted-model', 'en', ['requires-terms-review'], 1_133_080_512),
+    );
+
+    expect(policy.badges.map((badge) => badge.label)).toEqual(['Terms apply']);
+    expect(policy.installConfirmation).toMatchObject({
+      link: { href: 'https://example.com/license', text: 'Open model license' },
+      title: 'Review model terms',
+    });
+    expect(policy.installConfirmation?.message).toContain('1.06 GiB');
+    expect(policy.installConfirmation?.message).toContain('CC-BY-4.0');
+  });
+
   it('opens task-aware TTS details when the rendered row details button is clicked', async () => {
     const model = {
       ...ttsModel('pocket-current', 'en'),

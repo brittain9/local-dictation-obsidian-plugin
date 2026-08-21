@@ -879,15 +879,27 @@ export default class LocalSttPlugin extends Plugin {
     status.setAttribute('aria-live', 'polite');
     status.setAttribute('role', 'status');
     status.onclick = state === null ? null : reopen;
-    if (state === null) { status.textContent = ''; return; }
-    status.textContent = state.phase === 'translating' && state.total > 1
-      ? t('translation.modal.translatingProgress', { completed: state.completed, total: state.total })
-      : state.phase === 'completed' ? t('translation.modal.ready')
-      : state.phase === 'failed' ? t('translation.modal.failed')
-      : state.phase === 'cancelled' ? t('translation.modal.canceled')
-      : state.phase === 'missing_model' ? t('translation.modal.missingModel')
-      : state.phase === 'translating' ? t('translation.modal.translating')
-      : t('translation.modal.loading');
+    if (state === null) {
+      status.textContent = '';
+      return;
+    }
+    status.textContent =
+      state.phase === 'translating' && state.total > 1
+        ? t('translation.modal.translatingProgress', {
+            completed: state.completed,
+            total: state.total,
+          })
+        : state.phase === 'completed'
+          ? t('translation.modal.ready')
+          : state.phase === 'failed'
+            ? t('translation.modal.failed')
+            : state.phase === 'cancelled'
+              ? t('translation.modal.canceled')
+              : state.phase === 'missing_model'
+                ? t('translation.modal.missingModel')
+                : state.phase === 'translating'
+                  ? t('translation.modal.translating')
+                  : t('translation.modal.loading');
   }
 
   private installedReadAloudModels(): CatalogModelRecord[] {
