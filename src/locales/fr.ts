@@ -767,6 +767,9 @@ export const fr = {
   'settings.readAloud.hotkey': 'Raccourci recommandé',
   'settings.readAloud.hotkeyDesc':
     'Associez un raccourci à Lire à voix haute. Le texte sélectionné est lu, sinon la note entière.',
+  'settings.readAloud.highlightSpokenText': 'Surligner le texte lu',
+  'settings.readAloud.highlightSpokenTextDesc':
+    'Surligne la phrase ou le fragment de texte en cours dans l’éditeur pendant la lecture à voix haute.',
   'settings.readAloud.voice': 'Voix',
   'settings.readAloud.voiceDesc':
     'Choisissez parmi les voix installées pour le modèle sélectionné.',

@@ -122,6 +122,17 @@ export function renderAutomaticCopyFinalizedUtterancesSetting(
   });
 }
 
+export function renderReadAloudHighlightSetting(
+  parent: HTMLElement,
+  access: SettingAccess,
+): Setting {
+  return addToggleSetting(parent, access, {
+    name: t('settings.readAloud.highlightSpokenText'),
+    desc: t('settings.readAloud.highlightSpokenTextDesc'),
+    key: 'highlightSpokenText',
+  });
+}
+
 export class LocalSttSettingTab extends PluginSettingTab {
   override readonly icon = 'audio-lines';
 
@@ -395,6 +406,8 @@ export class LocalSttSettingTab extends PluginSettingTab {
           });
         });
       });
+
+    renderReadAloudHighlightSetting(readAloudSection, this.access);
 
     new Setting(readAloudSection)
       .setName(t('settings.readAloud.speed'))

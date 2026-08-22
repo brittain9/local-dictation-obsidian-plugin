@@ -207,6 +207,7 @@ export interface PluginSettings {
   translationSourceLanguage: TranslationLanguage | null;
   translationTargetLanguage: TranslationLanguage | null;
   transcriptFormatting: TranscriptFormattingMode;
+  highlightSpokenText: boolean;
   ttsSpeed: number;
   useLlmNoteContext: boolean;
   useNoteAsContext: boolean;
@@ -272,6 +273,7 @@ export const DEFAULT_PLUGIN_SETTINGS: PluginSettings = {
   translationSourceLanguage: null,
   translationTargetLanguage: null,
   transcriptFormatting: 'smart',
+  highlightSpokenText: true,
   ttsSpeed: 1,
   useLlmNoteContext: false,
   useNoteAsContext: true,
@@ -447,6 +449,10 @@ export function resolvePluginSettings(data: unknown): PluginSettings {
     transcriptFormatting: isTranscriptFormattingMode(raw.transcriptFormatting)
       ? raw.transcriptFormatting
       : DEFAULT_PLUGIN_SETTINGS.transcriptFormatting,
+    highlightSpokenText: readBoolean(
+      raw.highlightSpokenText,
+      DEFAULT_PLUGIN_SETTINGS.highlightSpokenText,
+    ),
     ttsSpeed: readClampedNumber(
       raw.ttsSpeed,
       DEFAULT_PLUGIN_SETTINGS.ttsSpeed,

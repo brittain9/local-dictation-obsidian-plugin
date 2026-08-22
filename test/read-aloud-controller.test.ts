@@ -1,6 +1,6 @@
 import type { Editor, EditorPosition } from 'obsidian';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-
+import type { ReadAloudFollowAlongHandle } from '../src/editor/read-aloud-follow-along';
 import type {
   InstalledModelRecord,
   ModelCatalogRecord,
@@ -15,6 +15,7 @@ import {
 const playback = vi.hoisted(() => ({
   enqueue: vi.fn(),
   markGenerationComplete: vi.fn(),
+  currentSequence: vi.fn<(sequence: number | null) => void>(),
   playThrough: vi.fn<(sequence: number) => void>(),
   start: vi.fn(),
   stop: vi.fn(),
@@ -23,7 +24,11 @@ const playback = vi.hoisted(() => ({
 
 vi.mock('../src/audio/pcm-playback-queue', () => ({
   PcmPlaybackQueue: class {
-    constructor(options: { onPlayedThrough: (sequence: number) => void }) {
+    constructor(options: {
+      onCurrentSequenceChange: (sequence: number | null) => void;
+      onPlayedThrough: (sequence: number) => void;
+    }) {
+      playback.currentSequence.mockImplementation(options.onCurrentSequenceChange);
       playback.playThrough.mockImplementation(options.onPlayedThrough);
     }
 
@@ -111,6 +116,9 @@ function controllerHarness(options: {
   selectedVoice?: string | null;
   sidecarLifecycleGate?: SidecarLifecycleGate;
   startSynthesis?: StartSynthesisMock;
+  followAlong?: {
+    begin: (editor: Editor | null, source: string) => ReadAloudFollowAlongHandle;
+  };
 }) {
   const feedback = { show: vi.fn() };
   const stopDictation = vi.fn(async (): Promise<void> => undefined);
@@ -119,8 +127,12 @@ function controllerHarness(options: {
   const startSynthesis =
     options.startSynthesis ??
     vi.fn(async (_payload: Omit<StartSynthesisCommand, 'type'>) => undefined);
+  const followAlong = options.followAlong ?? {
+    begin: vi.fn(() => ({ setDesiredRange: vi.fn() })),
+  };
   const controller = new ReadAloudController({
     feedback,
+    followAlong,
     getCatalog: () => options.catalog ?? TTS_CATALOG,
     getInstalledModels: () => options.installedModels ?? TTS_INSTALLED_MODELS,
     getSettings: () => ({
@@ -154,6 +166,7 @@ function controllerHarness(options: {
     onModelMissing,
     startSynthesis,
     stopDictation,
+    followAlong,
   };
 }
 
@@ -197,6 +210,35 @@ describe('resolveReadRange', () => {
 });
 
 describe('ReadAloudController', () => {
+  it('publishes only the audible chunk range to the follow-along target', async () => {
+    const setDesiredRange = vi.fn();
+    const followAlong = { begin: vi.fn(() => ({ setDesiredRange })) };
+    const harness = controllerHarness({ selected: true, followAlong });
+    const editor = editorFor('First sentence. Second sentence.', { ch: 0, line: 0 });
+
+    await harness.controller.read(editor);
+
+    expect(followAlong.begin).toHaveBeenCalledWith(editor, 'First sentence. Second sentence.');
+    const chunks = harness.startSynthesis.mock.calls[0]?.[0].chunks;
+    if (chunks === undefined) throw new Error('synthesis did not start');
+
+    playback.currentSequence(0);
+    expect(setDesiredRange).toHaveBeenLastCalledWith(chunks[0]?.sourceRange);
+    playback.currentSequence(1);
+    expect(setDesiredRange).toHaveBeenLastCalledWith(chunks[1]?.sourceRange);
+    playback.currentSequence(null);
+    expect(setDesiredRange).toHaveBeenLastCalledWith(null);
+  });
+
+  it('starts translated preview playback without an editor follow-along target', async () => {
+    const followAlong = { begin: vi.fn(() => ({ setDesiredRange: vi.fn() })) };
+    const harness = controllerHarness({ selected: true, followAlong });
+
+    await harness.controller.readText('Hola.', 'es');
+
+    expect(followAlong.begin).toHaveBeenCalledWith(null, 'Hola.');
+  });
+
   it('reads translated text in its explicit target language without changing dictation settings', async () => {
     const harness = controllerHarness({ selected: true, dictationLanguage: 'en' });
 

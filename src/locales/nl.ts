@@ -760,6 +760,9 @@ export const nl = {
   'settings.readAloud.hotkey': 'Aanbevolen sneltoets',
   'settings.readAloud.hotkeyDesc':
     'Koppel een sneltoets aan Voorlezen. Geselecteerde tekst wordt voorgelezen, anders de hele notitie.',
+  'settings.readAloud.highlightSpokenText': 'Voorgelezen tekst markeren',
+  'settings.readAloud.highlightSpokenTextDesc':
+    'Markeer de huidige zin of tekstsectie in de editor tijdens het voorlezen.',
   'settings.readAloud.voice': 'Stem',
   'settings.readAloud.voiceDesc':
     'Kies uit stemmen die voor het geselecteerde model zijn geïnstalleerd.',

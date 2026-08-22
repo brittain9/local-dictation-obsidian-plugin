@@ -1,6 +1,10 @@
 import type { Editor } from 'obsidian';
 
 import { PcmPlaybackQueue } from '../audio/pcm-playback-queue';
+import type {
+  ReadAloudFollowAlong,
+  ReadAloudFollowAlongHandle,
+} from '../editor/read-aloud-follow-along';
 import { dictationLanguageLabel, isDictationLanguage } from '../language/dictation-language';
 import {
   type CatalogModelSelection,
@@ -60,6 +64,7 @@ type SynthesisConfigurationMode = 'capability_check' | 'playback_request';
 
 interface ReadAloudControllerDependencies {
   feedback: Pick<UserFeedback, 'show'>;
+  followAlong: Pick<ReadAloudFollowAlong, 'begin'>;
   getCatalog: () => ModelCatalogRecord;
   getInstalledModels: () => readonly InstalledModelRecord[];
   getSettings: () => PluginSettings;
@@ -92,11 +97,19 @@ export class ReadAloudController {
   private releaseEvents: (() => void) | null;
   private sampleRate: number | null = null;
   private state: ReadAloudState = 'idle';
+  private followAlongReading: ReadAloudFollowAlongHandle | null = null;
   private readonly playback: PcmPlaybackQueue;
 
   constructor(private readonly deps: ReadAloudControllerDependencies) {
     this.playback = new PcmPlaybackQueue({
       onDrained: () => this.finish(),
+      onCurrentSequenceChange: (sequence) => {
+        const followAlongReading = this.followAlongReading;
+        if (followAlongReading === null) return;
+        followAlongReading.setDesiredRange(
+          sequence === null ? null : (this.activeChunks[sequence]?.sourceRange ?? null),
+        );
+      },
       onPlayedThrough: (sequence) => {
         this.lastPlayedSequence = Math.max(this.lastPlayedSequence, sequence);
         if (this.activeSynthesisId !== null) {
@@ -137,7 +150,7 @@ export class ReadAloudController {
     );
     if (configuration === null) return;
 
-    await this.startReading(chunks, configuration);
+    await this.startReading(chunks, configuration, editor, source);
   }
 
   canReadText(text: string, language: string): boolean {
@@ -156,12 +169,14 @@ export class ReadAloudController {
     const configuration = this.resolveSynthesisConfiguration(language, 'playback_request');
     if (configuration === null) return;
 
-    await this.startReading(chunks, configuration);
+    await this.startReading(chunks, configuration, null, text);
   }
 
   private async startReading(
     chunks: SynthesisTextChunk[],
     configuration: SynthesisConfiguration,
+    editor: Editor | null,
+    source: string,
   ): Promise<void> {
     let speechLease: SidecarLifecycleLease;
     try {
@@ -183,6 +198,7 @@ export class ReadAloudController {
     try {
       if (this.deps.isDictationBusy()) await this.deps.stopDictation();
       if (startRevision !== this.pendingStartRevision) return;
+      this.followAlongReading = this.deps.followAlong.begin(editor, source);
       await this.startChunks(chunks, this.deps.getSettings().ttsSpeed, configuration, speechLease);
     } finally {
       if (this.pendingSpeechLeases.delete(speechLease)) {
@@ -432,6 +448,8 @@ export class ReadAloudController {
     this.activeLanguage = null;
     this.lastPlayedSequence = -1;
     this.sampleRate = null;
+    this.followAlongReading?.setDesiredRange(null);
+    this.followAlongReading = null;
     this.playback.stop();
     this.setState('idle');
     speechLease?.release();

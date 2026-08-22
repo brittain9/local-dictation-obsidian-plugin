@@ -5,6 +5,7 @@ import { DEFAULT_PLUGIN_SETTINGS } from '../src/settings/plugin-settings';
 import {
   LocalSttSettingTab,
   renderAutomaticCopyFinalizedUtterancesSetting,
+  renderReadAloudHighlightSetting,
 } from '../src/settings/settings-tab';
 import { type Setting as MockSetting, TestElement } from './__mocks__/obsidian';
 
@@ -69,6 +70,25 @@ describe('LocalSttSettingTab Obsidian 1.13 compatibility', () => {
 
     await vi.waitFor(() => {
       expect(persistOne).toHaveBeenCalledWith('autoCopyFinalizedUtterances', true);
+    });
+  });
+
+  it('renders the enabled read-aloud highlight toggle and persists live changes', async () => {
+    const persistOne = vi.fn(async () => {});
+    const setting = renderReadAloudHighlightSetting(new TestElement() as unknown as HTMLElement, {
+      getSettings: () => DEFAULT_PLUGIN_SETTINGS,
+      persistOne,
+    }) as unknown as MockSetting;
+
+    expect(setting.name).toBe('Highlight spoken text');
+    expect(setting.descEl.textContent).toBe(
+      'Highlight the current sentence or text chunk in the editor while Read Aloud is playing.',
+    );
+    expect(setting.onlyToggle().value).toBe(true);
+
+    setting.onlyToggle().change(false);
+    await vi.waitFor(() => {
+      expect(persistOne).toHaveBeenCalledWith('highlightSpokenText', false);
     });
   });
 });

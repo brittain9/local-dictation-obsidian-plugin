@@ -773,6 +773,9 @@ export const it = {
   'settings.readAloud.hotkey': 'Scorciatoia consigliata',
   'settings.readAloud.hotkeyDesc':
     "Assegna una scorciatoia a Leggi ad alta voce. Legge il testo selezionato oppure l'intera nota se non c'è una selezione.",
+  'settings.readAloud.highlightSpokenText': 'Evidenzia il testo letto',
+  'settings.readAloud.highlightSpokenTextDesc':
+    'Evidenzia la frase o il frammento di testo corrente nell’editor durante la lettura ad alta voce.',
   'settings.readAloud.voice': 'Voce',
   'settings.readAloud.voiceDesc': 'Scegli tra le voci installate per il modello selezionato.',
   'settings.readAloud.noVoices': 'Nessuna voce installata',
