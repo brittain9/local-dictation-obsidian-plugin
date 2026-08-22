@@ -22,6 +22,89 @@ const SNAPSHOT: TranslationSnapshot = {
 };
 
 describe('TranslationModal mutation safety', () => {
+  it('disables translation styles that are not installed', () => {
+    Setting.reset();
+    const modal = createModal({
+      editor: {
+        getValue: () => SNAPSHOT.source,
+        replaceRange: vi.fn(),
+      },
+      getEngineAvailability: () => [
+        { engineId: 'bergamot', model: null, status: 'not_installed' },
+        { engineId: 'tencent_hy_mt', model: null, status: 'available' },
+      ],
+      runTranslation: () => new Promise(() => {}),
+    });
+
+    modal.open();
+
+    const style = Setting.named('Default translation style').dropdownComponents[0];
+    expect(style?.selectEl.options.find((option) => option.value === 'bergamot')).toEqual(
+      expect.objectContaining({
+        disabled: true,
+        label: expect.stringContaining('(not installed)'),
+      }),
+    );
+    expect(style?.selectEl.options.find((option) => option.value === 'tencent_hy_mt')).toEqual(
+      expect.objectContaining({ disabled: false }),
+    );
+    modal.close();
+  });
+
+  it('names the missing translation style in the install state', async () => {
+    Setting.reset();
+    const modal = createModal({
+      editor: {
+        getValue: () => SNAPSHOT.source,
+        replaceRange: vi.fn(),
+      },
+      getEngineAvailability: () => [
+        { engineId: 'bergamot', model: null, status: 'not_installed' },
+        { engineId: 'tencent_hy_mt', model: null, status: 'not_installed' },
+      ],
+      runTranslation: async () => ({
+        engineId: 'bergamot',
+        kind: 'missing_model',
+        reason: 'not_installed',
+      }),
+    });
+
+    modal.open();
+
+    await vi.waitFor(() => {
+      expect(
+        (modal.contentEl as unknown as TestElement).querySelector(
+          '.local-stt-translation-modal__status-text',
+        )?.textContent,
+      ).toContain('Firefox Translations is not installed');
+    });
+  });
+
+  it('distinguishes an unsupported language pair from an uninstalled model', async () => {
+    Setting.reset();
+    const modal = createModal({
+      editor: {
+        getValue: () => SNAPSHOT.source,
+        replaceRange: vi.fn(),
+      },
+      runTranslation: async () => ({
+        engineId: 'bergamot',
+        kind: 'missing_model',
+        reason: 'unsupported_pair',
+      }),
+    });
+
+    modal.open();
+
+    await vi.waitFor(() => {
+      expect(
+        (modal.contentEl as unknown as TestElement).querySelector(
+          '.local-stt-translation-modal__status-text',
+        )?.textContent,
+      ).toBe('Your installed translation models do not support this language pair.');
+    });
+  });
+
   it('keeps the read-aloud action hidden while translation is in progress', () => {
     Setting.reset();
     const modal = createModal({
@@ -377,6 +460,10 @@ describe('TranslationModal mutation safety', () => {
 function createModal({
   canReadAloud = () => false,
   editor,
+  getEngineAvailability = () => [
+    { engineId: 'bergamot', model: null, status: 'available' as const },
+    { engineId: 'tencent_hy_mt', model: null, status: 'available' as const },
+  ],
   onReadAloud = vi.fn(),
   onRestart = vi.fn(),
   onTranslateCurrent = vi.fn(),
@@ -387,6 +474,9 @@ function createModal({
     getValue: () => string;
     replaceRange: ReturnType<typeof vi.fn>;
   };
+  getEngineAvailability?: ConstructorParameters<
+    typeof TranslationModal
+  >[1]['getEngineAvailability'];
   onReadAloud?: ConstructorParameters<typeof TranslationModal>[1]['onReadAloud'];
   onRestart?: ConstructorParameters<typeof TranslationModal>[1]['onRestart'];
   onTranslateCurrent?: () => void;
@@ -402,6 +492,7 @@ function createModal({
     canReadAloud,
     editor: editor as never,
     feedback: { show: vi.fn() },
+    getEngineAvailability,
     job,
     onApplied: vi.fn(),
     onClosed: vi.fn(),

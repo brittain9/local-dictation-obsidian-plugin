@@ -823,6 +823,10 @@ export const nl = {
   'translation.modal.failed': 'Vertalen mislukt.',
   'translation.modal.missingModel':
     'Installeer het lokale vertaalpakket om dit talenpaar te gebruiken.',
+  'translation.modal.missingEngineModel':
+    '{style} is niet geïnstalleerd. Installeer het lokale model om dit talenpaar te vertalen.',
+  'translation.modal.unsupportedPairModel':
+    'Je geïnstalleerde vertaalmodellen ondersteunen dit talenpaar niet.',
   'translation.modal.incompleteModel':
     'Er ontbreken bestanden in het vertaalmodel. Installeer het opnieuw om verder te gaan.',
   'translation.modal.installModel': 'Vertaalmodel installeren',
@@ -837,6 +841,8 @@ export const nl = {
     'Snel is letterlijker; Natuurlijk gebruikt het optionele Tencent HY-MT-model.',
   'translation.engine.bergamot': 'Snel en letterlijk — Firefox Translations',
   'translation.engine.tencentHyMt': 'Natuurlijk — Tencent HY-MT',
+  'translation.engine.notInstalled': '{style} (niet geïnstalleerd)',
+  'translation.engine.unsupportedPair': '{style} (niet beschikbaar voor dit talenpaar)',
   'translation.modal.stale':
     'De notitie is gewijzigd sinds deze vertaling begon. Start een nieuwe vertaling of kopieer deze.',
   'translation.notice.copied': 'Vertaling gekopieerd.',

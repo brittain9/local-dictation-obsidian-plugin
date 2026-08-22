@@ -109,8 +109,10 @@ obligations. No Gemma terms apply to v1.
 
 ## User workflow
 
-1. The Translation settings group shows the model's installed state, links to
-   Manage Models, and sets the default source and target languages.
+1. The Translation settings group summarizes all installed translation models,
+   links to Manage Models, and sets the default style, source, and target
+   languages. Uninstalled or pair-incompatible styles remain visible but cannot
+   be selected.
 2. The user selects text or invokes translation for a non-empty active note.
 3. A modal opens with the active source and target languages in both its title
    and controls.
@@ -124,6 +126,13 @@ obligations. No Gemma terms apply to v1.
 7. Replace and Insert below are enabled only if the original source range is
    unchanged and every Markdown unit rebuilt safely. Copy remains available
    when the note changed or a partial preview is retained for inspection.
+
+The preferred translation style is reconciled with the installed inventory. A
+compatible installed preference remains stable; otherwise another compatible
+installed engine becomes the persisted default. If none is installed, Fast
+remains the missing-model target when it supports the pair and Natural is the
+target otherwise. Returning from Manage Models re-runs this resolution against
+the refreshed inventory.
 
 The source and target preferences persist tolerantly without a settings-schema
 migration. If no preference exists, source defaults to the explicit dictation

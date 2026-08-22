@@ -830,6 +830,10 @@ export const fr = {
   'translation.modal.failed': 'La traduction a échoué.',
   'translation.modal.missingModel':
     'Installez le pack de traduction locale pour utiliser cette paire de langues.',
+  'translation.modal.missingEngineModel':
+    '{style} n’est pas installé. Installez son modèle local pour traduire cette paire de langues.',
+  'translation.modal.unsupportedPairModel':
+    'Vos modèles de traduction installés ne prennent pas en charge cette paire de langues.',
   'translation.modal.incompleteModel':
     'Il manque des fichiers au modèle de traduction. Réinstallez-le pour continuer.',
   'translation.modal.installModel': 'Installer le modèle de traduction',
@@ -844,6 +848,8 @@ export const fr = {
     'Rapide est plus littéral ; Naturel utilise le modèle Tencent HY-MT facultatif.',
   'translation.engine.bergamot': 'Rapide et littéral — Firefox Translations',
   'translation.engine.tencentHyMt': 'Naturel — Tencent HY-MT',
+  'translation.engine.notInstalled': '{style} (non installé)',
+  'translation.engine.unsupportedPair': '{style} (indisponible pour cette paire de langues)',
   'translation.modal.stale':
     'La note a changé depuis le début de cette traduction. Lancez une nouvelle traduction ou copiez celle-ci.',
   'translation.notice.copied': 'Traduction copiée.',
