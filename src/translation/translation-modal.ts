@@ -13,7 +13,12 @@ import {
   translationTargetsFor,
 } from './languages';
 import { TranslationModelIncompleteError } from './translation-artifacts';
-import { TRANSLATION_ENGINES, translationEngineLabel } from './translation-engines';
+import {
+  TRANSLATION_ENGINES,
+  type TranslationEngineAvailability,
+  translationEngineLabel,
+  translationEngineOptionLabel,
+} from './translation-engines';
 import type { TranslationJob, TranslationJobState } from './translation-job';
 
 const LARGE_SOURCE_CHARACTERS = 10_000;
@@ -27,6 +32,7 @@ interface TranslationModalDependencies {
   canReadAloud: (text: string, language: TranslationLanguage) => boolean;
   editor: Editor;
   feedback: Pick<UserFeedback, 'show'>;
+  getEngineAvailability: () => readonly TranslationEngineAvailability[];
   job: TranslationJob;
   onApplied: () => void;
   onClosed: () => void;
@@ -149,13 +155,22 @@ export class TranslationModal extends Modal {
       cls: 'local-stt-translation-modal__translation-style',
     });
     new Setting(style).setName(t('settings.translation.engine.name')).addDropdown((dropdown) => {
-      for (const engine of TRANSLATION_ENGINES)
-        dropdown.addOption(engine.id, translationEngineLabel(engine.id));
+      const availability = this.dependencies.getEngineAvailability();
+      for (const engine of TRANSLATION_ENGINES) {
+        const status = availability.find((candidate) => candidate.engineId === engine.id)?.status;
+        dropdown.addOption(engine.id, translationEngineOptionLabel(engine.id, status));
+        setOptionDisabled(dropdown.selectEl, engine.id, status !== 'available');
+      }
       dropdown
         .setValue(this.dependencies.job.engineId)
-        .setDisabled(active)
+        .setDisabled(active || !availability.some((engine) => engine.status === 'available'))
         .onChange((value) => {
-          if (value === 'bergamot' || value === 'tencent_hy_mt')
+          if (
+            (value === 'bergamot' || value === 'tencent_hy_mt') &&
+            availability.some(
+              (candidate) => candidate.engineId === value && candidate.status === 'available',
+            )
+          )
             this.restart(
               value,
               this.dependencies.job.sourceLanguage,
@@ -246,7 +261,11 @@ export class TranslationModal extends Modal {
             })
           : t('translation.modal.translating');
       case 'missing_model':
-        return t('translation.modal.missingModel');
+        return this.state.reason === 'unsupported_pair'
+          ? t('translation.modal.unsupportedPairModel')
+          : t('translation.modal.missingEngineModel', {
+              style: translationEngineLabel(this.state.engineId),
+            });
       case 'cancelled':
         return t('translation.modal.canceled');
       case 'failed':
@@ -492,6 +511,16 @@ export class TranslationModal extends Modal {
     this.close();
   }
 }
+
+function setOptionDisabled(
+  select: HTMLSelectElement,
+  engineId: TranslationEngineId,
+  disabled: boolean,
+): void {
+  const option = Array.from(select.options).find((candidate) => candidate.value === engineId);
+  if (option !== undefined) option.disabled = disabled;
+}
+
 function translationFailureMessage(error: unknown): string {
   if (error instanceof TranslationModelIncompleteError) {
     return t('translation.modal.incompleteModel');

@@ -146,6 +146,10 @@ export const en = {
   'translation.modal.canceled': 'Translation canceled.',
   'translation.modal.failed': 'Translation failed.',
   'translation.modal.missingModel': 'Install the local translation pack to use this language pair.',
+  'translation.modal.missingEngineModel':
+    '{style} is not installed. Install its local model to translate this language pair.',
+  'translation.modal.unsupportedPairModel':
+    'Your installed translation models do not support this language pair.',
   'translation.modal.incompleteModel':
     'The translation model is missing files. Reinstall it to continue.',
   'translation.modal.installModel': 'Install translation model',
@@ -203,6 +207,10 @@ export const en = {
     'Changing speed while reading restarts from the current sentence.',
   'settings.translation.model.name': 'Translation model',
   'settings.translation.model.installedDesc': '{model} · Installed · {size}',
+  'settings.translation.model.noneInstalledDesc':
+    'No translation model is installed. Choose one in Manage models.',
+  'settings.translation.model.multipleInstalledDesc':
+    '{count} translation models installed · {size}',
   'settings.translation.model.availableDesc': '{model} · Not installed · {size}',
   'settings.translation.model.unavailable': 'No translation model is available.',
   'settings.translation.model.download': 'Download translation model',
@@ -212,6 +220,8 @@ export const en = {
     'Fast is compact and literal. Natural produces more fluent prose and supports more language pairs.',
   'translation.engine.bergamot': 'Fast & literal — Firefox Translations',
   'translation.engine.tencentHyMt': 'Natural — Tencent HY-MT',
+  'translation.engine.notInstalled': '{style} (not installed)',
+  'translation.engine.unsupportedPair': '{style} (not available for this language pair)',
   'settings.translation.source.name': 'Default source language',
   'settings.translation.source.desc':
     'Preselected when you translate a note or selection. You can change it before translating.',

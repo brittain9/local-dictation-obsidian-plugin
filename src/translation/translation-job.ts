@@ -1,14 +1,22 @@
 import type { TranslationEngineId, TranslationLanguage } from './languages';
 
 export type TranslationJobResult =
-  | { kind: 'missing_model' }
+  | {
+      engineId: TranslationEngineId;
+      kind: 'missing_model';
+      reason: 'not_installed' | 'unsupported_pair';
+    }
   | { kind: 'translated'; sourceUnitsKept: number; text: string };
 
 export type TranslationJobState =
   | { phase: 'idle' }
   | { phase: 'loading'; startedAt: number }
   | { completed: number; phase: 'translating'; startedAt: number; total: number }
-  | { phase: 'missing_model' }
+  | {
+      engineId: TranslationEngineId;
+      phase: 'missing_model';
+      reason: 'not_installed' | 'unsupported_pair';
+    }
   | { phase: 'completed'; sourceUnitsKept: number; text: string }
   | { phase: 'cancelled' }
   | { error: unknown; phase: 'failed' };
@@ -77,7 +85,11 @@ export class TranslationJob {
         this.abortController = null;
         this.setState(
           result.kind === 'missing_model'
-            ? { phase: 'missing_model' }
+            ? {
+                engineId: result.engineId,
+                phase: 'missing_model',
+                reason: result.reason,
+              }
             : {
                 phase: 'completed',
                 sourceUnitsKept: result.sourceUnitsKept,

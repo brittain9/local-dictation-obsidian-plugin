@@ -22,7 +22,10 @@ describe('TranslationController', () => {
       feedback: { show },
       getSettings: () => DEFAULT_PLUGIN_SETTINGS,
       logger: { error: vi.fn() } as never,
-      modelManager: {} as never,
+      modelManager: {
+        getState: () => ({ catalog: { models: [] }, installedModels: [] }),
+        subscribe: () => () => {},
+      } as never,
       onReadAloud: vi.fn(),
       openModelPicker: vi.fn(async () => {}),
       saveSettings: vi.fn(async () => {}),
@@ -58,6 +61,7 @@ describe('TranslationController', () => {
           catalog: { models: [] },
           installedModels: [],
         }),
+        subscribe: () => () => {},
       } as never,
       onReadAloud: vi.fn(),
       openModelPicker,
@@ -77,6 +81,173 @@ describe('TranslationController', () => {
     expect(worker).not.toHaveBeenCalled();
     expect(replaceRange).not.toHaveBeenCalled();
     expect(openModelPicker).not.toHaveBeenCalled();
+  });
+
+  it('uses installed Natural translation when the saved Fast model is not installed', async () => {
+    Modal.instances.length = 0;
+    Setting.reset();
+    const startTranslation = vi.fn(async () => {});
+    const saveSettings = vi.fn(async () => {});
+    const controller = new TranslationController({
+      app: {} as never,
+      canReadAloud: () => false,
+      feedback: { show: vi.fn() },
+      getSettings: () => DEFAULT_PLUGIN_SETTINGS,
+      logger: { error: vi.fn(), warn: vi.fn() } as never,
+      modelManager: {
+        getState: () => ({
+          catalog: {
+            models: [
+              {
+                familyId: 'tencent_hy_mt',
+                modelId: 'hy-mt',
+                runtimeId: 'llama_cpp',
+                task: 'translation',
+                translationSupport: { kind: 'all_to_all', languages: ['en', 'es'] },
+              },
+            ],
+          },
+          installedModels: [
+            { familyId: 'tencent_hy_mt', modelId: 'hy-mt', runtimeId: 'llama_cpp' },
+          ],
+        }),
+        subscribe: () => () => {},
+      } as never,
+      onReadAloud: vi.fn(),
+      openModelPicker: vi.fn(async () => {}),
+      saveSettings,
+      sidecarConnection: {
+        cancelTranslation: vi.fn(),
+        startTranslation,
+        subscribe: () => () => {},
+      } as never,
+    });
+    const editor = { getValue: () => 'Translate this note.', replaceRange: vi.fn() };
+
+    controller.translateNote(editor as never);
+
+    await vi.waitFor(() => expect(startTranslation).toHaveBeenCalledTimes(1));
+    expect(saveSettings).toHaveBeenCalledWith(
+      expect.objectContaining({ translationEngineId: 'tencent_hy_mt' }),
+    );
+    expect(
+      Setting.instances
+        .flatMap((setting) => setting.buttonComponents)
+        .some((button) => button.text === 'Install translation model'),
+    ).toBe(false);
+  });
+
+  it('re-resolves the default after installing a different translation model', async () => {
+    Modal.instances.length = 0;
+    Setting.reset();
+    const startTranslation = vi.fn(async () => {});
+    const tencentModel = {
+      familyId: 'tencent_hy_mt',
+      modelId: 'hy-mt',
+      runtimeId: 'llama_cpp',
+      task: 'translation',
+      translationSupport: { kind: 'all_to_all', languages: ['en', 'es'] },
+    };
+    const firefoxModel = {
+      familyId: 'firefox_translations',
+      modelId: 'firefox',
+      runtimeId: 'bergamot_wasm',
+      task: 'translation',
+      translationSupport: { kind: 'pairs', pairs: [{ source: 'en', target: 'es' }] },
+    };
+    let installedModels: object[] = [];
+    const controller = new TranslationController({
+      app: {} as never,
+      canReadAloud: () => false,
+      feedback: { show: vi.fn() },
+      getSettings: () => DEFAULT_PLUGIN_SETTINGS,
+      logger: { error: vi.fn(), warn: vi.fn() } as never,
+      modelManager: {
+        getState: () => ({
+          catalog: { models: [firefoxModel, tencentModel] },
+          installedModels,
+        }),
+        subscribe: () => () => {},
+      } as never,
+      onReadAloud: vi.fn(),
+      openModelPicker: vi.fn(async () => {
+        installedModels = [{ familyId: 'tencent_hy_mt', modelId: 'hy-mt', runtimeId: 'llama_cpp' }];
+      }),
+      saveSettings: vi.fn(async () => {}),
+      sidecarConnection: {
+        cancelTranslation: vi.fn(),
+        startTranslation,
+        subscribe: () => () => {},
+      } as never,
+    });
+    const editor = { getValue: () => 'Translate this note.', replaceRange: vi.fn() };
+
+    controller.translateNote(editor as never);
+    await vi.waitFor(() => expect(Setting.buttonNamed('Install translation model')).toBeDefined());
+    await Setting.buttonNamed('Install translation model').click();
+
+    await vi.waitFor(() => expect(startTranslation).toHaveBeenCalledTimes(1));
+  });
+
+  it('persists an installed fallback after the preferred model is removed', async () => {
+    let notifyModels = () => {};
+    let installedModels: object[] = [
+      { familyId: 'tencent_hy_mt', modelId: 'hy-mt', runtimeId: 'llama_cpp' },
+      { familyId: 'firefox_translations', modelId: 'firefox', runtimeId: 'bergamot_wasm' },
+    ];
+    const settings = {
+      ...DEFAULT_PLUGIN_SETTINGS,
+      translationEngineId: 'tencent_hy_mt' as const,
+    };
+    const saveSettings = vi.fn(async () => {});
+    new TranslationController({
+      app: {} as never,
+      canReadAloud: () => false,
+      feedback: { show: vi.fn() },
+      getSettings: () => settings,
+      logger: { error: vi.fn(), warn: vi.fn() } as never,
+      modelManager: {
+        getState: () => ({
+          catalog: {
+            models: [
+              {
+                familyId: 'firefox_translations',
+                modelId: 'firefox',
+                runtimeId: 'bergamot_wasm',
+                task: 'translation',
+                translationSupport: { kind: 'pairs', pairs: [{ source: 'en', target: 'es' }] },
+              },
+              {
+                familyId: 'tencent_hy_mt',
+                modelId: 'hy-mt',
+                runtimeId: 'llama_cpp',
+                task: 'translation',
+                translationSupport: { kind: 'all_to_all', languages: ['en', 'es'] },
+              },
+            ],
+          },
+          installedModels,
+        }),
+        subscribe: (listener: () => void) => {
+          notifyModels = listener;
+          return () => {};
+        },
+      } as never,
+      onReadAloud: vi.fn(),
+      openModelPicker: vi.fn(async () => {}),
+      saveSettings,
+    });
+
+    installedModels = [
+      { familyId: 'firefox_translations', modelId: 'firefox', runtimeId: 'bergamot_wasm' },
+    ];
+    notifyModels();
+
+    await vi.waitFor(() => {
+      expect(saveSettings).toHaveBeenCalledWith(
+        expect.objectContaining({ translationEngineId: 'bergamot' }),
+      );
+    });
   });
 
   it('detaches a long Natural job, reopens it without duplicate inference, and keeps progress current', async () => {
@@ -110,6 +281,7 @@ describe('TranslationController', () => {
             { familyId: 'tencent_hy_mt', modelId: 'hy-mt', runtimeId: 'llama_cpp' },
           ],
         }),
+        subscribe: () => () => {},
       } as never,
       onReadAloud: vi.fn(),
       openModelPicker: vi.fn(async () => {}),
@@ -178,6 +350,7 @@ describe('TranslationController', () => {
             { familyId: 'tencent_hy_mt', modelId: 'hy-mt', runtimeId: 'llama_cpp' },
           ],
         }),
+        subscribe: () => () => {},
       } as never,
       onReadAloud: vi.fn(),
       openModelPicker: vi.fn(async () => {}),

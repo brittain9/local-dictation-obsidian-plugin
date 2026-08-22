@@ -821,6 +821,10 @@ export const ja = {
   'translation.modal.failed': '翻訳に失敗しました。',
   'translation.modal.missingModel':
     'この言語ペアを使用するには、ローカル翻訳パックをインストールしてください。',
+  'translation.modal.missingEngineModel':
+    '{style} はインストールされていません。この言語ペアを翻訳するには、ローカルモデルをインストールしてください。',
+  'translation.modal.unsupportedPairModel':
+    'インストール済みの翻訳モデルは、この言語ペアに対応していません。',
   'translation.modal.incompleteModel':
     '翻訳モデルのファイルが不足しています。続行するには再インストールしてください。',
   'translation.modal.installModel': '翻訳モデルをインストール',
@@ -835,6 +839,8 @@ export const ja = {
     '高速は直訳寄りです。自然は任意の Tencent HY-MT モデルを使用します。',
   'translation.engine.bergamot': '高速・直訳 — Firefox Translations',
   'translation.engine.tencentHyMt': '自然 — Tencent HY-MT',
+  'translation.engine.notInstalled': '{style}（未インストール）',
+  'translation.engine.unsupportedPair': '{style}（この言語ペアでは利用できません）',
   'translation.modal.stale':
     '翻訳開始後にノートが変更されました。もう一度翻訳するか、この翻訳をコピーしてください。',
   'translation.notice.copied': '翻訳をコピーしました。',
