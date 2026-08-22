@@ -295,6 +295,7 @@ export default class LocalSttPlugin extends Plugin {
     this.readAloudController = new ReadAloudController({
       feedback: this.feedback,
       getCatalog: () => this.requireModelInstallManager().getState().catalog,
+      getInstalledModels: () => this.requireModelInstallManager().getState().installedModels,
       getSettings: () => this.settings,
       isDictationBusy: () => this.requireDictationController().isCaptureActive(),
       logger: this.logger,
@@ -310,10 +311,13 @@ export default class LocalSttPlugin extends Plugin {
     });
     this.translationController = new TranslationController({
       app: this.app,
+      canReadAloud: (text, language) =>
+        this.requireReadAloudController().canReadText(text, language),
       feedback: this.feedback,
       getSettings: () => this.settings,
       logger: this.logger,
       modelManager: this.requireModelInstallManager(),
+      onReadAloud: (text, language) => this.requireReadAloudController().readText(text, language),
       openModelPicker: () => this.openModelPicker({ initialTask: 'translation' }),
       saveSettings: (nextSettings) => this.updateSettings(nextSettings),
       setDetachedStatus: (state, reopen) => this.renderTranslationStatus(state, reopen),

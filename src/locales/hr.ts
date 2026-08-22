@@ -132,6 +132,7 @@ export const hr = {
   'translation.modal.sourceSelection': 'Odabrani tekst',
   'translation.modal.sourceNote': 'Izvorna bilješka',
   'translation.modal.previewAria': 'Pregled prijevoda',
+  'translation.modal.readAloud': 'Pročitaj prijevod naglas na jeziku {language}',
   'translation.modal.preparing': 'Priprema lokalnog prijevoda…',
   'translation.modal.loading': 'Učitavanje lokalnog modela…',
   'translation.modal.translating': 'Prevođenje…',

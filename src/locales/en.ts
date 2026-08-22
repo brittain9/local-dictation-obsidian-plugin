@@ -133,6 +133,7 @@ export const en = {
   'translation.modal.sourceSelection': 'Source selection',
   'translation.modal.sourceNote': 'Source note',
   'translation.modal.previewAria': 'Translation preview',
+  'translation.modal.readAloud': 'Read translation aloud in {language}',
   'translation.modal.preparing': 'Preparing local translation…',
   'translation.modal.loading': 'Loading local model…',
   'translation.modal.translating': 'Translating…',

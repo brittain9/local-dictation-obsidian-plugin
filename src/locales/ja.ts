@@ -804,6 +804,7 @@ export const ja = {
   'translation.modal.sourceSelection': '翻訳元の選択範囲',
   'translation.modal.sourceNote': '翻訳元のノート',
   'translation.modal.previewAria': '翻訳プレビュー',
+  'translation.modal.readAloud': '{language}語で翻訳を読み上げる',
   'translation.modal.preparing': 'ローカル翻訳を準備しています…',
   'translation.modal.loading': 'ローカルモデルを読み込んでいます…',
   'translation.modal.translating': '翻訳しています…',

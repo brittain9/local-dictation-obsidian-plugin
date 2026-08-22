@@ -259,11 +259,15 @@ function splitLongSentence(
 export function extractAndSegmentMarkdown(
   source: string,
   sourceRange: SourceRange = { from: 0, to: source.length },
+  options: { locale?: string } = {},
 ): SynthesisTextChunk[] {
   const sliced = source.slice(sourceRange.from, sourceRange.to);
   const mapped = extractSpeakableMarkdown(sliced);
-  return segmentSpeakableText({
-    sourceOffsets: mapped.sourceOffsets.map((offset) => offset + sourceRange.from),
-    text: mapped.text,
-  });
+  return segmentSpeakableText(
+    {
+      sourceOffsets: mapped.sourceOffsets.map((offset) => offset + sourceRange.from),
+      text: mapped.text,
+    },
+    options,
+  );
 }

@@ -806,6 +806,7 @@ export const nl = {
   'translation.modal.sourceSelection': 'Bronselectie',
   'translation.modal.sourceNote': 'Bronnotitie',
   'translation.modal.previewAria': 'Vertaalvoorbeeld',
+  'translation.modal.readAloud': 'Vertaling voorlezen in {language}',
   'translation.modal.preparing': 'Lokale vertaling voorbereiden…',
   'translation.modal.loading': 'Lokaal model laden…',
   'translation.modal.translating': 'Vertalen…',

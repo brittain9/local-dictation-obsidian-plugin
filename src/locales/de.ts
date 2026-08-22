@@ -820,6 +820,7 @@ export const de = {
   'translation.modal.sourceSelection': 'Quellauswahl',
   'translation.modal.sourceNote': 'Quellnotiz',
   'translation.modal.previewAria': 'Übersetzungsvorschau',
+  'translation.modal.readAloud': 'Übersetzung auf {language} vorlesen',
   'translation.modal.preparing': 'Lokale Übersetzung wird vorbereitet…',
   'translation.modal.loading': 'Lokales Modell wird geladen…',
   'translation.modal.translating': 'Wird übersetzt…',

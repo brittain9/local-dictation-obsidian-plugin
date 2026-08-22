@@ -18,10 +18,12 @@ describe('TranslationController', () => {
     const show = vi.fn();
     const controller = new TranslationController({
       app: {} as never,
+      canReadAloud: () => false,
       feedback: { show },
       getSettings: () => DEFAULT_PLUGIN_SETTINGS,
       logger: { error: vi.fn() } as never,
       modelManager: {} as never,
+      onReadAloud: vi.fn(),
       openModelPicker: vi.fn(async () => {}),
       saveSettings: vi.fn(async () => {}),
     });
@@ -47,6 +49,7 @@ describe('TranslationController', () => {
     const openModelPicker = vi.fn(async () => {});
     const controller = new TranslationController({
       app: {} as never,
+      canReadAloud: () => false,
       feedback: { show: vi.fn() },
       getSettings: () => DEFAULT_PLUGIN_SETTINGS,
       logger: { error: vi.fn() } as never,
@@ -56,6 +59,7 @@ describe('TranslationController', () => {
           installedModels: [],
         }),
       } as never,
+      onReadAloud: vi.fn(),
       openModelPicker,
       saveSettings: vi.fn(async () => {}),
     });
@@ -95,6 +99,7 @@ describe('TranslationController', () => {
     };
     const controller = new TranslationController({
       app: {} as never,
+      canReadAloud: () => false,
       feedback: { show: vi.fn() },
       getSettings: () => settings,
       logger: { error: vi.fn(), warn: vi.fn() } as never,
@@ -106,6 +111,7 @@ describe('TranslationController', () => {
           ],
         }),
       } as never,
+      onReadAloud: vi.fn(),
       openModelPicker: vi.fn(async () => {}),
       saveSettings: vi.fn(async () => {}),
       setDetachedStatus,
@@ -151,6 +157,7 @@ describe('TranslationController', () => {
     const settings = { ...DEFAULT_PLUGIN_SETTINGS, translationEngineId: 'tencent_hy_mt' as const };
     const controller = new TranslationController({
       app: {} as never,
+      canReadAloud: () => false,
       feedback: { show: vi.fn() },
       getSettings: () => settings,
       logger: { error: vi.fn(), warn: vi.fn() } as never,
@@ -172,6 +179,7 @@ describe('TranslationController', () => {
           ],
         }),
       } as never,
+      onReadAloud: vi.fn(),
       openModelPicker: vi.fn(async () => {}),
       saveSettings: vi.fn(async () => {}),
       sidecarConnection: {
