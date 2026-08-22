@@ -12,6 +12,10 @@ import { dictationAnchorExtension } from './editor/dictation-anchor-extension';
 import { noteSurfaceUpdateListenerExtension } from './editor/note-surface';
 import { provisionalTranscriptExtension } from './editor/provisional-transcript-extension';
 import { RawTranscriptRecovery } from './editor/raw-transcript-recovery';
+import {
+  ReadAloudFollowAlong,
+  readAloudFollowAlongExtension,
+} from './editor/read-aloud-follow-along';
 import { sessionProcessingExtension } from './editor/session-processing-extension';
 import { TemporaryLeafPinLeaseManager } from './editor/temporary-leaf-pin';
 import { syncDictationLanguageWithObsidian } from './language/dictation-language-sync';
@@ -119,6 +123,7 @@ export default class LocalSttPlugin extends Plugin {
   });
   private ribbonController: DictationRibbonController | null = null;
   private readAloudController: ReadAloudController | null = null;
+  private readAloudFollowAlong: ReadAloudFollowAlong | null = null;
   private releaseReadAloudModelSubscription: (() => void) | null = null;
   private readAloudStatus: HTMLElement | null = null;
   override settings: PluginSettings = DEFAULT_PLUGIN_SETTINGS;
@@ -162,6 +167,11 @@ export default class LocalSttPlugin extends Plugin {
     this.registerEditorExtension(dictationAnchorExtension());
     this.registerEditorExtension(noteSurfaceUpdateListenerExtension());
     this.registerEditorExtension(provisionalTranscriptExtension());
+    this.readAloudFollowAlong = new ReadAloudFollowAlong(
+      this.app.workspace,
+      this.settings.highlightSpokenText,
+    );
+    this.registerEditorExtension(readAloudFollowAlongExtension(this.readAloudFollowAlong));
     this.registerEditorExtension(sessionProcessingExtension());
     this.sidecarConnection = new SidecarConnection({
       getRequestTimeoutMs: () => this.settings.sidecarRequestTimeoutSeconds * 1000,
@@ -294,6 +304,7 @@ export default class LocalSttPlugin extends Plugin {
     this.readAloudStatus.addClass('local-stt-read-aloud-status');
     this.readAloudController = new ReadAloudController({
       feedback: this.feedback,
+      followAlong: this.requireReadAloudFollowAlong(),
       getCatalog: () => this.requireModelInstallManager().getState().catalog,
       getInstalledModels: () => this.requireModelInstallManager().getState().installedModels,
       getSettings: () => this.settings,
@@ -599,6 +610,13 @@ export default class LocalSttPlugin extends Plugin {
     }
 
     try {
+      this.readAloudFollowAlong?.dispose();
+      this.readAloudFollowAlong = null;
+    } catch (error) {
+      this.logger.error('tts', 'failed to dispose read-aloud follow-along cleanly', error);
+    }
+
+    try {
       this.translationController?.dispose();
     } catch (error) {
       this.logger.error('translation', 'failed to dispose translation controller cleanly', error);
@@ -722,6 +740,9 @@ export default class LocalSttPlugin extends Plugin {
     if (options.persist) {
       await this.saveData(this.settings);
     }
+    if (previousSettings.highlightSpokenText !== this.settings.highlightSpokenText) {
+      this.readAloudFollowAlong?.setEnabled(this.settings.highlightSpokenText);
+    }
     if (didReadAloudSettingsChange(previousSettings, this.settings)) {
       await this.readAloudController?.applySpeed(this.settings.ttsSpeed);
       this.renderReadAloudStatus(this.readAloudController?.getState() ?? 'idle');
@@ -759,6 +780,13 @@ export default class LocalSttPlugin extends Plugin {
       throw new Error('Read-aloud controller has not been initialized.');
     }
     return this.readAloudController;
+  }
+
+  private requireReadAloudFollowAlong(): ReadAloudFollowAlong {
+    if (this.readAloudFollowAlong === null) {
+      throw new Error('Read-aloud follow-along has not been initialized.');
+    }
+    return this.readAloudFollowAlong;
   }
 
   private requireTranslationController(): TranslationController {

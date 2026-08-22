@@ -192,6 +192,9 @@ export const en = {
   'settings.readAloud.hotkey': 'Recommended shortcut',
   'settings.readAloud.hotkeyDesc':
     'Bind “Speech Kit: Read aloud” to a hotkey. It reads selected text, or the entire note when nothing is selected.',
+  'settings.readAloud.highlightSpokenText': 'Highlight spoken text',
+  'settings.readAloud.highlightSpokenTextDesc':
+    'Highlight the current sentence or text chunk in the editor while Read Aloud is playing.',
   'settings.readAloud.voice': 'Voice',
   'settings.readAloud.voiceDesc': 'Choose from voices installed for the selected model.',
   'settings.readAloud.noVoices': 'No installed voices',

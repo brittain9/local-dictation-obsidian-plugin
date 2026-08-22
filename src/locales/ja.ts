@@ -761,6 +761,9 @@ export const ja = {
   'settings.readAloud.hotkey': 'おすすめのホットキー',
   'settings.readAloud.hotkeyDesc':
     '読み上げにホットキーを割り当てます。選択範囲があればその部分を、なければノート全体を読み上げます。',
+  'settings.readAloud.highlightSpokenText': '読み上げ中のテキストを強調表示',
+  'settings.readAloud.highlightSpokenTextDesc':
+    '読み上げ中の文またはテキストチャンクをエディターで強調表示します。',
   'settings.readAloud.voice': '音声',
   'settings.readAloud.voiceDesc': '選択したモデルにインストール済みの音声から選びます。',
   'settings.readAloud.noVoices': 'インストール済みの音声はありません',

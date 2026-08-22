@@ -774,6 +774,9 @@ export const de = {
   'settings.readAloud.hotkey': 'Empfohlene Tastenkombination',
   'settings.readAloud.hotkeyDesc':
     'Lege eine Tastenkombination für Vorlesen fest. Markierter Text wird vorgelesen, andernfalls die gesamte Notiz.',
+  'settings.readAloud.highlightSpokenText': 'Gesprochenen Text hervorheben',
+  'settings.readAloud.highlightSpokenTextDesc':
+    'Hebt den aktuellen Satz oder Textabschnitt im Editor hervor, während Vorlesen läuft.',
   'settings.readAloud.voice': 'Stimme',
   'settings.readAloud.voiceDesc': 'Wähle eine für das ausgewählte Modell installierte Stimme.',
   'settings.readAloud.noVoices': 'Keine installierten Stimmen',

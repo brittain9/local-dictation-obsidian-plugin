@@ -1,11 +1,13 @@
 export interface PcmPlaybackQueueCallbacks {
   onDrained: () => void;
+  onCurrentSequenceChange: (sequence: number | null) => void;
   onPlayedThrough: (sequence: number) => void;
 }
 
 type AudioContextFactory = () => AudioContext;
 
 interface ScheduledSource {
+  sequence: number;
   source: AudioBufferSourceNode;
 }
 
@@ -16,6 +18,8 @@ export class PcmPlaybackQueue {
   private nextStartTime = 0;
   private paused = false;
   private scheduled = new Map<number, ScheduledSource>();
+  private currentSequence: number | null = null;
+  private generation = 0;
 
   constructor(
     private readonly callbacks: PcmPlaybackQueueCallbacks,
@@ -24,6 +28,7 @@ export class PcmPlaybackQueue {
 
   start(): void {
     this.stop();
+    this.generation += 1;
     this.context = this.createAudioContext();
     this.nextStartTime = this.context.currentTime;
   }
@@ -48,13 +53,23 @@ export class PcmPlaybackQueue {
     source.connect(context.destination);
     const startTime = Math.max(context.currentTime, this.nextStartTime);
     this.nextStartTime = startTime + buffer.duration;
-    this.scheduled.set(sequence, { source });
+    const hadScheduledSource = this.scheduled.size > 0;
+    const generation = this.generation;
+    this.scheduled.set(sequence, { sequence, source });
     source.onended = () => {
+      if (generation !== this.generation) return;
       if (!this.scheduled.delete(sequence)) return;
       this.callbacks.onPlayedThrough(sequence);
+      if (this.currentSequence === sequence) {
+        const next = this.scheduled.values().next().value;
+        this.setCurrentSequence(next?.sequence ?? null);
+      }
       this.notifyIfDrained();
     };
     source.start(startTime);
+    if (this.currentSequence === null && !hadScheduledSource) {
+      this.setCurrentSequence(sequence);
+    }
   }
 
   markGenerationComplete(): void {
@@ -82,11 +97,13 @@ export class PcmPlaybackQueue {
   }
 
   stop(): void {
+    this.generation += 1;
     const context = this.context;
     this.context = null;
     this.generationComplete = false;
     this.nextStartTime = 0;
     this.paused = false;
+    this.currentSequence = null;
     for (const { source } of this.scheduled.values()) {
       source.onended = null;
       try {
@@ -104,5 +121,11 @@ export class PcmPlaybackQueue {
     if (this.generationComplete && this.scheduled.size === 0) {
       this.callbacks.onDrained();
     }
+  }
+
+  private setCurrentSequence(sequence: number | null): void {
+    if (sequence === this.currentSequence) return;
+    this.currentSequence = sequence;
+    this.callbacks.onCurrentSequenceChange(sequence);
   }
 }

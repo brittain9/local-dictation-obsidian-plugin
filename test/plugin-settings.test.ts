@@ -33,6 +33,13 @@ describe('resolvePluginSettings', () => {
     expect(resolvePluginSettings(undefined)).toEqual(DEFAULT_PLUGIN_SETTINGS);
   });
 
+  it('enables read-aloud follow-along highlighting by default and normalizes invalid values', () => {
+    expect(DEFAULT_PLUGIN_SETTINGS.highlightSpokenText).toBe(true);
+    expect(resolvePluginSettings({}).highlightSpokenText).toBe(true);
+    expect(resolvePluginSettings({ highlightSpokenText: false }).highlightSpokenText).toBe(false);
+    expect(resolvePluginSettings({ highlightSpokenText: 'no' }).highlightSpokenText).toBe(true);
+  });
+
   it('distinguishes a fresh install from an existing vault with missing routing data', () => {
     expect(resolvePluginSettings(null).llmRoutingPolicy).toBeNull();
     expect(resolvePluginSettings({}).llmRoutingPolicy).toEqual({

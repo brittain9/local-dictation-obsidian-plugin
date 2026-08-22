@@ -32,12 +32,13 @@ function createHarness() {
     suspend: vi.fn(async () => undefined),
   };
   const onDrained = vi.fn();
+  const onCurrentSequenceChange = vi.fn();
   const onPlayedThrough = vi.fn();
   const queue = new PcmPlaybackQueue(
-    { onDrained, onPlayedThrough },
+    { onCurrentSequenceChange, onDrained, onPlayedThrough },
     () => context as unknown as AudioContext,
   );
-  return { context, onDrained, onPlayedThrough, queue, sources };
+  return { context, onCurrentSequenceChange, onDrained, onPlayedThrough, queue, sources };
 }
 
 describe('PcmPlaybackQueue', () => {
@@ -47,11 +48,35 @@ describe('PcmPlaybackQueue', () => {
     harness.queue.enqueue(4, 24_000, new Uint8Array([0, 0, 255, 127]));
     expect(harness.context.createBuffer).toHaveBeenCalledWith(1, 2, 24_000);
     expect(harness.sources[0]?.start).toHaveBeenCalledWith(1);
+    expect(harness.onCurrentSequenceChange).toHaveBeenLastCalledWith(4);
     harness.queue.markGenerationComplete();
     expect(harness.onDrained).not.toHaveBeenCalled();
     harness.sources[0]?.onended?.();
     expect(harness.onPlayedThrough).toHaveBeenCalledWith(4);
     expect(harness.onDrained).toHaveBeenCalledOnce();
+  });
+
+  it('does not report a pre-buffered sequence until the current source ends', () => {
+    const harness = createHarness();
+    harness.queue.start();
+    harness.queue.enqueue(0, 24_000, new Uint8Array([0, 0, 255, 127]));
+    harness.queue.enqueue(1, 24_000, new Uint8Array([0, 0, 255, 127]));
+
+    expect(harness.onCurrentSequenceChange).toHaveBeenLastCalledWith(0);
+    harness.sources[0]?.onended?.();
+    expect(harness.onCurrentSequenceChange).toHaveBeenLastCalledWith(1);
+  });
+
+  it('reports a playback gap without exposing a future sequence', () => {
+    const harness = createHarness();
+    harness.queue.start();
+    harness.queue.enqueue(0, 24_000, new Uint8Array([0, 0, 255, 127]));
+
+    harness.sources[0]?.onended?.();
+    expect(harness.onCurrentSequenceChange).toHaveBeenLastCalledWith(null);
+
+    harness.queue.enqueue(1, 24_000, new Uint8Array([0, 0, 255, 127]));
+    expect(harness.onCurrentSequenceChange).toHaveBeenLastCalledWith(1);
   });
 
   it('suspends and resumes the audio context', async () => {
@@ -79,5 +104,18 @@ describe('PcmPlaybackQueue', () => {
 
     await expect(pausing).resolves.toBe(false);
     expect(harness.queue.isPaused()).toBe(false);
+  });
+
+  it('suppresses callbacks from sources after a stop and restart', () => {
+    const harness = createHarness();
+    harness.queue.start();
+    harness.queue.enqueue(0, 24_000, new Uint8Array([0, 0, 255, 127]));
+    const staleSource = harness.sources[0];
+
+    harness.queue.start();
+    staleSource?.onended?.();
+
+    expect(harness.onPlayedThrough).not.toHaveBeenCalled();
+    expect(harness.onCurrentSequenceChange).toHaveBeenLastCalledWith(0);
   });
 });

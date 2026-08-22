@@ -764,6 +764,9 @@ export const pt = {
   'settings.readAloud.hotkey': 'Atalho recomendado',
   'settings.readAloud.hotkeyDesc':
     'Associe um atalho a Ler em voz alta. Lê o texto selecionado ou a nota inteira quando não há seleção.',
+  'settings.readAloud.highlightSpokenText': 'Destacar texto falado',
+  'settings.readAloud.highlightSpokenTextDesc':
+    'Destaca a frase ou o trecho de texto atual no editor enquanto a leitura em voz alta está ativa.',
   'settings.readAloud.voice': 'Voz',
   'settings.readAloud.voiceDesc': 'Escolha entre as vozes instaladas para o modelo selecionado.',
   'settings.readAloud.noVoices': 'Nenhuma voz instalada',

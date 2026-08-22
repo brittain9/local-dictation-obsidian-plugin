@@ -191,6 +191,9 @@ export const hr = {
   'settings.readAloud.hotkey': 'Preporučeni tipkovni prečac',
   'settings.readAloud.hotkeyDesc':
     'Dodijelite tipkovni prečac naredbi „Speech Kit: Čitaj naglas”. Čita odabrani tekst ili cijelu bilješku ako ništa nije odabrano.',
+  'settings.readAloud.highlightSpokenText': 'Istakni izgovoreni tekst',
+  'settings.readAloud.highlightSpokenTextDesc':
+    'Istakni trenutačnu rečenicu ili dio teksta u uređivaču dok je čitanje naglas aktivno.',
   'settings.readAloud.voice': 'Glas',
   'settings.readAloud.voiceDesc': 'Odaberite među glasovima instaliranima za odabrani model.',
   'settings.readAloud.noVoices': 'Nema instaliranih glasova',
