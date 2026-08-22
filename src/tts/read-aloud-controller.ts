@@ -56,6 +56,8 @@ interface SynthesisConfiguration {
   voiceId: string;
 }
 
+type SynthesisConfigurationMode = 'capability_check' | 'playback_request';
+
 interface ReadAloudControllerDependencies {
   feedback: Pick<UserFeedback, 'show'>;
   getCatalog: () => ModelCatalogRecord;
@@ -131,7 +133,7 @@ export class ReadAloudController {
     }
     const configuration = this.resolveSynthesisConfiguration(
       this.deps.getSettings().dictationLanguage,
-      true,
+      'playback_request',
     );
     if (configuration === null) return;
 
@@ -141,7 +143,7 @@ export class ReadAloudController {
   canReadText(text: string, language: string): boolean {
     return (
       extractAndSegmentMarkdown(text, undefined, { locale: language }).length > 0 &&
-      this.resolveSynthesisConfiguration(language, false) !== null
+      this.resolveSynthesisConfiguration(language, 'capability_check') !== null
     );
   }
 
@@ -151,7 +153,7 @@ export class ReadAloudController {
       this.deps.feedback.show({ intent: 'warning', message: t('tts.notice.noText') });
       return;
     }
-    const configuration = this.resolveSynthesisConfiguration(language, true);
+    const configuration = this.resolveSynthesisConfiguration(language, 'playback_request');
     if (configuration === null) return;
 
     await this.startReading(chunks, configuration);
@@ -218,7 +220,7 @@ export class ReadAloudController {
     }
     const configuration = this.resolveSynthesisConfiguration(
       this.activeLanguage ?? this.deps.getSettings().dictationLanguage,
-      true,
+      'playback_request',
     );
     if (configuration === null) return;
     const speechLease = this.activeSpeechLease;
@@ -290,8 +292,9 @@ export class ReadAloudController {
 
   private resolveSynthesisConfiguration(
     requestedLanguage: string,
-    reportErrors: boolean,
+    mode: SynthesisConfigurationMode,
   ): SynthesisConfiguration | null {
+    const reportErrors = mode === 'playback_request';
     const settings = this.deps.getSettings();
     const selection = settings.selectedTtsModel;
     if (selection === null || selection.kind !== 'catalog_model') {

@@ -275,6 +275,38 @@ describe('ReadAloudController', () => {
     },
   );
 
+  it('keeps ordinary editor playback actionable when the selected model is no longer installed', async () => {
+    const harness = controllerHarness({ installedModels: [], selected: true });
+
+    await harness.controller.read(editorFor('Speak this.', { ch: 0, line: 0 }));
+
+    expect(harness.startSynthesis).not.toHaveBeenCalled();
+    expect(harness.feedback.show).toHaveBeenCalledWith(
+      expect.objectContaining({
+        intent: 'action-required',
+        key: 'read-aloud-model-required',
+        message: 'Install and select a read-aloud model first.',
+      }),
+    );
+  });
+
+  it('keeps ordinary editor playback actionable when its selected voice is no longer installed', async () => {
+    const harness = controllerHarness({
+      installedModels: [
+        { ...TTS_INSTALLED_MODELS[0], installedVoiceIds: [] } as unknown as InstalledModelRecord,
+      ],
+      selected: true,
+    });
+
+    await harness.controller.read(editorFor('Speak this.', { ch: 0, line: 0 }));
+
+    expect(harness.startSynthesis).not.toHaveBeenCalled();
+    expect(harness.feedback.show).toHaveBeenCalledWith({
+      intent: 'warning',
+      message: 'Select an installed voice first.',
+    });
+  });
+
   it('refuses a start synchronously while sidecar maintenance is active', async () => {
     const sidecarLifecycleGate = new SidecarLifecycleGate();
     const mutation = sidecarLifecycleGate.acquireMutation();
