@@ -1,9 +1,10 @@
 import type { Editor } from 'obsidian';
 
 import { PcmPlaybackQueue } from '../audio/pcm-playback-queue';
-import { type DictationLanguage, dictationLanguageLabel } from '../language/dictation-language';
+import { dictationLanguageLabel, isDictationLanguage } from '../language/dictation-language';
 import {
   type CatalogModelSelection,
+  type InstalledModelRecord,
   type ModelCatalogRecord,
   matchesModelTriple,
 } from '../models/model-management-types';
@@ -31,19 +32,19 @@ import { resolveReadAloudVoiceId } from './read-aloud-selection';
 export type ReadAloudState = 'idle' | 'paused' | 'reading';
 export type ReadAloudFallbackRange = 'entire_note' | 'from_cursor';
 
-/// Read aloud speaks the dictation language, but only when the selected voice
+/// Read aloud speaks the requested language, but only when the selected voice
 /// model declares it. An unlisted tag would otherwise fall through to the
 /// language-neutral synthesis branch and produce mispronounced audio instead of
 /// an honest failure — Serbian, which no voice model covers, is the live case.
 function resolveSynthesisLanguage(
-  dictationLanguage: DictationLanguage,
+  requestedLanguage: string,
   modelLanguageTags: readonly string[],
 ): SynthesisLanguage | null {
-  if (dictationLanguage === 'auto') return 'na';
-  if (!modelLanguageTags.includes(dictationLanguage)) return null;
+  if (requestedLanguage === 'auto') return 'na';
+  if (!modelLanguageTags.includes(requestedLanguage)) return null;
   return (
     SYNTHESIS_LANGUAGES.find(
-      (language): language is SynthesisLanguage => language === dictationLanguage,
+      (language): language is SynthesisLanguage => language === requestedLanguage,
     ) ?? null
   );
 }
@@ -55,9 +56,12 @@ interface SynthesisConfiguration {
   voiceId: string;
 }
 
+type SynthesisConfigurationMode = 'capability_check' | 'playback_request';
+
 interface ReadAloudControllerDependencies {
   feedback: Pick<UserFeedback, 'show'>;
   getCatalog: () => ModelCatalogRecord;
+  getInstalledModels: () => readonly InstalledModelRecord[];
   getSettings: () => PluginSettings;
   isDictationBusy: () => boolean;
   logger?: PluginLogger;
@@ -79,6 +83,7 @@ export class ReadAloudController {
   private activeChunks: SynthesisTextChunk[] = [];
   private activeSpeechLease: SidecarLifecycleLease | null = null;
   private activeSynthesisId: number | null = null;
+  private activeLanguage: string | null = null;
   private lastPlayedSequence = -1;
   private nextSynthesisId = 1;
   private pendingStartRevision = 0;
@@ -126,9 +131,38 @@ export class ReadAloudController {
       this.deps.feedback.show({ intent: 'warning', message: t('tts.notice.noText') });
       return;
     }
-    const configuration = this.resolveSynthesisConfiguration();
+    const configuration = this.resolveSynthesisConfiguration(
+      this.deps.getSettings().dictationLanguage,
+      'playback_request',
+    );
     if (configuration === null) return;
 
+    await this.startReading(chunks, configuration);
+  }
+
+  canReadText(text: string, language: string): boolean {
+    return (
+      extractAndSegmentMarkdown(text, undefined, { locale: language }).length > 0 &&
+      this.resolveSynthesisConfiguration(language, 'capability_check') !== null
+    );
+  }
+
+  async readText(text: string, language: string): Promise<void> {
+    const chunks = extractAndSegmentMarkdown(text, undefined, { locale: language });
+    if (chunks.length === 0) {
+      this.deps.feedback.show({ intent: 'warning', message: t('tts.notice.noText') });
+      return;
+    }
+    const configuration = this.resolveSynthesisConfiguration(language, 'playback_request');
+    if (configuration === null) return;
+
+    await this.startReading(chunks, configuration);
+  }
+
+  private async startReading(
+    chunks: SynthesisTextChunk[],
+    configuration: SynthesisConfiguration,
+  ): Promise<void> {
     let speechLease: SidecarLifecycleLease;
     try {
       speechLease = this.deps.sidecarLifecycleGate.acquireSpeech();
@@ -144,6 +178,7 @@ export class ReadAloudController {
 
     const releaseStartOperation = speechLease.retain();
     this.pendingSpeechLeases.add(speechLease);
+    this.activeLanguage = configuration.language === 'na' ? 'auto' : configuration.language;
     const startRevision = ++this.pendingStartRevision;
     try {
       if (this.deps.isDictationBusy()) await this.deps.stopDictation();
@@ -183,7 +218,10 @@ export class ReadAloudController {
       this.stop();
       return;
     }
-    const configuration = this.resolveSynthesisConfiguration();
+    const configuration = this.resolveSynthesisConfiguration(
+      this.activeLanguage ?? this.deps.getSettings().dictationLanguage,
+      'playback_request',
+    );
     if (configuration === null) return;
     const speechLease = this.activeSpeechLease;
     if (speechLease === null) return;
@@ -252,12 +290,18 @@ export class ReadAloudController {
     }
   }
 
-  private resolveSynthesisConfiguration(): SynthesisConfiguration | null {
+  private resolveSynthesisConfiguration(
+    requestedLanguage: string,
+    mode: SynthesisConfigurationMode,
+  ): SynthesisConfiguration | null {
+    const reportErrors = mode === 'playback_request';
     const settings = this.deps.getSettings();
     const selection = settings.selectedTtsModel;
     if (selection === null || selection.kind !== 'catalog_model') {
-      this.reportModelRequired();
-      this.stop();
+      if (reportErrors) {
+        this.reportModelRequired();
+        this.stop();
+      }
       return null;
     }
     const catalogModel = this.deps
@@ -265,29 +309,39 @@ export class ReadAloudController {
       .models.find((model) =>
         matchesModelTriple(model, selection.runtimeId, selection.familyId, selection.modelId),
       );
-    if (catalogModel === undefined) {
-      this.reportModelRequired();
-      this.stop();
+    const installedModel = this.deps
+      .getInstalledModels()
+      .find((model) =>
+        matchesModelTriple(model, selection.runtimeId, selection.familyId, selection.modelId),
+      );
+    if (catalogModel === undefined || catalogModel.task !== 'tts' || installedModel === undefined) {
+      if (reportErrors) {
+        this.reportModelRequired();
+        this.stop();
+      }
       return null;
     }
     const voiceId = resolveReadAloudVoiceId(settings.selectedTtsVoice, catalogModel.defaultVoice);
-    if (voiceId === null) {
-      this.deps.feedback.show({ intent: 'warning', message: t('tts.notice.voiceRequired') });
-      this.stop();
+    if (voiceId === null || !installedModel.installedVoiceIds.includes(voiceId)) {
+      if (reportErrors) {
+        this.deps.feedback.show({ intent: 'warning', message: t('tts.notice.voiceRequired') });
+        this.stop();
+      }
       return null;
     }
-    const language = resolveSynthesisLanguage(
-      settings.dictationLanguage,
-      catalogModel.languageTags,
-    );
+    const language = resolveSynthesisLanguage(requestedLanguage, catalogModel.languageTags);
     if (language === null) {
-      this.deps.feedback.show({
-        intent: 'warning',
-        message: t('tts.notice.languageUnsupported', {
-          language: dictationLanguageLabel(settings.dictationLanguage),
-        }),
-      });
-      this.stop();
+      if (reportErrors) {
+        this.deps.feedback.show({
+          intent: 'warning',
+          message: t('tts.notice.languageUnsupported', {
+            language: isDictationLanguage(requestedLanguage)
+              ? dictationLanguageLabel(requestedLanguage)
+              : requestedLanguage,
+          }),
+        });
+        this.stop();
+      }
       return null;
     }
     return {
@@ -375,6 +429,7 @@ export class ReadAloudController {
     this.activeSpeechLease = null;
     this.activeChunks = [];
     this.activeSynthesisId = null;
+    this.activeLanguage = null;
     this.lastPlayedSequence = -1;
     this.sampleRate = null;
     this.playback.stop();

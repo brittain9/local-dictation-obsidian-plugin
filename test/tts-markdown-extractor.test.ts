@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import {
   extractAndSegmentMarkdown,
@@ -91,5 +91,23 @@ describe('segmentSpeakableText', () => {
     expect(chunks.length).toBeGreaterThan(1);
     expect(chunks.every((chunk) => chunk.text.length <= 60)).toBe(true);
     expect(chunks.map((chunk) => chunk.text).join(' ')).toBe(source);
+  });
+
+  it('uses the requested locale while splitting long translated prose', () => {
+    const NativeSegmenter = Intl.Segmenter;
+    const segmenter = vi
+      .spyOn(Intl, 'Segmenter')
+      .mockImplementation(function MockSegmenter(locales, options) {
+        return new NativeSegmenter(locales, options);
+      });
+    const source = 'これは長い翻訳文です'.repeat(40);
+
+    const chunks = extractAndSegmentMarkdown(source, undefined, { locale: 'ja' });
+
+    expect(segmenter).toHaveBeenCalledWith('ja', { granularity: 'sentence' });
+    expect(chunks.length).toBeGreaterThan(1);
+    expect(chunks.every((chunk) => chunk.text.length <= 300)).toBe(true);
+    expect(chunks.map((chunk) => chunk.text).join('')).toBe(source);
+    segmenter.mockRestore();
   });
 });

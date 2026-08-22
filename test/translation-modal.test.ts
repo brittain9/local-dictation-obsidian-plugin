@@ -22,6 +22,26 @@ const SNAPSHOT: TranslationSnapshot = {
 };
 
 describe('TranslationModal mutation safety', () => {
+  it('keeps the read-aloud action hidden while translation is in progress', () => {
+    Setting.reset();
+    const modal = createModal({
+      editor: {
+        getValue: () => SNAPSHOT.source,
+        replaceRange: vi.fn(),
+      },
+      runTranslation: () => new Promise(() => {}),
+    });
+
+    modal.open();
+
+    expect(
+      (modal.contentEl as unknown as TestElement).querySelector(
+        '.local-stt-translation-modal__read-aloud',
+      ),
+    ).toBeNull();
+    modal.close();
+  });
+
   it('keeps the preview read-only until a translation succeeds', async () => {
     Setting.reset();
     let resolveTranslation:
@@ -49,6 +69,139 @@ describe('TranslationModal mutation safety', () => {
     });
     await vi.waitFor(() => {
       expect(output?.attributes.has('readonly')).toBe(false);
+    });
+  });
+
+  it('offers read aloud for a completed compatible translation', async () => {
+    Setting.reset();
+    const canReadAloud = vi.fn(() => true);
+    const onReadAloud = vi.fn();
+    const modal = createModal({
+      canReadAloud,
+      editor: {
+        getValue: () => SNAPSHOT.source,
+        replaceRange: vi.fn(),
+      },
+      onReadAloud,
+      runTranslation: vi.fn(async () => ({
+        kind: 'translated' as const,
+        sourceUnitsKept: 0,
+        text: 'Traduzca esto.',
+      })),
+    });
+
+    modal.open();
+    await vi.waitFor(() => {
+      expect(
+        (modal.contentEl as unknown as TestElement).querySelector(
+          '.local-stt-translation-modal__read-aloud',
+        ),
+      ).not.toBeNull();
+    });
+
+    const button = (modal.contentEl as unknown as TestElement).querySelector(
+      '.local-stt-translation-modal__read-aloud',
+    );
+    expect(button?.getAttribute('aria-label')).toBe('Read translation aloud in Español');
+    expect(button?.innerHTML).toContain('data-icon="volume-2"');
+    expect(canReadAloud).toHaveBeenLastCalledWith('Traduzca esto.', 'es');
+
+    await button?.click();
+    expect(onReadAloud).toHaveBeenCalledExactlyOnceWith('Traduzca esto.', 'es');
+  });
+
+  it('reads the edited preview and hides the action when it becomes empty', async () => {
+    Setting.reset();
+    const canReadAloud = vi.fn((text: string) => text.trim().length > 0);
+    const onReadAloud = vi.fn();
+    const modal = createModal({
+      canReadAloud,
+      editor: {
+        getValue: () => SNAPSHOT.source,
+        replaceRange: vi.fn(),
+      },
+      onReadAloud,
+      runTranslation: vi.fn(async () => ({
+        kind: 'translated' as const,
+        sourceUnitsKept: 0,
+        text: 'Traduzca esto.',
+      })),
+    });
+
+    modal.open();
+    await vi.waitFor(() => {
+      expect(
+        (modal.contentEl as unknown as TestElement).querySelector(
+          '.local-stt-translation-modal__read-aloud',
+        ),
+      ).not.toBeNull();
+    });
+    const output = (modal.contentEl as unknown as TestElement).querySelector('textarea');
+    if (output === null) throw new Error('Expected editable translation output.');
+
+    (output as unknown as HTMLTextAreaElement).value = 'Texto editado.';
+    output.dispatchEvent({ type: 'input' });
+    expect(canReadAloud).toHaveBeenLastCalledWith('Texto editado.', 'es');
+    await (
+      (modal.contentEl as unknown as TestElement).querySelector(
+        '.local-stt-translation-modal__read-aloud',
+      ) as TestElement
+    ).click();
+    expect(onReadAloud).toHaveBeenLastCalledWith('Texto editado.', 'es');
+
+    (output as unknown as HTMLTextAreaElement).value = '   ';
+    output.dispatchEvent({ type: 'input' });
+    expect(
+      (modal.contentEl as unknown as TestElement).querySelector(
+        '.local-stt-translation-modal__read-aloud',
+      ),
+    ).toBeNull();
+  });
+
+  it('hides read aloud for partial translations but keeps it for stale sources', async () => {
+    Setting.reset();
+    const canReadAloud = vi.fn(() => true);
+    const partial = createModal({
+      canReadAloud,
+      editor: {
+        getValue: () => SNAPSHOT.source,
+        replaceRange: vi.fn(),
+      },
+      runTranslation: vi.fn(async () => ({
+        kind: 'translated' as const,
+        sourceUnitsKept: 1,
+        text: 'Traduzca esto.',
+      })),
+    });
+    partial.open();
+    await vi.waitFor(() => expect(Setting.buttonNamed('Replace')).toBeDefined());
+    expect(
+      (partial.contentEl as unknown as TestElement).querySelector(
+        '.local-stt-translation-modal__read-aloud',
+      ),
+    ).toBeNull();
+    partial.close();
+
+    Setting.reset();
+    const stale = createModal({
+      canReadAloud,
+      editor: {
+        getValue: () => 'The note changed.',
+        replaceRange: vi.fn(),
+      },
+      runTranslation: vi.fn(async () => ({
+        kind: 'translated' as const,
+        sourceUnitsKept: 0,
+        text: 'Traduzca esto.',
+      })),
+    });
+    stale.open();
+    await vi.waitFor(() => {
+      expect(
+        (stale.contentEl as unknown as TestElement).querySelector(
+          '.local-stt-translation-modal__read-aloud',
+        ),
+      ).not.toBeNull();
     });
   });
 
@@ -222,15 +375,19 @@ describe('TranslationModal mutation safety', () => {
 });
 
 function createModal({
+  canReadAloud = () => false,
   editor,
+  onReadAloud = vi.fn(),
   onRestart = vi.fn(),
   onTranslateCurrent = vi.fn(),
   runTranslation,
 }: {
+  canReadAloud?: ConstructorParameters<typeof TranslationModal>[1]['canReadAloud'];
   editor: {
     getValue: () => string;
     replaceRange: ReturnType<typeof vi.fn>;
   };
+  onReadAloud?: ConstructorParameters<typeof TranslationModal>[1]['onReadAloud'];
   onRestart?: ConstructorParameters<typeof TranslationModal>[1]['onRestart'];
   onTranslateCurrent?: () => void;
   runTranslation: (options: TranslationJobRunOptions) => Promise<TranslationJobResult>;
@@ -242,6 +399,7 @@ function createModal({
     targetLanguage: 'es',
   });
   return new TranslationModal({} as never, {
+    canReadAloud,
     editor: editor as never,
     feedback: { show: vi.fn() },
     job,
@@ -249,6 +407,7 @@ function createModal({
     onClosed: vi.fn(),
     onDismissed: vi.fn(),
     onInstallModel: vi.fn(async () => {}),
+    onReadAloud,
     onTranslateCurrent,
     onRestart,
     snapshot: SNAPSHOT,

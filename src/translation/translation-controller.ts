@@ -31,10 +31,12 @@ import { TranslationModal, type TranslationSnapshot } from './translation-modal'
 const MAX_TRANSLATION_CHARACTERS = 50_000;
 interface TranslationControllerDependencies {
   app: App;
+  canReadAloud: (text: string, language: TranslationLanguage) => boolean;
   feedback: Pick<UserFeedback, 'show'>;
   getSettings: () => PluginSettings;
   logger: PluginLogger;
   modelManager: ModelInstallManager;
+  onReadAloud: (text: string, language: TranslationLanguage) => Promise<void> | void;
   openModelPicker: () => Promise<void>;
   saveSettings: (settings: PluginSettings) => Promise<void>;
   sidecarConnection?: Pick<
@@ -143,6 +145,7 @@ export class TranslationController {
     if (active === null || this.activeModal !== null) return;
     this.dependencies.setDetachedStatus?.(null, () => {});
     const modal = new TranslationModal(this.dependencies.app, {
+      canReadAloud: this.dependencies.canReadAloud,
       editor: active.editor,
       feedback: this.dependencies.feedback,
       job: active.job,
@@ -168,6 +171,7 @@ export class TranslationController {
             active.job.targetLanguage,
           );
       },
+      onReadAloud: this.dependencies.onReadAloud,
       onTranslateCurrent: () => {
         const source =
           active.snapshot.kind === 'note'

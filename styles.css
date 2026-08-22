@@ -1555,6 +1555,14 @@
   background: var(--background-secondary);
 }
 
+.local-stt-translation-modal__output-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 42px;
+}
+
 .local-stt-translation-modal__output-surface.is-hidden {
   display: none;
 }
@@ -1564,6 +1572,11 @@
   color: var(--text-muted);
   font-size: var(--font-ui-small);
   font-weight: var(--font-medium);
+}
+
+.local-stt-translation-modal__read-aloud {
+  flex: 0 0 auto;
+  margin-right: 6px;
 }
 
 .local-stt-translation-modal__output {

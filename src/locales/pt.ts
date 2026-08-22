@@ -809,6 +809,7 @@ export const pt = {
   'translation.modal.sourceSelection': 'Seleção de origem',
   'translation.modal.sourceNote': 'Nota de origem',
   'translation.modal.previewAria': 'Prévia da tradução',
+  'translation.modal.readAloud': 'Ler tradução em voz alta em {language}',
   'translation.modal.preparing': 'Preparando a tradução local…',
   'translation.modal.loading': 'Carregando o modelo local…',
   'translation.modal.translating': 'Traduzindo…',

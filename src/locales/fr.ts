@@ -813,6 +813,7 @@ export const fr = {
   'translation.modal.sourceSelection': 'Sélection source',
   'translation.modal.sourceNote': 'Note source',
   'translation.modal.previewAria': 'Aperçu de la traduction',
+  'translation.modal.readAloud': 'Lire la traduction à voix haute en {language}',
   'translation.modal.preparing': 'Préparation de la traduction locale…',
   'translation.modal.loading': 'Chargement du modèle local…',
   'translation.modal.translating': 'Traduction en cours…',

@@ -1,7 +1,10 @@
 import type { Editor, EditorPosition } from 'obsidian';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import type { ModelCatalogRecord } from '../src/models/model-management-types';
+import type {
+  InstalledModelRecord,
+  ModelCatalogRecord,
+} from '../src/models/model-management-types';
 import { DEFAULT_PLUGIN_SETTINGS } from '../src/settings/plugin-settings';
 import type { StartSynthesisCommand } from '../src/sidecar/protocol';
 import {
@@ -81,9 +84,19 @@ const TTS_CATALOG = {
       languageTags: ['en', 'es', 'de', 'fr', 'pt', 'it', 'nl', 'ja', 'hr'],
       modelId: TTS_SELECTION.modelId,
       runtimeId: TTS_SELECTION.runtimeId,
+      task: 'tts',
     },
   ],
 } as unknown as ModelCatalogRecord;
+
+const TTS_INSTALLED_MODELS = [
+  {
+    familyId: TTS_SELECTION.familyId,
+    installedVoiceIds: ['alba'],
+    modelId: TTS_SELECTION.modelId,
+    runtimeId: TTS_SELECTION.runtimeId,
+  },
+] as unknown as InstalledModelRecord[];
 
 type StartSynthesisMock = ReturnType<
   typeof vi.fn<(payload: Omit<StartSynthesisCommand, 'type'>) => Promise<void>>
@@ -92,6 +105,7 @@ type StartSynthesisMock = ReturnType<
 function controllerHarness(options: {
   catalog?: ModelCatalogRecord;
   dictationLanguage?: 'auto' | 'en' | 'sr';
+  installedModels?: readonly InstalledModelRecord[];
   onModelMissing?: () => Promise<void> | void;
   selected: boolean;
   selectedVoice?: string | null;
@@ -108,6 +122,7 @@ function controllerHarness(options: {
   const controller = new ReadAloudController({
     feedback,
     getCatalog: () => options.catalog ?? TTS_CATALOG,
+    getInstalledModels: () => options.installedModels ?? TTS_INSTALLED_MODELS,
     getSettings: () => ({
       ...DEFAULT_PLUGIN_SETTINGS,
       dictationLanguage: options.dictationLanguage ?? DEFAULT_PLUGIN_SETTINGS.dictationLanguage,
@@ -182,6 +197,116 @@ describe('resolveReadRange', () => {
 });
 
 describe('ReadAloudController', () => {
+  it('reads translated text in its explicit target language without changing dictation settings', async () => {
+    const harness = controllerHarness({ selected: true, dictationLanguage: 'en' });
+
+    await harness.controller.readText('Hola. ¿Cómo estás?', 'es');
+
+    expect(harness.startSynthesis).toHaveBeenCalledWith(
+      expect.objectContaining({
+        chunks: [
+          expect.objectContaining({ text: 'Hola.' }),
+          expect.objectContaining({ text: '¿Cómo estás?' }),
+        ],
+        language: 'es',
+      }),
+    );
+    expect(harness.controller.canReadText('Hola. ¿Cómo estás?', 'es')).toBe(true);
+  });
+
+  it('keeps the translated target language when playback speed restarts synthesis', async () => {
+    const harness = controllerHarness({ selected: true, dictationLanguage: 'en' });
+
+    await harness.controller.readText('Hola. First sentence. Second sentence.', 'es');
+    await harness.controller.applySpeed(1.25);
+
+    expect(harness.startSynthesis.mock.calls[1]?.[0]).toMatchObject({
+      language: 'es',
+      speed: 1.25,
+    });
+  });
+
+  const unavailableCases: Array<
+    [
+      string,
+      {
+        installedModels?: readonly InstalledModelRecord[];
+        catalog?: ModelCatalogRecord;
+        language?: string;
+        selected: boolean;
+        text?: string;
+      },
+    ]
+  > = [
+    ['no selected model', { selected: false }],
+    ['unsupported synthesis protocol language', { selected: true, language: 'zh' }],
+    [
+      'selected model language unsupported',
+      {
+        catalog: {
+          ...TTS_CATALOG,
+          models: TTS_CATALOG.models.map((model) => ({ ...model, languageTags: ['en'] })),
+        } as ModelCatalogRecord,
+        selected: true,
+      },
+    ],
+    ['missing installed model', { selected: true, installedModels: [] as InstalledModelRecord[] }],
+    [
+      'missing selected voice',
+      {
+        selected: true,
+        installedModels: [
+          { ...TTS_INSTALLED_MODELS[0], installedVoiceIds: [] } as unknown as InstalledModelRecord,
+        ],
+      },
+    ],
+    ['no speakable text', { selected: true, text: '```code```' }],
+  ];
+
+  it.each(unavailableCases)(
+    'silently hides unavailable translated playback for %s',
+    (_name, options) => {
+      const harness = controllerHarness(options);
+
+      expect(
+        harness.controller.canReadText(options.text ?? 'Hola.', options.language ?? 'es'),
+      ).toBe(false);
+      expect(harness.feedback.show).not.toHaveBeenCalled();
+    },
+  );
+
+  it('keeps ordinary editor playback actionable when the selected model is no longer installed', async () => {
+    const harness = controllerHarness({ installedModels: [], selected: true });
+
+    await harness.controller.read(editorFor('Speak this.', { ch: 0, line: 0 }));
+
+    expect(harness.startSynthesis).not.toHaveBeenCalled();
+    expect(harness.feedback.show).toHaveBeenCalledWith(
+      expect.objectContaining({
+        intent: 'action-required',
+        key: 'read-aloud-model-required',
+        message: 'Install and select a read-aloud model first.',
+      }),
+    );
+  });
+
+  it('keeps ordinary editor playback actionable when its selected voice is no longer installed', async () => {
+    const harness = controllerHarness({
+      installedModels: [
+        { ...TTS_INSTALLED_MODELS[0], installedVoiceIds: [] } as unknown as InstalledModelRecord,
+      ],
+      selected: true,
+    });
+
+    await harness.controller.read(editorFor('Speak this.', { ch: 0, line: 0 }));
+
+    expect(harness.startSynthesis).not.toHaveBeenCalled();
+    expect(harness.feedback.show).toHaveBeenCalledWith({
+      intent: 'warning',
+      message: 'Select an installed voice first.',
+    });
+  });
+
   it('refuses a start synchronously while sidecar maintenance is active', async () => {
     const sidecarLifecycleGate = new SidecarLifecycleGate();
     const mutation = sidecarLifecycleGate.acquireMutation();

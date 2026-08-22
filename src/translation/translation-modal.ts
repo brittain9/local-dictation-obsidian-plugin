@@ -1,4 +1,4 @@
-import { type App, type Editor, type EditorPosition, Modal, Setting } from 'obsidian';
+import { type App, type Editor, type EditorPosition, Modal, Setting, setIcon } from 'obsidian';
 import { t, tPlural } from '../shared/i18n';
 import type { UserFeedback } from '../shared/user-feedback';
 import { localizeKnownSidecarEventCode } from '../sidecar/sidecar-event-localization';
@@ -24,6 +24,7 @@ export interface TranslationSnapshot {
   to: EditorPosition;
 }
 interface TranslationModalDependencies {
+  canReadAloud: (text: string, language: TranslationLanguage) => boolean;
   editor: Editor;
   feedback: Pick<UserFeedback, 'show'>;
   job: TranslationJob;
@@ -31,6 +32,7 @@ interface TranslationModalDependencies {
   onClosed: () => void;
   onDismissed: () => void;
   onInstallModel: () => Promise<void>;
+  onReadAloud: (text: string, language: TranslationLanguage) => Promise<void> | void;
   onTranslateCurrent: () => void;
   onRestart: (
     engineId: TranslationEngineId,
@@ -45,7 +47,9 @@ export class TranslationModal extends Modal {
   private headingEl: HTMLElement | null = null;
   private selectorsEl: HTMLElement | null = null;
   private outputEl: HTMLTextAreaElement | null = null;
+  private outputHeaderEl: HTMLElement | null = null;
   private outputSurfaceEl: HTMLElement | null = null;
+  private readAloudButtonEl: HTMLElement | null = null;
   private reviewedOutput: string | null = null;
   private releaseJob: (() => void) | null = null;
   private state: TranslationJobState;
@@ -109,7 +113,10 @@ export class TranslationModal extends Modal {
     this.outputSurfaceEl = this.contentEl.createDiv({
       cls: 'local-stt-translation-modal__output-surface',
     });
-    this.outputSurfaceEl.createDiv({
+    this.outputHeaderEl = this.outputSurfaceEl.createDiv({
+      cls: 'local-stt-translation-modal__output-header',
+    });
+    this.outputHeaderEl.createDiv({
       cls: 'local-stt-translation-modal__output-label',
       text: t('translation.modal.previewAria'),
     });
@@ -120,6 +127,7 @@ export class TranslationModal extends Modal {
     this.outputEl.addEventListener('input', () => {
       if (this.outputEl !== null && this.reviewedOutput !== null)
         this.reviewedOutput = this.outputEl.value;
+      this.renderReadAloudAction();
     });
     this.actionsEl = this.contentEl.createDiv();
     this.renderHeading();
@@ -220,6 +228,7 @@ export class TranslationModal extends Modal {
       }
     }
     this.outputSurfaceEl?.toggleClass('is-hidden', this.state.phase !== 'completed');
+    this.renderReadAloudAction();
     this.renderStatus(this.statusText());
     this.renderSelectors();
     this.renderActions();
@@ -282,6 +291,38 @@ export class TranslationModal extends Modal {
       return;
     }
     this.statusEl.createSpan({ cls: 'local-stt-translation-modal__status-text', text: status });
+  }
+
+  private renderReadAloudAction(): void {
+    this.readAloudButtonEl?.remove();
+    this.readAloudButtonEl = null;
+    if (
+      this.outputHeaderEl === null ||
+      this.state.phase !== 'completed' ||
+      this.state.sourceUnitsKept > 0 ||
+      this.reviewedOutput === null ||
+      !this.dependencies.canReadAloud(this.reviewedOutput, this.dependencies.job.targetLanguage)
+    )
+      return;
+    const language = translationLanguageLabel(this.dependencies.job.targetLanguage);
+    const label = t('translation.modal.readAloud', { language });
+    const button = this.outputHeaderEl.createEl('button', {
+      attr: {
+        'aria-label': label,
+        title: label,
+        type: 'button',
+      },
+      cls: 'clickable-icon local-stt-translation-modal__read-aloud',
+    });
+    setIcon(button, 'volume-2');
+    button.addEventListener('click', () => {
+      if (this.reviewedOutput !== null)
+        void this.dependencies.onReadAloud(
+          this.reviewedOutput,
+          this.dependencies.job.targetLanguage,
+        );
+    });
+    this.readAloudButtonEl = button;
   }
   private syncElapsedTimer(): void {
     if (this.state.phase === 'loading' || this.state.phase === 'translating') {

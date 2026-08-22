@@ -811,6 +811,7 @@ export const es = {
   'translation.modal.sourceSelection': 'Selección original',
   'translation.modal.sourceNote': 'Nota original',
   'translation.modal.previewAria': 'Vista previa de la traducción',
+  'translation.modal.readAloud': 'Leer la traducción en voz alta en {language}',
   'translation.modal.preparing': 'Preparando la traducción local…',
   'translation.modal.loading': 'Cargando el modelo local…',
   'translation.modal.translating': 'Traduciendo…',
