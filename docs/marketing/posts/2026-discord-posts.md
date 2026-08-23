@@ -357,3 +357,57 @@ Speech Kit now supports Croatian and Serbian dictation 🎙️
 Croatian works with Whisper and Nemotron. Serbian works with Whisper and defaults to Cyrillic. Everything stays local.
 
 [Install Speech Kit](https://obsidian.md/plugins?id=local-dictation) • [GitHub](https://github.com/brittain9/speech-kit-obsidian-plugin)
+
+## August 22, 2026
+
+**Reactions:** Not yet recorded.
+
+🌍 Speech Kit just got a huge translation upgrade
+
+Speech Kit turns Obsidian into a private, local-first language workspace. You can dictate your thoughts, transcribe meetings, listen to your notes, and now translate them with a genuinely powerful multilingual model.
+
+This release adds Tencent HY-MT, bringing natural, fluent translation across 38 languages directly into Obsidian.
+
+Instead of stiff, word-for-word output, the new Natural translation mode is designed for real writing. It produces smoother prose that feels much closer to something a person would actually write.
+
+✨ Translate entire notes or selected text
+🌎 Translate between any two supported languages
+✏️ Edit the result before adding it to your note
+⚡ Choose between Fast & literal and Natural & fluent
+🔒 Keep your notes private with translation running locally on your computer
+📴 Continue translating offline after setup
+
+This is one of the biggest Speech Kit releases yet, and it makes Obsidian dramatically more useful for multilingual writing, research, language learning, and international work.
+
+If you support open-source, private AI tools, please star the GitHub repository. It genuinely helps more people discover the project:
+
+⭐ Star Speech Kit on GitHub
+
+If Speech Kit makes your life easier and you want to support its continued development:
+
+☕ Buy me a coffee
+
+Install from Obsidian | See the release
+
+## August 23, 2026
+
+**Reactions:** Not yet recorded.
+
+🎧 **Speech Kit 2026.8.6: hear it, follow it, refine it**
+
+Speech Kit (formerly Local Dictation) is the speech and language toolkit for Obsidian. Dictate ideas, transcribe recordings, translate your writing, and listen to your notes—using models that run on your own computer.
+
+This release makes read aloud and translation work together more naturally.
+
+✨ **Follow along as Speech Kit reads**
+Turn on spoken-text highlighting to see a subtle underline move through the sentence currently being read. It keeps your editor and selection untouched, so you can stay oriented without disrupting your note.
+
+🌍 **Listen to translation previews**
+Finished translations now have a Read aloud button. Hear the result in its target language before you replace, insert, or copy it into your note.
+
+⚙️ **Use the translation model already on your computer**
+Speech Kit now chooses a compatible installed translation style for the language pair you selected, and makes unavailable options clear instead of sending you toward the wrong model.
+
+🔒 Everything stays local and continues working offline once your models are installed.
+
+⬇️ [Install Speech Kit](https://obsidian.md/plugins?id=local-dictation) • 📝 [Release notes](https://github.com/brittain9/speech-kit-obsidian-plugin/releases/latest) • 💻 [GitHub](https://github.com/brittain9/speech-kit-obsidian-plugin) • 💜 [Support the project](https://buymeacoffee.com/alexbrittaq)
