@@ -1,7 +1,7 @@
 {
   "id": "local-dictation",
   "name": "Speech Kit",
-  "version": "2026.8.5",
+  "version": "2026.8.6",
   "minAppVersion": "1.11.5",
   "description": "Local speech and language toolkit for notes. Dictate, transcribe meetings, translate text, and read notes aloud with on-device models.",
   "author": "Alexander Brittain",
