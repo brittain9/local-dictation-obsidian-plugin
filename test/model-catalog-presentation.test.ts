@@ -73,9 +73,7 @@ describe('model catalog presentation', () => {
     expect(models.every((model) => model.licenseLabel === 'Apache-2.0')).toBe(true);
     expect(
       models.every((model) =>
-        model.licenseUrl.endsWith(
-          '/71928c82b61fc04e0289ad7eab1faf5ebef721b2/LICENSE.txt',
-        ),
+        model.licenseUrl.endsWith('/71928c82b61fc04e0289ad7eab1faf5ebef721b2/LICENSE.txt'),
       ),
     ).toBe(true);
     expect(models[0]?.summary).toContain('suitable for most local translation');
