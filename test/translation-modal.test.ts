@@ -4,8 +4,8 @@ vi.mock('virtual:bergamot-worker-source', () => ({
   BERGAMOT_WORKER_SOURCE: '',
 }));
 
-import { TranslationCancelledError } from '../src/translation/bergamot-client';
 import type { CatalogModelRecord } from '../src/models/model-management-types';
+import { TranslationCancelledError } from '../src/translation/bergamot-client';
 import { HyMtTranslationError } from '../src/translation/hy-mt-client';
 import {
   TranslationJob,

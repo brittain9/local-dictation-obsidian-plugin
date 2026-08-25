@@ -198,10 +198,7 @@ export class TranslationModal extends Modal {
               this.dependencies.job.model,
             )
           )
-            this.restart(
-              this.dependencies.job.sourceLanguage,
-              value,
-            );
+            this.restart(this.dependencies.job.sourceLanguage, value);
         });
     });
   }
