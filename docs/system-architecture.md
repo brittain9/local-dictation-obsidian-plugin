@@ -3,8 +3,8 @@
 Speech Kit is an Obsidian plugin that handles voice and language workflows
 entirely on-device. Dictation audio crosses a binary protocol into a native
 Rust sidecar and returns as text. Read-aloud text takes the inverse path and
-returns as audio for playback in Obsidian. Fast translation runs inside an
-isolated WebAssembly worker; Natural translation uses a packaged native helper.
+returns as audio for playback in Obsidian. Firefox translation runs inside an
+isolated WebAssembly worker; Tencent HY-MT 2 uses a packaged native helper.
 
 The split is deliberate:
 
@@ -484,7 +484,8 @@ The read-aloud path is independent from microphone capture and transcription:
    queued audio. Read aloud and dictation are mutually exclusive so playback
    cannot feed an active capture session.
 
-The model catalog and settings keep independent `stt` and `tts` selections.
+The model catalog and settings keep independent `stt`, `translation`, and `tts`
+selections.
 Pocket TTS and Supertonic models and optional voices are downloaded on demand
 and verified by their pinned size and SHA-256 before activation.
 
@@ -492,14 +493,15 @@ and verified by their pinned size and SHA-256 before activation.
 
 ### Stage 9: Local Translation
 
-Translation has one controller-owned job and two engine adapters:
+Translation has one controller-owned job and a small adapter registry keyed by
+the selected model runtime and family:
 
 1. `TranslationController` captures a selection or whole-note snapshot.
 2. A pure TypeScript segmentation pass protects Markdown structure, code,
    math, links, tags, frontmatter, and whitespace while extracting prose.
-3. Fast mode resolves an exact Firefox direction and runs Bergamot in a
-   Blob-backed Web Worker. Natural mode sends ordered text units to the sidecar,
-   which supervises the sibling HY-MT helper over bounded framed stdio.
+3. Firefox models run in a Blob-backed Web Worker. Tencent HY-MT 2 models send
+   ordered text units to the sidecar, which supervises the sibling helper over
+   bounded framed stdio.
 4. HY-MT loads lazily, handles one inference job, remains warm for five idle
    minutes, and uses the GGUF's embedded chat template exactly once.
 5. Closing the modal detaches it from the job; the translation status item can

@@ -11,7 +11,7 @@ describe('translateWithHyMt', () => {
       modelSelection: {
         familyId: 'tencent_hy_mt',
         kind: 'catalog_model',
-        modelId: 'tencent-hy-mt-1.5-1.8b-q4-k-m',
+        modelId: 'tencent-hy-mt-2-1.8b-q4-k-m',
         runtimeId: 'llama_cpp',
       },
       onProgress: vi.fn(),
@@ -56,7 +56,7 @@ describe('translateWithHyMt', () => {
       modelSelection: {
         familyId: 'tencent_hy_mt',
         kind: 'catalog_model',
-        modelId: 'tencent-hy-mt-1.5-1.8b-q4-k-m',
+        modelId: 'tencent-hy-mt-2-1.8b-q4-k-m',
         runtimeId: 'llama_cpp',
       },
       onProgress: vi.fn(),

@@ -4,21 +4,15 @@ import type { UserFeedback } from '../shared/user-feedback';
 import { localizeKnownSidecarEventCode } from '../sidecar/sidecar-event-localization';
 import { HyMtTranslationError } from './hy-mt-client';
 import {
+  isSupportedTranslationPair,
   isTranslationLanguage,
   resolveTranslationTarget,
-  TRANSLATION_LANGUAGES,
-  type TranslationEngineId,
   type TranslationLanguage,
   translationLanguageLabel,
+  translationSourcesFor,
   translationTargetsFor,
 } from './languages';
 import { TranslationModelIncompleteError } from './translation-artifacts';
-import {
-  TRANSLATION_ENGINES,
-  type TranslationEngineAvailability,
-  translationEngineLabel,
-  translationEngineOptionLabel,
-} from './translation-engines';
 import type { TranslationJob, TranslationJobState } from './translation-job';
 
 const LARGE_SOURCE_CHARACTERS = 10_000;
@@ -32,7 +26,6 @@ interface TranslationModalDependencies {
   canReadAloud: (text: string, language: TranslationLanguage) => boolean;
   editor: Editor;
   feedback: Pick<UserFeedback, 'show'>;
-  getEngineAvailability: () => readonly TranslationEngineAvailability[];
   job: TranslationJob;
   onApplied: () => void;
   onClosed: () => void;
@@ -40,11 +33,7 @@ interface TranslationModalDependencies {
   onInstallModel: () => Promise<void>;
   onReadAloud: (text: string, language: TranslationLanguage) => Promise<void> | void;
   onTranslateCurrent: () => void;
-  onRestart: (
-    engineId: TranslationEngineId,
-    source: TranslationLanguage,
-    target: TranslationLanguage,
-  ) => void;
+  onRestart: (source: TranslationLanguage, target: TranslationLanguage) => void;
   snapshot: TranslationSnapshot;
 }
 
@@ -151,33 +140,11 @@ export class TranslationModal extends Modal {
     if (this.selectorsEl === null) return;
     this.selectorsEl.empty();
     const active = this.state.phase === 'loading' || this.state.phase === 'translating';
-    const style = this.selectorsEl.createDiv({
-      cls: 'local-stt-translation-modal__translation-style',
-    });
-    new Setting(style).setName(t('settings.translation.engine.name')).addDropdown((dropdown) => {
-      const availability = this.dependencies.getEngineAvailability();
-      for (const engine of TRANSLATION_ENGINES) {
-        const status = availability.find((candidate) => candidate.engineId === engine.id)?.status;
-        dropdown.addOption(engine.id, translationEngineOptionLabel(engine.id, status));
-        setOptionDisabled(dropdown.selectEl, engine.id, status !== 'available');
-      }
-      dropdown
-        .setValue(this.dependencies.job.engineId)
-        .setDisabled(active || !availability.some((engine) => engine.status === 'available'))
-        .onChange((value) => {
-          if (
-            (value === 'bergamot' || value === 'tencent_hy_mt') &&
-            availability.some(
-              (candidate) => candidate.engineId === value && candidate.status === 'available',
-            )
-          )
-            this.restart(
-              value,
-              this.dependencies.job.sourceLanguage,
-              this.dependencies.job.targetLanguage,
-            );
-        });
-    });
+    new Setting(this.selectorsEl)
+      .setName(t('settings.translation.model.name'))
+      .setDesc(
+        this.dependencies.job.model?.displayName ?? t('settings.translation.model.unavailable'),
+      );
     const languagePair = this.selectorsEl.createDiv({
       cls: 'local-stt-translation-modal__language-pair',
     });
@@ -185,20 +152,22 @@ export class TranslationModal extends Modal {
       cls: 'local-stt-translation-modal__language-control',
     });
     new Setting(source).setName(t('translation.modal.from')).addDropdown((dropdown) => {
-      for (const language of TRANSLATION_LANGUAGES)
+      for (const language of translationSourcesFor(this.dependencies.job.model))
         dropdown.addOption(language, translationLanguageLabel(language));
       dropdown
         .setValue(this.dependencies.job.sourceLanguage)
         .setDisabled(active)
         .onChange((value) => {
-          if (isTranslationLanguage(value))
+          if (
+            isTranslationLanguage(value) &&
+            translationSourcesFor(this.dependencies.job.model).includes(value)
+          )
             this.restart(
-              this.dependencies.job.engineId,
               value,
               resolveTranslationTarget(
                 value,
                 this.dependencies.job.targetLanguage,
-                this.dependencies.job.engineId,
+                this.dependencies.job.model,
               ),
             );
         });
@@ -214,16 +183,22 @@ export class TranslationModal extends Modal {
     new Setting(target).setName(t('translation.modal.to')).addDropdown((dropdown) => {
       for (const language of translationTargetsFor(
         this.dependencies.job.sourceLanguage,
-        this.dependencies.job.engineId,
+        this.dependencies.job.model,
       ))
         dropdown.addOption(language, translationLanguageLabel(language));
       dropdown
         .setValue(this.dependencies.job.targetLanguage)
         .setDisabled(active)
         .onChange((value) => {
-          if (isTranslationLanguage(value))
+          if (
+            isTranslationLanguage(value) &&
+            isSupportedTranslationPair(
+              this.dependencies.job.sourceLanguage,
+              value,
+              this.dependencies.job.model,
+            )
+          )
             this.restart(
-              this.dependencies.job.engineId,
               this.dependencies.job.sourceLanguage,
               value,
             );
@@ -261,11 +236,7 @@ export class TranslationModal extends Modal {
             })
           : t('translation.modal.translating');
       case 'missing_model':
-        return this.state.reason === 'unsupported_pair'
-          ? t('translation.modal.unsupportedPairModel')
-          : t('translation.modal.missingEngineModel', {
-              style: translationEngineLabel(this.state.engineId),
-            });
+        return t('translation.modal.missingModel');
       case 'cancelled':
         return t('translation.modal.canceled');
       case 'failed':
@@ -384,7 +355,6 @@ export class TranslationModal extends Modal {
           .setCta()
           .onClick(() =>
             this.restart(
-              this.dependencies.job.engineId,
               this.dependencies.job.sourceLanguage,
               this.dependencies.job.targetLanguage,
             ),
@@ -446,14 +416,10 @@ export class TranslationModal extends Modal {
       }),
     );
   }
-  private restart(
-    engineId: TranslationEngineId,
-    source: TranslationLanguage,
-    target: TranslationLanguage,
-  ): void {
+  private restart(source: TranslationLanguage, target: TranslationLanguage): void {
     if (this.state.phase === 'loading' || this.state.phase === 'translating') return;
     this.close();
-    this.dependencies.onRestart(engineId, source, target);
+    this.dependencies.onRestart(source, target);
   }
   private sourceIsCurrent(): boolean {
     const { editor, snapshot } = this.dependencies;
@@ -510,15 +476,6 @@ export class TranslationModal extends Modal {
     this.dependencies.onApplied();
     this.close();
   }
-}
-
-function setOptionDisabled(
-  select: HTMLSelectElement,
-  engineId: TranslationEngineId,
-  disabled: boolean,
-): void {
-  const option = Array.from(select.options).find((candidate) => candidate.value === engineId);
-  if (option !== undefined) option.disabled = disabled;
 }
 
 function translationFailureMessage(error: unknown): string {

@@ -1,4 +1,4 @@
-import type { TranslationEngineId } from './languages';
+import type { ModelFamilyId } from '../models/model-management-types';
 
 export type TranslationSegment =
   | { kind: 'protected'; text: string }
@@ -126,14 +126,14 @@ export function protectedMarkerModeForLanguages(
 }
 
 export function protectedMarkerModeForTranslation(
-  engineId: TranslationEngineId,
+  familyId: ModelFamilyId,
   sourceLanguage: string,
   targetLanguage: string,
 ): ProtectedMarkerMode {
   // HY-MT preserves URL-shaped placeholders more reliably than Unicode private
   // use characters. Bergamot keeps its compact marker form except for Japanese,
   // whose tokenization also benefits from URL-shaped placeholders.
-  return engineId === 'tencent_hy_mt'
+  return familyId === 'tencent_hy_mt'
     ? 'synthetic-url'
     : protectedMarkerModeForLanguages(sourceLanguage, targetLanguage);
 }

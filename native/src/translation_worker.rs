@@ -252,7 +252,7 @@ fn worker_main(commands: Receiver<WorkerCommand>, events: Sender<Event>) {
                     let _ = events.send(Event::TranslationError {
                         translation_id: request.translation_id,
                         code: "translation_busy".into(),
-                        message: "Another Natural translation is already running.".into(),
+                        message: "Another translation is already running.".into(),
                         details: None,
                     });
                     continue;

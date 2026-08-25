@@ -63,7 +63,7 @@ impl ModelFamilyId {
     pub fn display_name(self) -> &'static str {
         match self {
             Self::FirefoxTranslations => "Firefox Translations",
-            Self::TencentHyMt => "Tencent HY-MT",
+            Self::TencentHyMt => "Tencent HY-MT 2",
             Self::CohereTranscribe => "Cohere Transcribe",
             Self::Moonshine => "Moonshine",
             Self::NemotronAsr => "NVIDIA Nemotron 3.5 ASR",

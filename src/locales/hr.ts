@@ -155,11 +155,6 @@ export const hr = {
   'translation.modal.insertBelow': 'Umetni ispod',
   'translation.modal.copy': 'Kopiraj',
   'translation.modal.dismiss': 'Odbaci',
-  'settings.translation.engine.name': 'Zadani stil prijevoda',
-  'settings.translation.engine.desc':
-    'Brzi stil je doslovniji; Prirodni koristi neobavezni model Tencent HY-MT.',
-  'translation.engine.bergamot': 'Brzo i doslovno — Firefox Translations',
-  'translation.engine.tencentHyMt': 'Prirodno — Tencent HY-MT',
   'translation.modal.stale':
     'Bilješka se promijenila otkako je prijevod započeo. Pokrenite novi prijevod ili kopirajte ovaj.',
   'translation.notice.copied': 'Prijevod je kopiran.',

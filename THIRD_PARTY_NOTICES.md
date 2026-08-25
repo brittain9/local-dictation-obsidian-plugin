@@ -37,17 +37,17 @@ COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER
 IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
 CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
-## Tencent HY-MT and llama.cpp
+## Tencent HY-MT 2 and llama.cpp
 
-Natural translation uses a packaged helper built from llama.cpp through the
+Translation uses a packaged helper built from llama.cpp through the
 version-pinned `llama-cpp-2` Rust binding. llama.cpp and llama-cpp-2 are
 licensed under the MIT license (llama-cpp-2 also offers Apache-2.0).
 
-The optional Tencent HY-MT model is not distributed in plugin or sidecar
-archives. When the user chooses Install, it is downloaded directly from the
-pinned upstream Tencent repository. Use of the downloaded model is subject to
-the Tencent HY-MT Model License and required notices:
-https://huggingface.co/tencent/HY-MT1.5-1.8B-GGUF/blob/265b2e615a7dc9b06c435dc878829ad99a512ba2/License.txt
+The optional Tencent HY-MT 2 models are not distributed in plugin or sidecar
+archives. When the user chooses Install, a selected Q4_K_M model is downloaded
+directly from the pinned upstream Tencent repository. The models are licensed
+under Apache-2.0; retain Tencent's upstream attribution and notices:
+https://raw.githubusercontent.com/Tencent-Hunyuan/Hy-MT2/main/LICENSE.txt
 
 No endorsement by Tencent, llama.cpp, or llama-cpp-2 contributors is implied.
 

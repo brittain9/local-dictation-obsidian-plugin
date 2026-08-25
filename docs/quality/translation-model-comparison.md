@@ -1,5 +1,10 @@
 # Optional local translation engine benchmark
 
+> Historical HY-MT 1.5 benchmark retained for provenance only. HY-MT 1.5 is
+> no longer an active catalog option; production support uses the pinned
+> Apache-2.0 HY-MT 2 Q4_K_M records. The historical decisions below must not
+> be used to infer current model selection, licensing, or routing behavior.
+
 Date: 2026-07-27
 
 Branch benchmarked: `agent/spec-local-translation` at `513dc0b`
@@ -34,20 +39,17 @@ continue evaluating a **natural, paraphrastic** sidecar mode. A future
 candidate needs a permissive/global license and a structure-safe translation
 pipeline before it is exposed to users.
 
-### Production reassessment (2026-08-21)
+### Superseded production reassessment (2026-08-21)
 
-The benchmark above remains the quality record; HY-MT is not a quality upgrade
-over Bergamot. The production implementation instead treats it as an optional,
-more paraphrastic behavior choice for language pairs Fast does not cover. It
-translates parsed prose units and table cells, rejects unsafe reconstruction,
+The benchmark above remains a historical quality record. It predates the HY-MT 2
+integration and does not describe the current model-driven implementation.
+The historical implementation translated parsed prose units and table cells,
+rejected unsafe reconstruction,
 keeps preview mandatory, and never silently replaces source text.
 
-Speech Kit does not redistribute the model. Its installer downloads the pinned
-artifact directly from Tencent only after the user opens the upstream license
-and explicitly confirms that they are outside the European Union, United
-Kingdom, and South Korea and accept the terms. This is a restricted opt-in
-catalog entry, not the unrestricted global distribution rejected by the
-2026-07-27 gate.
+The restricted HY-MT 1.5 terms flow described by this historical note was
+removed. Current HY-MT 2 records use ordinary Apache-2.0 attribution and are
+selected explicitly through Manage Models.
 
 ## How the comparison was judged
 

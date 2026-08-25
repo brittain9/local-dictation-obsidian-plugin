@@ -12,9 +12,11 @@ const FRAME_HEADER_LENGTH = 5;
 const INSTALL_TIMEOUT_MS = 10 * 60_000;
 const TRANSLATION_TIMEOUT_MS = 2 * 60_000;
 const SHUTDOWN_TIMEOUT_MS = 10_000;
+const modelId =
+  process.env.LOCAL_DICTATION_HY_MT2_MODEL_ID?.trim() || 'tencent_hy_mt_2_1_8b_q4_k_m';
 const MODEL_TRIPLE = {
   familyId: 'tencent_hy_mt',
-  modelId: 'tencent_hy_mt_1_5_1_8b_q4_k_m',
+  modelId,
   runtimeId: 'llama_cpp',
 };
 const SOURCE_LANGUAGE = 'en';
@@ -29,16 +31,16 @@ Read [the specification](https://example.com/spec).
 `;
 
 const sidecarPath = resolve(
-  process.env.LOCAL_DICTATION_NATURAL_SIDECAR?.trim() ||
-    `native/target/${process.env.LOCAL_DICTATION_NATURAL_PROFILE?.trim() || 'debug'}/local-dictation-sidecar`,
+  process.env.LOCAL_DICTATION_HY_MT2_SIDECAR?.trim() ||
+    `native/target/${process.env.LOCAL_DICTATION_HY_MT2_PROFILE?.trim() || 'debug'}/local-dictation-sidecar`,
 );
-const configuredModelStore = process.env.LOCAL_DICTATION_NATURAL_MODEL_STORE?.trim();
+const configuredModelStore = process.env.LOCAL_DICTATION_HY_MT2_MODEL_STORE?.trim();
 const modelStorePath =
   configuredModelStore === undefined || configuredModelStore === ''
     ? await mkdtemp(join(tmpdir(), 'speech-kit-hy-mt-smoke-'))
     : resolve(configuredModelStore);
-const accelerationPreference = process.env.LOCAL_DICTATION_NATURAL_ACCELERATION?.trim() || 'auto';
-const skipInstall = process.env.LOCAL_DICTATION_NATURAL_SKIP_INSTALL === '1';
+const accelerationPreference = process.env.LOCAL_DICTATION_HY_MT2_ACCELERATION?.trim() || 'auto';
+const skipInstall = process.env.LOCAL_DICTATION_HY_MT2_SKIP_INSTALL === '1';
 const sidecar = startSidecar(sidecarPath);
 
 try {

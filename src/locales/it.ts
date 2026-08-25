@@ -849,13 +849,6 @@ export const it = {
   'translation.modal.insertBelow': 'Inserisci sotto',
   'translation.modal.copy': 'Copia',
   'translation.modal.dismiss': 'Ignora',
-  'settings.translation.engine.name': 'Stile di traduzione predefinito',
-  'settings.translation.engine.desc':
-    'Veloce è più letterale; Naturale usa il modello Tencent HY-MT facoltativo.',
-  'translation.engine.bergamot': 'Veloce e letterale — Firefox Translations',
-  'translation.engine.tencentHyMt': 'Naturale — Tencent HY-MT',
-  'translation.engine.notInstalled': '{style} (non installato)',
-  'translation.engine.unsupportedPair': '{style} (non disponibile per questa coppia di lingue)',
   'translation.modal.stale':
     'La nota è cambiata da quando è iniziata questa traduzione. Avvia una nuova traduzione o copia questa.',
   'translation.notice.copied': 'Traduzione copiata.',

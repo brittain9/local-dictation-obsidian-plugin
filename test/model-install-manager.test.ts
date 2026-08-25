@@ -1435,7 +1435,7 @@ describe('ModelInstallManager', () => {
       expect(harness.sidecarConnection.probeModelSelection).not.toHaveBeenCalled();
     });
 
-    it('does not replace the dictation selection after installing translation', async () => {
+    it('auto-selects translation without replacing the dictation selection after install', async () => {
       configureSidecarForInit(harness.sidecarConnection);
       const catalog = sampleCatalog();
       catalog.families.push({
@@ -1447,6 +1447,7 @@ describe('ModelInstallManager', () => {
       });
       catalog.models.push(sampleTranslationCatalogModel());
       harness.sidecarConnection.listModelCatalog.mockResolvedValue(catalog);
+      harness.sidecarConnection.probeModelSelection.mockResolvedValueOnce(sampleReadyProbeResult());
       await harness.manager.init();
 
       emitInstallUpdate(harness, {
@@ -1464,10 +1465,22 @@ describe('ModelInstallManager', () => {
       });
 
       await vi.waitFor(() => {
-        expect(harness.sidecarConnection.listInstalledModels).toHaveBeenCalledTimes(2);
+        expect(harness.getSettings().selectedTranslationModel).toEqual({
+          familyId: 'firefox_translations',
+          kind: 'catalog_model',
+          modelId: 'firefox_translations_release',
+          runtimeId: 'bergamot_wasm',
+        });
       });
       expect(harness.getSettings().selectedModel).toBeNull();
-      expect(harness.sidecarConnection.probeModelSelection).not.toHaveBeenCalled();
+      expect(harness.sidecarConnection.probeModelSelection).toHaveBeenCalledWith({
+        modelSelection: {
+          familyId: 'firefox_translations',
+          kind: 'catalog_model',
+          modelId: 'firefox_translations_release',
+          runtimeId: 'bergamot_wasm',
+        },
+      });
     });
   });
 

@@ -88,7 +88,7 @@ export async function translateWithHyMt(options: HyMtTranslationOptions): Promis
         translationId: options.translationId,
       })
       .catch((error: unknown) =>
-        finish(() => reject(asError(error, 'Natural translation could not be started.'))),
+        finish(() => reject(asError(error, 'Translation could not be started.'))),
       );
   });
 }

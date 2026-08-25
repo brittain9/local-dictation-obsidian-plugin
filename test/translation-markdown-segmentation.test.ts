@@ -15,9 +15,11 @@ describe('Markdown translation segmentation', () => {
     expect(protectedMarkerModeForLanguages('en', 'es')).toBe('private-use');
   });
 
-  it('uses URL-shaped markers for Natural translation', () => {
+  it('uses URL-shaped markers for Tencent HY-MT 2 translation', () => {
     expect(protectedMarkerModeForTranslation('tencent_hy_mt', 'en', 'es')).toBe('synthetic-url');
-    expect(protectedMarkerModeForTranslation('bergamot', 'en', 'es')).toBe('private-use');
+    expect(protectedMarkerModeForTranslation('firefox_translations', 'en', 'es')).toBe(
+      'private-use',
+    );
   });
 
   it('preserves note structure and protected content exactly', () => {

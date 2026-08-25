@@ -47,24 +47,7 @@ export const TRANSLATION_LANGUAGES = [
 
 export type TranslationLanguage = (typeof TRANSLATION_LANGUAGES)[number];
 
-export const TRANSLATION_ENGINE_IDS = ['bergamot', 'tencent_hy_mt'] as const;
-
-export type TranslationEngineId = (typeof TRANSLATION_ENGINE_IDS)[number];
-
-const BERGAMOT_TRANSLATION_LANGUAGES = new Set<TranslationLanguage>([
-  'en',
-  'es',
-  'de',
-  'fr',
-  'pt',
-  'it',
-  'nl',
-  'ja',
-]);
-
-export function normalizeTranslationEngine(value: unknown): TranslationEngineId {
-  return value === 'tencent_hy_mt' ? 'tencent_hy_mt' : 'bergamot';
-}
+type TranslationModelSupport = Pick<CatalogModelRecord, 'translationSupport'>;
 
 const LANGUAGE_LABELS: Readonly<Record<TranslationLanguage, string>> = {
   ar: 'العربية',
@@ -124,47 +107,42 @@ export function translationLanguageLabel(language: TranslationLanguage): string 
 export function isSupportedTranslationPair(
   sourceLanguage: TranslationLanguage,
   targetLanguage: TranslationLanguage,
-  engine: TranslationEngineId = 'bergamot',
+  model: TranslationModelSupport | null,
 ): boolean {
-  if (sourceLanguage === targetLanguage) return false;
-  if (engine === 'tencent_hy_mt') return true;
   return (
-    BERGAMOT_TRANSLATION_LANGUAGES.has(sourceLanguage) &&
-    BERGAMOT_TRANSLATION_LANGUAGES.has(targetLanguage) &&
-    (sourceLanguage === 'en' || targetLanguage === 'en')
+    sourceLanguage !== targetLanguage &&
+    (model === null || catalogSupportsPair(model, sourceLanguage, targetLanguage))
   );
 }
 
 export function translationTargetsFor(
   sourceLanguage: TranslationLanguage,
-  engine: TranslationEngineId = 'bergamot',
+  model: TranslationModelSupport | null,
 ): TranslationLanguage[] {
   return TRANSLATION_LANGUAGES.filter((language) =>
-    isSupportedTranslationPair(sourceLanguage, language, engine),
+    isSupportedTranslationPair(sourceLanguage, language, model),
   );
 }
 
-export function resolveTranslationEngine(
-  preferredEngine: TranslationEngineId,
-  sourceLanguage: TranslationLanguage,
-  targetLanguage: TranslationLanguage,
-): TranslationEngineId {
-  return isSupportedTranslationPair(sourceLanguage, targetLanguage, preferredEngine)
-    ? preferredEngine
-    : 'tencent_hy_mt';
+export function translationSourcesFor(
+  model: TranslationModelSupport | null,
+): TranslationLanguage[] {
+  return TRANSLATION_LANGUAGES.filter((language) => modelSupportsSourceLanguage(model, language));
 }
 
 export function resolveTranslationTarget(
   sourceLanguage: TranslationLanguage,
   preferredTarget: TranslationLanguage | null,
-  engine: TranslationEngineId = 'bergamot',
+  model: TranslationModelSupport | null,
 ): TranslationLanguage {
-  return preferredTarget !== null &&
-    isSupportedTranslationPair(sourceLanguage, preferredTarget, engine)
-    ? preferredTarget
-    : sourceLanguage === 'en'
-      ? 'es'
-      : 'en';
+  if (
+    preferredTarget !== null &&
+    isSupportedTranslationPair(sourceLanguage, preferredTarget, model)
+  ) {
+    return preferredTarget;
+  }
+  if (model === null) return sourceLanguage === 'en' ? 'es' : 'en';
+  return translationTargetsFor(sourceLanguage, model)[0] ?? (sourceLanguage === 'en' ? 'es' : 'en');
 }
 
 export interface InstalledTranslationModel {
@@ -183,14 +161,15 @@ export function findInstalledTranslationModel(
   },
   sourceLanguage: TranslationLanguage,
   targetLanguage: TranslationLanguage,
-  engine: TranslationEngineId = 'bergamot',
+  selectedModel: Pick<CatalogModelRecord, 'runtimeId' | 'familyId' | 'modelId'>,
 ): InstalledTranslationModel | null {
-  const familyId = engine === 'bergamot' ? 'firefox_translations' : 'tencent_hy_mt';
   const catalogModel = state.models.find(
-    (model) =>
-      model.task === 'translation' &&
-      model.familyId === familyId &&
-      catalogSupportsPair(model, sourceLanguage, targetLanguage),
+    (candidate) =>
+      candidate.task === 'translation' &&
+      candidate.runtimeId === selectedModel.runtimeId &&
+      candidate.familyId === selectedModel.familyId &&
+      candidate.modelId === selectedModel.modelId &&
+      catalogSupportsPair(candidate, sourceLanguage, targetLanguage),
   );
   if (catalogModel === undefined) return null;
 
@@ -232,10 +211,27 @@ export function resolveTranslationLanguages(
   dictationLanguage: string,
   preferredSource: TranslationLanguage | null,
   preferredTarget: TranslationLanguage | null,
-  engine: TranslationEngineId = 'bergamot',
+  model: TranslationModelSupport | null,
 ): TranslationLanguagePair {
   const defaults = defaultTranslationLanguages(dictationLanguage);
-  const sourceLanguage = preferredSource ?? defaults.sourceLanguage;
-  const targetLanguage = resolveTranslationTarget(sourceLanguage, preferredTarget, engine);
+  const sourceLanguage =
+    preferredSource !== null && modelSupportsSourceLanguage(model, preferredSource)
+      ? preferredSource
+      : modelSupportsSourceLanguage(model, defaults.sourceLanguage)
+        ? defaults.sourceLanguage
+        : (translationSourcesFor(model)[0] ?? defaults.sourceLanguage);
+  const targetLanguage = resolveTranslationTarget(sourceLanguage, preferredTarget, model);
   return { sourceLanguage, targetLanguage };
+}
+
+function modelSupportsSourceLanguage(
+  model: TranslationModelSupport | null,
+  language: TranslationLanguage,
+): boolean {
+  if (model === null) return true;
+  if (model.translationSupport === undefined) return false;
+  if (model.translationSupport.kind === 'all_to_all') {
+    return model.translationSupport.languages.includes(language);
+  }
+  return model.translationSupport.pairs.some((pair) => pair.source === language);
 }

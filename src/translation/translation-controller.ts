@@ -1,5 +1,7 @@
 import type { App, Editor, EditorPosition } from 'obsidian';
+import type { ModelPickerOptions } from '../models/manage-models-modal';
 import type { ModelInstallManager } from '../models/model-install-manager';
+import type { CatalogModelRecord } from '../models/model-management-types';
 import type { PluginSettings } from '../settings/plugin-settings';
 import { t } from '../shared/i18n';
 import type { PluginLogger } from '../shared/plugin-logger';
@@ -9,8 +11,8 @@ import { TranslationCancelledError, translateWithBergamot } from './bergamot-cli
 import { translateWithHyMt } from './hy-mt-client';
 import {
   findInstalledTranslationModel,
+  type InstalledTranslationModel,
   resolveTranslationLanguages,
-  type TranslationEngineId,
   type TranslationLanguage,
 } from './languages';
 import {
@@ -20,10 +22,6 @@ import {
   translatableTexts,
 } from './markdown-segmentation';
 import {
-  resolveInstalledTranslationEngine,
-  translationEngineAvailability,
-} from './translation-engines';
-import {
   TranslationJob,
   type TranslationJobResult,
   type TranslationJobRunOptions,
@@ -32,6 +30,69 @@ import {
 import { TranslationModal, type TranslationSnapshot } from './translation-modal';
 
 const MAX_TRANSLATION_CHARACTERS = 50_000;
+
+interface TranslationAdapterContext {
+  installed: InstalledTranslationModel;
+  model: CatalogModelRecord;
+  options: TranslationJobRunOptions;
+  settings: PluginSettings;
+  sidecarConnection:
+    | Pick<SidecarConnection, 'cancelTranslation' | 'startTranslation' | 'subscribe'>
+    | undefined;
+  sourceLanguage: TranslationLanguage;
+  targetLanguage: TranslationLanguage;
+  texts: string[];
+}
+
+type TranslationAdapter = (context: TranslationAdapterContext) => Promise<string[]>;
+
+const TRANSLATION_ADAPTERS: Readonly<Record<string, TranslationAdapter>> = {
+  'bergamot_wasm:firefox_translations': ({
+    installed,
+    options,
+    sourceLanguage,
+    targetLanguage,
+    texts,
+  }) =>
+    translateWithBergamot({
+      ...installed,
+      ...options,
+      sourceLanguage,
+      targetLanguage,
+      texts,
+    }),
+  'llama_cpp:tencent_hy_mt': ({
+    model,
+    options,
+    settings,
+    sidecarConnection,
+    sourceLanguage,
+    targetLanguage,
+    texts,
+  }) => {
+    if (sidecarConnection === undefined)
+      throw new Error('This translation model requires the native sidecar.');
+    return translateWithHyMt({
+      accelerationPreference: settings.accelerationPreference,
+      modelSelection: {
+        kind: 'catalog_model',
+        runtimeId: model.runtimeId,
+        familyId: model.familyId,
+        modelId: model.modelId,
+      },
+      ...(settings.modelStorePathOverride === ''
+        ? {}
+        : { modelStorePathOverride: settings.modelStorePathOverride }),
+      ...options,
+      sidecarConnection,
+      sourceLanguage,
+      targetLanguage,
+      texts,
+      translationId: createTranslationId(),
+    });
+  },
+};
+
 interface TranslationControllerDependencies {
   app: App;
   canReadAloud: (text: string, language: TranslationLanguage) => boolean;
@@ -40,7 +101,7 @@ interface TranslationControllerDependencies {
   logger: PluginLogger;
   modelManager: ModelInstallManager;
   onReadAloud: (text: string, language: TranslationLanguage) => Promise<void> | void;
-  openModelPicker: () => Promise<void>;
+  openModelPicker: (options?: ModelPickerOptions) => Promise<void>;
   saveSettings: (settings: PluginSettings) => Promise<void>;
   sidecarConnection?: Pick<
     SidecarConnection,
@@ -58,15 +119,7 @@ interface ActiveTranslation {
 export class TranslationController {
   private active: ActiveTranslation | null = null;
   private activeModal: TranslationModal | null = null;
-  private pendingEnginePersistence: TranslationEngineId | null = null;
-  private readonly releaseModelSubscription: () => void;
-
-  constructor(private readonly dependencies: TranslationControllerDependencies) {
-    this.releaseModelSubscription = dependencies.modelManager.subscribe(() => {
-      this.reconcileDefaultEngine();
-    });
-    this.reconcileDefaultEngine();
-  }
+  constructor(private readonly dependencies: TranslationControllerDependencies) {}
 
   translateSelection(editor: Editor): void {
     if (this.reopenActive() || !editor.somethingSelected()) return;
@@ -88,7 +141,6 @@ export class TranslationController {
     this.begin(editor, { from: { line: 0, ch: 0 }, kind: 'note', source, to: endPosition(source) });
   }
   dispose(): void {
-    this.releaseModelSubscription();
     this.active?.job.cancel();
     this.activeModal?.close();
     this.clearActive();
@@ -102,7 +154,6 @@ export class TranslationController {
   private begin(
     editor: Editor,
     snapshot: TranslationSnapshot,
-    engineOverride?: TranslationEngineId,
     sourceOverride?: TranslationLanguage,
     targetOverride?: TranslationLanguage,
   ): void {
@@ -118,38 +169,20 @@ export class TranslationController {
     }
     this.clearActive();
     const settings = this.dependencies.getSettings();
-    const preferredEngine = engineOverride ?? settings.translationEngineId;
-    let { sourceLanguage, targetLanguage } =
-      sourceOverride !== undefined && targetOverride !== undefined
-        ? { sourceLanguage: sourceOverride, targetLanguage: targetOverride }
-        : resolveTranslationLanguages(
-            settings.dictationLanguage,
-            settings.translationSourceLanguage,
-            settings.translationTargetLanguage,
-            'tencent_hy_mt',
-          );
-    const engineResolution = resolveInstalledTranslationEngine(
-      this.dependencies.modelManager.getState(),
-      preferredEngine,
-      sourceLanguage,
-      targetLanguage,
-    );
-    const engineId = engineResolution.engineId;
-    if (engineOverride === undefined && engineResolution.status === 'installed_fallback') {
-      this.persistResolvedEngine(engineId);
-    }
-    ({ sourceLanguage, targetLanguage } = resolveTranslationLanguages(
+    const model = selectedTranslationModel(this.dependencies.modelManager.getState(), settings);
+    const resolved = resolveTranslationLanguages(
       settings.dictationLanguage,
-      sourceLanguage,
-      targetLanguage,
-      engineId,
-    ));
+      sourceOverride ?? settings.translationSourceLanguage,
+      targetOverride ?? settings.translationTargetLanguage,
+      model,
+    );
+    const { sourceLanguage, targetLanguage } = resolved;
     const job = new TranslationJob({
-      engineId,
+      model,
       sourceLanguage,
       targetLanguage,
       run: (options) =>
-        this.runTranslation(snapshot.source, engineId, sourceLanguage, targetLanguage, options),
+        this.runTranslation(snapshot.source, model, sourceLanguage, targetLanguage, options),
     });
     const active: ActiveTranslation = { editor, job, release: () => {}, snapshot };
     active.release = job.subscribe((state) => {
@@ -182,16 +215,16 @@ export class TranslationController {
       },
       onInstallModel: async () => {
         modal.close();
-        await this.dependencies.openModelPicker();
-        if (this.active === active) this.begin(active.editor, active.snapshot);
+        await this.dependencies.openModelPicker({ initialTask: 'translation' });
+        if (this.active === active)
+          this.begin(
+            active.editor,
+            active.snapshot,
+            active.job.sourceLanguage,
+            active.job.targetLanguage,
+          );
       },
       onReadAloud: this.dependencies.onReadAloud,
-      getEngineAvailability: () =>
-        translationEngineAvailability(
-          this.dependencies.modelManager.getState(),
-          active.job.sourceLanguage,
-          active.job.targetLanguage,
-        ),
       onTranslateCurrent: () => {
         const source =
           active.snapshot.kind === 'note'
@@ -204,20 +237,18 @@ export class TranslationController {
             source,
             ...(active.snapshot.kind === 'note' ? { to: endPosition(source) } : {}),
           },
-          active.job.engineId,
           active.job.sourceLanguage,
           active.job.targetLanguage,
         );
       },
-      onRestart: (engineId, source, target) => {
+      onRestart: (source, target) => {
         const current = this.dependencies.getSettings();
         void this.dependencies.saveSettings({
           ...current,
-          translationEngineId: engineId,
           translationSourceLanguage: source,
           translationTargetLanguage: target,
         });
-        this.begin(active.editor, active.snapshot, engineId, source, target);
+        this.begin(active.editor, active.snapshot, source, target);
       },
     });
     this.activeModal = modal;
@@ -229,72 +260,25 @@ export class TranslationController {
     active?.release();
     this.dependencies.setDetachedStatus?.(null, () => {});
   }
-
-  private reconcileDefaultEngine(): void {
-    const settings = this.dependencies.getSettings();
-    const { sourceLanguage, targetLanguage } = resolveTranslationLanguages(
-      settings.dictationLanguage,
-      settings.translationSourceLanguage,
-      settings.translationTargetLanguage,
-      'tencent_hy_mt',
-    );
-    const resolution = resolveInstalledTranslationEngine(
-      this.dependencies.modelManager.getState(),
-      settings.translationEngineId,
-      sourceLanguage,
-      targetLanguage,
-    );
-    if (resolution.status === 'installed_fallback') {
-      this.persistResolvedEngine(resolution.engineId);
-    }
-  }
-
-  private persistResolvedEngine(engineId: TranslationEngineId): void {
-    if (this.pendingEnginePersistence === engineId) return;
-    const current = this.dependencies.getSettings();
-    if (current.translationEngineId === engineId) return;
-    this.pendingEnginePersistence = engineId;
-    void this.dependencies
-      .saveSettings({ ...current, translationEngineId: engineId })
-      .catch((error: unknown) => {
-        this.dependencies.logger.warn(
-          'translation',
-          `failed to save installed translation style: ${error instanceof Error ? error.message : String(error)}`,
-        );
-      })
-      .finally(() => {
-        if (this.pendingEnginePersistence === engineId) this.pendingEnginePersistence = null;
-      });
-  }
   private async runTranslation(
     source: string,
-    engineId: TranslationEngineId,
+    model: CatalogModelRecord | null,
     sourceLanguage: TranslationLanguage,
     targetLanguage: TranslationLanguage,
     options: TranslationJobRunOptions,
   ): Promise<TranslationJobResult> {
+    if (model === null) return { kind: 'missing_model' };
     const state = this.dependencies.modelManager.getState();
     const installed = findInstalledTranslationModel(
       { models: state.catalog.models, installedModels: state.installedModels },
       sourceLanguage,
       targetLanguage,
-      engineId,
+      model,
     );
-    if (installed === null) {
-      const availability = translationEngineAvailability(
-        state,
-        sourceLanguage,
-        targetLanguage,
-      ).find((engine) => engine.engineId === engineId);
-      return {
-        engineId,
-        kind: 'missing_model',
-        reason: availability?.status === 'unsupported_pair' ? 'unsupported_pair' : 'not_installed',
-      };
-    }
+    if (installed === null) return { kind: 'missing_model' };
     const segments = segmentMarkdownForTranslation(source, {
       protectedMarkerMode: protectedMarkerModeForTranslation(
-        engineId,
+        model.familyId,
         sourceLanguage,
         targetLanguage,
       ),
@@ -302,22 +286,19 @@ export class TranslationController {
     const texts = translatableTexts(segments);
     if (texts.length === 0) return { kind: 'translated', sourceUnitsKept: 0, text: source };
     try {
-      const translations =
-        engineId === 'bergamot'
-          ? await translateWithBergamot({
-              ...installed,
-              ...options,
-              sourceLanguage,
-              targetLanguage,
-              texts,
-            })
-          : await this.runHyMt(
-              installed.catalogModel.modelId,
-              sourceLanguage,
-              targetLanguage,
-              texts,
-              options,
-            );
+      const adapter = TRANSLATION_ADAPTERS[`${model.runtimeId}:${model.familyId}`];
+      if (adapter === undefined)
+        throw new Error(`No translation adapter is available for ${model.modelId}.`);
+      const translations = await adapter({
+        installed,
+        model,
+        options,
+        settings: this.dependencies.getSettings(),
+        sidecarConnection: this.dependencies.sidecarConnection,
+        sourceLanguage,
+        targetLanguage,
+        texts,
+      });
       const rebuilt = rebuildTranslatedMarkdown(segments, translations);
       if (rebuilt.sourceUnitsKept > 0)
         this.dependencies.logger.warn(
@@ -334,36 +315,23 @@ export class TranslationController {
       throw error;
     }
   }
-  private runHyMt(
-    modelId: string,
-    sourceLanguage: TranslationLanguage,
-    targetLanguage: TranslationLanguage,
-    texts: string[],
-    options: TranslationJobRunOptions,
-  ): Promise<string[]> {
-    const sidecarConnection = this.dependencies.sidecarConnection;
-    if (sidecarConnection === undefined)
-      throw new Error('Natural translation requires the native sidecar.');
-    const settings = this.dependencies.getSettings();
-    return translateWithHyMt({
-      accelerationPreference: settings.accelerationPreference,
-      modelSelection: {
-        kind: 'catalog_model',
-        runtimeId: 'llama_cpp',
-        familyId: 'tencent_hy_mt',
-        modelId,
-      },
-      ...(settings.modelStorePathOverride === ''
-        ? {}
-        : { modelStorePathOverride: settings.modelStorePathOverride }),
-      ...options,
-      sidecarConnection,
-      sourceLanguage,
-      targetLanguage,
-      texts,
-      translationId: createTranslationId(),
-    });
-  }
+}
+
+function selectedTranslationModel(
+  state: ReturnType<ModelInstallManager['getState']>,
+  settings: PluginSettings,
+): CatalogModelRecord | null {
+  const selection = state.selectedTranslationModel ?? settings.selectedTranslationModel;
+  if (selection?.kind !== 'catalog_model') return null;
+  return (
+    state.catalog.models.find(
+      (model) =>
+        model.task === 'translation' &&
+        model.runtimeId === selection.runtimeId &&
+        model.familyId === selection.familyId &&
+        model.modelId === selection.modelId,
+    ) ?? null
+  );
 }
 function createTranslationId(): string {
   return (

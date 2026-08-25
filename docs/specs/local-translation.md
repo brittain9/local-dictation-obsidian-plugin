@@ -8,37 +8,36 @@ local language workflow alongside speech to text and text to speech:
 speech → transcription → optional cleanup → optional translation → optional
 read aloud.
 
-The fast default is **Bergamot WebAssembly with the current models released in
-Firefox**. An optional **Tencent HY-MT 1.5 1.8B GGUF** engine adds natural,
-all-to-all translation across its documented 38 languages. Bergamot runs in an
-isolated Obsidian Web Worker; HY-MT runs in a version-matched helper supervised
-by the native sidecar over framed standard input/output.
+Translation uses one explicitly selected catalog model. Firefox Translations
+models run in an isolated Obsidian Web Worker; Tencent HY-MT 2 1.8B and 7B
+Q4_K_M models run in a version-matched helper supervised by the native sidecar
+over framed standard input/output. The 1.8B model uses less storage and memory;
+the 7B model is a presentation-only Heavy option with a 4.62 GB download.
 
 This decision supersedes the original TranslateGemma recommendation after a
 local feasibility spike on 2026-07-27. The owner explicitly rejected its
 measured latency as too slow to ship.
 
-### HY-MT terms and notice
+### HY-MT 2 terms and notice
 
-HY-MT is an optional, direct user-initiated upstream download. Model bytes are
-not included in the plugin release archives. Before installation, the plugin
-links to Tencent's pinned model license and presents its required notice,
-including the stated territorial restrictions. Installation requires an
-explicit confirmation that the user is outside the European Union, United
-Kingdom, and South Korea and accepts the upstream terms. The model remains a
-direct upstream download; Speech Kit does not redistribute its bytes.
+HY-MT 2 is an optional, direct user-initiated upstream download. Model bytes are
+not included in the plugin release archives. The catalog links to Tencent's
+pinned Apache-2.0 license and records the required attribution. The model
+remains a direct upstream download; Speech Kit does not redistribute its bytes.
 
-Natural is a behavior choice, not a claim of higher accuracy. It is more
-paraphrastic than Fast and can change wording or meaning, so preview remains
-mandatory before any note mutation.
+Model badges describe resource cost only. Preview remains mandatory before any
+note mutation.
 
-## Why Bergamot
+## Runtime choices
 
-The product needs all three of:
+The product supports two independently selectable runtime families:
 
-- fast enough for an interactive note-editing workflow;
-- useful general translation quality across the eight product languages;
-- a license suitable for a worldwide open-source desktop product.
+- Firefox/Bergamot for its compact, exact-direction translation packs.
+- Tencent HY-MT 2 for its broader all-to-all language coverage.
+
+The catalog is the source of truth. Users select the model they want through
+Manage Models; neither runtime is preferred, prioritized, or used as a silent
+fallback for the other.
 
 Measured on an M2 Pro:
 
@@ -53,9 +52,9 @@ translated two English→Spanish sentences in 235 ms total. A beam size of four
 was also tested; it was slower and did not improve the observed wording, so v1
 uses Firefox's fast beam-size-one configuration.
 
-TranslateGemma remains a possible later **optional large quality tier**, using
-an accelerated GGUF runtime. It is not an acceptable default and is not part
-of v1.
+The benchmark above is historical context for why both runtime families are
+kept small and locally runnable. It does not define a quality tier, default,
+recommendation, or routing rule.
 
 ## License and provenance
 
@@ -89,55 +88,41 @@ obligations. No Gemma terms apply to v1.
 - Cancel by terminating the worker; cancellation never changes the note.
 - Managed installation and removal through the existing Manage Models UI.
 - Offline inference with no cloud translation provider or silent fallback.
-- Fast mode: eight product languages (English, Spanish, German, French,
-  Portuguese, Italian, Dutch, and Japanese) across fourteen English-anchored
-  directions: `en↔es`, `en↔de`, `en↔fr`, `en↔pt`, `en↔it`, `en↔nl`, and
-  `en↔ja`.
-- Natural mode: an explicitly installed HY-MT model supports all directed,
-  non-identity pairs among its 38 documented languages.
+- The selected catalog model determines supported language pairs. Firefox
+  models cover their exact English-anchored directions; either HY-MT 2 model
+  covers all directed, non-identity pairs among its 38 documented languages.
 
 ### Not v1
 
 - Automatic source-language detection.
-- Direct non-English pairs in Fast mode or silent pivoting through English.
+- Automatic source-language detection or pivoting through another language.
 - Automatic translation after dictation or cleanup.
 - Whole-vault or multi-note translation.
 - A glossary or custom do-not-translate list.
 - A ribbon icon.
 - `Translate last utterance`.
-- A large/slow model tier other than the explicit Natural option.
+- Automatic model selection, priority, fallback, or engine routing.
 
 ## User workflow
 
-1. The Translation settings group summarizes all installed translation models,
-   links to Manage Models, and sets the default style, source, and target
-   languages. Uninstalled or pair-incompatible styles remain visible but cannot
-   be selected.
+1. The Translation settings group shows the selected model, links to Manage
+   Models, and sets the source and target language preferences.
 2. The user selects text or invokes translation for a non-empty active note.
 3. A modal opens with the active source and target languages in both its title
    and controls.
 4. If the translation pack is missing, the modal links directly to Manage
    Models filtered to Translation.
-5. Fast mode reads only the exact installed artifacts required for the selected
-   direction, transfers them to an isolated worker, and runs Bergamot locally.
-   Natural mode sends the same protected prose units to the managed HY-MT
-   helper without network access.
+5. The selected model adapter reads only its exact installed artifacts and runs
+   locally without network access.
 6. The user reviews the complete result.
 7. Replace and Insert below are enabled only if the original source range is
    unchanged and every Markdown unit rebuilt safely. Copy remains available
    when the note changed or a partial preview is retained for inspection.
 
-The preferred translation style is reconciled with the installed inventory. A
-compatible installed preference remains stable; otherwise another compatible
-installed engine becomes the persisted default. If none is installed, Fast
-remains the missing-model target when it supports the pair and Natural is the
-target otherwise. Returning from Manage Models re-runs this resolution against
-the refreshed inventory.
-
-The source and target preferences persist tolerantly without a settings-schema
-migration. If no preference exists, source defaults to the explicit dictation
-language when supported, otherwise English; the target defaults to English or
-Spanish as needed to form a supported pair. Invoking Translate note on an empty
+The source and target preferences persist tolerantly. If no preference exists,
+source defaults to the explicit dictation language when supported, otherwise
+English; the target defaults to English or Spanish as needed to form a supported
+pair. Invoking Translate note on an empty
 note explains that there is no text to translate instead of silently doing
 nothing.
 
@@ -276,25 +261,24 @@ Required before merge:
 - Settings normalization tests.
 - Command availability tests.
 - Model install/remove and missing-model recovery review.
-- Live Obsidian test-vault check on the built bundle, including Natural
-  download, selection, close/reopen, cancel, and apply flows.
+- Live Obsidian test-vault check on the built bundle, including translation
+  model installation, selection/switching, close/reopen, cancel, and apply
+  flows.
 
 The real-model worker and Markdown smoke is deliberately excluded from default
-CI, like the repository's ignored native-model suites. Run the Fast smoke after
-installing its managed pack:
+CI, like the repository's ignored native-model suites. Run the HY-MT 2 smoke
+after installing its managed pack:
 
 ```sh
-npm run test:translation:e2e
+npm run test:translation:hy-mt2:e2e
 ```
 
-The script bundles the same worker and segmentation code used by production,
-loads the pinned managed installation, translates real Markdown, checks
+The script bundles the same segmentation code used by production, loads the
+pinned HY-MT 2 installation, translates real Markdown, checks
 English-to-Spanish meaning, and verifies that code, wikilinks, tags, math, link
-destinations, and table structure survive byte-for-byte.
-
-Run the Natural smoke only after its upstream model has been installed through
-the reviewed terms flow. It must exercise the packaged sidecar/helper boundary,
-not a localhost server or a standalone llama.cpp executable.
+destinations, and table structure survive byte-for-byte. The packaged helper
+smoke must exercise the sidecar/helper boundary, not a localhost server or a
+standalone llama.cpp executable.
 
 Recommended follow-up evidence:
 
@@ -304,8 +288,8 @@ Recommended follow-up evidence:
   minimum hardware;
 - split the pack into smaller per-language downloads only if install size is a
   demonstrated adoption problem;
-- evaluate an accelerated TranslateGemma GGUF tier only as a separate,
-  explicitly large option.
+- exercise both HY-MT 2 Q4_K_M records across CPU/GPU execution, cancellation,
+  and cached-model switching on representative hardware.
 
 ## Rejected approaches
 

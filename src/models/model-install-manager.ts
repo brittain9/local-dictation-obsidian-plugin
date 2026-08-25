@@ -72,6 +72,7 @@ export interface ModelManagerState {
   selectedModelCapabilities: SelectedModelCapabilities;
   selectedTtsModel: SelectedModel | null;
   selectedTtsModelCapabilities: SelectedModelCapabilities;
+  selectedTranslationModel?: SelectedModel | null;
 }
 
 interface ModelInstallManagerDependencies {
@@ -401,6 +402,7 @@ export class ModelInstallManager {
       selectedModelCapabilities: this.selectedModelCapabilities,
       selectedTtsModel: this.deps.getSettings().selectedTtsModel,
       selectedTtsModelCapabilities: this.selectedTtsModelCapabilities,
+      selectedTranslationModel: this.deps.getSettings().selectedTranslationModel,
     };
   }
 
@@ -598,11 +600,6 @@ export class ModelInstallManager {
     canCommit: (settings: Readonly<PluginSettings>) => boolean,
   ): Promise<ModelProbeResultEvent> {
     const task = this.selectionTask(selection);
-    if (task === 'translation') {
-      throw new Error(
-        'Translation models are resolved by language pair and do not need selection.',
-      );
-    }
     const probeResult = await this.deps.sidecarConnection.probeModelSelection({
       modelSelection: selection,
       ...createModelStoreOverridePayload(this.deps.getSettings().modelStorePathOverride),
@@ -613,9 +610,10 @@ export class ModelInstallManager {
       // The user explicitly (re-)probed this exact selection and it's
       // confirmed broken now — drop any cached "ready" snapshot for it so a
       // future startup doesn't trust stale, now-incorrect capabilities.
-      await this.applyProbeResultToCapabilities(selection, probeResult, task);
+      if (task !== 'translation')
+        await this.applyProbeResultToCapabilities(selection, probeResult, task);
       if (!canCommit(this.deps.getSettings())) return probeResult;
-      await this.invalidateCapabilitiesSnapshot(selection, task);
+      if (task !== 'translation') await this.invalidateCapabilitiesSnapshot(selection, task);
       throw new Error(createProbeFailureMessage(probeResult));
     }
 
@@ -645,33 +643,44 @@ export class ModelInstallManager {
       throw incompatibleLanguageError(displayName, currentLanguage);
     }
     if (!canCommit(this.deps.getSettings())) return probeResult;
-    const committed = await this.deps.commitSettingsIf(canCommit, (currentSettings) => ({
-      ...currentSettings,
-      ...(task === 'tts'
-        ? {
-            selectedTtsModel: selection,
-            selectedTtsVoice:
-              selection.kind === 'catalog_model'
-                ? (this.catalog.models.find((model) =>
-                    matchesModelTriple(
-                      model,
-                      selection.runtimeId,
-                      selection.familyId,
-                      selection.modelId,
-                    ),
-                  )?.defaultVoice ?? null)
-                : null,
-          }
-        : { selectedModel: selection }),
-    }));
+    const committed = await this.deps.commitSettingsIf(canCommit, (currentSettings) => {
+      if (task === 'translation')
+        return { ...currentSettings, selectedTranslationModel: selection };
+      if (task === 'tts') {
+        return {
+          ...currentSettings,
+          selectedTtsModel: selection,
+          selectedTtsVoice:
+            selection.kind === 'catalog_model'
+              ? (this.catalog.models.find((model) =>
+                  matchesModelTriple(
+                    model,
+                    selection.runtimeId,
+                    selection.familyId,
+                    selection.modelId,
+                  ),
+                )?.defaultVoice ?? null)
+              : null,
+        };
+      }
+      return { ...currentSettings, selectedModel: selection };
+    });
     if (!committed || !canCommit(this.deps.getSettings())) return probeResult;
-    await this.applyProbeResultToCapabilities(selection, probeResult, task);
+    if (task === 'translation') {
+      this.notify();
+    } else {
+      await this.applyProbeResultToCapabilities(selection, probeResult, task);
+    }
     return probeResult;
   }
 
   async remove(selection: CatalogModelSelection): Promise<void> {
     const settings = this.deps.getSettings();
-    const currentSelections = [settings.selectedModel, settings.selectedTtsModel];
+    const currentSelections = [
+      settings.selectedModel,
+      settings.selectedTtsModel,
+      settings.selectedTranslationModel,
+    ];
 
     if (
       currentSelections.some(
@@ -766,6 +775,19 @@ export class ModelInstallManager {
     if (!committed) return;
     this.selectedTtsModelCapabilities = { status: 'none' };
     this.notify();
+  }
+
+  async clearTranslationSelection(): Promise<void> {
+    const expectedLifecycleGeneration = this.lifecycleGeneration;
+    const expectedSelectionGeneration = ++this.selectionGeneration;
+    this.deps.logger?.debug('model', 'cleared selected translation model');
+    const committed = await this.deps.commitSettingsIf(
+      () =>
+        this.lifecycleGeneration === expectedLifecycleGeneration &&
+        this.selectionGeneration === expectedSelectionGeneration,
+      (currentSettings) => ({ ...currentSettings, selectedTranslationModel: null }),
+    );
+    if (committed) this.notify();
   }
 
   async validateAndSelectExternalFile(
@@ -1020,21 +1042,13 @@ export class ModelInstallManager {
       reconciledFailure = true;
     }
 
-    // Auto-select on install when nothing is currently selected — new users
-    // shouldn't have to figure out a second "Use" click after installing.
+    // Auto-select on install when nothing is currently selected for that task.
     const canAutoSelectReconciledFailure = refresh.reconcileFailure === null || reconciledFailure;
     if (refresh.completed !== null && canAutoSelectReconciledFailure) {
       const completed = refresh.completed;
       const completedTask = this.selectionTask(completed);
-      if (completedTask === 'translation') {
-        if (this.lifecycleGeneration === refresh.expectedLifecycleGeneration) {
-          this.notify();
-        }
-        return;
-      }
       const canCommitAutoSelection = (settings: Readonly<PluginSettings>): boolean => {
-        const selectedForTask =
-          completedTask === 'tts' ? settings.selectedTtsModel : settings.selectedModel;
+        const selectedForTask = selectedModelForTask(settings, completedTask);
         return (
           this.lifecycleGeneration === refresh.expectedLifecycleGeneration &&
           this.installGeneration === refresh.expectedInstallGeneration &&
@@ -1161,4 +1175,18 @@ function incompatibleLanguageError(modelName: string, language: DictationLanguag
   return new Error(
     `${modelName} does not support ${dictationLanguageLabel(language)}. Change Dictation language before installing or selecting this model.`,
   );
+}
+
+function selectedModelForTask(
+  settings: Readonly<PluginSettings>,
+  task: ModelTask,
+): SelectedModel | null {
+  switch (task) {
+    case 'translation':
+      return settings.selectedTranslationModel;
+    case 'tts':
+      return settings.selectedTtsModel;
+    case 'stt':
+      return settings.selectedModel;
+  }
 }

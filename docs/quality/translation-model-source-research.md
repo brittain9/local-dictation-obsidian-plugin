@@ -1,5 +1,9 @@
 # Translation candidate source research
 
+> Historical HY-MT 1.5 source research retained for provenance only. It does
+> not describe the active production catalog, license flow, or model-routing
+> behavior. Current production support uses pinned Apache-2.0 HY-MT 2 records.
+
 Primary-source review for `tencent/HY-MT1.5-1.8B-GGUF` and
 MADLAD-400-3B-MT Q4_K_M. Checked on 2026-07-27 without downloading model
 weights in full; only anonymous one-byte range requests were made against the
@@ -8,11 +12,10 @@ immutable revisions are recorded below.
 
 ## Bottom line
 
-Update 2026-08-21: the unrestricted global model entry rejected below remains
-out of scope. The production implementation does not redistribute model bytes
-and gates the direct Tencent download behind an explicit confirmation that the
-user is outside the excluded territories and accepts the upstream terms. This
-is an engineering distribution boundary, not legal advice.
+Update 2026-08-21: the unrestricted global model entry rejected below was
+superseded by the later HY-MT 2 integration. The current records use pinned
+Apache-2.0 metadata and ordinary model-manager selection. This historical note
+is not legal advice or a current product policy.
 
 - **HY-MT1.5 is source-level viable with llama.cpp and Metal, but its license is
   not globally shippable.** Tencent publishes the GGUF itself, documents a

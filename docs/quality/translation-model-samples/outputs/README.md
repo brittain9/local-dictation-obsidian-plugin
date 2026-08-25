@@ -1,8 +1,8 @@
 # Translation model note outputs
 
-These are complete English-to-Dutch outputs from the current PR-head Markdown
-pipeline. Bergamot uses the actual installed Firefox Translations pack.
-HY-MT uses the official Tencent prompt and recommended decoding
+These are historical English-to-Dutch outputs from the pre-HY-MT2 PR-head
+Markdown pipeline. Bergamot uses the actual installed Firefox Translations
+pack. HY-MT uses the official Tencent prompt and recommended decoding
 (`temperature=0.7`, `top_k=20`, `top_p=0.6`,
 `repeat_penalty=1.05`), fixed seed 42, and synthetic-URL protected markers.
 “Topology changed” means that heading levels, list shape, blockquotes, fenced
@@ -14,7 +14,7 @@ MADLAD outputs are absent because its requested GGUF failed the llama.cpp smoke
 test before generation, its one permitted fallback produced invalid output, and
 the user directed the run to skip it.
 
-| Sample | English source | Bergamot | HY-MT1.5-1.8B Q4_K_M |
+| Sample | English source | Bergamot | Historical HY-MT1.5-1.8B Q4_K_M |
 | --- | --- | --- | --- |
 | 01-release-plan | [source](../source/01-release-plan.md) | [Bergamot](bergamot/01-release-plan.md) | [HY-MT](hy-mt/01-release-plan.md) (topology changed) |
 | 02-research-log | [source](../source/02-research-log.md) | [Bergamot](bergamot/02-research-log.md) | [HY-MT](hy-mt/02-research-log.md) (topology changed) |

@@ -1,22 +1,15 @@
-import type { TranslationEngineId, TranslationLanguage } from './languages';
+import type { CatalogModelRecord } from '../models/model-management-types';
+import type { TranslationLanguage } from './languages';
 
 export type TranslationJobResult =
-  | {
-      engineId: TranslationEngineId;
-      kind: 'missing_model';
-      reason: 'not_installed' | 'unsupported_pair';
-    }
+  | { kind: 'missing_model' }
   | { kind: 'translated'; sourceUnitsKept: number; text: string };
 
 export type TranslationJobState =
   | { phase: 'idle' }
   | { phase: 'loading'; startedAt: number }
   | { completed: number; phase: 'translating'; startedAt: number; total: number }
-  | {
-      engineId: TranslationEngineId;
-      phase: 'missing_model';
-      reason: 'not_installed' | 'unsupported_pair';
-    }
+  | { phase: 'missing_model' }
   | { phase: 'completed'; sourceUnitsKept: number; text: string }
   | { phase: 'cancelled' }
   | { error: unknown; phase: 'failed' };
@@ -28,7 +21,7 @@ export interface TranslationJobRunOptions {
 }
 
 interface TranslationJobOptions {
-  engineId: TranslationEngineId;
+  model: CatalogModelRecord | null;
   run: (options: TranslationJobRunOptions) => Promise<TranslationJobResult>;
   sourceLanguage: TranslationLanguage;
   targetLanguage: TranslationLanguage;
@@ -37,7 +30,7 @@ interface TranslationJobOptions {
 type Listener = (state: TranslationJobState) => void;
 
 export class TranslationJob {
-  readonly engineId: TranslationEngineId;
+  readonly model: CatalogModelRecord | null;
   readonly sourceLanguage: TranslationLanguage;
   readonly targetLanguage: TranslationLanguage;
   private abortController: AbortController | null = null;
@@ -45,7 +38,7 @@ export class TranslationJob {
   private readonly listeners = new Set<Listener>();
 
   constructor(private readonly options: TranslationJobOptions) {
-    this.engineId = options.engineId;
+    this.model = options.model;
     this.sourceLanguage = options.sourceLanguage;
     this.targetLanguage = options.targetLanguage;
   }
@@ -85,11 +78,7 @@ export class TranslationJob {
         this.abortController = null;
         this.setState(
           result.kind === 'missing_model'
-            ? {
-                engineId: result.engineId,
-                phase: 'missing_model',
-                reason: result.reason,
-              }
+            ? { phase: 'missing_model' }
             : {
                 phase: 'completed',
                 sourceUnitsKept: result.sourceUnitsKept,

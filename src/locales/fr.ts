@@ -843,13 +843,6 @@ export const fr = {
   'translation.modal.insertBelow': 'Insérer en dessous',
   'translation.modal.copy': 'Copier',
   'translation.modal.dismiss': 'Ignorer',
-  'settings.translation.engine.name': 'Style de traduction par défaut',
-  'settings.translation.engine.desc':
-    'Rapide est plus littéral ; Naturel utilise le modèle Tencent HY-MT facultatif.',
-  'translation.engine.bergamot': 'Rapide et littéral — Firefox Translations',
-  'translation.engine.tencentHyMt': 'Naturel — Tencent HY-MT',
-  'translation.engine.notInstalled': '{style} (non installé)',
-  'translation.engine.unsupportedPair': '{style} (indisponible pour cette paire de langues)',
   'translation.modal.stale':
     'La note a changé depuis le début de cette traduction. Lancez une nouvelle traduction ou copiez celle-ci.',
   'translation.notice.copied': 'Traduction copiée.',
