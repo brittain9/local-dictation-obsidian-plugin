@@ -2380,7 +2380,7 @@
       },
       "uxTags": ["multilingual", "optional"],
       "licenseLabel": "Apache-2.0",
-      "licenseUrl": "https://raw.githubusercontent.com/Tencent-Hunyuan/Hy-MT2/main/LICENSE.txt",
+      "licenseUrl": "https://raw.githubusercontent.com/Tencent-Hunyuan/Hy-MT2/71928c82b61fc04e0289ad7eab1faf5ebef721b2/LICENSE.txt",
       "sourceUrl": "https://huggingface.co/tencent/Hy-MT2-1.8B-GGUF/tree/1cd5208700acedef4ef93019b6cfc148b8522d45",
       "modelCardUrl": "https://huggingface.co/tencent/Hy-MT2-1.8B-GGUF/tree/1cd5208700acedef4ef93019b6cfc148b8522d45",
       "notes": [
@@ -2493,7 +2493,7 @@
       },
       "uxTags": ["heavy", "multilingual", "optional"],
       "licenseLabel": "Apache-2.0",
-      "licenseUrl": "https://raw.githubusercontent.com/Tencent-Hunyuan/Hy-MT2/main/LICENSE.txt",
+      "licenseUrl": "https://raw.githubusercontent.com/Tencent-Hunyuan/Hy-MT2/71928c82b61fc04e0289ad7eab1faf5ebef721b2/LICENSE.txt",
       "sourceUrl": "https://huggingface.co/tencent/Hy-MT2-7B-GGUF/tree/ab8472660ac61fac25f1af43fac2599d52a8a775",
       "modelCardUrl": "https://huggingface.co/tencent/Hy-MT2-7B-GGUF/tree/ab8472660ac61fac25f1af43fac2599d52a8a775",
       "notes": [

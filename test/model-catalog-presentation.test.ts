@@ -71,6 +71,13 @@ describe('model catalog presentation', () => {
       [4624648896, '9f96256500f3fc1ab4d64336b58f52a949a95ad7516b0c229476eef782f9f77b'],
     ]);
     expect(models.every((model) => model.licenseLabel === 'Apache-2.0')).toBe(true);
+    expect(
+      models.every((model) =>
+        model.licenseUrl.endsWith(
+          '/71928c82b61fc04e0289ad7eab1faf5ebef721b2/LICENSE.txt',
+        ),
+      ),
+    ).toBe(true);
     expect(models[0]?.summary).toContain('suitable for most local translation');
     expect(models[0]?.uxTags).not.toContain('heavy');
     expect(models[1]?.uxTags).toContain('heavy');

@@ -47,7 +47,7 @@ The optional Tencent HY-MT 2 models are not distributed in plugin or sidecar
 archives. When the user chooses Install, a selected Q4_K_M model is downloaded
 directly from the pinned upstream Tencent repository. The models are licensed
 under Apache-2.0; retain Tencent's upstream attribution and notices:
-https://raw.githubusercontent.com/Tencent-Hunyuan/Hy-MT2/main/LICENSE.txt
+https://raw.githubusercontent.com/Tencent-Hunyuan/Hy-MT2/71928c82b61fc04e0289ad7eab1faf5ebef721b2/LICENSE.txt
 
 No endorsement by Tencent, llama.cpp, or llama-cpp-2 contributors is implied.
 
