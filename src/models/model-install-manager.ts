@@ -777,19 +777,6 @@ export class ModelInstallManager {
     this.notify();
   }
 
-  async clearTranslationSelection(): Promise<void> {
-    const expectedLifecycleGeneration = this.lifecycleGeneration;
-    const expectedSelectionGeneration = ++this.selectionGeneration;
-    this.deps.logger?.debug('model', 'cleared selected translation model');
-    const committed = await this.deps.commitSettingsIf(
-      () =>
-        this.lifecycleGeneration === expectedLifecycleGeneration &&
-        this.selectionGeneration === expectedSelectionGeneration,
-      (currentSettings) => ({ ...currentSettings, selectedTranslationModel: null }),
-    );
-    if (committed) this.notify();
-  }
-
   async validateAndSelectExternalFile(
     filePath: string,
     engine: Pick<ExternalFileModelSelection, 'familyId' | 'runtimeId'> = {
