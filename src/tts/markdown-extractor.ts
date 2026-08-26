@@ -64,8 +64,8 @@ export function extractSpeakableMarkdown(source: string): MappedText {
       sourceOffsets,
     );
 
-    if (newlineLength > 0 && output.length > 0 && output.at(-1) !== ' ') {
-      output.push(' ');
+    if (newlineLength > 0 && output.length > 0) {
+      output.push('\n');
       sourceOffsets.push(offset + line.length);
     }
     offset += lineWithEnding.length;
@@ -172,19 +172,33 @@ function normalizeMappedText(chars: string[], offsets: number[]): MappedText {
   const output: string[] = [];
   const sourceOffsets: number[] = [];
   let pendingSpaceOffset: number | null = null;
+  let pendingNewlineCount = 0;
+  let pendingNewlineOffset: number | null = null;
 
   for (let index = 0; index < chars.length; index += 1) {
     const char = chars[index] ?? '';
     const offset = offsets[index] ?? 0;
+    if (char === '\n') {
+      pendingNewlineCount += 1;
+      pendingNewlineOffset ??= offset;
+      continue;
+    }
     if (/\s/u.test(char)) {
       pendingSpaceOffset ??= offset;
       continue;
     }
-    if (pendingSpaceOffset !== null && output.length > 0) {
-      output.push(' ');
-      sourceOffsets.push(pendingSpaceOffset);
+    if (output.length > 0) {
+      if (pendingNewlineCount >= 2) {
+        output.push('\n', '\n');
+        sourceOffsets.push(pendingNewlineOffset ?? offset, pendingNewlineOffset ?? offset);
+      } else if (pendingSpaceOffset !== null || pendingNewlineCount === 1) {
+        output.push(' ');
+        sourceOffsets.push(pendingSpaceOffset ?? pendingNewlineOffset ?? offset);
+      }
     }
     pendingSpaceOffset = null;
+    pendingNewlineCount = 0;
+    pendingNewlineOffset = null;
     output.push(char);
     sourceOffsets.push(offset);
   }
@@ -198,25 +212,63 @@ export function segmentSpeakableText(
 ): SynthesisTextChunk[] {
   const minimumCharacters = options.minimumCharacters ?? 1;
   const maximumCharacters = options.maximumCharacters ?? 300;
-  const segmenter = new Intl.Segmenter(options.locale ?? 'en', { granularity: 'sentence' });
-  const sentences = [...segmenter.segment(mapped.text)].flatMap((sentence) =>
-    splitLongSentence(mapped.text, sentence.index, sentence.segment.length, maximumCharacters),
-  );
   const chunks: SynthesisTextChunk[] = [];
+  const paragraphBreak = /\n{2,}/gu;
+  let paragraphStart = 0;
+  for (const match of mapped.text.matchAll(paragraphBreak)) {
+    const paragraphEnd = match.index ?? paragraphStart;
+    appendSegmentedRange(
+      mapped,
+      paragraphStart,
+      paragraphEnd,
+      options.locale,
+      minimumCharacters,
+      maximumCharacters,
+      chunks,
+    );
+    paragraphStart = paragraphEnd + match[0].length;
+  }
+  appendSegmentedRange(
+    mapped,
+    paragraphStart,
+    mapped.text.length,
+    options.locale,
+    minimumCharacters,
+    maximumCharacters,
+    chunks,
+  );
+  return chunks;
+}
+
+function appendSegmentedRange(
+  mapped: MappedText,
+  rangeStart: number,
+  rangeEnd: number,
+  locale: string | undefined,
+  minimumCharacters: number,
+  maximumCharacters: number,
+  chunks: SynthesisTextChunk[],
+): void {
+  if (rangeEnd <= rangeStart) return;
+  const text = mapped.text.slice(rangeStart, rangeEnd);
+  const segmenter = new Intl.Segmenter(locale ?? 'en', { granularity: 'sentence' });
+  const sentences = [...segmenter.segment(text)].flatMap((sentence) =>
+    splitLongSentence(text, sentence.index, sentence.segment.length, maximumCharacters),
+  );
   let start = 0;
   let end = 0;
 
   const flush = (): void => {
-    const text = mapped.text.slice(start, end).trim();
-    if (text.length === 0) return;
-    const first = mapped.text.indexOf(text, start);
-    const last = first + text.length - 1;
+    const trimmed = mapped.text.slice(rangeStart + start, rangeStart + end).trim();
+    if (trimmed.length === 0) return;
+    const first = mapped.text.indexOf(trimmed, rangeStart + start);
+    const last = first + trimmed.length - 1;
     const sourceStart = mapped.sourceOffsets[first];
     const sourceEnd = mapped.sourceOffsets[last];
     if (sourceStart === undefined || sourceEnd === undefined) return;
     chunks.push({
       sourceRange: { from: sourceStart, to: sourceEnd + 1 },
-      text,
+      text: trimmed,
     });
   };
 
@@ -233,7 +285,6 @@ export function segmentSpeakableText(
     }
   }
   if (end > start) flush();
-  return chunks;
 }
 
 function splitLongSentence(

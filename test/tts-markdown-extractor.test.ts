@@ -52,7 +52,7 @@ describe('extractSpeakableMarkdown', () => {
       '\n',
     );
 
-    expect(extractSpeakableMarkdown(source).text).toBe('Before after. Finish.');
+    expect(extractSpeakableMarkdown(source).text).toBe('Before after.\n\nFinish.');
   });
 });
 
@@ -62,6 +62,23 @@ describe('segmentSpeakableText', () => {
     expect(
       segmentSpeakableText(extractSpeakableMarkdown(source)).map((chunk) => chunk.text),
     ).toEqual(['One.', 'Two.', 'Three.']);
+  });
+
+  it('never combines separate Markdown paragraphs into one synthesis chunk', () => {
+    const source = 'First paragraph without punctuation\n\nSecond paragraph without punctuation';
+    const chunks = extractAndSegmentMarkdown(source);
+
+    expect(chunks.map((chunk) => chunk.text)).toEqual([
+      'First paragraph without punctuation',
+      'Second paragraph without punctuation',
+    ]);
+    expect(chunks.map((chunk) => chunk.sourceRange)).toEqual([
+      { from: 0, to: 'First paragraph without punctuation'.length },
+      {
+        from: source.indexOf('Second'),
+        to: source.length,
+      },
+    ]);
   });
 
   it('merges short sentences and preserves source ranges', () => {

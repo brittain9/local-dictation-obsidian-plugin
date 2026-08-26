@@ -314,6 +314,125 @@ describe('TranslationModal mutation safety', () => {
     expect(replaceRange).not.toHaveBeenCalled();
   });
 
+  it('does not translate automatically when the language pair changes', async () => {
+    Setting.reset();
+    const runTranslation = vi.fn(async () => ({
+      kind: 'translated' as const,
+      sourceUnitsKept: 0,
+      text: 'Traduzca esto.',
+    }));
+    const onRestart = vi.fn();
+    const onLanguageChange = vi.fn(async () => {});
+    const modal = createModal({
+      editor: {
+        getValue: () => SNAPSHOT.source,
+        replaceRange: vi.fn(),
+      },
+      runTranslation,
+      onRestart,
+      onLanguageChange,
+    });
+
+    modal.open();
+    await vi.waitFor(() => expect(Setting.buttonNamed('Replace').disabled).toBe(false));
+
+    const sourceSetting = Setting.instances.filter((setting) => setting.name === 'From').at(-1);
+    sourceSetting?.dropdownComponents[0]?.change('es');
+    await vi.waitFor(() => expect(onLanguageChange).toHaveBeenCalledWith('es', 'en'));
+
+    expect(runTranslation).toHaveBeenCalledOnce();
+    expect(onRestart).not.toHaveBeenCalled();
+    expect(Setting.buttonNamed('Translate again')).toBeDefined();
+    const latestActions = Setting.instances
+      .filter((setting) => setting.buttonComponents.length > 0)
+      .at(-1);
+    expect(latestActions?.buttonComponents.some((button) => button.text === 'Replace')).toBe(false);
+  });
+
+  it('switches models through the shared selection callback without starting inference', async () => {
+    Setting.reset();
+    const secondModel = {
+      ...createModalModel(),
+      displayName: 'HY-MT 2',
+      familyId: 'tencent_hy_mt' as const,
+      modelId: 'hy-mt-2',
+      runtimeId: 'llama_cpp' as const,
+    } as CatalogModelRecord;
+    const runTranslation = vi.fn(async () => ({
+      kind: 'translated' as const,
+      sourceUnitsKept: 0,
+      text: 'Traduzca esto.',
+    }));
+    const onModelChange = vi.fn(async () => {});
+    const modal = createModal({
+      editor: {
+        getValue: () => SNAPSHOT.source,
+        replaceRange: vi.fn(),
+      },
+      modelOptions: [secondModel],
+      onModelChange,
+      runTranslation,
+    });
+
+    modal.open();
+    await vi.waitFor(() => expect(Setting.buttonNamed('Replace').disabled).toBe(false));
+
+    const modelSetting = Setting.instances
+      .filter((setting) => setting.name === 'Translation model')
+      .at(-1);
+    const secondModelOption = modelSetting?.dropdownComponents[0]?.selectEl.options.find(
+      (option) => option.label === 'HY-MT 2',
+    );
+    if (secondModelOption === undefined) throw new Error('Expected HY-MT 2 model option.');
+    modelSetting?.dropdownComponents[0]?.change(secondModelOption.value);
+    await vi.waitFor(() => expect(onModelChange).toHaveBeenCalledWith(secondModel, 'en', 'es'));
+
+    expect(runTranslation).toHaveBeenCalledOnce();
+    expect(Setting.buttonNamed('Translate again')).toBeDefined();
+  });
+
+  it('offers an explicit retry after selecting an installed model for a missing-model job', async () => {
+    Setting.reset();
+    const installedModel = createModalModel();
+    const runTranslation = vi.fn(async () => ({ kind: 'missing_model' as const }));
+    const onModelChange = vi.fn(async () => {});
+    const onTranslateCurrent = vi.fn();
+    const modal = createModal({
+      configuration: { model: null, sourceLanguage: 'en', targetLanguage: 'es' },
+      editor: {
+        getValue: () => SNAPSHOT.source,
+        replaceRange: vi.fn(),
+      },
+      jobModel: null,
+      modelOptions: [installedModel],
+      onModelChange,
+      onTranslateCurrent,
+      runTranslation,
+    });
+
+    modal.open();
+    await vi.waitFor(() => expect(Setting.buttonNamed('Install translation model')).toBeDefined());
+
+    const modelSetting = Setting.instances
+      .filter((setting) => setting.name === 'Translation model')
+      .at(-1);
+    const installedOption = modelSetting?.dropdownComponents[0]?.selectEl.options[0];
+    if (installedOption === undefined) throw new Error('Expected installed translation model.');
+    modelSetting?.dropdownComponents[0]?.change(installedOption.value);
+
+    await vi.waitFor(() => expect(onModelChange).toHaveBeenCalledOnce());
+    expect(runTranslation).toHaveBeenCalledOnce();
+    expect(Setting.buttonNamed('Translate again')).toBeDefined();
+    expect(
+      (modal.contentEl as unknown as TestElement).findByText(
+        'Translation setup changed. Select Translate again to update the preview.',
+      ),
+    ).toBeDefined();
+
+    await Setting.buttonNamed('Translate again').click();
+    expect(onTranslateCurrent).toHaveBeenCalledWith('en', 'es');
+  });
+
   it('reports partial results but never writes them into the note', async () => {
     Setting.reset();
     const replaceRange = vi.fn();
@@ -373,62 +492,115 @@ describe('TranslationModal mutation safety', () => {
 
     expect(replaceRange).toHaveBeenCalledWith('Traduzca este texto.', SNAPSHOT.from, SNAPSHOT.to);
   });
+
+  it('surfaces a stale result if the note changes after actions render', async () => {
+    Setting.reset();
+    let source = SNAPSHOT.source;
+    const replaceRange = vi.fn();
+    const modal = createModal({
+      editor: {
+        getValue: () => source,
+        replaceRange,
+      },
+      runTranslation: vi.fn(async () => ({
+        kind: 'translated' as const,
+        sourceUnitsKept: 0,
+        text: 'Traduzca esto.',
+      })),
+    });
+
+    modal.open();
+    await vi.waitFor(() => expect(Setting.buttonNamed('Replace').disabled).toBe(false));
+    source = 'The note changed after completion.';
+    await Setting.buttonNamed('Replace').click();
+
+    expect(replaceRange).not.toHaveBeenCalled();
+    expect(
+      (modal.contentEl as unknown as TestElement).findByText(
+        'The note changed since this translation started. Start a new translation or copy this one.',
+      ),
+    ).toBeDefined();
+  });
 });
 
 function createModal({
   canReadAloud = () => false,
+  configuration,
   editor,
+  jobModel = createModalModel(),
+  modelOptions = [],
+  onManageModels = vi.fn(async () => {}),
+  onModelChange = vi.fn(async () => {}),
+  onLanguageChange = vi.fn(async () => {}),
   onReadAloud = vi.fn(),
   onRestart = vi.fn(),
   onTranslateCurrent = vi.fn(),
   runTranslation,
 }: {
   canReadAloud?: ConstructorParameters<typeof TranslationModal>[1]['canReadAloud'];
+  configuration?: ConstructorParameters<typeof TranslationModal>[1]['configuration'];
   editor: {
     getValue: () => string;
     replaceRange: ReturnType<typeof vi.fn>;
   };
+  jobModel?: CatalogModelRecord | null;
+  modelOptions?: ConstructorParameters<typeof TranslationModal>[1]['modelOptions'];
+  onManageModels?: ConstructorParameters<typeof TranslationModal>[1]['onManageModels'];
+  onLanguageChange?: ConstructorParameters<typeof TranslationModal>[1]['onLanguageChange'];
+  onModelChange?: ConstructorParameters<typeof TranslationModal>[1]['onModelChange'];
   onReadAloud?: ConstructorParameters<typeof TranslationModal>[1]['onReadAloud'];
   onRestart?: ConstructorParameters<typeof TranslationModal>[1]['onRestart'];
-  onTranslateCurrent?: () => void;
+  onTranslateCurrent?: ConstructorParameters<typeof TranslationModal>[1]['onTranslateCurrent'];
   runTranslation: (options: TranslationJobRunOptions) => Promise<TranslationJobResult>;
 }): TranslationModal {
   const job = new TranslationJob({
-    model: {
-      artifacts: [],
-      collectionId: 'translation',
-      displayName: 'Firefox Translations',
-      familyId: 'firefox_translations',
-      languageTags: ['en', 'es'],
-      licenseLabel: 'MPL-2.0',
-      licenseUrl: 'https://www.mozilla.org/MPL/2.0/',
-      modelCardUrl: null,
-      modelId: 'firefox',
-      notes: [],
-      runtimeId: 'bergamot_wasm',
-      sourceUrl: 'https://example.com',
-      summary: 'Local translation',
-      supportsAutomaticLanguageDetection: false,
-      task: 'translation',
-      translationSupport: { kind: 'all_to_all', languages: ['en', 'es'] },
-      uxTags: [],
-    } as CatalogModelRecord,
+    model: jobModel,
     run: runTranslation,
     sourceLanguage: 'en',
     targetLanguage: 'es',
   });
   return new TranslationModal({} as never, {
     canReadAloud,
+    configuration: configuration ?? {
+      model: jobModel,
+      sourceLanguage: 'en',
+      targetLanguage: 'es',
+    },
     editor: editor as never,
     feedback: { show: vi.fn() },
     job,
+    modelOptions,
     onApplied: vi.fn(),
     onClosed: vi.fn(),
     onDismissed: vi.fn(),
-    onInstallModel: vi.fn(async () => {}),
+    onLanguageChange,
+    onManageModels,
+    onModelChange,
     onReadAloud,
     onTranslateCurrent,
     onRestart,
     snapshot: SNAPSHOT,
   });
+}
+
+function createModalModel(): CatalogModelRecord {
+  return {
+    artifacts: [],
+    collectionId: 'translation',
+    displayName: 'Firefox Translations',
+    familyId: 'firefox_translations',
+    languageTags: ['en', 'es'],
+    licenseLabel: 'MPL-2.0',
+    licenseUrl: 'https://www.mozilla.org/MPL/2.0/',
+    modelCardUrl: null,
+    modelId: 'firefox',
+    notes: [],
+    runtimeId: 'bergamot_wasm',
+    sourceUrl: 'https://example.com',
+    summary: 'Local translation',
+    supportsAutomaticLanguageDetection: false,
+    task: 'translation',
+    translationSupport: { kind: 'all_to_all', languages: ['en', 'es'] },
+    uxTags: [],
+  };
 }

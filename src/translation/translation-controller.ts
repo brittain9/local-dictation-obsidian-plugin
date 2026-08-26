@@ -1,7 +1,7 @@
 import type { App, Editor, EditorPosition } from 'obsidian';
 import type { ModelPickerOptions } from '../models/manage-models-modal';
 import type { ModelInstallManager } from '../models/model-install-manager';
-import type { CatalogModelRecord } from '../models/model-management-types';
+import { type CatalogModelRecord, matchesModelTriple } from '../models/model-management-types';
 import type { PluginSettings } from '../settings/plugin-settings';
 import { t } from '../shared/i18n';
 import type { PluginLogger } from '../shared/plugin-logger';
@@ -110,10 +110,16 @@ interface TranslationControllerDependencies {
   setDetachedStatus?: (state: TranslationJobState | null, reopen: () => void) => void;
 }
 interface ActiveTranslation {
+  configuration: TranslationConfiguration;
   editor: Editor;
   job: TranslationJob;
   release: () => void;
   snapshot: TranslationSnapshot;
+}
+interface TranslationConfiguration {
+  model: CatalogModelRecord | null;
+  sourceLanguage: TranslationLanguage;
+  targetLanguage: TranslationLanguage;
 }
 
 export class TranslationController {
@@ -184,7 +190,13 @@ export class TranslationController {
       run: (options) =>
         this.runTranslation(snapshot.source, model, sourceLanguage, targetLanguage, options),
     });
-    const active: ActiveTranslation = { editor, job, release: () => {}, snapshot };
+    const active: ActiveTranslation = {
+      configuration: { model, sourceLanguage, targetLanguage },
+      editor,
+      job,
+      release: () => {},
+      snapshot,
+    };
     active.release = job.subscribe((state) => {
       if (this.active !== active) return;
       if (this.activeModal === null)
@@ -203,6 +215,8 @@ export class TranslationController {
       editor: active.editor,
       feedback: this.dependencies.feedback,
       job: active.job,
+      configuration: active.configuration,
+      modelOptions: this.installedTranslationModels(),
       snapshot: active.snapshot,
       onApplied: () => this.clearActive(),
       onDismissed: () => this.clearActive(),
@@ -213,42 +227,58 @@ export class TranslationController {
             this.dependencies.setDetachedStatus?.(active.job.state(), () => this.openModal());
         }
       },
-      onInstallModel: async () => {
+      onManageModels: async () => {
         modal.close();
-        await this.dependencies.openModelPicker({ initialTask: 'translation' });
-        if (this.active === active)
-          this.begin(
-            active.editor,
-            active.snapshot,
-            active.job.sourceLanguage,
-            active.job.targetLanguage,
+        try {
+          await this.dependencies.openModelPicker({ initialTask: 'translation' });
+          if (this.active !== active) return;
+          const nextModel = selectedTranslationModel(
+            this.dependencies.modelManager.getState(),
+            this.dependencies.getSettings(),
           );
+          if (!sameTranslationModel(active.configuration.model, nextModel)) {
+            const pair = resolveTranslationLanguages(
+              this.dependencies.getSettings().dictationLanguage,
+              active.configuration.sourceLanguage,
+              active.configuration.targetLanguage,
+              nextModel,
+            );
+            active.configuration = { model: nextModel, ...pair };
+            await this.persistTranslationLanguages(pair.sourceLanguage, pair.targetLanguage);
+          }
+        } finally {
+          if (this.active === active) this.openModal();
+        }
+      },
+      onLanguageChange: (sourceLanguage, targetLanguage) => {
+        active.configuration = {
+          ...active.configuration,
+          sourceLanguage,
+          targetLanguage,
+        };
+        return this.persistTranslationLanguages(sourceLanguage, targetLanguage);
+      },
+      onModelChange: async (model, sourceLanguage, targetLanguage) => {
+        await this.dependencies.modelManager.select({
+          familyId: model.familyId,
+          kind: 'catalog_model',
+          modelId: model.modelId,
+          runtimeId: model.runtimeId,
+        });
+        active.configuration = { model, sourceLanguage, targetLanguage };
       },
       onReadAloud: this.dependencies.onReadAloud,
-      onTranslateCurrent: () => {
-        const source =
-          active.snapshot.kind === 'note'
-            ? active.editor.getValue()
-            : active.editor.getRange(active.snapshot.from, active.snapshot.to);
+      onTranslateCurrent: (sourceLanguage, targetLanguage) => {
         this.begin(
           active.editor,
-          {
-            ...active.snapshot,
-            source,
-            ...(active.snapshot.kind === 'note' ? { to: endPosition(source) } : {}),
-          },
-          active.job.sourceLanguage,
-          active.job.targetLanguage,
+          this.snapshotFromCurrentEditor(active),
+          sourceLanguage,
+          targetLanguage,
         );
       },
       onRestart: (source, target) => {
-        const current = this.dependencies.getSettings();
-        void this.dependencies.saveSettings({
-          ...current,
-          translationSourceLanguage: source,
-          translationTargetLanguage: target,
-        });
-        this.begin(active.editor, active.snapshot, source, target);
+        void this.persistTranslationLanguages(source, target);
+        this.begin(active.editor, this.snapshotFromCurrentEditor(active), source, target);
       },
     });
     this.activeModal = modal;
@@ -259,6 +289,37 @@ export class TranslationController {
     this.active = null;
     active?.release();
     this.dependencies.setDetachedStatus?.(null, () => {});
+  }
+  private persistTranslationLanguages(
+    sourceLanguage: TranslationLanguage,
+    targetLanguage: TranslationLanguage,
+  ): Promise<void> {
+    return this.dependencies.saveSettings({
+      ...this.dependencies.getSettings(),
+      translationSourceLanguage: sourceLanguage,
+      translationTargetLanguage: targetLanguage,
+    });
+  }
+  private snapshotFromCurrentEditor(active: ActiveTranslation): TranslationSnapshot {
+    const source =
+      active.snapshot.kind === 'note'
+        ? active.editor.getValue()
+        : active.editor.getRange(active.snapshot.from, active.snapshot.to);
+    return {
+      ...active.snapshot,
+      source,
+      ...(active.snapshot.kind === 'note' ? { to: endPosition(source) } : {}),
+    };
+  }
+  private installedTranslationModels(): CatalogModelRecord[] {
+    const state = this.dependencies.modelManager.getState();
+    return state.catalog.models.filter(
+      (model) =>
+        model.task === 'translation' &&
+        state.installedModels.some((installed) =>
+          matchesModelTriple(installed, model.runtimeId, model.familyId, model.modelId),
+        ),
+    );
   }
   private async runTranslation(
     source: string,
@@ -332,6 +393,13 @@ function selectedTranslationModel(
         model.modelId === selection.modelId,
     ) ?? null
   );
+}
+function sameTranslationModel(
+  left: CatalogModelRecord | null,
+  right: CatalogModelRecord | null,
+): boolean {
+  if (left === null || right === null) return left === right;
+  return matchesModelTriple(left, right.runtimeId, right.familyId, right.modelId);
 }
 function createTranslationId(): string {
   return (

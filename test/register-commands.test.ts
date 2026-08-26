@@ -181,6 +181,8 @@ describe('registerCommands', () => {
 
     expect(readAloudCommand).toBeDefined();
     expect(readFromCursorCommand).toBeDefined();
+    expect(readAloudCommand?.name).toBe('Read aloud from selection or note start');
+    expect(readFromCursorCommand?.name).toBe('Read aloud from cursor');
     expect(commands.some(({ id }) => id === 'read-entire-note')).toBe(false);
 
     await readAloudCommand?.editorCallback?.(editor, {} as never);

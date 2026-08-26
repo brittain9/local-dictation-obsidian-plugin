@@ -82,7 +82,7 @@ describe('LocalSttSettingTab Obsidian 1.13 compatibility', () => {
 
     expect(setting.name).toBe('Highlight spoken text');
     expect(setting.descEl.textContent).toBe(
-      'Highlight the current sentence or text chunk in the editor while Read Aloud is playing.',
+      'Highlight the current spoken block in the editor while Read Aloud is playing.',
     );
     expect(setting.onlyToggle().value).toBe(true);
 

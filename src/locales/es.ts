@@ -755,7 +755,7 @@ export const es = {
     'Esta compilación de motor de voz no está disponible para su plataforma o arquitectura.',
   'setup.sidecar.modal.genericInstallError':
     'No se pudo instalar el motor de voz. Consulte los registros del complemento para obtener más detalles y vuelva a intentarlo.',
-  'commands.readAloud': 'Leer en voz alta',
+  'commands.readAloud': 'Leer desde la selección o el inicio de la nota',
   'commands.readAloudFromCursor': 'Leer en voz alta desde el cursor',
   'commands.pauseResumeReadAloud': 'Pausar o reanudar la lectura',
   'commands.stopReadAloud': 'Detener la lectura',
@@ -765,10 +765,10 @@ export const es = {
   'settings.model.textToSpeech': 'Modelo de texto a voz',
   'settings.readAloud.hotkey': 'Atajo recomendado',
   'settings.readAloud.hotkeyDesc':
-    'Asigna un atajo a Leer en voz alta. Lee el texto seleccionado o toda la nota si no hay selección.',
+    'Asigna un atajo a Leer desde la selección o el inicio de la nota. Lee el texto seleccionado o toda la nota si no hay selección.',
   'settings.readAloud.highlightSpokenText': 'Resaltar texto leído',
   'settings.readAloud.highlightSpokenTextDesc':
-    'Resalta la frase o el fragmento de texto actual en el editor mientras se reproduce la lectura en voz alta.',
+    'Resalta el bloque hablado actual en el editor mientras se reproduce la lectura en voz alta.',
   'settings.readAloud.voice': 'Voz',
   'settings.readAloud.voiceDesc': 'Elige una voz instalada para el modelo seleccionado.',
   'settings.readAloud.noVoices': 'No hay voces instaladas',
@@ -818,7 +818,7 @@ export const es = {
   'translation.modal.preparing': 'Preparando la traducción local…',
   'translation.modal.loading': 'Cargando el modelo local…',
   'translation.modal.translating': 'Traduciendo…',
-  'translation.modal.translatingProgress': 'Traduciendo… {completed}/{total}',
+  'translation.modal.translatingProgress': 'Traduciendo el bloque {completed} de {total}…',
   'translation.modal.ready': 'Traducción lista.',
   'translation.modal.readyPartial_one':
     'Traducción lista. 1 bloque conservó su idioma original porque no se pudo preservar su formato.',
@@ -836,6 +836,8 @@ export const es = {
     'Al modelo de traducción le faltan archivos. Vuelve a instalarlo para continuar.',
   'translation.modal.installModel': 'Instalar modelo de traducción',
   'translation.modal.translateAgain': 'Traducir de nuevo',
+  'translation.modal.retryReady':
+    'La configuración de traducción cambió. Selecciona Traducir de nuevo para actualizar la vista previa.',
   'translation.modal.cancel': 'Cancelar',
   'translation.modal.replace': 'Reemplazar',
   'translation.modal.insertBelow': 'Insertar debajo',

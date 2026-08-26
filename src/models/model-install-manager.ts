@@ -1029,17 +1029,13 @@ export class ModelInstallManager {
       reconciledFailure = true;
     }
 
-    // Translation installs remain unselected until the user presses Use in
-    // Manage Models. The other model-backed tasks retain their existing
-    // first-install auto-selection behavior.
+    // A first install should be immediately usable for every model-backed
+    // task. Keep an existing selection (including one made while the install
+    // was in flight) authoritative; only the empty slot is eligible.
     const canAutoSelectReconciledFailure = refresh.reconcileFailure === null || reconciledFailure;
     if (refresh.completed !== null && canAutoSelectReconciledFailure) {
       const completed = refresh.completed;
       const completedTask = this.selectionTask(completed);
-      if (completedTask === 'translation') {
-        if (this.lifecycleGeneration === refresh.expectedLifecycleGeneration) this.notify();
-        return;
-      }
       const canCommitAutoSelection = (settings: Readonly<PluginSettings>): boolean => {
         const selectedForTask = selectedModelForTask(settings, completedTask);
         return (

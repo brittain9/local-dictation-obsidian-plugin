@@ -79,6 +79,20 @@ describe('ReadAloudFollowAlong', () => {
     expect(decorationCount(harness.second.view)).toBe(0);
   });
 
+  it('renders a pending range when the editor view registers after reading starts', () => {
+    const first = createEditor('First sentence. Second sentence.');
+    const leaf = { view: { editor: first.editor, file: null } } as unknown as FakeLeaf;
+    const workspace = createWorkspace([leaf]);
+    const manager = new ReadAloudFollowAlong(workspace as never, true);
+    const handle = manager.begin(first.editor, first.view.state.doc.toString());
+
+    handle.setDesiredRange({ from: 0, to: 5 });
+    expect(decorationCount(first.view)).toBe(0);
+
+    manager.registerView(first.view as never);
+    expect(decorationCount(first.view)).toBe(1);
+  });
+
   it('clears immediately when disabled and restores the valid current range when re-enabled', () => {
     const harness = createHarness();
     const handle = harness.manager.begin(

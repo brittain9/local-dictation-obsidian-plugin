@@ -4,6 +4,7 @@ vi.mock('virtual:bergamot-worker-source', () => ({
   BERGAMOT_WORKER_SOURCE: '',
 }));
 
+import type { PluginSettings } from '../src/settings/plugin-settings';
 import { DEFAULT_PLUGIN_SETTINGS } from '../src/settings/plugin-settings';
 import type { SidecarEvent } from '../src/sidecar/protocol';
 import { TranslationController } from '../src/translation/translation-controller';
@@ -230,4 +231,142 @@ describe('TranslationController', () => {
     await vi.waitFor(() => expect(startTranslation).toHaveBeenCalledTimes(2));
     expect(startTranslation.mock.calls[1]?.[0].texts).toEqual(['Updated version.']);
   });
+
+  it('preserves draft languages across model management and modal reopen without auto-translating', async () => {
+    Modal.instances.length = 0;
+    Setting.reset();
+    const listeners: ((event: SidecarEvent) => void)[] = [];
+    let translationId = '';
+    const startTranslation = vi.fn(async (payload: { translationId: string }) => {
+      translationId = payload.translationId;
+    });
+    const firstModel = translationModel('hy-mt-1.8b', 'HY-MT 2 1.8B');
+    const secondModel = translationModel('hy-mt-7b', 'HY-MT 2 7B');
+    let settings: PluginSettings = {
+      ...DEFAULT_PLUGIN_SETTINGS,
+      selectedTranslationModel: selectionFor(firstModel),
+    };
+    const saveSettings = vi.fn(async (next: PluginSettings) => {
+      settings = next;
+    });
+    const openModelPicker = vi.fn(async () => {
+      settings = { ...settings, selectedTranslationModel: selectionFor(secondModel) };
+    });
+    const controller = new TranslationController({
+      app: {} as never,
+      canReadAloud: () => false,
+      feedback: { show: vi.fn() },
+      getSettings: () => settings,
+      logger: { error: vi.fn(), warn: vi.fn() } as never,
+      modelManager: {
+        getState: () => ({
+          catalog: { models: [firstModel, secondModel] },
+          installedModels: [installedRecord(firstModel), installedRecord(secondModel)],
+          selectedTranslationModel: settings.selectedTranslationModel,
+        }),
+      } as never,
+      onReadAloud: vi.fn(),
+      openModelPicker,
+      saveSettings,
+      sidecarConnection: {
+        cancelTranslation: vi.fn(),
+        startTranslation,
+        subscribe: (next: (event: SidecarEvent) => void) => {
+          listeners.push(next);
+          return () => {};
+        },
+      } as never,
+    });
+    const editor = { getValue: () => 'Translate this note.', replaceRange: vi.fn() };
+
+    controller.translateNote(editor as never);
+    await vi.waitFor(() => expect(startTranslation).toHaveBeenCalledOnce());
+    listeners[0]?.({
+      type: 'translation_complete',
+      translationId,
+      translations: ['Traduzca esta nota.'],
+    });
+    await vi.waitFor(() => expect(Setting.buttonNamed('Replace')).toBeDefined());
+
+    const sourceSetting = Setting.instances.filter((setting) => setting.name === 'From').at(-1);
+    sourceSetting?.dropdownComponents[0]?.change('es');
+    await vi.waitFor(() =>
+      expect(settings).toMatchObject({
+        translationSourceLanguage: 'es',
+        translationTargetLanguage: 'en',
+      }),
+    );
+
+    const modelSetting = Setting.instances
+      .filter((setting) => setting.name === 'Translation model')
+      .at(-1);
+    await modelSetting?.buttonComponents
+      .find((button) => button.text === 'Manage translation models')
+      ?.click();
+
+    await vi.waitFor(() => expect(Modal.instances).toHaveLength(2));
+    expect(startTranslation).toHaveBeenCalledOnce();
+    expect(openModelPicker).toHaveBeenCalledOnce();
+    expect(latestDropdownValue('From')).toBe('es');
+    expect(latestDropdownValue('To')).toBe('en');
+    expect(latestDropdownLabel('Translation model')).toBe('HY-MT 2 7B');
+
+    Modal.instances.at(-1)?.close();
+    controller.translateNote(editor as never);
+
+    expect(Modal.instances).toHaveLength(3);
+    expect(startTranslation).toHaveBeenCalledOnce();
+    expect(latestDropdownValue('From')).toBe('es');
+    expect(latestDropdownValue('To')).toBe('en');
+    expect(latestDropdownLabel('Translation model')).toBe('HY-MT 2 7B');
+  });
 });
+
+function translationModel(modelId: string, displayName: string) {
+  return {
+    artifacts: [],
+    collectionId: 'translation',
+    displayName,
+    familyId: 'tencent_hy_mt' as const,
+    languageTags: ['en', 'es'],
+    licenseLabel: 'Apache-2.0',
+    licenseUrl: 'https://example.com/license',
+    modelCardUrl: null,
+    modelId,
+    notes: [],
+    runtimeId: 'llama_cpp' as const,
+    sourceUrl: 'https://example.com/model',
+    summary: 'Local translation',
+    supportsAutomaticLanguageDetection: false,
+    task: 'translation' as const,
+    translationSupport: { kind: 'all_to_all' as const, languages: ['en', 'es'] },
+    uxTags: [],
+  };
+}
+
+function selectionFor(model: ReturnType<typeof translationModel>) {
+  return {
+    familyId: model.familyId,
+    kind: 'catalog_model' as const,
+    modelId: model.modelId,
+    runtimeId: model.runtimeId,
+  };
+}
+
+function installedRecord(model: ReturnType<typeof translationModel>) {
+  return {
+    familyId: model.familyId,
+    modelId: model.modelId,
+    runtimeId: model.runtimeId,
+  };
+}
+
+function latestDropdownValue(settingName: string): string | undefined {
+  return Setting.instances.filter((setting) => setting.name === settingName).at(-1)
+    ?.dropdownComponents[0]?.selectEl.value;
+}
+
+function latestDropdownLabel(settingName: string): string | undefined {
+  return Setting.instances.filter((setting) => setting.name === settingName).at(-1)
+    ?.dropdownComponents[0]?.fittedLabel;
+}

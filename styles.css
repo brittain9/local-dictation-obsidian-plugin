@@ -240,10 +240,11 @@
 }
 
 /* Follow-along cue for the sentence or synthesis chunk currently audible.
-   Keep this deliberately distinct from editor selection styling: it adds an
-   understated underline and never changes text metrics. */
+   Use semantic theme colors so the cue remains visible in light and dark
+   themes without changing text metrics or competing with editor selection. */
 .local-stt-read-aloud-follow-along {
-  box-shadow: inset 0 -2px 0 color-mix(in srgb, var(--interactive-accent) 72%, transparent);
+  background-color: var(--text-highlight-bg, var(--background-modifier-hover));
+  box-shadow: inset 0 -2px 0 var(--interactive-accent, var(--text-accent));
 }
 
 .local-stt-tab-bar {

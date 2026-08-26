@@ -8,8 +8,10 @@ local language workflow alongside speech to text and text to speech:
 speech → transcription → optional cleanup → optional translation → optional
 read aloud.
 
-Translation uses one explicitly selected catalog model. Firefox Translations
-models run in an isolated Obsidian Web Worker; Tencent HY-MT 2 1.8B and 7B
+Translation uses one selected catalog model. When no translation model is
+selected, the first model the user installs becomes active; switching between
+installed models remains explicit. Firefox Translations models run in an
+isolated Obsidian Web Worker; Tencent HY-MT 2 1.8B and 7B
 Q4_K_M models run in a version-matched helper supervised by the native sidecar
 over framed standard input/output. The 1.8B model uses less storage and memory;
 the 7B model is a presentation-only Heavy option with a 4.62 GB download.
@@ -35,9 +37,9 @@ The product supports two independently selectable runtime families:
 - Firefox/Bergamot for its compact, exact-direction translation packs.
 - Tencent HY-MT 2 for its broader all-to-all language coverage.
 
-The catalog is the source of truth. Users select the model they want through
-Manage Models; neither runtime is preferred, prioritized, or used as a silent
-fallback for the other.
+The catalog is the source of truth. Users can select a different installed
+model through Manage Models or the translation preview; neither runtime is
+preferred, prioritized, or used as a silent fallback for the other.
 
 Measured on an M2 Pro:
 
@@ -101,21 +103,25 @@ obligations. No Gemma terms apply to v1.
 - A glossary or custom do-not-translate list.
 - A ribbon icon.
 - `Translate last utterance`.
-- Automatic model selection, priority, fallback, or engine routing.
+- Model ranking, priority, fallback, or engine routing. First-install
+  activation only fills an otherwise empty task slot.
 
 ## User workflow
 
-1. The Translation settings group shows the selected model, links to Manage
-   Models, and sets the source and target language preferences.
+1. The Models settings group shows the selected translation model and links to
+   Manage Models. The Translation settings group sets the source and target
+   language preferences.
 2. The user selects text or invokes translation for a non-empty active note.
 3. A modal opens with the active source and target languages in both its title
    and controls.
 4. If the translation pack is missing, the modal links directly to Manage
    Models filtered to Translation.
-5. The selected model adapter reads only its exact installed artifacts and runs
+5. The modal can switch among installed translation models and language pairs;
+   changing either marks the preview stale and never starts inference by itself.
+6. The selected model adapter reads only its exact installed artifacts and runs
    locally without network access.
-6. The user reviews the complete result.
-7. Replace and Insert below are enabled only if the original source range is
+7. The user reviews the complete result.
+8. Replace and Insert below are enabled only if the original source range is
    unchanged and every Markdown unit rebuilt safely. Copy remains available
    when the note changed or a partial preview is retained for inspection.
 

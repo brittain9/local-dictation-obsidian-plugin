@@ -139,6 +139,7 @@ export class ReadAloudFollowAlong {
   registerView(view: EditorView): void {
     if (this.disposed) return;
     this.registeredViews.add(view);
+    if (this.currentOperation?.target?.view === view) this.render(this.currentOperation);
   }
 
   handleDocumentChange(view: EditorView): void {

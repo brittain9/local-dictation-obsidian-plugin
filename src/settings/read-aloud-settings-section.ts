@@ -54,17 +54,15 @@ export function readAloudControlsFingerprint(
 
 export function renderTextToSpeechSettings(
   modelContainer: HTMLDivElement,
-  modelBefore: HTMLElement,
   readAloudContainer: HTMLDivElement,
   readAloudBefore: HTMLElement,
   dependencies: ReadAloudSettingsSectionDependencies,
 ): () => void {
   let fingerprint = readAloudControlsFingerprint(dependencies.manager.getState());
-  let modelSettingEl: HTMLElement | null = null;
   let voiceSettingEl: HTMLElement | null = null;
 
   const render = (): void => {
-    if (modelSettingEl !== null) modelContainer.removeChild(modelSettingEl);
+    modelContainer.empty();
     if (voiceSettingEl !== null) readAloudContainer.removeChild(voiceSettingEl);
     const settings = dependencies.getSettings();
     const state = dependencies.manager.getState();
@@ -97,9 +95,6 @@ export function renderTextToSpeechSettings(
           });
       });
     }
-    modelSettingEl = modelSetting.settingEl;
-    modelContainer.insertBefore(modelSettingEl, modelBefore);
-
     const installed =
       catalogModel === null
         ? null

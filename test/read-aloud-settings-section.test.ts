@@ -140,13 +140,11 @@ describe('Read Aloud settings incremental refresh', () => {
     } as unknown as ModelInstallManager;
     const parent = new TestElement();
     const modelControls = parent.createDiv();
-    const modelBefore = modelControls.createDiv();
     const readAloudControls = parent.createDiv();
     const readAloudBefore = readAloudControls.createDiv();
     const focusedSibling = parent.createDiv({ attr: { 'data-focused': 'true' } });
     const dispose = renderTextToSpeechSettings(
       modelControls as unknown as HTMLDivElement,
-      modelBefore as unknown as HTMLElement,
       readAloudControls as unknown as HTMLDivElement,
       readAloudBefore as unknown as HTMLElement,
       {
@@ -161,7 +159,7 @@ describe('Read Aloud settings incremental refresh', () => {
       },
     );
     const originalFirstControl = modelControls.children[0];
-    expect(modelControls.children).toEqual([originalFirstControl, modelBefore]);
+    expect(modelControls.children).toEqual([originalFirstControl]);
     expect(readAloudControls.children[1]).toBe(readAloudBefore);
     expect(Setting.named('Text-to-speech model').descEl.textContent).toBe('No model selected');
     expect(Setting.named('Voice')).toBeDefined();
@@ -191,7 +189,6 @@ describe('Read Aloud settings incremental refresh', () => {
     } as unknown as ModelInstallManager;
     const parent = new TestElement();
     const modelControls = parent.createDiv();
-    const modelBefore = modelControls.createDiv();
     const readAloudControls = parent.createDiv();
     const readAloudBefore = readAloudControls.createDiv();
     const details = vi.fn(() => {
@@ -203,7 +200,6 @@ describe('Read Aloud settings incremental refresh', () => {
 
     renderTextToSpeechSettings(
       modelControls as unknown as HTMLDivElement,
-      modelBefore as unknown as HTMLElement,
       readAloudControls as unknown as HTMLDivElement,
       readAloudBefore as unknown as HTMLElement,
       {

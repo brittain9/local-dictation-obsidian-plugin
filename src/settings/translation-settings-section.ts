@@ -17,7 +17,7 @@ import {
 } from '../translation/languages';
 import type { PluginSettings } from './plugin-settings';
 
-interface TranslationSettingsDependencies {
+export interface TranslationSettingsDependencies {
   getSettings: () => PluginSettings;
   manager: ModelInstallManager;
   openModelPicker: (options?: ModelPickerOptions) => Promise<void>;
@@ -61,29 +61,6 @@ export function renderTranslationSettings(
     container.empty();
     const state = dependencies.manager.getState();
     const selectedModel = selectedTranslationCatalogModel(state);
-    const installedRecord =
-      selectedModel === null
-        ? null
-        : (state.installedModels.find((candidate) =>
-            matchesModelTriple(
-              candidate,
-              selectedModel.runtimeId,
-              selectedModel.familyId,
-              selectedModel.modelId,
-            ),
-          ) ?? null);
-
-    new Setting(container)
-      .setName(t('settings.translation.model.name'))
-      .setDesc(modelDescription(selectedModel, installedRecord?.totalSizeBytes ?? null))
-      .addButton((button) => {
-        button
-          .setCta()
-          .setButtonText(t('settings.translation.model.manage'))
-          .onClick(() => {
-            void dependencies.openModelPicker({ initialTask: 'translation' });
-          });
-      });
 
     const settings = dependencies.getSettings();
     const pair = resolveTranslationLanguages(
@@ -128,6 +105,57 @@ export function renderTranslationSettings(
           await dependencies.persistLanguages(pair.sourceLanguage, value);
           render();
         });
+      });
+  };
+
+  render();
+  const unsubscribe = dependencies.manager.subscribe(() => {
+    const nextFingerprint = translationSettingsFingerprint(dependencies.manager.getState());
+    if (nextFingerprint === fingerprint) return;
+    fingerprint = nextFingerprint;
+    render();
+  });
+  return () => {
+    disposed = true;
+    unsubscribe();
+  };
+}
+
+/** Renders the active translation model in the shared Models settings group. */
+export function renderTranslationModelSetting(
+  container: HTMLDivElement,
+  dependencies: TranslationSettingsDependencies,
+): () => void {
+  let disposed = false;
+  let fingerprint = translationSettingsFingerprint(dependencies.manager.getState());
+
+  const render = (): void => {
+    if (disposed) return;
+    container.empty();
+    const state = dependencies.manager.getState();
+    const selectedModel = selectedTranslationCatalogModel(state);
+    const installedRecord =
+      selectedModel === null
+        ? null
+        : (state.installedModels.find((candidate) =>
+            matchesModelTriple(
+              candidate,
+              selectedModel.runtimeId,
+              selectedModel.familyId,
+              selectedModel.modelId,
+            ),
+          ) ?? null);
+
+    new Setting(container)
+      .setName(t('settings.translation.model.name'))
+      .setDesc(modelDescription(selectedModel, installedRecord?.totalSizeBytes ?? null))
+      .addButton((button) => {
+        button
+          .setCta()
+          .setButtonText(t('settings.model.manageModels'))
+          .onClick(() => {
+            void dependencies.openModelPicker({ initialTask: 'translation' });
+          });
       });
   };
 

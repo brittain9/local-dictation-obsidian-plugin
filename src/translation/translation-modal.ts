@@ -1,4 +1,5 @@
 import { type App, type Editor, type EditorPosition, Modal, Setting, setIcon } from 'obsidian';
+import { type CatalogModelRecord, matchesModelTriple } from '../models/model-management-types';
 import { t, tPlural } from '../shared/i18n';
 import type { UserFeedback } from '../shared/user-feedback';
 import { localizeKnownSidecarEventCode } from '../sidecar/sidecar-event-localization';
@@ -24,15 +25,30 @@ export interface TranslationSnapshot {
 }
 interface TranslationModalDependencies {
   canReadAloud: (text: string, language: TranslationLanguage) => boolean;
+  configuration: {
+    model: CatalogModelRecord | null;
+    sourceLanguage: TranslationLanguage;
+    targetLanguage: TranslationLanguage;
+  };
   editor: Editor;
   feedback: Pick<UserFeedback, 'show'>;
   job: TranslationJob;
+  modelOptions: readonly CatalogModelRecord[];
   onApplied: () => void;
   onClosed: () => void;
   onDismissed: () => void;
-  onInstallModel: () => Promise<void>;
+  onManageModels: () => Promise<void>;
+  onLanguageChange: (
+    source: TranslationLanguage,
+    target: TranslationLanguage,
+  ) => Promise<void> | void;
+  onModelChange: (
+    model: CatalogModelRecord,
+    source: TranslationLanguage,
+    target: TranslationLanguage,
+  ) => Promise<void>;
   onReadAloud: (text: string, language: TranslationLanguage) => Promise<void> | void;
-  onTranslateCurrent: () => void;
+  onTranslateCurrent: (source: TranslationLanguage, target: TranslationLanguage) => void;
   onRestart: (source: TranslationLanguage, target: TranslationLanguage) => void;
   snapshot: TranslationSnapshot;
 }
@@ -50,6 +66,9 @@ export class TranslationModal extends Modal {
   private state: TranslationJobState;
   private statusEl: HTMLElement | null = null;
   private elapsedTimer: number | null = null;
+  private draftModel: CatalogModelRecord | null;
+  private draftSourceLanguage: TranslationLanguage;
+  private draftTargetLanguage: TranslationLanguage;
 
   constructor(
     app: App,
@@ -57,6 +76,9 @@ export class TranslationModal extends Modal {
   ) {
     super(app);
     this.state = dependencies.job.state();
+    this.draftModel = dependencies.configuration.model;
+    this.draftSourceLanguage = dependencies.configuration.sourceLanguage;
+    this.draftTargetLanguage = dependencies.configuration.targetLanguage;
   }
   override onOpen(): void {
     this.modalEl.addClass('local-stt-translation-modal');
@@ -132,19 +154,76 @@ export class TranslationModal extends Modal {
   private renderHeading(): void {
     if (this.headingEl !== null)
       this.headingEl.textContent = t('translation.modal.titleWithPair', {
-        source: translationLanguageLabel(this.dependencies.job.sourceLanguage),
-        target: translationLanguageLabel(this.dependencies.job.targetLanguage),
+        source: translationLanguageLabel(this.draftSourceLanguage),
+        target: translationLanguageLabel(this.draftTargetLanguage),
       });
   }
   private renderSelectors(): void {
     if (this.selectorsEl === null) return;
     this.selectorsEl.empty();
     const active = this.state.phase === 'loading' || this.state.phase === 'translating';
-    new Setting(this.selectorsEl)
-      .setName(t('settings.translation.model.name'))
-      .setDesc(
-        this.dependencies.job.model?.displayName ?? t('settings.translation.model.unavailable'),
-      );
+    const modelSetting = new Setting(this.selectorsEl).setName(
+      t('settings.translation.model.name'),
+    );
+    modelSetting.addDropdown((dropdown) => {
+      const options = this.dependencies.modelOptions.some((model) =>
+        sameTranslationModel(model, this.draftModel),
+      )
+        ? this.dependencies.modelOptions
+        : this.draftModel === null
+          ? this.dependencies.modelOptions
+          : [this.draftModel, ...this.dependencies.modelOptions];
+      if (options.length === 0) {
+        dropdown.addOption('', t('settings.translation.model.unavailable'));
+      } else {
+        for (const model of options)
+          dropdown.addOption(translationModelKey(model), model.displayName);
+      }
+      dropdown.setValue(this.draftModel === null ? '' : translationModelKey(this.draftModel));
+      dropdown.setDisabled(active || options.length === 0);
+      dropdown.onChange(async (value) => {
+        const model = options.find((candidate) => translationModelKey(candidate) === value);
+        if (model === undefined || sameTranslationModel(model, this.draftModel)) return;
+        const previousModel = this.draftModel;
+        const previousSource = this.draftSourceLanguage;
+        const previousTarget = this.draftTargetLanguage;
+        this.draftModel = model;
+        this.draftSourceLanguage = translationSourcesFor(model).includes(previousSource)
+          ? previousSource
+          : (translationSourcesFor(model)[0] ?? previousSource);
+        this.draftTargetLanguage = resolveTranslationTarget(
+          this.draftSourceLanguage,
+          previousTarget,
+          model,
+        );
+        try {
+          await this.dependencies.onModelChange(
+            model,
+            this.draftSourceLanguage,
+            this.draftTargetLanguage,
+          );
+          this.acceptDraftConfiguration();
+          return;
+        } catch (error) {
+          this.draftModel = previousModel;
+          this.draftSourceLanguage = previousSource;
+          this.draftTargetLanguage = previousTarget;
+          this.dependencies.feedback.show({
+            cause: error,
+            intent: 'error',
+            message: t('models.manage.selectFailed'),
+          });
+        }
+        this.renderHeading();
+        this.renderState();
+      });
+    });
+    modelSetting.addButton((button) => {
+      button
+        .setButtonText(t('settings.translation.model.manage'))
+        .setDisabled(active)
+        .onClick(() => void this.manageModels());
+    });
     const languagePair = this.selectorsEl.createDiv({
       cls: 'local-stt-translation-modal__language-pair',
     });
@@ -152,24 +231,24 @@ export class TranslationModal extends Modal {
       cls: 'local-stt-translation-modal__language-control',
     });
     new Setting(source).setName(t('translation.modal.from')).addDropdown((dropdown) => {
-      for (const language of translationSourcesFor(this.dependencies.job.model))
+      for (const language of translationSourcesFor(this.draftModel))
         dropdown.addOption(language, translationLanguageLabel(language));
       dropdown
-        .setValue(this.dependencies.job.sourceLanguage)
+        .setValue(this.draftSourceLanguage)
         .setDisabled(active)
         .onChange((value) => {
           if (
             isTranslationLanguage(value) &&
-            translationSourcesFor(this.dependencies.job.model).includes(value)
-          )
-            this.restart(
+            translationSourcesFor(this.draftModel).includes(value)
+          ) {
+            this.draftSourceLanguage = value;
+            this.draftTargetLanguage = resolveTranslationTarget(
               value,
-              resolveTranslationTarget(
-                value,
-                this.dependencies.job.targetLanguage,
-                this.dependencies.job.model,
-              ),
+              this.draftTargetLanguage,
+              this.draftModel,
             );
+            this.acceptDraftConfiguration();
+          }
         });
     });
     languagePair.createSpan({
@@ -181,26 +260,35 @@ export class TranslationModal extends Modal {
       cls: 'local-stt-translation-modal__language-control',
     });
     new Setting(target).setName(t('translation.modal.to')).addDropdown((dropdown) => {
-      for (const language of translationTargetsFor(
-        this.dependencies.job.sourceLanguage,
-        this.dependencies.job.model,
-      ))
+      for (const language of translationTargetsFor(this.draftSourceLanguage, this.draftModel))
         dropdown.addOption(language, translationLanguageLabel(language));
       dropdown
-        .setValue(this.dependencies.job.targetLanguage)
+        .setValue(this.draftTargetLanguage)
         .setDisabled(active)
         .onChange((value) => {
           if (
             isTranslationLanguage(value) &&
-            isSupportedTranslationPair(
-              this.dependencies.job.sourceLanguage,
-              value,
-              this.dependencies.job.model,
-            )
-          )
-            this.restart(this.dependencies.job.sourceLanguage, value);
+            isSupportedTranslationPair(this.draftSourceLanguage, value, this.draftModel)
+          ) {
+            this.draftTargetLanguage = value;
+            this.acceptDraftConfiguration();
+          }
         });
     });
+  }
+
+  private acceptDraftConfiguration(): void {
+    void Promise.resolve(
+      this.dependencies.onLanguageChange(this.draftSourceLanguage, this.draftTargetLanguage),
+    ).catch((error: unknown) => {
+      this.dependencies.feedback.show({
+        cause: error,
+        intent: 'error',
+        message: t('common.actionFailed'),
+      });
+    });
+    this.renderHeading();
+    this.renderState();
   }
   private renderState(): void {
     if (this.outputEl !== null) {
@@ -288,10 +376,11 @@ export class TranslationModal extends Modal {
       this.state.phase !== 'completed' ||
       this.state.sourceUnitsKept > 0 ||
       this.reviewedOutput === null ||
-      !this.dependencies.canReadAloud(this.reviewedOutput, this.dependencies.job.targetLanguage)
+      this.configurationIsDirty() ||
+      !this.dependencies.canReadAloud(this.reviewedOutput, this.draftTargetLanguage)
     )
       return;
-    const language = translationLanguageLabel(this.dependencies.job.targetLanguage);
+    const language = translationLanguageLabel(this.draftTargetLanguage);
     const label = t('translation.modal.readAloud', { language });
     const button = this.outputHeaderEl.createEl('button', {
       attr: {
@@ -304,10 +393,7 @@ export class TranslationModal extends Modal {
     setIcon(button, 'volume-2');
     button.addEventListener('click', () => {
       if (this.reviewedOutput !== null)
-        void this.dependencies.onReadAloud(
-          this.reviewedOutput,
-          this.dependencies.job.targetLanguage,
-        );
+        void this.dependencies.onReadAloud(this.reviewedOutput, this.draftTargetLanguage);
     });
     this.readAloudButtonEl = button;
   }
@@ -337,12 +423,28 @@ export class TranslationModal extends Modal {
       return;
     }
     if (this.state.phase === 'missing_model') {
-      actions.addButton((button) =>
-        button
-          .setButtonText(t('translation.modal.installModel'))
-          .setCta()
-          .onClick(() => void this.dependencies.onInstallModel()),
-      );
+      if (this.draftModelIsInstalled()) {
+        this.renderStatus(t('translation.modal.retryReady'));
+        actions.addButton((button) =>
+          button
+            .setButtonText(t('translation.modal.translateAgain'))
+            .setCta()
+            .onClick(() => {
+              this.close();
+              this.dependencies.onTranslateCurrent(
+                this.draftSourceLanguage,
+                this.draftTargetLanguage,
+              );
+            }),
+        );
+      } else {
+        actions.addButton((button) =>
+          button
+            .setButtonText(t('translation.modal.installModel'))
+            .setCta()
+            .onClick(() => void this.manageModels()),
+        );
+      }
       return;
     }
     if (this.state.phase === 'cancelled' || this.state.phase === 'failed') {
@@ -350,12 +452,7 @@ export class TranslationModal extends Modal {
         button
           .setButtonText(t('translation.modal.translateAgain'))
           .setCta()
-          .onClick(() =>
-            this.restart(
-              this.dependencies.job.sourceLanguage,
-              this.dependencies.job.targetLanguage,
-            ),
-          ),
+          .onClick(() => this.restart(this.draftSourceLanguage, this.draftTargetLanguage)),
       );
       actions.addButton((button) =>
         button.setButtonText(t('translation.modal.dismiss')).onClick(() => {
@@ -366,7 +463,7 @@ export class TranslationModal extends Modal {
       return;
     }
     if (this.state.phase !== 'completed') return;
-    const current = this.sourceIsCurrent();
+    const current = this.resultIsCurrent();
     if (!current) {
       actions.addButton((button) =>
         button
@@ -374,7 +471,10 @@ export class TranslationModal extends Modal {
           .setCta()
           .onClick(() => {
             this.close();
-            this.dependencies.onTranslateCurrent();
+            this.dependencies.onTranslateCurrent(
+              this.draftSourceLanguage,
+              this.draftTargetLanguage,
+            );
           }),
       );
       actions.addButton((button) =>
@@ -386,7 +486,7 @@ export class TranslationModal extends Modal {
           this.close();
         }),
       );
-      this.renderStatus(t('translation.modal.stale'));
+      this.renderStatus(this.retryStatusText());
       return;
     }
     const canApply = this.state.sourceUnitsKept === 0;
@@ -418,6 +518,37 @@ export class TranslationModal extends Modal {
     this.close();
     this.dependencies.onRestart(source, target);
   }
+  private async manageModels(): Promise<void> {
+    try {
+      await this.dependencies.onManageModels();
+    } catch (error) {
+      this.dependencies.feedback.show({
+        cause: error,
+        intent: 'error',
+        message: t('common.actionFailed'),
+      });
+    }
+  }
+  private resultIsCurrent(): boolean {
+    return !this.configurationIsDirty() && this.sourceIsCurrent();
+  }
+  private configurationIsDirty(): boolean {
+    return (
+      !sameTranslationModel(this.draftModel, this.dependencies.job.model) ||
+      this.draftSourceLanguage !== this.dependencies.job.sourceLanguage ||
+      this.draftTargetLanguage !== this.dependencies.job.targetLanguage
+    );
+  }
+  private draftModelIsInstalled(): boolean {
+    return this.dependencies.modelOptions.some((model) =>
+      sameTranslationModel(model, this.draftModel),
+    );
+  }
+  private retryStatusText(): string {
+    return this.configurationIsDirty()
+      ? t('translation.modal.retryReady')
+      : t('translation.modal.stale');
+  }
   private sourceIsCurrent(): boolean {
     const { editor, snapshot } = this.dependencies;
     return snapshot.kind === 'note'
@@ -446,10 +577,13 @@ export class TranslationModal extends Modal {
     if (
       this.state.phase !== 'completed' ||
       this.reviewedOutput === null ||
-      this.state.sourceUnitsKept > 0 ||
-      !this.sourceIsCurrent()
+      this.state.sourceUnitsKept > 0
     )
       return;
+    if (!this.resultIsCurrent()) {
+      this.showStaleResult();
+      return;
+    }
     this.dependencies.editor.replaceRange(
       this.reviewedOutput,
       this.dependencies.snapshot.from,
@@ -462,10 +596,13 @@ export class TranslationModal extends Modal {
     if (
       this.state.phase !== 'completed' ||
       this.reviewedOutput === null ||
-      this.state.sourceUnitsKept > 0 ||
-      !this.sourceIsCurrent()
+      this.state.sourceUnitsKept > 0
     )
       return;
+    if (!this.resultIsCurrent()) {
+      this.showStaleResult();
+      return;
+    }
     this.dependencies.editor.replaceRange(
       `\n\n${this.reviewedOutput}`,
       this.dependencies.snapshot.to,
@@ -473,6 +610,22 @@ export class TranslationModal extends Modal {
     this.dependencies.onApplied();
     this.close();
   }
+  private showStaleResult(): void {
+    this.renderStatus(this.retryStatusText());
+    this.renderActions();
+  }
+}
+
+function translationModelKey(model: CatalogModelRecord): string {
+  return JSON.stringify([model.runtimeId, model.familyId, model.modelId]);
+}
+
+function sameTranslationModel(
+  left: CatalogModelRecord | null,
+  right: CatalogModelRecord | null,
+): boolean {
+  if (left === null || right === null) return left === right;
+  return matchesModelTriple(left, right.runtimeId, right.familyId, right.modelId);
 }
 
 function translationFailureMessage(error: unknown): string {

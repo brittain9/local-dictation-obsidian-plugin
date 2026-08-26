@@ -763,7 +763,7 @@ export const de = {
     'Dieser Sprach-Engine-Build ist für Ihre Plattform oder Architektur nicht verfügbar.',
   'setup.sidecar.modal.genericInstallError':
     'Die Sprach-Engine konnte nicht installiert werden. Überprüfen Sie die Plugin-Protokolle auf Details und versuchen Sie es dann erneut.',
-  'commands.readAloud': 'Vorlesen',
+  'commands.readAloud': 'Aus Auswahl oder Notizanfang vorlesen',
   'commands.readAloudFromCursor': 'Ab Cursor vorlesen',
   'commands.pauseResumeReadAloud': 'Vorlesen pausieren oder fortsetzen',
   'commands.stopReadAloud': 'Vorlesen beenden',
@@ -773,10 +773,10 @@ export const de = {
   'settings.model.textToSpeech': 'Text-zu-Sprache-Modell',
   'settings.readAloud.hotkey': 'Empfohlene Tastenkombination',
   'settings.readAloud.hotkeyDesc':
-    'Lege eine Tastenkombination für Vorlesen fest. Markierter Text wird vorgelesen, andernfalls die gesamte Notiz.',
+    'Lege eine Tastenkombination für „Aus Auswahl oder Notizanfang vorlesen“ fest. Markierter Text wird vorgelesen, andernfalls die gesamte Notiz.',
   'settings.readAloud.highlightSpokenText': 'Gesprochenen Text hervorheben',
   'settings.readAloud.highlightSpokenTextDesc':
-    'Hebt den aktuellen Satz oder Textabschnitt im Editor hervor, während Vorlesen läuft.',
+    'Hebt den aktuell gesprochenen Block im Editor hervor, während Vorlesen läuft.',
   'settings.readAloud.voice': 'Stimme',
   'settings.readAloud.voiceDesc': 'Wähle eine für das ausgewählte Modell installierte Stimme.',
   'settings.readAloud.noVoices': 'Keine installierten Stimmen',
@@ -827,7 +827,7 @@ export const de = {
   'translation.modal.preparing': 'Lokale Übersetzung wird vorbereitet…',
   'translation.modal.loading': 'Lokales Modell wird geladen…',
   'translation.modal.translating': 'Wird übersetzt…',
-  'translation.modal.translatingProgress': 'Übersetzen… {completed}/{total}',
+  'translation.modal.translatingProgress': 'Block {completed} von {total} wird übersetzt…',
   'translation.modal.ready': 'Übersetzung ist fertig.',
   'translation.modal.readyPartial_one':
     'Übersetzung ist fertig. 1 Block blieb in der Ausgangssprache, weil seine Formatierung nicht erhalten werden konnte.',
@@ -845,6 +845,8 @@ export const de = {
     'Dem Übersetzungsmodell fehlen Dateien. Installiere es neu, um fortzufahren.',
   'translation.modal.installModel': 'Übersetzungsmodell installieren',
   'translation.modal.translateAgain': 'Erneut übersetzen',
+  'translation.modal.retryReady':
+    'Die Übersetzungseinstellungen wurden geändert. Wählen Sie „Erneut übersetzen“, um die Vorschau zu aktualisieren.',
   'translation.modal.cancel': 'Abbrechen',
   'translation.modal.replace': 'Ersetzen',
   'translation.modal.insertBelow': 'Darunter einfügen',
