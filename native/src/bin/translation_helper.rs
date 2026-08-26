@@ -84,6 +84,9 @@ struct LlamaInference<'a> {
     model: &'a CachedModel,
 }
 
+const HY_MT_CONTEXT_SIZE: u32 = 8192;
+const HY_MT_MAX_OUTPUT_TOKENS: i32 = 4096;
+
 impl HyMtInference for LlamaInference<'_> {
     fn translate(&mut self, prompt: &str, cancelled: &AtomicBool) -> Result<String> {
         let message = LlamaChatMessage::new("user".into(), prompt.into())?;
@@ -93,7 +96,7 @@ impl HyMtInference for LlamaInference<'_> {
             .model
             .apply_chat_template(&template, &[message], false)?;
         let tokens = self.model.model.str_to_token(&rendered, AddBos::Always)?;
-        let context_size = NonZeroU32::new(4096).expect("nonzero");
+        let context_size = NonZeroU32::new(HY_MT_CONTEXT_SIZE).expect("nonzero");
         if tokens.len() >= context_size.get() as usize {
             bail!("translation unit exceeds model context");
         }
@@ -105,7 +108,7 @@ impl HyMtInference for LlamaInference<'_> {
                 context_params_for_acceleration(context_size, self.model.use_gpu),
             )
             .context("unable to create HY-MT inference context")?;
-        let mut batch = LlamaBatch::new(4096, 1);
+        let mut batch = LlamaBatch::new(HY_MT_CONTEXT_SIZE as usize, 1);
         batch
             .add_sequence(&tokens, 0, false)
             .context("unable to prepare HY-MT prompt tokens")?;
@@ -121,7 +124,8 @@ impl HyMtInference for LlamaInference<'_> {
         ]);
         let mut output = Vec::new();
         let mut position = i32::try_from(tokens.len())?;
-        let max_position = i32::try_from(context_size.get())?.min(position + 2048);
+        let max_position =
+            i32::try_from(context_size.get())?.min(position + HY_MT_MAX_OUTPUT_TOKENS);
         while position < max_position {
             if cancelled.load(Ordering::Relaxed) {
                 bail!("translation cancelled");
@@ -202,9 +206,7 @@ fn main() -> Result<()> {
                         &HelperEvent::Error {
                             translation_id: work.translation_id,
                             code: "model_load_failed".into(),
-                            message: format!(
-                                "Unable to load the Natural translation model: {error:#}"
-                            ),
+                            message: format!("Unable to load the translation model: {error:#}"),
                         },
                     )?;
                     continue;
@@ -242,7 +244,7 @@ fn main() -> Result<()> {
             Err(error) => HelperEvent::Error {
                 translation_id: work.translation_id.clone(),
                 code: "inference_failed".into(),
-                message: format!("Natural translation failed: {error:#}"),
+                message: format!("Translation failed: {error:#}"),
             },
         };
         cancellations

@@ -4,6 +4,7 @@ vi.mock('virtual:bergamot-worker-source', () => ({
   BERGAMOT_WORKER_SOURCE: '',
 }));
 
+import type { CatalogModelRecord } from '../src/models/model-management-types';
 import { TranslationCancelledError } from '../src/translation/bergamot-client';
 import { HyMtTranslationError } from '../src/translation/hy-mt-client';
 import {
@@ -22,89 +23,6 @@ const SNAPSHOT: TranslationSnapshot = {
 };
 
 describe('TranslationModal mutation safety', () => {
-  it('disables translation styles that are not installed', () => {
-    Setting.reset();
-    const modal = createModal({
-      editor: {
-        getValue: () => SNAPSHOT.source,
-        replaceRange: vi.fn(),
-      },
-      getEngineAvailability: () => [
-        { engineId: 'bergamot', model: null, status: 'not_installed' },
-        { engineId: 'tencent_hy_mt', model: null, status: 'available' },
-      ],
-      runTranslation: () => new Promise(() => {}),
-    });
-
-    modal.open();
-
-    const style = Setting.named('Default translation style').dropdownComponents[0];
-    expect(style?.selectEl.options.find((option) => option.value === 'bergamot')).toEqual(
-      expect.objectContaining({
-        disabled: true,
-        label: expect.stringContaining('(not installed)'),
-      }),
-    );
-    expect(style?.selectEl.options.find((option) => option.value === 'tencent_hy_mt')).toEqual(
-      expect.objectContaining({ disabled: false }),
-    );
-    modal.close();
-  });
-
-  it('names the missing translation style in the install state', async () => {
-    Setting.reset();
-    const modal = createModal({
-      editor: {
-        getValue: () => SNAPSHOT.source,
-        replaceRange: vi.fn(),
-      },
-      getEngineAvailability: () => [
-        { engineId: 'bergamot', model: null, status: 'not_installed' },
-        { engineId: 'tencent_hy_mt', model: null, status: 'not_installed' },
-      ],
-      runTranslation: async () => ({
-        engineId: 'bergamot',
-        kind: 'missing_model',
-        reason: 'not_installed',
-      }),
-    });
-
-    modal.open();
-
-    await vi.waitFor(() => {
-      expect(
-        (modal.contentEl as unknown as TestElement).querySelector(
-          '.local-stt-translation-modal__status-text',
-        )?.textContent,
-      ).toContain('Firefox Translations is not installed');
-    });
-  });
-
-  it('distinguishes an unsupported language pair from an uninstalled model', async () => {
-    Setting.reset();
-    const modal = createModal({
-      editor: {
-        getValue: () => SNAPSHOT.source,
-        replaceRange: vi.fn(),
-      },
-      runTranslation: async () => ({
-        engineId: 'bergamot',
-        kind: 'missing_model',
-        reason: 'unsupported_pair',
-      }),
-    });
-
-    modal.open();
-
-    await vi.waitFor(() => {
-      expect(
-        (modal.contentEl as unknown as TestElement).querySelector(
-          '.local-stt-translation-modal__status-text',
-        )?.textContent,
-      ).toBe('Your installed translation models do not support this language pair.');
-    });
-  });
-
   it('keeps the read-aloud action hidden while translation is in progress', () => {
     Setting.reset();
     const modal = createModal({
@@ -288,7 +206,7 @@ describe('TranslationModal mutation safety', () => {
     });
   });
 
-  it('shows an actionable Natural translation failure', async () => {
+  it('shows an actionable translation failure', async () => {
     Setting.reset();
     const modal = createModal({
       editor: {
@@ -305,7 +223,7 @@ describe('TranslationModal mutation safety', () => {
     await vi.waitFor(() => {
       expect(
         (modal.contentEl as unknown as TestElement).findByText(
-          'Another Natural translation is already running.',
+          'Another translation is already running.',
         ),
       ).toBeDefined();
     });
@@ -366,7 +284,7 @@ describe('TranslationModal mutation safety', () => {
     const output = (modal.contentEl as unknown as TestElement).querySelector('textarea');
     expect(output?.attributes.has('readonly')).toBe(true);
     await Setting.buttonNamed('Translate again').click();
-    expect(onRestart).toHaveBeenCalledExactlyOnceWith('bergamot', 'en', 'es');
+    expect(onRestart).toHaveBeenCalledExactlyOnceWith('en', 'es');
     expect(replaceRange).not.toHaveBeenCalled();
   });
 
@@ -460,10 +378,6 @@ describe('TranslationModal mutation safety', () => {
 function createModal({
   canReadAloud = () => false,
   editor,
-  getEngineAvailability = () => [
-    { engineId: 'bergamot', model: null, status: 'available' as const },
-    { engineId: 'tencent_hy_mt', model: null, status: 'available' as const },
-  ],
   onReadAloud = vi.fn(),
   onRestart = vi.fn(),
   onTranslateCurrent = vi.fn(),
@@ -474,16 +388,31 @@ function createModal({
     getValue: () => string;
     replaceRange: ReturnType<typeof vi.fn>;
   };
-  getEngineAvailability?: ConstructorParameters<
-    typeof TranslationModal
-  >[1]['getEngineAvailability'];
   onReadAloud?: ConstructorParameters<typeof TranslationModal>[1]['onReadAloud'];
   onRestart?: ConstructorParameters<typeof TranslationModal>[1]['onRestart'];
   onTranslateCurrent?: () => void;
   runTranslation: (options: TranslationJobRunOptions) => Promise<TranslationJobResult>;
 }): TranslationModal {
   const job = new TranslationJob({
-    engineId: 'bergamot',
+    model: {
+      artifacts: [],
+      collectionId: 'translation',
+      displayName: 'Firefox Translations',
+      familyId: 'firefox_translations',
+      languageTags: ['en', 'es'],
+      licenseLabel: 'MPL-2.0',
+      licenseUrl: 'https://www.mozilla.org/MPL/2.0/',
+      modelCardUrl: null,
+      modelId: 'firefox',
+      notes: [],
+      runtimeId: 'bergamot_wasm',
+      sourceUrl: 'https://example.com',
+      summary: 'Local translation',
+      supportsAutomaticLanguageDetection: false,
+      task: 'translation',
+      translationSupport: { kind: 'all_to_all', languages: ['en', 'es'] },
+      uxTags: [],
+    } as CatalogModelRecord,
     run: runTranslation,
     sourceLanguage: 'en',
     targetLanguage: 'es',
@@ -492,7 +421,6 @@ function createModal({
     canReadAloud,
     editor: editor as never,
     feedback: { show: vi.fn() },
-    getEngineAvailability,
     job,
     onApplied: vi.fn(),
     onClosed: vi.fn(),

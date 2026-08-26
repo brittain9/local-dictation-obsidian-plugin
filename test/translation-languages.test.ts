@@ -4,13 +4,26 @@ import {
   isSupportedTranslationPair,
   isTranslationLanguage,
   normalizeTranslationLanguage,
-  resolveTranslationEngine,
   TRANSLATION_LANGUAGES,
+  translationSourcesFor,
   translationTargetsFor,
 } from '../src/translation/languages';
 
+const hyMt2 = {
+  translationSupport: { kind: 'all_to_all' as const, languages: [...TRANSLATION_LANGUAGES] },
+};
+const bergamot = {
+  translationSupport: {
+    kind: 'pairs' as const,
+    pairs: [
+      { source: 'en', target: 'es' },
+      { source: 'es', target: 'en' },
+    ],
+  },
+};
+
 describe('translation language capabilities', () => {
-  it('exposes every HY-MT language through one canonical translation-language list', () => {
+  it('exposes every HY-MT 2 language through one canonical translation-language list', () => {
     expect(TRANSLATION_LANGUAGES).toHaveLength(38);
     expect(TRANSLATION_LANGUAGES).toEqual(
       expect.arrayContaining(['zh', 'zh-Hant', 'yue', 'bo', 'ug', 'en', 'ja']),
@@ -19,19 +32,26 @@ describe('translation language capabilities', () => {
     expect(isTranslationLanguage('zh-Hant')).toBe(true);
   });
 
-  it('allows HY-MT to translate every non-identity pair without widening Bergamot', () => {
-    expect(translationTargetsFor('ja', 'tencent_hy_mt')).toHaveLength(37);
-    expect(isSupportedTranslationPair('ja', 'ko', 'tencent_hy_mt')).toBe(true);
-    expect(isSupportedTranslationPair('ja', 'ko', 'bergamot')).toBe(false);
-    expect(isSupportedTranslationPair('ja', 'en', 'bergamot')).toBe(true);
-    expect(isSupportedTranslationPair('en', 'ar', 'bergamot')).toBe(false);
-    expect(isSupportedTranslationPair('ar', 'en', 'bergamot')).toBe(false);
+  it('derives pair support from the selected catalog model', () => {
+    expect(translationTargetsFor('ja', hyMt2)).toHaveLength(37);
+    expect(translationSourcesFor(hyMt2)).toHaveLength(38);
+    expect(isSupportedTranslationPair('ja', 'ko', hyMt2)).toBe(true);
+    expect(isSupportedTranslationPair('ja', 'ko', bergamot)).toBe(false);
+    expect(isSupportedTranslationPair('en', 'es', bergamot)).toBe(true);
+    expect(isSupportedTranslationPair('en', 'ar', bergamot)).toBe(false);
+    expect(isSupportedTranslationPair('ar', 'en', null)).toBe(true);
   });
 
-  it('keeps the preferred engine when compatible and selects Natural otherwise', () => {
-    expect(resolveTranslationEngine('bergamot', 'en', 'es')).toBe('bergamot');
-    expect(resolveTranslationEngine('bergamot', 'en', 'ar')).toBe('tencent_hy_mt');
-    expect(resolveTranslationEngine('bergamot', 'ja', 'ko')).toBe('tencent_hy_mt');
-    expect(resolveTranslationEngine('tencent_hy_mt', 'en', 'es')).toBe('tencent_hy_mt');
+  it('resolves source languages from directed pair support', () => {
+    const oneWay = {
+      translationSupport: {
+        kind: 'pairs' as const,
+        pairs: [{ source: 'en' as const, target: 'es' as const }],
+      },
+    };
+
+    expect(translationSourcesFor(oneWay)).toEqual(['en']);
+    expect(translationTargetsFor('en', oneWay)).toEqual(['es']);
+    expect(translationTargetsFor('es', oneWay)).toEqual([]);
   });
 });

@@ -834,13 +834,6 @@ export const ja = {
   'translation.modal.insertBelow': '下に挿入',
   'translation.modal.copy': 'コピー',
   'translation.modal.dismiss': '破棄',
-  'settings.translation.engine.name': '既定の翻訳スタイル',
-  'settings.translation.engine.desc':
-    '高速は直訳寄りです。自然は任意の Tencent HY-MT モデルを使用します。',
-  'translation.engine.bergamot': '高速・直訳 — Firefox Translations',
-  'translation.engine.tencentHyMt': '自然 — Tencent HY-MT',
-  'translation.engine.notInstalled': '{style}（未インストール）',
-  'translation.engine.unsupportedPair': '{style}（この言語ペアでは利用できません）',
   'translation.modal.stale':
     '翻訳開始後にノートが変更されました。もう一度翻訳するか、この翻訳をコピーしてください。',
   'translation.notice.copied': '翻訳をコピーしました。',

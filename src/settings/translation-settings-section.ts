@@ -10,25 +10,17 @@ import {
   isTranslationLanguage,
   resolveTranslationLanguages,
   resolveTranslationTarget,
-  TRANSLATION_LANGUAGES,
-  type TranslationEngineId,
   type TranslationLanguage,
   translationLanguageLabel,
+  translationSourcesFor,
   translationTargetsFor,
 } from '../translation/languages';
-import {
-  resolveInstalledTranslationEngine,
-  TRANSLATION_ENGINES,
-  translationEngineAvailability,
-  translationEngineOptionLabel,
-} from '../translation/translation-engines';
 import type { PluginSettings } from './plugin-settings';
 
 interface TranslationSettingsDependencies {
   getSettings: () => PluginSettings;
   manager: ModelInstallManager;
   openModelPicker: (options?: ModelPickerOptions) => Promise<void>;
-  persistEngine: (engineId: TranslationEngineId) => Promise<void>;
   persistLanguages: (
     sourceLanguage: TranslationLanguage,
     targetLanguage: TranslationLanguage,
@@ -36,7 +28,7 @@ interface TranslationSettingsDependencies {
 }
 
 export function translationSettingsFingerprint(
-  state: Pick<ModelManagerState, 'catalog' | 'installedModels'>,
+  state: Pick<ModelManagerState, 'catalog' | 'installedModels' | 'selectedTranslationModel'>,
 ): string {
   const models = translationModels(state);
   const installed = models.filter((model) =>
@@ -44,11 +36,16 @@ export function translationSettingsFingerprint(
       matchesModelTriple(candidate, model.runtimeId, model.familyId, model.modelId),
     ),
   );
+  const selected = state.selectedTranslationModel;
   return [
     state.catalog.catalogVersion,
     ...models.map((model) => model.modelId),
     '|',
     ...installed.map((model) => model.modelId),
+    '|',
+    selected?.runtimeId ?? '',
+    selected?.familyId ?? '',
+    selected?.kind === 'catalog_model' ? selected.modelId : '',
   ].join(':');
 }
 
@@ -63,25 +60,26 @@ export function renderTranslationSettings(
     if (disposed) return;
     container.empty();
     const state = dependencies.manager.getState();
-    const models = translationModels(state);
-    const installedModels = models.flatMap((model) => {
-      const installed = state.installedModels.find((candidate) =>
-        matchesModelTriple(candidate, model.runtimeId, model.familyId, model.modelId),
-      );
-      return installed === undefined ? [] : [{ installed, model }];
-    });
+    const selectedModel = selectedTranslationCatalogModel(state);
+    const installedRecord =
+      selectedModel === null
+        ? null
+        : (state.installedModels.find((candidate) =>
+            matchesModelTriple(
+              candidate,
+              selectedModel.runtimeId,
+              selectedModel.familyId,
+              selectedModel.modelId,
+            ),
+          ) ?? null);
 
     new Setting(container)
       .setName(t('settings.translation.model.name'))
-      .setDesc(modelDescription(installedModels))
+      .setDesc(modelDescription(selectedModel, installedRecord?.totalSizeBytes ?? null))
       .addButton((button) => {
         button
           .setCta()
-          .setButtonText(
-            installedModels.length === 0
-              ? t('settings.translation.model.download')
-              : t('settings.translation.model.manage'),
-          )
+          .setButtonText(t('settings.translation.model.manage'))
           .onClick(() => {
             void dependencies.openModelPicker({ initialTask: 'translation' });
           });
@@ -92,68 +90,24 @@ export function renderTranslationSettings(
       settings.dictationLanguage,
       settings.translationSourceLanguage,
       settings.translationTargetLanguage,
-      'tencent_hy_mt',
+      selectedModel,
     );
-    const engineResolution = resolveInstalledTranslationEngine(
-      state,
-      settings.translationEngineId,
-      pair.sourceLanguage,
-      pair.targetLanguage,
-    );
-    const effectiveEngine = engineResolution.engineId;
-    const availability = translationEngineAvailability(
-      state,
-      pair.sourceLanguage,
-      pair.targetLanguage,
-    );
-
-    new Setting(container)
-      .setName(t('settings.translation.engine.name'))
-      .setDesc(t('settings.translation.engine.desc'))
-      .addDropdown((dropdown) => {
-        for (const engine of TRANSLATION_ENGINES) {
-          const status = availability.find((candidate) => candidate.engineId === engine.id)?.status;
-          dropdown.addOption(engine.id, translationEngineOptionLabel(engine.id, status));
-          setOptionDisabled(dropdown.selectEl, engine.id, status !== 'available');
-        }
-        dropdown
-          .setValue(effectiveEngine)
-          .setDisabled(!availability.some((engine) => engine.status === 'available'));
-        dropdown.onChange(async (value) => {
-          if (value !== 'bergamot' && value !== 'tencent_hy_mt') return;
-          if (
-            !availability.some(
-              (candidate) => candidate.engineId === value && candidate.status === 'available',
-            )
-          )
-            return;
-          await dependencies.persistEngine(value);
-          render();
-        });
-      });
 
     new Setting(container)
       .setName(t('settings.translation.source.name'))
       .setDesc(t('settings.translation.source.desc'))
       .addDropdown((dropdown) => {
-        for (const language of TRANSLATION_LANGUAGES) {
+        for (const language of translationSourcesFor(selectedModel)) {
           dropdown.addOption(language, translationLanguageLabel(language));
         }
         dropdown.setValue(pair.sourceLanguage);
         dropdown.onChange(async (value) => {
           if (!isTranslationLanguage(value)) return;
+          if (!translationSourcesFor(selectedModel).includes(value)) return;
           const targetLanguage = resolveTranslationTarget(
             value,
             pair.targetLanguage,
-            'tencent_hy_mt',
-          );
-          await dependencies.persistEngine(
-            resolveInstalledTranslationEngine(
-              state,
-              settings.translationEngineId,
-              value,
-              targetLanguage,
-            ).engineId,
+            selectedModel,
           );
           await dependencies.persistLanguages(value, targetLanguage);
           render();
@@ -164,21 +118,13 @@ export function renderTranslationSettings(
       .setName(t('settings.translation.target.name'))
       .setDesc(t('settings.translation.target.desc'))
       .addDropdown((dropdown) => {
-        for (const language of translationTargetsFor(pair.sourceLanguage, 'tencent_hy_mt')) {
+        for (const language of translationTargetsFor(pair.sourceLanguage, selectedModel)) {
           dropdown.addOption(language, translationLanguageLabel(language));
         }
         dropdown.setValue(pair.targetLanguage);
         dropdown.onChange(async (value) => {
           if (!isTranslationLanguage(value)) return;
-          if (!isSupportedTranslationPair(pair.sourceLanguage, value, 'tencent_hy_mt')) return;
-          await dependencies.persistEngine(
-            resolveInstalledTranslationEngine(
-              state,
-              settings.translationEngineId,
-              pair.sourceLanguage,
-              value,
-            ).engineId,
-          );
+          if (!isSupportedTranslationPair(pair.sourceLanguage, value, selectedModel)) return;
           await dependencies.persistLanguages(pair.sourceLanguage, value);
           render();
         });
@@ -202,34 +148,34 @@ function translationModels(state: Pick<ModelManagerState, 'catalog'>): CatalogMo
   return state.catalog.models.filter((model) => model.task === 'translation');
 }
 
-function modelDescription(
-  installedModels: readonly {
-    installed: ModelManagerState['installedModels'][number];
-    model: CatalogModelRecord;
-  }[],
-): string {
-  if (installedModels.length === 0) return t('settings.translation.model.noneInstalledDesc');
-  if (installedModels.length === 1) {
-    const installed = installedModels[0];
-    if (installed === undefined) return t('settings.translation.model.noneInstalledDesc');
-    return t('settings.translation.model.installedDesc', {
-      model: installed.model.displayName,
-      size: formatBytes(installed.installed.totalSizeBytes),
-    });
-  }
-  return t('settings.translation.model.multipleInstalledDesc', {
-    count: installedModels.length,
-    size: formatBytes(
-      installedModels.reduce((total, candidate) => total + candidate.installed.totalSizeBytes, 0),
-    ),
-  });
+function selectedTranslationCatalogModel(
+  state: Pick<ModelManagerState, 'catalog' | 'selectedTranslationModel'>,
+): CatalogModelRecord | null {
+  const selected = state.selectedTranslationModel;
+  if (selected?.kind !== 'catalog_model') return null;
+  return (
+    state.catalog.models.find(
+      (model) =>
+        model.task === 'translation' &&
+        matchesModelTriple(model, selected.runtimeId, selected.familyId, selected.modelId),
+    ) ?? null
+  );
 }
 
-function setOptionDisabled(
-  select: HTMLSelectElement,
-  engineId: TranslationEngineId,
-  disabled: boolean,
-): void {
-  const option = Array.from(select.options).find((candidate) => candidate.value === engineId);
-  if (option !== undefined) option.disabled = disabled;
+function modelDescription(model: CatalogModelRecord | null, installedSize: number | null): string {
+  if (model === null) return t('settings.translation.model.unavailable');
+  const size =
+    installedSize ??
+    model.artifacts
+      .filter((artifact) => artifact.required)
+      .reduce((total, artifact) => total + artifact.sizeBytes, 0);
+  return t(
+    installedSize === null
+      ? 'settings.translation.model.availableDesc'
+      : 'settings.translation.model.installedDesc',
+    {
+      model: model.displayName,
+      size: formatBytes(size),
+    },
+  );
 }

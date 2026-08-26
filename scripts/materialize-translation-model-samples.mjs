@@ -47,7 +47,7 @@ MADLAD outputs are absent because its requested GGUF failed the llama.cpp smoke
 test before generation, its one permitted fallback produced invalid output, and
 the user directed the run to skip it.
 
-| Sample | English source | Bergamot | HY-MT1.5-1.8B Q4_K_M |
+| Sample | English source | Bergamot | HY-MT2 1.8B Q4_K_M |
 | --- | --- | --- | --- |
 ${rows.join('\n')}
 `;

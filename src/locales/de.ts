@@ -850,13 +850,6 @@ export const de = {
   'translation.modal.insertBelow': 'Darunter einfügen',
   'translation.modal.copy': 'Kopieren',
   'translation.modal.dismiss': 'Verwerfen',
-  'settings.translation.engine.name': 'Standard-Übersetzungsstil',
-  'settings.translation.engine.desc':
-    'Schnell ist wörtlicher; Natürlich verwendet das optionale Tencent-HY-MT-Modell.',
-  'translation.engine.bergamot': 'Schnell & wörtlich — Firefox Translations',
-  'translation.engine.tencentHyMt': 'Natürlich — Tencent HY-MT',
-  'translation.engine.notInstalled': '{style} (nicht installiert)',
-  'translation.engine.unsupportedPair': '{style} (für dieses Sprachenpaar nicht verfügbar)',
   'translation.modal.stale':
     'Die Notiz hat sich seit dem Start dieser Übersetzung geändert. Starte eine neue Übersetzung oder kopiere diese.',
   'translation.notice.copied': 'Übersetzung kopiert.',

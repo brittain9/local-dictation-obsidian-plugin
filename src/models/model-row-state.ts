@@ -97,13 +97,24 @@ export function deriveModelFamilyTabs(
 // ---------------------------------------------------------------------------
 
 export function deriveModelRowStates(state: ModelManagerState): ModelRowState[] {
-  const { catalog, installedModels, selectedModel, activeInstall, failedInstall } = state;
+  const {
+    catalog,
+    installedModels,
+    selectedModel,
+    selectedTranslationModel,
+    activeInstall,
+    failedInstall,
+  } = state;
 
   return [...catalog.models].sort(compareCatalogModels).map((model) => {
     return deriveRowState(
       model,
       installedModels,
-      model.task === 'tts' ? state.selectedTtsModel : selectedModel,
+      model.task === 'tts'
+        ? state.selectedTtsModel
+        : model.task === 'translation'
+          ? (selectedTranslationModel ?? null)
+          : selectedModel,
       activeInstall,
       failedInstall,
     );
@@ -144,21 +155,14 @@ function deriveRowState(
       : null;
 
   const hasFailed = thisFailure !== null;
-  // A translation pack is never selected as the active engine, so an installed
-  // one that is sitting idle only offers remove and details.
-  const isIdleTranslationPack =
-    model.task === 'translation' && installed && !isInstalling && !isCanceling && !hasFailed;
-
-  const allowedActions: ModelRowAction[] = isIdleTranslationPack
-    ? ['remove', 'details']
-    : deriveAllowedActions({
-        installed,
-        isSelected,
-        isInstalling,
-        isCanceling,
-        hasFailed,
-        hasOtherActiveInstall,
-      });
+  const allowedActions = deriveAllowedActions({
+    installed,
+    isSelected,
+    isInstalling,
+    isCanceling,
+    hasFailed,
+    hasOtherActiveInstall,
+  });
 
   return {
     model,
@@ -341,7 +345,7 @@ function resolveFamilyDisplayName(
     case 'firefox_translations':
       return 'Firefox Translations';
     case 'tencent_hy_mt':
-      return 'Tencent HY-MT';
+      return 'Tencent HY-MT 2';
     case 'moonshine':
       return 'Moonshine';
     case 'nemotron_asr':

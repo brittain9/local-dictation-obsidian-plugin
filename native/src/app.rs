@@ -689,12 +689,12 @@ impl AppState {
                         model_id,
                     } = &model_selection
                     else {
-                        anyhow::bail!("Natural translation requires an installed catalog model");
+                        anyhow::bail!("Translation requires an installed catalog model");
                     };
                     anyhow::ensure!(
                         *runtime_id == RuntimeId::LlamaCpp
                             && *family_id == ModelFamilyId::TencentHyMt,
-                        "the selected model is not Tencent HY-MT"
+                        "the selected model is not Tencent HY-MT 2"
                     );
                     let model = self
                         .catalog
@@ -752,7 +752,7 @@ impl AppState {
                     Err(error) => events.push(Event::TranslationError {
                         translation_id,
                         code: "invalid_translation_request".into(),
-                        message: "Natural translation could not be started.".into(),
+                        message: "Translation could not be started.".into(),
                         details: Some(format!("{error:#}")),
                     }),
                 }

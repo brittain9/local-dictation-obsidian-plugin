@@ -52,16 +52,16 @@ pub fn translation_prompt(source: &str, target: &str, text: &str) -> Result<Stri
     if !HY_MT_LANGUAGES.iter().any(|(code, _, _)| *code == source) {
         bail!("unsupported source language");
     }
-    let chinese_related =
+    let chinese_prompt =
         matches!(source, "zh" | "zh-Hant" | "yue") || matches!(target, "zh" | "zh-Hant" | "yue");
-    Ok(if chinese_related {
+    Ok(if chinese_prompt {
         format!(
             "将以下文本翻译为{}，注意只需要输出翻译后的结果，不要额外解释：\n\n{text}",
             target_names.1
         )
     } else {
         format!(
-            "Translate the following segment into {}, without additional explanation.\n\n{text}",
+            "Translate the following text into {}. Note that you should only output the translated result without any additional explanation:\n\n{text}",
             target_names.0
         )
     })
@@ -106,15 +106,13 @@ mod tests {
     #[test]
     fn all_languages_have_prompt_names_and_all_to_all_units_stay_ordered() {
         assert_eq!(HY_MT_LANGUAGES.len(), 38);
-        assert!(
-            translation_prompt("fr", "ja", "bonjour")
-                .unwrap()
-                .starts_with("Translate")
+        assert_eq!(
+            translation_prompt("fr", "ja", "bonjour").unwrap(),
+            "Translate the following text into Japanese. Note that you should only output the translated result without any additional explanation:\n\nbonjour"
         );
-        assert!(
-            translation_prompt("zh-Hant", "en", "你好")
-                .unwrap()
-                .starts_with("将以下文本")
+        assert_eq!(
+            translation_prompt("zh-Hant", "en", "你好").unwrap(),
+            "将以下文本翻译为英语，注意只需要输出翻译后的结果，不要额外解释：\n\n你好"
         );
         let result = translate_units(
             &mut Fake,

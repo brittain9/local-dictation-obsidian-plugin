@@ -21,11 +21,12 @@ export interface ModelPresentationPolicy {
   warning: string | null;
 }
 
-const POLICY_TAGS = new Set(['high-cpu', 'may-buffer']);
+const POLICY_TAGS = new Set(['high-cpu', 'may-buffer', 'heavy']);
 
 export function resolveModelPresentationPolicy(model: CatalogModelRecord): ModelPresentationPolicy {
   const highCpu = model.uxTags.includes('high-cpu');
   const mayBuffer = model.uxTags.includes('may-buffer');
+  const heavy = model.uxTags.includes('heavy');
   const requiresTermsReview = model.uxTags.includes('requires-terms-review');
   const size = formatBytes(
     model.artifacts
@@ -35,11 +36,20 @@ export function resolveModelPresentationPolicy(model: CatalogModelRecord): Model
   const badges = model.uxTags
     .filter((tag) => POLICY_TAGS.has(tag))
     .map((tag) => ({
-      label: tag === 'high-cpu' ? t('models.tag.highCpu') : t('models.tag.mayBuffer'),
+      label:
+        tag === 'high-cpu'
+          ? t('models.tag.highCpu')
+          : tag === 'may-buffer'
+            ? t('models.tag.mayBuffer')
+            : t('models.tag.heavy'),
       tag,
       tone: 'warning' as const,
     }));
-  const warning = mayBuffer ? t('models.manage.performanceWarning') : null;
+  const warning = heavy
+    ? t('models.manage.heavyWarning')
+    : mayBuffer
+      ? t('models.manage.performanceWarning')
+      : null;
 
   return {
     badges,
@@ -54,14 +64,19 @@ export function resolveModelPresentationPolicy(model: CatalogModelRecord): Model
           }),
           title: t('models.manage.installTermsTitle'),
         }
-      : highCpu || mayBuffer
+      : highCpu || mayBuffer || heavy
         ? {
             confirmLabel: t('common.install'),
             link: null,
-            message: t('models.manage.installWarningMessage', {
-              model: model.displayName,
-              size,
-            }),
+            message: t(
+              heavy
+                ? 'models.manage.heavyInstallWarningMessage'
+                : 'models.manage.installWarningMessage',
+              {
+                model: model.displayName,
+                size,
+              },
+            ),
             title: t('models.manage.installWarningTitle'),
           }
         : null,

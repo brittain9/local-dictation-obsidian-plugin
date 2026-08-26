@@ -215,13 +215,6 @@ export const en = {
   'settings.translation.model.unavailable': 'No translation model is available.',
   'settings.translation.model.download': 'Download translation model',
   'settings.translation.model.manage': 'Manage translation models',
-  'settings.translation.engine.name': 'Default translation style',
-  'settings.translation.engine.desc':
-    'Fast is compact and literal. Natural produces more fluent prose and supports more language pairs.',
-  'translation.engine.bergamot': 'Fast & literal — Firefox Translations',
-  'translation.engine.tencentHyMt': 'Natural — Tencent HY-MT',
-  'translation.engine.notInstalled': '{style} (not installed)',
-  'translation.engine.unsupportedPair': '{style} (not available for this language pair)',
   'settings.translation.source.name': 'Default source language',
   'settings.translation.source.desc':
     'Preselected when you translate a note or selection. You can change it before translating.',
@@ -244,9 +237,13 @@ export const en = {
   'models.manage.languagesLabel': 'Languages',
   'models.manage.manageVoices': 'Manage voices',
   'models.manage.performanceWarning': 'Higher reading speeds may buffer on slower CPUs.',
+  'models.manage.heavyWarning':
+    'Heavy model: the 4.62 GB download requires substantially more memory during local translation.',
   'models.manage.installWarningTitle': 'Install a high-resource model?',
   'models.manage.installWarningMessage':
     '{model} downloads approximately {size} and uses substantially more CPU. Higher reading speeds may buffer.',
+  'models.manage.heavyInstallWarningMessage':
+    '{model} downloads approximately {size} and requires substantially more memory during local translation.',
   'models.manage.installTermsTitle': 'Review model terms',
   'models.manage.installTermsMessage':
     '{model} is a direct {size} download from its publisher and is governed by {license}. That license does not permit use in the European Union, United Kingdom, or South Korea. Review it before installing. Continue only if you are outside those territories and agree to its terms.',
@@ -254,6 +251,7 @@ export const en = {
   'models.manage.installTermsLink': 'Open model license',
   'models.tag.highCpu': 'High CPU',
   'models.tag.mayBuffer': 'May buffer',
+  'models.tag.heavy': 'Heavy',
   'models.tag.termsApply': 'Terms apply',
   'tts.status.reading': 'Reading…',
   'tts.status.paused': 'Reading paused',
@@ -994,19 +992,20 @@ export const en = {
     'Fast local translation between English and seven product languages using models released in Firefox.',
   'catalog.family.firefox_translations.summary':
     'Translates note text locally with the compact Bergamot engine and released Firefox models.',
-  'catalog.tencent_hy_mt_1_5_1_8b_q4_k_m.summary':
-    'Natural, paraphrastic local translation across 38 languages and language varieties.',
+  'catalog.tencent_hy_mt_2_1_8b_q4_k_m.summary':
+    'Smaller download and lower resource use; suitable for most local translation.',
+  'catalog.tencent_hy_mt_2_7b_q4_k_m.summary':
+    'Higher-capacity local translation with a 4.62 GB download and substantially higher memory use.',
   'catalog.family.tencent_hy_mt.summary':
-    'Translates locally with the optional Tencent HY-MT model in an isolated native helper.',
-  'sidecarError.helper_protocol_error': 'The Natural translation helper returned invalid data.',
-  'sidecarError.helper_unavailable':
-    'The packaged Natural translation helper could not be started.',
-  'sidecarError.helper_write_failed': 'The Natural translation helper stopped unexpectedly.',
-  'sidecarError.inference_failed': 'Natural translation failed.',
-  'sidecarError.model_load_failed': 'The Natural translation model could not be loaded.',
-  'sidecarError.invalid_translation_request': 'Natural translation could not be started.',
-  'sidecarError.translation_busy': 'Another Natural translation is already running.',
-  'sidecarError.translation_worker_unavailable': 'The Natural translation worker is unavailable.',
+    'Translates locally with optional Tencent HY-MT 2 models in an isolated native helper.',
+  'sidecarError.helper_protocol_error': 'The translation helper returned invalid data.',
+  'sidecarError.helper_unavailable': 'The packaged translation helper could not be started.',
+  'sidecarError.helper_write_failed': 'The translation helper stopped unexpectedly.',
+  'sidecarError.inference_failed': 'Translation failed.',
+  'sidecarError.model_load_failed': 'The translation model could not be loaded.',
+  'sidecarError.invalid_translation_request': 'Translation could not be started.',
+  'sidecarError.translation_busy': 'Another translation is already running.',
+  'sidecarError.translation_worker_unavailable': 'The translation worker is unavailable.',
   'setup.sidecar.modal.unsupportedPlatform':
     'This speech engine build is not available for your platform or architecture.',
   'setup.sidecar.modal.genericInstallError':

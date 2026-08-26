@@ -12,7 +12,7 @@ describe('TranslationJob', () => {
         }),
     );
     const job = new TranslationJob({
-      engineId: 'tencent_hy_mt',
+      model: null,
       run,
       sourceLanguage: 'fr',
       targetLanguage: 'ja',
@@ -42,7 +42,7 @@ describe('TranslationJob', () => {
         }),
     );
     const job = new TranslationJob({
-      engineId: 'tencent_hy_mt',
+      model: null,
       run,
       sourceLanguage: 'en',
       targetLanguage: 'de',

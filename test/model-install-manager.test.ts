@@ -1435,7 +1435,7 @@ describe('ModelInstallManager', () => {
       expect(harness.sidecarConnection.probeModelSelection).not.toHaveBeenCalled();
     });
 
-    it('does not replace the dictation selection after installing translation', async () => {
+    it('leaves translation unselected until the user chooses Use after install', async () => {
       configureSidecarForInit(harness.sidecarConnection);
       const catalog = sampleCatalog();
       catalog.families.push({
@@ -1463,9 +1463,10 @@ describe('ModelInstallManager', () => {
         state: 'completed',
       });
 
-      await vi.waitFor(() => {
-        expect(harness.sidecarConnection.listInstalledModels).toHaveBeenCalledTimes(2);
-      });
+      await vi.waitFor(() =>
+        expect(harness.sidecarConnection.listInstalledModels).toHaveBeenCalledTimes(2),
+      );
+      expect(harness.getSettings().selectedTranslationModel).toBeNull();
       expect(harness.getSettings().selectedModel).toBeNull();
       expect(harness.sidecarConnection.probeModelSelection).not.toHaveBeenCalled();
     });

@@ -321,6 +321,17 @@ describe('model browser', () => {
     expect(policy.installConfirmation?.message).toContain('South Korea');
   });
 
+  it('presents Heavy as a warning-only resource badge', () => {
+    const policy = resolveModelPresentationPolicy(
+      ttsModel('heavy-model', 'en', ['heavy'], 4_624_648_896),
+    );
+
+    expect(policy.badges).toEqual([{ label: 'Heavy', tag: 'heavy', tone: 'warning' }]);
+    expect(policy.warning).toContain('4.62 GB');
+    expect(policy.installConfirmation?.message).toContain('4.31 GiB');
+    expect(policy.installConfirmation?.link).toBeNull();
+  });
+
   it('opens task-aware TTS details when the rendered row details button is clicked', async () => {
     const model = {
       ...ttsModel('pocket-current', 'en'),

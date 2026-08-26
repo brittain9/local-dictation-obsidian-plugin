@@ -63,7 +63,7 @@ impl ModelFamilyAdapter for TencentHyMtAdapter {
     }
     fn load(&self, _: &Path, _: GpuConfig) -> Result<Box<dyn LoadedModel>, TranscriptionError> {
         Err(TranscriptionError::unsupported_engine(
-            "Tencent HY-MT runs in the packaged translation helper.".to_string(),
+            "Tencent HY-MT 2 runs in the packaged translation helper.".to_string(),
         ))
     }
 }

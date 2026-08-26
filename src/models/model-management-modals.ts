@@ -304,10 +304,15 @@ export function openModelDetailsModal(
 export function openSelectedModelDetailsModal(
   app: App,
   manager: Pick<ModelInstallManager, 'getState'>,
-  task: 'stt' | 'tts',
+  task: 'stt' | 'translation' | 'tts',
 ): void {
   const state = manager.getState();
-  const selection = task === 'stt' ? state.selectedModel : state.selectedTtsModel;
+  const selection =
+    task === 'stt'
+      ? state.selectedModel
+      : task === 'tts'
+        ? state.selectedTtsModel
+        : state.selectedTranslationModel;
   if (selection?.kind !== 'catalog_model') return;
   openModelDetailsModal(app, state, selection);
 }
