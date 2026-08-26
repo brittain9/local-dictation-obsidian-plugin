@@ -17,3 +17,7 @@ export function formatBytes(sizeBytes: number): string {
 export function formatErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
+
+export function formatVoiceLabel(voiceId: string): string {
+  return `${voiceId.charAt(0).toUpperCase()}${voiceId.slice(1)}`;
+}

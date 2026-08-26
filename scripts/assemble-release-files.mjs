@@ -1,6 +1,7 @@
 #!/usr/bin/env node
-// Stage the release directory: copy plugin bundle files into dist/release,
-// validate the exact set of sidecar archives, and emit a deterministic
+// Stage the release directory: copy plugin bundle files into dist/release
+// alongside the sidecar archives that were downloaded into the same
+// directory, validate the exact set of archives, and emit a deterministic
 // checksums.txt. Replaces the inline shell block in release.yml's publish job
 // so missing/extra/empty sidecar artifacts fail the release before upload
 // instead of silently shipping a partial set.
@@ -10,10 +11,10 @@
 //   dist/plugin-bundle/{main.js, manifest.json, styles.css}
 //   dist/release/<each EXPECTED_SIDECAR_ARCHIVES file>
 // Output:
-//   dist/release/{main.js, manifest.json, styles.css, checksums.txt}
+//   dist/release/{main.js, manifest.json, styles.css, <archives>, checksums.txt}
 
 import { createHash } from 'node:crypto';
-import { copyFile, readdir, readFile, stat, writeFile } from 'node:fs/promises';
+import { copyFile, mkdir, readdir, readFile, stat, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import process from 'node:process';
 
@@ -129,9 +130,19 @@ async function listArchiveCandidates(releaseDir) {
   return candidates;
 }
 
-async function main() {
-  const pluginBundleDir = join('dist', 'plugin-bundle');
-  const releaseDir = join('dist', 'release');
+/**
+ * Assemble `<rootDir>/dist/release/` with the plugin bundle files alongside
+ * the sidecar archives already downloaded into the same directory, then emit
+ * a deterministic `checksums.txt`. `rootDir` defaults to the current working
+ * directory; tests pass a temp directory.
+ *
+ * @param {string} rootDir
+ */
+export async function assembleReleaseFiles(rootDir = '.') {
+  const pluginBundleDir = join(rootDir, 'dist', 'plugin-bundle');
+  const releaseDir = join(rootDir, 'dist', 'release');
+
+  await mkdir(releaseDir, { recursive: true });
 
   for (const file of PLUGIN_FILES) {
     await copyFile(join(pluginBundleDir, file), join(releaseDir, file));
@@ -154,9 +165,7 @@ async function main() {
   const body = buildChecksumsFile(archiveContents);
   await writeFile(join(releaseDir, 'checksums.txt'), body);
 
-  console.log(
-    `[assemble-release-files] wrote ${PLUGIN_FILES.length} plugin files and checksums for ${EXPECTED_SIDECAR_ARCHIVES.length} sidecar archives to ${releaseDir}`,
-  );
+  return { releaseDir };
 }
 
 const invokedDirectly =
@@ -164,8 +173,14 @@ const invokedDirectly =
   import.meta.url.endsWith(process.argv[1] ?? '');
 
 if (invokedDirectly) {
-  main().catch((error) => {
-    console.error(error);
-    process.exitCode = 1;
-  });
+  assembleReleaseFiles()
+    .then(({ releaseDir }) => {
+      console.log(
+        `[assemble-release-files] wrote ${PLUGIN_FILES.length} plugin files and checksums for ${EXPECTED_SIDECAR_ARCHIVES.length} sidecar archives to ${releaseDir}`,
+      );
+    })
+    .catch((error) => {
+      console.error(error);
+      process.exitCode = 1;
+    });
 }

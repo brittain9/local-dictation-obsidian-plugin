@@ -1,31 +1,26 @@
 import { isRecord } from '../shared/type-guards';
 
-export const RUNTIME_IDS = ['onnx_runtime', 'whisper_cpp'] as const;
+export const RUNTIME_IDS = ['bergamot_wasm', 'llama_cpp', 'onnx_runtime', 'whisper_cpp'] as const;
 
 export type RuntimeId = (typeof RUNTIME_IDS)[number];
 
-export const MODEL_FAMILY_IDS = ['cohere_transcribe', 'whisper'] as const;
+export const MODEL_FAMILY_IDS = [
+  'firefox_translations',
+  'tencent_hy_mt',
+  'cohere_transcribe',
+  'moonshine',
+  'nemotron_asr',
+  'pocket_tts',
+  'supertonic',
+  'whisper',
+] as const;
 
 export type ModelFamilyId = (typeof MODEL_FAMILY_IDS)[number];
 
-export const LIVE_PARTIAL_STRATEGIES = ['snapshot', 'streaming'] as const;
-
-export type LivePartialStrategy = (typeof LIVE_PARTIAL_STRATEGIES)[number];
-
-export interface LivePartialModelCapability {
-  autoEnabled: boolean;
-  minAudioMs: number;
-  recommendedUpdateMs: number;
-  strategy: LivePartialStrategy;
-}
-
-export const RUNTIME_LOCATION_KINDS = ['install_directory', 'primary_artifact_file'] as const;
-
-export type RuntimeLocationKind = (typeof RUNTIME_LOCATION_KINDS)[number];
-
 export type AcceleratorId = 'cpu' | 'cuda' | 'direct_ml' | 'metal';
 
-export type ModelFormat = 'ggml' | 'gguf' | 'onnx';
+export type ModelFormat = 'bergamot' | 'ggml' | 'gguf' | 'onnx';
+export type ModelTask = 'stt' | 'translation' | 'tts';
 
 export type LanguageSupport =
   | { kind: 'all' }
@@ -45,11 +40,17 @@ export interface RuntimeCapabilitiesRecord {
 }
 
 export interface ModelFamilyCapabilitiesRecord {
-  livePartialStrategies: LivePartialStrategy[];
+  task: ModelTask;
+  supportsHardwareAcceleration: boolean;
+  availableVoices: string[];
+  supportsSpeedControl: boolean;
+  outputSampleRate: number | null;
   supportsSegmentTimestamps: boolean;
   supportsWordTimestamps: boolean;
   supportsInitialPrompt: boolean;
+  supportsStreaming: boolean;
   supportsLanguageSelection: boolean;
+  supportsAutomaticLanguageDetection: boolean;
   supportedLanguages: LanguageSupport;
   maxAudioDurationSecs: number | null;
   producesPunctuation: boolean;
@@ -83,7 +84,12 @@ export interface ExternalFileModelSelection {
 
 export type SelectedModel = CatalogModelSelection | ExternalFileModelSelection;
 
-type ModelArtifactRole = 'supporting_file' | 'transcription_model';
+type ModelArtifactRole =
+  | 'supporting_file'
+  | 'synthesis_model'
+  | 'translation_model'
+  | 'transcription_model'
+  | 'voice';
 
 export interface ModelArtifactRecord {
   artifactId: string;
@@ -91,6 +97,7 @@ export interface ModelArtifactRecord {
   filename: string;
   required: boolean;
   role: ModelArtifactRole;
+  voiceId?: string;
   sha256: string;
   sizeBytes: number;
 }
@@ -100,6 +107,7 @@ export interface ModelFamilyRecord {
   familyId: ModelFamilyId;
   runtimeId: RuntimeId;
   summary: string;
+  task: ModelTask;
 }
 
 export interface ModelCollectionRecord {
@@ -111,21 +119,27 @@ export interface ModelCollectionRecord {
 export interface CatalogModelRecord {
   artifacts: ModelArtifactRecord[];
   collectionId: string;
+  defaultVoice?: string;
   displayName: string;
   familyId: ModelFamilyId;
   languageTags: string[];
+  supportsAutomaticLanguageDetection: boolean;
   licenseLabel: string;
   licenseUrl: string;
-  livePartials: LivePartialModelCapability | null;
   modelCardUrl: string | null;
   modelId: string;
   notes: string[];
   runtimeId: RuntimeId;
-  runtimeLocationKind: RuntimeLocationKind;
+  task: ModelTask;
+  translationSupport?: TranslationSupportRecord;
   sourceUrl: string;
   summary: string;
   uxTags: string[];
 }
+
+export type TranslationSupportRecord =
+  | { kind: 'all_to_all'; languages: string[] }
+  | { kind: 'pairs'; pairs: { source: string; target: string }[] };
 
 export interface ModelCatalogRecord {
   catalogVersion: number;
@@ -143,6 +157,7 @@ export interface InstalledModelRecord {
   runtimeId: RuntimeId;
   runtimePath: string | null;
   totalSizeBytes: number;
+  installedVoiceIds: string[];
 }
 
 export interface ModelStoreRecord {
@@ -183,6 +198,14 @@ export type SelectedModelCapabilities =
       selection: SelectedModel;
       capabilities: EngineCapabilitiesRecord;
     };
+
+// A persisted record of the last successful probe for a given selection, used
+// to skip the sidecar probe (which forces a full model load) on plugin
+// startup. Invalidated whenever the selection it was captured for changes.
+export interface SelectedModelCapabilitiesSnapshot {
+  capabilities: EngineCapabilitiesRecord;
+  selection: SelectedModel;
+}
 
 export type ModelInstallState =
   | 'cancelled'
@@ -240,6 +263,83 @@ export function isSelectedModel(value: unknown): value is SelectedModel {
   return false;
 }
 
+function isLanguageSupport(value: unknown): value is LanguageSupport {
+  if (!isRecord(value)) {
+    return false;
+  }
+
+  switch (value.kind) {
+    case 'all':
+    case 'english_only':
+    case 'unknown':
+      return true;
+    case 'list':
+      return Array.isArray(value.tags) && value.tags.every((tag) => typeof tag === 'string');
+    default:
+      return false;
+  }
+}
+
+function isModelFamilyCapabilitiesRecord(value: unknown): value is ModelFamilyCapabilitiesRecord {
+  return (
+    isRecord(value) &&
+    (value.task === 'stt' || value.task === 'translation' || value.task === 'tts') &&
+    typeof value.supportsHardwareAcceleration === 'boolean' &&
+    Array.isArray(value.availableVoices) &&
+    value.availableVoices.every((voice) => typeof voice === 'string') &&
+    typeof value.supportsSpeedControl === 'boolean' &&
+    (value.outputSampleRate === null || typeof value.outputSampleRate === 'number') &&
+    typeof value.supportsSegmentTimestamps === 'boolean' &&
+    typeof value.supportsWordTimestamps === 'boolean' &&
+    typeof value.supportsInitialPrompt === 'boolean' &&
+    typeof value.supportsStreaming === 'boolean' &&
+    typeof value.supportsLanguageSelection === 'boolean' &&
+    typeof value.supportsAutomaticLanguageDetection === 'boolean' &&
+    isLanguageSupport(value.supportedLanguages) &&
+    (value.maxAudioDurationSecs === null || typeof value.maxAudioDurationSecs === 'number') &&
+    typeof value.producesPunctuation === 'boolean'
+  );
+}
+
+function isAcceleratorId(value: unknown): value is AcceleratorId {
+  return value === 'cpu' || value === 'cuda' || value === 'direct_ml' || value === 'metal';
+}
+
+function isModelFormat(value: unknown): value is ModelFormat {
+  return value === 'bergamot' || value === 'ggml' || value === 'gguf' || value === 'onnx';
+}
+
+function isRuntimeCapabilitiesRecord(value: unknown): value is RuntimeCapabilitiesRecord {
+  return (
+    isRecord(value) &&
+    Array.isArray(value.availableAccelerators) &&
+    value.availableAccelerators.every(isAcceleratorId) &&
+    isRecord(value.acceleratorDetails) &&
+    Array.isArray(value.supportedModelFormats) &&
+    value.supportedModelFormats.every(isModelFormat)
+  );
+}
+
+export function isEngineCapabilitiesRecord(value: unknown): value is EngineCapabilitiesRecord {
+  return (
+    isRecord(value) &&
+    isModelFamilyId(value.familyId) &&
+    isRuntimeId(value.runtimeId) &&
+    isModelFamilyCapabilitiesRecord(value.family) &&
+    isRuntimeCapabilitiesRecord(value.runtime)
+  );
+}
+
+export function isSelectedModelCapabilitiesSnapshot(
+  value: unknown,
+): value is SelectedModelCapabilitiesSnapshot {
+  return (
+    isRecord(value) &&
+    isSelectedModel(value.selection) &&
+    isEngineCapabilitiesRecord(value.capabilities)
+  );
+}
+
 export function normalizeSelectedModel(value: SelectedModel): SelectedModel {
   if (value.kind === 'catalog_model') {
     return {
@@ -259,7 +359,9 @@ export function normalizeSelectedModel(value: SelectedModel): SelectedModel {
 }
 
 export function getTotalModelSize(model: CatalogModelRecord): number {
-  return model.artifacts.reduce((sum, a) => sum + a.sizeBytes, 0);
+  return model.artifacts
+    .filter((artifact) => artifact.required)
+    .reduce((sum, artifact) => sum + artifact.sizeBytes, 0);
 }
 
 export function matchesModelTriple(
@@ -294,9 +396,11 @@ export function selectedModelEquals(left: SelectedModel, right: SelectedModel): 
 }
 
 export function getPrimaryArtifact(model: CatalogModelRecord): ModelArtifactRecord | null {
-  return (
-    model.artifacts.find(
-      (artifact) => artifact.required && artifact.role === 'transcription_model',
-    ) ?? null
-  );
+  const role =
+    model.task === 'tts'
+      ? 'synthesis_model'
+      : model.task === 'translation'
+        ? 'translation_model'
+        : 'transcription_model';
+  return model.artifacts.find((artifact) => artifact.required && artifact.role === role) ?? null;
 }

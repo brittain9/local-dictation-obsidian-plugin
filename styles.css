@@ -1,5 +1,5 @@
 /* ===================================================================
-   Local Dictation - Plugin Styles
+   Speech Kit - Plugin Styles
    All selectors prefixed with .local-stt- to avoid collisions.
    All colors use Obsidian CSS variables with fallback values.
    =================================================================== */
@@ -37,6 +37,11 @@
   color: var(--text-muted);
 }
 
+.local-stt-badge--streaming {
+  background-color: var(--background-modifier-border, rgba(128, 128, 128, 0.15));
+  color: var(--text-accent);
+}
+
 /* --- Tag pills ---------------------------------------------------- */
 
 .local-stt-tags {
@@ -64,20 +69,190 @@
   color: var(--text-muted);
 }
 
+.local-stt-tag--warning {
+  border: 1px solid var(--color-orange, var(--text-warning));
+  background: color-mix(in srgb, var(--color-orange, var(--text-warning)) 12%, transparent);
+  color: var(--text-normal);
+}
+
 /* --- Modal toolbar (tab bar) -------------------------------------- */
 
 .local-stt-toolbar {
   display: flex;
   align-items: center;
-  gap: 12px;
-  margin-bottom: 8px;
-  border-bottom: 1px solid var(--background-modifier-border, rgba(128, 128, 128, 0.2));
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 12px;
+}
+
+.local-stt-task-switcher {
+  display: inline-flex;
+  padding: 2px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-m);
+  background: var(--background-secondary);
+}
+
+.local-stt-task-switcher__button {
+  min-height: 30px;
+  padding: 4px 12px;
+  border: 0;
+  border-radius: var(--radius-s);
+  background: transparent;
+  color: var(--text-muted);
+  font-size: var(--font-ui-small);
+  font-weight: 600;
+}
+
+.local-stt-task-switcher__button.is-active {
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+}
+
+.local-stt-task-switcher__button:focus-visible,
+.local-stt-language-rail__button:focus-visible,
+.local-stt-tab:focus-visible {
+  outline: 2px solid var(--interactive-accent);
+  outline-offset: 2px;
+}
+
+.local-stt-model-search {
+  width: min(240px, 42%);
+  min-width: 140px;
+}
+
+.local-stt-model-browser {
+  display: grid;
+  grid-template-columns: 148px minmax(0, 1fr);
+  gap: 16px;
+  min-height: 280px;
+}
+
+.local-stt-model-browser__results {
+  min-width: 0;
+}
+
+.local-stt-language-rail {
+  align-self: start;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  max-height: min(560px, calc(100vh - 240px));
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding-right: 12px;
+  border-right: 1px solid var(--background-modifier-border);
+  scrollbar-width: thin;
+}
+
+.local-stt-language-rail__button {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: baseline;
+  gap: 8px;
+  width: 100%;
+  padding: 7px 9px;
+  border: 0;
+  border-radius: var(--radius-s);
+  background: transparent;
+  color: var(--text-muted);
+  text-align: left;
+}
+
+.local-stt-language-rail__button:hover {
+  background: var(--background-modifier-hover);
+  color: var(--text-normal);
+}
+
+.local-stt-language-rail__button.is-active {
+  background: var(--background-modifier-active-hover);
+  color: var(--text-normal);
+  font-weight: 600;
+}
+
+.local-stt-language-rail__code {
+  color: var(--text-faint);
+  font-family: var(--font-monospace);
+  font-size: var(--font-smallest);
+}
+
+.local-stt-model-warning {
+  margin-top: 6px;
+  color: var(--text-warning);
+  font-size: var(--font-smallest);
+}
+
+.local-stt-acceleration-status {
+  margin-top: 6px;
+}
+
+.local-stt-acceleration-fallback {
+  margin-top: 2px;
+  color: var(--text-warning);
+}
+
+.local-stt-voice-management {
+  margin: 0 0 6px 20px;
+  padding-left: 12px;
+  border-left: 1px solid var(--background-modifier-border);
+}
+
+.local-stt-voice-management > summary {
+  padding: 6px 0;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: var(--font-ui-small);
+  font-weight: 600;
+}
+
+.local-stt-task-label {
+  align-self: center;
+  margin: 0 6px 0 12px;
+  color: var(--text-muted);
+  font-size: var(--font-smallest);
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+.local-stt-task-label:first-child {
+  margin-left: 0;
+}
+
+.local-stt-voice-row {
+  margin-left: 24px;
+}
+
+.local-stt-read-aloud-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.local-stt-read-aloud-status button {
+  border: 0;
+  background: transparent;
+}
+
+.local-stt-read-aloud-status__menu {
+  padding: 0 4px;
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+}
+
+/* Follow-along cue for the sentence or synthesis chunk currently audible.
+   Use semantic theme colors so the cue remains visible in light and dark
+   themes without changing text metrics or competing with editor selection. */
+.local-stt-read-aloud-follow-along {
+  background-color: var(--text-highlight-bg, var(--background-modifier-hover));
+  box-shadow: inset 0 -2px 0 var(--interactive-accent, var(--text-accent));
 }
 
 .local-stt-tab-bar {
   display: flex;
   gap: 0;
   flex-shrink: 0;
+  overflow-x: auto;
+  scrollbar-width: thin;
 }
 
 .local-stt-tab {
@@ -102,6 +277,14 @@
 .local-stt-tab--active {
   color: var(--text-normal);
   border-bottom-color: var(--interactive-accent, #7c3aed);
+}
+
+/* --- Family summary (under the tab bar) --------------------------- */
+
+.local-stt-family-summary {
+  margin: 4px 0 12px;
+  color: var(--text-muted);
+  font-size: var(--font-ui-small);
 }
 
 /* --- Model rows (compact Setting-based) --------------------------- */
@@ -179,6 +362,25 @@
   opacity: 0.7;
 }
 
+/* A failed install keeps the same card in the same row and turns red, rather
+   than moving the report to a banner somewhere else in the modal. The track
+   itself carries the colour because a failure has no meaningful percentage. */
+.local-stt-install-progress--failed {
+  border-color: var(--text-error, #cd5c5c);
+}
+
+.local-stt-install-progress--failed .local-stt-install-progress__status {
+  color: var(--text-error, #cd5c5c);
+}
+
+.local-stt-install-progress--failed .local-stt-install-progress__track {
+  background: var(--text-error, #cd5c5c);
+}
+
+.local-stt-install-progress--failed .local-stt-install-progress__fill {
+  display: none;
+}
+
 /* --- Empty state -------------------------------------------------- */
 
 .local-stt-empty-state {
@@ -186,6 +388,48 @@
   font-size: var(--font-ui-small);
   text-align: center;
   padding: 24px 0;
+}
+
+.local-stt-empty-panel {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  padding: 32px 16px;
+  text-align: center;
+}
+
+.local-stt-empty-panel__icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-muted);
+}
+
+.local-stt-empty-panel__icon svg {
+  width: 40px;
+  height: 40px;
+}
+
+.local-stt-empty-panel h3 {
+  margin: 0;
+}
+
+.local-stt-empty-panel p {
+  margin: 0;
+  max-width: 36em;
+  color: var(--text-muted);
+}
+
+.local-stt-empty-panel__detail {
+  font-size: var(--font-ui-small);
+  color: var(--text-faint);
+}
+
+.local-stt-empty-panel__actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 4px;
 }
 
 /* --- Details grid (dt/dd pairs) ----------------------------------- */
@@ -208,6 +452,12 @@
   margin: 0;
   font-size: var(--font-ui-small);
   word-break: break-all;
+}
+
+/* Comma-separated value rows wrap between items, not through them —
+   `break-all` above exists for install paths and would split "F1, F2". */
+.local-stt-details-grid dd.local-stt-details-values {
+  word-break: normal;
 }
 
 .local-stt-mono {
@@ -257,7 +507,66 @@
 /* --- Manage-models modal width constraint ------------------------- */
 
 .local-stt-manage-models {
-  width: min(600px, 90vw);
+  width: min(760px, 92vw);
+}
+
+@media (max-width: 560px) {
+  .local-stt-toolbar {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .local-stt-model-search {
+    width: 100%;
+  }
+
+  .local-stt-model-browser {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .local-stt-model-browser__results {
+    width: 100%;
+  }
+
+  .local-stt-language-rail {
+    flex-direction: row;
+    overflow-x: auto;
+    padding: 0 0 8px;
+    border-right: 0;
+    border-bottom: 1px solid var(--background-modifier-border);
+    scrollbar-width: thin;
+  }
+
+  .local-stt-language-rail__button {
+    flex: 0 0 auto;
+    width: auto;
+    min-width: 112px;
+  }
+}
+
+.local-stt-external-model-guidance {
+  margin: 12px 0;
+  padding: 10px 12px;
+  border: 1px solid var(--background-modifier-border, rgba(128, 128, 128, 0.18));
+  border-radius: var(--radius-s, 6px);
+  background: var(--background-secondary-alt, rgba(128, 128, 128, 0.06));
+  color: var(--text-muted);
+  font-size: var(--font-ui-small);
+}
+
+.local-stt-external-model-guidance ul {
+  margin: 6px 0 0;
+  padding-inline-start: 20px;
+}
+
+.local-stt-external-model-error {
+  margin: 8px 0 0;
+  color: var(--text-error);
+  font-size: var(--font-ui-small);
+  white-space: pre-wrap;
 }
 
 /* --- Ribbon icon animations --------------------------------------- */
@@ -273,37 +582,6 @@
   }
   25% {
     opacity: 0.2;
-  }
-}
-
-/* Three depth variants: edges stay tall, center moves most */
-@keyframes local-stt-wave-shallow {
-  0%,
-  100% {
-    transform: scaleY(1);
-  }
-  50% {
-    transform: scaleY(0.65);
-  }
-}
-
-@keyframes local-stt-wave-mid {
-  0%,
-  100% {
-    transform: scaleY(1);
-  }
-  50% {
-    transform: scaleY(0.45);
-  }
-}
-
-@keyframes local-stt-wave-deep {
-  0%,
-  100% {
-    transform: scaleY(1);
-  }
-  50% {
-    transform: scaleY(0.3);
   }
 }
 
@@ -327,90 +605,85 @@
 }
 
 /* 8 spokes, each offset by 0.15s = 1.2s full cycle */
-.side-dock-ribbon-action:is(
-    [data-local-stt-state="starting"],
-    [data-local-stt-state="working"]
-  ) > svg
-  > path {
+.side-dock-ribbon-action[data-local-stt-state="starting"] > svg > path {
   animation: local-stt-chase 1.2s ease-in-out infinite;
   opacity: 0.2;
 }
 
-.side-dock-ribbon-action:is([data-local-stt-state="starting"], [data-local-stt-state="working"])
-  > svg
-  > path:nth-child(1) {
+.side-dock-ribbon-action[data-local-stt-state="starting"] > svg > path:nth-child(1) {
   animation-delay: 0s;
 }
 
-.side-dock-ribbon-action:is([data-local-stt-state="starting"], [data-local-stt-state="working"])
-  > svg
-  > path:nth-child(2) {
+.side-dock-ribbon-action[data-local-stt-state="starting"] > svg > path:nth-child(2) {
   animation-delay: 0.15s;
 }
 
-.side-dock-ribbon-action:is([data-local-stt-state="starting"], [data-local-stt-state="working"])
-  > svg
-  > path:nth-child(3) {
+.side-dock-ribbon-action[data-local-stt-state="starting"] > svg > path:nth-child(3) {
   animation-delay: 0.3s;
 }
 
-.side-dock-ribbon-action:is([data-local-stt-state="starting"], [data-local-stt-state="working"])
-  > svg
-  > path:nth-child(4) {
+.side-dock-ribbon-action[data-local-stt-state="starting"] > svg > path:nth-child(4) {
   animation-delay: 0.45s;
 }
 
-.side-dock-ribbon-action:is([data-local-stt-state="starting"], [data-local-stt-state="working"])
-  > svg
-  > path:nth-child(5) {
+.side-dock-ribbon-action[data-local-stt-state="starting"] > svg > path:nth-child(5) {
   animation-delay: 0.6s;
 }
 
-.side-dock-ribbon-action:is([data-local-stt-state="starting"], [data-local-stt-state="working"])
-  > svg
-  > path:nth-child(6) {
+.side-dock-ribbon-action[data-local-stt-state="starting"] > svg > path:nth-child(6) {
   animation-delay: 0.75s;
 }
 
-.side-dock-ribbon-action:is([data-local-stt-state="starting"], [data-local-stt-state="working"])
-  > svg
-  > path:nth-child(7) {
+.side-dock-ribbon-action[data-local-stt-state="starting"] > svg > path:nth-child(7) {
   animation-delay: 0.9s;
 }
 
-.side-dock-ribbon-action:is([data-local-stt-state="starting"], [data-local-stt-state="working"])
-  > svg
-  > path:nth-child(8) {
+.side-dock-ribbon-action[data-local-stt-state="starting"] > svg > path:nth-child(8) {
   animation-delay: 1.05s;
 }
 
 .side-dock-ribbon-action[data-local-stt-state="listening"] > svg {
-  opacity: 0.7;
+  opacity: 0.45;
 }
 
-/* Unique durations per bar create pseudo-random phasing (pattern won't repeat for ~30s).
-   Edge bars use shallow depth (stay tall), center bars use deep (most movement). */
+/* Live per-band FFT amplitude scales each bar via --local-stt-bar-N (1..6),
+   written by DictationRibbonController on every animation frame while VAD
+   reports speech. The listening state shares the same transform rules with a
+   slower ease so the bars settle back to default scale (no variables set)
+   gracefully when speech_detected flips off after the tail hold. */
+.side-dock-ribbon-action[data-local-stt-state="listening"] > svg > path,
 .side-dock-ribbon-action[data-local-stt-state="speech_detected"] > svg > path {
   transform-origin: center;
 }
-
+.side-dock-ribbon-action[data-local-stt-state="speech_detected"] > svg > path {
+  transition: transform 60ms linear;
+}
+.side-dock-ribbon-action[data-local-stt-state="listening"] > svg > path {
+  transition: transform 550ms ease-out;
+}
+.side-dock-ribbon-action[data-local-stt-state="listening"] > svg > path:nth-child(1),
 .side-dock-ribbon-action[data-local-stt-state="speech_detected"] > svg > path:nth-child(1) {
-  animation: local-stt-wave-shallow 0.7s ease-in-out infinite;
+  transform: scaleY(var(--local-stt-bar-1, 1));
 }
+.side-dock-ribbon-action[data-local-stt-state="listening"] > svg > path:nth-child(2),
 .side-dock-ribbon-action[data-local-stt-state="speech_detected"] > svg > path:nth-child(2) {
-  animation: local-stt-wave-mid 0.9s ease-in-out infinite;
+  transform: scaleY(var(--local-stt-bar-2, 1));
 }
+.side-dock-ribbon-action[data-local-stt-state="listening"] > svg > path:nth-child(3),
 .side-dock-ribbon-action[data-local-stt-state="speech_detected"] > svg > path:nth-child(3) {
-  animation: local-stt-wave-deep 0.6s ease-in-out infinite;
+  transform: scaleY(var(--local-stt-bar-3, 1));
 }
+.side-dock-ribbon-action[data-local-stt-state="listening"] > svg > path:nth-child(4),
 .side-dock-ribbon-action[data-local-stt-state="speech_detected"] > svg > path:nth-child(4) {
-  animation: local-stt-wave-deep 1.1s ease-in-out infinite;
+  transform: scaleY(var(--local-stt-bar-4, 1));
 }
+.side-dock-ribbon-action[data-local-stt-state="listening"] > svg > path:nth-child(5),
 .side-dock-ribbon-action[data-local-stt-state="speech_detected"] > svg > path:nth-child(5) {
-  animation: local-stt-wave-mid 0.8s ease-in-out infinite;
+  transform: scaleY(var(--local-stt-bar-5, 1));
 }
+.side-dock-ribbon-action[data-local-stt-state="listening"] > svg > path:nth-child(6),
 .side-dock-ribbon-action[data-local-stt-state="speech_detected"] > svg > path:nth-child(6) {
-  animation: local-stt-wave-shallow 0.75s ease-in-out infinite;
+  transform: scaleY(var(--local-stt-bar-6, 1));
 }
 
 .side-dock-ribbon-action[data-local-stt-state="error"] > svg {
@@ -427,6 +700,11 @@
   .local-stt-dictation-anchor--visible::before {
     animation: none;
     opacity: 0.55;
+  }
+
+  .local-stt-session-processing {
+    animation: none;
+    opacity: 1;
   }
 }
 
@@ -478,6 +756,81 @@
   }
   50% {
     opacity: 0.15;
+  }
+}
+
+/* --- Preset manager modal ------------------------------------------ */
+
+.local-stt-preset-manager .local-stt-preset-row .setting-item-info {
+  cursor: pointer;
+}
+
+.local-stt-preset-manager .local-stt-preset-row .setting-item-info:focus-visible {
+  outline: 2px solid var(--interactive-accent);
+  outline-offset: 2px;
+}
+
+.local-stt-preset-manager .local-stt-preset-back {
+  margin-bottom: var(--size-4-2);
+}
+
+.local-stt-preset-manager .local-stt-preset-search {
+  width: 100%;
+  margin-bottom: var(--size-4-2);
+}
+
+.local-stt-preset-manager .local-stt-preset-empty {
+  color: var(--text-muted);
+  margin: var(--size-4-2) 0;
+}
+
+/* Highlight search matches like the core search pane instead of the theme's
+   bold/accent suggestion styling. */
+.local-stt-preset-manager .suggestion-highlight {
+  background-color: var(--text-highlight-bg);
+  color: inherit;
+  font-weight: inherit;
+}
+
+.local-stt-preset-editor__prompt textarea {
+  width: 100%;
+}
+
+.local-stt-preset-editor__prompt-size {
+  margin: var(--size-2-2) 0 var(--size-4-2);
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+  text-align: right;
+}
+
+.local-stt-preset-editor__error {
+  color: var(--text-error);
+  margin: var(--size-2-2) 0;
+}
+
+.local-stt-confirm-modal__error {
+  color: var(--text-error);
+  margin: var(--size-2-2) 0;
+}
+
+/* --- Batch LLM processing pulse ----------------------------------- */
+
+.local-stt-transcript-provisional {
+  opacity: 0.85;
+  transition: opacity 120ms ease;
+}
+
+.local-stt-session-processing {
+  animation: local-stt-session-processing-pulse 1.4s ease-in-out infinite;
+}
+
+@keyframes local-stt-session-processing-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
   }
 }
 
@@ -549,5 +902,727 @@
   }
   50% {
     opacity: 1;
+  }
+}
+
+/* --- LLM sidebar shell and responsive layout ---------------------- */
+
+.local-dictation-sidebar {
+  padding-bottom: var(--size-4-6);
+}
+
+.local-dictation-sidebar__header {
+  padding: var(--size-4-3) var(--size-4-3) var(--size-4-4);
+}
+
+.local-dictation-sidebar__eyebrow {
+  margin-bottom: var(--size-4-1);
+  color: var(--text-faint);
+  font-size: var(--font-ui-smaller);
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.local-dictation-sidebar__title {
+  margin: 0;
+  color: var(--text-normal);
+  font-size: var(--font-ui-large);
+}
+
+.local-dictation-sidebar__description {
+  margin: var(--size-4-1) 0 var(--size-4-3);
+  color: var(--text-muted);
+  font-size: var(--font-ui-small);
+  line-height: var(--line-height-tight);
+}
+
+.local-dictation-sidebar__summary {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  gap: var(--size-4-2);
+}
+
+.local-dictation-sidebar__badge {
+  flex: 0 0 auto;
+  padding: 2px var(--size-4-2);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-s);
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+  font-weight: 600;
+}
+
+.local-dictation-sidebar__badge--active {
+  border-color: var(--background-modifier-success, var(--background-modifier-border));
+  color: var(--text-success);
+}
+
+.local-dictation-sidebar__summary-text {
+  display: -webkit-box;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.local-dictation-sidebar__empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  margin: var(--size-4-5) var(--size-4-3) 0;
+  padding: var(--size-4-6) var(--size-4-4);
+  border: 1px dashed var(--background-modifier-border);
+  border-radius: var(--radius-m);
+  text-align: center;
+}
+
+.local-dictation-sidebar__empty-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  margin-bottom: var(--size-4-2);
+  border-radius: 50%;
+  background: var(--background-secondary-alt);
+  color: var(--text-muted);
+}
+
+.local-dictation-sidebar__empty-icon svg {
+  width: 17px;
+  height: 17px;
+}
+
+.local-dictation-sidebar__empty h3 {
+  margin: 0;
+  font-size: var(--font-ui-medium);
+}
+
+.local-dictation-sidebar__empty p {
+  max-width: 32em;
+  margin: var(--size-4-1) 0 0;
+  color: var(--text-muted);
+  font-size: var(--font-ui-small);
+}
+
+.local-dictation-sidebar .setting-item,
+.local-dictation-sidebar .setting-item-info,
+.local-dictation-sidebar .setting-item-control {
+  min-width: 0;
+}
+
+.local-dictation-sidebar .setting-item-info,
+.local-dictation-sidebar__summary-text {
+  overflow-wrap: anywhere;
+}
+
+.local-dictation-sidebar .setting-item-control {
+  max-width: 100%;
+}
+
+.local-dictation-sidebar .setting-item-control select {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.local-dictation-sidebar .local-dictation-preset-setting .setting-item-control > select {
+  flex: 1 1 10rem;
+  min-width: min(10rem, 100%);
+}
+
+.local-dictation-sidebar .local-dictation-model-setting {
+  flex-direction: column;
+  align-items: stretch;
+}
+
+.local-dictation-sidebar .local-dictation-model-setting .setting-item-info {
+  margin-right: 0;
+  margin-bottom: 6px;
+}
+
+.local-dictation-sidebar .local-dictation-model-setting .setting-item-control {
+  justify-content: flex-start;
+  width: 100%;
+}
+
+.local-dictation-sidebar .local-dictation-model-setting input[type="text"] {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+/* When the sidebar is dragged narrow, stack setting rows vertically so labels
+   and controls don't get squeezed onto a single short line. */
+
+.local-dictation-sidebar--narrow .setting-item {
+  flex-direction: column;
+  align-items: stretch;
+}
+
+.local-dictation-sidebar--narrow .setting-item-info {
+  margin-right: 0;
+  margin-bottom: 6px;
+}
+
+.local-dictation-sidebar--narrow .setting-item-control {
+  justify-content: flex-start;
+  flex-wrap: wrap;
+}
+
+.local-dictation-sidebar--narrow .setting-item-control select,
+.local-dictation-sidebar--narrow .setting-item-control input[type="text"],
+.local-dictation-sidebar--narrow .setting-item-control input[type="number"] {
+  width: 100%;
+  min-width: 0;
+}
+
+.local-dictation-sidebar--narrow .local-dictation-preset-setting .setting-item-control > select {
+  flex-basis: 100%;
+}
+
+/* Truncate preset description to one line; full text in title attr on hover. */
+.local-dictation-sidebar .setting-item-description {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* --- LLM sidebar inline status row -------------------------------- */
+
+.local-dictation-status {
+  display: flex;
+  align-items: center;
+  gap: var(--size-4-2);
+  padding: 0 var(--size-4-3) var(--size-4-2);
+  font-size: var(--font-ui-smaller);
+}
+
+.local-dictation-status__icon {
+  display: inline-flex;
+  flex-shrink: 0;
+}
+
+.local-dictation-status__icon svg {
+  width: 14px;
+  height: 14px;
+}
+
+.local-dictation-status--warning {
+  color: var(--text-warning, var(--color-orange));
+}
+
+.local-dictation-status--info {
+  color: var(--text-muted);
+}
+
+.local-dictation-connection-test--loading svg {
+  animation: local-dictation-connection-test-spin 800ms linear infinite;
+}
+
+@keyframes local-dictation-connection-test-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* --- LLM routing control ------------------------------------------ */
+
+.local-dictation-route-field {
+  padding: var(--size-4-2) var(--size-4-3) var(--size-4-3);
+}
+
+.local-dictation-route-field__hint {
+  margin: 0;
+  padding: 0 var(--size-4-3) var(--size-4-3);
+  overflow-wrap: anywhere;
+  font-size: var(--font-ui-smaller);
+  color: var(--text-muted);
+}
+
+.local-dictation-segmented {
+  display: flex;
+  width: 100%;
+  gap: 3px;
+  padding: 3px;
+  border-radius: var(--radius-m, 8px);
+  background: var(--background-modifier-border, rgba(128, 128, 128, 0.15));
+}
+
+.local-dictation-segmented__option {
+  flex: 1;
+  appearance: none;
+  border: none;
+  box-shadow: none;
+  cursor: pointer;
+  padding: 5px 12px;
+  border-radius: var(--radius-s, 6px);
+  background: transparent;
+  color: var(--text-muted);
+  font-size: var(--font-ui-small);
+  font-weight: 500;
+  transition:
+    background-color 120ms ease,
+    color 120ms ease,
+    box-shadow 120ms ease;
+}
+
+.local-dictation-segmented__option:hover {
+  color: var(--text-normal);
+}
+
+.local-dictation-segmented__option:focus-visible {
+  outline: 2px solid var(--interactive-accent);
+  outline-offset: 1px;
+}
+
+.local-dictation-segmented__option.is-active {
+  background: var(--background-primary);
+  box-shadow: var(--shadow-s, 0 1px 2px rgba(0, 0, 0, 0.15));
+  color: var(--text-normal);
+  font-weight: 600;
+}
+
+.local-dictation-route-leg {
+  display: flex;
+  align-items: center;
+  gap: var(--size-4-2);
+  padding: var(--size-4-4) var(--size-4-3) var(--size-4-2);
+  font-size: var(--font-ui-smaller);
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+/* Trailing hairline so the leg label reads as a section divider instead of a
+   stray caption between setting rows. */
+.local-dictation-route-leg::after {
+  content: "";
+  flex: 1;
+  border-top: 1px solid var(--background-modifier-border);
+}
+
+/* The labeled divider replaces the built-in row separator, so drop the
+   following setting row's own border to avoid a doubled line. */
+.local-dictation-route-leg + .setting-item {
+  border-top: none;
+}
+
+/* --- OpenRouter model suggest secondary line ---------------------- */
+
+.local-dictation-suggest__top {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--size-4-2);
+}
+
+.local-dictation-suggest__primary {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.local-dictation-suggest__secondary {
+  display: block;
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+}
+
+.local-dictation-price {
+  flex-shrink: 0;
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.03em;
+}
+
+.local-dictation-price--free {
+  color: var(--text-success, #2e8b57);
+}
+
+.local-dictation-price--premium {
+  color: var(--text-warning, var(--color-orange));
+}
+
+.local-stt-version-chip {
+  margin-left: 0.55em;
+  color: var(--text-muted);
+  font-size: 0.82em;
+  font-weight: normal;
+  font-variant-numeric: tabular-nums;
+}
+
+/* --- Settings attention ------------------------------------------ */
+
+/* This is also a native `setting-group`, which owns the vertical rhythm before
+   the following section heading. Bordered in the theme accent rather than a
+   muted grey: this callout is the one thing in Settings that is asking to be
+   acted on. The fill stays `--background-secondary` so the row text keeps full
+   contrast in every theme. */
+.local-stt-settings-attention {
+  overflow: hidden;
+  border: 1px solid var(--interactive-accent, #7c3aed);
+  border-left-width: 3px;
+  border-radius: var(--radius-m);
+  background: var(--background-secondary);
+}
+
+.local-stt-settings-attention .setting-items {
+  padding: var(--size-4-1) var(--size-4-4);
+}
+
+.local-stt-settings-attention__item .setting-item-name {
+  font-weight: var(--font-semibold);
+}
+
+@media (max-width: 500px) {
+  .local-stt-settings-attention .setting-item {
+    align-items: stretch;
+    flex-direction: column;
+    gap: var(--size-4-3);
+  }
+
+  .local-stt-settings-attention .setting-item-control {
+    justify-content: flex-start;
+  }
+}
+
+/* --- Setup wizard ------------------------------------------------- */
+
+.local-stt-setup-wizard {
+  width: min(560px, 92vw);
+}
+
+.local-stt-wizard-progress {
+  display: flex;
+  gap: 8px;
+  justify-content: center;
+  margin: 4px 0 18px;
+}
+
+.local-stt-wizard-progress__dot {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 999px;
+  background: var(--background-modifier-border, rgba(128, 128, 128, 0.18));
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+  font-weight: 600;
+}
+
+.local-stt-wizard-progress__dot.is-active {
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+}
+
+.local-stt-wizard-progress__dot.is-complete {
+  background: var(--background-modifier-success, rgba(0, 160, 0, 0.18));
+  color: var(--text-success, var(--text-normal));
+}
+
+.local-stt-wizard-step {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.local-stt-wizard-step__title {
+  margin: 0 0 4px;
+  font-size: var(--font-ui-large, 1.1em);
+}
+
+.local-stt-wizard-step__muted {
+  color: var(--text-muted);
+  font-size: var(--font-ui-small);
+  margin: 0;
+}
+
+.local-stt-wizard-card {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 10px 14px;
+  padding: 12px 14px;
+  margin-top: 8px;
+  border: 1px solid var(--background-modifier-border, rgba(128, 128, 128, 0.18));
+  border-radius: var(--radius-m, 8px);
+  background: var(--background-secondary-alt, rgba(128, 128, 128, 0.05));
+}
+
+.local-stt-wizard-card__icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  color: var(--interactive-accent);
+}
+
+.local-stt-wizard-card__text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.local-stt-wizard-card__text p {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: var(--font-ui-small);
+}
+
+.local-stt-wizard-card > button {
+  grid-column: 1 / -1;
+  justify-self: start;
+  margin-top: 4px;
+}
+
+.local-stt-wizard-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  margin-top: 18px;
+}
+
+/* --- Local translation -------------------------------------------- */
+
+.local-stt-translation-modal {
+  width: 720px;
+  max-width: calc(100vw - 32px);
+}
+
+.local-stt-translation-modal h2 {
+  letter-spacing: -0.02em;
+  margin-bottom: 6px;
+}
+
+.local-stt-translation-modal__privacy {
+  color: var(--text-muted);
+  margin: 0 0 18px;
+}
+
+.local-stt-translation-modal__status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 14px 0;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-muted);
+}
+
+.local-stt-translation-modal__status.is-active {
+  min-height: 74px;
+  box-sizing: border-box;
+  padding: 14px 16px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-m);
+  background: var(--background-secondary);
+  color: var(--text-normal);
+}
+
+.local-stt-translation-modal__status-copy {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+  gap: 2px;
+}
+
+.local-stt-translation-modal__status-text {
+  font-weight: var(--font-semibold);
+}
+
+.local-stt-translation-modal__status-detail {
+  overflow: hidden;
+  color: var(--text-muted);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.local-stt-translation-modal__elapsed {
+  padding: 3px 7px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-s);
+  color: var(--text-muted);
+  font-family: var(--font-monospace);
+  font-size: var(--font-ui-small);
+}
+
+.local-stt-translation-modal__spinner {
+  box-sizing: border-box;
+  width: 20px;
+  height: 20px;
+  flex: 0 0 auto;
+  border: 2px solid var(--background-modifier-border);
+  border-top-color: var(--interactive-accent);
+  border-radius: 50%;
+  animation: local-stt-translation-spin 0.8s linear infinite;
+}
+
+@keyframes local-stt-translation-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.local-stt-translation-modal__languages {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 0 0 14px;
+  padding: 12px 14px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-m);
+  background: var(--background-secondary);
+}
+
+.local-stt-translation-modal__language-pair {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 28px minmax(0, 1fr);
+  align-items: end;
+  gap: 8px;
+}
+
+.local-stt-translation-modal__translation-style .setting-item,
+.local-stt-translation-modal__language-control .setting-item {
+  border: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  padding: var(--size-4-2) 0;
+}
+
+.local-stt-translation-modal__translation-style .setting-item-info,
+.local-stt-translation-modal__language-control .setting-item-info {
+  padding: 0 0 4px;
+}
+
+.local-stt-translation-modal__translation-style .setting-item-control,
+.local-stt-translation-modal__language-control .setting-item-control {
+  width: 100%;
+  justify-content: flex-start;
+}
+
+.local-stt-translation-modal__translation-style .dropdown,
+.local-stt-translation-modal__language-control .dropdown {
+  width: 100%;
+}
+
+.local-stt-translation-modal__direction {
+  display: grid;
+  width: 28px;
+  height: 32px;
+  place-items: center;
+  color: var(--text-muted);
+  font-size: 20px;
+}
+
+.local-stt-translation-modal__warning {
+  color: var(--text-warning);
+}
+
+.local-stt-translation-modal__source {
+  margin: 0;
+  border: 1px solid transparent;
+  border-radius: var(--radius-s);
+}
+
+.local-stt-translation-modal__source[open] {
+  margin-bottom: 12px;
+  padding: 8px 10px;
+  border-color: var(--background-modifier-border);
+  background: var(--background-secondary);
+}
+
+.local-stt-translation-modal__source summary {
+  cursor: pointer;
+  color: var(--text-muted);
+  font-weight: var(--font-medium);
+}
+
+.local-stt-translation-modal__preview {
+  margin: 10px 0 0;
+  max-height: 140px;
+  overflow: auto;
+  white-space: pre-wrap;
+}
+
+.local-stt-translation-modal__output-surface {
+  margin-top: 14px;
+  overflow: hidden;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-m);
+  background: var(--background-secondary);
+}
+
+.local-stt-translation-modal__output-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 42px;
+}
+
+.local-stt-translation-modal__output-surface.is-hidden {
+  display: none;
+}
+
+.local-stt-translation-modal__output-label {
+  padding: 10px 12px 8px;
+  color: var(--text-muted);
+  font-size: var(--font-ui-small);
+  font-weight: var(--font-medium);
+}
+
+.local-stt-translation-modal__read-aloud {
+  flex: 0 0 auto;
+  margin-right: 6px;
+}
+
+.local-stt-translation-modal__output {
+  box-sizing: border-box;
+  min-height: 240px;
+  margin: 0;
+  border-width: 1px 0 0;
+  border-radius: 0;
+  background: var(--background-primary);
+  resize: vertical;
+  width: 100%;
+}
+
+.local-stt-translation-modal__actions {
+  margin-top: 16px;
+  padding-top: 12px;
+  border-top: 1px solid var(--background-modifier-border);
+}
+
+.local-stt-translation-modal__actions .setting-item-control {
+  margin-left: auto;
+  justify-content: flex-end;
+}
+
+@media (max-width: 600px) {
+  .local-stt-language-rail {
+    max-height: none;
+    overflow-y: visible;
+  }
+
+  .local-stt-translation-modal__language-pair {
+    grid-template-columns: 1fr;
+    gap: 4px;
+  }
+
+  .local-stt-translation-modal__direction {
+    width: 100%;
+    height: 24px;
+    transform: rotate(90deg);
   }
 }

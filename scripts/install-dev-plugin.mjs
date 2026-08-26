@@ -7,9 +7,10 @@ import { listCudaArtifacts } from './lib/cuda-artifacts.mjs';
 
 const PLUGIN_ID = 'local-dictation';
 const PLUGIN_FILES = ['manifest.json', 'main.js', 'styles.css'];
-const SIDECAR_BASENAME = 'local-transcript-sidecar';
+const SIDECAR_BASENAME = 'local-dictation-sidecar';
 const SIDECAR_SUFFIX = process.platform === 'win32' ? '.exe' : '';
 const SIDECAR_EXECUTABLE = `${SIDECAR_BASENAME}${SIDECAR_SUFFIX}`;
+const TRANSLATION_HELPER_EXECUTABLE = `local-dictation-translation-helper${SIDECAR_SUFFIX}`;
 
 const args = parseArgs(process.argv.slice(2));
 
@@ -34,7 +35,7 @@ async function main(options) {
 
   if (options.sidecars) {
     await installSidecarVariant({
-      artifacts: [SIDECAR_EXECUTABLE],
+      artifacts: [SIDECAR_EXECUTABLE, TRANSLATION_HELPER_EXECUTABLE],
       destination: join(pluginDirectory, 'bin', 'cpu'),
       profile,
       sourceDirectory: join('native', 'target', profile),
@@ -43,7 +44,7 @@ async function main(options) {
 
     await installSidecarVariant({
       allowMissingArtifacts: true,
-      artifacts: [SIDECAR_EXECUTABLE, ...(await getCudaArtifacts())],
+      artifacts: [SIDECAR_EXECUTABLE, TRANSLATION_HELPER_EXECUTABLE, ...(await getCudaArtifacts())],
       destination: join(pluginDirectory, 'bin', 'cuda'),
       optional: true,
       profile,
@@ -63,7 +64,10 @@ async function installSidecarVariant(options) {
   const executablePath = join(options.sourceDirectory, SIDECAR_EXECUTABLE);
 
   if (!(await fileExists(executablePath))) {
-    if (options.optional) return;
+    if (options.optional) {
+      await rm(options.destination, { force: true, recursive: true });
+      return;
+    }
     throw new Error(
       `Missing ${options.variant} sidecar at ${executablePath}. Build it before using --sidecars.`,
     );
@@ -148,11 +152,7 @@ async function enablePlugin(obsidianDirectory) {
 async function getCudaArtifacts() {
   if (process.platform !== 'linux' && process.platform !== 'win32') return [];
 
-  const [providers, runtime] = await Promise.all([
-    listCudaArtifacts('providers', process.platform),
-    listCudaArtifacts('runtime', process.platform),
-  ]);
-  return [...providers, ...runtime];
+  return listCudaArtifacts(process.platform);
 }
 
 async function fileExists(path) {

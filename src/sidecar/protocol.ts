@@ -1,57 +1,38 @@
-import {
-  type AcceleratorAvailability,
-  type AcceleratorId,
-  type CatalogModelRecord,
-  type EngineCapabilitiesRecord,
-  getPrimaryArtifact,
-  type InstalledModelRecord,
-  type LanguageSupport,
-  LIVE_PARTIAL_STRATEGIES,
-  type LivePartialModelCapability,
-  MODEL_FAMILY_IDS,
-  type ModelCatalogRecord,
-  type ModelCollectionRecord,
-  type ModelFamilyCapabilitiesRecord,
-  type ModelFamilyId,
-  type ModelFamilyRecord,
-  type ModelFormat,
-  type ModelInstallState,
-  type ModelInstallUpdateRecord,
-  type LivePartialStrategy as ModelLivePartialStrategy,
-  type ModelProbeResultRecord,
-  type ModelRemovedRecord,
-  type ModelStoreRecord,
-  normalizeSelectedModel,
-  type RequestWarning,
-  RUNTIME_IDS,
-  RUNTIME_LOCATION_KINDS,
-  type RuntimeCapabilitiesRecord,
-  type RuntimeId,
-  type RuntimeLocationKind,
-  type SelectedModel,
+import type { DictationLanguage } from '../language/dictation-language';
+import type {
+  InstalledModelRecord,
+  ModelCatalogRecord,
+  ModelFamilyCapabilitiesRecord,
+  ModelFamilyId,
+  ModelInstallUpdateRecord,
+  ModelProbeResultRecord,
+  ModelRemovedRecord,
+  ModelStoreRecord,
+  RequestWarning,
+  RuntimeCapabilitiesRecord,
+  RuntimeId,
+  SelectedModel,
 } from '../models/model-management-types';
-import {
-  STAGE_IDS,
-  type StageId,
-  type StageOutcome,
-  type StageStatus,
-  type UtteranceId,
-} from '../session/session-journal';
+import type { StageOutcome, UtteranceId } from '../session/session-journal';
 import { PCM_BYTES_PER_FRAME } from '../shared/pcm-format';
 import { isRecord } from '../shared/type-guards';
+import type { TranslationLanguage } from '../translation/languages';
 
 export const JSON_FRAME_KIND = 0x01;
 export const AUDIO_FRAME_KIND = 0x02;
+export const SYNTHESIS_AUDIO_FRAME_KIND = 0x03;
 export const FRAME_HEADER_LENGTH = 5;
+export const SESSION_ID_BYTES = 16;
+// Must match `MAX_FRAME_PAYLOAD` in native/src/protocol.rs. Symmetric caps stop a
+// corrupted length header (or a misbehaving sidecar) from triggering a multi-GiB
+// allocation that would OOM the Obsidian renderer.
+export const MAX_FRAME_PAYLOAD_BYTES = 16 * 1024 * 1024;
 
 export type AccelerationPreference = 'auto' | 'cpu_only';
 export type SpeakingStyle = 'responsive' | 'balanced' | 'patient';
 
 export const LISTENING_MODES = ['always_on', 'one_sentence'] as const;
 export type ListeningMode = (typeof LISTENING_MODES)[number];
-
-export const LIVE_PARTIAL_MODES = ['auto', 'always', 'off'] as const;
-export type LivePartialMode = (typeof LIVE_PARTIAL_MODES)[number];
 
 export const SESSION_STATES = [
   'error',
@@ -66,7 +47,7 @@ export type SessionState = (typeof SESSION_STATES)[number];
 export const SESSION_STOP_REASONS = [
   'queue_overload',
   'sentence_complete',
-  'session_replaced',
+  'session_error',
   'timeout',
   'user_cancel',
   'user_stop',
@@ -83,9 +64,20 @@ export type QueueBackpressureTier = (typeof QUEUE_BACKPRESSURE_TIERS)[number];
 
 export interface TranscriptSegment {
   endMs: number;
+  speaker: number | null;
   startMs: number;
   text: string;
   timestampGranularity: TimestampGranularity;
+  timestampSource: TimestampSource;
+  /** Engine-provided word alignments when the selected model supports them.
+   * Omitted by older sidecars and empty for models without word timing. */
+  words?: TranscriptWord[];
+}
+
+export interface TranscriptWord {
+  endMs: number;
+  startMs: number;
+  text: string;
   timestampSource: TimestampSource;
 }
 
@@ -95,19 +87,11 @@ export type TimestampSource = (typeof TIMESTAMP_SOURCES)[number];
 export const TIMESTAMP_GRANULARITIES = ['segment', 'utterance', 'word'] as const;
 export type TimestampGranularity = (typeof TIMESTAMP_GRANULARITIES)[number];
 
-export type ContextWindowSource =
-  | {
-      kind: 'note_glossary';
-      text: string;
-      truncated: boolean;
-    }
-  | {
-      endRevision: number;
-      kind: 'session_utterance';
-      text: string;
-      truncated: boolean;
-      utteranceId: UtteranceId;
-    };
+export interface ContextWindowSource {
+  kind: 'note_glossary';
+  text: string;
+  truncated: boolean;
+}
 
 export interface ContextWindow {
   budgetChars: number;
@@ -133,12 +117,18 @@ interface EnvelopeBase<TType extends string> {
   type: TType;
 }
 
-export interface HealthCommand extends EnvelopeBase<'health'> {}
+export type HealthCommand = EnvelopeBase<'health'>;
+
+export type ProbeSystemAudioCommand = EnvelopeBase<'probe_system_audio'>;
 
 export interface StartSessionCommand extends EnvelopeBase<'start_session'> {
   accelerationPreference: AccelerationPreference;
-  language: 'en';
-  livePartialMode: LivePartialMode;
+  /** Opt in to adapter work needed for dense word alignment. */
+  detailedTimestampsEnabled: boolean;
+  diarizationEnabled: boolean;
+  diarizationMaxSpeakers: number | null;
+  includeSystemAudio: boolean;
+  language: DictationLanguage;
   mode: ListeningMode;
   modelSelection: SelectedModel;
   modelStorePathOverride?: string;
@@ -156,7 +146,7 @@ export interface GetModelStoreCommand extends EnvelopeBase<'get_model_store'> {
   modelStorePathOverride?: string;
 }
 
-export interface ListModelCatalogCommand extends EnvelopeBase<'list_model_catalog'> {}
+export type ListModelCatalogCommand = EnvelopeBase<'list_model_catalog'>;
 
 export interface ListInstalledModelsCommand extends EnvelopeBase<'list_installed_models'> {
   modelStorePathOverride?: string;
@@ -175,6 +165,7 @@ export interface RemoveModelCommand extends EnvelopeBase<'remove_model'> {
 }
 
 export interface InstallModelCommand extends EnvelopeBase<'install_model'> {
+  artifactIds?: string[];
   familyId: ModelFamilyId;
   installId: string;
   modelId: string;
@@ -182,20 +173,88 @@ export interface InstallModelCommand extends EnvelopeBase<'install_model'> {
   runtimeId: RuntimeId;
 }
 
+export interface SourceRange {
+  from: number;
+  to: number;
+}
+
+export interface SynthesisTextChunk {
+  sourceRange: SourceRange;
+  text: string;
+}
+
+/// Languages a synthesis command may name. `na` is the language-neutral branch
+/// used for auto-detected dictation; every other tag must be one a voice model
+/// declares in its catalog `languageTags`, checked at the call site.
+export const SYNTHESIS_LANGUAGES = [
+  'de',
+  'en',
+  'es',
+  'fr',
+  'hr',
+  'it',
+  'ja',
+  'na',
+  'nl',
+  'pt',
+] as const;
+
+export type SynthesisLanguage = (typeof SYNTHESIS_LANGUAGES)[number];
+
+export interface StartSynthesisCommand extends EnvelopeBase<'start_synthesis'> {
+  chunks: SynthesisTextChunk[];
+  language: SynthesisLanguage;
+  modelSelection: SelectedModel;
+  modelStorePathOverride?: string;
+  speed: number;
+  synthesisId: number;
+  voiceId: string;
+}
+
+export interface CancelSynthesisCommand extends EnvelopeBase<'cancel_synthesis'> {
+  synthesisId: number;
+}
+
+export interface StartTranslationCommand extends EnvelopeBase<'start_translation'> {
+  accelerationPreference: AccelerationPreference;
+  modelSelection: SelectedModel;
+  modelStorePathOverride?: string;
+  sourceLanguage: TranslationLanguage;
+  targetLanguage: TranslationLanguage;
+  texts: string[];
+  translationId: string;
+}
+
+export interface CancelTranslationCommand extends EnvelopeBase<'cancel_translation'> {
+  translationId: string;
+}
+
+export interface SynthesisPlaybackPositionCommand
+  extends EnvelopeBase<'synthesis_playback_position'> {
+  playedThroughSeq: number;
+  synthesisId: number;
+}
+
 export interface CancelModelInstallCommand extends EnvelopeBase<'cancel_model_install'> {
   installId: string;
 }
 
-export interface StopSessionCommand extends EnvelopeBase<'stop_session'> {}
+export interface StopSessionCommand extends EnvelopeBase<'stop_session'> {
+  sessionId: string;
+}
 
-export interface CancelSessionCommand extends EnvelopeBase<'cancel_session'> {}
+export interface CancelSessionCommand extends EnvelopeBase<'cancel_session'> {
+  sessionId: string;
+}
 
-export interface ShutdownCommand extends EnvelopeBase<'shutdown'> {}
+export type ShutdownCommand = EnvelopeBase<'shutdown'>;
 
-export interface GetSystemInfoCommand extends EnvelopeBase<'get_system_info'> {}
+export type GetSystemInfoCommand = EnvelopeBase<'get_system_info'>;
 
 export type SidecarCommand =
   | CancelModelInstallCommand
+  | CancelSynthesisCommand
+  | CancelTranslationCommand
   | CancelSessionCommand
   | ContextResponseCommand
   | GetModelStoreCommand
@@ -204,10 +263,14 @@ export type SidecarCommand =
   | InstallModelCommand
   | ListInstalledModelsCommand
   | ListModelCatalogCommand
+  | ProbeSystemAudioCommand
   | ProbeModelSelectionCommand
   | RemoveModelCommand
   | ShutdownCommand
   | StartSessionCommand
+  | StartSynthesisCommand
+  | StartTranslationCommand
+  | SynthesisPlaybackPositionCommand
   | StopSessionCommand;
 
 export interface HealthOkEvent extends EnvelopeBase<'health_ok'> {
@@ -220,6 +283,12 @@ export interface SystemInfoEvent extends EnvelopeBase<'system_info'> {
   compiledRuntimes: CompiledRuntimeInfo[];
   sidecarVersion: string;
   systemInfo: string;
+}
+
+export interface SystemAudioProbeResultEvent extends EnvelopeBase<'system_audio_probe_result'> {
+  code?: string;
+  message?: string;
+  ok: boolean;
 }
 
 export interface ModelStoreEvent extends EnvelopeBase<'model_store'>, ModelStoreRecord {}
@@ -240,6 +309,56 @@ export interface ModelInstallUpdateEvent
   extends EnvelopeBase<'model_install_update'>,
     ModelInstallUpdateRecord {}
 
+export interface SynthesisStartedEvent extends EnvelopeBase<'synthesis_started'> {
+  sampleRate: number;
+  synthesisId: number;
+}
+
+export interface SynthesisChunkMetaEvent extends EnvelopeBase<'synthesis_chunk_meta'> {
+  durationMs: number;
+  seq: number;
+  sourceRange: SourceRange;
+  synthesisId: number;
+}
+
+export interface SynthesisCompleteEvent extends EnvelopeBase<'synthesis_complete'> {
+  synthesisId: number;
+}
+
+export interface SynthesisErrorEvent extends EnvelopeBase<'synthesis_error'> {
+  code: string;
+  details?: string;
+  message: string;
+  synthesisId: number;
+}
+
+export interface TranslationStartedEvent extends EnvelopeBase<'translation_started'> {
+  total: number;
+  translationId: string;
+}
+
+export interface TranslationProgressEvent extends EnvelopeBase<'translation_progress'> {
+  completed: number;
+  total: number;
+  translationId: string;
+}
+
+export interface TranslationCompleteEvent extends EnvelopeBase<'translation_complete'> {
+  translations: string[];
+  translationId: string;
+}
+
+export interface TranslationCancelledEvent extends EnvelopeBase<'translation_cancelled'> {
+  translationId: string;
+}
+
+export interface TranslationErrorEvent extends EnvelopeBase<'translation_error'> {
+  code: string;
+  details?: string;
+  message: string;
+  translationId: string;
+}
+
 export interface SessionStartedEvent extends EnvelopeBase<'session_started'> {
   mode: ListeningMode;
   sessionId: string;
@@ -250,6 +369,11 @@ export interface SessionStateChangedEvent extends EnvelopeBase<'session_state_ch
   state: SessionState;
 }
 
+export interface AudioLevelEvent extends EnvelopeBase<'audio_level'> {
+  bands: [number, number, number, number, number, number];
+  sessionId: string;
+}
+
 export interface TranscriptReadyEvent extends EnvelopeBase<'transcript_ready'> {
   isFinal: boolean;
   pauseMsBeforeUtterance: number | null;
@@ -257,6 +381,7 @@ export interface TranscriptReadyEvent extends EnvelopeBase<'transcript_ready'> {
   revision: number;
   segments: TranscriptSegment[];
   sessionId: string;
+  speakerIndex: number | null;
   stageResults: StageOutcome[];
   text: string;
   utteranceDurationMs: number;
@@ -301,6 +426,7 @@ export interface ErrorEvent extends EnvelopeBase<'error'> {
 }
 
 export type SidecarEvent =
+  | AudioLevelEvent
   | ContextRequestEvent
   | ErrorEvent
   | HealthOkEvent
@@ -313,13 +439,27 @@ export type SidecarEvent =
   | SessionStartedEvent
   | SessionStateChangedEvent
   | SessionStoppedEvent
+  | SystemAudioProbeResultEvent
   | SystemInfoEvent
+  | SynthesisChunkMetaEvent
+  | SynthesisCompleteEvent
+  | SynthesisErrorEvent
+  | SynthesisStartedEvent
   | TranscriptionQueueChangedEvent
   | TranscriptReadyEvent
+  | TranslationCancelledEvent
+  | TranslationCompleteEvent
+  | TranslationErrorEvent
+  | TranslationProgressEvent
+  | TranslationStartedEvent
   | WarningEvent;
 
 export function createHealthCommand(): HealthCommand {
   return createEnvelope('health');
+}
+
+export function createProbeSystemAudioCommand(): ProbeSystemAudioCommand {
+  return createEnvelope('probe_system_audio');
 }
 
 export function createGetSystemInfoCommand(): GetSystemInfoCommand {
@@ -389,12 +529,49 @@ export function createCancelModelInstallCommand(installId: string): CancelModelI
   };
 }
 
-export function createStopSessionCommand(): StopSessionCommand {
-  return createEnvelope('stop_session');
+export function createStartSynthesisCommand(
+  payload: Omit<StartSynthesisCommand, 'type'>,
+): StartSynthesisCommand {
+  return { ...createEnvelope('start_synthesis'), ...payload };
 }
 
-export function createCancelSessionCommand(): CancelSessionCommand {
-  return createEnvelope('cancel_session');
+export function createCancelSynthesisCommand(synthesisId: number): CancelSynthesisCommand {
+  return { ...createEnvelope('cancel_synthesis'), synthesisId };
+}
+
+export function createStartTranslationCommand(
+  payload: Omit<StartTranslationCommand, 'type'>,
+): StartTranslationCommand {
+  return { ...createEnvelope('start_translation'), ...payload };
+}
+
+export function createCancelTranslationCommand(translationId: string): CancelTranslationCommand {
+  return { ...createEnvelope('cancel_translation'), translationId };
+}
+
+export function createSynthesisPlaybackPositionCommand(
+  synthesisId: number,
+  playedThroughSeq: number,
+): SynthesisPlaybackPositionCommand {
+  return {
+    ...createEnvelope('synthesis_playback_position'),
+    playedThroughSeq,
+    synthesisId,
+  };
+}
+
+export function createStopSessionCommand(sessionId: string): StopSessionCommand {
+  return {
+    ...createEnvelope('stop_session'),
+    sessionId,
+  };
+}
+
+export function createCancelSessionCommand(sessionId: string): CancelSessionCommand {
+  return {
+    ...createEnvelope('cancel_session'),
+    sessionId,
+  };
 }
 
 export function createShutdownCommand(): ShutdownCommand {
@@ -416,14 +593,47 @@ export function encodeJsonFrame(envelope: SidecarCommand | SidecarEvent): Uint8A
   return encodeFrame(JSON_FRAME_KIND, textEncoder.encode(JSON.stringify(envelope)));
 }
 
-export function encodeAudioFrame(frameBytes: Uint8Array): Uint8Array {
+export function encodeAudioFrame(sessionId: string, frameBytes: Uint8Array): Uint8Array {
   if (frameBytes.byteLength !== PCM_BYTES_PER_FRAME) {
     throw new Error(
       `Audio frames must be ${PCM_BYTES_PER_FRAME} bytes, received ${frameBytes.byteLength}.`,
     );
   }
 
-  return encodeFrame(AUDIO_FRAME_KIND, frameBytes);
+  const envelope = new Uint8Array(SESSION_ID_BYTES + frameBytes.byteLength);
+  envelope.set(sessionIdToBytes(sessionId), 0);
+  envelope.set(frameBytes, SESSION_ID_BYTES);
+
+  return encodeFrame(AUDIO_FRAME_KIND, envelope);
+}
+
+export function sessionIdToBytes(sessionId: string): Uint8Array {
+  return Buffer.from(normalizeSessionId(sessionId), 'hex');
+}
+
+export function bytesToSessionId(bytes: Uint8Array): string {
+  if (bytes.byteLength !== SESSION_ID_BYTES) {
+    throw new Error(`Session ids must be ${SESSION_ID_BYTES} bytes, received ${bytes.byteLength}.`);
+  }
+
+  const hex = Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength).toString('hex');
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+}
+
+export function decodeAudioFrameEnvelope(payload: Uint8Array): {
+  frameBytes: Uint8Array;
+  sessionId: string;
+} {
+  if (payload.byteLength !== SESSION_ID_BYTES + PCM_BYTES_PER_FRAME) {
+    throw new Error(
+      `Audio frame envelopes must be ${SESSION_ID_BYTES + PCM_BYTES_PER_FRAME} bytes, received ${payload.byteLength}.`,
+    );
+  }
+
+  return {
+    frameBytes: payload.slice(SESSION_ID_BYTES),
+    sessionId: bytesToSessionId(payload.slice(0, SESSION_ID_BYTES)),
+  };
 }
 
 export interface JsonFrame<TEnvelope> {
@@ -432,14 +642,65 @@ export interface JsonFrame<TEnvelope> {
 }
 
 export interface AudioFrame {
+  frameBytes: Uint8Array;
   kind: typeof AUDIO_FRAME_KIND;
-  payload: Uint8Array<ArrayBufferLike>;
+  sessionId: string;
 }
 
-export type ParsedFrame<TEnvelope> = AudioFrame | JsonFrame<TEnvelope>;
+export interface SynthesisAudioFrame {
+  kind: typeof SYNTHESIS_AUDIO_FRAME_KIND;
+  pcm16le: Uint8Array;
+  seq: number;
+  synthesisId: number;
+}
+
+export type ParsedFrame<TEnvelope> = AudioFrame | JsonFrame<TEnvelope> | SynthesisAudioFrame;
+
+const SIDECAR_EVENT_TYPE_FLAGS = {
+  audio_level: 1,
+  context_request: 1,
+  error: 1,
+  health_ok: 1,
+  installed_models: 1,
+  model_catalog: 1,
+  model_install_update: 1,
+  model_probe_result: 1,
+  model_removed: 1,
+  model_store: 1,
+  session_started: 1,
+  session_state_changed: 1,
+  session_stopped: 1,
+  system_audio_probe_result: 1,
+  system_info: 1,
+  synthesis_chunk_meta: 1,
+  synthesis_complete: 1,
+  synthesis_error: 1,
+  synthesis_started: 1,
+  transcript_ready: 1,
+  transcription_queue_changed: 1,
+  translation_cancelled: 1,
+  translation_complete: 1,
+  translation_error: 1,
+  translation_progress: 1,
+  translation_started: 1,
+  warning: 1,
+} as const satisfies Record<SidecarEvent['type'], 1>;
+
+const SIDECAR_EVENT_TYPES: ReadonlySet<SidecarEvent['type']> = new Set(
+  Object.keys(SIDECAR_EVENT_TYPE_FLAGS) as SidecarEvent['type'][],
+);
+
+function isKnownEventType(value: unknown): value is SidecarEvent['type'] {
+  return typeof value === 'string' && SIDECAR_EVENT_TYPES.has(value as SidecarEvent['type']);
+}
+
+export interface PushChunkResult<TEnvelope> {
+  fatal: Error | undefined;
+  frames: ParsedFrame<TEnvelope>[];
+}
 
 export class FramedMessageParser<TEnvelope> {
-  private buffered: Uint8Array<ArrayBufferLike> = new Uint8Array(0);
+  private buffered: Uint8Array = new Uint8Array(0);
 
   constructor(private readonly parseJsonEnvelope: (jsonText: string) => TEnvelope) {}
 
@@ -447,11 +708,12 @@ export class FramedMessageParser<TEnvelope> {
     this.buffered = new Uint8Array(0);
   }
 
-  pushChunk(chunk: Uint8Array<ArrayBufferLike>): ParsedFrame<TEnvelope>[] {
+  pushChunk(chunk: Uint8Array): PushChunkResult<TEnvelope> {
     this.buffered = concatBytes(this.buffered, chunk);
 
     const frames: ParsedFrame<TEnvelope>[] = [];
     let offset = 0;
+    let fatal: Error | undefined;
 
     while (this.buffered.byteLength - offset >= FRAME_HEADER_LENGTH) {
       const kind = this.buffered[offset];
@@ -461,6 +723,17 @@ export class FramedMessageParser<TEnvelope> {
       }
 
       const payloadLength = readUint32LE(this.buffered, offset + 1);
+
+      // Cap before slicing: a corrupted 4-byte length header can otherwise
+      // drive an allocation up to ~4 GiB while the parser waits for bytes
+      // that will never arrive.
+      if (payloadLength > MAX_FRAME_PAYLOAD_BYTES) {
+        fatal = new Error(
+          `Sidecar frame payload exceeds limit: ${payloadLength} bytes (max ${MAX_FRAME_PAYLOAD_BYTES}).`,
+        );
+        break;
+      }
+
       const frameLength = FRAME_HEADER_LENGTH + payloadLength;
 
       if (this.buffered.byteLength - offset < frameLength) {
@@ -469,25 +742,48 @@ export class FramedMessageParser<TEnvelope> {
 
       const payload = this.buffered.slice(offset + FRAME_HEADER_LENGTH, offset + frameLength);
 
-      if (kind === JSON_FRAME_KIND) {
-        frames.push({
-          envelope: this.parseJsonEnvelope(textDecoder.decode(payload)),
-          kind,
-        });
-      } else if (kind === AUDIO_FRAME_KIND) {
-        frames.push({
-          kind,
-          payload,
-        });
-      } else {
-        throw new Error(`Unsupported sidecar frame kind: ${kind}`);
+      try {
+        if (kind === JSON_FRAME_KIND) {
+          frames.push({
+            envelope: this.parseJsonEnvelope(textDecoder.decode(payload)),
+            kind,
+          });
+        } else if (kind === AUDIO_FRAME_KIND) {
+          const { frameBytes, sessionId } = decodeAudioFrameEnvelope(payload);
+          frames.push({
+            frameBytes,
+            kind,
+            sessionId,
+          });
+        } else if (kind === SYNTHESIS_AUDIO_FRAME_KIND) {
+          if (payload.byteLength < 8 || (payload.byteLength - 8) % 2 !== 0) {
+            throw new Error(`Invalid synthesis audio payload length: ${payload.byteLength}`);
+          }
+          frames.push({
+            kind,
+            pcm16le: payload.slice(8),
+            seq: readUint32LE(payload, 4),
+            synthesisId: readUint32LE(payload, 0),
+          });
+        } else {
+          throw new Error(`Unsupported sidecar frame kind: ${kind}`);
+        }
+      } catch (error) {
+        fatal =
+          error instanceof Error
+            ? error
+            : new Error(`Failed to parse sidecar frame: ${String(error)}`);
+        break;
       }
 
       offset += frameLength;
     }
 
-    this.buffered = this.buffered.slice(offset);
-    return frames;
+    // On fatal, the buffer is unrecoverable: payload-length corruption or an
+    // unknown frame kind leaves us with no resynchronization point. Drop the
+    // backlog so the caller can restart the stream from a known state.
+    this.buffered = fatal ? new Uint8Array(0) : this.buffered.slice(offset);
+    return { fatal, frames };
   }
 }
 
@@ -495,179 +791,60 @@ export function parseEventFrame(jsonText: string): SidecarEvent {
   const parsedValue: unknown = JSON.parse(jsonText);
 
   if (!isRecord(parsedValue)) {
-    throw new Error('Sidecar event must be a JSON object.');
+    throw new Error(`Sidecar event must be a JSON object, received: ${jsonText.slice(0, 200)}`);
   }
 
-  const type = readString(parsedValue.type, 'event.type');
-
-  switch (type) {
-    case 'health_ok':
-      return {
-        sidecarVersion: readString(parsedValue.sidecarVersion, 'event.sidecarVersion'),
-        status: readReadyStatus(parsedValue.status),
-        type,
-      };
-
-    case 'model_store':
-      return {
-        overridePath: readNullableString(parsedValue.overridePath, 'event.overridePath'),
-        path: readString(parsedValue.path, 'event.path'),
-        type,
-        usingDefaultPath: readBoolean(parsedValue.usingDefaultPath, 'event.usingDefaultPath'),
-      };
-
-    case 'model_catalog':
-      return {
-        catalogVersion: readPositiveInteger(parsedValue.catalogVersion, 'event.catalogVersion'),
-        collections: readModelCollections(parsedValue.collections),
-        families: readModelFamilies(parsedValue.families),
-        models: readCatalogModels(parsedValue.models),
-        type,
-      };
-
-    case 'installed_models':
-      return {
-        models: readInstalledModels(parsedValue.models),
-        type,
-      };
-
-    case 'model_probe_result':
-      return {
-        available: readBoolean(parsedValue.available, 'event.available'),
-        details: readNullableString(parsedValue.details, 'event.details'),
-        displayName: readNullableString(parsedValue.displayName, 'event.displayName'),
-        familyId: readModelFamilyId(parsedValue.familyId, 'event.familyId'),
-        installed: readBoolean(parsedValue.installed, 'event.installed'),
-        mergedCapabilities: readOptionalEngineCapabilities(
-          parsedValue.mergedCapabilities,
-          'event.mergedCapabilities',
-        ),
-        message: readString(parsedValue.message, 'event.message'),
-        modelId: readNullableString(parsedValue.modelId, 'event.modelId'),
-        resolvedPath: readNullableString(parsedValue.resolvedPath, 'event.resolvedPath'),
-        runtimeId: readRuntimeId(parsedValue.runtimeId, 'event.runtimeId'),
-        selection: readSelectedModel(parsedValue.selection, 'event.selection'),
-        sizeBytes: readNullableNumber(parsedValue.sizeBytes, 'event.sizeBytes'),
-        status: readModelProbeStatus(parsedValue.status, 'event.status'),
-        type,
-      };
-
-    case 'model_removed':
-      return {
-        familyId: readModelFamilyId(parsedValue.familyId, 'event.familyId'),
-        modelId: readString(parsedValue.modelId, 'event.modelId'),
-        removed: readBoolean(parsedValue.removed, 'event.removed'),
-        runtimeId: readRuntimeId(parsedValue.runtimeId, 'event.runtimeId'),
-        type,
-      };
-
-    case 'model_install_update':
-      return {
-        details: readNullableString(parsedValue.details, 'event.details'),
-        downloadedBytes: readNullableNumber(parsedValue.downloadedBytes, 'event.downloadedBytes'),
-        familyId: readModelFamilyId(parsedValue.familyId, 'event.familyId'),
-        installId: readString(parsedValue.installId, 'event.installId'),
-        message: readNullableString(parsedValue.message, 'event.message'),
-        modelId: readString(parsedValue.modelId, 'event.modelId'),
-        runtimeId: readRuntimeId(parsedValue.runtimeId, 'event.runtimeId'),
-        state: readModelInstallState(parsedValue.state, 'event.state'),
-        totalBytes: readNullableNumber(parsedValue.totalBytes, 'event.totalBytes'),
-        type,
-      };
-
-    case 'system_info':
-      return {
-        compiledAdapters: readCompiledAdapters(parsedValue.compiledAdapters),
-        compiledRuntimes: readCompiledRuntimes(parsedValue.compiledRuntimes),
-        sidecarVersion: readString(parsedValue.sidecarVersion, 'event.sidecarVersion'),
-        systemInfo: readString(parsedValue.systemInfo, 'event.systemInfo'),
-        type,
-      };
-
-    case 'session_started':
-      return {
-        mode: readListeningMode(parsedValue.mode, 'event.mode'),
-        sessionId: readString(parsedValue.sessionId, 'event.sessionId'),
-        type,
-      };
-
-    case 'session_state_changed':
-      return {
-        sessionId: readString(parsedValue.sessionId, 'event.sessionId'),
-        state: readSessionState(parsedValue.state, 'event.state'),
-        type,
-      };
-
-    case 'transcript_ready':
-      return {
-        isFinal: readBoolean(parsedValue.isFinal, 'event.isFinal'),
-        pauseMsBeforeUtterance: readNullableNumber(
-          parsedValue.pauseMsBeforeUtterance,
-          'event.pauseMsBeforeUtterance',
-        ),
-        processingDurationMs: readNonNegativeNumber(
-          parsedValue.processingDurationMs,
-          'event.processingDurationMs',
-        ),
-        revision: readNonNegativeInteger(parsedValue.revision, 'event.revision'),
-        segments: readTranscriptSegments(parsedValue.segments),
-        sessionId: readString(parsedValue.sessionId, 'event.sessionId'),
-        stageResults: readStageOutcomes(parsedValue.stageResults),
-        text: readString(parsedValue.text, 'event.text'),
-        type,
-        utteranceDurationMs: readNonNegativeNumber(
-          parsedValue.utteranceDurationMs,
-          'event.utteranceDurationMs',
-        ),
-        utteranceEndMsInSession: readNonNegativeNumber(
-          parsedValue.utteranceEndMsInSession,
-          'event.utteranceEndMsInSession',
-        ),
-        utteranceId: readString(parsedValue.utteranceId, 'event.utteranceId'),
-        utteranceIndex: readNonNegativeInteger(parsedValue.utteranceIndex, 'event.utteranceIndex'),
-        utteranceStartMsInSession: readNonNegativeNumber(
-          parsedValue.utteranceStartMsInSession,
-          'event.utteranceStartMsInSession',
-        ),
-        warnings: readRequestWarnings(parsedValue.warnings),
-      };
-
-    case 'transcription_queue_changed':
-      return {
-        queuedUtterances: readNonNegativeInteger(
-          parsedValue.queuedUtterances,
-          'event.queuedUtterances',
-        ),
-        sessionId: readString(parsedValue.sessionId, 'event.sessionId'),
-        tier: readQueueBackpressureTier(parsedValue.tier, 'event.tier'),
-        type,
-      };
-
-    case 'context_request':
-      return {
-        budgetChars: readNonNegativeInteger(parsedValue.budgetChars, 'event.budgetChars'),
-        correlationId: readString(parsedValue.correlationId, 'event.correlationId'),
-        sessionId: readString(parsedValue.sessionId, 'event.sessionId'),
-        type,
-        utteranceId: readString(parsedValue.utteranceId, 'event.utteranceId'),
-      };
-
-    case 'warning':
-      return createWarningEvent(parsedValue);
-
-    case 'session_stopped':
-      return {
-        reason: readSessionStopReason(parsedValue.reason, 'event.reason'),
-        sessionId: readString(parsedValue.sessionId, 'event.sessionId'),
-        type,
-      };
-
-    case 'error':
-      return createErrorEvent(parsedValue);
-
-    default:
-      throw new Error(`Unsupported sidecar event type: ${type}`);
+  if (!isKnownEventType(parsedValue.type)) {
+    throw new Error(`Unsupported sidecar event type: ${String(parsedValue.type)}`);
   }
+
+  if (parsedValue.type.startsWith('translation_')) validateTranslationEvent(parsedValue);
+
+  if (parsedValue.type === 'transcript_ready') {
+    return {
+      ...parsedValue,
+      speakerIndex: normalizeSpeakerIndex(parsedValue.speakerIndex),
+    } as unknown as SidecarEvent;
+  }
+
+  return parsedValue as unknown as SidecarEvent;
+}
+
+function validateTranslationEvent(event: Record<string, unknown>): void {
+  const type = String(event.type);
+  const invalid = (): never => {
+    throw new Error(`Invalid ${type} sidecar event.`);
+  };
+  if (typeof event.translationId !== 'string' || event.translationId.length === 0) invalid();
+  if (type === 'translation_started') {
+    if (!Number.isSafeInteger(event.total) || (event.total as number) < 0) invalid();
+  } else if (type === 'translation_progress') {
+    if (
+      !Number.isSafeInteger(event.completed) ||
+      !Number.isSafeInteger(event.total) ||
+      (event.completed as number) < 0 ||
+      (event.total as number) < 0 ||
+      (event.completed as number) > (event.total as number)
+    )
+      invalid();
+  } else if (type === 'translation_complete') {
+    if (
+      !Array.isArray(event.translations) ||
+      !event.translations.every((value) => typeof value === 'string')
+    )
+      invalid();
+  } else if (type === 'translation_error') {
+    if (
+      typeof event.code !== 'string' ||
+      event.code.length === 0 ||
+      typeof event.message !== 'string'
+    )
+      invalid();
+  }
+}
+
+function normalizeSpeakerIndex(value: unknown): number | null {
+  return typeof value === 'number' && Number.isInteger(value) && value >= 0 ? value : null;
 }
 
 function createEnvelope<TType extends SidecarCommand['type']>(
@@ -687,10 +864,7 @@ function encodeFrame(kind: number, payload: Uint8Array): Uint8Array {
   return frame;
 }
 
-function concatBytes(
-  left: Uint8Array<ArrayBufferLike>,
-  right: Uint8Array<ArrayBufferLike>,
-): Uint8Array<ArrayBufferLike> {
+function concatBytes(left: Uint8Array, right: Uint8Array): Uint8Array {
   const concatenated = new Uint8Array(left.byteLength + right.byteLength);
   concatenated.set(left, 0);
   concatenated.set(right, left.byteLength);
@@ -705,623 +879,16 @@ function readUint32LE(bytes: Uint8Array, offset: number): number {
   return new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength).getUint32(offset, true);
 }
 
-function readString(value: unknown, fieldName: string): string {
-  if (typeof value !== 'string') {
-    throw new Error(`${fieldName} must be a string.`);
+function normalizeSessionId(sessionId: string): string {
+  const normalized = sessionId.toLowerCase();
+  const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u;
+
+  if (!uuidPattern.test(normalized)) {
+    throw new Error(`Session id must be a UUID v4 string: ${sessionId}`);
   }
 
-  return value;
-}
-
-function readEnumValue<TValue extends string>(
-  value: unknown,
-  allowed: readonly TValue[],
-  fieldName: string,
-): TValue {
-  const candidate = readString(value, fieldName);
-
-  if ((allowed as readonly string[]).includes(candidate)) {
-    return candidate as TValue;
-  }
-
-  throw new Error(`${fieldName} must be one of: ${allowed.join(', ')}; received "${candidate}".`);
-}
-
-function readOptionalString(value: unknown, fieldName: string): string | undefined {
-  if (value === undefined) {
-    return undefined;
-  }
-
-  return readString(value, fieldName);
-}
-
-function readNullableString(value: unknown, fieldName: string): string | null {
-  if (value === undefined || value === null) {
-    return null;
-  }
-
-  return readString(value, fieldName);
-}
-
-function readBoolean(value: unknown, fieldName: string): boolean {
-  if (typeof value !== 'boolean') {
-    throw new Error(`${fieldName} must be a boolean.`);
-  }
-
-  return value;
-}
-
-function readNonNegativeNumber(value: unknown, fieldName: string): number {
-  if (typeof value !== 'number' || Number.isNaN(value) || value < 0) {
-    throw new Error(`${fieldName} must be a non-negative number.`);
-  }
-
-  return value;
-}
-
-function readNullableNumber(value: unknown, fieldName: string): number | null {
-  if (value === undefined || value === null) {
-    return null;
-  }
-
-  return readNonNegativeNumber(value, fieldName);
-}
-
-function readPositiveInteger(value: unknown, fieldName: string): number {
-  if (typeof value !== 'number' || !Number.isInteger(value) || value <= 0) {
-    throw new Error(`${fieldName} must be a positive integer.`);
-  }
-
-  return value;
-}
-
-function readReadyStatus(value: unknown): 'ready' {
-  return readEnumValue(value, ['ready'] as const, 'event.status');
-}
-
-function readListeningMode(value: unknown, fieldName: string): ListeningMode {
-  return readEnumValue(value, LISTENING_MODES, fieldName);
-}
-
-function readSessionState(value: unknown, fieldName: string): SessionState {
-  return readEnumValue(value, SESSION_STATES, fieldName);
-}
-
-function readSessionStopReason(value: unknown, fieldName: string): SessionStopReason {
-  return readEnumValue(value, SESSION_STOP_REASONS, fieldName);
-}
-
-function readQueueBackpressureTier(value: unknown, fieldName: string): QueueBackpressureTier {
-  return readEnumValue(value, QUEUE_BACKPRESSURE_TIERS, fieldName);
-}
-
-function readTimestampSource(value: unknown, fieldName: string): TimestampSource {
-  return readEnumValue(value, TIMESTAMP_SOURCES, fieldName);
-}
-
-function readTimestampGranularity(value: unknown, fieldName: string): TimestampGranularity {
-  return readEnumValue(value, TIMESTAMP_GRANULARITIES, fieldName);
-}
-
-function readRuntimeId(value: unknown, fieldName: string): RuntimeId {
-  return readEnumValue(value, RUNTIME_IDS, fieldName);
-}
-
-function readModelFamilyId(value: unknown, fieldName: string): ModelFamilyId {
-  return readEnumValue(value, MODEL_FAMILY_IDS, fieldName);
-}
-
-function readSelectedModel(value: unknown, fieldName: string): SelectedModel {
-  const record = readRecord(value, fieldName);
-  const kind = readEnumValue(
-    record.kind,
-    ['catalog_model', 'external_file'] as const,
-    `${fieldName}.kind`,
-  );
-  const runtimeId = readRuntimeId(record.runtimeId, `${fieldName}.runtimeId`);
-  const familyId = readModelFamilyId(record.familyId, `${fieldName}.familyId`);
-
-  if (kind === 'catalog_model') {
-    return normalizeSelectedModel({
-      familyId,
-      kind,
-      modelId: readString(record.modelId, `${fieldName}.modelId`),
-      runtimeId,
-    });
-  }
-
-  return normalizeSelectedModel({
-    familyId,
-    filePath: readString(record.filePath, `${fieldName}.filePath`),
-    kind,
-    runtimeId,
-  });
-}
-
-function readModelProbeStatus(value: unknown, fieldName: string): ModelProbeResultRecord['status'] {
-  return readEnumValue(value, ['invalid', 'missing', 'ready'] as const, fieldName);
-}
-
-function readAcceleratorId(value: unknown, fieldName: string): AcceleratorId {
-  return readEnumValue(value, ['cpu', 'cuda', 'direct_ml', 'metal'] as const, fieldName);
-}
-
-function readModelFormat(value: unknown, fieldName: string): ModelFormat {
-  return readEnumValue(value, ['ggml', 'gguf', 'onnx'] as const, fieldName);
-}
-
-function readAcceleratorAvailability(value: unknown, fieldName: string): AcceleratorAvailability {
-  const record = readRecord(value, fieldName);
-
-  return {
-    available: readBoolean(record.available, `${fieldName}.available`),
-    unavailableReason: readNullableString(
-      record.unavailableReason,
-      `${fieldName}.unavailableReason`,
-    ),
-  };
-}
-
-function readAcceleratorDetails(
-  value: unknown,
-  fieldName: string,
-): Partial<Record<AcceleratorId, AcceleratorAvailability>> {
-  const record = readRecord(value, fieldName);
-  const result: Partial<Record<AcceleratorId, AcceleratorAvailability>> = {};
-
-  for (const [key, entry] of Object.entries(record)) {
-    const acceleratorId = readAcceleratorId(key, `${fieldName}[key]`);
-    result[acceleratorId] = readAcceleratorAvailability(entry, `${fieldName}[${key}]`);
-  }
-
-  return result;
-}
-
-function readRuntimeCapabilities(value: unknown, fieldName: string): RuntimeCapabilitiesRecord {
-  const record = readRecord(value, fieldName);
-
-  return {
-    acceleratorDetails: readAcceleratorDetails(
-      record.acceleratorDetails,
-      `${fieldName}.acceleratorDetails`,
-    ),
-    availableAccelerators: readArray(
-      record.availableAccelerators,
-      `${fieldName}.availableAccelerators`,
-    ).map((entry, index) =>
-      readAcceleratorId(entry, `${fieldName}.availableAccelerators[${index}]`),
-    ),
-    supportedModelFormats: readArray(
-      record.supportedModelFormats,
-      `${fieldName}.supportedModelFormats`,
-    ).map((entry, index) => readModelFormat(entry, `${fieldName}.supportedModelFormats[${index}]`)),
-  };
-}
-
-function readLanguageSupport(value: unknown, fieldName: string): LanguageSupport {
-  const record = readRecord(value, fieldName);
-  const kind = readEnumValue(
-    record.kind,
-    ['all', 'english_only', 'list', 'unknown'] as const,
-    `${fieldName}.kind`,
-  );
-
-  if (kind === 'list') {
-    return {
-      kind,
-      tags: readArray(record.tags, `${fieldName}.tags`).map((entry, index) =>
-        readString(entry, `${fieldName}.tags[${index}]`),
-      ),
-    };
-  }
-
-  return { kind };
-}
-
-function readModelFamilyCapabilities(
-  value: unknown,
-  fieldName: string,
-): ModelFamilyCapabilitiesRecord {
-  const record = readRecord(value, fieldName);
-
-  return {
-    livePartialStrategies: readLivePartialStrategyArray(
-      record.livePartialStrategies,
-      `${fieldName}.livePartialStrategies`,
-    ),
-    maxAudioDurationSecs: readNullableNumber(
-      record.maxAudioDurationSecs,
-      `${fieldName}.maxAudioDurationSecs`,
-    ),
-    producesPunctuation: readBoolean(
-      record.producesPunctuation,
-      `${fieldName}.producesPunctuation`,
-    ),
-    supportedLanguages: readLanguageSupport(
-      record.supportedLanguages,
-      `${fieldName}.supportedLanguages`,
-    ),
-    supportsInitialPrompt: readBoolean(
-      record.supportsInitialPrompt,
-      `${fieldName}.supportsInitialPrompt`,
-    ),
-    supportsLanguageSelection: readBoolean(
-      record.supportsLanguageSelection,
-      `${fieldName}.supportsLanguageSelection`,
-    ),
-    supportsSegmentTimestamps: readBoolean(
-      record.supportsSegmentTimestamps,
-      `${fieldName}.supportsSegmentTimestamps`,
-    ),
-    supportsWordTimestamps: readBoolean(
-      record.supportsWordTimestamps,
-      `${fieldName}.supportsWordTimestamps`,
-    ),
-  };
-}
-
-function readLivePartialStrategy(value: unknown, fieldName: string): ModelLivePartialStrategy {
-  return readEnumValue(value, LIVE_PARTIAL_STRATEGIES, fieldName);
-}
-
-function readLivePartialStrategyArray(
-  value: unknown,
-  fieldName: string,
-): ModelLivePartialStrategy[] {
-  if (value === undefined || value === null) {
-    return [];
-  }
-
-  return readArray(value, fieldName).map((entry, index) =>
-    readLivePartialStrategy(entry, `${fieldName}[${index}]`),
-  );
-}
-
-function readLivePartialModelCapability(
-  value: unknown,
-  fieldName: string,
-): LivePartialModelCapability | null {
-  if (value === undefined || value === null) {
-    return null;
-  }
-
-  const record = readRecord(value, fieldName);
-
-  return {
-    autoEnabled: readBoolean(record.autoEnabled, `${fieldName}.autoEnabled`),
-    minAudioMs: readNonNegativeInteger(record.minAudioMs, `${fieldName}.minAudioMs`),
-    recommendedUpdateMs: readNonNegativeInteger(
-      record.recommendedUpdateMs,
-      `${fieldName}.recommendedUpdateMs`,
-    ),
-    strategy: readLivePartialStrategy(record.strategy, `${fieldName}.strategy`),
-  };
-}
-
-function readRuntimeLocationKind(value: unknown, fieldName: string): RuntimeLocationKind {
-  return readEnumValue(value, RUNTIME_LOCATION_KINDS, fieldName);
-}
-
-function readOptionalEngineCapabilities(
-  value: unknown,
-  fieldName: string,
-): EngineCapabilitiesRecord | null {
-  if (value === undefined || value === null) {
-    return null;
-  }
-
-  const record = readRecord(value, fieldName);
-
-  return {
-    family: readModelFamilyCapabilities(record.family, `${fieldName}.family`),
-    familyId: readModelFamilyId(record.familyId, `${fieldName}.familyId`),
-    runtime: readRuntimeCapabilities(record.runtime, `${fieldName}.runtime`),
-    runtimeId: readRuntimeId(record.runtimeId, `${fieldName}.runtimeId`),
-  };
-}
-
-function readCompiledRuntimes(value: unknown): CompiledRuntimeInfo[] {
-  return readArray(value, 'event.compiledRuntimes').map((entry, index) => {
-    const record = readRecord(entry, `event.compiledRuntimes[${index}]`);
-    return {
-      displayName: readString(record.displayName, `event.compiledRuntimes[${index}].displayName`),
-      runtimeCapabilities: readRuntimeCapabilities(
-        record.runtimeCapabilities,
-        `event.compiledRuntimes[${index}].runtimeCapabilities`,
-      ),
-      runtimeId: readRuntimeId(record.runtimeId, `event.compiledRuntimes[${index}].runtimeId`),
-    };
-  });
-}
-
-function readCompiledAdapters(value: unknown): CompiledAdapterInfo[] {
-  return readArray(value, 'event.compiledAdapters').map((entry, index) => {
-    const record = readRecord(entry, `event.compiledAdapters[${index}]`);
-    return {
-      displayName: readString(record.displayName, `event.compiledAdapters[${index}].displayName`),
-      familyCapabilities: readModelFamilyCapabilities(
-        record.familyCapabilities,
-        `event.compiledAdapters[${index}].familyCapabilities`,
-      ),
-      familyId: readModelFamilyId(record.familyId, `event.compiledAdapters[${index}].familyId`),
-      runtimeId: readRuntimeId(record.runtimeId, `event.compiledAdapters[${index}].runtimeId`),
-    };
-  });
-}
-
-function readRequestWarnings(value: unknown): RequestWarning[] {
-  if (value === undefined || value === null) {
-    return [];
-  }
-
-  return readArray(value, 'event.warnings').map((entry, index) => {
-    const record = readRecord(entry, `event.warnings[${index}]`);
-    return {
-      field: readString(record.field, `event.warnings[${index}].field`),
-      reason: readString(record.reason, `event.warnings[${index}].reason`),
-    };
-  });
-}
-
-function readModelInstallState(value: unknown, fieldName: string): ModelInstallState {
-  return readEnumValue(
-    value,
-    ['cancelled', 'completed', 'downloading', 'failed', 'probing', 'queued', 'verifying'] as const,
-    fieldName,
-  );
-}
-
-function readNonNegativeInteger(value: unknown, fieldName: string): number {
-  if (typeof value !== 'number' || !Number.isInteger(value) || value < 0) {
-    throw new Error(`${fieldName} must be a non-negative integer.`);
-  }
-
-  return value;
-}
-
-function readStageOutcomes(value: unknown): StageOutcome[] {
-  return readArray(value, 'event.stageResults').map((entry, index) =>
-    readStageOutcome(entry, `event.stageResults[${index}]`),
-  );
-}
-
-function readStageOutcome(value: unknown, fieldName: string): StageOutcome {
-  const record = readRecord(value, fieldName);
-  const outcome: StageOutcome = {
-    durationMs: readNonNegativeNumber(record.durationMs, `${fieldName}.durationMs`),
-    isFinal: readBoolean(record.isFinal, `${fieldName}.isFinal`),
-    revisionIn: readNonNegativeInteger(record.revisionIn, `${fieldName}.revisionIn`),
-    stageId: readStageId(record.stageId, `${fieldName}.stageId`),
-    status: readStageStatus(record.status, `${fieldName}.status`),
-  };
-
-  if (record.payload !== undefined && record.payload !== null) {
-    outcome.payload = readRecord(record.payload, `${fieldName}.payload`);
-  }
-
-  if (record.revisionOut !== undefined && record.revisionOut !== null) {
-    outcome.revisionOut = readNonNegativeInteger(record.revisionOut, `${fieldName}.revisionOut`);
-  }
-
-  return outcome;
-}
-
-function readStageId(value: unknown, fieldName: string): StageId {
-  return readEnumValue(value, STAGE_IDS, fieldName);
-}
-
-function readStageStatus(value: unknown, fieldName: string): StageStatus {
-  const record = readRecord(value, fieldName);
-  const kind = readString(record.kind, `${fieldName}.kind`);
-
-  if (kind === 'ok') {
-    return { kind };
-  }
-
-  if (kind === 'skipped') {
-    return { kind, reason: readString(record.reason, `${fieldName}.reason`) };
-  }
-
-  if (kind === 'failed') {
-    return { error: readString(record.error, `${fieldName}.error`), kind };
-  }
-
-  throw new Error(`Unsupported stage status kind: ${kind}`);
-}
-
-function readTranscriptSegments(value: unknown): TranscriptSegment[] {
-  if (!Array.isArray(value)) {
-    throw new Error('event.segments must be an array.');
-  }
-
-  return value.map((segment, index) => {
-    if (!isRecord(segment)) {
-      throw new Error(`event.segments[${index}] must be an object.`);
-    }
-
-    return {
-      endMs: readNonNegativeNumber(segment.endMs, `event.segments[${index}].endMs`),
-      startMs: readNonNegativeNumber(segment.startMs, `event.segments[${index}].startMs`),
-      text: readString(segment.text, `event.segments[${index}].text`),
-      timestampGranularity: readTimestampGranularity(
-        segment.timestampGranularity,
-        `event.segments[${index}].timestampGranularity`,
-      ),
-      timestampSource: readTimestampSource(
-        segment.timestampSource,
-        `event.segments[${index}].timestampSource`,
-      ),
-    };
-  });
-}
-
-function readModelFamilies(value: unknown): ModelFamilyRecord[] {
-  return readArray(value, 'event.families').map((entry, index) => {
-    const record = readRecord(entry, `event.families[${index}]`);
-
-    return {
-      displayName: readString(record.displayName, `event.families[${index}].displayName`),
-      familyId: readModelFamilyId(record.familyId, `event.families[${index}].familyId`),
-      runtimeId: readRuntimeId(record.runtimeId, `event.families[${index}].runtimeId`),
-      summary: readString(record.summary, `event.families[${index}].summary`),
-    };
-  });
-}
-
-function readModelCollections(value: unknown): ModelCollectionRecord[] {
-  return readArray(value, 'event.collections').map((collection, index) => {
-    const record = readRecord(collection, `event.collections[${index}]`);
-
-    return {
-      collectionId: readString(record.collectionId, `event.collections[${index}].collectionId`),
-      displayName: readString(record.displayName, `event.collections[${index}].displayName`),
-      summary: readString(record.summary, `event.collections[${index}].summary`),
-    };
-  });
-}
-
-function readCatalogModels(value: unknown): CatalogModelRecord[] {
-  return readArray(value, 'event.models').map((model, index) => {
-    const record = readRecord(model, `event.models[${index}]`);
-    const artifacts = readModelArtifacts(record.artifacts, `event.models[${index}].artifacts`);
-    const parsedModel: CatalogModelRecord = {
-      artifacts,
-      collectionId: readString(record.collectionId, `event.models[${index}].collectionId`),
-      displayName: readString(record.displayName, `event.models[${index}].displayName`),
-      familyId: readModelFamilyId(record.familyId, `event.models[${index}].familyId`),
-      languageTags: readStringArray(record.languageTags, `event.models[${index}].languageTags`),
-      licenseLabel: readString(record.licenseLabel, `event.models[${index}].licenseLabel`),
-      licenseUrl: readString(record.licenseUrl, `event.models[${index}].licenseUrl`),
-      livePartials: readLivePartialModelCapability(
-        record.livePartials,
-        `event.models[${index}].livePartials`,
-      ),
-      modelCardUrl: readNullableString(record.modelCardUrl, `event.models[${index}].modelCardUrl`),
-      modelId: readString(record.modelId, `event.models[${index}].modelId`),
-      notes: readStringArray(record.notes, `event.models[${index}].notes`),
-      runtimeId: readRuntimeId(record.runtimeId, `event.models[${index}].runtimeId`),
-      runtimeLocationKind: readRuntimeLocationKind(
-        record.runtimeLocationKind,
-        `event.models[${index}].runtimeLocationKind`,
-      ),
-      sourceUrl: readString(record.sourceUrl, `event.models[${index}].sourceUrl`),
-      summary: readString(record.summary, `event.models[${index}].summary`),
-      uxTags: readStringArray(record.uxTags, `event.models[${index}].uxTags`),
-    };
-
-    if (getPrimaryArtifact(parsedModel) === null) {
-      throw new Error(`event.models[${index}] is missing a required transcription artifact.`);
-    }
-
-    return parsedModel;
-  });
-}
-
-function readModelArtifacts(value: unknown, fieldName: string): CatalogModelRecord['artifacts'] {
-  return readArray(value, fieldName).map((artifact, index) => {
-    const record = readRecord(artifact, `${fieldName}[${index}]`);
-    const role = readEnumValue(
-      record.role,
-      ['supporting_file', 'transcription_model'] as const,
-      `${fieldName}[${index}].role`,
-    );
-
-    return {
-      artifactId: readString(record.artifactId, `${fieldName}[${index}].artifactId`),
-      downloadUrl: readString(record.downloadUrl, `${fieldName}[${index}].downloadUrl`),
-      filename: readString(record.filename, `${fieldName}[${index}].filename`),
-      required: readBoolean(record.required, `${fieldName}[${index}].required`),
-      role,
-      sha256: readString(record.sha256, `${fieldName}[${index}].sha256`),
-      sizeBytes: readPositiveInteger(record.sizeBytes, `${fieldName}[${index}].sizeBytes`),
-    };
-  });
-}
-
-function readInstalledModels(value: unknown): InstalledModelRecord[] {
-  return readArray(value, 'event.models').map((model, index) => {
-    const record = readRecord(model, `event.models[${index}]`);
-
-    return {
-      catalogVersion: readPositiveInteger(
-        record.catalogVersion,
-        `event.models[${index}].catalogVersion`,
-      ),
-      familyId: readModelFamilyId(record.familyId, `event.models[${index}].familyId`),
-      installPath: readString(record.installPath, `event.models[${index}].installPath`),
-      installedAtUnixMs: readNonNegativeNumber(
-        record.installedAtUnixMs,
-        `event.models[${index}].installedAtUnixMs`,
-      ),
-      modelId: readString(record.modelId, `event.models[${index}].modelId`),
-      runtimeId: readRuntimeId(record.runtimeId, `event.models[${index}].runtimeId`),
-      runtimePath: readNullableString(record.runtimePath, `event.models[${index}].runtimePath`),
-      totalSizeBytes: readNonNegativeNumber(
-        record.totalSizeBytes,
-        `event.models[${index}].totalSizeBytes`,
-      ),
-    };
-  });
-}
-
-function readArray(value: unknown, fieldName: string): unknown[] {
-  if (!Array.isArray(value)) {
-    throw new Error(`${fieldName} must be an array.`);
-  }
-
-  return value;
-}
-
-function readStringArray(value: unknown, fieldName: string): string[] {
-  return readArray(value, fieldName).map((entry, index) =>
-    readString(entry, `${fieldName}[${index}]`),
-  );
-}
-
-function readRecord(value: unknown, fieldName: string): Record<string, unknown> {
-  if (!isRecord(value)) {
-    throw new Error(`${fieldName} must be an object.`);
-  }
-
-  return value;
+  return normalized.replaceAll('-', '');
 }
 
 const textEncoder = new TextEncoder();
 const textDecoder = new TextDecoder();
-
-function createWarningEvent(value: Record<string, unknown>): WarningEvent {
-  return {
-    code: readString(value.code, 'event.code'),
-    ...readOptionalEventFields(value),
-    message: readString(value.message, 'event.message'),
-    type: 'warning',
-  };
-}
-
-function createErrorEvent(value: Record<string, unknown>): ErrorEvent {
-  return {
-    code: readString(value.code, 'event.code'),
-    ...readOptionalEventFields(value),
-    message: readString(value.message, 'event.message'),
-    type: 'error',
-  };
-}
-
-function readOptionalEventFields(value: Record<string, unknown>): {
-  details?: string;
-  sessionId?: string;
-} {
-  const result: { details?: string; sessionId?: string } = {};
-  const details = readOptionalString(value.details, 'event.details');
-  const sessionId = readOptionalString(value.sessionId, 'event.sessionId');
-
-  if (details !== undefined) {
-    result.details = details;
-  }
-
-  if (sessionId !== undefined) {
-    result.sessionId = sessionId;
-  }
-
-  return result;
-}

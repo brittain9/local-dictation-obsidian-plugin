@@ -4,10 +4,28 @@ import type { PluginLogger } from '../shared/plugin-logger';
 import { PCM_RECORDER_WORKLET_NAME } from './pcm-recorder-worklet-shared';
 import { PCM_RECORDER_WORKLET_SOURCE } from './pcm-recorder-worklet-source';
 
-type AudioFrameListener = (frameBytes: Uint8Array) => void;
+type AudioFrameListener = (sessionId: string, frameBytes: Uint8Array) => void;
 
 interface AudioCaptureStreamOptions {
   logger?: PluginLogger;
+  // Invoked when a saved deviceId is unavailable and we transparently fall back
+  // to the OS default. The attempted id lets the settings layer avoid clearing
+  // a newer selection if the user changed it while capture was starting.
+  onDeviceFallback?: (unavailableDeviceId: string) => Promise<void> | void;
+  // A track can end while its MediaStream still exists (for example, when a
+  // USB microphone is unplugged). Include the session id so a late event from
+  // an old track cannot stop a newer capture.
+  onUnexpectedEnd?: (sessionId: string) => void;
+}
+
+interface UserMediaRequest {
+  mediaStream: MediaStream;
+  unavailableDeviceId: string | null;
+}
+
+export interface AudioCaptureStartOptions {
+  audioInputDeviceId?: string | null;
+  sessionId: string;
 }
 
 export class AudioCaptureStream {
@@ -17,6 +35,10 @@ export class AudioCaptureStream {
   private muteNode: GainNode | null = null;
   private recorderNode: AudioWorkletNode | null = null;
   private sourceNode: MediaStreamAudioSourceNode | null = null;
+  private trackEndListener: {
+    listener: () => void;
+    tracks: MediaStreamTrack[];
+  } | null = null;
 
   constructor(private readonly options: AudioCaptureStreamOptions) {}
 
@@ -24,26 +46,23 @@ export class AudioCaptureStream {
     return this.mediaStream !== null;
   }
 
-  async start(frameListener: AudioFrameListener): Promise<void> {
+  async start(options: AudioCaptureStartOptions, frameListener: AudioFrameListener): Promise<void> {
+    const { sessionId, audioInputDeviceId } = options;
+
     if (this.isCapturing()) {
       throw new Error('Audio capture is already active.');
     }
 
-    const mediaDevices = globalThis.navigator?.mediaDevices;
+    const mediaDevices = window.navigator?.mediaDevices;
 
     if (mediaDevices?.getUserMedia === undefined) {
       throw new Error('Microphone capture is not available in this Obsidian runtime.');
     }
 
-    const mediaStream = await mediaDevices.getUserMedia({
-      audio: {
-        autoGainControl: false,
-        channelCount: PCM_CHANNEL_COUNT,
-        echoCancellation: false,
-        noiseSuppression: false,
-      },
-      video: false,
-    });
+    const { mediaStream, unavailableDeviceId } = await this.requestUserMedia(
+      mediaDevices,
+      audioInputDeviceId,
+    );
 
     let audioContext: AudioContext | null = null;
 
@@ -75,7 +94,7 @@ export class AudioCaptureStream {
           return;
         }
 
-        this.frameListener?.(frameBytes);
+        this.frameListener?.(sessionId, frameBytes);
       };
 
       sourceNode.connect(recorderNode);
@@ -88,7 +107,12 @@ export class AudioCaptureStream {
       this.muteNode = muteNode;
       this.recorderNode = recorderNode;
       this.sourceNode = sourceNode;
+      this.observeUnexpectedTrackEnd(mediaStream, sessionId);
       this.options.logger?.debug('audio', 'capture started');
+
+      if (unavailableDeviceId !== null) {
+        void this.handleDeviceFallback(unavailableDeviceId);
+      }
     } catch (error) {
       this.options.logger?.error('audio', 'failed to initialize streaming audio capture', error);
       await stopMediaStream(mediaStream);
@@ -110,6 +134,67 @@ export class AudioCaptureStream {
     this.options.logger?.debug('audio', 'capture stopped');
   }
 
+  private async requestUserMedia(
+    mediaDevices: MediaDevices,
+    audioInputDeviceId: string | null | undefined,
+  ): Promise<UserMediaRequest> {
+    const baseConstraints: MediaTrackConstraints = {
+      autoGainControl: false,
+      channelCount: PCM_CHANNEL_COUNT,
+      echoCancellation: false,
+      noiseSuppression: false,
+    };
+
+    if (typeof audioInputDeviceId !== 'string' || audioInputDeviceId.length === 0) {
+      return {
+        mediaStream: await mediaDevices.getUserMedia({ audio: baseConstraints, video: false }),
+        unavailableDeviceId: null,
+      };
+    }
+
+    try {
+      return {
+        mediaStream: await mediaDevices.getUserMedia({
+          audio: { ...baseConstraints, deviceId: { exact: audioInputDeviceId } },
+          video: false,
+        }),
+        unavailableDeviceId: null,
+      };
+    } catch (error) {
+      if (!isDeviceConstraintError(error)) {
+        throw error;
+      }
+
+      this.options.logger?.warn(
+        'audio',
+        'saved microphone unavailable; falling back to the default input device',
+        error,
+      );
+      // Only fire the fallback notice if the retry actually succeeds. If it
+      // also rejects, the outer error path will surface a single "Failed to
+      // start dictation" notice rather than two contradictory ones.
+      const mediaStream = await mediaDevices.getUserMedia({
+        audio: baseConstraints,
+        video: false,
+      });
+      return { mediaStream, unavailableDeviceId: audioInputDeviceId };
+    }
+  }
+
+  private async handleDeviceFallback(unavailableDeviceId: string): Promise<void> {
+    try {
+      await this.options.onDeviceFallback?.(unavailableDeviceId);
+    } catch (callbackError) {
+      // Settings repair is secondary to capture. It runs only after the stream
+      // is owned, so failure or indefinite delay cannot block capture teardown.
+      this.options.logger?.warn(
+        'audio',
+        'microphone fallback handler failed; continuing with the default input device',
+        callbackError,
+      );
+    }
+  }
+
   private async releaseCapture(): Promise<void> {
     const audioContext = this.audioContext;
     const mediaStream = this.mediaStream;
@@ -117,6 +202,7 @@ export class AudioCaptureStream {
     const recorderNode = this.recorderNode;
     const sourceNode = this.sourceNode;
 
+    this.clearTrackEndListener();
     this.audioContext = null;
     this.frameListener = null;
     this.mediaStream = null;
@@ -148,11 +234,59 @@ export class AudioCaptureStream {
       await closeAudioContext(audioContext);
     }
   }
+
+  private observeUnexpectedTrackEnd(mediaStream: MediaStream, sessionId: string): void {
+    const tracks = mediaStream.getAudioTracks();
+    let reported = false;
+    const listener = (): void => {
+      if (reported || this.mediaStream !== mediaStream) {
+        return;
+      }
+      reported = true;
+      this.options.logger?.warn('audio', 'microphone track ended unexpectedly');
+      this.options.onUnexpectedEnd?.(sessionId);
+    };
+
+    for (const track of tracks) {
+      track.addEventListener('ended', listener);
+    }
+    this.trackEndListener = { listener, tracks };
+
+    // Cover a device that disappeared after getUserMedia resolved but before
+    // the audio graph and event listeners finished initializing.
+    if (tracks.some((track) => track.readyState === 'ended')) {
+      listener();
+    }
+  }
+
+  private clearTrackEndListener(): void {
+    const registration = this.trackEndListener;
+    this.trackEndListener = null;
+    if (registration === null) {
+      return;
+    }
+    for (const track of registration.tracks) {
+      track.removeEventListener('ended', registration.listener);
+    }
+  }
+}
+
+// OverconstrainedError is the spec-defined rejection when `deviceId: { exact }`
+// matches nothing. We only treat that exact case as a "fall back to default"
+// signal — other DOMExceptions (NotAllowed, NotFound, NotReadable) propagate so
+// the existing top-level error path can surface them.
+function isDeviceConstraintError(error: unknown): boolean {
+  if (typeof error !== 'object' || error === null) {
+    return false;
+  }
+
+  const named = error as { constraint?: unknown; name?: unknown };
+  return named.name === 'OverconstrainedError' && named.constraint === 'deviceId';
 }
 
 function getAudioContextConstructor(): typeof AudioContext {
-  if (globalThis.AudioContext !== undefined) {
-    return globalThis.AudioContext;
+  if (window.AudioContext !== undefined) {
+    return window.AudioContext;
   }
 
   throw new Error('AudioContext is not available in this Obsidian runtime.');

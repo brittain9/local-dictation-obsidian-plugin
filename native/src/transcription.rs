@@ -5,7 +5,17 @@ use uuid::Uuid;
 
 use crate::protocol::{ContextWindow, StageId, StageOutcome, TranscriptSegment};
 
-pub(crate) const SUPPORTED_LANGUAGE: &str = "en";
+pub(crate) const ENGLISH_LANGUAGE_TAG: &str = "en";
+/// Every language tag the product can persist or that a catalog entry may name.
+///
+/// This is a vocabulary, not a capability. Membership here means the tag is
+/// spelled correctly and the UI has an option for it — nothing more. What a
+/// given engine can actually serve is declared by that engine's adapter, so
+/// adding a tag here can never make a model appear eligible for a language its
+/// artifact cannot handle.
+pub(crate) const PRODUCT_LANGUAGE_TAGS: &[&str] =
+    &["en", "es", "de", "fr", "pt", "it", "nl", "ja", "hr", "sr"];
+pub(crate) const AUTOMATIC_LANGUAGE_TAG: &str = "auto";
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct GpuConfig {
@@ -15,6 +25,9 @@ pub struct GpuConfig {
 #[derive(Debug, Clone, PartialEq)]
 pub struct TranscriptionRequest {
     pub audio_samples: Vec<f32>,
+    /// Whether the user selected dense model timing. Adapters must avoid the
+    /// additional alignment work when this is false.
+    pub detailed_timestamps_enabled: bool,
     pub gpu_config: GpuConfig,
     pub language: String,
     pub model_file_path: PathBuf,
@@ -34,6 +47,10 @@ pub struct TranscriptionRequest {
 pub struct EngineTranscriptOutput {
     pub segments: Vec<TranscriptSegment>,
     pub diagnostics: Vec<SegmentDiagnostics>,
+    /// Language identified by the engine during automatic detection. Adapters
+    /// leave this unset when the language was selected explicitly or the
+    /// engine does not expose a detected tag.
+    pub detected_language: Option<String>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq)]
@@ -137,7 +154,7 @@ pub fn validate_model_path(model_file_path: &Path) -> Result<(), TranscriptionEr
 }
 
 pub fn validate_language(language: &str) -> Result<(), TranscriptionError> {
-    if language == SUPPORTED_LANGUAGE {
+    if language == ENGLISH_LANGUAGE_TAG {
         return Ok(());
     }
 
@@ -149,6 +166,14 @@ pub fn validate_language(language: &str) -> Result<(), TranscriptionError> {
 }
 
 impl TranscriptionError {
+    pub(crate) fn unsupported_language(language: &str, details: &str) -> Self {
+        Self {
+            code: "unsupported_language",
+            message: "The selected model does not support this dictation language.",
+            details: Some(format!("{language}: {details}")),
+        }
+    }
+
     pub(crate) fn invalid_model(details: &'static str) -> Self {
         Self {
             code: "invalid_model_file",
@@ -221,17 +246,21 @@ mod tests {
             segments: vec![
                 TranscriptSegment {
                     end_ms: 0,
+                    speaker: None,
                     start_ms: 0,
                     text: " Hello".to_string(),
                     timestamp_granularity: TimestampGranularity::Segment,
                     timestamp_source: TimestampSource::Engine,
+                    words: Vec::new(),
                 },
                 TranscriptSegment {
                     end_ms: 0,
+                    speaker: None,
                     start_ms: 0,
                     text: "world ".to_string(),
                     timestamp_granularity: TimestampGranularity::Segment,
                     timestamp_source: TimestampSource::Engine,
+                    words: Vec::new(),
                 },
             ],
             stage_history: Vec::new(),
@@ -248,24 +277,30 @@ mod tests {
             segments: vec![
                 TranscriptSegment {
                     end_ms: 0,
+                    speaker: None,
                     start_ms: 0,
                     text: "Hello".to_string(),
                     timestamp_granularity: TimestampGranularity::Segment,
                     timestamp_source: TimestampSource::Engine,
+                    words: Vec::new(),
                 },
                 TranscriptSegment {
                     end_ms: 0,
+                    speaker: None,
                     start_ms: 0,
                     text: "   ".to_string(),
                     timestamp_granularity: TimestampGranularity::Segment,
                     timestamp_source: TimestampSource::Engine,
+                    words: Vec::new(),
                 },
                 TranscriptSegment {
                     end_ms: 0,
+                    speaker: None,
                     start_ms: 0,
                     text: "world".to_string(),
                     timestamp_granularity: TimestampGranularity::Segment,
                     timestamp_source: TimestampSource::Engine,
+                    words: Vec::new(),
                 },
             ],
             stage_history: Vec::new(),

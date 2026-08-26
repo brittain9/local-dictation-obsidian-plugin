@@ -1,0 +1,38 @@
+{
+  "schemaVersion": 1,
+  "reference": {
+    "checkpointRevision": "f3d333391852ba876df169dcc9ba902d25b6ab0b",
+    "nemoRevision": "06312c963ce69c308d67ec7f129800ba594d9565",
+    "script": "examples/asr/asr_cache_aware_streaming/speech_to_text_cache_aware_streaming_infer.py",
+    "torchVersion": "2.12.1",
+    "librosaVersion": "0.11.0",
+    "numpyVersion": "2.4.6",
+    "soundfileVersion": "0.13.1",
+    "dither": 0.0
+  },
+  "audio": {
+    "path": "../audio/7021-79740-0000.wav",
+    "sha256": "d0d6bcf2e108dde9e7c1575ad843512213b1cff5ea77b9231e7f256591aa0986",
+    "sampleRate": 16000,
+    "sampleCount": 178000
+  },
+  "frontend": {
+    "shape": [128, 1112],
+    "maxAbsError": 0.0002,
+    "oraclePath": "frontend-560ms.f32le",
+    "oracleSha256": "b39064c14f5440bd021c47569d1fe336536a5796b382f763b7336050166d2d59"
+  },
+  "streaming": {
+    "attentionContext": [56, 6],
+    "chunkSizeMs": 560,
+    "prompt": "en-US",
+    "promptIndex": 0,
+    "text": "To such persons, these indirect modes of training children inhabits of subordination to their will, or rather of yielding to their influence are specially useful",
+    "tokenIds": [
+      373, 2, 40, 592, 2, 2437, 40, 6, 150, 817, 461, 1028, 2956, 2, 318, 297, 40, 1639, 12945, 288,
+      125, 47, 2959, 2, 1301, 66, 71, 59, 124, 2, 47, 1872, 1304, 34, 40, 1639, 1992, 9563, 125,
+      466, 12945, 46, 150, 1028, 2834, 6, 2, 409, 2, 288, 2961, 1639, 2, 129, 47, 436, 855, 2959,
+      12945, 46, 150, 1028, 2, 125, 121, 918, 1109, 2, 1942, 2, 1333, 301, 2966, 2, 68, 817, 2926
+    ]
+  }
+}

@@ -1,17 +1,22 @@
 [package]
-name = "local-transcript-sidecar"
-version = "2026.5.3"
+name = "local-dictation-sidecar"
+version = "2026.8.6"
 edition = "2024"
 license = "MIT"
 rust-version = "1.94.1"
 
 [lib]
-name = "local_transcript_sidecar"
+name = "local_dictation_sidecar"
 path = "src/lib.rs"
 
 [[bin]]
-name = "local-transcript-sidecar"
+name = "local-dictation-sidecar"
 path = "src/main.rs"
+
+[[bin]]
+name = "local-dictation-translation-helper"
+path = "src/bin/translation_helper.rs"
+required-features = ["engine-hy-mt"]
 
 [dependencies]
 anyhow = "1.0"
@@ -20,22 +25,58 @@ directories = "6.0"
 ndarray = "0.17"
 half = { version = "2", optional = true, features = ["num-traits"] }
 ort = { version = "=2.0.0-rc.12", default-features = false, features = ["std", "download-binaries", "copy-dylibs", "ndarray", "preload-dylibs", "tls-rustls"] }
-realfft = { version = "3.5", optional = true }
-reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "stream"] }
+realfft = { version = "3.5" }
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "stream"] }
+regex = { version = "1", optional = true }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
+safetensors = { version = "0.8", optional = true }
+sentencepiece-rs = { version = "0.2.2", optional = true }
 sha2 = "0.11"
 tokio = { version = "1.52", features = ["macros", "rt", "sync"] }
+unicode-normalization = { version = "0.1", optional = true }
 uuid = { version = "1", features = ["v4", "serde"] }
-whisper-rs = "0.16.0"
+whisper-rs = { version = "0.16.0", optional = true }
+llama-cpp-2 = { version = "=0.1.154", default-features = false, optional = true }
+llama-cpp-sys-2 = { version = "=0.1.154", default-features = false, optional = true }
 
 [features]
 default = ["engine-whisper"]
-engine-whisper = []
-engine-cohere-transcribe = ["half", "ort/half", "realfft"]
-gpu-metal = ["whisper-rs/metal"]
-gpu-cuda = ["whisper-rs/cuda"]
-gpu-ort-cuda = ["engine-cohere-transcribe", "ort/cuda"]
+engine-whisper = ["dep:whisper-rs"]
+engine-cohere-transcribe = ["half", "ort/half"]
+engine-moonshine = []
+engine-nemotron-asr = []
+engine-pocket-tts = ["dep:safetensors", "dep:sentencepiece-rs"]
+engine-supertonic = ["dep:regex", "dep:unicode-normalization"]
+engine-hy-mt = ["dep:llama-cpp-2", "dep:llama-cpp-sys-2"]
+gpu-metal = ["whisper-rs/metal", "llama-cpp-2/metal"]
+gpu-cuda = ["whisper-rs/cuda", "llama-cpp-2/cuda"]
+
+# Test/bench-only dependencies for the end-to-end quality suite under `tests/`
+# and `benches/`. Runtime `[dependencies]` above (serde, serde_json, sha2, uuid,
+# reqwest, ...) are already visible to test and bench targets, so only genuinely
+# test-only crates are listed here: WAV decoding (hound), the Criterion bench
+# harness, and reqwest's `blocking` feature for the synchronous model download
+# (feature-unified with the runtime reqwest into one build).
+[dev-dependencies]
+criterion = { version = "0.8", default-features = false, features = ["cargo_bench_support"] }
+hound = "3.5"
+reqwest = { version = "0.12", default-features = false, features = ["blocking", "rustls-tls"] }
+
+[[test]]
+name = "nemotron_asr_e2e"
+required-features = ["engine-nemotron-asr"]
+
+[[test]]
+name = "nemotron_asr_tails"
+required-features = ["engine-nemotron-asr"]
+
+# End-to-end transcription benchmark (real-time factor). Uses the Criterion
+# harness rather than libtest, and is skipped automatically when no whisper
+# model is available (see benches/transcription.rs).
+[[bench]]
+name = "transcription"
+harness = false
 
 # Release profile tuned for distribution size + steady-state perf. `panic`
 # stays at the implicit default (`unwind`) because worker.rs and installer.rs
@@ -45,3 +86,16 @@ gpu-ort-cuda = ["engine-cohere-transcribe", "ort/cuda"]
 lto = "thin"
 codegen-units = 1
 strip = "symbols"
+
+[target."cfg(windows)".dependencies]
+wasapi = "0.24.0"
+
+# libpulse is dlopen'd at runtime (see system_audio/linux.rs), so this is the
+# only Linux capture dependency — no libpulse-dev / pkg-config at build time.
+[target."cfg(target_os = \"linux\")".dependencies]
+libloading = "0.9"
+
+[target."cfg(target_os = \"macos\")".dependencies]
+libc = "0.2"
+objc2 = "0.6.4"
+objc2-foundation = "0.3.2"

@@ -38,7 +38,7 @@ export function addEnumSetting<K extends keyof PluginSettings>(
     options: ReadonlyArray<DropdownOption<PluginSettings[K] & string>>;
     isValid: (value: unknown) => value is PluginSettings[K];
   },
-): void {
+): Setting {
   const setting = new Setting(parent).setName(spec.name).setDesc(spec.desc);
   setting.addDropdown((dropdown) => {
     for (const option of spec.options) {
@@ -51,21 +51,24 @@ export function addEnumSetting<K extends keyof PluginSettings>(
     });
   });
   appendInfoTooltip(setting, spec.tooltip);
+  return setting;
 }
 
 export function addToggleSetting<K extends SettingsKeyOf<boolean>>(
   parent: HTMLElement,
   access: SettingAccess,
-  spec: SettingSpec & { key: K },
-): void {
+  spec: SettingSpec & { key: K; onChange?: (value: boolean) => void | Promise<void> },
+): Setting {
   const setting = new Setting(parent).setName(spec.name).setDesc(spec.desc);
   setting.addToggle((toggle) => {
-    toggle.setValue(access.getSettings()[spec.key] as boolean);
+    toggle.setValue(access.getSettings()[spec.key]);
     toggle.onChange(async (value) => {
-      await access.persistOne(spec.key, value as PluginSettings[K]);
+      await access.persistOne(spec.key, value);
+      await spec.onChange?.(value);
     });
   });
   appendInfoTooltip(setting, spec.tooltip);
+  return setting;
 }
 
 export function addTextSetting<K extends SettingsKeyOf<string>>(
@@ -76,9 +79,9 @@ export function addTextSetting<K extends SettingsKeyOf<string>>(
   const setting = new Setting(parent).setName(spec.name).setDesc(spec.desc);
   setting.addText((text) => {
     if (spec.placeholder !== undefined) text.setPlaceholder(spec.placeholder);
-    text.setValue(access.getSettings()[spec.key] as string);
+    text.setValue(access.getSettings()[spec.key]);
     text.onChange(async (value) => {
-      await access.persistOne(spec.key, value.trim() as PluginSettings[K]);
+      await access.persistOne(spec.key, value.trim());
     });
   });
   appendInfoTooltip(setting, spec.tooltip);
@@ -96,10 +99,49 @@ export function addPositiveIntSetting<K extends SettingsKeyOf<number>>(
     text.onChange(async (value) => {
       const parsed = Number.parseInt(value, 10);
       if (!Number.isInteger(parsed) || parsed <= 0) return;
-      await access.persistOne(spec.key, parsed as PluginSettings[K]);
+      await access.persistOne(spec.key, parsed);
     });
   });
   appendInfoTooltip(setting, spec.tooltip);
+}
+
+export interface NumberInputOptions extends SettingSpec {
+  onChange: (value: number) => void | Promise<void>;
+  onElement?: (element: HTMLInputElement) => void;
+  value: number;
+}
+
+export function addNumberInputSetting(parent: HTMLElement, options: NumberInputOptions): Setting {
+  const setting = new Setting(parent).setName(options.name).setDesc(options.desc);
+  setting.addText((text) => {
+    text.inputEl.type = 'number';
+    text.setValue(options.value.toString());
+    options.onElement?.(text.inputEl);
+    text.onChange(async (next) => {
+      await options.onChange(Number(next));
+    });
+  });
+  appendInfoTooltip(setting, options.tooltip);
+  return setting;
+}
+
+export interface TextAreaOptions extends SettingSpec {
+  onChange: (value: string) => void;
+  onElement?: (element: HTMLTextAreaElement) => void;
+  rows: number;
+  value: string;
+}
+
+export function addTextAreaSetting(parent: HTMLElement, options: TextAreaOptions): Setting {
+  const setting = new Setting(parent).setName(options.name).setDesc(options.desc);
+  setting.addTextArea((text) => {
+    text.inputEl.rows = options.rows;
+    text.setValue(options.value);
+    options.onElement?.(text.inputEl);
+    text.onChange(options.onChange);
+  });
+  appendInfoTooltip(setting, options.tooltip);
+  return setting;
 }
 
 export function appendInfoTooltip(setting: Setting, tooltip: string | undefined): void {
@@ -107,4 +149,19 @@ export function appendInfoTooltip(setting: Setting, tooltip: string | undefined)
   setting.addExtraButton((button) => {
     button.setIcon('info').setTooltip(tooltip);
   });
+}
+
+// Build the native Obsidian "setting-group" structure used by core settings
+// tabs: a wrapper div with a heading row, then a "setting-items" sibling
+// that holds the actual rows. Obsidian's bundled CSS targets this shape to
+// produce the rounded card with internal dividers.
+export function createSettingGroup(
+  parent: HTMLElement,
+  heading: string,
+  tooltip?: string,
+): HTMLDivElement {
+  const group = parent.createDiv({ cls: 'setting-group' });
+  const headingSetting = new Setting(group).setName(heading).setHeading();
+  appendInfoTooltip(headingSetting, tooltip);
+  return group.createDiv({ cls: 'setting-items' });
 }

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Build sidecar: Whisper + Cohere + CUDA GPU. Linux only.
+# Build sidecar: all speech families + CUDA GPU. Linux only.
 # Output goes to target-cuda/ to avoid overwriting the CPU binary.
 set -euo pipefail
 
@@ -7,8 +7,9 @@ usage() {
   cat <<'EOF'
 Usage: bash scripts/build-cuda.sh [OPTIONS]
 
-Build the CUDA-enabled native sidecar (Whisper+CUDA, Cohere+CUDA).
-Output: native/target-cuda/{debug|release}/local-transcript-sidecar
+Build all speech families with CUDA acceleration for whisper.cpp.
+ONNX Runtime families remain on their proven CPU execution path.
+Output: native/target-cuda/{debug|release}/local-dictation-sidecar
 
 Options:
   --release   Build release binary instead of debug.
@@ -17,8 +18,8 @@ Options:
   --help      Show this help text.
 
 Environment overrides:
-  CC             Host C compiler       (default: /usr/bin/gcc)
-  CXX            Host C++ compiler     (default: /usr/bin/g++)
+  CC             Host C compiler       (default: newest supported /usr/bin/gcc-*)
+  CXX            Host C++ compiler     (default: newest supported /usr/bin/g++-*)
   CUDAHOSTCXX    nvcc host compiler    (default: $CXX)
   CUDACXX        CUDA compiler         (default: /usr/local/cuda/bin/nvcc)
   CUDA_LIB_PATH  Library dir for RPATH (auto-detected from CUDACXX)
@@ -39,21 +40,49 @@ require_cmd() {
   fi
 }
 
-require_glob_match() {
-  local pattern=$1
-  compgen -G "$pattern" >/dev/null || die "required runtime artifact missing after build: $pattern"
+compiler_major() {
+  local compiler=$1
+  "$compiler" -dumpfullversion -dumpversion | awk -F. '{ print $1 }'
 }
 
-stage_runtime_artifact() {
-  local artifact_path=$1
-  local resolved_path
-  resolved_path=$(readlink -f "$artifact_path")
-  [[ -f "$resolved_path" ]] || die "runtime artifact does not resolve to a file: $artifact_path"
+pick_supported_compiler() {
+  local fallback=$1
+  shift
 
-  if [[ "$resolved_path" != "$artifact_path" ]]; then
-    rm -f "$artifact_path"
-    cp "$resolved_path" "$artifact_path"
+  local candidate
+  for candidate in "$@"; do
+    [[ -x "$candidate" ]] || continue
+    local major
+    major=$(compiler_major "$candidate")
+    [[ "$major" =~ ^[0-9]+$ ]] || continue
+    if (( major <= 15 )); then
+      printf '%s\n' "$candidate"
+      return
+    fi
+  done
+
+  printf '%s\n' "$fallback"
+}
+
+require_cuda_supported_compiler() {
+  local label=$1
+  local compiler=$2
+  local major
+  major=$(compiler_major "$compiler")
+  [[ "$major" =~ ^[0-9]+$ ]] || die "failed to detect $label version from $compiler"
+
+  if (( major > 15 )); then
+    die "CUDA 13.2 does not support $label $compiler (GCC $major). Install gcc-15/g++-15 or set CC/CXX/CUDAHOSTCXX to a GCC <= 15 toolchain."
   fi
+}
+
+copy_resolved_artifact() {
+  local source_path=$1
+  local destination_path=$2
+  local resolved_path
+  resolved_path=$(readlink -f "$source_path")
+  [[ -f "$resolved_path" ]] || die "runtime artifact does not resolve to a file: $source_path"
+  cp "$resolved_path" "$destination_path"
 }
 
 # ---------------------------------------------------------------------------
@@ -87,8 +116,10 @@ done
 # ---------------------------------------------------------------------------
 
 export PATH="/usr/local/cuda/bin:$HOME/.cargo/bin:$PATH"
-export CC=${CC:-/usr/bin/gcc}
-export CXX=${CXX:-/usr/bin/g++}
+default_cc=$(pick_supported_compiler /usr/bin/gcc /usr/bin/gcc-15 /usr/bin/gcc-14 /usr/bin/gcc-13 /usr/bin/gcc-12 /usr/bin/gcc)
+default_cxx=$(pick_supported_compiler /usr/bin/g++ /usr/bin/g++-15 /usr/bin/g++-14 /usr/bin/g++-13 /usr/bin/g++-12 /usr/bin/g++)
+export CC=${CC:-$default_cc}
+export CXX=${CXX:-$default_cxx}
 export CUDAHOSTCXX=${CUDAHOSTCXX:-$CXX}
 export CUDACXX=${CUDACXX:-/usr/local/cuda/bin/nvcc}
 export WHISPER_DONT_GENERATE_BINDINGS=1
@@ -97,11 +128,15 @@ export GGML_CCACHE=OFF
 export CMAKE_ARGS="${CMAKE_ARGS:+$CMAKE_ARGS }-DWHISPER_CCACHE=OFF -DGGML_CCACHE=OFF"
 
 require_cmd cargo
+require_cmd node
 require_cmd rustc
 require_cmd "$CC"
 require_cmd "$CXX"
 require_cmd "$CUDAHOSTCXX"
 require_cmd "$CUDACXX"
+require_cuda_supported_compiler "CC" "$CC"
+require_cuda_supported_compiler "CXX" "$CXX"
+require_cuda_supported_compiler "CUDAHOSTCXX" "$CUDAHOSTCXX"
 
 # ---------------------------------------------------------------------------
 # Paths
@@ -156,7 +191,8 @@ args=(
   --locked
   --manifest-path "$MANIFEST"
   --target-dir "$target_dir"
-  --features gpu-cuda,gpu-ort-cuda
+  --features engine-whisper,engine-cohere-transcribe,engine-hy-mt,engine-moonshine,engine-nemotron-asr,engine-pocket-tts,engine-supertonic,gpu-cuda
+  --bins
   -j "$jobs"
   --config "host.linker=\"${CC}\""
   --config "host.rustflags=[\"-C\",\"link-arg=-fuse-ld=bfd\"]"
@@ -172,11 +208,12 @@ printf 'cargo %q ' "${args[@]}"
 printf '\n'
 cargo "${args[@]}"
 
-binary="$target_dir/$profile/local-transcript-sidecar"
+binary="$target_dir/$profile/local-dictation-sidecar"
 [[ -f "$binary" ]] || die "build completed but binary not found at $binary"
+helper="$target_dir/$profile/local-dictation-translation-helper"
+[[ -f "$helper" ]] || die "build completed but helper not found at $helper"
 
-while IFS= read -r provider; do
-  require_glob_match "$target_dir/$profile/${provider}*"
-  stage_runtime_artifact "$target_dir/$profile/$provider"
-done < <(node "$REPO_ROOT/scripts/list-cuda-artifacts.mjs" providers linux)
+while IFS= read -r runtime; do
+  copy_resolved_artifact "$cuda_lib/$runtime" "$target_dir/$profile/$runtime"
+done < <(node "$REPO_ROOT/scripts/list-cuda-artifacts.mjs" linux)
 printf 'Done: %s\n' "$binary"

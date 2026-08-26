@@ -1,13 +1,12 @@
 use std::borrow::Cow;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::sync::LazyLock;
 
 use ort::session::{Session, SessionInputValue};
 use ort::value::{DynValue, TensorElementType, Value, ValueType};
 
 use crate::engine::capabilities::{
-    LanguageSupport, ModelFamilyCapabilities, ModelFamilyId, RuntimeId,
+    LanguageSupport, ModelFamilyCapabilities, ModelFamilyId, ModelTask, RuntimeId,
 };
 use crate::engine::traits::{LoadedModel, ModelFamilyAdapter};
 use crate::protocol::{TimestampGranularity, TimestampSource, TranscriptSegment};
@@ -43,17 +42,25 @@ const TOKENIZER_FILENAME: &str = "tokenizer.json";
 #[derive(Default)]
 pub struct CohereTranscribeAdapter;
 
-static CAPABILITIES: LazyLock<ModelFamilyCapabilities> =
-    LazyLock::new(|| ModelFamilyCapabilities {
-        supports_segment_timestamps: false,
-        supports_word_timestamps: false,
-        supports_initial_prompt: false,
-        supports_language_selection: false,
-        supported_languages: LanguageSupport::EnglishOnly,
-        max_audio_duration_secs: Some(MAX_AUDIO_DURATION_SECS),
-        produces_punctuation: true,
-        live_partial_strategies: Vec::new(),
-    });
+static CAPABILITIES: ModelFamilyCapabilities = ModelFamilyCapabilities {
+    task: ModelTask::Stt,
+    // The int8 encoder is split across CUDA and CPU with 96 inserted copies,
+    // making it about twice as slow as the CPU-only session in local release
+    // benchmarks. Keep Auto on the proven path.
+    supports_hardware_acceleration: false,
+    available_voices: Vec::new(),
+    supports_speed_control: false,
+    output_sample_rate: None,
+    supports_segment_timestamps: false,
+    supports_word_timestamps: false,
+    supports_initial_prompt: false,
+    supports_streaming: false,
+    supports_language_selection: false,
+    supports_automatic_language_detection: false,
+    supported_languages: LanguageSupport::EnglishOnly,
+    max_audio_duration_secs: Some(MAX_AUDIO_DURATION_SECS),
+    produces_punctuation: true,
+};
 
 impl ModelFamilyAdapter for CohereTranscribeAdapter {
     fn runtime_id(&self) -> RuntimeId {
@@ -158,10 +165,12 @@ impl LoadedModel for LoadedCohereModel {
             let duration_ms = (request.audio_samples.len() as u64 * 1_000) / SAMPLE_RATE as u64;
             vec![TranscriptSegment {
                 end_ms: duration_ms,
+                speaker: None,
                 start_ms: 0,
                 text: trimmed,
                 timestamp_granularity: TimestampGranularity::Utterance,
                 timestamp_source: TimestampSource::Vad,
+                words: Vec::new(),
             }]
         };
         let diagnostics = if segments.is_empty() {
@@ -176,6 +185,7 @@ impl LoadedModel for LoadedCohereModel {
         };
 
         Ok(EngineTranscriptOutput {
+            detected_language: None,
             segments,
             diagnostics,
         })

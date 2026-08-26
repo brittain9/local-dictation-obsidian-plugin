@@ -30,7 +30,7 @@ function Invoke-TimedStep($Name, [scriptblock]$Action) {
   }
 }
 
-foreach ($tool in 'cargo', 'nvcc') {
+foreach ($tool in 'cargo', 'node', 'nvcc') {
   if (-not (Get-Command $tool -ErrorAction SilentlyContinue)) {
     throw "required tool not found on PATH: $tool"
   }
@@ -40,12 +40,27 @@ $jobs = Read-PositiveInt 'BUILD_JOBS' ([Environment]::ProcessorCount)
 $env:CARGO_BUILD_JOBS = "$jobs"
 $env:CMAKE_BUILD_PARALLEL_LEVEL = "$jobs"
 
+# Disable the whisper/ggml ccache probe (no ccache on the runner; the rust-cache
+# target-cuda restore is what makes warm builds fast, not ccache), matching
+# build-cuda.sh.
+#
+# NOTE: do NOT set WHISPER_DONT_GENERATE_BINDINGS=1 here. Unlike Linux, Windows
+# must run bindgen: whisper-rs-sys' vendored bindings are Linux-ABI, so reusing
+# them on Windows makes bindings.rs' compile-time struct-size assertions overflow
+# (rustc E0080, "attempt to compute N - M which would overflow"). LIBCLANG_PATH
+# is set up for Windows in setup-sidecar-rust precisely so bindgen can run here.
+$env:WHISPER_CCACHE = 'OFF'
+$env:GGML_CCACHE = 'OFF'
+$env:CMAKE_ARGS = (@($env:CMAKE_ARGS, '-DWHISPER_CCACHE=OFF', '-DGGML_CCACHE=OFF') |
+  Where-Object { $_ } ) -join ' '
+
 $cargoArgs = @(
   'build',
   '--locked',
   '--manifest-path', 'native/Cargo.toml',
   '--target-dir', 'native/target-cuda',
-  '--features', 'gpu-cuda,gpu-ort-cuda',
+  '--features', 'engine-whisper,engine-cohere-transcribe,engine-hy-mt,engine-moonshine,engine-nemotron-asr,engine-pocket-tts,engine-supertonic,gpu-cuda',
+  '--bins',
   '-j', "$jobs"
 )
 if ($Release) { $cargoArgs += '--release' }
@@ -73,8 +88,33 @@ Invoke-TimedStep "Build CUDA sidecar ($buildProfile)" {
 }
 
 $outDir = "native/target-cuda/$buildProfile"
-$providers = (& node scripts/list-cuda-artifacts.mjs providers win32) -split "`r?`n" | Where-Object { $_ -ne '' }
-$expected = @("$outDir/local-transcript-sidecar.exe") + ($providers | ForEach-Object { "$outDir/$_" })
+$cudaRoot = if ($env:CUDA_PATH) {
+  $env:CUDA_PATH
+} else {
+  Split-Path -Parent (Split-Path -Parent (Get-Command nvcc).Source)
+}
+$cudaBinDirs = @(
+  (Join-Path $cudaRoot 'bin/x64'),
+  (Join-Path $cudaRoot 'bin')
+) | Where-Object { Test-Path $_ }
+$runtimeFiles = @(& node scripts/list-cuda-artifacts.mjs win32)
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+Invoke-TimedStep "Stage CUDA runtime libraries" {
+  foreach ($runtimeFile in $runtimeFiles) {
+    $source = $cudaBinDirs |
+      ForEach-Object { Join-Path $_ $runtimeFile } |
+      Where-Object { Test-Path $_ } |
+      Select-Object -First 1
+    if (-not $source) {
+      throw "required CUDA runtime library not found under ${cudaRoot}: $runtimeFile"
+    }
+    Copy-Item -LiteralPath $source -Destination (Join-Path $outDir $runtimeFile) -Force
+  }
+}
+
+$expected = @("$outDir/local-dictation-sidecar.exe", "$outDir/local-dictation-translation-helper.exe") +
+  ($runtimeFiles | ForEach-Object { Join-Path $outDir $_ })
 Invoke-TimedStep "Verify CUDA sidecar artifacts" {
   foreach ($path in $expected) {
     if (-not (Test-Path $path)) {
@@ -84,4 +124,4 @@ Invoke-TimedStep "Verify CUDA sidecar artifacts" {
     Write-Host "$path $([Math]::Round($item.Length / 1MB, 2)) MiB"
   }
 }
-Write-Host "Done: $outDir/local-transcript-sidecar.exe"
+Write-Host "Done: $outDir/local-dictation-sidecar.exe"

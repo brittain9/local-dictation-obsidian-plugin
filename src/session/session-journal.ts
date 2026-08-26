@@ -1,15 +1,41 @@
 export type UtteranceId = string;
 
-export const STAGE_IDS = ['engine', 'hallucination_filter', 'punctuation', 'user_rules'] as const;
+export const STAGE_IDS = [
+  'diarization',
+  'engine',
+  'hallucination_filter',
+  'llm_postprocess',
+  'punctuation',
+  'user_rules',
+] as const;
 export type StageId = (typeof STAGE_IDS)[number];
 
 export interface TranscriptSegment {
   endMs: number;
-  speaker?: string;
+  /** Session-stable speaker for this segment, 0-based; `null` when diarization
+   * is off or no turn was attributed. */
+  speaker: number | null;
   startMs: number;
   text: string;
   timestampGranularity: 'segment' | 'utterance' | 'word';
   timestampSource: 'engine' | 'interpolated' | 'none' | 'vad';
+  /** Engine-provided word alignments, relative to this utterance. */
+  words?: readonly TranscriptWord[];
+}
+
+export interface TranscriptWord {
+  endMs: number;
+  startMs: number;
+  text: string;
+  timestampSource: 'engine' | 'interpolated' | 'none' | 'vad';
+}
+
+/** A speaker-homogeneous run of text within an utterance — the unit the renderer
+ * labels and lays out. One span (the whole utterance) when diarization is off or
+ * a single speaker was detected; several when an utterance spans speaker turns. */
+export interface TranscriptSpan {
+  speakerIndex: number | null;
+  text: string;
 }
 
 export type StageStatus =
@@ -29,10 +55,16 @@ export interface StageOutcome {
 
 export interface TranscriptRevision {
   isFinal: boolean;
+  llmPostprocessRawText?: string | null;
   pauseMsBeforeUtterance: number | null;
   revision: number;
   segments: readonly TranscriptSegment[];
   sessionId: string;
+  speakerIndex: number | null;
+  /** Renderable speaker spans (consecutive same-speaker segments merged). The
+   * source of truth for diarized rendering; `text` stays the plain joined
+   * transcript for context, raw-session, and batch cleanup. */
+  spans: readonly TranscriptSpan[];
   stageResults: readonly StageOutcome[];
   text: string;
   utteranceEndMsInSession: number;

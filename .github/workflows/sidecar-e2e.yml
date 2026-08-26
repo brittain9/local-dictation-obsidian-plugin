@@ -1,0 +1,291 @@
+name: sidecar-e2e
+
+# Heavy, model-backed quality suite for the Rust sidecar: runs known audio
+# fixtures through the full pipeline and asserts the transcript (accuracy +
+# wire-protocol). Kept out of the general `ci` workflow because it downloads
+# large model artifacts and runs real inference. English smoke coverage runs on
+# relevant PR paths. Multilingual certification has its own manually
+# dispatchable, weekly workflow in multilingual-quality.yml.
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/sidecar-e2e.yml'
+      - 'native/catalog.json'
+      - 'native/src/**'
+      - 'native/tests/**'
+      - 'scripts/lib/transcription-quality-report.mjs'
+      - 'scripts/transcription-quality-report.mjs'
+      - 'scripts/tts-quality-summary.mjs'
+      - 'scripts/pocket-tts-phase0/**'
+      - 'test/transcription-quality-report.test.ts'
+      - 'package.json'
+  workflow_dispatch:
+  schedule:
+    - cron: '0 6 * * 1' # Mondays 06:00 UTC
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sidecar-e2e-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  NODE_VERSION: 24.14.1
+  RUST_TOOLCHAIN: 1.94.1
+  MODEL_CACHE_DIR: ${{ github.workspace }}/.test-models
+
+jobs:
+  transcription-e2e:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup Node.js + npm
+        uses: ./.github/actions/setup-node-npm
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'true'
+          upgrade-npm: 'true'
+
+      - name: Setup Rust
+        uses: ./.github/actions/setup-sidecar-rust
+        with:
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
+          components: rustfmt, clippy
+          cache-workspaces: native -> target
+          cache-shared-key: sidecar-e2e
+
+      # Persist the downloaded whisper model across runs so we only pay the
+      # download once. The key is stable: the model is pinned in the catalog.
+      - name: Cache whisper test model
+        uses: actions/cache@v6
+        with:
+          path: ${{ env.MODEL_CACHE_DIR }}
+          key: whisper-test-model-tiny-en-q8_0
+
+      - name: Install JavaScript dependencies
+        run: npm ci
+
+      - name: Run sidecar e2e quality suite
+        env:
+          STT_QUALITY_REPORT_PATH: ${{ runner.temp }}/quality/whisper-english.jsonl
+          STT_TEST_MODEL_DIR: ${{ env.MODEL_CACHE_DIR }}
+        run: npm run test:sidecar:e2e
+
+      - name: Upload quality measurements
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: quality-measurements-whisper-english
+          path: ${{ runner.temp }}/quality/whisper-english.jsonl
+          if-no-files-found: error
+
+  nemotron-e2e:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup Node.js + npm
+        uses: ./.github/actions/setup-node-npm
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'true'
+          upgrade-npm: 'true'
+
+      - name: Setup Rust
+        uses: ./.github/actions/setup-sidecar-rust
+        with:
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
+          components: rustfmt, clippy
+          cache-workspaces: native -> target
+          cache-shared-key: nemotron-e2e
+
+      - name: Cache pinned Nemotron test model
+        uses: actions/cache@v6
+        with:
+          path: ${{ env.MODEL_CACHE_DIR }}
+          key: nemotron-asr-${{ hashFiles('native/catalog.json') }}
+
+      - name: Run Nemotron real-model quality suite
+        env:
+          STT_QUALITY_REPORT_PATH: ${{ runner.temp }}/quality/nemotron-english.jsonl
+          STT_TEST_MODEL_DIR: ${{ env.MODEL_CACHE_DIR }}
+        run: npm run test:sidecar:nemotron:e2e
+
+      - name: Upload quality measurements
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: quality-measurements-nemotron-english
+          path: ${{ runner.temp }}/quality/nemotron-english.jsonl
+          if-no-files-found: error
+
+  pocket-tts-smoke:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup Node.js + npm
+        uses: ./.github/actions/setup-node-npm
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'true'
+          upgrade-npm: 'true'
+
+      - name: Setup Rust
+        uses: ./.github/actions/setup-sidecar-rust
+        with:
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
+          components: rustfmt, clippy
+          cache-workspaces: native -> target
+          cache-shared-key: pocket-tts-smoke-${{ runner.os }}
+
+      - name: Cache pinned English Pocket TTS model
+        uses: actions/cache@v6
+        with:
+          path: ${{ env.MODEL_CACHE_DIR }}
+          key: pocket-tts-english-${{ runner.os }}-${{ hashFiles('native/catalog.json') }}
+
+      - name: Install JavaScript dependencies
+        run: npm ci
+
+      - name: Run English Pocket TTS real-model smoke
+        env:
+          STT_TEST_MODEL_DIR: ${{ env.MODEL_CACHE_DIR }}
+        run: npm run test:sidecar:pocket-tts:smoke
+
+  pocket-tts-certification:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup Node.js + npm
+        uses: ./.github/actions/setup-node-npm
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'true'
+          upgrade-npm: 'true'
+
+      - name: Setup Rust
+        uses: ./.github/actions/setup-sidecar-rust
+        with:
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
+          components: rustfmt, clippy
+          cache-workspaces: native -> target
+          cache-shared-key: pocket-tts-certification
+
+      - name: Cache pinned Pocket TTS and Whisper models
+        uses: actions/cache@v6
+        with:
+          path: ${{ env.MODEL_CACHE_DIR }}
+          key: pocket-tts-multilingual-${{ hashFiles('native/catalog.json') }}
+
+      - name: Install JavaScript dependencies
+        run: npm ci
+
+      - name: Run six-language Pocket TTS certification
+        env:
+          STT_TEST_MODEL_DIR: ${{ env.MODEL_CACHE_DIR }}
+          TTS_QUALITY_REPORT_PATH: ${{ runner.temp }}/quality/pocket-tts-multilingual-v1.jsonl
+        run: npm run test:sidecar:pocket-tts:certify
+
+      - name: Publish certification in the workflow summary
+        if: always()
+        run: node scripts/tts-quality-summary.mjs "${{ runner.temp }}/quality/pocket-tts-multilingual-v1.jsonl" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload TTS quality measurements
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: tts-quality-measurements-multilingual-v1
+          path: ${{ runner.temp }}/quality/pocket-tts-multilingual-v1.jsonl
+          if-no-files-found: error
+
+  supertonic-smoke:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup Node.js + npm
+        uses: ./.github/actions/setup-node-npm
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'true'
+          upgrade-npm: 'true'
+
+      - name: Setup Rust
+        uses: ./.github/actions/setup-sidecar-rust
+        with:
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
+          components: rustfmt, clippy
+          cache-workspaces: native -> target
+          cache-shared-key: supertonic-smoke
+
+      - name: Cache pinned Supertonic model
+        uses: actions/cache@v6
+        with:
+          path: ${{ env.MODEL_CACHE_DIR }}
+          key: supertonic-${{ hashFiles('native/catalog.json') }}
+
+      - name: Install JavaScript dependencies
+        run: npm ci
+
+      - name: Run Supertonic real-model smoke
+        env:
+          STT_TEST_MODEL_DIR: ${{ env.MODEL_CACHE_DIR }}
+        run: npm run test:sidecar:supertonic:smoke
+
+  quality-report:
+    needs: [transcription-e2e, nemotron-e2e]
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Download quality measurements
+        uses: actions/download-artifact@v8
+        with:
+          pattern: quality-measurements-*
+          path: artifacts/quality-measurements
+          merge-multiple: true
+
+      - name: Render quality report
+        env:
+          GITHUB_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          RUNNER_DESCRIPTION: GitHub Actions Ubuntu 24.04 x86_64 CPU
+        run: >-
+          node scripts/transcription-quality-report.mjs
+          --render-only artifacts/quality-measurements
+          --output-dir artifacts/transcription-quality
+
+      - name: Publish report in the workflow summary
+        run: cat artifacts/transcription-quality/transcription-quality.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload transcription quality report
+        uses: actions/upload-artifact@v7
+        with:
+          name: transcription-quality-report
+          path: artifacts/transcription-quality

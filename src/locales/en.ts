@@ -1,0 +1,1017 @@
+export const en = {
+  'notice.dictationNotActive': 'Dictation is not currently active.',
+  'notice.dictationStartFailed': 'Could not start dictation.',
+  'notice.dictationStopFailed': 'Could not stop dictation.',
+  'notice.finalizedUtteranceAutoCopyFailed':
+    'Could not automatically copy the finalized utterance.',
+  'notice.lastUtteranceCleared': 'Cleared the last retained utterance.',
+  'notice.lastUtteranceCopied': 'Copied the last finalized utterance.',
+  'notice.lastUtteranceCopyFailed': 'Could not copy the last finalized utterance.',
+  'notice.lastUtteranceReinsertFailed': 'Could not reinsert the last finalized utterance.',
+  'notice.lastUtteranceReinserted': 'Reinserted the last finalized utterance.',
+  'notice.lastUtteranceUnavailable': 'No finalized utterance is available.',
+  'notice.llmTransformEmpty': 'LLM transform returned nothing to add.',
+  'notice.microphoneDisconnected':
+    'Microphone disconnected. Dictation stopped and will finish processing audio already captured. Reconnect the microphone, then start dictation again.',
+  'notice.rawTranscriptChanged':
+    'Could not restore the raw transcript because the note changed after cleanup.',
+  'notice.rawTranscriptCleared': 'Cleared the raw transcript recovery.',
+  'notice.rawTranscriptCopied': 'Copied the raw transcript.',
+  'notice.rawTranscriptCopyFailed': 'Could not copy the raw transcript.',
+  'notice.rawTranscriptRestored': 'Restored the raw transcript.',
+  'notice.rawTranscriptRestoreFailed': 'Could not restore the raw transcript.',
+  'notice.rawTranscriptTargetUnavailable':
+    'Could not restore the raw transcript because its original note is no longer open in the same editor.',
+  'notice.rawTranscriptUnavailable': 'No raw transcript recovery is available.',
+  'notice.sidecarHealthCheckFailed': 'Sidecar health check failed',
+  'notice.sidecarReady': 'Sidecar is ready ({version}).',
+  'notice.sidecarRestarted': 'Restarted sidecar ({version}).',
+  'notice.sidecarRestartFailed': 'Sidecar restart failed',
+  'notice.sidecarRestartRequiresIdle':
+    'Restart the sidecar only when dictation and reading are idle.',
+  'notice.sidecarMaintenanceInProgress':
+    'The speech engine is being installed or restarted. Wait for it to finish, then try again.',
+  'notice.transcriptRecordFailed': 'Could not record the transcript.',
+  'notice.sidecarSessionError': 'The speech engine reported an error.',
+  'notice.sidecarVersionDrift.actionMultiple': 'Update speech engines',
+  'notice.sidecarVersionDrift.actionOne': 'Update speech engine',
+  'notice.sidecarVersionDrift.cpu':
+    'Updated to {version}, but the installed speech engine is out of date. Update now to keep them in sync.',
+  'notice.sidecarVersionDrift.cpuAndCuda':
+    'Updated to {version}, but the installed CPU and CUDA speech engines are out of date. Update now to keep them in sync.',
+  'notice.sidecarVersionDrift.cuda':
+    'Updated to {version}, but the installed CUDA speech engine is out of date. Update now to keep them in sync.',
+  'notice.surfaceDesynchronized':
+    'Dictation stopped because the note changed in a way Speech Kit could not safely track. Start dictation again to continue.',
+  'notice.targetNoteClosed':
+    'Dictation stopped because its target note was closed or replaced. Start dictation again to continue.',
+  'notice.targetNoteDeleted':
+    'Dictation stopped because its target note was deleted. Restore or recreate the note, then start dictation again.',
+  'notice.transcriptWriteFailed':
+    'Dictation stopped because Speech Kit could not safely write to the note. Start dictation again to continue.',
+  'setup.sidecar.cpu.firstRun.body':
+    'Speech Kit needs a one-time download of the CPU speech-to-text engine from GitHub releases. Transcription runs locally on your machine after this completes. You can install CUDA acceleration later from settings.',
+  'setup.sidecar.cpu.firstRun.primaryButton': 'Download CPU sidecar',
+  'setup.sidecar.cpu.firstRun.success': 'Speech Kit sidecar installed and started.',
+  'setup.sidecar.cpu.firstRun.title': 'Finish setting up Speech Kit',
+  'setup.sidecar.cpu.install.body':
+    'Download the CPU speech-to-text engine from GitHub releases. Transcription runs locally on your machine after this completes.',
+  'setup.sidecar.cpu.install.primaryButton': 'Download CPU sidecar',
+  'setup.sidecar.cpu.install.success': 'CPU sidecar installed and started.',
+  'setup.sidecar.cpu.install.title': 'Install CPU sidecar',
+  'setup.sidecar.cpu.reinstall.body':
+    'Re-download the CPU speech-to-text engine from GitHub releases. This replaces the current CPU install.',
+  'setup.sidecar.cpu.reinstall.primaryButton': 'Redownload CPU sidecar',
+  'setup.sidecar.cpu.reinstall.success': 'CPU sidecar reinstalled and restarted.',
+  'setup.sidecar.cpu.reinstall.title': 'Reinstall CPU sidecar',
+  'setup.sidecar.cuda.install.body':
+    'Download the CUDA sidecar to accelerate Whisper models on a supported NVIDIA GPU. This replaces the CPU sidecar while active; the CPU sidecar remains installed as a fallback.',
+  'setup.sidecar.cuda.install.primaryButton': 'Download CUDA sidecar',
+  'setup.sidecar.cuda.install.success': 'CUDA sidecar installed and started.',
+  'setup.sidecar.cuda.install.title': 'Install CUDA acceleration',
+  'setup.sidecar.mac.firstRun.body':
+    'Speech Kit needs a one-time download of its speech-to-text engine from GitHub releases. Once installed, transcription runs entirely on your Mac — audio never leaves your machine.',
+  'setup.sidecar.mac.firstRun.primaryButton': 'Download sidecar',
+  'setup.sidecar.mac.firstRun.success': 'Speech Kit sidecar installed and started.',
+  'setup.sidecar.mac.firstRun.title': 'Finish setting up Speech Kit',
+  'setup.sidecar.mac.install.body':
+    'Download the speech-to-text engine from GitHub releases. Transcription runs locally on your Mac after this completes.',
+  'setup.sidecar.mac.install.primaryButton': 'Download sidecar',
+  'setup.sidecar.mac.install.success': 'Sidecar installed and started.',
+  'setup.sidecar.mac.install.title': 'Install sidecar',
+  'setup.sidecar.mac.reinstall.body':
+    'Re-download the speech-to-text engine from GitHub releases. This replaces the current install.',
+  'setup.sidecar.mac.reinstall.primaryButton': 'Redownload sidecar',
+  'setup.sidecar.mac.reinstall.success': 'Sidecar reinstalled and restarted.',
+  'setup.sidecar.mac.reinstall.title': 'Reinstall sidecar',
+  'setup.sidecar.update.body':
+    'Download the current {engineLabel} to match this version of Speech Kit. Existing installs are replaced in place.',
+  'setup.sidecar.update.engine.cpuAndCuda': 'CPU and CUDA speech engines',
+  'setup.sidecar.update.engine.cuda': 'CUDA speech engine',
+  'setup.sidecar.update.engine.default': 'speech engine',
+  'setup.sidecar.update.primaryButton_one': 'Update speech engine',
+  'setup.sidecar.update.primaryButton_other': 'Update speech engines',
+  'setup.sidecar.update.success_one': 'Speech Kit speech engine updated and restarted.',
+  'setup.sidecar.update.success_other': 'Speech Kit speech engines updated and restarted.',
+  'setup.sidecar.update.title_one': 'Update speech engine',
+  'setup.sidecar.update.title_other': 'Update speech engines',
+  'audio.microphone.permissionDeniedMac':
+    'Microphone permission denied. Open System Settings → Privacy & Security → Microphone, enable Obsidian, then restart Obsidian and try again.',
+  'audio.microphone.permissionDenied':
+    'Microphone permission denied. Grant access in your OS settings and try again.',
+  'audio.microphone.notFound':
+    'No microphone detected. Plug in a microphone or USB headset, or enable an input device in your OS sound settings, then try again.',
+  'audio.microphone.notReadable':
+    'Microphone could not be opened. Another app may be using it, or the audio device errored. Close other apps using the mic and try again.',
+  'audio.systemAudio.notReady': 'System audio is not ready.',
+  'audio.systemAudio.outdatedInstaller':
+    '{message} Your Obsidian installer predates the macOS system-audio permission. Download a fresh installer from obsidian.md and reinstall, then try again.',
+  'commands.toggleDictation': 'Toggle dictation',
+  'commands.startDictation': 'Start dictation',
+  'commands.stopDictation': 'Stop dictation',
+  'commands.cancelDictation': 'Cancel dictation',
+  'commands.reinsertLastUtterance': 'Reinsert last utterance',
+  'commands.copyLastUtterance': 'Copy last utterance',
+  'commands.clearLastUtterance': 'Clear last utterance',
+  'commands.restoreRawTranscript': 'Restore raw transcript',
+  'commands.copyRawTranscript': 'Copy raw transcript',
+  'commands.clearRawRecovery': 'Clear raw recovery',
+  'commands.checkSidecarHealth': 'Check sidecar health',
+  'commands.restartSidecar': 'Restart sidecar',
+  'commands.readAloud': 'Read aloud from selection or note start',
+  'commands.readAloudFromCursor': 'Read aloud from cursor',
+  'commands.pauseResumeReadAloud': 'Pause or resume reading',
+  'commands.stopReadAloud': 'Stop reading',
+  'commands.translateNote': 'Translate note',
+  'commands.translateSelection': 'Translate selection',
+  'translation.modal.titleWithPair': 'Translate: {source} → {target}',
+  'translation.modal.privacy': 'Translation runs entirely on this device.',
+  'translation.modal.from': 'From',
+  'translation.modal.to': 'To',
+  'translation.modal.swap': 'Swap',
+  'translation.modal.largeNote': 'Large note: translation may take a few seconds.',
+  'translation.modal.sourceSelection': 'Source selection',
+  'translation.modal.sourceNote': 'Source note',
+  'translation.modal.previewAria': 'Translation preview',
+  'translation.modal.readAloud': 'Read translation aloud in {language}',
+  'translation.modal.preparing': 'Preparing local translation…',
+  'translation.modal.loading': 'Loading local model…',
+  'translation.modal.translating': 'Translating…',
+  'translation.modal.translatingProgress': 'Translating block {completed} of {total}…',
+  'translation.modal.ready': 'Translation ready.',
+  'translation.modal.readyPartial_one':
+    'Translation ready. 1 block kept its original language because its formatting could not be preserved.',
+  'translation.modal.readyPartial_other':
+    'Translation ready. {count} blocks kept their original language because their formatting could not be preserved.',
+  'translation.modal.canceled': 'Translation canceled.',
+  'translation.modal.failed': 'Translation failed.',
+  'translation.modal.missingModel': 'Install the local translation pack to use this language pair.',
+  'translation.modal.missingEngineModel':
+    '{style} is not installed. Install its local model to translate this language pair.',
+  'translation.modal.unsupportedPairModel':
+    'Your installed translation models do not support this language pair.',
+  'translation.modal.incompleteModel':
+    'The translation model is missing files. Reinstall it to continue.',
+  'translation.modal.installModel': 'Install translation model',
+  'translation.modal.translateAgain': 'Translate again',
+  'translation.modal.retryReady':
+    'Translation setup changed. Select Translate again to update the preview.',
+  'translation.modal.cancel': 'Cancel',
+  'translation.modal.replace': 'Replace',
+  'translation.modal.insertBelow': 'Insert below',
+  'translation.modal.copy': 'Copy',
+  'translation.modal.dismiss': 'Dismiss',
+  'translation.modal.stale':
+    'The note changed since this translation started. Start a new translation or copy this one.',
+  'translation.notice.copied': 'Copied the translation.',
+  'translation.notice.copyFailed': 'Could not copy the translation.',
+  'translation.notice.tooLong': 'Translate up to {count} characters at a time.',
+  'translation.notice.noText': 'There is no text to translate in this note.',
+  'common.reset': 'Reset',
+  'common.actionFailed': 'Could not complete this action. Try again.',
+  'settings.acceleration.active': 'Configured acceleration: {accelerator}',
+  'settings.acceleration.pending': 'pending (sidecar not ready)',
+  'settings.acceleration.unavailable': 'CPU ({accelerator} unavailable)',
+  'settings.acceleration.unknownReason': 'unknown reason',
+  'settings.dictationLanguage.autoDetect': 'Auto detect',
+  'settings.dictationLanguage.name': 'Dictation language',
+  'settings.dictationLanguage.englishOnlyDesc':
+    'The selected model, {model}, supports English only.',
+  'settings.dictationLanguage.desc':
+    'Choose the language you will speak. Manual selection gives the most predictable cleanup. Auto detect may start more slowly and chooses one language per utterance.',
+  'settings.dictationLanguage.unsupported': '{language} (unsupported)',
+  'settings.dictationLanguage.noReadAloud': 'Read aloud does not cover {language} yet.',
+  'settings.dictationLanguage.noTranslation': 'Local translation does not cover {language} yet.',
+  'settings.dictationLanguage.modelRequired':
+    'Choose a transcription model that supports {language} before starting dictation.',
+  'settings.dictationLanguage.chooseModel': 'Choose compatible model',
+  'settings.dictationLanguage.openModelPickerFailed': 'Could not open the model picker.',
+  'settings.engine.named': '{engine} engine',
+  'settings.groups.model': 'Models',
+  'settings.groups.readAloud': 'Read aloud',
+  'settings.groups.translation': 'Translation',
+  'settings.groups.capture': 'Capture',
+  'settings.groups.transcriptOutput': 'Transcript output',
+  'settings.groups.llmTransformation': 'LLM transformation',
+  'settings.groups.engine': 'Engine',
+  'settings.groups.advanced': 'Advanced',
+  'settings.readAloud.hotkey': 'Recommended shortcut',
+  'settings.readAloud.hotkeyDesc':
+    'Bind “Speech Kit: Read aloud from selection or note start” to a hotkey. It reads selected text, or the entire note when nothing is selected.',
+  'settings.readAloud.highlightSpokenText': 'Highlight spoken text',
+  'settings.readAloud.highlightSpokenTextDesc':
+    'Highlight the current spoken block in the editor while Read Aloud is playing.',
+  'settings.readAloud.voice': 'Voice',
+  'settings.readAloud.voiceDesc': 'Choose from voices installed for the selected model.',
+  'settings.readAloud.noVoices': 'No installed voices',
+  'settings.readAloud.speed': 'Reading speed',
+  'settings.readAloud.speedDesc':
+    'Changing speed while reading restarts from the current sentence.',
+  'settings.translation.model.name': 'Translation model',
+  'settings.translation.model.installedDesc': '{model} · Installed · {size}',
+  'settings.translation.model.noneInstalledDesc':
+    'No translation model is installed. Choose one in Manage models.',
+  'settings.translation.model.multipleInstalledDesc':
+    '{count} translation models installed · {size}',
+  'settings.translation.model.availableDesc': '{model} · Not installed · {size}',
+  'settings.translation.model.unavailable': 'No translation model is available.',
+  'settings.translation.model.download': 'Download translation model',
+  'settings.translation.model.manage': 'Manage translation models',
+  'settings.translation.source.name': 'Default source language',
+  'settings.translation.source.desc':
+    'Preselected when you translate a note or selection. You can change it before translating.',
+  'settings.translation.target.name': 'Default target language',
+  'settings.translation.target.desc':
+    'The language Speech Kit translates into by default. Every translation preview shows the active pair.',
+  'models.manage.dictationModels': 'Speech to text',
+  'models.manage.readAloudModels': 'Text to speech',
+  'models.manage.translationModels': 'Translation',
+  'models.manage.allLanguages': 'All languages',
+  'models.manage.familiesLabel': 'Model families',
+  'models.manage.noneForLanguage': 'No models are available for this task and language.',
+  'models.manage.installAllVoices': 'Install all voices',
+  'models.manage.installAllVoicesDesc':
+    'Install the remaining {count} optional voices for this model.',
+  'models.manage.optionalVoice': 'Optional local voice',
+  'models.manage.voiceInstalled': 'Installed',
+  'models.manage.taskLabel': 'Model task',
+  'models.manage.searchPlaceholder': 'Search {task} models',
+  'models.manage.languagesLabel': 'Languages',
+  'models.manage.manageVoices': 'Manage voices',
+  'models.manage.performanceWarning': 'Higher reading speeds may buffer on slower CPUs.',
+  'models.manage.heavyWarning':
+    'Heavy model: the 4.62 GB download requires substantially more memory during local translation.',
+  'models.manage.installWarningTitle': 'Install a high-resource model?',
+  'models.manage.installWarningMessage':
+    '{model} downloads approximately {size} and uses substantially more CPU. Higher reading speeds may buffer.',
+  'models.manage.heavyInstallWarningMessage':
+    '{model} downloads approximately {size} and requires substantially more memory during local translation.',
+  'models.manage.installTermsTitle': 'Review model terms',
+  'models.manage.installTermsMessage':
+    '{model} is a direct {size} download from its publisher and is governed by {license}. That license does not permit use in the European Union, United Kingdom, or South Korea. Review it before installing. Continue only if you are outside those territories and agree to its terms.',
+  'models.manage.installTermsConfirm': 'I confirm and install',
+  'models.manage.installTermsLink': 'Open model license',
+  'models.tag.highCpu': 'High CPU',
+  'models.tag.mayBuffer': 'May buffer',
+  'models.tag.heavy': 'Heavy',
+  'models.tag.termsApply': 'Terms apply',
+  'tts.status.reading': 'Reading…',
+  'tts.status.paused': 'Reading paused',
+  'tts.control.model': 'Model: {model}',
+  'tts.control.speed': 'Speed: {speed}',
+  'tts.control.voice': 'Voice: {voice}',
+  'tts.control.pause': 'Pause reading',
+  'tts.control.resume': 'Resume reading',
+  'tts.control.stop': 'Stop reading',
+  'tts.action.chooseModel': 'Choose model',
+  'tts.notice.noText': 'There is no speakable text here.',
+  'tts.notice.modelRequired': 'Install and select a read-aloud model first.',
+  'tts.notice.voiceRequired': 'Select an installed voice first.',
+  'tts.notice.languageUnsupported': 'The selected read-aloud model cannot speak {language}.',
+  'tts.notice.startFailed': 'Could not start reading.',
+  'tts.notice.playbackFailed': 'Audio playback failed.',
+  'tts.notice.sidecarExited': 'Reading stopped because the sidecar exited unexpectedly.',
+  'settings.listeningMode.alwaysOn': 'Always on',
+  'settings.listeningMode.oneSentence': 'One sentence',
+  'settings.listeningMode.name': 'Listening mode',
+  'settings.listeningMode.desc': 'Continuous, or stop after one sentence.',
+  'settings.autoCopyFinalizedUtterances.name': 'Automatically copy finalized utterances',
+  'settings.autoCopyFinalizedUtterances.desc':
+    'Each finalized phrase replaces the system clipboard.',
+  'settings.insertText.atCursor': 'At cursor',
+  'settings.insertText.endOfNote': 'End of note',
+  'settings.insertText.name': 'Insert text',
+  'settings.insertText.desc': 'Where dictated text appears.',
+  'settings.transcriptFormatting.smartParagraphs': 'Smart paragraphs',
+  'settings.transcriptFormatting.space': 'Space',
+  'settings.transcriptFormatting.newLine': 'New line',
+  'settings.transcriptFormatting.newParagraph': 'New paragraph',
+  'settings.transcriptFormatting.name': 'Transcript formatting',
+  'settings.transcriptFormatting.desc': 'How phrases are joined together.',
+  'settings.phraseFinalization.responsiveOption': 'Responsive — short pauses',
+  'settings.phraseFinalization.balancedOption': 'Balanced — standard',
+  'settings.phraseFinalization.patientOption': 'Patient — long pauses',
+  'settings.phraseFinalization.name': 'Phrase finalization',
+  'settings.phraseFinalization.responsive':
+    'Finalizes after shorter pauses for faster completed text.',
+  'settings.phraseFinalization.balanced':
+    'Uses the standard pause tolerance for everyday dictation.',
+  'settings.phraseFinalization.patient':
+    'Waits through longer pauses so a thought is less likely to be split.',
+  'settings.phraseFinalization.tooltip':
+    'Applies to every transcription model. Live words can still update before the phrase is final. This changes voice-activity boundaries, not writing style or model accuracy. Responsive favors speed; Patient favors keeping pauses inside one phrase.',
+  'settings.systemAudio.name': 'Include system audio',
+  'settings.systemAudio.desc':
+    "Also capture this computer's default audio output for meetings, calls, and videos.",
+  'settings.systemAudio.ready': 'System audio is ready.',
+  'settings.systemAudio.testFailed':
+    'Could not test system audio. Check that the speech engine is installed and try again.',
+  'settings.speakerLabels.name': 'Speaker labels',
+  'settings.speakerLabels.desc': 'Label each phrase by speaker.',
+  'settings.speakerLabels.streamingLimitation': 'Speaker labels require a batch model.',
+  'settings.speakerLabels.modal.title': 'Speaker label settings',
+  'settings.speakerLabels.modal.intro':
+    'Speaker labels run on-device after each voice-detected phrase. They require a batch transcription model.',
+  'settings.speakerLabels.maximumSpeakers.name': 'Maximum speakers',
+  'settings.speakerLabels.maximumSpeakers.desc':
+    'Automatic determines the speaker count. Set a limit only if extra speaker labels appear.',
+  'settings.speakerLabels.maximumSpeakers.disabledDesc':
+    'Enable speaker labels before configuring a speaker limit.',
+  'settings.speakerLabels.automatic': 'Automatic',
+  'settings.timestamps.enable.name': 'Use timestamps',
+  'settings.timestamps.enable.desc': 'Add timestamp landmarks to dictated transcripts.',
+  'settings.timestamps.modal.title': 'Timestamp settings',
+  'settings.timestamps.modal.intro':
+    'Choose landmarks at intervals, phrase boundaries, or Smart paragraph breaks.',
+  'settings.timestamps.clock.elapsed': 'Elapsed',
+  'settings.timestamps.clock.wallClock': 'Wall clock',
+  'settings.timestamps.frequency.atIntervals': 'At intervals',
+  'settings.timestamps.frequency.everyPhrase': 'Every phrase',
+  'settings.timestamps.frequency.atParagraphBreaks': 'At paragraph breaks',
+  'settings.timestamps.sessionHeader.name': 'Session header',
+  'settings.timestamps.sessionHeader.desc':
+    'Start each timestamped session with [YYYY-MM-DD HH:MM].',
+  'settings.timestamps.referenceClock.name': 'Reference clock',
+  'settings.timestamps.referenceClock.desc':
+    'Elapsed time since dictation started, or local wall-clock time.',
+  'settings.timestamps.frequency.name': 'Frequency',
+  'settings.timestamps.frequency.desc': 'Choose how often timestamps appear.',
+  'settings.timestamps.frequency.sparseDesc': 'Add readable landmarks at the configured interval.',
+  'settings.timestamps.frequency.everyPhraseDesc':
+    'Add a timestamp before each model-timed segment when available, otherwise at each voice-detected phrase.',
+  'settings.timestamps.frequency.paragraphUnavailableDesc':
+    'Set Transcript formatting to Smart paragraphs to get paragraph breaks.',
+  'settings.timestamps.frequency.paragraphDesc':
+    'Add a timestamp at the start of the session and at each Smart paragraph break.',
+  'settings.timestamps.interval.name': 'Interval',
+  'settings.timestamps.interval.desc': 'Seconds between timestamp landmarks ({min}-{max}).',
+  'settings.timestamps.interval.inactiveDesc': 'Used only when frequency is set to At intervals.',
+  'settings.timestamps.interval.validation': 'Enter a whole number from {min} to {max} seconds.',
+  'settings.smartParagraph.modal.title': 'Smart paragraph settings',
+  'settings.smartParagraph.modal.intro':
+    'Smart paragraphs turn longer pauses into line or paragraph breaks. These values apply only when transcript formatting is set to Smart paragraphs.',
+  'settings.smartParagraph.lineBreakPause.name': 'Line break pause',
+  'settings.smartParagraph.lineBreakPause.desc':
+    'Seconds before a single line break ({min}-{max}).',
+  'settings.smartParagraph.paragraphPause.name': 'Paragraph pause',
+  'settings.smartParagraph.paragraphPause.desc': 'Seconds before a paragraph break ({min}-{max}).',
+  'settings.llm.enableFeatures.name': 'Enable LLM features',
+  'settings.llm.enableFeatures.desc':
+    'Make LLM transformations available. Turn transformation on or off in the sidebar.',
+  'settings.llm.restoreDefaults.name': 'Restore transform defaults',
+  'settings.llm.restoreDefaults.desc':
+    'Reset preset, timing, context, minimum words, and temperature. Saved presets and models are kept.',
+  'settings.llm.restoreDefaults.button': 'Restore',
+  'settings.llm.restoreDefaults.confirmMessage':
+    'Restore the default preset, timing, context, minimum words, and temperature? Saved presets and models are kept.',
+  'settings.llm.migratedPreset': 'My preset',
+  'settings.llm.migratedPresetNumbered': 'My preset {number}',
+  'settings.recoveryMemory.name': 'Keep recovery text in memory',
+  'settings.recoveryMemory.desc':
+    'Keep the latest recoverable text and note snapshot in memory. Nothing is written to disk.',
+  'settings.modelStoreOverride.name': 'Model store folder override',
+  'settings.modelStoreOverride.desc': 'Custom folder for managed model downloads.',
+  'settings.modelStoreOverride.placeholder': 'Use the shared default model store',
+  'settings.runSetup.name': 'Run setup',
+  'settings.runSetup.desc': 'Re-run the first-time setup wizard.',
+  'settings.hardwareAcceleration.name': 'Hardware acceleration',
+  'settings.hardwareAcceleration.desc': 'Run inference on the GPU when available.',
+  'settings.hardwareAcceleration.busy':
+    'Cannot change hardware acceleration while dictation or Read aloud is active. If dictation is still processing after you stop it, run "Cancel dictation".',
+  'settings.hardwareAcceleration.on': 'Hardware acceleration on.',
+  'settings.hardwareAcceleration.off': 'Hardware acceleration off.',
+  'settings.hardwareAcceleration.saveFailed':
+    'Could not save the hardware acceleration setting. The previous setting is still active.',
+  'settings.hardwareAcceleration.restartFailedRolledBack':
+    'The speech engine could not restart with that setting. The previous setting was restored.',
+  'settings.hardwareAcceleration.rollbackSaveFailed':
+    'The speech engine could not restart, and the previous hardware acceleration setting could not be restored. Restart Obsidian before trying again.',
+  'settings.hardwareAcceleration.rollbackRestartFailed':
+    'The previous hardware acceleration setting was restored, but the speech engine could not restart. Restart Obsidian before dictating.',
+  'settings.noteContext.name': 'Use note as context',
+  'settings.noteContext.desc':
+    'For manually selected English, send distinctive terms from the open note to help spelling.',
+  'settings.noteContext.tooltip':
+    'Sends a glossary of proper nouns and technical terms as the engine’s initial prompt. Only used for manually selected English with engines that support initial prompts.',
+  'settings.microphone.name': 'Microphone',
+  'settings.microphone.desc':
+    'Which microphone to use for dictation. Changes apply on the next dictation session.',
+  'settings.microphone.default': 'Default microphone',
+  'settings.microphone.labelUnavailable': 'Microphone (label unavailable)',
+  'settings.microphone.notConnected': '{microphone} (not connected)',
+  'settings.microphone.detectTooltip': 'Detect microphones (asks for permission)',
+  'settings.microphone.allowAccessFirst': 'Allow microphone access first to save this device.',
+  'settings.microphone.stopDictationToDetect': 'Stop dictation to detect microphones.',
+  'settings.microphone.unavailableRuntime': 'Microphone access is not available in this runtime.',
+  'settings.microphone.detectFailed':
+    'Could not detect microphones. Check your system audio settings.',
+  'settings.microphone.fallbackSaveFailed':
+    'Saved microphone unavailable. Using the default microphone, but this change could not be saved. Select an available microphone in Settings before restarting Obsidian.',
+  'settings.microphone.fallbackUnchanged':
+    'Saved microphone unavailable. Using the default microphone for this session; the current microphone setting was left unchanged.',
+  'settings.microphone.fallbackCleared':
+    'Saved microphone unavailable. Using the default microphone; the saved selection was cleared for future sessions.',
+  'settings.model.notInstalled': 'Not installed',
+  'settings.model.validatedExternal': 'Validated · external',
+  'settings.model.external': 'External',
+  'settings.model.checking': 'Checking…',
+  'settings.model.unavailable': 'Unavailable',
+  'settings.model.noModel': 'No model',
+  'settings.model.noModelSelected': 'No model selected',
+  'settings.model.speechToText': 'Speech-to-text model',
+  'settings.model.textToSpeech': 'Text-to-speech model',
+  'settings.model.streaming': 'Streaming',
+  'settings.model.manageModels': 'Manage models',
+  'settings.model.useExternalFile': 'Use external file',
+  'settings.model.details': 'Model details',
+  'settings.install.installingNamed': 'Installing: {name}',
+  'settings.install.installingSidecar': 'Installing: {variant} sidecar',
+  'settings.install.installingSidecarMac': 'Installing sidecar',
+  'settings.install.cancelling': 'Cancelling...',
+  'settings.install.cancel': 'Cancel',
+  'settings.attention.regionLabel': 'Needs attention',
+  'settings.attention.installCuda.name': 'CUDA acceleration is available',
+  'settings.attention.installCuda.desc':
+    'A compatible NVIDIA GPU and driver were detected. Install the CUDA speech engine to accelerate Whisper models.',
+  'settings.attention.installCuda.action': 'Install CUDA acceleration',
+  'settings.attention.enableCuda.name': 'Enable CUDA acceleration',
+  'settings.attention.enableCuda.desc':
+    'The CUDA speech engine is installed and current, but hardware acceleration is turned off.',
+  'settings.attention.enableCuda.action': 'Enable',
+  'settings.missingSidecar.name': 'Set up Speech Kit',
+  'settings.missingSidecar.desc':
+    "Speech Kit isn't ready yet. Run the setup wizard to install the speech engine and a model.",
+  'settings.sidecar.name': 'Sidecar',
+  'settings.sidecar.genericName': 'sidecar',
+  'settings.sidecar.variantName': '{variant} sidecar',
+  'settings.sidecar.desc': 'Speech-to-text engine.',
+  'settings.sidecar.cpuName': 'CPU sidecar',
+  'settings.sidecar.cpuDesc': 'Speech-to-text engine. Required.',
+  'settings.sidecar.gpuName': 'GPU sidecar',
+  'settings.sidecar.cudaLibraryPath.name': 'CUDA library path',
+  'settings.sidecar.cudaLibraryPath.desc':
+    'Optional library search path for the sidecar (Flatpak, custom CUDA installs).',
+  'settings.sidecar.installAnyway': 'Install anyway',
+  'settings.sidecar.installUnverifiedTooltip':
+    'Proceed with CUDA install even though compatibility could not be confirmed.',
+  'settings.sidecar.cudaCompatibility.compatible':
+    'Compatible NVIDIA CUDA environment detected. The CUDA sidecar can accelerate Whisper models.',
+  'settings.sidecar.cudaCompatibility.incompatibleDriver':
+    'NVIDIA driver is too old. Update to R{minimumDriverMajor} or later to use the published CUDA sidecar.',
+  'settings.sidecar.cudaCompatibility.incompatibleGpu':
+    'NVIDIA GPU needs compute capability {minimumComputeCapability} or later for the published CUDA sidecar.',
+  'settings.sidecar.cudaCompatibility.absent':
+    'NVIDIA driver not detected. The CUDA sidecar requires a compatible NVIDIA GPU and driver.',
+  'settings.sidecar.cudaCompatibility.unknown':
+    'CUDA compatibility could not be confirmed. Check your NVIDIA driver and GPU before installing.',
+  'settings.sidecar.cudaCompatibility.unsupported':
+    'CUDA sidecar releases are available only for Windows and Linux x64.',
+  'settings.sidecar.stopBeforeInstall':
+    'Stop dictation or Read aloud before installing a sidecar — the install restarts the engine. If dictation is still processing, run "Cancel dictation" to stop it now.',
+  'settings.sidecar.stopBeforeUninstall':
+    'Stop dictation or Read aloud before uninstalling the {sidecar}. If dictation is still processing, run "Cancel dictation" to stop it now.',
+  'settings.sidecar.operationInProgress':
+    'Another speech-engine maintenance operation is in progress. Wait for it to finish, then try again.',
+  'settings.sidecar.uninstallFailed':
+    'Could not uninstall the {sidecar}. Close other setup windows and try again.',
+  'settings.sidecar.uninstalled': 'Sidecar uninstalled.',
+  'settings.sidecar.cudaUninstalled': 'CUDA sidecar uninstalled. Running on CPU.',
+  'settings.sidecar.cpuUninstalled': 'CPU sidecar uninstalled.',
+  'settings.sidecar.restartFailed':
+    'The speech engine could not restart. Restart Obsidian before dictating.',
+  'settings.sidecar.reinstall': 'Reinstall',
+  'settings.sidecar.uninstall': 'Uninstall',
+  'settings.sidecar.install': 'Install',
+  'plugin.name': 'Speech Kit',
+  'common.cancel': 'Cancel',
+  'common.delete': 'Delete',
+  'common.duplicate': 'Duplicate',
+  'common.free': 'Free',
+  'common.inherit': 'Inherit',
+  'common.off': 'Off',
+  'common.on': 'On',
+  'common.save': 'Save',
+  'common.unavailable': 'Unavailable',
+  'ribbon.idle': 'Speech Kit — start dictation',
+  'ribbon.starting': 'Speech Kit — starting…',
+  'ribbon.listening': 'Speech Kit — listening',
+  'ribbon.speechDetected': 'Speech Kit — hearing speech',
+  'ribbon.error': 'Speech Kit — error',
+  'validation.wholeNumberRange': 'Enter a whole number from {min} to {max}.',
+  'validation.numberRange': 'Enter a number from {min} to {max}.',
+  'llm.managedByPreset': 'Managed by “{preset}”. Edit that preset to change this value.',
+  'llm.context.title': 'Context settings',
+  'llm.context.settingsTooltip': 'Context settings',
+  'llm.context.intro':
+    'More context can improve terminology, but may increase local latency or OpenRouter cost.',
+  'llm.context.noteLength.name': 'Note context length',
+  'llm.context.noteLength.description':
+    'Maximum characters taken from the current note above the cursor.',
+  'llm.context.previousPhrases.name': 'Previous phrases',
+  'llm.context.previousPhrases.description':
+    'Recent dictated phrases included as conversation history.',
+  'llm.context.afterEachPhraseOnly': 'Used only when Run transform is set to After each phrase.',
+  'llm.context.limit.name': 'Context limit',
+  'llm.context.limit.description':
+    'Maximum combined characters from note context and previous phrases.',
+  'llm.context.useCurrentNote.name': 'Use current note as context',
+  'llm.context.useCurrentNote.description': 'Include text above the cursor in each prompt.',
+  'llm.model.title': 'Advanced model settings',
+  'llm.model.settingsTooltip': 'Advanced model settings',
+  'llm.model.temperature.name': 'Temperature',
+  'llm.model.temperature.description':
+    'Sampling variation sent to every provider. 0 is deterministic; higher values are more varied.',
+  'llm.model.routingThreshold.name': 'Large transcript threshold',
+  'llm.model.routingThreshold.description':
+    'Use the large-transcript provider above this many characters.',
+  'llm.model.networkTimeout.name': 'Network timeout',
+  'llm.model.networkTimeout.description':
+    'Stop waiting for network providers after this many seconds. The original transcript is kept.',
+  'llm.model.behavior.name': 'Advanced settings',
+  'llm.model.summary.temperature': 'Temperature {value}',
+  'llm.model.summary.temperatureShared': 'Temperature {value} for both providers',
+  'llm.model.summary.timeout': '{value}s network timeout',
+  'llm.failure.authInvalid': '{provider} API key rejected. Check settings.',
+  'llm.failure.permissionDenied':
+    '{provider} denied access. Check credentials, account permissions, or model access.',
+  'llm.failure.rateLimited': '{provider} rate limit hit. Falling back to raw text.',
+  'llm.failure.network': 'Network error reaching {provider}.',
+  'llm.failure.modelNotConfigured': '{provider} model is not configured. Choose one under Model.',
+  'llm.failure.unknownModel': '{provider} model not found. Choose another under Model.',
+  'llm.failure.unknown': 'LLM transform failed. See console.',
+  'llm.status.selectOllamaModel': 'Select an Ollama model below.',
+  'llm.status.selectOpenRouterModel': 'Select an OpenRouter model below.',
+  'llm.status.selectCustomModel': 'Enter a model ID below.',
+  'llm.status.customModelsUnavailable': "Couldn't load models—enter a model ID manually.",
+  'llm.status.ollamaNotRunning': 'Ollama is not running.',
+  'llm.status.unreachable': '{provider} is unreachable.',
+  'llm.status.authInvalid': '{provider} API key rejected.',
+  'llm.status.permissionDenied':
+    '{provider} denied access. Check credentials, account permissions, or model access.',
+  'llm.status.rateLimited': '{provider} rate limit hit.',
+  'llm.status.noOllamaModels': 'No chat models installed in Ollama.',
+  'llm.status.noModels': 'No usable {provider} models found.',
+  'llm.status.selectedUnavailable': 'Selected model is unavailable.',
+  'llm.timing.title': 'Timing settings',
+  'llm.timing.settingsTooltip': 'Timing settings',
+  'llm.timing.minimumWords.name': 'Minimum words',
+  'llm.timing.minimumWords.description':
+    'Skip the transform when the transcript has fewer words than this.',
+  'llm.timing.timestamps.perUtterance': 'After each phrase preserves timestamp boundaries.',
+  'llm.timing.timestamps.batch':
+    'All at once may rewrite or remove timestamps, depending on the preset.',
+  'llm.timing.option.perUtterance': 'After each phrase',
+  'llm.timing.option.batch': 'All at once on stop',
+  'llm.routing.priceTierTooltip': 'Approximate price tier',
+  'llm.routing.providerModel': '{provider} model',
+  'llm.routing.ollamaModelDescription': 'Pick a local Ollama chat model.',
+  'llm.routing.selectModel': 'Select a model',
+  'llm.routing.refreshModels': 'Refresh {provider} models',
+  'llm.routing.openRouterModel.name': 'OpenRouter model',
+  'llm.routing.openRouterModel.description': 'Type to search OpenRouter models.',
+  'llm.routing.testConnection': 'Test API key and model',
+  'llm.routing.testingConnection': 'Testing connection…',
+  'llm.provider.ollama': 'Ollama',
+  'llm.provider.openrouter': 'OpenRouter',
+  'llm.provider.custom': 'OpenAI-compatible',
+  'llm.routing.provider': 'Provider',
+  'llm.routing.defaultProvider': 'Default provider',
+  'llm.routing.largeProvider': 'Large-transcript provider',
+  'llm.routing.chooseProvider': 'Choose a provider',
+  'llm.routing.audioPrivacy':
+    'Only transcript text and enabled context are sent. Audio is never sent.',
+  'llm.routing.useLargeProvider': 'Use a different provider for large transcripts',
+  'llm.routing.useLargeProviderDescription':
+    'Route transcripts over the configured character threshold to another provider.',
+  'llm.routing.defaultLeg': 'Default',
+  'llm.routing.largeLeg': 'Large transcripts',
+  'llm.routing.openRouterApiKey.name': 'OpenRouter API key',
+  'llm.routing.openRouterApiKey.description': 'Required. Stored securely by Obsidian.',
+  'llm.routing.customBaseUrl.name': 'Base URL',
+  'llm.routing.customBaseUrl.description':
+    'Include the API version path when required, for example http://localhost:1234/v1.',
+  'llm.routing.customDestination': 'Transformation destination: {host}',
+  'llm.routing.insecureHttpWarning':
+    'This non-local endpoint uses unencrypted HTTP. Transcript text and API keys may be exposed.',
+  'llm.routing.customApiKey.name': 'API key',
+  'llm.routing.customApiKey.description': 'Optional. Stored securely by Obsidian.',
+  'llm.routing.customModel.name': 'Model',
+  'llm.routing.customModel.description':
+    "Choose a discovered model or enter a model ID. If discovery isn't available, manual entry still works.",
+  'llm.readiness.chooseProvider': 'Choose a provider to use transforms.',
+  'llm.readiness.chooseModel': 'Choose a model for {provider}.',
+  'llm.readiness.apiKeyMissing': 'Choose an OpenRouter API key in Secret Storage.',
+  'llm.readiness.baseUrlInvalid': 'Enter a valid OpenAI-compatible base URL.',
+  'llm.readiness.routingInvalid': 'Choose two different providers for size-based routing.',
+  'llm.validation.baseUrl.empty': 'Enter an OpenAI-compatible base URL.',
+  'llm.validation.baseUrl.absolute': 'Enter an absolute HTTP or HTTPS URL.',
+  'llm.validation.baseUrl.scheme': 'The base URL must use HTTP or HTTPS.',
+  'llm.validation.baseUrl.credentials': 'Remove credentials from the URL and use Secret Storage.',
+  'llm.validation.baseUrl.queryOrFragment':
+    'The base URL cannot contain a query string or fragment.',
+  'llm.sidebar.eyebrow': 'Transcript workflow',
+  'llm.sidebar.title': 'Transform dictation',
+  'llm.sidebar.description': 'Choose how spoken text is shaped before it reaches your note.',
+  'llm.sidebar.group.preset': 'Preset',
+  'llm.sidebar.group.model': 'Model',
+  'llm.sidebar.group.context': 'Context',
+  'llm.sidebar.enabled.name': 'Enabled',
+  'llm.sidebar.enabled.description': 'Apply the active preset to new dictated text.',
+  'llm.sidebar.showOriginal.name': 'Show original transcript',
+  'llm.sidebar.showOriginal.description':
+    'Keep it in a collapsible callout below each transformed result.',
+  'llm.sidebar.runTransform.name': 'Run transform',
+  'llm.sidebar.runTransform.description': 'Run after each phrase, or all at once when you stop.',
+  'llm.sidebar.runTransform.setByPreset': 'Set by {preset} — {timing}.',
+  'llm.sidebar.activePreset': 'Active preset',
+  'llm.sidebar.unavailable.title': 'LLM features are unavailable',
+  'llm.sidebar.unavailable.description':
+    'Enable LLM features in Speech Kit settings to configure transforms.',
+  'llm.sidebar.unavailable.summary': 'Enable LLM features in settings',
+  'llm.sidebar.off.title': 'Raw transcript mode',
+  'llm.sidebar.off.description':
+    'Dictation inserts the raw local transcript. Turn on Transform when you want cleanup, rewriting, or summaries.',
+  'llm.sidebar.off.summary': 'Raw transcript',
+  'llm.sidebar.active.summary': '{preset} · {timing}',
+  'llm.preset.builtin.cleanUp.label': 'Clean up',
+  'llm.preset.builtin.cleanUp.description':
+    'Fix transcription artifacts, filler, punctuation, and capitalization while preserving voice and meaning.',
+  'llm.preset.builtin.cleanUp.prompt':
+    "Clean dictated speech-to-text. Fix filler, false starts, repetitions, punctuation, capitalization, and obvious recognition errors. Preserve the speaker's voice and meaning. Use the reference context only for spelling. Write in the transcript’s original language. Never translate unless the user explicitly asks for translation. Return only the cleaned text — no preamble, no commentary.",
+  'llm.preset.builtin.professionalWriting.label': 'Professional writing',
+  'llm.preset.builtin.professionalWriting.description':
+    'Rewrite into concise, polished professional prose while preserving facts, names, decisions, and technical terms.',
+  'llm.preset.builtin.professionalWriting.prompt':
+    'Rewrite dictated speech as concise professional prose. Active voice, no filler or hedging. Preserve every fact, name, and term. Use the reference context for spelling. Write in the transcript’s original language. Never translate unless the user explicitly asks for translation. Return only the rewritten text — no preamble, no commentary.',
+  'llm.preset.builtin.tldr.label': 'TLDR',
+  'llm.preset.builtin.tldr.description':
+    'Add a short TLDR summary above your untouched transcript.',
+  'llm.preset.builtin.tldr.prompt':
+    "Write a TLDR summary of the dictated transcript: a 'TLDR' heading followed by 1-3 short bullets covering the key points. Write in the transcript’s original language. Never translate unless the user explicitly asks for translation. Return only the heading and bullets — do not repeat the transcript, no preamble, no commentary.",
+  'llm.preset.builtin.markdownFormatting.label': 'Markdown formatting',
+  'llm.preset.builtin.markdownFormatting.description':
+    'Reformat the session transcript as structured Markdown with headings, lists, and emphasis.',
+  'llm.preset.builtin.markdownFormatting.prompt':
+    "Reformat dictated speech as well-structured Markdown. Add headings, bullet or numbered lists, bold, emphasis, and fenced code blocks where the content calls for it. Lightly clean filler, false starts, punctuation, and capitalization; preserve the speaker's wording, every fact, name, and term. Write in the transcript’s original language. Never translate unless the user explicitly asks for translation. Return only the Markdown — no preamble, no commentary.",
+  'llm.preset.builtin.actionItems.label': 'Action items',
+  'llm.preset.builtin.actionItems.description':
+    'Add an action-item checklist below your untouched transcript.',
+  'llm.preset.builtin.actionItems.prompt':
+    "Extract action items from the dictated transcript. Output an 'Action items' heading followed by a Markdown checklist of concrete tasks, naming an owner when the speaker mentions one. If the transcript contains no action items, return nothing. Write in the transcript’s original language. Never translate unless the user explicitly asks for translation. Return only the heading and checklist — do not repeat the transcript, no preamble, no commentary.",
+  'llm.preset.timing.perUtterance': 'Runs after each phrase',
+  'llm.preset.timing.batch': 'Runs once on stop',
+  'llm.preset.timing.either': 'Runs in either mode',
+  'llm.preset.behavior.addAbove': 'adds new content above the transcript',
+  'llm.preset.behavior.addBelow': 'adds new content below the transcript',
+  'llm.preset.behavior.replace': 'rewrites the dictated text',
+  'llm.preset.behavior.overrides': 'overrides {fields}',
+  'llm.preset.override.minimumWords': 'min words',
+  'llm.preset.override.temperature': 'temperature',
+  'llm.preset.override.noteContext': 'note context',
+  'llm.preset.option.perUtterance': '{preset} (after each phrase)',
+  'llm.preset.option.batch': '{preset} (on stop)',
+  'llm.preset.copySuffix': ' (copy)',
+  'llm.preset.copySuffixNumbered': ' (copy {number})',
+  'llm.preset.validation.nameRequired': 'Enter a name for this preset.',
+  'llm.preset.validation.nameExists': 'A preset with that name already exists.',
+  'llm.preset.validation.promptRequired': 'Enter a prompt for this preset.',
+  'llm.preset.validation.minimumWords': 'Min words must be a whole number between 0 and {max}.',
+  'llm.preset.validation.temperature': 'Temperature must be a number between 0 and {max}.',
+  'llm.preset.validation.maximumCount': 'You can save up to {max} presets. Delete one first.',
+  'llm.preset.validation.builtinName':
+    'That name is used by a built-in preset — choose a different name.',
+  'llm.preset.manager.title': 'Manage presets',
+  'llm.preset.manager.newTitle': 'New preset',
+  'llm.preset.manager.editTitle': 'Edit preset',
+  'llm.preset.manager.presets.name': 'Presets',
+  'llm.preset.manager.presets.description':
+    'The active preset is marked. Built-in presets are read-only — duplicate one to customize it.',
+  'llm.preset.manager.new': 'New preset',
+  'llm.preset.manager.searchPlaceholder': 'Search presets...',
+  'llm.preset.manager.noMatches': 'No presets match your search.',
+  'llm.preset.manager.builtinHeading': 'Built-in',
+  'llm.preset.manager.yoursHeading': 'Your presets',
+  'llm.preset.manager.viewTooltip': 'View preset',
+  'llm.preset.manager.editTooltip': 'Edit preset',
+  'llm.preset.manager.duplicateTooltip': 'Duplicate preset',
+  'llm.preset.manager.deleteTooltip': 'Delete preset "{preset}"',
+  'llm.preset.manager.back': '← All presets',
+  'llm.preset.editor.name': 'Name',
+  'llm.preset.editor.namePlaceholder': 'e.g. Meeting notes',
+  'llm.preset.editor.description': 'Description (optional)',
+  'llm.preset.editor.descriptionPlaceholder': 'When to use this preset',
+  'llm.preset.editor.prompt': 'Prompt',
+  'llm.preset.editor.promptDescription': 'Sent to the model as the system prompt.',
+  'llm.preset.editor.promptSize': '~{tokens} tokens ({characters} chars) — sent with every request',
+  'llm.preset.editor.timing': 'Timing',
+  'llm.preset.editor.timingDescription':
+    'When the transform runs. “Either” follows the sidebar timing.',
+  'llm.preset.editor.timingEither': 'Either (follow sidebar)',
+  'llm.preset.editor.timingPerUtterance': 'After each phrase',
+  'llm.preset.editor.timingBatch': 'Once on stop',
+  'llm.preset.editor.output': 'Output',
+  'llm.preset.editor.outputDescription':
+    'Replace rewrites your dictated text. Add keeps it untouched and inserts new content.',
+  'llm.preset.editor.outputReplace': 'Replace text',
+  'llm.preset.editor.outputAddAbove': 'Add above transcript',
+  'llm.preset.editor.outputAddBelow': 'Add below transcript',
+  'llm.preset.editor.overrides': 'Overrides',
+  'llm.preset.editor.overridesDescription': 'Leave a field blank to use the global setting.',
+  'llm.preset.editor.minimumWords': 'Min words',
+  'llm.preset.delete.title': 'Delete preset',
+  'llm.preset.delete.message': 'Delete preset "{preset}"? This cannot be undone.',
+  'llm.preset.delete.activeFallback': '"{preset}" was active — switched to Clean up.',
+  'common.back': 'Back',
+  'common.close': 'Close',
+  'common.done': 'Done',
+  'common.install': 'Install',
+  'common.later': 'Later',
+  'common.next': 'Next',
+  'common.remove': 'Remove',
+  'common.tryAgain': 'Try again',
+  'setup.ready.waitForDictation': 'Wait for the current dictation to finish, then try again.',
+  'setup.ready.openMarkdownNote': 'Open a Markdown note in editing mode, then try dictation again.',
+  'setup.ready.completionFailed': "Couldn't finish setup. Try again.",
+  'setup.wizard.welcomeTitle': 'Welcome to Speech Kit',
+  'setup.wizard.title': 'Set up Speech Kit',
+  'setup.wizard.engineReadyTitle': 'Speech engine ready',
+  'setup.wizard.engineReadyDesc': 'The local speech-to-text engine is installed and ready.',
+  'setup.wizard.intro':
+    'Dictate notes hands-free, right inside Obsidian — fully on your machine. No account, no cloud, no telemetry.',
+  'setup.wizard.quickSetup': 'A quick 2-minute setup:',
+  'setup.wizard.downloadEngineStep': 'Download the speech engine',
+  'setup.wizard.pickModelStep': 'Pick a transcription model',
+  'setup.wizard.startTalking':
+    'Then hit the mic in the ribbon (or your own hotkey) and start talking.',
+  'setup.wizard.cpuBuildNote':
+    'Starts with the CPU build. NVIDIA GPU? You can install the CUDA build later to accelerate Whisper models.',
+  'setup.wizard.downloadEngine': 'Download engine',
+  'setup.wizard.modelSelectedTitle': 'Model selected',
+  'setup.wizard.pickModelTitle': 'Pick a transcription model',
+  'setup.wizard.modelSelectedDesc':
+    'A transcription model is installed and selected. You can install more or switch later from Settings.',
+  'setup.wizard.modelIntro':
+    'Install a transcription model to enable dictation. You can install more later — smaller models are faster, larger models are more accurate.',
+  'setup.wizard.modelKinds':
+    'Two kinds are available: streaming models show words live as you speak; standard models transcribe after each pause. For hands-free dictation, start with the recommended Moonshine Small model. Nemotron 3.5 ASR is a higher-resource streaming option.',
+  'setup.wizard.gpuNote':
+    'Whisper models can run much faster with GPU acceleration. If you have an NVIDIA GPU, you can install the CUDA build later from Settings.',
+  'setup.wizard.openModelPicker': 'Open model picker',
+  'setup.wizard.readyTitle': "You're ready to dictate",
+  'setup.wizard.readyDesc':
+    "Try it in the Markdown note that's open now. Speak a few words, then use the ribbon mic or your hotkey to stop.",
+  'setup.wizard.ribbonTitle': 'Use the ribbon mic',
+  'setup.wizard.ribbonDesc':
+    'Look for this icon in the Obsidian ribbon. Click it to start dictating; click again to stop.',
+  'setup.wizard.hotkeyTitle': 'Or bind a hotkey',
+  'setup.wizard.hotkeyDescBefore': 'Bind a shortcut to the ',
+  'setup.wizard.toggleCommandName': 'Speech Kit: Toggle dictation',
+  'setup.wizard.hotkeyDescAfter': ' command to start and stop from anywhere in Obsidian.',
+  'setup.wizard.openHotkeySettings': 'Open hotkey settings',
+  'setup.wizard.tryDictationNow': 'Try dictation now',
+  'setup.wizard.openHotkeySettingsFallback': 'Open Settings → Hotkeys and search for "Speech Kit".',
+  'setup.sidecar.modal.download': 'Download',
+  'setup.sidecar.modal.variantDownload': '{variant} download',
+  'setup.sidecar.modal.version': 'Version',
+  'setup.sidecar.modal.cancelling': 'Cancelling...',
+  'setup.sidecar.modal.downloading': 'Downloading...',
+  'setup.sidecar.modal.retryDownload': 'Retry download',
+  'setup.sidecar.modal.installFailureNotice':
+    'The speech engine install failed. Reopen setup or Settings to review the error and retry.',
+  'setup.sidecar.modal.startFailed':
+    'Could not start the sidecar install. Close other setup windows and try again.',
+  'setup.sidecar.installCancelled': 'Sidecar install cancelled.',
+  'setup.sidecar.progress.variant': ' {variant} sidecar ({current} of {total})',
+  'setup.sidecar.progress.downloading': 'Downloading',
+  'setup.sidecar.progress.verifying': 'Verifying checksum...',
+  'setup.sidecar.progress.extracting': 'Extracting archive...',
+  'models.manage.title': 'Manage models',
+  'models.manage.loadFailedTitle': "Couldn't load models",
+  'models.manage.loadFailedDesc':
+    'The speech engine may not be installed or may not be responding. Re-run setup to reinstall it, or try again.',
+  'models.manage.runSetup': 'Run setup',
+  'models.manage.loadingCatalog': 'Loading model catalog…',
+  'models.manage.loadCatalogFailed': 'Failed to load the model catalog.',
+  'models.manage.noneAvailable': 'No models available for this engine.',
+  'models.manage.unsupportedLanguage':
+    ' · Does not support {language}. Change Dictation language to install or use this model.',
+  'models.manage.use': 'Use',
+  'models.manage.selected': 'Selected',
+  'models.manage.cancelling': 'Cancelling…',
+  'models.manage.details': 'Details',
+  'models.manage.retryInstall': 'Retry',
+  'models.manage.dismissInstallFailure': 'Dismiss',
+  'models.manage.installStartFailed': 'Could not start the model install. Try again.',
+  'models.manage.selectFailed': 'Could not select the model. Check that its files are available.',
+  'models.manage.selectedNotice': 'Model selected.',
+  'models.manage.removeFailed': 'Could not remove the model. Close any process using its files.',
+  'models.manage.stopSpeechFirst':
+    'Stop dictation or Read aloud first — the speech engine is using model files right now.',
+  'models.manage.removedNotice': 'Model removed.',
+  'models.external.title': 'Use external file',
+  'models.external.intro':
+    'External models are for advanced use. Speech Kit does not download, update, or checksum-verify these files.',
+  'models.external.family.name': 'Model family',
+  'models.external.family.desc':
+    'Choose the loader that matches the model. The family is not inferred from its filename.',
+  'models.external.path.name': 'Model file path',
+  'models.external.path.desc':
+    'Enter the absolute path to the primary model artifact. It is validated before this selection is saved.',
+  'models.external.validateAndUse': 'Validate and use',
+  'models.external.validating': 'Validating…',
+  'models.external.selectedNotice': 'External model file validated and selected.',
+  'models.external.requirementsTitle': 'File requirements',
+  'models.external.validation.notConfigured': 'Model file path is not configured.',
+  'models.external.validation.notAbsolute': 'Model file path must be an absolute path.',
+  'models.external.validation.missing': 'Model file path does not exist: {path}',
+  'models.external.validation.notFile': 'Model file path must point to a file: {path}',
+  'models.external.validation.selectEntryFile': 'Select {filename}.',
+  'models.external.validation.nemotronEntryFile':
+    'Nemotron 3.5 ASR requires its encoder.int8.onnx artifact. Select encoder.int8.onnx from the pinned 560 ms model directory.',
+  'models.external.validation.moonshineEntryFile':
+    'Moonshine requires its primary frontend.ort artifact. Select frontend.ort from the streaming model directory.',
+  'models.external.validation.generic': 'The speech engine could not validate this model.',
+  'models.external.requirements.nemotron.entry':
+    'Select encoder.int8.onnx from the pinned Nemotron 3.5 ASR 560 ms int8 export.',
+  'models.external.requirements.nemotron.siblings':
+    'The same directory must contain decoder.int8.onnx, joiner.int8.onnx, and tokens.txt.',
+  'models.external.requirements.nemotron.compatibility':
+    'Other chunk sizes and ORT GenAI exports are not compatible with this adapter.',
+  'models.external.requirements.moonshine.entry':
+    'Select frontend.ort from a Moonshine v2 streaming ORT model directory.',
+  'models.external.requirements.moonshine.siblings':
+    'The same directory must contain encoder.ort, adapter.ort, cross_kv.ort, decoder_kv.ort, streaming_config.json, and tokenizer.bin.',
+  'models.external.requirements.moonshine.compatibility':
+    'Non-streaming Moonshine ONNX exports are not compatible.',
+  'models.external.requirements.whisper.entry':
+    'Select one whisper.cpp-compatible GGML or GGUF model file.',
+  'models.external.requirements.whisper.validation':
+    'The loader validates the file contents; a filename extension alone does not establish compatibility.',
+  'models.external.requirements.whisper.language':
+    'Whisper files with .en weights are English-only; multilingual weights expose the verified language selector and automatic detection.',
+  'models.details.totalSize': 'Total size',
+  'models.details.source': 'Source',
+  'models.details.license': 'License',
+  'models.details.capabilities': 'Capabilities',
+  'models.details.installPath': 'Install path',
+  'models.details.files': 'Files ({count})',
+  'models.details.size': 'Size',
+  'models.details.modelCard': 'Model card',
+  'models.details.languages': 'Languages',
+  'models.details.availableVoices': 'Available voices',
+  'models.details.installedVoices': 'Installed voices',
+  'models.details.defaultVoice': '{voice} (default)',
+  'models.details.speedControl': 'Speed control',
+  'models.details.outputSampleRate': 'Output sample rate',
+  'models.details.supported': 'Supported',
+  'models.capability.segmentTimestamps': 'Segment timestamps',
+  'models.capability.wordTimestamps': 'Word timestamps',
+  'models.capability.initialPrompt': 'Initial prompt',
+  'models.capability.streaming': 'Streaming',
+  'models.capability.autoLanguageDetection': 'Auto language detection',
+  'models.capability.punctuation': 'Punctuation',
+  'models.capability.maxAudio': 'Max audio: {seconds}s',
+  'models.capability.anyLanguage': 'Any language',
+  'models.capability.englishOnly': 'English only',
+  'models.capability.languageCount': '{count} languages',
+  'models.capability.languageSelection': 'Language selection',
+  'models.tag.fullPrecision': 'Full precision',
+  'models.tag.reducedSize': 'Reduced size',
+  'models.progress.preparing': 'Preparing install',
+  'models.progress.downloading': 'Downloading',
+  'models.progress.verifying': 'Verifying download',
+  'models.progress.validating': 'Validating model',
+  'models.progress.installed': 'Model installed',
+  'models.progress.cancelled': 'Model install cancelled',
+  'models.progress.failed': 'Model install failed',
+  'models.progress.downloadingFile': 'Downloading {filename}',
+  'models.progress.verifyingFile': 'Verifying {filename}',
+  'models.progress.fileCount': 'File {current} of {total}',
+  'models.current.noneSelected': 'No model selected',
+  'models.current.noneSelectedDesc': 'Choose an installed model or validate an external file.',
+  'models.current.notSelected': 'Not selected',
+  'models.current.externalFile': 'External file',
+  'models.current.managedNotInstalled': 'The selected managed model is not installed.',
+  'models.current.installed': 'Installed',
+  'models.current.notInstalled': 'Not installed',
+  'models.current.managedDownload': 'Managed download',
+  'models.current.externalValidated': 'External validated',
+  'models.current.checking': 'Checking',
+  'models.current.externalUnavailableDesc':
+    'The external model is unavailable. Validate the file again to see details.',
+  'models.current.unavailable': 'Unavailable',
+  'models.current.validateBeforeDictating': 'Validate the external model file before dictating.',
+  'sidecarError.audio_too_long': 'Audio clip exceeds the maximum duration for this engine.',
+  'sidecarError.engine_inference_failed': 'Local transcription failed.',
+  'sidecarError.internal_error': 'The speech engine encountered an internal error.',
+  'sidecarError.invalid_audio_buffer': 'Audio buffer was empty when transcription started.',
+  'sidecarError.invalid_audio_frame': 'The speech engine received an invalid audio frame.',
+  'sidecarError.invalid_diarization_speaker_limit':
+    'Maximum speakers must be at least 1 or set to Automatic.',
+  'sidecarError.invalid_frame': 'The speech engine received an invalid protocol frame.',
+  'sidecarError.invalid_model_file': 'Model file is missing, unreadable, or unsupported.',
+  'sidecarError.invalid_model_task': 'The selected model cannot be used for dictation.',
+  'sidecarError.invalid_model_store': 'The model storage folder is unavailable or invalid.',
+  'sidecarError.invalid_synthesis_request': 'The read-aloud request is invalid.',
+  'sidecarError.missing_model_file': 'Model file does not exist or is not a regular file.',
+  'sidecarError.missing_voice_file': 'The selected read-aloud voice is not installed.',
+  'sidecarError.no_active_install': 'There is no active model install to cancel.',
+  'sidecarError.no_active_session': 'There is no active dictation session.',
+  'sidecarError.session_already_exists': 'A dictation session with this id already exists.',
+  'sidecarError.session_capacity_exceeded':
+    'Speech Kit already has the maximum number of active sessions.',
+  'sidecarError.sidecar_exited': 'The sidecar process exited unexpectedly.',
+  'sidecarError.system_audio_capture_failed': 'Could not start system-audio capture.',
+  'sidecarError.system_audio_permission_denied':
+    'System-audio recording permission is off for Obsidian. Open System Settings → Privacy & Security → Screen & System Audio Recording, enable Obsidian, and try again.',
+  'sidecarError.system_audio_unsupported':
+    "System-audio capture isn't available on this platform yet. Route this computer's output through a virtual audio device and pick it as your microphone — see the System audio guide.",
+  'sidecarError.synthesis_cancelled': 'Reading was cancelled.',
+  'sidecarError.synthesis_failed': 'Local speech synthesis failed.',
+  'sidecarError.synthesis_worker_unavailable': 'The local speech synthesis worker is unavailable.',
+  'sidecarError.transcription_failure': 'Local transcription failed.',
+  'sidecarError.unsupported_engine': 'The requested engine is not available in this build.',
+  'sidecarError.unsupported_language':
+    'The selected model does not support this dictation language.',
+  'sidecarError.utterance_dropped_during_overload_drain':
+    'A finalized utterance was dropped while the transcription queue was draining.',
+  'sidecarError.utterance_queue_overload':
+    'Dictation stopped because the transcription queue is overloaded. Accepted audio will finish processing.',
+  'sidecarError.vad_error': 'Voice activity detection failed on an audio frame.',
+  'sidecarError.vad_init_failed': 'Failed to initialize the bundled Silero VAD.',
+  'sidecarError.worker_panic': 'The speech engine transcription worker stopped unexpectedly.',
+  'catalog.whisper_tiny_en_q8_0.summary':
+    'Fastest model with lowest resource cost. Good for testing or low-power machines.',
+  'catalog.whisper_base_en_q8_0.summary':
+    'Fast model with decent accuracy. A good choice for quick drafts on CPU.',
+  'catalog.whisper_small_en_q5_1.summary':
+    'Balances transcription quality, download size, and CPU speed.',
+  'catalog.whisper_medium_en_q5_0.summary':
+    'High-accuracy model for users who prioritize transcription quality over speed.',
+  'catalog.whisper_large_v3_turbo_q8_0.summary':
+    'Multilingual high-accuracy transcription with an architecture optimized for GPU acceleration.',
+  'catalog.cohere_transcribe_fp16.summary':
+    'Largest Cohere variant, preserving full model precision.',
+  'catalog.cohere_transcribe_int8.summary':
+    'Middle Cohere variant by download size, using 8-bit quantization.',
+  'catalog.cohere_transcribe_q4.summary':
+    'Smallest Cohere variant; 4-bit quantization reduces size at a quality cost.',
+  'catalog.moonshine_tiny_streaming_en.summary':
+    'Fastest Moonshine streaming model at 34M parameters, designed for low-end CPUs.',
+  'catalog.moonshine_small_streaming_en.summary':
+    'Balanced live-dictation model at 123M parameters.',
+  'catalog.moonshine_medium_streaming_en.summary':
+    'Most accurate Moonshine streaming model at 245M parameters.',
+  'catalog.nemotron_asr_0_6b_int8_streaming_560ms.summary':
+    "NVIDIA's 0.6B multilingual RNNT, exported to int8 ONNX for cache-aware live transcription in eight verified languages.",
+  'catalog.pocket_tts_english_2026_04_int8.summary':
+    'Natural local English read-aloud synthesis with selectable curated voices.',
+  'catalog.pocket_tts_french_24l_int8.summary':
+    'Higher-quality local French synthesis; this 24-layer model uses more CPU and may buffer at higher reading speeds.',
+  'catalog.pocket_tts_german_int8.summary':
+    'Natural local German read-aloud synthesis with selectable curated voices.',
+  'catalog.pocket_tts_spanish_int8.summary':
+    'Natural local Spanish read-aloud synthesis with selectable curated voices.',
+  'catalog.pocket_tts_portuguese_int8.summary':
+    'Natural local Portuguese read-aloud synthesis with selectable curated voices.',
+  'catalog.pocket_tts_italian_int8.summary':
+    'Natural local Italian read-aloud synthesis with selectable curated voices.',
+  'catalog.supertonic_3_multilingual_2026_05.summary':
+    'Lightning-fast local multilingual read-aloud synthesis for the eight supported app languages.',
+  'catalog.family.whisper.summary':
+    'Transcribes after each pause. Whisper provides more accurate timestamps than other model families, including optional word-level timing. Tiny and Base favor speed, Small balances speed and quality, and Medium and Large favor quality.',
+  'catalog.family.cohere_transcribe.summary':
+    'High-quality batch transcription with multi-gigabyte download and memory requirements.',
+  'catalog.family.moonshine.summary':
+    'Shows words while you speak. Tiny favors lower resource use, Small balances speed and quality, and Medium favors quality.',
+  'catalog.family.nemotron_asr.summary':
+    'High-accuracy multilingual streaming with a larger download and higher resource use. Moonshine Small remains the recommended English live-dictation default.',
+  'catalog.family.supertonic.summary':
+    'Lightning-fast on-device multilingual TTS via ONNX Runtime.',
+  'catalog.family.pocket_tts.summary':
+    'Reads notes aloud locally in English, French, German, Spanish, Portuguese, and Italian with selectable voices and pitch-preserving speed control.',
+  'catalog.firefox_translations_release_2026_07.summary':
+    'Fast local translation between English and seven product languages using models released in Firefox.',
+  'catalog.family.firefox_translations.summary':
+    'Translates note text locally with the compact Bergamot engine and released Firefox models.',
+  'catalog.tencent_hy_mt_2_1_8b_q4_k_m.summary':
+    'Smaller download and lower resource use; suitable for most local translation.',
+  'catalog.tencent_hy_mt_2_7b_q4_k_m.summary':
+    'Higher-capacity local translation with a 4.62 GB download and substantially higher memory use.',
+  'catalog.family.tencent_hy_mt.summary':
+    'Translates locally with optional Tencent HY-MT 2 models in an isolated native helper.',
+  'sidecarError.helper_protocol_error': 'The translation helper returned invalid data.',
+  'sidecarError.helper_unavailable': 'The packaged translation helper could not be started.',
+  'sidecarError.helper_write_failed': 'The translation helper stopped unexpectedly.',
+  'sidecarError.inference_failed': 'Translation failed.',
+  'sidecarError.model_load_failed': 'The translation model could not be loaded.',
+  'sidecarError.invalid_translation_request': 'Translation could not be started.',
+  'sidecarError.translation_busy': 'Another translation is already running.',
+  'sidecarError.translation_worker_unavailable': 'The translation worker is unavailable.',
+  'setup.sidecar.modal.unsupportedPlatform':
+    'This speech engine build is not available for your platform or architecture.',
+  'setup.sidecar.modal.genericInstallError':
+    'The speech engine could not be installed. Check the plugin logs for details, then try again.',
+} as const;
+
+export type TranslationKey = keyof typeof en;

@@ -2,6 +2,8 @@ import { builtinModules } from 'node:module';
 import process from 'node:process';
 import { build, context } from 'esbuild';
 
+import { bundleBergamotWorker } from './scripts/bundle-bergamot-worker.mjs';
+
 const args = new Set(process.argv.slice(2));
 const isWatch = args.has('watch');
 const isProduction = args.has('production');
@@ -27,7 +29,7 @@ const mainBuildOptions = {
   treeShaking: true,
   outfile: 'main.js',
   external: externalModules,
-  plugins: [pcmRecorderWorkletSourcePlugin()],
+  plugins: [buildModePlugin(), pcmRecorderWorkletSourcePlugin(), bergamotWorkerSourcePlugin()],
 };
 
 async function buildAll() {
@@ -50,6 +52,31 @@ main().catch((error) => {
   console.error(error);
   process.exitCode = 1;
 });
+
+function buildModePlugin() {
+  const buildModeId = 'virtual:build-mode';
+
+  return {
+    name: 'build-mode',
+    setup(buildContext) {
+      buildContext.onResolve({ filter: /^virtual:build-mode$/ }, () => ({
+        namespace: 'build-mode',
+        path: buildModeId,
+      }));
+
+      buildContext.onLoad(
+        {
+          filter: /^virtual:build-mode$/,
+          namespace: 'build-mode',
+        },
+        () => ({
+          contents: `export const IS_PRODUCTION_BUILD = ${JSON.stringify(isProduction)};`,
+          loader: 'js',
+        }),
+      );
+    },
+  };
+}
 
 function pcmRecorderWorkletSourcePlugin() {
   const workletSourceId = 'virtual:pcm-recorder-worklet-source';
@@ -88,6 +115,35 @@ function pcmRecorderWorkletSourcePlugin() {
 
           return {
             contents: `export const PCM_RECORDER_WORKLET_SOURCE = ${JSON.stringify(workletSource)};`,
+            loader: 'js',
+          };
+        },
+      );
+    },
+  };
+}
+
+function bergamotWorkerSourcePlugin() {
+  const workerSourceId = 'virtual:bergamot-worker-source';
+
+  return {
+    name: 'bergamot-worker-source',
+    setup(buildContext) {
+      buildContext.onResolve({ filter: /^virtual:bergamot-worker-source$/ }, () => ({
+        namespace: 'bergamot-worker-source',
+        path: workerSourceId,
+      }));
+
+      buildContext.onLoad(
+        {
+          filter: /^virtual:bergamot-worker-source$/,
+          namespace: 'bergamot-worker-source',
+        },
+        async () => {
+          return {
+            contents: `export const BERGAMOT_WORKER_SOURCE = ${JSON.stringify(
+              await bundleBergamotWorker({ minify: isProduction }),
+            )};`,
             loader: 'js',
           };
         },

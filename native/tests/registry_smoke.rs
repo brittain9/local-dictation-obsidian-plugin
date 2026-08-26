@@ -8,7 +8,9 @@
 
 use std::path::Path;
 
-use local_transcript_sidecar::engine::{
+#[cfg(any(feature = "engine-nemotron-asr", feature = "engine-supertonic"))]
+use local_dictation_sidecar::engine::LanguageSupport;
+use local_dictation_sidecar::engine::{
     AcceleratorId, EngineRegistry, ModelFamilyId, RuntimeId, missing_adapter_error,
 };
 
@@ -56,6 +58,79 @@ fn cohere_pair_is_registered_when_compiled() {
             .available_accelerators
             .contains(&AcceleratorId::Cpu)
     );
+}
+
+#[cfg(feature = "engine-moonshine")]
+#[test]
+fn moonshine_pair_is_registered_when_compiled() {
+    let registry = EngineRegistry::build();
+
+    let adapter = registry
+        .adapter(RuntimeId::OnnxRuntime, ModelFamilyId::Moonshine)
+        .expect("Moonshine adapter must be registered when engine-moonshine is on");
+    assert_eq!(adapter.runtime_id(), RuntimeId::OnnxRuntime);
+    assert_eq!(adapter.family_id(), ModelFamilyId::Moonshine);
+
+    let merged = registry
+        .merged_capabilities(RuntimeId::OnnxRuntime, ModelFamilyId::Moonshine)
+        .expect("merged capabilities must be present for compiled pair");
+    assert!(merged.family.supports_streaming);
+    assert!(
+        merged
+            .runtime
+            .available_accelerators
+            .contains(&AcceleratorId::Cpu)
+    );
+}
+
+#[cfg(feature = "engine-nemotron-asr")]
+#[test]
+fn nemotron_asr_pair_is_registered_when_compiled() {
+    let registry = EngineRegistry::build();
+
+    let adapter = registry
+        .adapter(RuntimeId::OnnxRuntime, ModelFamilyId::NemotronAsr)
+        .expect("Nemotron adapter must be registered when engine-nemotron-asr is on");
+    assert_eq!(adapter.runtime_id(), RuntimeId::OnnxRuntime);
+    assert_eq!(adapter.family_id(), ModelFamilyId::NemotronAsr);
+
+    let merged = registry
+        .merged_capabilities(RuntimeId::OnnxRuntime, ModelFamilyId::NemotronAsr)
+        .expect("merged capabilities must be present for the compiled pair");
+    assert!(merged.family.supports_streaming);
+    assert!(merged.family.produces_punctuation);
+    assert!(merged.family.supports_language_selection);
+    assert!(merged.family.supports_automatic_language_detection);
+    assert!(matches!(
+        merged.family.supported_languages,
+        LanguageSupport::List { ref tags } if tags.contains(&"ja".to_string()) && !tags.contains(&"auto".to_string())
+    ));
+    assert!(
+        merged
+            .runtime
+            .available_accelerators
+            .contains(&AcceleratorId::Cpu)
+    );
+}
+
+#[cfg(feature = "engine-supertonic")]
+#[test]
+fn supertonic_pair_is_registered_when_compiled() {
+    let registry = EngineRegistry::build();
+
+    let adapter = registry
+        .adapter(RuntimeId::OnnxRuntime, ModelFamilyId::Supertonic)
+        .expect("Supertonic adapter must be registered when engine-supertonic is on");
+    let capabilities = adapter.capabilities();
+    assert_eq!(
+        capabilities.task,
+        local_dictation_sidecar::engine::ModelTask::Tts
+    );
+    assert_eq!(capabilities.output_sample_rate, Some(44_100));
+    assert!(matches!(
+        capabilities.supported_languages,
+        LanguageSupport::List { ref tags } if tags.contains(&"ja".to_string())
+    ));
 }
 
 #[test]

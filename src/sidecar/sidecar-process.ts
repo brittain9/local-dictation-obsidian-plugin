@@ -30,7 +30,13 @@ export class SidecarProcess {
   ) {}
 
   isRunning(): boolean {
-    return this.child !== null && this.child.exitCode === null && !this.child.killed;
+    // A child that has been sent a kill signal but has not yet emitted 'exit'
+    // still owns the slot: Node sets `child.killed` synchronously inside
+    // kill(), well before the OS reaps the process. Treating it as "not
+    // running" here would let start() spawn a replacement while the old
+    // process is still alive. `exitCode` (and `signalCode` for
+    // signal-terminated processes) only flip once 'exit' has actually fired.
+    return this.child !== null && this.child.exitCode === null && this.child.signalCode === null;
   }
 
   async start(): Promise<void> {
@@ -80,6 +86,15 @@ export class SidecarProcess {
     this.stderrReader.on('line', this.handlers.onStderrLine);
 
     child.once('exit', (code, signal) => {
+      // Guard against a stale exit: if `this.child` has already moved on to a
+      // newer generation (only reachable if a future change weakens the
+      // invariants above), this exit belongs to a process we no longer own —
+      // clearing shared state or firing onExit here would clobber the
+      // replacement.
+      if (this.child !== child) {
+        return;
+      }
+
       this.disposeReaders();
       child.stdout.removeAllListeners('data');
       this.child = null;
@@ -123,7 +138,7 @@ export class SidecarProcess {
 
 function assertDesktopRuntime(): void {
   if (!Platform.isDesktopApp) {
-    throw new Error('Local Dictation sidecar support requires Obsidian desktop.');
+    throw new Error('Speech Kit sidecar support requires Obsidian desktop.');
   }
 }
 
@@ -150,14 +165,19 @@ async function waitForSpawn(child: ChildProcessWithoutNullStreams): Promise<void
 }
 
 async function waitForExit(child: ChildProcessWithoutNullStreams): Promise<void> {
+  // stop()'s contract is "the process is gone" -- resolving as soon as we
+  // *ask* it to die (rather than waiting for the real 'exit' event) is what
+  // let a slow-to-die child outlive stop() and later clobber a replacement
+  // spawned in the meantime. Give the process a grace period to exit on its
+  // own, then escalate to SIGKILL, but always wait for the actual 'exit'
+  // event -- a SIGKILLed process is guaranteed to exit on Linux/macOS.
   await new Promise<void>((resolve) => {
-    const timeoutHandle = globalThis.setTimeout(() => {
-      child.kill();
-      resolve();
+    const timeoutHandle = window.setTimeout(() => {
+      child.kill('SIGKILL');
     }, 2_000);
 
     child.once('exit', () => {
-      globalThis.clearTimeout(timeoutHandle);
+      window.clearTimeout(timeoutHandle);
       resolve();
     });
   });

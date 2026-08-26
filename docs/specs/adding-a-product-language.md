@@ -1,0 +1,331 @@
+# Adding a product language
+
+This is the repeatable process for answering "can you add language X?". It is
+written to be executable: an agent handed a language request should be able to
+follow it end to end and open a reviewable PR.
+
+Architecture and invariants live in
+[multilingual-support.md](multilingual-support.md). This document is the
+operational layer on top of it.
+
+## The problem this solves
+
+Speech Kit currently ships eight languages, and today that is one coupled set:
+the same eight tags appear in dictation, read aloud, translation, and the UI
+catalog. That coupling is a coincidence of how the first multilingual release
+was scoped, not a design.
+
+The moment a user asks for a ninth language, the coincidence breaks. Whisper can
+transcribe Croatian; Supertonic may not speak it; there is no Croatian UI
+catalog and nobody has reviewed one. If we keep treating "supported language" as
+a single boolean, the only options are to overclaim or to refuse.
+
+So: **capability is per exact model, and the product describes the union
+honestly.** A language is not "supported" or "unsupported" — it has a matrix.
+
+## Support tiers
+
+Tiers are names for the common shapes that matrix takes. They exist so a request
+can be answered in minutes instead of re-litigating scope every time. A tier is a
+*description* of the derived matrix, never a switch in code — nothing reads a
+tier at runtime.
+
+| Tier | Batch dictation | Live dictation | Read aloud | UI catalog | Translation |
+| --- | --- | --- | --- | --- | --- |
+| **Full** | ✅ | ✅ | ✅ | ✅ localized | when released |
+| **Dictation** | ✅ | if the model has it | if the model has it | English | when released |
+| **Deferred** | — | — | — | — | — |
+
+**Full** means all three speech capabilities. That is the tier's definition, and
+it is what earns a UI catalog — see [The localization
+rule](#the-localization-rule). The current eight are Full: `en`, `es`, `de`,
+`fr`, `pt`, `it`, `nl`, `ja`.
+
+**Dictation** is the default answer to a request. It solves what people actually
+ask for ("let me dictate in my language") using models we already ship, and
+costs one fixture plus a handful of list entries. Live dictation and read aloud
+are *conditional* here rather than tiers of their own — whether Nemotron or
+Supertonic happens to cover a language is a property of those artifacts, not a
+product decision worth naming.
+
+**Deferred** is a real answer, recorded with its reason. A request we cannot
+serve is data, not a failure — see [When to add a new
+model](#when-to-add-a-new-model).
+
+Translation sits outside the tiers deliberately. It depends on Mozilla releasing
+both directions, which is independent of anything we control, so it is recorded
+per direction in the matrix and never used to define a tier.
+
+### The localization rule
+
+**A language earns a UI catalog when it has full speech coverage.** Batch, live,
+and read aloud — all three.
+
+The reasoning is maintenance, not gatekeeping. A locale catalog is a permanent
+cost: every new user-facing string needs a translation and a reviewer, forever.
+Paying that for a language where the product can only transcribe means the
+interface is fully localized around a feature set that mostly says "not
+available with your installed models." The localization would be advertising
+capability the product doesn't have.
+
+If we fully support a language, we localize it. If all we have is Whisper, the
+English interface is the honest presentation, and dictation still works
+perfectly well.
+
+This is a gate, not an obligation. Full speech coverage makes a catalog
+*eligible*; it does not produce a native reviewer. A Full-tier language without
+a catalog is a normal state — record it in the matrix and treat it as an open
+call for contributors rather than authoring one speculatively. An unreviewed
+machine-translated catalog is worse than the English fallback, because English
+fallback reads as English while bad Croatian reads as a broken product.
+
+## Tracking coverage
+
+"What do I get if I pick my language?" gets asked in three places, and all three
+need the same answer:
+
+| Where | Who is asking | State |
+| --- | --- | --- |
+| README | someone deciding whether to install | per-feature table under "Language support" |
+| Settings | someone who already installed | coverage sentences under the dictation language, derived from the catalog |
+| Issue replies | someone requesting a language | point at the matrix below |
+
+Three hand-maintained copies of one table will drift, and a drifted capability
+claim is exactly the overclaiming this document exists to prevent. So:
+
+**The catalog is the source of truth.** `languageTags` across the models in
+`native/catalog.json`, plus the catalogs present in `src/locales/`, already
+encode the entire matrix. Everything else is derived.
+
+The intended shape, following the existing `scripts/*-report.mjs` pattern, is a
+`scripts/language-matrix.mjs` that reads the catalog and the locale directory,
+regenerates the table below and the README's language section, and fails
+`npm run check` when a committed table disagrees with the catalog. Until that
+exists, the table is hand-maintained and must be updated in the same PR that
+adds a language.
+
+Settings now closes the user-facing half of this: `languageFeatureCoverage` in
+`src/language/dictation-language.ts` reads the catalog and the dictation language
+row states which adjacent features the selection does not reach, so "this is
+broken" becomes "transcription works, read aloud needs a model that speaks it."
+It is derived, not restated, so it cannot drift.
+
+## Current support matrix
+
+Speech columns are the exact models: batch is Whisper Large V3 Turbo, live is
+Nemotron 3.5 ASR Streaming, read aloud is Supertonic 3. Translation is recorded
+per direction because Mozilla releases directions independently.
+
+| Language | Tag | Tier | Batch | Live | Read aloud | UI | en→ | →en |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| English | `en` | Full | ✅ | ✅ | ✅ | ✅ | — | — |
+| Español | `es` | Full | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Deutsch | `de` | Full | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Français | `fr` | Full | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Português | `pt` | Full | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Italiano | `it` | Full | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Nederlands | `nl` | Full | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| 日本語 | `ja` | Full | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Hrvatski | `hr` | Full | ✅ | ✅ | ✅ | ✅ | ⏸ | ❌ |
+| Српски | `sr` | Dictation | ✅ | ❌ | ❌ | ❌ by rule | ⏸ | ❌ |
+
+✅ shipped · 🔜 planned, [#359](https://github.com/brittain9/speech-kit-obsidian-plugin/issues/359) · ⏸ available upstream, deferred · ❌ no released model
+
+Notes on the two most recent rows:
+
+- Croatian is Full tier and earned its UI catalog under [the localization
+  rule](#the-localization-rule). `src/locales/hr.ts` ships complete; it has not
+  yet been signed off by a native reviewer.
+- Serbian has no live or read-aloud model upstream — `sr` is absent from
+  Nemotron's prompt dictionary and Supertonic's language list entirely. It
+  therefore does not earn a catalog, even though Obsidian ships an `sr` locale
+  and one would be technically selectable.
+- Translation is deferred for both: only the `en→` directions are released
+  upstream, and shipping a one-way language is not worth the pack-size and UI
+  cost while every existing translation language works both ways. See
+  [croatian-serbian-dictation.md](croatian-serbian-dictation.md).
+
+## The recipe
+
+### Step 0 — Identify the language
+
+Normalize to a BCP 47 base tag and pick the endonym users will recognize. Check
+the [IANA subtag
+registry](https://www.iana.org/assignments/language-subtag-registry/language-subtag-registry)
+when the tag is not obvious.
+
+Two traps:
+
+- **Do not merge mutually intelligible languages.** Croatian and Serbian are
+  separate product choices even where the speech models treat them similarly.
+  Serving `sr` from an `hr` selection is the kind of substitution that makes
+  people close the plugin.
+- **Decide the script policy explicitly** when a language has more than one
+  orthography. Default: ship one base-tag option, pass the model's output
+  through unmodified, and record which script it actually produced. Add a
+  script-qualified tag (`sr-Latn`) only on demonstrated demand.
+
+Regional tags stay out — `pt-BR` and `pt-PT` are one `pt` option, per the
+existing policy in [multilingual-support.md](multilingual-support.md).
+
+### Step 1 — Check each model, one at a time
+
+Never infer from a family page or a language count. Check the exact pinned
+artifact. These are the four checks, with the authoritative source for each:
+
+| Model | Where to check | What counts as a yes |
+| --- | --- | --- |
+| Whisper Large V3 Turbo | [whisper.cpp language map](https://github.com/ggml-org/whisper.cpp/blob/master/src/whisper.cpp#L2707-L2753) | tag present in the map, artifact is not `.en` |
+| Nemotron 3.5 ASR Streaming | `prompt_dictionary` in the pinned [`processor_config.json`](https://huggingface.co/nvidia/nemotron-3.5-asr-streaming-0.6b/blob/f3d333391852ba876df169dcc9ba902d25b6ab0b/processor_config.json) | tag present; record its integer index |
+| Supertonic 3 | [model card supported languages](https://huggingface.co/Supertone/supertonic-3#supported-languages) | an explicit language path, not the `na` fallback |
+| Firefox Translations | [Mozilla model registry](https://storage.googleapis.com/moz-fx-translations-data--303e-prod-translations-data/db/models.json) | `releaseStatus: "Release"` on the direction — **check each direction separately** |
+
+Cohere Transcribe, Moonshine, and Pocket TTS are English-only by artifact. They
+are not part of this check and should not be touched by a language PR.
+
+Record every answer including the noes — the noes are what the UI has to explain
+and what feeds the new-model decision later.
+
+### Step 2 — Write the code
+
+Ordered, with exact seams. Steps 2a and 2b always apply; the rest are gated on
+Step 1 answers.
+
+**2a. Product vocabulary** — `native/src/transcription.rs`
+
+Add the tag to `PRODUCT_LANGUAGE_TAGS`. This list is the set of tags the product
+can persist and that catalog entries are allowed to name. It grants no
+capability; it is a spelling check.
+
+**2b. User-facing option** — `src/language/dictation-language.ts`
+
+Add `{ label: '<endonym>', value: '<tag>' }` to `DICTATION_LANGUAGE_OPTIONS`.
+Use the endonym, matching the existing entries; the `Intl.DisplayNames` fallback
+in `formatCatalogLanguageLabel` is only for catalog tags with no option.
+
+**2c. Whisper** (if yes) — add the tag to Whisper's own supported-language list
+in `native/src/adapters/whisper.rs`, and to `languageTags` on
+`whisper_large_v3_turbo_q8_0` in `native/catalog.json`. The `.en` artifacts stay
+English-only.
+
+**2d. Nemotron** (if yes) — add a `LanguagePrompt` entry to
+`SUPPORTED_LANGUAGE_PROMPTS` in `native/src/adapters/nemotron_asr.rs` with the
+`product_tag`, the upstream `metadata_key`, and the `index` recorded in Step 1.
+Add the tag to `languageTags` on `nemotron_asr_0_6b_int8_streaming_560ms`.
+
+**2e. Supertonic** (if yes) — add the tag to `SUPPORTED_LANGUAGES` in
+`native/src/adapters/supertonic.rs` and to `languageTags` on
+`supertonic_3_multilingual_2026_05`.
+
+**2f. Translation** (rarely) — add the released directions to
+`translationPairs` on `firefox_translations_release_2026_07`, pinning each
+model, vocab, and lexical-shortlist artifact by SHA-256 as the existing entries
+do.
+
+Two things to get right. First, **directions release independently** — Mozilla
+ships `en→hr` at `Release` while `hr→en` exists only as an unreleased `tiny`
+build. The catalog's `translationPairs` is directional and handles this
+correctly, but `isSupportedTranslationPair` in `src/translation/languages.ts:44`
+approves any English-anchored pair from a product-level list, so a one-way
+language would be offered in the UI and then fail the model-level check at line
+85. That is the same class of bug as the shared-tag constant: a product list
+overstating a model. Fix the product layer to consult installed directions.
+
+Second, **the pack is one download**, so every added direction grows it for
+every user regardless of the languages they translate.
+
+**2g. UI locale** (separate track) — a new `src/locales/*.ts` catalog needs a
+native reviewer and passes the existing parity checks. Check that Obsidian ships
+the app locale first ([obsidian-translations](https://github.com/obsidianmd/obsidian-translations#existing-languages)),
+since the plugin locale follows the app language — without it the catalog can
+never be selected.
+
+Localization is independent of dictation in both directions: a UI catalog must
+never widen model eligibility, and dictation support does not imply a catalog is
+owed. Partial catalogs fall back to English per key and are safe to ship, but
+"localized UI" is only claimable for a reviewed complete catalog. Do not bundle
+this into a dictation PR.
+
+The invariant that makes all of this safe: **no shared list may be the reason a
+model appears eligible.** If adding one tag in one place changes what two
+different engines claim, that is the bug — fix the coupling, not the symptom.
+
+### Step 3 — Add the quality fixture
+
+The multilingual corpus is data-driven and pinned to Google FLEURS validation
+sentence 1577, one recording per language.
+
+1. Find the language's FLEURS config (`hr_hr`, `sr_rs`, …) and the row carrying
+   sentence 1577.
+2. Convert to 16 kHz mono 16-bit PCM WAV, commit as
+   `native/tests/fixtures/audio/<tag>-fleurs-1577.wav`.
+3. Add the entry to `native/tests/fixtures/multilingual.json`: `language`,
+   `config`, `row`, `recordingId`, `audioPath`, `sha256`, `reference`, and two
+   `anchors` (content words that must survive).
+
+No code change — the suite picks it up. If FLEURS has no config for the
+language, say so in the PR and propose an alternative permissively licensed
+read-speech clip with the same provenance fields.
+
+The fixture is a regression floor, not proof of quality. It catches "we broke
+Croatian", not "Croatian is good". Native review is the second half.
+
+### Step 4 — Fix the product copy
+
+The README still describes the eight as one set ("eight languages", "seven other
+languages"). Any PR that breaks the coupling has to split those claims into
+their real, separate counts:
+
+- **Interface languages** — the `src/locales/` catalogs.
+- **Translation languages** — released directions in the model pack.
+- **Dictation languages** — the union across STT models, which is now larger
+  than either of the above and varies by installed model.
+
+Do not replace a specific claim with a vague one. "Dictation in 10 languages
+depending on the model you install" is honest; "multilingual" is not.
+
+### Step 5 — Verify
+
+- `npm run check` — the full gate.
+- Manually dispatch the `multilingual-quality` workflow. It runs the real
+  pinned models against the fixture corpus and is the evidence for the new
+  language. It is not a PR gate, so dispatch it deliberately and link the run.
+- Native-speaker review of representative output for every capability being
+  claimed: transcript quality, punctuation, proper nouns, and — for scripted
+  languages — which script came back. Record the result in
+  `docs/quality/multilingual-quality-report.md`.
+- Obsidian smoke test: one supported path works, one unsupported path explains
+  itself before recording or playback starts rather than falling back to
+  English.
+
+## When to add a new model
+
+The trigger is **a cluster of requests pointing at the same gap**, not any
+single request and never the existence of a model that lists more languages.
+
+Adding a runtime is the most expensive thing this project can do: licensing,
+provenance, packaging, per-platform build, download size, and a permanent
+maintenance surface. A model that covers forty languages we have never been
+asked for is a liability, not a feature.
+
+The practical rule: keep declined and partial languages in the matrix above with
+their reason. When several accumulate behind one missing capability — say, four
+Slavic-language users all wanting live dictation Nemotron cannot serve — that
+cluster is the business case, and it names exactly what the candidate model has
+to do. Evaluate one candidate against that specific gap.
+
+Until then, a Dictation-tier answer plus an honest gap is the right response,
+and it is a much better user experience than an overclaimed one.
+
+## Checklist
+
+- [ ] Tag normalized, endonym chosen, script policy decided.
+- [ ] All four models checked against their pinned artifact; noes recorded.
+- [ ] Tier chosen; Full-tier promotion justified separately if claimed.
+- [ ] No shared list grants capability to a model that lacks it.
+- [ ] Unsupported combinations explain themselves before capture or playback.
+- [ ] FLEURS fixture committed with provenance and anchors.
+- [ ] README language claims split by capability, not merged.
+- [ ] `npm run check` green; `multilingual-quality` dispatched and linked.
+- [ ] Native review recorded in `docs/quality/`.
+- [ ] Support matrix in this document updated.

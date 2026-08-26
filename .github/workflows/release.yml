@@ -17,33 +17,32 @@ concurrency:
   group: release-${{ github.ref }}
   cancel-in-progress: false
 
-env:
-  # GGML_NATIVE=OFF forces a portable CPU feature baseline (falls back to
-  # GGML_AVX2). Without this, ggml's cmake probes the runner's CPU and bakes
-  # in whatever SIMD it supports (AVX-512 on current Azure ubuntu-latest /
-  # windows-latest runners), which crashes with STATUS_ILLEGAL_INSTRUCTION on
-  # consumer CPUs that don't execute AVX-512 (e.g. Alder Lake / Raptor Lake).
-  # Inherited by every job env so Swatinem/rust-cache (which runs before the
-  # Build sidecar step) sees it when computing its key, otherwise stale
-  # AVX-512-compiled artifacts get restored and silently re-shipped.
-  GGML_NATIVE: 'OFF'
-  NODE_VERSION: 24.14.1
-  RUST_TOOLCHAIN: 1.94.1
-
 jobs:
   metadata:
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.version.outputs.value }}
+      notes_path: ${{ steps.notes.outputs.path }}
+      node_version: ${{ steps.build-config.outputs.node-version }}
+      rust_toolchain: ${{ steps.build-config.outputs.rust-toolchain }}
+      ggml_native: ${{ steps.build-config.outputs.ggml-native }}
+      cuda_toolkit_version: ${{ steps.build-config.outputs.cuda-toolkit-version }}
+      cuda_architectures: ${{ steps.build-config.outputs.cuda-architectures }}
+      windows_cuda_subpackages_manifest: ${{ steps.build-config.outputs.windows-cuda-subpackages-manifest }}
+      windows_cuda_rust_cache_env_vars: ${{ steps.build-config.outputs.windows-cuda-rust-cache-env-vars }}
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
+
+      - id: build-config
+        name: Resolve release build configuration
+        uses: ./.github/actions/resolve-release-build-config
 
       - name: Setup Node.js + npm
         uses: ./.github/actions/setup-node-npm
         with:
-          node-version: ${{ env.NODE_VERSION }}
+          node-version: ${{ steps.build-config.outputs.node-version }}
 
       - id: version
         name: Resolve release version
@@ -53,26 +52,32 @@ jobs:
         if: github.event_name == 'push'
         run: node scripts/read-release-version.mjs --tag "${GITHUB_REF_NAME}"
 
+      - id: notes
+        name: Validate release notes
+        run: echo "path=$(node scripts/validate-release-notes.mjs --version '${{ steps.version.outputs.value }}')" >> "$GITHUB_OUTPUT"
+
   plugin-bundle:
     needs: metadata
+    permissions:
+      contents: read
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Setup Node.js + npm
         uses: ./.github/actions/setup-node-npm
         with:
-          node-version: ${{ env.NODE_VERSION }}
+          node-version: ${{ needs.metadata.outputs.node_version }}
           cache: 'true'
           upgrade-npm: 'true'
 
       - name: Install JavaScript dependencies
         run: npm ci
 
-      - name: Run frontend quality gates
-        run: npm run check:frontend
+      - name: Build frontend bundle
+        run: npm run build:frontend
 
       - name: Upload plugin bundle
         uses: actions/upload-artifact@v7
@@ -83,52 +88,21 @@ jobs:
             manifest.json
             styles.css
 
-  native-quality:
-    needs: metadata
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v6
-
-      - name: Setup Node.js + npm
-        uses: ./.github/actions/setup-node-npm
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: 'true'
-          upgrade-npm: 'true'
-
-      - name: Setup Rust
-        uses: ./.github/actions/setup-sidecar-rust
-        with:
-          toolchain: ${{ env.RUST_TOOLCHAIN }}
-          components: rustfmt, clippy
-          cache-workspaces: native -> target
-          cache-shared-key: native-quality
-
-      - name: Install JavaScript dependencies
-        run: npm ci
-
-      - name: Build sidecar
-        run: npm run build:sidecar
-
-      - name: Run Rust quality gates
-        run: npm run check:rust
-
   build-sidecar-posix:
+    # Start the native build as soon as version and notes are validated; release
+    # publication depends only on successful production builds and packaging.
     needs:
       - metadata
-      - native-quality
     permissions:
       contents: read
       id-token: write
       attestations: write
     env:
-      # ggml's CUDA 12.9 default builds PTX/SASS for nine architecture variants,
-      # which dominates release CUDA jobs (especially on Windows). Ship one
-      # forward-compatible Turing PTX target instead. That requires a Turing-or-
-      # newer NVIDIA GPU for CUDA acceleration; older GPUs use the CPU sidecar.
-      CMAKE_CUDA_ARCHITECTURES: ${{ matrix.cuda_architectures }}
+      # These values must exist before rust-cache computes its environment key.
+      GGML_NATIVE: ${{ needs.metadata.outputs.ggml_native }}
+      CUDA_TOOLKIT_VERSION: ${{ needs.metadata.outputs.cuda_toolkit_version }}
+      # Only the CUDA matrix leg consumes this shared release target.
+      CMAKE_CUDA_ARCHITECTURES: ${{ matrix.cuda && needs.metadata.outputs.cuda_architectures || '' }}
     strategy:
       fail-fast: false
       matrix:
@@ -136,57 +110,58 @@ jobs:
           - runner: macos-15
             asset_name: sidecar-macos-arm64
             archive_name: sidecar-macos-arm64.tar.gz
-            binary_path: native/target/release/local-transcript-sidecar
+            binary_path: native/target/release/local-dictation-sidecar
             build_command: npm run build:sidecar:release
             cache_workspaces: native -> target
             cuda: false
-            cuda_architectures: ''
           - runner: ubuntu-latest
             asset_name: sidecar-linux-x86_64-cpu
             archive_name: sidecar-linux-x86_64-cpu.tar.gz
-            binary_path: native/target/release/local-transcript-sidecar
+            binary_path: native/target/release/local-dictation-sidecar
             build_command: npm run build:sidecar:release
             cache_workspaces: native -> target
             cuda: false
-            cuda_architectures: ''
           - runner: ubuntu-latest
             asset_name: sidecar-linux-x86_64-cuda
             archive_name: sidecar-linux-x86_64-cuda.tar.gz
-            binary_path: native/target-cuda/release/local-transcript-sidecar
+            binary_path: native/target-cuda/release/local-dictation-sidecar
             build_command: npm run build:sidecar:cuda:release
             cache_workspaces: native -> target-cuda
             cuda: true
-            cuda_architectures: '75-virtual'
 
     runs-on: ${{ matrix.runner }}
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Setup Node.js + npm
         uses: ./.github/actions/setup-node-npm
         with:
-          node-version: ${{ env.NODE_VERSION }}
+          node-version: ${{ needs.metadata.outputs.node_version }}
 
       - name: Setup Rust
         uses: ./.github/actions/setup-sidecar-rust
         with:
-          toolchain: ${{ env.RUST_TOOLCHAIN }}
+          toolchain: ${{ needs.metadata.outputs.rust_toolchain }}
           cache-workspaces: ${{ matrix.cache_workspaces }}
           cache-shared-key: ${{ matrix.asset_name }}
+          # Never save a cache from a failed build. A failed CUDA configure would
+          # otherwise persist a partial target-cuda tree under an immutable key
+          # that no later successful run can overwrite, permanently poisoning the
+          # warm-build path (the Windows-CUDA regression in #143).
+          cache-on-failure: 'false'
 
       - name: Install CUDA toolkit
         if: matrix.cuda
-        uses: Jimver/cuda-toolkit@v0.2.35
+        uses: Jimver/cuda-toolkit@v0.2.36
         with:
-          cuda: '12.9.0'
+          cuda: ${{ needs.metadata.outputs.cuda_toolkit_version }}
           method: network
 
       - name: Build sidecar
         env:
           CARGO_TIMINGS: '1'
-          CMAKE_CUDA_FLAGS: '-t0'
         run: ${{ matrix.build_command }}
 
       - name: Upload cargo timings
@@ -199,7 +174,9 @@ jobs:
 
       - name: Ad-hoc sign macOS binary
         if: runner.os == 'macOS'
-        run: codesign --force --sign - ${{ matrix.binary_path }}
+        run: |
+          codesign --force --sign - ${{ matrix.binary_path }}
+          codesign --force --sign - native/target/release/local-dictation-translation-helper
 
       - name: Package release archive
         env:
@@ -220,67 +197,96 @@ jobs:
         with:
           name: ${{ matrix.asset_name }}
           path: dist/${{ matrix.archive_name }}
+          # The archive is already gzip-compressed; the default level-6 zip pass
+          # re-deflates high-entropy data for ~zero size gain. Store-only is a
+          # faster upload, which matters most for the large CUDA archive. See #143.
+          compression-level: 0
 
   build-sidecar-windows:
+    # See build-sidecar-posix: metadata-only dependency, publish keeps the gate.
     needs:
       - metadata
-      - native-quality
     permissions:
       contents: read
       id-token: write
       attestations: write
-    env:
-      CMAKE_CUDA_ARCHITECTURES: ${{ matrix.cuda_architectures }}
     strategy:
       fail-fast: false
       matrix:
         include:
           - asset_name: sidecar-windows-x86_64-cpu
             archive_name: sidecar-windows-x86_64-cpu.tar.gz
-            binary_path: native/target/release/local-transcript-sidecar.exe
+            binary_path: native/target/release/local-dictation-sidecar.exe
             build_command: npm run build:sidecar:release
             cache_workspaces: native -> target
             cuda: false
-            cuda_architectures: ''
           - asset_name: sidecar-windows-x86_64-cuda
             archive_name: sidecar-windows-x86_64-cuda.tar.gz
-            binary_path: native/target-cuda/release/local-transcript-sidecar.exe
-            build_command: npm run build:sidecar:cuda:windows:release
-            cache_workspaces: native -> target-cuda
+            binary_path: native/target-cuda/release/local-dictation-sidecar.exe
             cuda: true
-            cuda_architectures: '75-virtual'
 
-    runs-on: windows-latest
+    # windows-2025 is the Windows Server 2025 image, which now ships Visual
+    # Studio 2026 (v18) by default. The pinned toolkit supports MSVC v18 as a
+    # host compiler, so the VS CUDA generator works here. We pin
+    # this OS label rather than windows-latest for determinism (it won't roll to
+    # a future Server major), and deliberately avoid the windows-2025-vs2026
+    # alias — that one is testing-only and collapses into windows-2025 after the
+    # June 2026 migration. The label still doesn't pin the VS *version* (GitHub
+    # migrates VS inside it, as in the 2022->2026 move), so the rust-cache key is
+    # forked by VS product line (see setup-sidecar-rust) to survive a future
+    # flip. See #139.
+    runs-on: windows-2025
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
+
+      - name: Configure Windows CPU release build
+        if: '!matrix.cuda'
+        shell: pwsh
+        env:
+          CUDA_TOOLKIT_VERSION_INPUT: ${{ needs.metadata.outputs.cuda_toolkit_version }}
+          GGML_NATIVE_INPUT: ${{ needs.metadata.outputs.ggml_native }}
+        run: |
+          "GGML_NATIVE=$env:GGML_NATIVE_INPUT" | Out-File -FilePath $env:GITHUB_ENV -Append
+          "CUDA_TOOLKIT_VERSION=$env:CUDA_TOOLKIT_VERSION_INPUT" | Out-File -FilePath $env:GITHUB_ENV -Append
 
       - name: Setup Node.js + npm
+        if: '!matrix.cuda'
         uses: ./.github/actions/setup-node-npm
         with:
-          node-version: ${{ env.NODE_VERSION }}
+          node-version: ${{ needs.metadata.outputs.node_version }}
 
       - name: Setup Rust
+        if: '!matrix.cuda'
         uses: ./.github/actions/setup-sidecar-rust
         with:
-          toolchain: ${{ env.RUST_TOOLCHAIN }}
+          toolchain: ${{ needs.metadata.outputs.rust_toolchain }}
           cache-workspaces: ${{ matrix.cache_workspaces }}
           cache-shared-key: ${{ matrix.asset_name }}
+          # Never save a cache from a failed build. A failed CUDA configure would
+          # otherwise persist a partial target-cuda tree under an immutable key
+          # that no later successful run can overwrite, permanently poisoning the
+          # warm-build path (the Windows-CUDA regression in #143).
+          cache-on-failure: 'false'
 
-      - name: Install CUDA toolkit
+      - name: Build Windows CUDA release sidecar
         if: matrix.cuda
-        uses: Jimver/cuda-toolkit@v0.2.35
+        uses: ./.github/actions/build-windows-cuda-release
         with:
-          cuda: '12.9.0'
-          method: network
-          sub-packages: '["nvcc", "cudart", "cublas", "cublas_dev", "cufft", "visual_studio_integration"]'
+          node-version: ${{ needs.metadata.outputs.node_version }}
+          rust-toolchain: ${{ needs.metadata.outputs.rust_toolchain }}
+          ggml-native: ${{ needs.metadata.outputs.ggml_native }}
+          cuda-toolkit-version: ${{ needs.metadata.outputs.cuda_toolkit_version }}
+          cuda-architectures: ${{ needs.metadata.outputs.cuda_architectures }}
+          windows-cuda-subpackages-manifest: ${{ needs.metadata.outputs.windows_cuda_subpackages_manifest }}
+          windows-cuda-rust-cache-env-vars: ${{ needs.metadata.outputs.windows_cuda_rust_cache_env_vars }}
 
       - name: Build sidecar
+        if: '!matrix.cuda'
         shell: pwsh
         env:
           CARGO_TIMINGS: '1'
-          CMAKE_CUDA_FLAGS: '-t0'
         run: ${{ matrix.build_command }}
 
       - name: Upload cargo timings
@@ -310,6 +316,10 @@ jobs:
         with:
           name: ${{ matrix.asset_name }}
           path: dist/${{ matrix.archive_name }}
+          # The archive is already gzip-compressed; the default level-6 zip pass
+          # re-deflates high-entropy data for ~zero size gain. Store-only is a
+          # faster upload, which matters most for the large CUDA archive. See #143.
+          compression-level: 0
 
   publish:
     needs:
@@ -319,16 +329,18 @@ jobs:
       - build-sidecar-windows
     permissions:
       contents: write
+      id-token: write
+      attestations: write
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Setup Node.js + npm
         uses: ./.github/actions/setup-node-npm
         with:
-          node-version: ${{ env.NODE_VERSION }}
+          node-version: ${{ needs.metadata.outputs.node_version }}
 
       - name: Download plugin bundle
         uses: actions/download-artifact@v8
@@ -360,7 +372,27 @@ jobs:
           files: dist/release/*
           name: ${{ needs.metadata.outputs.version }}
           tag_name: ${{ needs.metadata.outputs.version }}
+          body_path: ${{ needs.metadata.outputs.notes_path }}
           draft: true
+
+      - name: Stage exact release assets for attestation
+        if: github.event_name == 'push'
+        run: |
+          cp dist/release/main.js main.js
+          cp dist/release/manifest.json manifest.json
+          cp dist/release/styles.css styles.css
+
+      # Sign the exact assembled plugin files after release upload and directly
+      # before publication. This keeps the short-lived signing certificate valid
+      # when Obsidian's release scanner first sees the assets.
+      - name: Attest plugin release assets
+        if: github.event_name == 'push'
+        uses: actions/attest-build-provenance@v4
+        with:
+          subject-path: |
+            main.js
+            manifest.json
+            styles.css
 
       - name: Publish release
         if: github.event_name == 'push'
@@ -368,3 +400,40 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ needs.metadata.outputs.version }}
         run: gh release edit "$TAG" --draft=false --repo "$GITHUB_REPOSITORY"
+
+  # At-a-glance timing analytics for the run: who took how long, and which steps
+  # dominated. It runs after publish so the measured wall clock includes the
+  # actual publication path, but it does not gate publication. It also runs
+  # after a failed publish so slow/failed runs still leave useful evidence.
+  release-report:
+    needs:
+      - publish
+    if: always()
+    permissions:
+      actions: read
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - id: build-config
+        name: Resolve release build configuration
+        uses: ./.github/actions/resolve-release-build-config
+
+      - name: Setup Node.js + npm
+        uses: ./.github/actions/setup-node-npm
+        with:
+          node-version: ${{ steps.build-config.outputs.node-version }}
+
+      - name: Render release timing report
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TARGET_RELEASE_SECONDS: '1500'
+        run: node scripts/release-timing-report.mjs
+
+      - name: Upload release timing report
+        uses: actions/upload-artifact@v7
+        with:
+          name: release-report
+          path: release-report.md

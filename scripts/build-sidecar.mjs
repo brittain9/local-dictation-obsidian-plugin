@@ -5,8 +5,8 @@ const args = new Set(process.argv.slice(2));
 
 const features =
   process.platform === 'darwin'
-    ? 'engine-whisper,engine-cohere-transcribe,gpu-metal'
-    : 'engine-whisper,engine-cohere-transcribe';
+    ? 'engine-whisper,engine-cohere-transcribe,engine-hy-mt,engine-moonshine,engine-nemotron-asr,engine-pocket-tts,engine-supertonic,gpu-metal'
+    : 'engine-whisper,engine-cohere-transcribe,engine-hy-mt,engine-moonshine,engine-nemotron-asr,engine-pocket-tts,engine-supertonic';
 
 const cargoArgs = [
   'build',
@@ -15,6 +15,7 @@ const cargoArgs = [
   'native/Cargo.toml',
   '--features',
   features,
+  '--bins',
 ];
 
 if (args.has('--release')) cargoArgs.push('--release');

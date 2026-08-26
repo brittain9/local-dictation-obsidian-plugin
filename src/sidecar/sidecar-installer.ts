@@ -1,11 +1,14 @@
 import { createHash, type Hash } from 'node:crypto';
-import { createWriteStream, type WriteStream } from 'node:fs';
+import { createReadStream, createWriteStream, type WriteStream } from 'node:fs';
 import { chmod, mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import type { IncomingMessage } from 'node:http';
 import { get as httpsGet, type RequestOptions } from 'node:https';
 import { dirname, join, normalize, sep } from 'node:path';
-import { gunzipSync } from 'node:zlib';
+import { Writable } from 'node:stream';
+import { pipeline } from 'node:stream/promises';
+import { createGunzip } from 'node:zlib';
 
+import { getExistingPathKind } from '../filesystem/path-validation';
 import { asError } from '../shared/error-utils';
 import type { PluginLogger } from '../shared/plugin-logger';
 import { formatSidecarExecutableName } from './sidecar-executable';
@@ -45,7 +48,7 @@ export interface InstallSidecarResult {
 }
 
 export const DEFAULT_RELEASE_BASE_URL =
-  'https://github.com/brittain9/obsidian-local-speech-to-text/releases/download';
+  'https://github.com/brittain9/speech-kit-obsidian-plugin/releases/download';
 
 const INSTALL_MANIFEST_FILENAME = 'install.json';
 
@@ -60,7 +63,9 @@ export function detectPlatformAsset(
     }
 
     if (arch !== 'arm64') {
-      throw new Error(`Unsupported macOS architecture for sidecar: ${arch}.`);
+      throw new Error(
+        'Speech Kit requires an Apple Silicon Mac (M1 or newer). Intel Macs are not supported.',
+      );
     }
 
     return 'sidecar-macos-arm64.tar.gz';
@@ -149,8 +154,10 @@ export async function installSidecar(
       },
       options.signal,
     );
+    options.signal?.throwIfAborted();
 
     options.onProgress?.({ bytesDownloaded: 0, totalBytes: null, phase: 'verify' });
+    options.signal?.throwIfAborted();
 
     if (actualSha256 !== expectedSha256) {
       throw new Error(
@@ -159,12 +166,21 @@ export async function installSidecar(
     }
 
     options.onProgress?.({ bytesDownloaded: 0, totalBytes: null, phase: 'extract' });
-    await extractTarGz(archivePath, stagingDirectory);
+    options.signal?.throwIfAborted();
+    await extractTarGz(archivePath, stagingDirectory, options.signal);
+    options.signal?.throwIfAborted();
 
     await rm(archivePath, { force: true });
+    options.signal?.throwIfAborted();
 
     const executableName = resolveSidecarExecutableName();
     await markExecutable(join(stagingDirectory, executableName));
+    const helperName =
+      process.platform === 'win32'
+        ? 'local-dictation-translation-helper.exe'
+        : 'local-dictation-translation-helper';
+    await markExecutable(join(stagingDirectory, helperName));
+    options.signal?.throwIfAborted();
 
     const manifest: InstallManifest = {
       installedAt: new Date().toISOString(),
@@ -177,10 +193,41 @@ export async function installSidecar(
       `${JSON.stringify(manifest, null, 2)}\n`,
       'utf8',
     );
+    options.signal?.throwIfAborted();
 
     await options.beforeReplace?.();
-    await rm(destinationDirectory, { force: true, recursive: true });
-    await rename(stagingDirectory, destinationDirectory);
+    options.signal?.throwIfAborted();
+
+    // Atomic-ish promotion: move the existing install aside before we move
+    // the new one in, so a crash between the two renames leaves a recoverable
+    // backup rather than no install. Cleanup of any prior `.old` from a
+    // previous crashed install happens up front so it cannot accumulate.
+    const backupDir = `${destinationDirectory}.old`;
+    const destExists = (await getExistingPathKind(destinationDirectory)) !== 'missing';
+
+    if (destExists) {
+      await rm(backupDir, { force: true, recursive: true });
+      await rename(destinationDirectory, backupDir);
+    }
+
+    try {
+      options.signal?.throwIfAborted();
+      await rename(stagingDirectory, destinationDirectory);
+    } catch (renameError) {
+      if (destExists) {
+        await rename(backupDir, destinationDirectory).catch((rollbackError) => {
+          options.logger?.warn(
+            'installer',
+            `Failed to roll back install backup: ${asError(rollbackError, 'rollback').message}`,
+          );
+        });
+      }
+      throw renameError;
+    }
+
+    if (destExists) {
+      await rm(backupDir, { force: true, recursive: true });
+    }
 
     options.logger?.debug(
       'installer',
@@ -324,10 +371,10 @@ async function downloadToFile(
   let lastReportedBytes = 0;
   let lastReportedAt = 0;
 
-  let idleTimer: NodeJS.Timeout | null = null;
+  let idleTimer: number | null = null;
   const armIdleTimer = (): void => {
-    if (idleTimer !== null) clearTimeout(idleTimer);
-    idleTimer = setTimeout(() => {
+    if (idleTimer !== null) window.clearTimeout(idleTimer);
+    idleTimer = window.setTimeout(() => {
       stream.destroy(
         new Error(
           `Download stalled: no data received from ${url} for ${String(DOWNLOAD_IDLE_TIMEOUT_MS)}ms.`,
@@ -337,7 +384,7 @@ async function downloadToFile(
   };
   const clearIdleTimer = (): void => {
     if (idleTimer !== null) {
-      clearTimeout(idleTimer);
+      window.clearTimeout(idleTimer);
       idleTimer = null;
     }
   };
@@ -431,13 +478,33 @@ function resolveSidecarExecutableName(): string {
   return formatSidecarExecutableName(process.platform === 'win32');
 }
 
-async function extractTarGz(archivePath: string, destDir: string): Promise<void> {
-  const compressed = await readFile(archivePath);
-  const decompressed = gunzipSync(compressed);
+async function extractTarGz(
+  archivePath: string,
+  destDir: string,
+  signal?: AbortSignal,
+): Promise<void> {
+  // Stream the gunzip so the event loop is not blocked while decompressing
+  // (matters for the CUDA bundle). Memory is still O(archive) but no longer
+  // O(archive) of synchronous CPU on the main thread.
+  const chunks: Buffer[] = [];
+  await pipeline(
+    createReadStream(archivePath),
+    createGunzip(),
+    new Writable({
+      write(chunk: Buffer, _encoding, callback) {
+        chunks.push(chunk);
+        callback();
+      },
+    }),
+    { signal },
+  );
+  signal?.throwIfAborted();
+  const decompressed = Buffer.concat(chunks);
   const blockSize = 512;
   let offset = 0;
 
   while (offset + blockSize <= decompressed.length) {
+    signal?.throwIfAborted();
     const header = decompressed.subarray(offset, offset + blockSize);
     offset += blockSize;
 
@@ -478,7 +545,8 @@ async function extractTarGz(archivePath: string, destDir: string): Promise<void>
       await mkdir(resolvedPath, { recursive: true });
     } else {
       await mkdir(dirname(resolvedPath), { recursive: true });
-      await writeFile(resolvedPath, decompressed.subarray(offset, dataEnd));
+      signal?.throwIfAborted();
+      await writeFile(resolvedPath, decompressed.subarray(offset, dataEnd), { signal });
     }
 
     offset += Math.ceil(size / blockSize) * blockSize;

@@ -5,6 +5,8 @@ import {
   type ContextWindow,
   createCancelModelInstallCommand,
   createCancelSessionCommand,
+  createCancelSynthesisCommand,
+  createCancelTranslationCommand,
   createContextResponseCommand,
   createGetModelStoreCommand,
   createGetSystemInfoCommand,
@@ -13,10 +15,13 @@ import {
   createListInstalledModelsCommand,
   createListModelCatalogCommand,
   createProbeModelSelectionCommand,
+  createProbeSystemAudioCommand,
   createRemoveModelCommand,
-  createShutdownCommand,
   createStartSessionCommand,
+  createStartSynthesisCommand,
+  createStartTranslationCommand,
   createStopSessionCommand,
+  createSynthesisPlaybackPositionCommand,
   type ErrorEvent,
   encodeAudioFrame,
   encodeJsonFrame,
@@ -35,12 +40,35 @@ import {
   type SidecarCommand,
   type SidecarEvent,
   type StartSessionCommand,
+  type StartSynthesisCommand,
+  type StartTranslationCommand,
+  SYNTHESIS_AUDIO_FRAME_KIND,
+  type SynthesisAudioFrame,
+  type SystemAudioProbeResultEvent,
   type SystemInfoEvent,
 } from './protocol';
+import { localizeSidecarEvent, rawSidecarEventDetail } from './sidecar-event-localization';
 import { createSidecarStderrLogEntry } from './sidecar-logging';
 import { type ResolveSidecarLaunchSpec, SidecarProcess } from './sidecar-process';
 
 type SidecarEventListener = (event: SidecarEvent) => void;
+type SynthesisAudioListener = (frame: SynthesisAudioFrame) => void;
+
+export class SidecarError extends Error {
+  readonly code: string;
+  readonly details: string | undefined;
+  readonly sessionId: string | undefined;
+  readonly rawDetail: string;
+
+  constructor(event: ErrorEvent) {
+    super(localizeSidecarEvent(event));
+    this.name = 'SidecarError';
+    this.code = event.code;
+    this.details = event.details;
+    this.rawDetail = rawSidecarEventDetail(event);
+    this.sessionId = event.sessionId;
+  }
+}
 
 interface PendingEventWaiter {
   description: string;
@@ -48,7 +76,7 @@ interface PendingEventWaiter {
   rejectOnError: (event: ErrorEvent) => boolean;
   reject: (error: Error) => void;
   resolve: (event: SidecarEvent) => void;
-  timeoutHandle: ReturnType<typeof globalThis.setTimeout>;
+  timeoutHandle: number;
 }
 
 interface SidecarProcessLike {
@@ -70,23 +98,44 @@ interface SidecarConnectionOptions {
 
 export class SidecarConnection {
   private readonly eventListeners = new Set<SidecarEventListener>();
+  private readonly synthesisAudioListeners = new Set<SynthesisAudioListener>();
   private readonly frameParser = new FramedMessageParser(parseEventFrame);
   private readonly pendingWaiters = new Set<PendingEventWaiter>();
   private readonly process: SidecarProcessLike;
+  // Set true whenever the plugin itself initiates a stop (shutdown/restart),
+  // so the onExit handler can distinguish clean swaps from real crashes.
+  private expectedStop = false;
 
   constructor(private readonly options: SidecarConnectionOptions) {
     const handlers = {
       onExit: (code: number | null, signal: NodeJS.Signals | null) => {
-        this.options.logger?.warn(
-          'sidecar',
-          `sidecar process exited (code: ${String(code)}, signal: ${String(signal)})`,
-        );
+        const expectedStop = this.expectedStop;
+        if (expectedStop) {
+          this.options.logger?.debug(
+            'sidecar',
+            `sidecar stopped (code: ${String(code)}, signal: ${String(signal)})`,
+          );
+        } else {
+          this.options.logger?.warn(
+            'sidecar',
+            `sidecar process exited unexpectedly (code: ${String(code)}, signal: ${String(signal)})`,
+          );
+        }
+        this.expectedStop = false;
         this.frameParser.reset();
         this.rejectPendingWaiters(
           new Error(
             `Sidecar exited unexpectedly (code: ${String(code)}, signal: ${String(signal)}).`,
           ),
         );
+        if (!expectedStop) {
+          this.dispatchEvent({
+            code: 'sidecar_exited',
+            details: `code: ${String(code)}, signal: ${String(signal)}`,
+            message: 'The sidecar process exited unexpectedly.',
+            type: 'error',
+          });
+        }
       },
       onStderrLine: (line: string) => {
         const entry = createSidecarStderrLogEntry(line);
@@ -180,6 +229,16 @@ export class SidecarConnection {
     );
   }
 
+  async probeSystemAudio(timeoutMs = 75_000): Promise<SystemAudioProbeResultEvent> {
+    return this.sendCommandAndWait(
+      createProbeSystemAudioCommand(),
+      (event): event is SystemAudioProbeResultEvent => event.type === 'system_audio_probe_result',
+      'system_audio_probe_result',
+      timeoutMs,
+      (event) => event.sessionId === undefined,
+    );
+  }
+
   async removeModel(
     payload: Parameters<typeof createRemoveModelCommand>[0],
     timeoutMs = this.options.getRequestTimeoutMs(),
@@ -212,8 +271,42 @@ export class SidecarConnection {
     );
   }
 
-  async cancelModelInstall(installId: string): Promise<void> {
-    await this.sendCommand(createCancelModelInstallCommand(installId));
+  cancelModelInstall(installId: string): void {
+    if (!this.process.isRunning()) {
+      return;
+    }
+
+    this.process.write(encodeJsonFrame(createCancelModelInstallCommand(installId)));
+  }
+
+  async startSynthesis(payload: Omit<StartSynthesisCommand, 'type'>): Promise<void> {
+    await this.ensureStarted();
+    this.process.write(encodeJsonFrame(createStartSynthesisCommand(payload)));
+  }
+
+  cancelSynthesis(synthesisId: number): void {
+    if (this.process.isRunning()) {
+      this.process.write(encodeJsonFrame(createCancelSynthesisCommand(synthesisId)));
+    }
+  }
+
+  async startTranslation(payload: Omit<StartTranslationCommand, 'type'>): Promise<void> {
+    await this.ensureStarted();
+    this.process.write(encodeJsonFrame(createStartTranslationCommand(payload)));
+  }
+
+  cancelTranslation(translationId: string): void {
+    if (this.process.isRunning()) {
+      this.process.write(encodeJsonFrame(createCancelTranslationCommand(translationId)));
+    }
+  }
+
+  reportSynthesisPlaybackPosition(synthesisId: number, playedThroughSeq: number): void {
+    if (this.process.isRunning()) {
+      this.process.write(
+        encodeJsonFrame(createSynthesisPlaybackPositionCommand(synthesisId, playedThroughSeq)),
+      );
+    }
   }
 
   async startSession(
@@ -230,12 +323,12 @@ export class SidecarConnection {
     );
   }
 
-  async stopSession(
+  async cancelSession(
     sessionId: string,
     timeoutMs = this.options.getRequestTimeoutMs(),
   ): Promise<SessionStoppedEvent> {
     return this.sendCommandAndWait(
-      createStopSessionCommand(),
+      createCancelSessionCommand(sessionId),
       (event): event is SessionStoppedEvent =>
         event.type === 'session_stopped' && event.sessionId === sessionId,
       `session_stopped:${sessionId}`,
@@ -244,18 +337,12 @@ export class SidecarConnection {
     );
   }
 
-  async cancelSession(
-    sessionId: string,
-    timeoutMs = this.options.getRequestTimeoutMs(),
-  ): Promise<SessionStoppedEvent> {
-    return this.sendCommandAndWait(
-      createCancelSessionCommand(),
-      (event): event is SessionStoppedEvent =>
-        event.type === 'session_stopped' && event.sessionId === sessionId,
-      `session_stopped:${sessionId}`,
-      timeoutMs,
-      (event) => event.sessionId === undefined || event.sessionId === sessionId,
-    );
+  requestStopSession(sessionId: string): void {
+    if (!this.process.isRunning()) {
+      return;
+    }
+
+    this.process.write(encodeJsonFrame(createStopSessionCommand(sessionId)));
   }
 
   async restart(startupTimeoutMs = this.options.getRequestTimeoutMs()): Promise<HealthOkEvent> {
@@ -269,15 +356,17 @@ export class SidecarConnection {
       return;
     }
 
-    try {
-      this.process.write(encodeJsonFrame(createShutdownCommand()));
-    } finally {
-      await this.process.stop();
-    }
+    this.expectedStop = true;
+    this.rejectPendingWaiters(new Error('Sidecar is shutting down.'));
+
+    // Stdin EOF is the shutdown signal. Avoid writing the redundant wire-level
+    // shutdown command immediately before closing stdin; Node write() only
+    // guarantees buffering, not that bytes flushed to the OS pipe.
+    await this.process.stop();
   }
 
-  sendAudioFrame(frameBytes: Uint8Array): void {
-    this.process.write(encodeAudioFrame(frameBytes));
+  sendAudioFrame(sessionId: string, frameBytes: Uint8Array): void {
+    this.process.write(encodeAudioFrame(sessionId, frameBytes));
   }
 
   sendContextResponse(correlationId: string, context: ContextWindow | null): void {
@@ -290,6 +379,7 @@ export class SidecarConnection {
 
   dispose(): void {
     this.eventListeners.clear();
+    this.synthesisAudioListeners.clear();
     this.rejectPendingWaiters(new Error('SidecarConnection disposed'));
   }
 
@@ -299,6 +389,11 @@ export class SidecarConnection {
     return () => {
       this.eventListeners.delete(listener);
     };
+  }
+
+  subscribeSynthesisAudio(listener: SynthesisAudioListener): () => void {
+    this.synthesisAudioListeners.add(listener);
+    return () => this.synthesisAudioListeners.delete(listener);
   }
 
   private async sendCommandAndWait<TEvent extends SidecarEvent>(
@@ -325,21 +420,11 @@ export class SidecarConnection {
       try {
         this.process.write(encodeJsonFrame(command));
       } catch (error) {
-        globalThis.clearTimeout(waiter.timeoutHandle);
+        window.clearTimeout(waiter.timeoutHandle);
         this.pendingWaiters.delete(waiter);
         reject(asError(error, `Failed to write sidecar command: ${command.type}`));
       }
     });
-  }
-
-  private async sendCommand(command: SidecarCommand): Promise<void> {
-    await this.ensureStarted();
-
-    try {
-      this.process.write(encodeJsonFrame(command));
-    } catch (error) {
-      throw asError(error, `Failed to write sidecar command: ${command.type}`);
-    }
   }
 
   private createPendingWaiter(
@@ -356,7 +441,7 @@ export class SidecarConnection {
       reject,
       rejectOnError: rejectOnError ?? (() => true),
       resolve,
-      timeoutHandle: globalThis.setTimeout(() => {
+      timeoutHandle: window.setTimeout(() => {
         this.pendingWaiters.delete(waiter);
         waiter.reject(new Error(`Timed out waiting for sidecar event: ${description}`));
       }, timeoutMs),
@@ -367,17 +452,15 @@ export class SidecarConnection {
   }
 
   private handleStdoutChunk(chunk: Uint8Array): void {
-    let parsedFrames: ReturnType<typeof this.frameParser.pushChunk>;
+    const { fatal, frames } = this.frameParser.pushChunk(chunk);
 
-    try {
-      parsedFrames = this.frameParser.pushChunk(chunk);
-    } catch (error) {
-      this.options.logger?.warn('protocol', 'failed to parse sidecar stdout chunk', error);
-      this.frameParser.reset();
-      return;
-    }
-
-    for (const frame of parsedFrames) {
+    for (const frame of frames) {
+      if (frame.kind === SYNTHESIS_AUDIO_FRAME_KIND) {
+        for (const listener of this.synthesisAudioListeners) {
+          listener(frame);
+        }
+        continue;
+      }
       if (frame.kind !== JSON_FRAME_KIND) {
         this.options.logger?.warn(
           'protocol',
@@ -388,13 +471,18 @@ export class SidecarConnection {
 
       this.dispatchEvent(frame.envelope);
     }
+
+    if (fatal !== undefined) {
+      // The stream is unrecoverable: drain waiters with a meaningful error
+      // and tear down the process. The unexpected-exit handler will surface
+      // the crash and the next sendCommand respawns via ensureStarted().
+      this.options.logger?.warn('protocol', 'fatal sidecar stream error; restarting', fatal);
+      this.rejectPendingWaiters(new Error(`Sidecar stream parse failed: ${fatal.message}`));
+      void this.process.stop();
+    }
   }
 
   private dispatchEvent(event: SidecarEvent): void {
-    if (shouldLogProtocolEvent(event)) {
-      this.options.logger?.debug('protocol', summarizeProtocolEvent(event));
-    }
-
     if (event.type === 'model_install_update' && event.state === 'failed') {
       this.options.logger?.warn(
         'model',
@@ -410,62 +498,25 @@ export class SidecarConnection {
 
     for (const waiter of [...this.pendingWaiters]) {
       if (waiter.matches(event)) {
-        globalThis.clearTimeout(waiter.timeoutHandle);
+        window.clearTimeout(waiter.timeoutHandle);
         this.pendingWaiters.delete(waiter);
         waiter.resolve(event);
         continue;
       }
 
       if (event.type === 'error' && waiter.rejectOnError(event)) {
-        globalThis.clearTimeout(waiter.timeoutHandle);
+        window.clearTimeout(waiter.timeoutHandle);
         this.pendingWaiters.delete(waiter);
-        waiter.reject(new Error(`${event.message}${event.details ? ` (${event.details})` : ''}`));
+        waiter.reject(new SidecarError(event));
       }
     }
   }
 
   private rejectPendingWaiters(error: Error): void {
     for (const waiter of [...this.pendingWaiters]) {
-      globalThis.clearTimeout(waiter.timeoutHandle);
+      window.clearTimeout(waiter.timeoutHandle);
       this.pendingWaiters.delete(waiter);
       waiter.reject(error);
     }
-  }
-}
-
-function shouldLogProtocolEvent(event: SidecarEvent): boolean {
-  switch (event.type) {
-    case 'error':
-    case 'session_started':
-    case 'session_state_changed':
-    case 'session_stopped':
-    case 'transcript_ready':
-    case 'warning':
-      return true;
-    case 'model_install_update':
-      return false;
-    default:
-      return false;
-  }
-}
-
-function summarizeProtocolEvent(event: SidecarEvent): string {
-  switch (event.type) {
-    case 'model_install_update':
-      return `event: model_install_update (${event.modelId}, ${event.state})`;
-    case 'session_started':
-      return `event: session_started (${event.sessionId})`;
-    case 'session_state_changed':
-      return `event: session_state_changed (${event.sessionId}, ${event.state})`;
-    case 'session_stopped':
-      return `event: session_stopped (${event.sessionId}, ${event.reason})`;
-    case 'transcript_ready':
-      return `event: transcript_ready (${event.sessionId}, ${event.text.length} chars)`;
-    case 'warning':
-      return `event: warning (${event.code})`;
-    case 'error':
-      return `event: error (${event.code})`;
-    default:
-      return `event: ${event.type}`;
   }
 }

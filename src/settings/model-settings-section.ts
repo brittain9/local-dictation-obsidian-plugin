@@ -2,23 +2,32 @@ import { Setting } from 'obsidian';
 
 import { isCancellingPhase, type ModelInstallManager } from '../models/model-install-manager';
 import { updateInstallProgressElement } from '../models/model-install-progress';
-import { deriveCurrentModelDisplay } from '../models/model-row-state';
+import { type CurrentModelStatus, deriveCurrentModelDisplay } from '../models/model-row-state';
+import { t } from '../shared/i18n';
 import { renderActiveInstallCard } from './install-progress-row';
 
 // ---------------------------------------------------------------------------
-// Badge helper (maps installedLabel -> CSS modifier + display text)
+// Badge helper (maps stable model status -> CSS modifier + localized display text)
 // ---------------------------------------------------------------------------
 
-function getBadgeInfo(installedLabel: string): { modifier: string; text: string } {
-  switch (installedLabel) {
-    case 'Installed':
-      return { modifier: 'ready', text: 'Ready' };
-    case 'Not installed':
-      return { modifier: 'missing', text: 'Not installed' };
-    case 'External file':
-      return { modifier: 'external', text: 'Unverified' };
-    default:
-      return { modifier: 'none', text: 'No model' };
+export function getModelStatusBadge(
+  status: CurrentModelStatus,
+): { modifier: string; text: string } | null {
+  switch (status) {
+    case 'installed':
+      return null;
+    case 'not_installed':
+      return { modifier: 'missing', text: t('settings.model.notInstalled') };
+    case 'external_validated':
+      return { modifier: 'ready', text: t('settings.model.validatedExternal') };
+    case 'external_file':
+      return { modifier: 'external', text: t('settings.model.external') };
+    case 'checking':
+      return { modifier: 'external', text: t('settings.model.checking') };
+    case 'unavailable':
+      return { modifier: 'missing', text: t('settings.model.unavailable') };
+    case 'not_selected':
+      return { modifier: 'none', text: t('settings.model.noModel') };
   }
 }
 
@@ -54,24 +63,51 @@ export function renderModelSection(
     const currentModel = deriveCurrentModelDisplay(state);
 
     // --- Current model row ---
-    const descFragment = document.createDocumentFragment();
+    const descFragment = createFragment();
+    descFragment.createSpan({ text: currentModel.displayName });
+    let hasMetadata = currentModel.displayName.length > 0;
+    const appendSeparator = (): void => {
+      if (hasMetadata) {
+        descFragment.createSpan({ text: ' \u00b7 ' });
+      }
+      hasMetadata = true;
+    };
+
     if (currentModel.engineLabel.length > 0) {
-      descFragment.createSpan({ text: `${currentModel.engineLabel} \u00b7 ` });
+      appendSeparator();
+      descFragment.createSpan({ text: currentModel.engineLabel });
     }
-    const badge = getBadgeInfo(currentModel.installedLabel);
-    descFragment.createSpan({
-      cls: `local-stt-badge local-stt-badge--${badge.modifier}`,
-      text: badge.text,
-    });
+    const caps = state.selectedModelCapabilities;
+    if (caps.status === 'ready' && caps.capabilities.family.supportsStreaming) {
+      appendSeparator();
+      descFragment.createSpan({
+        cls: 'local-stt-badge local-stt-badge--streaming',
+        text: t('settings.model.streaming'),
+      });
+    }
+    const badge = getModelStatusBadge(currentModel.status);
+    if (badge !== null) {
+      appendSeparator();
+      descFragment.createSpan({
+        cls: `local-stt-badge local-stt-badge--${badge.modifier}`,
+        text: badge.text,
+      });
+    }
+    if (currentModel.detail.length > 0) {
+      if (hasMetadata) {
+        descFragment.createEl('br');
+      }
+      descFragment.createSpan({ text: currentModel.detail });
+    }
 
     const cardSetting = new Setting(container)
-      .setName(currentModel.displayName)
+      .setName(t('settings.model.speechToText'))
       .setDesc(descFragment);
 
     cardSetting.addButton((button) => {
       button
         .setCta()
-        .setButtonText('Manage models')
+        .setButtonText(t('settings.model.manageModels'))
         .onClick(() => {
           callbacks.onManageModels();
         });
@@ -80,7 +116,7 @@ export function renderModelSection(
     cardSetting.addExtraButton((button) => {
       button
         .setIcon('file-input')
-        .setTooltip('Use external file')
+        .setTooltip(t('settings.model.useExternalFile'))
         .onClick(() => {
           callbacks.onExternalFile();
         });
@@ -91,7 +127,7 @@ export function renderModelSection(
       cardSetting.addExtraButton((button) => {
         button
           .setIcon('info')
-          .setTooltip('Model details')
+          .setTooltip(t('settings.model.details'))
           .onClick(() => {
             onModelInfo();
           });
@@ -116,7 +152,7 @@ export function renderModelSection(
       const isCancelling = isCancellingPhase(activeInstall.phase);
       const { progressEl } = renderActiveInstallCard(container, {
         isCancelling,
-        name: `Installing: ${activeInstallDisplayName}`,
+        name: t('settings.install.installingNamed', { name: activeInstallDisplayName }),
         onCancel: () => {
           void manager.cancel();
         },
@@ -124,6 +160,11 @@ export function renderModelSection(
       });
       installProgressEl = progressEl;
     }
+
+    // This row lives in a private wrapper so manager updates cannot erase the
+    // sibling language control. Keep Obsidian's `.setting-item:last-child`
+    // rule from stripping its bottom padding and pulling the divider upward.
+    container.createSpan({ attr: { 'aria-hidden': 'true' } }).hide();
   }
 
   function handleStateChange(): void {

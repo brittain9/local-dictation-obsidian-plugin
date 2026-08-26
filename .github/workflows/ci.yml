@@ -26,7 +26,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Setup Node.js + npm
         uses: ./.github/actions/setup-node-npm
@@ -38,8 +38,14 @@ jobs:
       - name: Install JavaScript dependencies
         run: npm ci
 
+      - name: Validate release metadata
+        run: npm run check:release
+
       - name: Run frontend quality gates
         run: npm run check:frontend
+
+      - name: Verify frontend build output
+        run: npm run verify:frontend-output
 
   sidecar-quality:
     strategy:
@@ -57,7 +63,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Setup Node.js + npm
         uses: ./.github/actions/setup-node-npm

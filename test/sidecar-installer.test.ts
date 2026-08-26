@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import type { EventEmitter } from 'node:events';
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { gzipSync } from 'node:zlib';
@@ -106,8 +106,11 @@ describe('detectPlatformAsset', () => {
     expect(() => detectPlatformAsset('darwin', 'arm64', 'cuda')).toThrow(/not available on macOS/i);
   });
 
-  it('rejects Intel Mac', () => {
-    expect(() => detectPlatformAsset('darwin', 'x64', 'cpu')).toThrow(/architecture/i);
+  it('rejects Intel Mac with an Apple Silicon requirement message', () => {
+    expect(() => detectPlatformAsset('darwin', 'x64', 'cpu')).toThrow(/Apple Silicon/);
+    expect(() => detectPlatformAsset('darwin', 'x64', 'cpu')).toThrow(
+      /Intel Macs are not supported/,
+    );
   });
 
   it('returns the Linux tarball variants', () => {
@@ -190,7 +193,7 @@ describe('installSidecar', () => {
   it('downloads, verifies, extracts, and writes install.json last', async () => {
     const pluginDirectory = await createTempDirectory();
     const archive = buildTarGz([
-      { content: Buffer.from('#!/bin/bash\n'), name: 'local-transcript-sidecar' },
+      { content: Buffer.from('#!/bin/bash\n'), name: 'local-dictation-sidecar' },
     ]);
     const archiveSha256 = sha256Hex(archive);
     const assetName = 'sidecar-linux-x86_64-cpu.tar.gz';
@@ -223,7 +226,7 @@ describe('installSidecar', () => {
     expect(result.manifest.version).toBe('2026.4.21');
 
     const installedBinary = await readFile(
-      join(result.variantDirectory, 'local-transcript-sidecar'),
+      join(result.variantDirectory, 'local-dictation-sidecar'),
     );
     expect(installedBinary.toString('utf8')).toBe('#!/bin/bash\n');
 
@@ -240,10 +243,10 @@ describe('installSidecar', () => {
     const pluginDirectory = await createTempDirectory();
     const variantDir = variantDirectoryPath(pluginDirectory, 'cpu');
     await mkdir(variantDir, { recursive: true });
-    await writeFile(join(variantDir, 'local-transcript-sidecar'), 'old-binary');
+    await writeFile(join(variantDir, 'local-dictation-sidecar'), 'old-binary');
 
     const archive = buildTarGz([
-      { content: Buffer.from('new-binary'), name: 'local-transcript-sidecar' },
+      { content: Buffer.from('new-binary'), name: 'local-dictation-sidecar' },
     ]);
     const archiveSha256 = sha256Hex(archive);
     const assetName = 'sidecar-linux-x86_64-cpu.tar.gz';
@@ -266,15 +269,59 @@ describe('installSidecar', () => {
       }),
     ).rejects.toThrow(/cannot stop running sidecar/);
 
-    await expect(readFile(join(variantDir, 'local-transcript-sidecar'), 'utf8')).resolves.toBe(
+    await expect(readFile(join(variantDir, 'local-dictation-sidecar'), 'utf8')).resolves.toBe(
       'old-binary',
     );
+  });
+
+  it('restores the previous install when promotion fails between renames', async () => {
+    // Simulates a crash window between renaming the existing install aside
+    // and renaming staging into place: by destroying staging in beforeReplace
+    // we force `rename(staging, dest)` to throw ENOENT, after the existing
+    // install has already moved to `.old`. The rollback must restore it.
+    const pluginDirectory = await createTempDirectory();
+    const variantDir = variantDirectoryPath(pluginDirectory, 'cpu');
+    await mkdir(variantDir, { recursive: true });
+    await writeFile(join(variantDir, 'local-dictation-sidecar'), 'old-binary');
+
+    const stagingDirectory = join(pluginDirectory, 'bin', '.cpu-staging');
+    const backupDir = `${variantDir}.old`;
+
+    const archive = buildTarGz([
+      { content: Buffer.from('new-binary'), name: 'local-dictation-sidecar' },
+    ]);
+    const archiveSha256 = sha256Hex(archive);
+    const assetName = 'sidecar-linux-x86_64-cpu.tar.gz';
+    const checksumsText = `${archiveSha256}  ${assetName}\n`;
+
+    stubHttps({
+      [`https://releases.test/2026.4.21/${assetName}`]: archive,
+      'https://releases.test/2026.4.21/checksums.txt': Buffer.from(checksumsText),
+    });
+
+    await expect(
+      installSidecar({
+        beforeReplace: async () => {
+          await rm(stagingDirectory, { force: true, recursive: true });
+        },
+        pluginDirectory,
+        releaseBaseUrl: 'https://releases.test',
+        variant: 'cpu',
+        version: '2026.4.21',
+      }),
+    ).rejects.toThrow();
+
+    // rename is atomic per inode, so one file confirms the whole dir survived.
+    await expect(readFile(join(variantDir, 'local-dictation-sidecar'), 'utf8')).resolves.toBe(
+      'old-binary',
+    );
+    await expect(readInstallManifest(backupDir)).resolves.toBeNull();
   });
 
   it('fails and leaves no manifest when the checksum does not match', async () => {
     const pluginDirectory = await createTempDirectory();
     const archive = buildTarGz([
-      { content: Buffer.from('binary'), name: 'local-transcript-sidecar' },
+      { content: Buffer.from('binary'), name: 'local-dictation-sidecar' },
     ]);
     const assetName = 'sidecar-linux-x86_64-cpu.tar.gz';
     const checksumsText = `${'0'.repeat(64)}  ${assetName}\n`;
@@ -300,7 +347,7 @@ describe('installSidecar', () => {
   it('rejects and leaves no manifest when the archive write stream fails', async () => {
     const pluginDirectory = await createTempDirectory();
     const archive = buildTarGz([
-      { content: Buffer.from('binary'), name: 'local-transcript-sidecar' },
+      { content: Buffer.from('binary'), name: 'local-dictation-sidecar' },
     ]);
     const archiveSha256 = sha256Hex(archive);
     const assetName = 'sidecar-linux-x86_64-cpu.tar.gz';
@@ -323,6 +370,36 @@ describe('installSidecar', () => {
 
     const manifest = await readInstallManifest(variantDirectoryPath(pluginDirectory, 'cpu'));
     expect(manifest).toBeNull();
+  });
+
+  it('extracts every file from a multi-entry archive via the streaming pipeline', async () => {
+    const pluginDirectory = await createTempDirectory();
+    const archive = buildTarGz([
+      { content: Buffer.from('binary-bytes'), name: 'local-dictation-sidecar' },
+      { content: Buffer.from('# README\n'), name: 'README.md' },
+    ]);
+    const archiveSha256 = sha256Hex(archive);
+    const assetName = 'sidecar-linux-x86_64-cpu.tar.gz';
+    const checksumsText = `${archiveSha256}  ${assetName}\n`;
+
+    stubHttps({
+      [`https://releases.test/2026.4.21/${assetName}`]: archive,
+      'https://releases.test/2026.4.21/checksums.txt': Buffer.from(checksumsText),
+    });
+
+    const result = await installSidecar({
+      pluginDirectory,
+      releaseBaseUrl: 'https://releases.test',
+      variant: 'cpu',
+      version: '2026.4.21',
+    });
+
+    await expect(
+      readFile(join(result.variantDirectory, 'local-dictation-sidecar'), 'utf8'),
+    ).resolves.toBe('binary-bytes');
+    await expect(readFile(join(result.variantDirectory, 'README.md'), 'utf8')).resolves.toBe(
+      '# README\n',
+    );
   });
 
   it('rejects archive entries that escape the destination directory', async () => {
@@ -363,10 +440,129 @@ describe('installSidecar', () => {
     ).rejects.toMatchObject({ name: 'AbortError' });
   });
 
+  it.each(['verify', 'extract'] as const)(
+    'honors cancellation before the %s phase starts',
+    async (phase) => {
+      const pluginDirectory = await createTempDirectory();
+      const controller = new AbortController();
+      const archive = buildTarGz([
+        { content: Buffer.from('new-binary'), name: 'local-dictation-sidecar' },
+      ]);
+      const archiveSha256 = sha256Hex(archive);
+      const assetName = 'sidecar-linux-x86_64-cpu.tar.gz';
+
+      stubHttps({
+        [`https://releases.test/2026.4.21/${assetName}`]: archive,
+        'https://releases.test/2026.4.21/checksums.txt': Buffer.from(
+          `${archiveSha256}  ${assetName}\n`,
+        ),
+      });
+
+      await expect(
+        installSidecar({
+          onProgress: (progress) => {
+            if (progress.phase === phase) controller.abort();
+          },
+          pluginDirectory,
+          releaseBaseUrl: 'https://releases.test',
+          signal: controller.signal,
+          variant: 'cpu',
+          version: '2026.4.21',
+        }),
+      ).rejects.toMatchObject({ name: 'AbortError' });
+
+      await expect(
+        readInstallManifest(variantDirectoryPath(pluginDirectory, 'cpu')),
+      ).resolves.toBeNull();
+      await expect(
+        readInstallManifest(join(pluginDirectory, 'bin', '.cpu-staging')),
+      ).resolves.toBeNull();
+    },
+  );
+
+  it('honors cancellation after extraction has started', async () => {
+    const pluginDirectory = await createTempDirectory();
+    const controller = new AbortController();
+    const archive = buildTarGz([
+      { content: Buffer.alloc(8 * 1024 * 1024, 0x61), name: 'local-dictation-sidecar' },
+    ]);
+    const archiveSha256 = sha256Hex(archive);
+    const assetName = 'sidecar-linux-x86_64-cpu.tar.gz';
+
+    stubHttps({
+      [`https://releases.test/2026.4.21/${assetName}`]: archive,
+      'https://releases.test/2026.4.21/checksums.txt': Buffer.from(
+        `${archiveSha256}  ${assetName}\n`,
+      ),
+    });
+
+    await expect(
+      installSidecar({
+        onProgress: (progress) => {
+          if (progress.phase === 'extract') {
+            queueMicrotask(() => controller.abort());
+          }
+        },
+        pluginDirectory,
+        releaseBaseUrl: 'https://releases.test',
+        signal: controller.signal,
+        variant: 'cpu',
+        version: '2026.4.21',
+      }),
+    ).rejects.toMatchObject({ name: 'AbortError' });
+
+    await expect(
+      readInstallManifest(variantDirectoryPath(pluginDirectory, 'cpu')),
+    ).resolves.toBeNull();
+    await expect(readdir(join(pluginDirectory, 'bin'))).resolves.not.toContain('.cpu-staging');
+  });
+
+  it('honors cancellation after preparation without replacing the existing install', async () => {
+    const pluginDirectory = await createTempDirectory();
+    const variantDir = variantDirectoryPath(pluginDirectory, 'cpu');
+    await mkdir(variantDir, { recursive: true });
+    await writeFile(join(variantDir, 'local-dictation-sidecar'), 'old-binary');
+
+    const controller = new AbortController();
+    const archive = buildTarGz([
+      { content: Buffer.from('new-binary'), name: 'local-dictation-sidecar' },
+    ]);
+    const archiveSha256 = sha256Hex(archive);
+    const assetName = 'sidecar-linux-x86_64-cpu.tar.gz';
+
+    stubHttps({
+      [`https://releases.test/2026.4.21/${assetName}`]: archive,
+      'https://releases.test/2026.4.21/checksums.txt': Buffer.from(
+        `${archiveSha256}  ${assetName}\n`,
+      ),
+    });
+
+    await expect(
+      installSidecar({
+        beforeReplace: async () => {
+          controller.abort();
+        },
+        pluginDirectory,
+        releaseBaseUrl: 'https://releases.test',
+        signal: controller.signal,
+        variant: 'cpu',
+        version: '2026.4.21',
+      }),
+    ).rejects.toMatchObject({ name: 'AbortError' });
+
+    await expect(readFile(join(variantDir, 'local-dictation-sidecar'), 'utf8')).resolves.toBe(
+      'old-binary',
+    );
+    await expect(readInstallManifest(join(pluginDirectory, 'bin', '.cpu-staging'))).resolves.toBe(
+      null,
+    );
+    await expect(readInstallManifest(`${variantDir}.old`)).resolves.toBeNull();
+  });
+
   it('follows a single HTTP redirect to the final asset URL', async () => {
     const pluginDirectory = await createTempDirectory();
     const archive = buildTarGz([
-      { content: Buffer.from('redirected-binary'), name: 'local-transcript-sidecar' },
+      { content: Buffer.from('redirected-binary'), name: 'local-dictation-sidecar' },
     ]);
     const archiveSha256 = sha256Hex(archive);
     const assetName = 'sidecar-linux-x86_64-cpu.tar.gz';
@@ -393,7 +589,7 @@ describe('installSidecar', () => {
     });
 
     const installedBinary = await readFile(
-      join(result.variantDirectory, 'local-transcript-sidecar'),
+      join(result.variantDirectory, 'local-dictation-sidecar'),
     );
     expect(installedBinary.toString('utf8')).toBe('redirected-binary');
   });
@@ -454,7 +650,7 @@ describe('uninstallSidecarVariant', () => {
     const pluginDirectory = await createTempDirectory();
     const variantDir = variantDirectoryPath(pluginDirectory, 'cuda');
     await mkdir(variantDir, { recursive: true });
-    await writeFile(join(variantDir, 'local-transcript-sidecar'), 'binary');
+    await writeFile(join(variantDir, 'local-dictation-sidecar'), 'binary');
 
     await uninstallSidecarVariant(pluginDirectory, 'cuda');
 
@@ -515,8 +711,13 @@ interface TarEntry {
 
 function buildTarGz(entries: TarEntry[]): Buffer {
   const blocks: Buffer[] = [];
+  const completeEntries =
+    entries.some((entry) => entry.name === 'local-dictation-sidecar') &&
+    !entries.some((entry) => entry.name === 'local-dictation-translation-helper')
+      ? [...entries, { content: Buffer.from('helper'), name: 'local-dictation-translation-helper' }]
+      : entries;
 
-  for (const entry of entries) {
+  for (const entry of completeEntries) {
     blocks.push(buildTarHeader(entry.name, entry.content.length, entry.typeflag ?? '0'));
     blocks.push(padToBlock(entry.content));
   }

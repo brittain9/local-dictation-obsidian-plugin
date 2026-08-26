@@ -4,14 +4,18 @@
 // per-OS jobs only differ in build setup, not in packaging logic.
 //
 // Required env: ARCHIVE_NAME, ASSET_NAME, BINARY_PATH
-// Optional env: CUDA=true to copy CUDA provider+runtime libs alongside
+// Optional env: CUDA=true to copy whisper.cpp CUDA runtime libraries alongside
 
 import { spawnSync } from 'node:child_process';
-import { copyFile, mkdir, realpath } from 'node:fs/promises';
+import { existsSync } from 'node:fs';
+import { copyFile, realpath } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import process from 'node:process';
 
 import { listCudaArtifacts } from './lib/cuda-artifacts.mjs';
+import { stageSidecarBaseFiles } from './lib/package-sidecar-base-files.mjs';
+import { pickFirstExistingDir } from './lib/pick-existing-dir.mjs';
+import { requiredEnv } from './lib/required-env.mjs';
 
 const archiveName = requiredEnv('ARCHIVE_NAME');
 const assetName = requiredEnv('ASSET_NAME');
@@ -22,34 +26,37 @@ const isWindows = process.platform === 'win32';
 const isLinux = process.platform === 'linux';
 
 const platformKey = isWindows ? 'win32' : 'linux';
-const binaryName = isWindows ? 'local-transcript-sidecar.exe' : 'local-transcript-sidecar';
+const binaryName = isWindows ? 'local-dictation-sidecar.exe' : 'local-dictation-sidecar';
+const helperName = isWindows
+  ? 'local-dictation-translation-helper.exe'
+  : 'local-dictation-translation-helper';
+const helperPath = join(dirname(binaryPath), helperName);
 const distDir = 'dist';
 const artifactDir = join(distDir, assetName);
-const buildDir = dirname(binaryPath);
 
-await mkdir(artifactDir, { recursive: true });
-await copyFile(binaryPath, join(artifactDir, binaryName));
+await stageSidecarBaseFiles({
+  artifactDirectory: artifactDir,
+  binaryName,
+  binaryPath,
+  helperName,
+  helperPath,
+});
 
 if (isCuda) {
-  // ORT provider .so/.dll files land next to the binary during the build.
-  const providers = await listCudaArtifacts('providers', platformKey);
-  for (const provider of providers) {
-    const dest = join(artifactDir, provider);
-    await copyFile(join(buildDir, provider), dest);
-    if (isLinux) {
-      // Strip unneeded ELF symbols from provider shared libs to trim the
-      // archive. --strip-unneeded keeps dynamic symbols that runtime
-      // dlopen/dlsym chains need.
-      runStrip(dest);
-    }
-  }
-
   // CUDA runtime libs aren't provided by the user's system in a
   // version-compatible form (cudart is major-versioned and not
   // forward-compatible), so ship them next to the binary. On Linux the lib
   // dir is derived from nvcc's location, on Windows it lives under CUDA_PATH.
-  const runtimeFiles = await listCudaArtifacts('runtime', platformKey);
-  const runtimeSourceDir = isWindows ? join(requiredEnv('CUDA_PATH'), 'bin') : linuxCudaLibDir();
+  const runtimeFiles = await listCudaArtifacts(platformKey);
+  // CUDA 13 may relocate the Windows runtime DLLs from %CUDA_PATH%\bin to
+  // %CUDA_PATH%\bin\x64 (unconfirmed in NVIDIA docs), so try x64 first and fall
+  // back to the historical location. Linux derives its lib dir from nvcc.
+  const runtimeSourceDir = isWindows
+    ? pickFirstExistingDir(
+        [join(requiredEnv('CUDA_PATH'), 'bin', 'x64'), join(requiredEnv('CUDA_PATH'), 'bin')],
+        existsSync,
+      )
+    : linuxCudaLibDir();
 
   for (const runtimeFile of runtimeFiles) {
     const src = join(runtimeSourceDir, runtimeFile);
@@ -67,23 +74,16 @@ if (isCuda) {
 if (isLinux) {
   // Linux-only: strip the sidecar ELF. The Rust release profile strips
   // Rust-owned symbols, but bundled C++/CUDA objects (ggml, whisper.cpp,
-  // ORT kernels) can still carry debug sections. macOS binaries are ad-hoc
+  // CUDA kernels) can still carry debug sections. macOS binaries are ad-hoc
   // codesigned earlier in the workflow; do not strip them (both signature
   // and `strip` semantics differ).
   runStrip(join(artifactDir, binaryName));
+  runStrip(join(artifactDir, helperName));
 }
 
 await createArchive(artifactDir, join(distDir, archiveName));
 
 console.log(`Packaged ${archiveName} from ${artifactDir}`);
-
-function requiredEnv(name) {
-  const value = process.env[name];
-  if (typeof value !== 'string' || value.length === 0) {
-    throw new Error(`Required environment variable ${name} is not set.`);
-  }
-  return value;
-}
 
 function linuxCudaLibDir() {
   const which = spawnSync('which', ['nvcc'], { encoding: 'utf8' });

@@ -1,10 +1,12 @@
 use std::path::Path;
+use std::time::Duration;
 
 use crate::engine::capabilities::{
-    ModelFamilyCapabilities, ModelFamilyId, RuntimeCapabilities, RuntimeId,
+    LanguageSupport, ModelFamilyCapabilities, ModelFamilyId, RuntimeCapabilities, RuntimeId,
 };
+use crate::synthesis::{SynthesisError, SynthesisModel};
 use crate::transcription::{
-    EngineTranscriptOutput, GpuConfig, TranscriptionError, TranscriptionRequest,
+    EngineTranscriptOutput, GpuConfig, TranscriptionError, TranscriptionRequest, validate_language,
 };
 
 /// Execution-framework layer. Owns accelerator registration/probe and the
@@ -22,8 +24,35 @@ pub trait ModelFamilyAdapter: Send + Sync {
     fn capabilities(&self) -> &ModelFamilyCapabilities;
 
     fn probe_model(&self, path: &Path) -> Result<(), TranscriptionError>;
+    fn probe_model_and_language_support(
+        &self,
+        path: &Path,
+    ) -> Result<LanguageSupport, TranscriptionError> {
+        self.probe_model(path)?;
+        Ok(self.capabilities().supported_languages.clone())
+    }
     fn load(&self, path: &Path, gpu: GpuConfig)
     -> Result<Box<dyn LoadedModel>, TranscriptionError>;
+
+    fn load_streaming(
+        &self,
+        path: &Path,
+        gpu: GpuConfig,
+    ) -> Result<Box<dyn StreamingModel>, TranscriptionError> {
+        let _ = (path, gpu);
+        Err(TranscriptionError::unsupported_engine(format!(
+            "{} does not support streaming",
+            self.family_id().as_str()
+        )))
+    }
+
+    fn load_synthesis(&self, path: &Path) -> Result<Box<dyn SynthesisModel>, SynthesisError> {
+        let _ = path;
+        Err(SynthesisError::unsupported(format!(
+            "{} is not a speech-synthesis model",
+            self.family_id().as_str()
+        )))
+    }
 }
 
 /// Per-session inference state. Holds session/context/tokenizer whatever the
@@ -35,4 +64,39 @@ pub trait LoadedModel: Send {
         &mut self,
         request: &TranscriptionRequest,
     ) -> Result<EngineTranscriptOutput, TranscriptionError>;
+}
+
+/// Per-utterance incremental inference state. Implementations accept 16 kHz
+/// mono PCM and reset after `finalize_utterance`.
+pub trait StreamingModel: Send {
+    /// Minimum audio and wall-clock progress between partial decode attempts.
+    /// Models with a fixed encoder window can request a shorter poll interval
+    /// without forcing more inference: their `partial` implementation remains
+    /// responsible for returning cheaply until a window is ready.
+    fn partial_cadence(&self) -> StreamingPartialCadence {
+        StreamingPartialCadence::default()
+    }
+
+    fn accept_audio(&mut self, samples: &[i16]) -> Result<(), TranscriptionError>;
+    fn set_language(&mut self, language: &str) -> Result<(), TranscriptionError> {
+        validate_language(language)
+    }
+    fn partial(&mut self) -> Result<EngineTranscriptOutput, TranscriptionError>;
+    fn finalize_utterance(&mut self) -> Result<EngineTranscriptOutput, TranscriptionError>;
+    fn reset_utterance(&mut self);
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct StreamingPartialCadence {
+    pub min_audio_samples: usize,
+    pub min_wall_time: Duration,
+}
+
+impl Default for StreamingPartialCadence {
+    fn default() -> Self {
+        Self {
+            min_audio_samples: 8_000,
+            min_wall_time: Duration::from_millis(500),
+        }
+    }
 }

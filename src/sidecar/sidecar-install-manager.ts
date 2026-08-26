@@ -1,17 +1,26 @@
 import type { InstallProgressState } from '../models/model-install-progress';
 import { formatErrorMessage } from '../shared/format-utils';
+import { t } from '../shared/i18n';
 import type { PluginLogger } from '../shared/plugin-logger';
+import type { UserFeedback } from '../shared/user-feedback';
 import {
   type InstallProgress,
   installSidecar,
   type SidecarInstallVariant,
 } from './sidecar-installer';
+import {
+  SidecarLifecycleConflictError,
+  type SidecarLifecycleGate,
+  type SidecarLifecycleLease,
+} from './sidecar-lifecycle-gate';
 
 export type SidecarInstallPhase = 'canceling' | 'installing';
 
 export interface ActiveSidecarInstall {
+  currentVariantNumber: number;
   phase: SidecarInstallPhase;
   progress: InstallProgress;
+  totalVariants: number;
   variant: SidecarInstallVariant;
 }
 
@@ -22,6 +31,10 @@ export interface SidecarInstallManagerState {
 
 export interface SidecarInstallOptions {
   beforeReplace?: (() => Promise<void>) | undefined;
+  failureFeedback: {
+    isInlineVisible: () => boolean;
+    message: string;
+  };
   onInstalled: () => Promise<void>;
   pluginDirectory: string;
   successNotice: string;
@@ -29,9 +42,15 @@ export interface SidecarInstallOptions {
   version: string;
 }
 
+export interface SidecarInstallBatchOptions extends Omit<SidecarInstallOptions, 'variant'> {
+  onVariantInstalled?: ((variant: SidecarInstallVariant) => Promise<void>) | undefined;
+  variants: readonly SidecarInstallVariant[];
+}
+
 interface SidecarInstallManagerDependencies {
+  feedback: Pick<UserFeedback, 'show'>;
   logger?: PluginLogger | undefined;
-  notice: (message: string) => void;
+  sidecarLifecycleGate: SidecarLifecycleGate;
 }
 
 const INITIAL_PROGRESS: InstallProgress = {
@@ -63,21 +82,29 @@ export class SidecarInstallManager {
   }
 
   install(options: SidecarInstallOptions): void {
+    const { variant, ...batchOptions } = options;
+    this.installBatch({ ...batchOptions, variants: [variant] });
+  }
+
+  installBatch(options: SidecarInstallBatchOptions): void {
     if (this.activeInstall !== null) {
       throw new Error('Another sidecar is already being installed.');
     }
 
+    const variants = normalizeVariants(options.variants);
     const controller = new AbortController();
     this.abortController = controller;
     this.lastError = null;
     this.activeInstall = {
+      currentVariantNumber: 1,
       phase: 'installing',
       progress: INITIAL_PROGRESS,
-      variant: options.variant,
+      totalVariants: variants.length,
+      variant: variants[0],
     };
     this.notify();
 
-    void this.runInstall(options, controller.signal);
+    void this.runInstallBatch({ ...options, variants }, controller.signal);
   }
 
   cancel(): void {
@@ -99,34 +126,89 @@ export class SidecarInstallManager {
     this.listeners.clear();
   }
 
-  private async runInstall(options: SidecarInstallOptions, signal: AbortSignal): Promise<void> {
+  private async runInstallBatch(
+    options: SidecarInstallBatchOptions,
+    signal: AbortSignal,
+  ): Promise<void> {
+    const mutation = { lease: null as SidecarLifecycleLease | null };
     try {
-      await installSidecar({
-        beforeReplace: options.beforeReplace,
-        logger: this.deps.logger,
-        onProgress: (progress) => {
-          this.updateProgress(progress);
-        },
-        pluginDirectory: options.pluginDirectory,
-        signal,
-        variant: options.variant,
-        version: options.version,
-      });
+      for (const [index, variant] of options.variants.entries()) {
+        this.activeInstall = {
+          currentVariantNumber: index + 1,
+          phase: 'installing',
+          progress: INITIAL_PROGRESS,
+          totalVariants: options.variants.length,
+          variant,
+        };
+        this.notify();
+
+        await installSidecar({
+          beforeReplace: async () => {
+            mutation.lease ??= this.deps.sidecarLifecycleGate.acquireMutation();
+            await options.beforeReplace?.();
+          },
+          logger: this.deps.logger,
+          onProgress: (progress) => {
+            this.updateProgress(progress);
+          },
+          pluginDirectory: options.pluginDirectory,
+          signal,
+          variant,
+          version: options.version,
+        });
+
+        const hasMoreVariants = index + 1 < options.variants.length;
+        if (hasMoreVariants && options.onVariantInstalled !== undefined) {
+          try {
+            // Best effort only: an automatic resolver may still select another
+            // stale variant until the whole batch has been replaced.
+            await options.onVariantInstalled(variant);
+          } catch (error) {
+            this.deps.logger?.warn(
+              'installer',
+              `intermediate restart after ${variant} sidecar update failed; continuing batch`,
+              error,
+            );
+          }
+        }
+      }
 
       await options.onInstalled();
-      this.deps.notice(options.successNotice);
+      this.deps.feedback.show({ intent: 'success', message: options.successNotice });
       this.lastError = null;
     } catch (error) {
       if (isAbortError(error)) {
-        this.deps.notice('Sidecar install cancelled.');
+        this.deps.feedback.show({
+          intent: 'information',
+          message: t('setup.sidecar.installCancelled'),
+        });
+        this.lastError = null;
+      } else if (error instanceof SidecarLifecycleConflictError) {
+        this.deps.feedback.show({
+          intent: 'warning',
+          message:
+            error.activeKind === 'speech'
+              ? t('settings.sidecar.stopBeforeInstall')
+              : t('settings.sidecar.operationInProgress'),
+        });
         this.lastError = null;
       } else {
         const message = formatErrorMessage(error);
-        this.deps.logger?.error('installer', 'sidecar install failed', error);
         this.lastError = message;
-        this.deps.notice(`Sidecar install failed: ${message}`);
+        this.deps.logger?.error('installer', message, error);
+        if (options.failureFeedback.isInlineVisible()) {
+          this.deps.logger?.error('installer', 'sidecar install failed', error);
+        } else {
+          this.deps.feedback.show({
+            cause: error,
+            intent: 'error',
+            key: 'sidecar-install-failed',
+            message: options.failureFeedback.message,
+          });
+        }
       }
     } finally {
+      mutation.lease?.release();
       if (this.abortController?.signal === signal) {
         this.abortController = null;
       }
@@ -153,11 +235,20 @@ export class SidecarInstallManager {
 }
 
 export function buildSidecarProgressState(active: ActiveSidecarInstall): InstallProgressState {
+  const variantProgress =
+    active.totalVariants > 1
+      ? t('setup.sidecar.progress.variant', {
+          current: active.currentVariantNumber,
+          total: active.totalVariants,
+          variant: active.variant.toUpperCase(),
+        })
+      : '';
+
   return {
     details: null,
     downloadedBytes: active.progress.bytesDownloaded,
     isCancelling: active.phase === 'canceling',
-    message: formatProgressMessage(active.progress.phase),
+    message: `${formatProgressMessage(active.progress.phase)}${variantProgress}`,
     state: 'downloading',
     totalBytes: active.progress.totalBytes,
   };
@@ -166,14 +257,26 @@ export function buildSidecarProgressState(active: ActiveSidecarInstall): Install
 function formatProgressMessage(phase: InstallProgress['phase']): string {
   switch (phase) {
     case 'download':
-      return 'Downloading';
+      return t('setup.sidecar.progress.downloading');
     case 'verify':
-      return 'Verifying checksum...';
+      return t('setup.sidecar.progress.verifying');
     case 'extract':
-      return 'Extracting archive...';
+      return t('setup.sidecar.progress.extracting');
   }
 }
 
 function isAbortError(error: unknown): boolean {
   return error instanceof Error && error.name === 'AbortError';
+}
+
+function normalizeVariants(
+  variants: readonly SidecarInstallVariant[],
+): [SidecarInstallVariant, ...SidecarInstallVariant[]] {
+  const uniqueVariants = [...new Set(variants)];
+
+  if (uniqueVariants.length === 0) {
+    throw new Error('At least one sidecar variant is required.');
+  }
+
+  return uniqueVariants as [SidecarInstallVariant, ...SidecarInstallVariant[]];
 }

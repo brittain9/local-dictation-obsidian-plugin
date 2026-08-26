@@ -1,0 +1,90 @@
+# CUDA setup
+
+CUDA accelerates Whisper models on supported NVIDIA GPUs. Published CUDA release
+archives bundle the runtime libraries Whisper needs, so most users only need a
+recent NVIDIA driver — no CUDA Toolkit. macOS uses Metal for Whisper
+automatically and needs none of this.
+
+This guide covers enabling CUDA on Windows and Linux, and building from source.
+
+## Requirements
+
+- A Turing-or-newer NVIDIA GPU (RTX 20-series / GTX 16-series or newer) with an R595 or newer driver. Published releases use CUDA 13.2 with a PTX-only compute 7.5 target, so they require CUDA 13.2's native driver branch rather than CUDA minor-version compatibility.
+- The CUDA sidecar variant, installed from the plugin — or CUDA Toolkit `13.2` with `nvcc` to build from source.
+
+## What CUDA accelerates
+
+Speech Kit's CUDA sidecar uses whisper.cpp's mature CUDA backend for
+Whisper. Acceleration options are model-aware, so Settings shows GPU controls
+only when the selected model has a production-ready accelerated path. The CUDA
+download is streamlined around this route.
+
+## Windows
+
+No sandbox, so this is straightforward.
+
+1. Install the CUDA sidecar variant from **Settings → Speech Kit** (sidecar section), or build from source (below).
+2. Confirm the driver:
+   ```powershell
+   nvidia-smi
+   ```
+3. Under **Engine options**, leave **GPU acceleration** on **Use when available**.
+4. Run **Speech Kit: Check sidecar health**, then confirm the Whisper
+   hardware-acceleration row says `Configured acceleration: CUDA`.
+
+## Linux (native)
+
+On a native install the sidecar inherits the host environment, so there's usually nothing to configure. Install the CUDA variant, make sure the NVIDIA driver and `libcuda.so.1` are present, and confirm health as above. The `CUDA library path` setting exists for non-standard installs but isn't normally needed.
+
+## Linux (Flatpak)
+
+Flatpak hides the host `/usr`, and a global `LD_LIBRARY_PATH` breaks Electron's audio capture, so it needs a few extra steps.
+
+1. Expose the host filesystem and GPU, then fully restart Obsidian:
+   ```sh
+   flatpak override --user --filesystem=host-os md.obsidian.Obsidian
+   flatpak override --user --device=all md.obsidian.Obsidian
+   ```
+2. In **Settings → Speech Kit → Advanced: Sidecar**, set **CUDA library path** to the colon-separated host library directories. Use resolved real paths (from `readlink -f /usr/local/cuda`), not the `/usr/local/cuda` symlink — symlinks break across the sandbox boundary. This scopes `LD_LIBRARY_PATH` to the sidecar child process only. For example:
+   ```text
+   /run/host/usr/local/cuda-13.2/targets/x86_64-linux/lib:/run/host/usr/local/cuda-13.2/lib64:/run/host/usr/lib64
+   ```
+3. If the sidecar isn't auto-discovered inside the sandbox, set **Sidecar path override** to the CUDA binary.
+4. Run **Speech Kit: Check sidecar health** and confirm the Whisper
+   hardware-acceleration row says `Configured acceleration: CUDA`.
+
+Don't set `LD_LIBRARY_PATH` as a global Flatpak override — it makes Electron load host audio libraries and breaks the microphone (`NotReadableError: Could not start audio source`). Use the plugin's `CUDA library path` setting instead.
+
+## Building from source
+
+Needs CUDA Toolkit `13.2` with `nvcc` on `PATH`.
+CUDA 13.2 supports GCC host compilers through GCC 15; on Linux the build script
+prefers `/usr/bin/gcc-15` and `/usr/bin/g++-15` when they are installed.
+
+```sh
+bash scripts/build-cuda.sh            # Linux        (add --release for release)
+npm run build:sidecar:cuda:windows    # Windows      (append :release for release)
+```
+
+Artifacts:
+
+- CPU: `native/target/{debug|release}/local-dictation-sidecar[.exe]`
+- CUDA: `native/target-cuda/{debug|release}/local-dictation-sidecar[.exe]`
+
+The release packager stages the required whisper.cpp CUDA runtime libraries next
+to the binary — keep them together. A repo checkout auto-detects the CUDA debug
+build at `native/target-cuda/debug`, so no path override is needed when testing
+from source.
+
+## Troubleshooting
+
+**The Whisper row says `Configured acceleration: CPU`.** First confirm
+**GPU acceleration** is set to **Use when available**. If it is, check
+`nvidia-smi`, confirm the plugin points at the CUDA sidecar (not the CPU build),
+and — on Flatpak — that `--device=all` exposed the device nodes:
+
+```sh
+flatpak run --command=sh md.obsidian.Obsidian -c 'ls /dev/nvidia* 2>&1'
+```
+
+**(Flatpak) Sidecar fails to start with missing CUDA libraries.** Confirm `--filesystem=host-os` is set, the library path uses the resolved `cuda-13.x` directory rather than `/usr/local/cuda`, and the driver library directory is included.

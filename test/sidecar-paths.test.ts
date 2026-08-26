@@ -22,7 +22,7 @@ afterEach(async () => {
 describe('resolveSidecarExecutablePath', () => {
   it('returns the override path when set', async () => {
     const pluginDirectory = await createPluginFixture();
-    const executableName = 'local-transcript-sidecar';
+    const executableName = 'local-dictation-sidecar';
     const overridePath = join(pluginDirectory, 'custom-sidecar');
     await writeFile(overridePath, 'binary');
     // Installed binaries present — override must win regardless.
@@ -31,6 +31,7 @@ describe('resolveSidecarExecutablePath', () => {
     await expect(
       resolveSidecarExecutablePath({
         accelerationPreference: 'auto',
+        cudaLaunchPolicy: 'preferred',
         executableName,
         pluginDirectory,
         sidecarPathOverride: overridePath,
@@ -45,7 +46,8 @@ describe('resolveSidecarExecutablePath', () => {
 
     const rejection = resolveSidecarExecutablePath({
       accelerationPreference: 'auto',
-      executableName: 'local-transcript-sidecar',
+      cudaLaunchPolicy: 'preferred',
+      executableName: 'local-dictation-sidecar',
       pluginDirectory,
       sidecarPathOverride: join(pluginDirectory, 'does-not-exist'),
       sidecarProjectDirectory: join(pluginDirectory, 'native'),
@@ -58,13 +60,14 @@ describe('resolveSidecarExecutablePath', () => {
 
   it('prefers the installed CUDA binary when auto mode can use it', async () => {
     const pluginDirectory = await createPluginFixture();
-    const executableName = 'local-transcript-sidecar.exe';
+    const executableName = 'local-dictation-sidecar.exe';
     await writeInstalledBinary(pluginDirectory, 'cpu', executableName);
     await writeInstalledBinary(pluginDirectory, 'cuda', executableName);
 
     await expect(
       resolveSidecarExecutablePath({
         accelerationPreference: 'auto',
+        cudaLaunchPolicy: 'preferred',
         executableName,
         pluginDirectory,
         sidecarPathOverride: '',
@@ -80,13 +83,14 @@ describe('resolveSidecarExecutablePath', () => {
 
   it('picks the installed CPU binary when cpu_only is selected even if CUDA is installed', async () => {
     const pluginDirectory = await createPluginFixture();
-    const executableName = 'local-transcript-sidecar';
+    const executableName = 'local-dictation-sidecar';
     await writeInstalledBinary(pluginDirectory, 'cpu', executableName);
     await writeInstalledBinary(pluginDirectory, 'cuda', executableName);
 
     await expect(
       resolveSidecarExecutablePath({
         accelerationPreference: 'cpu_only',
+        cudaLaunchPolicy: 'preferred',
         executableName,
         pluginDirectory,
         sidecarPathOverride: '',
@@ -102,7 +106,7 @@ describe('resolveSidecarExecutablePath', () => {
 
   it('prefers an installed binary over a dev build', async () => {
     const pluginDirectory = await createPluginFixture();
-    const executableName = 'local-transcript-sidecar';
+    const executableName = 'local-dictation-sidecar';
     const sidecarProjectDirectory = join(pluginDirectory, 'native');
     await writeInstalledBinary(pluginDirectory, 'cpu', executableName);
     await writeDevBinary(sidecarProjectDirectory, 'cpu', executableName);
@@ -110,6 +114,7 @@ describe('resolveSidecarExecutablePath', () => {
     await expect(
       resolveSidecarExecutablePath({
         accelerationPreference: 'auto',
+        cudaLaunchPolicy: 'preferred',
         executableName,
         pluginDirectory,
         sidecarPathOverride: '',
@@ -125,7 +130,7 @@ describe('resolveSidecarExecutablePath', () => {
 
   it('falls back to the CUDA dev build when no installed binary is available', async () => {
     const pluginDirectory = await createPluginFixture();
-    const executableName = 'local-transcript-sidecar';
+    const executableName = 'local-dictation-sidecar';
     const sidecarProjectDirectory = join(pluginDirectory, 'native');
     await writeDevBinary(sidecarProjectDirectory, 'cpu', executableName);
     await writeDevBinary(sidecarProjectDirectory, 'cuda', executableName);
@@ -133,6 +138,7 @@ describe('resolveSidecarExecutablePath', () => {
     await expect(
       resolveSidecarExecutablePath({
         accelerationPreference: 'auto',
+        cudaLaunchPolicy: 'preferred',
         executableName,
         pluginDirectory,
         sidecarPathOverride: '',
@@ -148,7 +154,7 @@ describe('resolveSidecarExecutablePath', () => {
 
   it('falls back to the CPU dev build on macOS-style (no CUDA support)', async () => {
     const pluginDirectory = await createPluginFixture();
-    const executableName = 'local-transcript-sidecar';
+    const executableName = 'local-dictation-sidecar';
     const sidecarProjectDirectory = join(pluginDirectory, 'native');
     await writeDevBinary(sidecarProjectDirectory, 'cpu', executableName);
     await writeDevBinary(sidecarProjectDirectory, 'cuda', executableName);
@@ -156,6 +162,7 @@ describe('resolveSidecarExecutablePath', () => {
     await expect(
       resolveSidecarExecutablePath({
         accelerationPreference: 'auto',
+        cudaLaunchPolicy: 'preferred',
         executableName,
         pluginDirectory,
         sidecarPathOverride: '',
@@ -169,13 +176,77 @@ describe('resolveSidecarExecutablePath', () => {
     });
   });
 
+  it('prefers CPU over an installed CUDA binary the machine cannot run', async () => {
+    const pluginDirectory = await createPluginFixture();
+    const executableName = 'local-dictation-sidecar';
+    await writeInstalledBinary(pluginDirectory, 'cpu', executableName);
+    await writeInstalledBinary(pluginDirectory, 'cuda', executableName);
+
+    await expect(
+      resolveSidecarExecutablePath({
+        accelerationPreference: 'auto',
+        cudaLaunchPolicy: 'unavailable',
+        executableName,
+        pluginDirectory,
+        sidecarPathOverride: '',
+        sidecarProjectDirectory: join(pluginDirectory, 'native'),
+        supportsCuda: true,
+      }),
+    ).resolves.toEqual({
+      path: join(pluginDirectory, 'bin', 'cpu', executableName),
+      source: 'installed',
+      variant: 'cpu',
+    });
+  });
+
+  it('still launches CUDA as a last resort when compatibility is unknown', async () => {
+    const pluginDirectory = await createPluginFixture();
+    const executableName = 'local-dictation-sidecar';
+    await writeInstalledBinary(pluginDirectory, 'cuda', executableName);
+
+    await expect(
+      resolveSidecarExecutablePath({
+        accelerationPreference: 'auto',
+        cudaLaunchPolicy: 'fallback',
+        executableName,
+        pluginDirectory,
+        sidecarPathOverride: '',
+        sidecarProjectDirectory: join(pluginDirectory, 'native'),
+        supportsCuda: true,
+      }),
+    ).resolves.toEqual({
+      path: join(pluginDirectory, 'bin', 'cuda', executableName),
+      source: 'installed',
+      variant: 'cuda',
+    });
+  });
+
+  it('does not launch a CUDA-only binary when compatibility is known unusable', async () => {
+    const pluginDirectory = await createPluginFixture();
+    const executableName = 'local-dictation-sidecar';
+    await writeInstalledBinary(pluginDirectory, 'cuda', executableName);
+
+    await expect(
+      resolveSidecarExecutablePath({
+        accelerationPreference: 'auto',
+        cudaLaunchPolicy: 'unavailable',
+        executableName,
+        pluginDirectory,
+        sidecarPathOverride: '',
+        sidecarProjectDirectory: join(pluginDirectory, 'native'),
+        supportsCuda: true,
+      }),
+    ).rejects.toBeInstanceOf(SidecarNotInstalledError);
+  });
+
   it('throws a diagnostic error when nothing is found', async () => {
     const pluginDirectory = await createPluginFixture();
     const sidecarProjectDirectory = join(pluginDirectory, 'native');
 
     const rejection = resolveSidecarExecutablePath({
       accelerationPreference: 'auto',
-      executableName: 'local-transcript-sidecar',
+      cudaLaunchPolicy: 'preferred',
+      executableName: 'local-dictation-sidecar',
       pluginDirectory,
       sidecarPathOverride: '',
       sidecarProjectDirectory,
@@ -188,12 +259,13 @@ describe('resolveSidecarExecutablePath', () => {
 
   it('throws when cpu_only is selected and only a CUDA dev build exists', async () => {
     const pluginDirectory = await createPluginFixture();
-    const executableName = 'local-transcript-sidecar';
+    const executableName = 'local-dictation-sidecar';
     const sidecarProjectDirectory = join(pluginDirectory, 'native');
     await writeDevBinary(sidecarProjectDirectory, 'cuda', executableName);
 
     const rejection = resolveSidecarExecutablePath({
       accelerationPreference: 'cpu_only',
+      cudaLaunchPolicy: 'preferred',
       executableName,
       pluginDirectory,
       sidecarPathOverride: '',

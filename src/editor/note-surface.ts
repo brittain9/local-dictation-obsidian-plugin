@@ -1,9 +1,10 @@
-import type { Extension } from '@codemirror/state';
-import { Transaction } from '@codemirror/state';
+import type { Extension, StateEffect } from '@codemirror/state';
+import { Annotation, Transaction } from '@codemirror/state';
 import { EditorView, type ViewUpdate } from '@codemirror/view';
 
 import type { UtteranceId } from '../session/session-journal';
 import type { DictationAnchor } from '../settings/plugin-settings';
+import { truncateTrailingText } from '../shared/text-truncation';
 import type { TranscriptInsertProjection } from '../transcript/renderer';
 import {
   clearAnchorEffect,
@@ -11,6 +12,15 @@ import {
   setAnchorEffect,
   setAnchorModeEffect,
 } from './dictation-anchor-extension';
+import {
+  clearProvisionalTranscriptEffect,
+  setProvisionalTranscriptEffect,
+} from './provisional-transcript-extension';
+import {
+  bypassSessionProcessingLock,
+  type SessionProcessingRange,
+  setSessionProcessingEffect,
+} from './session-processing-extension';
 import { computeFirstPhrasePrefix } from './transcript-placement';
 
 export interface NotePlacementOptions {
@@ -37,7 +47,16 @@ export interface ProjectedSpan {
   utteranceId: UtteranceId;
 }
 
-export type AppendDenialReason = { kind: 'disposed' } | { kind: 'already_projected' };
+export interface SurfaceDesynchronization {
+  readonly documentLength: number;
+  readonly kind: 'surface_desynchronized';
+  readonly trackedPosition: number;
+}
+
+export type AppendDenialReason =
+  | { kind: 'disposed' }
+  | { kind: 'already_projected' }
+  | SurfaceDesynchronization;
 
 export type AppendResult =
   | {
@@ -54,7 +73,8 @@ export type ReplaceDenialReason =
   | { kind: 'disposed' }
   | { kind: 'not_found' }
   | { kind: 'user_edited' }
-  | { currentText: string; kind: 'span_mismatch' };
+  | { currentText: string; kind: 'span_mismatch' }
+  | SurfaceDesynchronization;
 
 export type ReplaceResult =
   | {
@@ -66,8 +86,6 @@ export type ReplaceResult =
       reason: ReplaceDenialReason;
       utteranceId: UtteranceId;
     };
-
-export type ReplaceProjectionResult = ReplaceResult;
 
 export interface RewriteRange {
   from: number;
@@ -83,7 +101,8 @@ export type RewriteDenialReason =
   | { kind: 'range_invalid' }
   | { kind: 'range_partial' }
   | { kind: 'user_edited' }
-  | { kind: 'span_mismatch' };
+  | { kind: 'span_mismatch' }
+  | SurfaceDesynchronization;
 
 export type RewriteResult =
   | {
@@ -95,47 +114,90 @@ export type RewriteResult =
       reason: RewriteDenialReason;
     };
 
-let activeNoteSurface: NoteSurface | null = null;
+const noteSurfaceInsertOrder = Annotation.define<number>();
+const noteSurfacesByView = new WeakMap<EditorView, Set<NoteSurface>>();
+let nextSurfaceOrder = 0;
 
-export function setActiveNoteSurface(surface: NoteSurface | null): void {
-  activeNoteSurface = surface;
+function registerNoteSurface(surface: NoteSurface): void {
+  const existing = noteSurfacesByView.get(surface.view);
+  if (existing !== undefined) {
+    existing.add(surface);
+    return;
+  }
+
+  noteSurfacesByView.set(surface.view, new Set([surface]));
+}
+
+function unregisterNoteSurface(surface: NoteSurface): void {
+  const surfaces = noteSurfacesByView.get(surface.view);
+  if (surfaces === undefined) {
+    return;
+  }
+
+  surfaces.delete(surface);
 }
 
 export function noteSurfaceUpdateListenerExtension(): Extension {
   return EditorView.updateListener.of((update) => {
-    if (activeNoteSurface !== null && update.view === activeNoteSurface.view) {
-      activeNoteSurface.observeTransaction(update);
+    const surfaces = noteSurfacesByView.get(update.view);
+    if (surfaces === undefined) {
+      return;
+    }
+
+    for (const surface of [...surfaces]) {
+      surface.observeTransaction(update);
     }
   });
 }
 
 export class NoteSurface {
+  private readonly createdAt = nextSurfaceOrder;
+  private desynchronization: SurfaceDesynchronization | null = null;
   private disposed = false;
   private initialAnchorPos: number;
+  private readonly initialBoundaryPos: number;
   private pendingInitialPrefix = '';
   private readonly spans = new Map<UtteranceId, ProjectedSpan>();
 
   constructor(
     readonly view: EditorView,
     private readonly placement: NotePlacementOptions,
+    private readonly onSurfaceDesynchronized?: (failure: SurfaceDesynchronization) => void,
   ) {
+    nextSurfaceOrder += 1;
     this.initialAnchorPos = this.computePinPosition();
     this.insertInitialPrefix();
-    this.view.dispatch({ effects: setAnchorEffect.of(this.initialAnchorPos) });
-    setActiveNoteSurface(this);
+    this.initialBoundaryPos = this.initialAnchorPos;
+    // Register before pinning the anchor so the ownership check below sees this
+    // surface — a freshly created surface is always the newest, so it owns the
+    // shared cursor.
+    registerNoteSurface(this);
+    if (this.isAnchorOwner()) {
+      this.view.dispatch({ effects: setAnchorEffect.of(this.initialAnchorPos) });
+    }
   }
 
-  observeTransaction(update: ViewUpdate): void {
+  observeTransaction(update: ViewUpdate): SurfaceDesynchronization | null {
     if (this.disposed || update.view !== this.view || !update.docChanged) {
-      return;
+      return null;
+    }
+    if (this.desynchronization !== null) {
+      return this.desynchronization;
+    }
+
+    const desynchronization = this.detectOwnedDesynchronization(update.startState.doc.length);
+    if (desynchronization !== null) {
+      this.onSurfaceDesynchronized?.(desynchronization);
+      return desynchronization;
     }
 
     const spansBefore = [...this.spans.values()].map(cloneSpan);
+    const latchedUtteranceIds: string[] = [];
 
     this.mapSpans(update);
 
     if (!this.hasLatchableUserChange(update)) {
-      return;
+      return null;
     }
 
     for (const before of spansBefore) {
@@ -147,8 +209,12 @@ export class NoteSurface {
 
       if (changeIntersectsSpan(update, before)) {
         current.latched = 'user_edited';
+        latchedUtteranceIds.push(current.utteranceId);
       }
     }
+
+    this.clearProvisional(latchedUtteranceIds);
+    return null;
   }
 
   readProjectionContext(): NoteProjectionContext {
@@ -165,6 +231,11 @@ export class NoteSurface {
       return { kind: 'denied', reason: { kind: 'disposed' }, utteranceId };
     }
 
+    const desynchronization = this.detectDesynchronization();
+    if (desynchronization !== null) {
+      return { kind: 'denied', reason: desynchronization, utteranceId };
+    }
+
     if (this.spans.has(utteranceId)) {
       return { kind: 'denied', reason: { kind: 'already_projected' }, utteranceId };
     }
@@ -175,13 +246,14 @@ export class NoteSurface {
     const to = from + projection.projectedText.length;
 
     this.view.dispatch({
+      annotations: noteSurfaceInsertOrder.of(this.createdAt),
       changes: { from, insert: projection.projectedText },
-      effects: [setAnchorEffect.of(to), EditorView.scrollIntoView(to, { y: 'nearest' })],
+      effects: this.ownerAnchorEffects(to),
     });
 
     const span: ProjectedSpan = {
       end: to,
-      projectedText: projection.projectedText,
+      projectedText: projection.insertedText,
       start: from,
       textEnd,
       textStart,
@@ -193,59 +265,19 @@ export class NoteSurface {
     return { kind: 'appended', span: cloneSpan(span) };
   }
 
-  replaceProjection(
+  replaceAnchor(
     utteranceId: UtteranceId,
-    newProjection: TranscriptInsertProjection,
-    expectedOldProjection: TranscriptInsertProjection,
-  ): ReplaceProjectionResult {
+    newText: string,
+    expectedOldText: string,
+    removeBoundary = newText.length === 0,
+  ): ReplaceResult {
     if (this.disposed) {
       return { kind: 'denied', reason: { kind: 'disposed' }, utteranceId };
     }
 
-    const span = this.spans.get(utteranceId);
-
-    if (span === undefined) {
-      return { kind: 'denied', reason: { kind: 'not_found' }, utteranceId };
-    }
-
-    if (span.latched !== undefined) {
-      return { kind: 'denied', reason: this.latchedReason(span), utteranceId };
-    }
-
-    const currentProjection = this.view.state.doc.sliceString(span.start, span.end);
-
-    if (
-      currentProjection !== expectedOldProjection.projectedText ||
-      currentProjection !== span.projectedText
-    ) {
-      span.latched = 'span_mismatch';
-      return {
-        kind: 'denied',
-        reason: { currentText: currentProjection, kind: 'span_mismatch' },
-        utteranceId,
-      };
-    }
-
-    const textStart = span.start + newProjection.textStartOffset;
-    const textEnd = span.start + newProjection.textEndOffset;
-    const end = span.start + newProjection.projectedText.length;
-
-    this.view.dispatch({
-      changes: { from: span.start, to: span.end, insert: newProjection.projectedText },
-      effects: [setAnchorEffect.of(end), EditorView.scrollIntoView(end, { y: 'nearest' })],
-    });
-
-    span.end = end;
-    span.projectedText = newProjection.projectedText;
-    span.textEnd = textEnd;
-    span.textStart = textStart;
-
-    return { kind: 'replaced', span: cloneSpan(span) };
-  }
-
-  replaceAnchor(utteranceId: UtteranceId, newText: string, expectedOldText: string): ReplaceResult {
-    if (this.disposed) {
-      return { kind: 'denied', reason: { kind: 'disposed' }, utteranceId };
+    const desynchronization = this.detectDesynchronization();
+    if (desynchronization !== null) {
+      return { kind: 'denied', reason: desynchronization, utteranceId };
     }
 
     const span = this.spans.get(utteranceId);
@@ -260,11 +292,9 @@ export class NoteSurface {
 
     const currentText = this.view.state.doc.sliceString(span.textStart, span.textEnd);
 
-    if (
-      currentText !== expectedOldText ||
-      this.view.state.doc.sliceString(span.start, span.end) !== span.projectedText
-    ) {
+    if (currentText !== expectedOldText || currentText !== span.projectedText) {
       span.latched = 'span_mismatch';
+      this.clearProvisional([utteranceId]);
       return {
         kind: 'denied',
         reason: { currentText, kind: 'span_mismatch' },
@@ -272,20 +302,31 @@ export class NoteSurface {
       };
     }
 
+    const replacementStart = removeBoundary ? span.start : span.textStart;
     this.view.dispatch({
-      changes: { from: span.textStart, to: span.textEnd, insert: newText },
-      effects: [
-        setAnchorEffect.of(span.textStart + newText.length),
-        EditorView.scrollIntoView(span.textStart + newText.length, { y: 'nearest' }),
-      ],
+      changes: { from: replacementStart, to: span.textEnd, insert: newText },
+      effects: this.ownerAnchorEffects(replacementStart + newText.length),
     });
 
-    const delta = newText.length - expectedOldText.length;
-    span.textEnd = span.textStart + newText.length;
-    span.end += delta;
-    span.projectedText = this.view.state.doc.sliceString(span.start, span.end);
+    const removedLength = span.textEnd - replacementStart;
+    span.textStart = replacementStart;
+    span.textEnd = replacementStart + newText.length;
+    span.end -= removedLength - newText.length;
+    span.projectedText = newText;
 
     return { kind: 'replaced', span: cloneSpan(span) };
+  }
+
+  readRange(range: RewriteRange): string | null {
+    if (this.disposed || !this.isValidRange(range)) {
+      return null;
+    }
+
+    return this.view.state.doc.sliceString(range.from, range.to);
+  }
+
+  readDocumentText(): string {
+    return this.view.state.doc.toString();
   }
 
   rewriteRegion(
@@ -295,6 +336,11 @@ export class NoteSurface {
   ): RewriteResult {
     if (this.disposed) {
       return { kind: 'denied', reason: { kind: 'disposed' } };
+    }
+
+    const desynchronization = this.detectDesynchronization();
+    if (desynchronization !== null) {
+      return { kind: 'denied', reason: desynchronization };
     }
 
     if (!this.isValidRange(range)) {
@@ -314,50 +360,123 @@ export class NoteSurface {
     }
 
     for (const span of spansInRange) {
-      if (span.latched !== undefined && !preserved.has(span.utteranceId)) {
+      if (preserved.has(span.utteranceId)) {
+        continue;
+      }
+
+      if (span.latched !== undefined) {
         return { kind: 'denied', reason: { kind: span.latched } };
       }
 
-      if (this.view.state.doc.sliceString(span.start, span.end) !== span.projectedText) {
+      if (this.view.state.doc.sliceString(span.textStart, span.textEnd) !== span.projectedText) {
         span.latched = 'span_mismatch';
         return { kind: 'denied', reason: { kind: 'span_mismatch' } };
       }
     }
 
-    this.view.dispatch({ changes: { from: range.from, to: range.to, insert: newText } });
+    const end = range.from + newText.length;
+    const ownsAnchor = this.isAnchorOwner();
+    this.view.dispatch({
+      annotations: bypassSessionProcessingLock.of(true),
+      changes: { from: range.from, to: range.to, insert: newText },
+      effects: this.ownerAnchorEffects(end),
+      // Only move the real caret when this surface owns the cursor, so a batch
+      // rewrite from an older session can't yank focus from a newer session.
+      ...(ownsAnchor ? { selection: { anchor: end } } : {}),
+    });
     for (const span of spansInRange) {
       this.spans.delete(span.utteranceId);
     }
+    this.clearProvisional(spansInRange.map((span) => span.utteranceId));
     this.pendingInitialPrefix = '';
 
     return { kind: 'rewritten', range };
   }
 
-  validateExternalModification(): void {
+  validateExternalModification(): SurfaceDesynchronization | null {
     if (this.disposed) {
-      return;
+      return null;
     }
 
+    const desynchronization = this.detectDesynchronization();
+    if (desynchronization !== null) {
+      return desynchronization;
+    }
+
+    const latchedUtteranceIds: string[] = [];
     for (const span of this.spans.values()) {
       if (span.latched !== undefined) {
         continue;
       }
 
-      if (this.view.state.doc.sliceString(span.start, span.end) !== span.projectedText) {
+      if (this.view.state.doc.sliceString(span.textStart, span.textEnd) !== span.projectedText) {
         span.latched = 'span_mismatch';
+        latchedUtteranceIds.push(span.utteranceId);
       }
     }
+    this.clearProvisional(latchedUtteranceIds);
+    return null;
   }
 
-  setAnchorMode(mode: DictationAnchorMode): void {
-    if (!this.disposed) {
+  setAnchorMode(mode: DictationAnchorMode): SurfaceDesynchronization | null {
+    if (this.disposed) {
+      return null;
+    }
+    const desynchronization = this.detectDesynchronization();
+    if (desynchronization !== null) {
+      return desynchronization;
+    }
+    if (this.isAnchorOwner()) {
       this.view.dispatch({ effects: setAnchorModeEffect.of(mode) });
     }
+    return null;
   }
 
-  trimPendingInitialPrefix(): void {
-    if (this.disposed || this.pendingInitialPrefix.length === 0) {
-      return;
+  setProcessingRange(range: SessionProcessingRange | null): SurfaceDesynchronization | null {
+    if (this.disposed) {
+      return null;
+    }
+    const desynchronization = this.detectDesynchronization();
+    if (desynchronization !== null) {
+      return desynchronization;
+    }
+    this.view.dispatch({ effects: setSessionProcessingEffect.of(range) });
+    return null;
+  }
+
+  setProvisional(utteranceId: UtteranceId, provisional: boolean): SurfaceDesynchronization | null {
+    if (this.disposed) {
+      return null;
+    }
+    const desynchronization = this.detectDesynchronization();
+    if (desynchronization !== null) {
+      return desynchronization;
+    }
+    const span = this.spans.get(utteranceId);
+    if (!provisional || span === undefined || span.latched !== undefined) {
+      this.clearProvisional([utteranceId]);
+      return null;
+    }
+    this.view.dispatch({
+      effects: setProvisionalTranscriptEffect.of({
+        from: span.textStart,
+        to: span.textEnd,
+        utteranceId,
+      }),
+    });
+    return null;
+  }
+
+  trimPendingInitialPrefix(): SurfaceDesynchronization | null {
+    if (this.disposed) {
+      return null;
+    }
+    const desynchronization = this.detectDesynchronization();
+    if (desynchronization !== null) {
+      return desynchronization;
+    }
+    if (this.pendingInitialPrefix.length === 0) {
+      return null;
     }
 
     const pending = this.pendingInitialPrefix;
@@ -375,16 +494,86 @@ export class NoteSurface {
     }
 
     this.pendingInitialPrefix = '';
+    return null;
   }
 
-  dispose(): void {
-    this.trimPendingInitialPrefix();
-    this.view.dispatch({ effects: clearAnchorEffect.of(null) });
-    this.disposed = true;
-
-    if (activeNoteSurface === this) {
-      setActiveNoteSurface(null);
+  dispose(): SurfaceDesynchronization | null {
+    if (this.disposed) {
+      return this.desynchronization;
     }
+
+    const desynchronization = this.detectDesynchronization();
+    if (desynchronization === null) {
+      this.trimPendingInitialPrefix();
+    }
+    const provisionalUtteranceIds = [...this.spans.keys()];
+    this.disposed = true;
+    unregisterNoteSurface(this);
+    // The anchor is a single shared widget. Only clear it when no other live
+    // session is still using it — otherwise a draining older session would wipe
+    // the newer session's cursor. The processing range is a single shared field
+    // too, but only the session currently draining ever shows the flash, so the
+    // disposing session always clears it.
+    const effects = [
+      setSessionProcessingEffect.of(null),
+      clearProvisionalTranscriptEffect.of(provisionalUtteranceIds),
+    ];
+    if (!this.hasOtherLiveSibling()) {
+      effects.push(clearAnchorEffect.of(null));
+    }
+    this.view.dispatch({ effects });
+    return desynchronization;
+  }
+
+  // The shared cursor belongs to the newest live surface for this view. With
+  // overlapping sessions (a new one started while a previous one still drains
+  // on a slow backend), this keeps a single session in control of the cursor.
+  private isAnchorOwner(): boolean {
+    if (this.disposed) {
+      return false;
+    }
+
+    const siblings = noteSurfacesByView.get(this.view);
+    if (siblings === undefined) {
+      return true;
+    }
+
+    for (const surface of siblings) {
+      if (surface !== this && !surface.disposed && surface.createdAt > this.createdAt) {
+        return false;
+      }
+    }
+
+    return true;
+  }
+
+  private clearProvisional(utteranceIds: readonly UtteranceId[]): void {
+    if (utteranceIds.length > 0) {
+      this.view.dispatch({ effects: clearProvisionalTranscriptEffect.of(utteranceIds) });
+    }
+  }
+
+  private hasOtherLiveSibling(): boolean {
+    const siblings = noteSurfacesByView.get(this.view);
+    if (siblings === undefined) {
+      return false;
+    }
+
+    for (const surface of siblings) {
+      if (surface !== this && !surface.disposed) {
+        return true;
+      }
+    }
+
+    return false;
+  }
+
+  private ownerAnchorEffects(pos: number): StateEffect<number>[] {
+    if (!this.isAnchorOwner()) {
+      return [];
+    }
+
+    return [setAnchorEffect.of(pos)];
   }
 
   getSpan(utteranceId: UtteranceId): ProjectedSpan | undefined {
@@ -392,17 +581,27 @@ export class NoteSurface {
     return span === undefined ? undefined : cloneSpan(span);
   }
 
-  // Whisper's `initial_prompt` is style-imitative — "Transcripts follow the
-  // style of the prompt" (OpenAI Whisper Prompting Guide). Feeding raw note
-  // prose causes whisper to continue in that voice instead of transcribing.
-  // A `Glossary: t1, t2, ...` shape has no narrative voice to imitate; it
-  // only nudges spelling for proper nouns and uncommon terms.
+  // Whisper's `initial_prompt` is style-imitative, so present spelling hints
+  // as sentence-cased transcript prose instead of a Title-Case glossary list.
   readNoteGlossary(maxChars: number): { text: string; truncated: boolean } | null {
     if (this.disposed || maxChars <= 0) {
       return null;
     }
 
     return buildGlossary(this.view.state.doc.toString(), maxChars);
+  }
+
+  readNoteText(maxChars: number): { text: string; truncated: boolean } | null {
+    if (this.disposed || maxChars <= 0) {
+      return null;
+    }
+
+    const beforeAnchor = this.view.state.doc.sliceString(0, this.writingRegionTail()).trim();
+    if (beforeAnchor.length === 0) {
+      return null;
+    }
+
+    return truncateTrailingText(beforeAnchor, maxChars);
   }
 
   private insertInitialPrefix(): void {
@@ -434,7 +633,79 @@ export class NoteSurface {
   }
 
   private writingRegionTail(): number {
-    return Math.max(this.initialAnchorPos, ...[...this.spans.values()].map((span) => span.end));
+    let tail = Math.max(this.initialAnchorPos, ...[...this.spans.values()].map((span) => span.end));
+    const siblingSurfaces = noteSurfacesByView.get(this.view);
+
+    if (siblingSurfaces === undefined) {
+      return tail;
+    }
+
+    for (const surface of siblingSurfaces) {
+      if (
+        surface === this ||
+        surface.disposed ||
+        surface.initialBoundaryPos !== this.initialBoundaryPos ||
+        surface.createdAt >= this.createdAt
+      ) {
+        continue;
+      }
+
+      tail = Math.max(tail, surface.writingRegionTail());
+    }
+
+    return tail;
+  }
+
+  private detectDesynchronization(
+    documentLength = this.view.state.doc.length,
+  ): SurfaceDesynchronization | null {
+    const ownedDesynchronization = this.detectOwnedDesynchronization(documentLength);
+    if (ownedDesynchronization !== null) {
+      return ownedDesynchronization;
+    }
+
+    const writingRegionTail = this.writingRegionTail();
+    if (!isDocumentPosition(writingRegionTail, documentLength)) {
+      return this.markDesynchronized(writingRegionTail, documentLength);
+    }
+
+    return null;
+  }
+
+  private detectOwnedDesynchronization(documentLength: number): SurfaceDesynchronization | null {
+    if (this.desynchronization !== null) {
+      return this.desynchronization;
+    }
+
+    if (!isDocumentPosition(this.initialAnchorPos, documentLength)) {
+      return this.markDesynchronized(this.initialAnchorPos, documentLength);
+    }
+
+    for (const span of this.spans.values()) {
+      const positions = [span.start, span.textStart, span.textEnd, span.end];
+      let previous = -1;
+      for (const position of positions) {
+        if (!isDocumentPosition(position, documentLength) || position < previous) {
+          return this.markDesynchronized(position, documentLength);
+        }
+        previous = position;
+      }
+    }
+
+    return null;
+  }
+
+  private markDesynchronized(
+    trackedPosition: number,
+    documentLength: number,
+  ): SurfaceDesynchronization {
+    const failure: SurfaceDesynchronization = {
+      documentLength,
+      kind: 'surface_desynchronized',
+      trackedPosition,
+    };
+    this.desynchronization = failure;
+    return failure;
   }
 
   private lastSpan(): ProjectedSpan | null {
@@ -450,15 +721,23 @@ export class NoteSurface {
   }
 
   private mapSpans(update: ViewUpdate): void {
+    const insertOrder = update.transactions
+      .map((transaction) => transaction.annotation(noteSurfaceInsertOrder))
+      .find((order) => order !== undefined);
+    const spanStartBias = insertOrder !== undefined && insertOrder < this.createdAt ? 1 : -1;
+    const initialAnchorBias = insertOrder !== undefined && insertOrder > this.createdAt ? -1 : 1;
+
     for (const span of this.spans.values()) {
-      span.start = update.changes.mapPos(span.start, -1);
-      span.textStart = update.changes.mapPos(span.textStart, -1);
-      span.textEnd = update.changes.mapPos(span.textEnd, 1);
+      span.start = update.changes.mapPos(span.start, spanStartBias);
+      span.textStart = update.changes.mapPos(span.textStart, spanStartBias);
+      // Text bias: insertions at textEnd land outside the span, so a sibling
+      // append at writingRegionTail() doesn't swallow the next utterance.
+      span.textEnd = update.changes.mapPos(span.textEnd, -1);
       span.end = update.changes.mapPos(span.end, 1);
     }
 
     // Tail bias: insertions at the initial anchor extend the writing region.
-    this.initialAnchorPos = update.changes.mapPos(this.initialAnchorPos, 1);
+    this.initialAnchorPos = update.changes.mapPos(this.initialAnchorPos, initialAnchorBias);
   }
 
   private latchedReason(span: ProjectedSpan): ReplaceDenialReason {
@@ -491,6 +770,10 @@ export class NoteSurface {
       range.to <= this.view.state.doc.length
     );
   }
+}
+
+function isDocumentPosition(position: number, documentLength: number): boolean {
+  return Number.isInteger(position) && position >= 0 && position <= documentLength;
 }
 
 function changeIntersectsSpan(update: ViewUpdate, span: ProjectedSpan): boolean {
@@ -583,14 +866,17 @@ function isAtSentenceStart(noteText: string, offset: number): boolean {
   return previous === '.' || previous === '!' || previous === '?';
 }
 
-// Build `Glossary: t1, t2, ...` from the note in a single pass, deduped
+// Keep this prompt prefix in sync with `is_prompt_leak` in
+// `native/src/stages/hallucination_filter.rs`.
+// Build sentence-cased prompt prose from the note in a single pass, deduped
 // case-insensitively (first-seen casing wins) and bounded by `maxChars`.
-// Stops scanning at the first token that would overflow the budget.
+// Stops scanning at the first token that would overflow the budget, including
+// the terminal period.
 function buildGlossary(
   noteText: string,
   maxChars: number,
 ): { text: string; truncated: boolean } | null {
-  const prefix = 'Glossary: ';
+  const prefix = 'The notes mention ';
 
   if (prefix.length >= maxChars) {
     return null;
@@ -619,7 +905,7 @@ function buildGlossary(
 
     const candidate = appended === 0 ? `${text}${token}` : `${text}, ${token}`;
 
-    if (candidate.length > maxChars) {
+    if (candidate.length + 1 > maxChars) {
       truncated = true;
       break;
     }
@@ -632,5 +918,5 @@ function buildGlossary(
     return null;
   }
 
-  return { text, truncated };
+  return { text: `${text}.`, truncated };
 }

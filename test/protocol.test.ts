@@ -3,71 +3,468 @@ import { describe, expect, it } from 'vitest';
 import { PCM_BYTES_PER_FRAME } from '../src/shared/pcm-format';
 import {
   AUDIO_FRAME_KIND,
+  bytesToSessionId,
   type ContextWindow,
+  createCancelSessionCommand,
+  createCancelTranslationCommand,
   createContextResponseCommand,
-  createGetSystemInfoCommand,
   createHealthCommand,
+  createProbeSystemAudioCommand,
   createStartSessionCommand,
+  createStartTranslationCommand,
+  createStopSessionCommand,
+  decodeAudioFrameEnvelope,
   encodeAudioFrame,
   encodeJsonFrame,
   FRAME_HEADER_LENGTH,
   FramedMessageParser,
   JSON_FRAME_KIND,
+  MAX_FRAME_PAYLOAD_BYTES,
   parseEventFrame,
+  SESSION_ID_BYTES,
+  SYNTHESIS_AUDIO_FRAME_KIND,
+  sessionIdToBytes,
+  type TranscriptReadyEvent,
 } from '../src/sidecar/protocol';
 
-describe('sidecar protocol', () => {
-  it('serializes JSON commands with the framed header', () => {
+const SESSION_ID = '123e4567-e89b-42d3-a456-426614174000';
+
+// Fixture builders -----------------------------------------------------------
+//
+// The wire protocol has a small number of large payload shapes that repeat
+// across tests. These builders return realistic defaults so each test can
+// focus on the field under examination instead of redeclaring 15 unrelated
+// fields. Inline shapes are preserved where the test's purpose is to pin the
+// exact byte/JSON layout (e.g. small command frames).
+
+function transcriptReadyPayload(
+  overrides: Partial<TranscriptReadyEvent> = {},
+): TranscriptReadyEvent {
+  return {
+    isFinal: true,
+    pauseMsBeforeUtterance: null,
+    processingDurationMs: 125,
+    revision: 0,
+    segments: [],
+    sessionId: 'session-1',
+    speakerIndex: null,
+    stageResults: [],
+    text: 'hello world',
+    type: 'transcript_ready',
+    utteranceDurationMs: 900,
+    utteranceEndMsInSession: 900,
+    utteranceId: 'utt-1',
+    utteranceIndex: 0,
+    utteranceStartMsInSession: 0,
+    warnings: [],
+    ...overrides,
+  };
+}
+
+function externalModelSelection() {
+  return {
+    familyId: 'whisper',
+    filePath: '/tmp/m.bin',
+    kind: 'external_file',
+    runtimeId: 'whisper_cpp',
+  } as const;
+}
+
+// Framing --------------------------------------------------------------------
+
+describe('framing', () => {
+  it('encodes JSON commands behind the JSON frame kind byte', () => {
     const frame = encodeJsonFrame(createHealthCommand());
 
     expect(frame[0]).toBe(JSON_FRAME_KIND);
-    expect(readPayload(frame)).toEqual({
-      type: 'health',
-    });
+    expect(readPayload(frame)).toEqual({ type: 'health' });
   });
 
-  it('serializes audio frames with the expected byte size', () => {
+  it('encodes audio frames at the expected wire length and decodes the envelope', () => {
     const payload = new Uint8Array(PCM_BYTES_PER_FRAME).fill(7);
-    const frame = encodeAudioFrame(payload);
+    const frame = encodeAudioFrame(SESSION_ID, payload);
 
     expect(frame[0]).toBe(AUDIO_FRAME_KIND);
-    expect(frame.byteLength).toBe(5 + PCM_BYTES_PER_FRAME);
+    expect(frame.byteLength).toBe(5 + SESSION_ID_BYTES + PCM_BYTES_PER_FRAME);
+    expect(decodeAudioFrameEnvelope(frame.slice(FRAME_HEADER_LENGTH))).toEqual({
+      frameBytes: payload,
+      sessionId: SESSION_ID,
+    });
   });
 
-  it('serializes start_session command with accelerationPreference', () => {
-    const command = createStartSessionCommand({
-      accelerationPreference: 'auto',
-      language: 'en',
-      livePartialMode: 'auto',
-      mode: 'always_on',
-      modelSelection: {
-        familyId: 'whisper',
-        filePath: '/tmp/m.bin',
-        kind: 'external_file',
-        runtimeId: 'whisper_cpp',
-      },
-      sessionStartUnixMs: 1_700_000_000_000,
-      sessionId: 'session-gpu',
-      speakingStyle: 'balanced',
+  it('round-trips UUID session ids and rejects non-UUID strings', () => {
+    expect(bytesToSessionId(sessionIdToBytes(SESSION_ID))).toBe(SESSION_ID);
+    expect(() => sessionIdToBytes('session-not-a-uuid')).toThrow(
+      'Session id must be a UUID v4 string',
+    );
+  });
+
+  it('rejects wrong-size payloads in encodeAudioFrame', () => {
+    expect(() => encodeAudioFrame(SESSION_ID, new Uint8Array(1))).toThrow(
+      `Audio frames must be ${PCM_BYTES_PER_FRAME} bytes, received 1.`,
+    );
+  });
+
+  it('parses interleaved JSON and binary frames across chunk boundaries', () => {
+    const parser = new FramedMessageParser(parseEventFrame);
+    const jsonFrame = encodeJsonFrame(transcriptReadyPayload());
+    const audioFrame = encodeAudioFrame(SESSION_ID, new Uint8Array(PCM_BYTES_PER_FRAME).fill(3));
+    const combined = new Uint8Array(jsonFrame.byteLength + audioFrame.byteLength);
+
+    combined.set(jsonFrame, 0);
+    combined.set(audioFrame, jsonFrame.byteLength);
+
+    // Split mid-frame to confirm the parser buffers across chunks.
+    const first = parser.pushChunk(combined.slice(0, 17));
+    const second = parser.pushChunk(combined.slice(17));
+    const frames = [...first.frames, ...second.frames];
+
+    expect(first.fatal).toBeUndefined();
+    expect(second.fatal).toBeUndefined();
+    expect(frames).toHaveLength(2);
+    expect(frames[0]).toMatchObject({
+      envelope: { type: 'transcript_ready' },
+      kind: JSON_FRAME_KIND,
     });
-    const frame = encodeJsonFrame(command);
+    expect(frames[1]).toEqual({
+      frameBytes: new Uint8Array(PCM_BYTES_PER_FRAME).fill(3),
+      kind: AUDIO_FRAME_KIND,
+      sessionId: SESSION_ID,
+    });
+  });
+
+  it('parses synthesis PCM frames with little-endian session and sequence headers', () => {
+    const payload = new Uint8Array(12);
+    const payloadView = new DataView(payload.buffer);
+    payloadView.setUint32(0, 0x1020_3040, true);
+    payloadView.setUint32(4, 7, true);
+    payload.set([0x34, 0x12, 0xcc, 0xff], 8);
+    const frame = new Uint8Array(FRAME_HEADER_LENGTH + payload.byteLength);
+    frame[0] = SYNTHESIS_AUDIO_FRAME_KIND;
+    new DataView(frame.buffer).setUint32(1, payload.byteLength, true);
+    frame.set(payload, FRAME_HEADER_LENGTH);
+
+    const parsed = new FramedMessageParser(parseEventFrame).pushChunk(frame);
+    expect(parsed.fatal).toBeUndefined();
+    expect(parsed.frames).toEqual([
+      {
+        kind: SYNTHESIS_AUDIO_FRAME_KIND,
+        pcm16le: new Uint8Array([0x34, 0x12, 0xcc, 0xff]),
+        seq: 7,
+        synthesisId: 0x1020_3040,
+      },
+    ]);
+  });
+});
+
+describe('translation protocol', () => {
+  it('encodes start and cancel commands with stable job ids and ordered text units', () => {
+    const modelSelection = {
+      familyId: 'tencent_hy_mt',
+      kind: 'catalog_model',
+      modelId: 'tencent-hy-mt-2-1.8b-q4-k-m',
+      runtimeId: 'llama_cpp',
+    } as const;
+
+    expect(
+      readPayload(
+        encodeJsonFrame(
+          createStartTranslationCommand({
+            accelerationPreference: 'auto',
+            modelSelection,
+            sourceLanguage: 'zh-Hant',
+            targetLanguage: 'en',
+            texts: ['first', 'second'],
+            translationId: 'translation-1',
+          }),
+        ),
+      ),
+    ).toEqual({
+      accelerationPreference: 'auto',
+      modelSelection,
+      sourceLanguage: 'zh-Hant',
+      targetLanguage: 'en',
+      texts: ['first', 'second'],
+      translationId: 'translation-1',
+      type: 'start_translation',
+    });
+    expect(readPayload(encodeJsonFrame(createCancelTranslationCommand('translation-1')))).toEqual({
+      translationId: 'translation-1',
+      type: 'cancel_translation',
+    });
+  });
+
+  it('accepts structured translation lifecycle events', () => {
+    expect(
+      parseEventFrame(
+        JSON.stringify({
+          completed: 2,
+          total: 3,
+          translationId: 'translation-1',
+          type: 'translation_progress',
+        }),
+      ),
+    ).toMatchObject({ type: 'translation_progress', completed: 2, total: 3 });
+    expect(
+      parseEventFrame(
+        JSON.stringify({
+          code: 'helper_crashed',
+          message: 'Translation helper stopped unexpectedly.',
+          translationId: 'translation-1',
+          type: 'translation_error',
+        }),
+      ),
+    ).toMatchObject({ type: 'translation_error', code: 'helper_crashed' });
+  });
+
+  it('rejects malformed translation lifecycle events', () => {
+    expect(() =>
+      parseEventFrame(
+        JSON.stringify({
+          type: 'translation_progress',
+          translationId: 'job',
+          completed: 3,
+          total: 2,
+        }),
+      ),
+    ).toThrow(/translation_progress/u);
+    expect(() =>
+      parseEventFrame(
+        JSON.stringify({
+          type: 'translation_complete',
+          translationId: 'job',
+          translations: ['ok', 4],
+        }),
+      ),
+    ).toThrow(/translation_complete/u);
+    expect(() =>
+      parseEventFrame(JSON.stringify({ type: 'translation_cancelled', translationId: '' })),
+    ).toThrow(/translation_cancelled/u);
+  });
+});
+
+// Fatal stream handling ------------------------------------------------------
+
+describe('FramedMessageParser fatal stream handling', () => {
+  function encodeFatalHeader(kind: number, declaredPayloadLength: number): Uint8Array {
+    const header = new Uint8Array(FRAME_HEADER_LENGTH);
+    header[0] = kind;
+    new DataView(header.buffer).setUint32(1, declaredPayloadLength, true);
+    return header;
+  }
+
+  it('flags a fatal result when payload length exceeds the cap', () => {
+    const parser = new FramedMessageParser(parseEventFrame);
+    const header = encodeFatalHeader(JSON_FRAME_KIND, 0xffffffff);
+
+    const { fatal, frames } = parser.pushChunk(header);
+
+    expect(frames).toEqual([]);
+    expect(fatal?.message).toContain(`max ${MAX_FRAME_PAYLOAD_BYTES}`);
+    expect(fatal?.message).toContain('4294967295');
+  });
+
+  it('accepts a payload length of exactly MAX_FRAME_PAYLOAD_BYTES', () => {
+    // Boundary spec: <= MAX_FRAME_PAYLOAD_BYTES is accepted, matching Rust's
+    // ensure!(payload_length <= MAX_FRAME_PAYLOAD) in native/src/protocol.rs.
+    const parser = new FramedMessageParser(parseEventFrame);
+    const header = encodeFatalHeader(JSON_FRAME_KIND, MAX_FRAME_PAYLOAD_BYTES);
+
+    const { fatal, frames } = parser.pushChunk(header);
+
+    // The parser buffers waiting for the (huge) body and does not flag fatal.
+    expect(frames).toEqual([]);
+    expect(fatal).toBeUndefined();
+  });
+
+  it('delivers every valid frame that precedes a fatal frame in the same chunk', () => {
+    const parser = new FramedMessageParser(parseEventFrame);
+    const first = encodeJsonFrame(transcriptReadyPayload({ text: 'first' }));
+    const second = encodeJsonFrame(transcriptReadyPayload({ text: 'second' }));
+    const fatalFrame = encodeFatalHeader(0xff, 0);
+
+    const combined = new Uint8Array(first.byteLength + second.byteLength + fatalFrame.byteLength);
+    combined.set(first, 0);
+    combined.set(second, first.byteLength);
+    combined.set(fatalFrame, first.byteLength + second.byteLength);
+
+    const { fatal, frames } = parser.pushChunk(combined);
+
+    expect(frames).toHaveLength(2);
+    expect(frames[0]).toMatchObject({ envelope: { text: 'first', type: 'transcript_ready' } });
+    expect(frames[1]).toMatchObject({ envelope: { text: 'second', type: 'transcript_ready' } });
+    expect(fatal?.message).toBe('Unsupported sidecar frame kind: 255');
+  });
+
+  it('discards the buffered backlog after a fatal so subsequent chunks resync', () => {
+    const parser = new FramedMessageParser(parseEventFrame);
+
+    const fatalFrame = encodeFatalHeader(0xff, 0);
+    const fatalResult = parser.pushChunk(fatalFrame);
+    expect(fatalResult.fatal).toBeDefined();
+
+    // A clean frame pushed after the fatal must parse as if the buffer were empty.
+    const cleanFrame = encodeJsonFrame(transcriptReadyPayload({ text: 'after-recovery' }));
+    const next = parser.pushChunk(cleanFrame);
+
+    expect(next.fatal).toBeUndefined();
+    expect(next.frames).toHaveLength(1);
+    expect(next.frames[0]).toMatchObject({
+      envelope: { text: 'after-recovery', type: 'transcript_ready' },
+    });
+  });
+
+  it('reports JSON envelope parse errors as fatal without losing earlier frames', () => {
+    const parser = new FramedMessageParser(parseEventFrame);
+    const good = encodeJsonFrame(transcriptReadyPayload({ text: 'pre-bad-json' }));
+    const badJsonBody = new TextEncoder().encode(JSON.stringify({ type: 'not_a_known_event' }));
+    const badJsonFrame = new Uint8Array(FRAME_HEADER_LENGTH + badJsonBody.byteLength);
+    badJsonFrame[0] = JSON_FRAME_KIND;
+    new DataView(badJsonFrame.buffer).setUint32(1, badJsonBody.byteLength, true);
+    badJsonFrame.set(badJsonBody, FRAME_HEADER_LENGTH);
+
+    const combined = new Uint8Array(good.byteLength + badJsonFrame.byteLength);
+    combined.set(good, 0);
+    combined.set(badJsonFrame, good.byteLength);
+
+    const { fatal, frames } = parser.pushChunk(combined);
+
+    expect(frames).toHaveLength(1);
+    expect(frames[0]).toMatchObject({ envelope: { text: 'pre-bad-json' } });
+    expect(fatal?.message).toContain('Unsupported sidecar event type');
+  });
+});
+
+// Commands -------------------------------------------------------------------
+
+describe('command serialization', () => {
+  it('serializes start_session with accelerationPreference, includeSystemAudio, and sessionId', () => {
+    const frame = encodeJsonFrame(
+      createStartSessionCommand({
+        accelerationPreference: 'auto',
+        detailedTimestampsEnabled: true,
+        diarizationEnabled: true,
+        diarizationMaxSpeakers: 2,
+        includeSystemAudio: true,
+        language: 'en',
+        mode: 'always_on',
+        modelSelection: externalModelSelection(),
+        sessionStartUnixMs: 1_700_000_000_000,
+        sessionId: 'session-gpu',
+        speakingStyle: 'balanced',
+      }),
+    );
     const payload = readPayload(frame) as Record<string, unknown>;
 
     expect(payload.accelerationPreference).toBe('auto');
-    expect(payload).not.toHaveProperty('useGpu');
+    expect(payload.detailedTimestampsEnabled).toBe(true);
+    expect(payload.diarizationEnabled).toBe(true);
+    expect(payload.diarizationMaxSpeakers).toBe(2);
+    expect(payload.includeSystemAudio).toBe(true);
+    expect(payload.language).toBe('en');
+    expect(payload).not.toHaveProperty('audioSource');
     expect(payload.sessionId).toBe('session-gpu');
   });
 
-  it('serializes get_system_info command', () => {
-    const frame = encodeJsonFrame(createGetSystemInfoCommand());
+  it('serializes an explicit multilingual dictation language', () => {
+    const frame = encodeJsonFrame(
+      createStartSessionCommand({
+        accelerationPreference: 'cpu_only',
+        detailedTimestampsEnabled: false,
+        diarizationEnabled: false,
+        diarizationMaxSpeakers: null,
+        includeSystemAudio: false,
+        language: 'ja',
+        mode: 'one_sentence',
+        modelSelection: externalModelSelection(),
+        sessionStartUnixMs: 1_700_000_000_000,
+        sessionId: 'session-ja',
+        speakingStyle: 'patient',
+      }),
+    );
 
-    expect(readPayload(frame)).toEqual({
-      type: 'get_system_info',
+    expect((readPayload(frame) as Record<string, unknown>).language).toBe('ja');
+  });
+
+  it('encodes session-addressed lifecycle commands with sessionId echoed in the payload', () => {
+    expect(readPayload(encodeJsonFrame(createStopSessionCommand(SESSION_ID)))).toEqual({
+      sessionId: SESSION_ID,
+      type: 'stop_session',
+    });
+    expect(readPayload(encodeJsonFrame(createCancelSessionCommand(SESSION_ID)))).toEqual({
+      sessionId: SESSION_ID,
+      type: 'cancel_session',
     });
   });
 
-  it('parses system_info event', () => {
-    const parser = new FramedMessageParser(parseEventFrame);
+  it('serializes the system-audio probe command without a session payload', () => {
+    expect(readPayload(encodeJsonFrame(createProbeSystemAudioCommand()))).toEqual({
+      type: 'probe_system_audio',
+    });
+  });
+
+  it('serializes context_response carrying a context window or explicit null', () => {
+    const window: ContextWindow = {
+      budgetChars: 512,
+      sources: [{ kind: 'note_glossary', text: 'hello', truncated: false }],
+      text: 'hello',
+      truncated: false,
+    };
+
+    expect(readPayload(encodeJsonFrame(createContextResponseCommand('corr-1', window)))).toEqual({
+      context: window,
+      correlationId: 'corr-1',
+      type: 'context_response',
+    });
+    expect(readPayload(encodeJsonFrame(createContextResponseCommand('corr-1', null)))).toEqual({
+      context: null,
+      correlationId: 'corr-1',
+      type: 'context_response',
+    });
+  });
+});
+
+// Event parsing --------------------------------------------------------------
+
+describe('event parsing', () => {
+  it('accepts successful and failed system-audio probe results', () => {
+    expect(
+      parseEventFrame(JSON.stringify({ ok: true, type: 'system_audio_probe_result' })),
+    ).toEqual({ ok: true, type: 'system_audio_probe_result' });
+    expect(
+      parseEventFrame(
+        JSON.stringify({
+          code: 'system_audio_permission_denied',
+          message: 'grant permission',
+          ok: false,
+          type: 'system_audio_probe_result',
+        }),
+      ),
+    ).toEqual({
+      code: 'system_audio_permission_denied',
+      message: 'grant permission',
+      ok: false,
+      type: 'system_audio_probe_result',
+    });
+  });
+
+  it('parses audio_level events for ribbon metering', () => {
+    expect(
+      parseEventFrame(
+        JSON.stringify({
+          bands: [0, 0.1, 0.2, 0.3, 0.4, 1],
+          sessionId: SESSION_ID,
+          type: 'audio_level',
+        }),
+      ),
+    ).toEqual({
+      bands: [0, 0.1, 0.2, 0.3, 0.4, 1],
+      sessionId: SESSION_ID,
+      type: 'audio_level',
+    });
+  });
+
+  it('parses system_info preserving compiled runtime and adapter shapes', () => {
     const runtimeCapabilities = {
       acceleratorDetails: {
         cpu: { available: true, unavailableReason: null },
@@ -77,11 +474,11 @@ describe('sidecar protocol', () => {
       supportedModelFormats: ['ggml' as const],
     };
     const familyCapabilities = {
-      livePartialStrategies: [],
       maxAudioDurationSecs: null,
       producesPunctuation: true,
       supportedLanguages: { kind: 'all' as const },
       supportsInitialPrompt: true,
+      supportsStreaming: false,
       supportsLanguageSelection: true,
       supportsSegmentTimestamps: true,
       supportsWordTimestamps: false,
@@ -97,242 +494,209 @@ describe('sidecar protocol', () => {
       familyId: 'whisper' as const,
       runtimeId: 'whisper_cpp' as const,
     };
-    const frame = encodeJsonFrame({
+    const event = parseEventFrame(
+      JSON.stringify({
+        compiledAdapters: [compiledAdapter],
+        compiledRuntimes: [compiledRuntime],
+        sidecarVersion: '0.0.0-test',
+        systemInfo: 'AVX = 1 | CUDA = 1',
+        type: 'system_info',
+      }),
+    );
+
+    expect(event).toEqual({
       compiledAdapters: [compiledAdapter],
       compiledRuntimes: [compiledRuntime],
       sidecarVersion: '0.0.0-test',
       systemInfo: 'AVX = 1 | CUDA = 1',
       type: 'system_info',
     });
-    const parsed = parser.pushChunk(frame);
+  });
 
-    expect(parsed).toHaveLength(1);
-    expect(parsed[0]).toEqual({
-      envelope: {
-        compiledAdapters: [compiledAdapter],
-        compiledRuntimes: [compiledRuntime],
-        sidecarVersion: '0.0.0-test',
-        systemInfo: 'AVX = 1 | CUDA = 1',
-        type: 'system_info',
+  it('parses model_probe_result with merged capabilities and with explicit null', () => {
+    const baseSelection = {
+      familyId: 'whisper' as const,
+      kind: 'catalog_model' as const,
+      modelId: 'small',
+      runtimeId: 'whisper_cpp' as const,
+    };
+
+    const ready = parseEventFrame(
+      JSON.stringify({
+        available: true,
+        details: null,
+        displayName: 'Whisper Small',
+        familyId: 'whisper',
+        installed: true,
+        mergedCapabilities: {
+          family: {
+            maxAudioDurationSecs: null,
+            producesPunctuation: true,
+            supportedLanguages: { kind: 'english_only' },
+            supportsInitialPrompt: true,
+            supportsStreaming: false,
+            supportsLanguageSelection: false,
+            supportsSegmentTimestamps: true,
+            supportsWordTimestamps: false,
+          },
+          familyId: 'whisper',
+          runtime: {
+            acceleratorDetails: { cpu: { available: true, unavailableReason: null } },
+            availableAccelerators: ['cpu'],
+            supportedModelFormats: ['ggml'],
+          },
+          runtimeId: 'whisper_cpp',
+        },
+        message: 'Model selection is ready.',
+        modelId: 'small',
+        resolvedPath: '/models/whisper-small.bin',
+        runtimeId: 'whisper_cpp',
+        selection: baseSelection,
+        sizeBytes: 100,
+        status: 'ready',
+        type: 'model_probe_result',
+      }),
+    );
+    expect(ready).toMatchObject({ available: true, status: 'ready' });
+
+    // Rust emits explicit `null` for unset optionals (no `skip_serializing_if`),
+    // so the parser trusts the wire shape verbatim instead of backfilling.
+    const missing = parseEventFrame(
+      JSON.stringify({
+        available: false,
+        details: 'not installed',
+        displayName: null,
+        familyId: 'whisper',
+        installed: false,
+        mergedCapabilities: null,
+        message: 'The selected managed model is not installed or is incomplete.',
+        modelId: 'small',
+        resolvedPath: null,
+        runtimeId: 'whisper_cpp',
+        selection: baseSelection,
+        sizeBytes: null,
+        status: 'missing',
+        type: 'model_probe_result',
+      }),
+    );
+    expect(missing).toMatchObject({ mergedCapabilities: null, status: 'missing' });
+  });
+
+  it.each([
+    ['non-object JSON', '"hello"', /Sidecar event must be a JSON object/],
+    ['number JSON', '42', /Sidecar event must be a JSON object/],
+    ['missing type', '{}', /Unsupported sidecar event type/],
+    [
+      'unknown type',
+      JSON.stringify({ type: 'nonexistent_event' }),
+      /Unsupported sidecar event type/,
+    ],
+  ] as const)('rejects malformed event (%s)', (_label, body, expectedMessage) => {
+    expect(() => parseEventFrame(body)).toThrow(expectedMessage);
+  });
+
+  it.each([
+    ['numeric pause', 320],
+    ['null pause', null],
+  ] as const)('parses transcript_ready with %s', (_label, pauseMsBeforeUtterance) => {
+    const event = parseEventFrame(
+      JSON.stringify(transcriptReadyPayload({ pauseMsBeforeUtterance })),
+    );
+
+    expect(event.type).toBe('transcript_ready');
+    if (event.type === 'transcript_ready') {
+      expect(event.pauseMsBeforeUtterance).toBe(pauseMsBeforeUtterance);
+    }
+  });
+
+  it.each([
+    ['an assigned speaker index', 1],
+    ['a null speaker (diarization off)', null],
+  ] as const)('parses transcript_ready with %s', (_label, speakerIndex) => {
+    const event = parseEventFrame(JSON.stringify(transcriptReadyPayload({ speakerIndex })));
+
+    expect(event.type).toBe('transcript_ready');
+    if (event.type === 'transcript_ready') {
+      expect(event.speakerIndex).toBe(speakerIndex);
+    }
+  });
+
+  it('normalizes a missing transcript_ready speaker index to null', () => {
+    const payload: Partial<TranscriptReadyEvent> = transcriptReadyPayload({ speakerIndex: 1 });
+    delete payload.speakerIndex;
+    const event = parseEventFrame(JSON.stringify(payload));
+
+    expect(event.type).toBe('transcript_ready');
+    if (event.type === 'transcript_ready') {
+      expect(event.speakerIndex).toBeNull();
+    }
+  });
+
+  it('preserves engine word timing on transcript segments', () => {
+    const segments: TranscriptReadyEvent['segments'] = [
+      {
+        endMs: 900,
+        speaker: null,
+        startMs: 100,
+        text: 'hello world',
+        timestampGranularity: 'segment',
+        timestampSource: 'engine',
+        words: [
+          { endMs: 400, startMs: 100, text: 'hello', timestampSource: 'engine' },
+          { endMs: 900, startMs: 500, text: 'world', timestampSource: 'engine' },
+        ],
       },
-      kind: JSON_FRAME_KIND,
+    ];
+    const event = parseEventFrame(JSON.stringify(transcriptReadyPayload({ segments })));
+
+    expect(event).toMatchObject({ segments, type: 'transcript_ready' });
+  });
+
+  it('parses transcript_ready carrying a non-empty stageResults history', () => {
+    const stageResults: TranscriptReadyEvent['stageResults'] = [
+      {
+        durationMs: 100,
+        isFinal: true,
+        payload: {
+          voiceActivity: {
+            audioEndMs: 1100,
+            audioStartMs: 100,
+            maxProbability: 0.98,
+            meanProbability: 0.72,
+            speechEndMs: 980,
+            speechStartMs: 180,
+            unvoicedMs: 200,
+            voicedMs: 800,
+          },
+        },
+        revisionIn: 0,
+        revisionOut: 0,
+        stageId: 'engine',
+        status: { kind: 'ok' },
+      },
+      {
+        durationMs: 0,
+        isFinal: true,
+        revisionIn: 0,
+        stageId: 'punctuation',
+        status: { kind: 'skipped', reason: 'no_action' },
+      },
+    ];
+
+    const event = parseEventFrame(
+      JSON.stringify(transcriptReadyPayload({ pauseMsBeforeUtterance: 250, stageResults })),
+    );
+
+    expect(event).toMatchObject({
+      pauseMsBeforeUtterance: 250,
+      stageResults,
+      type: 'transcript_ready',
     });
   });
 
-  it('parses model_probe_result event carrying merged capabilities', () => {
-    const mergedCapabilities = {
-      family: {
-        livePartialStrategies: [],
-        maxAudioDurationSecs: null,
-        producesPunctuation: true,
-        supportedLanguages: { kind: 'english_only' as const },
-        supportsInitialPrompt: true,
-        supportsLanguageSelection: false,
-        supportsSegmentTimestamps: true,
-        supportsWordTimestamps: false,
-      },
-      familyId: 'whisper' as const,
-      runtime: {
-        acceleratorDetails: {
-          cpu: { available: true, unavailableReason: null },
-        },
-        availableAccelerators: ['cpu' as const],
-        supportedModelFormats: ['ggml' as const],
-      },
-      runtimeId: 'whisper_cpp' as const,
-    };
-    const payload = {
-      available: true,
-      details: null,
-      displayName: 'Whisper Small',
-      familyId: 'whisper' as const,
-      installed: true,
-      mergedCapabilities,
-      message: 'Model selection is ready.',
-      modelId: 'small',
-      resolvedPath: '/models/whisper-small.bin',
-      runtimeId: 'whisper_cpp' as const,
-      selection: {
-        familyId: 'whisper' as const,
-        kind: 'catalog_model' as const,
-        modelId: 'small',
-        runtimeId: 'whisper_cpp' as const,
-      },
-      sizeBytes: 100,
-      status: 'ready' as const,
-      type: 'model_probe_result' as const,
-    };
-    const event = parseEventFrame(JSON.stringify(payload));
-
-    expect(event).toEqual(payload);
-  });
-
-  it('parses model_probe_result event when merged capabilities are absent', () => {
-    const payload = {
-      available: false,
-      details: 'not installed',
-      displayName: null,
-      familyId: 'whisper' as const,
-      installed: false,
-      message: 'The selected managed model is not installed or is incomplete.',
-      modelId: 'small',
-      resolvedPath: null,
-      runtimeId: 'whisper_cpp' as const,
-      selection: {
-        familyId: 'whisper' as const,
-        kind: 'catalog_model' as const,
-        modelId: 'small',
-        runtimeId: 'whisper_cpp' as const,
-      },
-      sizeBytes: null,
-      status: 'missing' as const,
-      type: 'model_probe_result' as const,
-    };
-    const event = parseEventFrame(JSON.stringify(payload));
-
-    expect(event).toEqual({ ...payload, mergedCapabilities: null });
-  });
-
-  it('rejects non-object JSON in parseEventFrame', () => {
-    expect(() => parseEventFrame('"hello"')).toThrow('Sidecar event must be a JSON object.');
-    expect(() => parseEventFrame('42')).toThrow('Sidecar event must be a JSON object.');
-  });
-
-  it('rejects missing type field in parseEventFrame', () => {
-    expect(() => parseEventFrame(JSON.stringify({}))).toThrow('event.type must be a string.');
-  });
-
-  it('rejects unknown event type in parseEventFrame', () => {
-    expect(() =>
-      parseEventFrame(
-        JSON.stringify({
-          type: 'nonexistent_event',
-        }),
-      ),
-    ).toThrow('Unsupported sidecar event type: nonexistent_event');
-  });
-
-  it('rejects unknown frame kind byte in FramedMessageParser.pushChunk', () => {
-    const parser = new FramedMessageParser(parseEventFrame);
-    const payload = new Uint8Array(4);
-    const frame = new Uint8Array(FRAME_HEADER_LENGTH + payload.byteLength);
-    const view = new DataView(frame.buffer);
-
-    frame[0] = 0xff;
-    view.setUint32(1, payload.byteLength, true);
-    frame.set(payload, FRAME_HEADER_LENGTH);
-
-    expect(() => parser.pushChunk(frame)).toThrow('Unsupported sidecar frame kind: 255');
-  });
-
-  it('rejects wrong-size payload in encodeAudioFrame', () => {
-    expect(() => encodeAudioFrame(new Uint8Array(1))).toThrow(
-      `Audio frames must be ${PCM_BYTES_PER_FRAME} bytes, received 1.`,
-    );
-  });
-
-  it('rejects transcript_ready with missing sessionId', () => {
-    expect(() =>
-      parseEventFrame(
-        JSON.stringify({
-          isFinal: true,
-          pauseMsBeforeUtterance: null,
-          processingDurationMs: 100,
-          revision: 0,
-          segments: [],
-          stageResults: [],
-          text: 'hello',
-          type: 'transcript_ready',
-          utteranceDurationMs: 500,
-          utteranceEndMsInSession: 900,
-          utteranceIndex: 0,
-          utteranceStartMsInSession: 0,
-          utteranceId: 'utt-1',
-          warnings: [],
-        }),
-      ),
-    ).toThrow('event.sessionId must be a string.');
-  });
-
-  it('rejects transcript_ready with missing utteranceId', () => {
-    expect(() =>
-      parseEventFrame(
-        JSON.stringify({
-          isFinal: true,
-          pauseMsBeforeUtterance: null,
-          processingDurationMs: 100,
-          revision: 0,
-          segments: [],
-          sessionId: 'session-1',
-          stageResults: [],
-          text: 'hello',
-          type: 'transcript_ready',
-          utteranceDurationMs: 500,
-          utteranceEndMsInSession: 500,
-          utteranceIndex: 0,
-          utteranceStartMsInSession: 0,
-          warnings: [],
-        }),
-      ),
-    ).toThrow('event.utteranceId must be a string.');
-  });
-
-  it('parses transcript_ready with pauseMsBeforeUtterance set to a number', () => {
-    const event = parseEventFrame(
-      JSON.stringify({
-        isFinal: true,
-        pauseMsBeforeUtterance: 320,
-        processingDurationMs: 100,
-        revision: 0,
-        segments: [],
-        sessionId: 'session-1',
-        stageResults: [],
-        text: 'hello',
-        type: 'transcript_ready',
-        utteranceDurationMs: 500,
-        utteranceEndMsInSession: 500,
-        utteranceIndex: 0,
-        utteranceStartMsInSession: 0,
-        utteranceId: 'utt-1',
-        warnings: [],
-      }),
-    );
-
-    expect(event.type).toBe('transcript_ready');
-    if (event.type === 'transcript_ready') {
-      expect(event.pauseMsBeforeUtterance).toBe(320);
-    }
-  });
-
-  it('parses transcript_ready with pauseMsBeforeUtterance explicitly null', () => {
-    const event = parseEventFrame(
-      JSON.stringify({
-        isFinal: true,
-        pauseMsBeforeUtterance: null,
-        processingDurationMs: 100,
-        revision: 0,
-        segments: [],
-        sessionId: 'session-1',
-        stageResults: [],
-        text: 'hello',
-        type: 'transcript_ready',
-        utteranceDurationMs: 500,
-        utteranceEndMsInSession: 500,
-        utteranceIndex: 0,
-        utteranceStartMsInSession: 0,
-        utteranceId: 'utt-1',
-        warnings: [],
-      }),
-    );
-
-    expect(event.type).toBe('transcript_ready');
-    if (event.type === 'transcript_ready') {
-      expect(event.pauseMsBeforeUtterance).toBeNull();
-    }
-  });
-
-  it('parses transcription_queue_changed event for each known tier', () => {
-    for (const tier of ['normal', 'catching_up', 'falling_behind', 'saturated'] as const) {
+  it.each(['normal', 'catching_up', 'falling_behind', 'saturated'] as const)(
+    'parses transcription_queue_changed at tier %s',
+    (tier) => {
       const event = parseEventFrame(
         JSON.stringify({
           queuedUtterances: 7,
@@ -348,243 +712,43 @@ describe('sidecar protocol', () => {
         tier,
         type: 'transcription_queue_changed',
       });
-    }
-  });
-
-  it('rejects transcription_queue_changed with an unknown tier', () => {
-    expect(() =>
-      parseEventFrame(
-        JSON.stringify({
-          queuedUtterances: 7,
-          sessionId: 'session-1',
-          tier: 'overheating',
-          type: 'transcription_queue_changed',
-        }),
-      ),
-    ).toThrow(/event\.tier must be one of/);
-  });
+    },
+  );
 
   it('parses session_stopped with the queue_overload reason', () => {
-    const event = parseEventFrame(
-      JSON.stringify({
-        reason: 'queue_overload',
-        sessionId: 'session-1',
-        type: 'session_stopped',
-      }),
-    );
-
-    expect(event).toEqual({
+    expect(
+      parseEventFrame(
+        JSON.stringify({
+          reason: 'queue_overload',
+          sessionId: 'session-1',
+          type: 'session_stopped',
+        }),
+      ),
+    ).toEqual({
       reason: 'queue_overload',
       sessionId: 'session-1',
       type: 'session_stopped',
     });
   });
 
-  it('parses transcript_ready with stage history', () => {
-    const event = parseEventFrame(
-      JSON.stringify({
-        isFinal: true,
-        pauseMsBeforeUtterance: 250,
-        processingDurationMs: 125,
-        revision: 0,
-        segments: [],
-        sessionId: 'session-1',
-        stageResults: [
-          {
-            durationMs: 100,
-            isFinal: true,
-            payload: {
-              voiceActivity: {
-                audioEndMs: 1100,
-                audioStartMs: 100,
-                maxProbability: 0.98,
-                meanProbability: 0.72,
-                speechEndMs: 980,
-                speechStartMs: 180,
-                unvoicedMs: 200,
-                voicedMs: 800,
-              },
-            },
-            revisionIn: 0,
-            revisionOut: 0,
-            stageId: 'engine',
-            status: { kind: 'ok' },
-          },
-          {
-            durationMs: 0,
-            isFinal: true,
-            revisionIn: 0,
-            stageId: 'punctuation',
-            status: { kind: 'skipped', reason: 'no_action' },
-          },
-        ],
-        text: 'hello world',
-        type: 'transcript_ready',
-        utteranceDurationMs: 900,
-        utteranceEndMsInSession: 900,
-        utteranceIndex: 0,
-        utteranceStartMsInSession: 0,
-        utteranceId: 'utt-1',
-        warnings: [],
-      }),
-    );
-
-    expect(event).toEqual({
-      isFinal: true,
-      pauseMsBeforeUtterance: 250,
-      processingDurationMs: 125,
-      revision: 0,
-      segments: [],
-      sessionId: 'session-1',
-      stageResults: [
-        {
-          durationMs: 100,
-          isFinal: true,
-          payload: {
-            voiceActivity: {
-              audioEndMs: 1100,
-              audioStartMs: 100,
-              maxProbability: 0.98,
-              meanProbability: 0.72,
-              speechEndMs: 980,
-              speechStartMs: 180,
-              unvoicedMs: 200,
-              voicedMs: 800,
-            },
-          },
-          revisionIn: 0,
-          revisionOut: 0,
-          stageId: 'engine',
-          status: { kind: 'ok' },
-        },
-        {
-          durationMs: 0,
-          isFinal: true,
-          revisionIn: 0,
-          stageId: 'punctuation',
-          status: { kind: 'skipped', reason: 'no_action' },
-        },
-      ],
-      text: 'hello world',
-      type: 'transcript_ready',
-      utteranceDurationMs: 900,
-      utteranceEndMsInSession: 900,
-      utteranceIndex: 0,
-      utteranceStartMsInSession: 0,
-      utteranceId: 'utt-1',
-      warnings: [],
-    });
-  });
-
-  it('parses context_request event', () => {
-    const event = parseEventFrame(
-      JSON.stringify({
-        budgetChars: 1024,
-        correlationId: 'corr-1',
-        sessionId: 'session-1',
-        type: 'context_request',
-        utteranceId: 'utt-1',
-      }),
-    );
-
-    expect(event).toEqual({
+  it('parses context_request preserving correlation and budget', () => {
+    expect(
+      parseEventFrame(
+        JSON.stringify({
+          budgetChars: 1024,
+          correlationId: 'corr-1',
+          sessionId: 'session-1',
+          type: 'context_request',
+          utteranceId: 'utt-1',
+        }),
+      ),
+    ).toEqual({
       budgetChars: 1024,
       correlationId: 'corr-1',
       sessionId: 'session-1',
       type: 'context_request',
       utteranceId: 'utt-1',
     });
-  });
-
-  it('serializes context_response with a context window', () => {
-    const context: ContextWindow = {
-      budgetChars: 512,
-      sources: [
-        {
-          endRevision: 0,
-          kind: 'session_utterance',
-          text: 'hello',
-          truncated: false,
-          utteranceId: 'utt-prior',
-        },
-      ],
-      text: 'hello',
-      truncated: false,
-    };
-
-    const command = createContextResponseCommand('corr-1', context);
-    const frame = encodeJsonFrame(command);
-    const payload = readPayload(frame) as Record<string, unknown>;
-
-    expect(payload).toEqual({
-      context,
-      correlationId: 'corr-1',
-      type: 'context_response',
-    });
-  });
-
-  it('serializes context_response with a null context', () => {
-    const frame = encodeJsonFrame(createContextResponseCommand('corr-1', null));
-
-    expect(readPayload(frame)).toEqual({
-      context: null,
-      correlationId: 'corr-1',
-      type: 'context_response',
-    });
-  });
-
-  it('parses mixed JSON and binary frames across chunk boundaries', () => {
-    const parser = new FramedMessageParser(parseEventFrame);
-    const transcriptFrame = encodeJsonFrame({
-      isFinal: true,
-      pauseMsBeforeUtterance: null,
-      processingDurationMs: 125,
-      revision: 0,
-      segments: [],
-      sessionId: 'session-1',
-      stageResults: [],
-      text: 'hello world',
-      type: 'transcript_ready',
-      utteranceDurationMs: 900,
-      utteranceEndMsInSession: 900,
-      utteranceIndex: 0,
-      utteranceStartMsInSession: 0,
-      utteranceId: 'utt-1',
-      warnings: [],
-    });
-    const audioFrame = encodeAudioFrame(new Uint8Array(PCM_BYTES_PER_FRAME).fill(3));
-    const combined = new Uint8Array(transcriptFrame.byteLength + audioFrame.byteLength);
-
-    combined.set(transcriptFrame, 0);
-    combined.set(audioFrame, transcriptFrame.byteLength);
-
-    const frames = [
-      ...parser.pushChunk(combined.slice(0, 17)),
-      ...parser.pushChunk(combined.slice(17)),
-    ];
-
-    expect(frames).toHaveLength(2);
-    expect(frames[0]).toEqual({
-      envelope: {
-        isFinal: true,
-        pauseMsBeforeUtterance: null,
-        processingDurationMs: 125,
-        revision: 0,
-        segments: [],
-        sessionId: 'session-1',
-        stageResults: [],
-        text: 'hello world',
-        type: 'transcript_ready',
-        utteranceDurationMs: 900,
-        utteranceEndMsInSession: 900,
-        utteranceIndex: 0,
-        utteranceStartMsInSession: 0,
-        utteranceId: 'utt-1',
-        warnings: [],
-      },
-      kind: JSON_FRAME_KIND,
-    });
-    expect(frames[1]?.kind).toBe(AUDIO_FRAME_KIND);
   });
 });
 

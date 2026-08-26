@@ -1,154 +1,117 @@
-# Local Dictation
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/brittain9/speech-kit-obsidian-plugin/main/docs/media/hero-dark.png">
+  <img src="https://raw.githubusercontent.com/brittain9/speech-kit-obsidian-plugin/main/docs/media/hero-light.png" alt="Speech Kit — Speech and language toolkit for Obsidian" width="100%">
+</picture>
 
-Run private, GPU-accelerated dictation directly in Obsidian with Whisper, Cohere Transcribe, Silero VAD, and optional LLM processing via Ollama.
+Dictate live. Transcribe meetings. Translate text. Listen to notes. One plugin inside the editor where your notes already live.
 
-## Features
-- **Cross-platform design** — built for desktop Obsidian on macOS, Linux, and Windows.
-- **Cohere Transcribe support** — use a [Hugging Face Open ASR Leaderboard](https://huggingface.co/spaces/hf-audio/open_asr_leaderboard)-topping speech recognition model directly inside Obsidian.
-- **Whisper support** — choose a mature offline transcription model with a wide range of size and performance options.
-- **Silero v6 voice activity detection** — [enterprise-grade neural VAD](https://github.com/snakers4/silero-vad) for accurate, real-time speech boundary detection.
-- **Optional LLM processing via Ollama** — clean up dictated text with a local LLM when you want an extra pass.
-- **One-click model management** — browse, download, and remove models from inside the plugin.
-- **Hardware acceleration** — supports Metal on macOS and CUDA on Linux/Windows with Turing-or-newer NVIDIA GPUs.
-- **Obsidian-native experience** — integrates cleanly with the app through native settings, commands, and interface elements.
-- **English-first** — optimized for English; other languages supported where engines allow
-- **Privacy-first** — transcription happens locally, with no cloud processing, no telemetry, and no account required for model downloads.
-- **Offline after setup** — only model downloads require a network connection
+> **Local Dictation is now Speech Kit.** It is the same plugin with the same local-first foundation, now with a name that fits what it has become. Existing installs, settings, and hotkeys carry over automatically.
 
-## Platform Support
+[Install Speech Kit from Obsidian Community Plugins](https://obsidian.md/plugins?id=local-dictation)
 
-| Platform | Support Status | Hardware Acceleration |
-|---|---|---|
-| macOS | Supported | Metal support for Whisper. |
-| Linux Native | Supported | CUDA support for Whisper and Cohere on Turing-or-newer NVIDIA GPUs. |
-| Linux Flatpak | Supported | CUDA supported on Turing-or-newer NVIDIA GPUs - [Flatpak GPU setup](docs/guides/linux-flatpak-gpu-setup.md). |
-| Windows | Supported | CUDA support for Whisper and Cohere on Turing-or-newer NVIDIA GPUs. [Windows CUDA setup](docs/guides/windows-cuda-setup.md). |
+## What it does
 
-## Runtime Dependencies
+- 🎤 **Speech:** Dictate with live streaming text, or capture higher-accuracy transcripts from meetings, calls, and other audio.
+- 🔊 **Voice:** Listen to your notes with natural voices.
+- 🌍 **Language:** Dictate in ten languages and translate notes locally across eight.
+- 🧠 **Models:** Choose from a managed catalog of speech, voice, and translation models, with optional LLM text tools.
 
-The CPU sidecar has no GPU runtime dependencies. On macOS, Whisper can use Metal through system frameworks; CUDA, cuDNN, and the CUDA Toolkit are not required.
+<p align="center">
+  <img src="https://raw.githubusercontent.com/brittain9/speech-kit-obsidian-plugin/main/docs/media/speech-kit-translation-demo.gif" alt="Speech Kit translating an Obsidian note from English to Spanish and replacing the original text" width="560">
+</p>
 
-Linux and Windows CUDA acceleration requires an NVIDIA Turing-generation or newer GPU, meaning compute capability 7.5 or newer. In consumer GPU terms, that means RTX 20-series / GTX 16-series or newer. CUDA release archives bundle the CUDA runtime libraries used by Whisper CUDA, so release users do not need to install the CUDA Toolkit or `nvcc`.
+## Why Speech Kit?
 
-Use an NVIDIA driver compatible with CUDA 12.9. NVIDIA's CUDA 12.9 release notes list Linux driver 575.51.03+ and Windows driver 576.02+ as the toolkit release baseline. Cohere CUDA additionally requires cuDNN 9 runtime libraries; when cuDNN is not available, Cohere falls back to CPU with an explicit runtime status.
+Speech and language tools are usually fragmented. One tool handles dictation. Another transcribes meetings. Another reads text aloud. Another translates. Each brings its own settings, models, and hotkeys, and often its own cloud account, subscription, and privacy policy.
 
-For the full platform contract, see [Platform Runtime Dependencies](docs/release/platform-runtime-dependencies.md). NVIDIA references: [CUDA 12.9 release notes](https://docs.nvidia.com/cuda/archive/12.9.0/cuda-toolkit-release-notes/index.html) and [CUDA GPU compute capability](https://developer.nvidia.com/cuda-gpus).
+Speech Kit replaces that stack with one consistent workflow inside Obsidian: one model manager, one settings surface, and one set of commands.
 
-## Quick Start
+Dictate an idea. Capture a meeting. Translate a passage. Listen to a note. Refine the result. It all happens inside the editor where your notes already live.
 
-### Users
+## Choose the models that fit your workflow
 
-The community-plugin package contains only Obsidian's three plugin files:
+Speech Kit is not tied to one speech engine or hosted API. It manages a growing catalog of models. Install only what you need, mix and match, and change models as your language, hardware, or priorities change.
 
-- `main.js`
-- `manifest.json`
-- `styles.css`
+| You want | Choose |
+| --- | --- |
+| Words on screen while you speak | Moonshine streaming models |
+| Multilingual live transcription | Nemotron 3.5 ASR |
+| The most accurate transcripts | Whisper Large V3 Turbo, Cohere Transcribe, and other batch models |
+| Natural local voices | Pocket TTS or Supertonic 3 |
+| Fast offline translation | Firefox Translations |
 
-After those files are installed, open `Settings -> Local Dictation` and install the sidecar from the plugin settings. The plugin downloads the sidecar archive from the GitHub Release matching its own `manifest.version`, verifies it, and stores it under the plugin's `bin/` directory. Then click `Manage models`, install a model, open a note, and start dictation from the ribbon button or `Local Dictation: Start Dictation Session`.
+The setup wizard installs the native engine and your first speech model. From there, Speech Kit manages the downloads and you choose how you work.
 
-The sidecar and model downloads are separate on purpose: Obsidian installs the plugin UI, the plugin installs the native sidecar, and the sidecar manages model downloads. Transcription runs locally after setup.
+## Dictate, transcribe, translate, listen, and refine
 
-### Manual Release Install
+**Dictate.** Streaming words appear and revise in place while you speak. Finished text lands as Markdown at your cursor. Switch to a batch model when accuracy after each pause matters more than immediacy.
 
-For manual testing of a published release, download these files from the same GitHub Release tag and place them in `<vault>/.obsidian/plugins/local-dictation/`:
+**Transcribe.** Combine your microphone with system audio to capture meetings, calls, interviews, and videos. Add timestamps and optional on-device speaker labels.
 
-```text
-main.js
-manifest.json
-styles.css
-```
+**Translate.** Translate a selection or a whole note between English and seven other languages. Preview the result before replacing your text, inserting it into the note, or copying it. One local model pack covers every supported direction.
 
-Restart Obsidian or reload plugins, enable `Local Dictation`, then use the settings page to download the sidecar and models.
+**Listen.** Read any note aloud with natural local voices. Control the voice, speed, and playback without leaving Obsidian.
 
-Do not mix plugin files from one version with sidecar assets from another version. Sidecar downloads are version-locked to `manifest.version`, not to the latest GitHub Release.
+**Refine.** Optional LLM tools can clean up, summarize, restructure, or transform text with your own prompts.
 
-## Development
+## One toolkit across platforms
 
-### Prerequisites
+Many speech apps are limited to one operating system, one model, or one part of the workflow. Speech Kit brings the same toolkit to macOS, Windows, and Linux, with hardware acceleration and system-audio capture where available.
 
-- Node.js `24.14.1`, npm `11.12.1`
-- TypeScript `6.0.2`
-- Rust `1.94.1`
-- CMake and a platform C/C++ toolchain for native sidecar builds
-- CUDA Toolkit `12.9` with `nvcc` for Linux/Windows CUDA sidecar builds only
-- cuDNN `9.x` runtime libraries for local Cohere CUDA verification only
+| Platform | Architecture | Acceleration | System audio |
+| --- | --- | --- | --- |
+| macOS | Apple silicon | Metal for Whisper | macOS 14.2 or later |
+| Windows | x86-64 | Optional NVIDIA CUDA | Supported |
+| Linux | x86-64 glibc | Optional NVIDIA CUDA | PulseAudio or PipeWire |
 
-Versions are pinned in `package.json` (`engines`, `packageManager`) and `rust-toolchain.toml`. If you use [mise](https://mise.jdx.dev), `mise install` will set up the Node and Rust toolchains automatically.
+Choose your platform. Choose your models. Keep one workflow inside Obsidian.
 
-The CUDA Toolkit is a build-from-source dependency. Published Linux/Windows CUDA sidecar archives bundle the CUDA runtime libraries needed by Whisper CUDA; release users need only a Turing-or-newer NVIDIA GPU and a compatible NVIDIA driver. Cohere CUDA additionally needs cuDNN `9.x` runtime libraries installed until cuDNN redistribution is reviewed.
+## Getting started
 
-### Project Structure
+1. Install **Speech Kit** from [Community Plugins](https://obsidian.md/plugins?id=local-dictation).
+2. Follow the setup wizard to install the native engine and a speech model.
+3. Select **Try dictation now**, or start from the ribbon, command palette, or a hotkey.
 
-The plugin has two runtime boundaries: a TypeScript Obsidian plugin in `src/` and a Rust native sidecar in `native/`. See [CONTRIBUTING.md](CONTRIBUTING.md) for architecture details.
+Dictation, transcription, translation, and read aloud require no account, API key, usage credits, or cloud service. Once their models are installed, they continue working offline.
 
-### Setup
+Optional LLM text tools are separate. You can connect a local or remote provider when you choose to use them.
 
-Install dependencies:
+## Language support
 
-```sh
-npm install
-```
+Each feature is served by a different model, so coverage is tracked per feature rather than as a single list.
 
-For fast frontend iteration, symlink or clone this repo into `<vault>/.obsidian/plugins/local-dictation`, run watch mode, and reload Obsidian after rebuilds:
+| Language | Transcription | Live dictation | Read aloud | Translation | Interface |
+| --- | :-: | :-: | :-: | :-: | :-: |
+| English, Spanish, German, French, Portuguese, Italian, Dutch, Japanese | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Croatian | ✅ | ✅ | ✅ | — | ✅ |
+| Serbian | ✅ | — | — | — | — |
 
-```sh
-npm run build:sidecar
-npm run dev
-```
+✅ supported · — not yet available
 
-For release-style local testing without cutting a GitHub Release, build the output and copy it into a test vault:
+Transcription coverage also depends on the model you select: multilingual models cover the full set above, while some smaller or specialized models are English-only. Translation runs through English in either direction, so every supported pair has English on one side.
 
-```sh
-npm run build:frontend
-npm run build:sidecar
-npm run install:dev -- --vault ~/Documents/test-vault-stt --sidecars --enable
-```
+## Local-first, private by default
 
-This installs the built `main.js`, `manifest.json`, and `styles.css` into the vault. With `--sidecars`, it also copies locally built sidecars into the plugin-local `bin/cpu` and `bin/cuda` layout. That lets you test the installed-plugin path without publishing a GitHub Release first.
+Speech Kit works without accounts, subscriptions, or required cloud services.
 
-For Linux CUDA testing:
+* **Your work stays on your machine.** Dictation, transcription, read aloud, and translation run locally and continue working offline once their models are installed.
+* **No account, telemetry, or metered usage.** No API key, credit card, subscription, or usage credits to monitor.
+* **LLM tools are optional.** Add flexible language processing to your workflow using a local model or a remote provider you choose. Text leaves your device only when you explicitly use a remote provider, and audio is never uploaded.
+* **Choose what works for you.** Install high-quality models suited to your language, hardware, and workflow.
+* **Transparent and open.** Downloads are explicit, third-party licenses are documented, and Speech Kit is open source.
 
-```sh
-npm run build:frontend
-npm run build:sidecar
-npm run build:sidecar:cuda
-npm run install:dev -- --vault ~/Documents/test-vault-stt --sidecars --enable
-```
+## Support development
 
-For macOS testing, `npm run build:sidecar` builds the Metal-capable sidecar automatically.
+If Speech Kit is useful to you, please support development:
 
-### Scripts
+<a href="https://buymeacoffee.com/alexbrittaq"><img src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png" alt="Buy Me a Coffee" width="217"></a>
 
-**Build:**
-```sh
-npm run build            # build sidecar + bundle plugin
-npm run build:frontend   # bundle plugin only (skip sidecar rebuild)
-npm run build:sidecar    # build sidecar only
-npm run build:sidecar:cuda            # Linux CUDA sidecar
-npm run build:sidecar:cuda:windows    # Windows CUDA sidecar
-npm run dev              # watch mode for plugin
-npm run install:dev -- --vault <vault> --sidecars --enable
-```
+## Development and project links
 
-**Test and check:**
-```sh
-npm run test             # TypeScript unit tests
-npm run typecheck        # type checking
-npm run lint             # Biome linting
-npm run check            # full quality gate (TS + Rust)
-```
+Speech Kit pairs a TypeScript plugin with a Rust native sidecar. See [CONTRIBUTING.md](CONTRIBUTING.md) for its architecture, setup, and development workflow.
 
-`npm run check` is the gate that must pass before a PR.
+[Community Plugin](https://obsidian.md/plugins?id=local-dictation) · [Latest release](https://github.com/brittain9/speech-kit-obsidian-plugin/releases/latest)
 
-**Format:**
-```sh
-npm run format           # auto-format with Biome
-```
+[Issues](https://github.com/brittain9/speech-kit-obsidian-plugin/issues) · [License](LICENSE)
 
-### Contributing
-
-See [CONTRIBUTING.md](CONTRIBUTING.md) for branching conventions, PR workflow, and architecture overview.
-
-## License
-
-MIT. See [LICENSE](LICENSE).
+Third-party component and model licenses are documented in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) and shown before model download.

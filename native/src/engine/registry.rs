@@ -2,10 +2,11 @@ use std::collections::HashMap;
 use std::path::Path;
 
 use crate::engine::capabilities::{
-    EngineCapabilities, ModelFamilyCapabilities, ModelFamilyId, RequestWarning, RuntimeId,
+    EngineCapabilities, LanguageSupport, ModelFamilyCapabilities, ModelFamilyId, RequestWarning,
+    RuntimeId,
 };
 use crate::engine::traits::{ModelFamilyAdapter, Runtime};
-use crate::transcription::TranscriptionRequest;
+use crate::transcription::{TranscriptionError, TranscriptionRequest};
 
 /// Registered runtimes and family adapters. Entries missing from this map are
 /// feature-gated off at compile time; callers surface "unsupported_engine" so
@@ -21,6 +22,21 @@ impl EngineRegistry {
         #[allow(unused_mut)]
         let mut registry = Self::default();
 
+        registry.register_runtime(Box::new(
+            crate::runtimes::bergamot_wasm::BergamotWasmRuntime::probe(),
+        ));
+        registry.register_adapter(Box::new(
+            crate::adapters::firefox_translations::FirefoxTranslationsAdapter,
+        ));
+
+        #[cfg(feature = "engine-hy-mt")]
+        {
+            registry.register_runtime(Box::new(
+                crate::runtimes::llama_cpp::LlamaCppRuntime::probe(),
+            ));
+            registry.register_adapter(Box::new(crate::adapters::tencent_hy_mt::TencentHyMtAdapter));
+        }
+
         #[cfg(feature = "engine-whisper")]
         {
             registry.register_runtime(Box::new(
@@ -29,17 +45,32 @@ impl EngineRegistry {
             registry.register_adapter(Box::new(crate::adapters::whisper::WhisperAdapter));
         }
 
-        // OnnxRuntime is registered inside the Cohere gate because Cohere is the
-        // only ONNX family today. When a second ONNX family lands, lift the
-        // runtime registration to `#[cfg(any(engine-cohere-transcribe, engine-<new>))]`
-        // so it registers once regardless of which ONNX families are enabled.
+        #[cfg(any(
+            feature = "engine-cohere-transcribe",
+            feature = "engine-moonshine",
+            feature = "engine-nemotron-asr",
+            feature = "engine-pocket-tts",
+            feature = "engine-supertonic"
+        ))]
+        registry.register_runtime(Box::new(crate::runtimes::onnx::OnnxRuntime::probe()));
+
         #[cfg(feature = "engine-cohere-transcribe")]
         {
-            registry.register_runtime(Box::new(crate::runtimes::onnx::OnnxRuntime::probe()));
             registry.register_adapter(Box::new(
                 crate::adapters::cohere_transcribe::CohereTranscribeAdapter,
             ));
         }
+
+        #[cfg(feature = "engine-moonshine")]
+        registry.register_adapter(Box::new(crate::adapters::moonshine::MoonshineAdapter));
+
+        #[cfg(feature = "engine-nemotron-asr")]
+        registry.register_adapter(Box::new(crate::adapters::nemotron_asr::NemotronAsrAdapter));
+
+        #[cfg(feature = "engine-pocket-tts")]
+        registry.register_adapter(Box::new(crate::adapters::pocket_tts::PocketTtsAdapter));
+        #[cfg(feature = "engine-supertonic")]
+        registry.register_adapter(Box::new(crate::adapters::supertonic::SupertonicAdapter));
 
         registry
     }
@@ -110,6 +141,17 @@ impl EngineRegistry {
             None => Err(missing_adapter_error(runtime_id, family_id)),
         }
     }
+
+    pub fn probe_model_and_language_support(
+        &self,
+        runtime_id: RuntimeId,
+        family_id: ModelFamilyId,
+        path: &Path,
+    ) -> Result<LanguageSupport, TranscriptionError> {
+        self.adapter(runtime_id, family_id)
+            .ok_or_else(|| missing_adapter_error(runtime_id, family_id))?
+            .probe_model_and_language_support(path)
+    }
 }
 
 pub fn missing_adapter_error(
@@ -160,7 +202,7 @@ mod tests {
     use super::{EngineRegistry, RequestWarning, apply_capability_gates, missing_adapter_error};
     use crate::engine::capabilities::{
         AcceleratorAvailability, AcceleratorId, LanguageSupport, ModelFamilyCapabilities,
-        ModelFamilyId, ModelFormat, RuntimeCapabilities, RuntimeId,
+        ModelFamilyId, ModelFormat, ModelTask, RuntimeCapabilities, RuntimeId,
     };
     use crate::engine::traits::{LoadedModel, ModelFamilyAdapter, Runtime};
     use crate::protocol::ContextWindow;
@@ -233,14 +275,20 @@ mod tests {
 
     fn whisper_family_caps() -> ModelFamilyCapabilities {
         ModelFamilyCapabilities {
+            task: ModelTask::Stt,
+            supports_hardware_acceleration: true,
+            available_voices: Vec::new(),
+            supports_speed_control: false,
+            output_sample_rate: None,
             supports_segment_timestamps: true,
             supports_word_timestamps: false,
             supports_initial_prompt: true,
+            supports_streaming: false,
             supports_language_selection: false,
+            supports_automatic_language_detection: false,
             supported_languages: LanguageSupport::EnglishOnly,
             max_audio_duration_secs: None,
             produces_punctuation: true,
-            live_partial_strategies: Vec::new(),
         }
     }
 
@@ -348,22 +396,39 @@ mod tests {
         assert!(details.contains("whisper"));
     }
 
+    #[test]
+    fn moonshine_without_compiled_adapter_reports_unsupported_engine() {
+        let err = missing_adapter_error(RuntimeId::OnnxRuntime, ModelFamilyId::Moonshine);
+
+        assert_eq!(err.code, "unsupported_engine");
+        let details = err.details.expect("details set");
+        assert!(details.contains("onnx_runtime"));
+        assert!(details.contains("moonshine"));
+    }
+
     fn capabilities(supports_initial_prompt: bool) -> ModelFamilyCapabilities {
         ModelFamilyCapabilities {
+            task: ModelTask::Stt,
+            supports_hardware_acceleration: true,
+            available_voices: Vec::new(),
+            supports_speed_control: false,
+            output_sample_rate: None,
             supports_segment_timestamps: true,
             supports_word_timestamps: false,
             supports_initial_prompt,
+            supports_streaming: false,
             supports_language_selection: true,
+            supports_automatic_language_detection: false,
             supported_languages: LanguageSupport::All,
             max_audio_duration_secs: None,
             produces_punctuation: true,
-            live_partial_strategies: Vec::new(),
         }
     }
 
     fn request_with_context(context: Option<ContextWindow>) -> TranscriptionRequest {
         TranscriptionRequest {
             audio_samples: vec![0.0; 16_000],
+            detailed_timestamps_enabled: false,
             gpu_config: GpuConfig::default(),
             language: "en".to_string(),
             model_file_path: PathBuf::from("/tmp/model.bin"),

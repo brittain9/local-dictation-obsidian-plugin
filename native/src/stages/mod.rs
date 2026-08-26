@@ -9,6 +9,7 @@ use crate::transcription::{SegmentDiagnostics, Transcript};
 
 mod hallucination_filter;
 
+/// Boolean opt-out for stages that always have a runtime config to consume.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct StageEnablement {
     pub hallucination_filter: bool,
@@ -23,12 +24,15 @@ impl Default for StageEnablement {
 }
 
 pub struct StageContext<'a> {
+    pub cancel_rx: &'a tokio::sync::watch::Receiver<bool>,
     pub context: Option<&'a crate::protocol::ContextWindow>,
     pub family_capabilities: &'a ModelFamilyCapabilities,
-    pub stage_enabled: &'a StageEnablement,
     pub is_final: bool,
+    pub language: &'a str,
     pub pause_ms_before_utterance: Option<u64>,
     pub segment_diagnostics: &'a [SegmentDiagnostics],
+    pub stage_enabled: &'a StageEnablement,
+    pub tokio_runtime: &'a tokio::runtime::Runtime,
     pub vad_probabilities: &'a [f32],
     pub voice_activity: &'a VoiceActivityEvidence,
 }
@@ -56,6 +60,9 @@ pub trait StageProcessor: Send + Sync {
     fn needs_context(&self) -> bool {
         false
     }
+    fn collapses_segment_boundaries(&self) -> bool {
+        false
+    }
     fn process(&self, transcript: &Transcript, ctx: &StageContext<'_>) -> StageProcess;
 }
 
@@ -63,12 +70,6 @@ pub trait StageProcessor: Send + Sync {
 /// engine stage outcome is appended separately by `assemble_transcript`.
 pub fn post_engine_processors() -> Vec<Box<dyn StageProcessor>> {
     vec![Box::new(hallucination_filter::HallucinationFilterStage)]
-}
-
-pub fn any_registered_stage_needs_context() -> bool {
-    post_engine_processors()
-        .iter()
-        .any(|processor| processor.needs_context())
 }
 
 pub fn run_post_engine(
@@ -104,6 +105,7 @@ pub fn run_post_engine(
                 &segments,
                 &transcript.segments,
                 ctx.voice_activity.duration_ms(),
+                processor.collapses_segment_boundaries(),
             ) {
                 Ok(()) => {
                     let revision_out = revision_in.saturating_add(1);
@@ -112,7 +114,7 @@ pub fn run_post_engine(
                     StageOutcome {
                         duration_ms,
                         is_final: ctx.is_final,
-                        payload,
+                        payload: stage_payload_with_duration(payload, duration_ms),
                         revision_in,
                         revision_out: Some(revision_out),
                         stage_id,
@@ -122,7 +124,7 @@ pub fn run_post_engine(
                 Err(error) => StageOutcome {
                     duration_ms,
                     is_final: ctx.is_final,
-                    payload,
+                    payload: stage_payload_with_duration(payload, duration_ms),
                     revision_in,
                     revision_out: None,
                     stage_id,
@@ -132,7 +134,7 @@ pub fn run_post_engine(
             Ok(StageProcess::Skipped { reason, payload }) => StageOutcome {
                 duration_ms,
                 is_final: ctx.is_final,
-                payload,
+                payload: stage_payload_with_duration(payload, duration_ms),
                 revision_in,
                 revision_out: None,
                 stage_id,
@@ -141,7 +143,7 @@ pub fn run_post_engine(
             Ok(StageProcess::Failed { error, payload }) => StageOutcome {
                 duration_ms,
                 is_final: ctx.is_final,
-                payload,
+                payload: stage_payload_with_duration(payload, duration_ms),
                 revision_in,
                 revision_out: None,
                 stage_id,
@@ -164,12 +166,28 @@ pub fn run_post_engine(
     }
 }
 
+/// Object payloads always receive the measured wall-clock duration after the
+/// stage returns. Stages do not need to emit a `durationMs` placeholder.
+fn stage_payload_with_duration(
+    payload: Option<serde_json::Value>,
+    duration_ms: u64,
+) -> Option<serde_json::Value> {
+    let mut payload = payload?;
+
+    if let serde_json::Value::Object(ref mut object) = payload {
+        object.insert("durationMs".to_string(), serde_json::json!(duration_ms));
+    }
+
+    Some(payload)
+}
+
 /// Text stages may drop segments or rewrite segment text, but must not move
 /// timing boundaries, overlap segments, or run past the utterance duration.
 fn validate_stage_segments(
     new_segments: &[TranscriptSegment],
     prior_segments: &[TranscriptSegment],
     utterance_duration_ms: u64,
+    boundary_collapsing: bool,
 ) -> Result<(), String> {
     for segment in new_segments {
         if segment.start_ms > segment.end_ms {
@@ -184,6 +202,32 @@ fn validate_stage_segments(
                 segment.start_ms, segment.end_ms, utterance_duration_ms,
             ));
         }
+
+        for word in &segment.words {
+            if word.text.trim().is_empty() {
+                return Err("word timestamp has empty text".to_string());
+            }
+            if word.start_ms > word.end_ms {
+                return Err(format!(
+                    "word {}-{} ms has start past end",
+                    word.start_ms, word.end_ms,
+                ));
+            }
+            if word.start_ms < segment.start_ms || word.end_ms > segment.end_ms {
+                return Err(format!(
+                    "word {}-{} ms falls outside segment {}-{} ms",
+                    word.start_ms, word.end_ms, segment.start_ms, segment.end_ms,
+                ));
+            }
+        }
+        for window in segment.words.windows(2) {
+            if window[1].start_ms < window[0].end_ms {
+                return Err(format!(
+                    "words {}-{} ms and {}-{} ms overlap or are out of order",
+                    window[0].start_ms, window[0].end_ms, window[1].start_ms, window[1].end_ms,
+                ));
+            }
+        }
     }
 
     for window in new_segments.windows(2) {
@@ -197,15 +241,17 @@ fn validate_stage_segments(
         }
     }
 
-    for segment in new_segments {
-        let preserved = prior_segments
-            .iter()
-            .any(|prior| prior.start_ms == segment.start_ms && prior.end_ms == segment.end_ms);
-        if !preserved {
-            return Err(format!(
-                "segment {}-{} ms introduces timing boundaries not in the prior revision",
-                segment.start_ms, segment.end_ms,
-            ));
+    if !boundary_collapsing {
+        for segment in new_segments {
+            let preserved = prior_segments
+                .iter()
+                .any(|prior| prior.start_ms == segment.start_ms && prior.end_ms == segment.end_ms);
+            if !preserved {
+                return Err(format!(
+                    "segment {}-{} ms introduces timing boundaries not in the prior revision",
+                    segment.start_ms, segment.end_ms,
+                ));
+            }
         }
     }
 
@@ -216,21 +262,27 @@ fn validate_stage_segments(
 mod tests {
     use super::*;
     use crate::audio_metadata::VoiceActivityEvidence;
-    use crate::engine::capabilities::{LanguageSupport, ModelFamilyCapabilities};
+    use crate::engine::capabilities::{LanguageSupport, ModelFamilyCapabilities, ModelTask};
     use crate::protocol::{TimestampGranularity, TimestampSource, TranscriptSegment};
     use serde_json::json;
     use uuid::Uuid;
 
     fn whisper_caps() -> ModelFamilyCapabilities {
         ModelFamilyCapabilities {
+            task: ModelTask::Stt,
+            supports_hardware_acceleration: true,
+            available_voices: Vec::new(),
+            supports_speed_control: false,
+            output_sample_rate: None,
             supports_segment_timestamps: true,
             supports_word_timestamps: false,
             supports_initial_prompt: true,
+            supports_streaming: false,
             supports_language_selection: false,
+            supports_automatic_language_detection: false,
             supported_languages: LanguageSupport::EnglishOnly,
             max_audio_duration_secs: None,
             produces_punctuation: true,
-            live_partial_strategies: Vec::new(),
         }
     }
 
@@ -240,10 +292,12 @@ mod tests {
             revision: 0,
             segments: vec![TranscriptSegment {
                 end_ms: 1_000,
+                speaker: None,
                 start_ms: 0,
                 text: "hello".to_string(),
                 timestamp_granularity: TimestampGranularity::Segment,
                 timestamp_source: TimestampSource::Engine,
+                words: Vec::new(),
             }],
             stage_history: vec![StageOutcome {
                 duration_ms: 0,
@@ -275,6 +329,22 @@ mod tests {
         }
     }
 
+    struct BoundaryCollapsingProcessor {
+        result: fn() -> StageProcess,
+    }
+
+    impl StageProcessor for BoundaryCollapsingProcessor {
+        fn id(&self) -> StageId {
+            StageId::Punctuation
+        }
+        fn collapses_segment_boundaries(&self) -> bool {
+            true
+        }
+        fn process(&self, _transcript: &Transcript, _ctx: &StageContext<'_>) -> StageProcess {
+            (self.result)()
+        }
+    }
+
     struct PanicProcessor;
 
     impl StageProcessor for PanicProcessor {
@@ -290,13 +360,21 @@ mod tests {
         let caps = whisper_caps();
         let enablement = StageEnablement::default();
         let voice_activity = voice_activity();
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        let (_cancel_tx, cancel_rx) = tokio::sync::watch::channel(false);
         let ctx = StageContext {
+            cancel_rx: &cancel_rx,
             context: None,
             family_capabilities: &caps,
-            stage_enabled: &enablement,
-            pause_ms_before_utterance: None,
             is_final: true,
+            language: "en",
+            pause_ms_before_utterance: None,
             segment_diagnostics: &[],
+            stage_enabled: &enablement,
+            tokio_runtime: &runtime,
             vad_probabilities: &[],
             voice_activity: &voice_activity,
         };
@@ -307,13 +385,21 @@ mod tests {
         let caps = whisper_caps();
         let enablement = StageEnablement::default();
         let voice_activity = voice_activity();
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        let (_cancel_tx, cancel_rx) = tokio::sync::watch::channel(false);
         let ctx = StageContext {
+            cancel_rx: &cancel_rx,
             context: None,
             family_capabilities: &caps,
-            stage_enabled: &enablement,
-            pause_ms_before_utterance: None,
             is_final: false,
+            language: "en",
+            pause_ms_before_utterance: None,
             segment_diagnostics: &[],
+            stage_enabled: &enablement,
+            tokio_runtime: &runtime,
             vad_probabilities: &[],
             voice_activity: &voice_activity,
         };
@@ -352,10 +438,12 @@ mod tests {
             result: || StageProcess::Ok {
                 segments: vec![TranscriptSegment {
                     end_ms: 1_000,
+                    speaker: None,
                     start_ms: 0,
                     text: "filtered".to_string(),
                     timestamp_granularity: TimestampGranularity::Segment,
                     timestamp_source: TimestampSource::Engine,
+                    words: Vec::new(),
                 }],
                 payload: Some(json!({ "rule": "test" })),
             },
@@ -371,7 +459,13 @@ mod tests {
         assert_eq!(outcome.status, StageStatus::Ok);
         assert_eq!(outcome.revision_in, 0);
         assert_eq!(outcome.revision_out, Some(1));
-        assert_eq!(outcome.payload, Some(json!({ "rule": "test" })));
+        let payload = outcome.payload.as_ref().expect("payload");
+        assert_eq!(payload.get("rule"), Some(&json!("test")));
+        assert!(
+            payload
+                .get("durationMs")
+                .is_some_and(|value| value.is_u64())
+        );
     }
 
     #[test]
@@ -540,10 +634,12 @@ mod tests {
             result: || StageProcess::Ok {
                 segments: vec![TranscriptSegment {
                     end_ms: 5_000,
+                    speaker: None,
                     start_ms: 0,
                     text: "overrun".to_string(),
                     timestamp_granularity: TimestampGranularity::Segment,
                     timestamp_source: TimestampSource::Engine,
+                    words: Vec::new(),
                 }],
                 payload: Some(json!({ "tried": "overrun" })),
             },
@@ -559,7 +655,20 @@ mod tests {
         assert!(
             matches!(&outcome.status, StageStatus::Failed { error } if error.contains("utterance duration"))
         );
-        assert_eq!(outcome.payload, Some(json!({ "tried": "overrun" })));
+        let payload = outcome.payload.as_ref().expect("payload");
+        assert_eq!(payload.get("tried"), Some(&json!("overrun")));
+        assert!(
+            payload
+                .get("durationMs")
+                .is_some_and(|value| value.is_u64())
+        );
+    }
+
+    #[test]
+    fn stage_payload_with_duration_inserts_duration_without_placeholder() {
+        let payload = stage_payload_with_duration(Some(json!({ "rule": "test" })), 42);
+
+        assert_eq!(payload, Some(json!({ "durationMs": 42, "rule": "test" })));
     }
 
     #[test]
@@ -570,10 +679,12 @@ mod tests {
             result: || StageProcess::Ok {
                 segments: vec![TranscriptSegment {
                     end_ms: 800,
+                    speaker: None,
                     start_ms: 0,
                     text: "shrunk".to_string(),
                     timestamp_granularity: TimestampGranularity::Segment,
                     timestamp_source: TimestampSource::Engine,
+                    words: Vec::new(),
                 }],
                 payload: None,
             },
@@ -598,17 +709,21 @@ mod tests {
             segments: vec![
                 TranscriptSegment {
                     end_ms: 500,
+                    speaker: None,
                     start_ms: 0,
                     text: "first".to_string(),
                     timestamp_granularity: TimestampGranularity::Segment,
                     timestamp_source: TimestampSource::Engine,
+                    words: Vec::new(),
                 },
                 TranscriptSegment {
                     end_ms: 1_000,
+                    speaker: None,
                     start_ms: 500,
                     text: "second".to_string(),
                     timestamp_granularity: TimestampGranularity::Segment,
                     timestamp_source: TimestampSource::Engine,
+                    words: Vec::new(),
                 },
             ],
             stage_history: vec![StageOutcome {
@@ -626,10 +741,12 @@ mod tests {
             result: || StageProcess::Ok {
                 segments: vec![TranscriptSegment {
                     end_ms: 500,
+                    speaker: None,
                     start_ms: 0,
                     text: "first".to_string(),
                     timestamp_granularity: TimestampGranularity::Segment,
                     timestamp_source: TimestampSource::Engine,
+                    words: Vec::new(),
                 }],
                 payload: None,
             },
@@ -643,5 +760,57 @@ mod tests {
         assert_eq!(transcript.segments[0].text, "first");
         let outcome = transcript.stage_history.last().unwrap();
         assert_eq!(outcome.status, StageStatus::Ok);
+    }
+
+    #[test]
+    fn boundary_collapsing_stage_may_replace_prior_segment_boundaries() {
+        let mut transcript = Transcript {
+            segments: vec![
+                TranscriptSegment {
+                    end_ms: 400,
+                    speaker: None,
+                    start_ms: 0,
+                    text: "first".to_string(),
+                    timestamp_granularity: TimestampGranularity::Segment,
+                    timestamp_source: TimestampSource::Engine,
+                    words: Vec::new(),
+                },
+                TranscriptSegment {
+                    end_ms: 1_000,
+                    speaker: None,
+                    start_ms: 400,
+                    text: "second".to_string(),
+                    timestamp_granularity: TimestampGranularity::Segment,
+                    timestamp_source: TimestampSource::Engine,
+                    words: Vec::new(),
+                },
+            ],
+            ..fresh_transcript()
+        };
+        let processors: Vec<Box<dyn StageProcessor>> =
+            vec![Box::new(BoundaryCollapsingProcessor {
+                result: || StageProcess::Ok {
+                    segments: vec![TranscriptSegment {
+                        end_ms: 1_000,
+                        speaker: None,
+                        start_ms: 0,
+                        text: "collapsed".to_string(),
+                        timestamp_granularity: TimestampGranularity::Utterance,
+                        timestamp_source: TimestampSource::None,
+                        words: Vec::new(),
+                    }],
+                    payload: None,
+                },
+            })];
+
+        run(&mut transcript, processors);
+
+        assert_eq!(transcript.revision, 1);
+        assert_eq!(transcript.segments.len(), 1);
+        assert_eq!(transcript.segments[0].text, "collapsed");
+        assert_eq!(
+            transcript.stage_history.last().unwrap().status,
+            StageStatus::Ok
+        );
     }
 }

@@ -1,0 +1,19 @@
+{
+  "verified_at": "2026-06-07",
+  "source": {
+    "upstream_project": "WeSpeaker (wenet-e2e/wespeaker)",
+    "model": "wespeaker_en_voxceleb_resnet34_LM",
+    "release_url": "https://github.com/k2-fsa/sherpa-onnx/releases/tag/speaker-recongition-models",
+    "download_url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/speaker-recongition-models/wespeaker_en_voxceleb_resnet34_LM.onnx",
+    "license": "CC-BY-4.0"
+  },
+  "artifact": {
+    "filename": "speaker_embedding.onnx",
+    "original_filename": "wespeaker_en_voxceleb_resnet34_LM.onnx",
+    "sha256": "e9848563da86f263117134dfd7ad63c92355b37de492b55e325400c9d9c39012",
+    "size_bytes": 26530550,
+    "input": "feats: float32[1, num_frames, 80] — Kaldi 80-bin log-Mel filterbank with per-utterance mean normalisation",
+    "output": "embs: float32[1, 256] — speaker embedding"
+  },
+  "notes": "256-d ResNet34 speaker-embedding model, run via ort for the diarization stage. Filterbank features are computed in src/diarize/fbank.rs. Bundled (include_bytes!) so diarization works fully offline."
+}

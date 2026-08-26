@@ -1,0 +1,10 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "paths": {
+      "obsidian": ["./node_modules/obsidian-floor"]
+    }
+  },
+  "include": ["src/**/*.ts", "scripts/**/*.d.mts"],
+  "exclude": ["test/**/*.ts", "vitest.config.ts"]
+}

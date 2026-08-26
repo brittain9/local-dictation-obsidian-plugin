@@ -1,6 +1,7 @@
 node_modules/
 dist/
 coverage/
+artifacts/
 main.js
 main.js.map
 assets/pcm-recorder.worklet.js
@@ -11,12 +12,22 @@ native/**/target-cuda/
 
 *.wav
 *.pcm
+# Committed audio fixtures for the sidecar transcription quality suite are an
+# exception to the *.wav / *.pcm ignore above.
+!native/tests/fixtures/audio/*.wav
+!native/tests/fixtures/audio/*.pcm
 *.tmp
 data.json
+# Local `download-stats.mjs --snapshot` output; the canonical history lives on
+# the stats-history branch (see docs/specs/download-stats.md).
+stats/
 
 .DS_Store
 .idea/
 .vscode/
-.worktrees/
+.worktree/
 .claude/
+.superpowers/
+AGENTS.md
+CLAUDE.md
 PLANS.md
