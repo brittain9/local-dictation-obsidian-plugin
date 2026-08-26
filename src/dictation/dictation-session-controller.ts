@@ -147,7 +147,15 @@ export class DictationSessionController {
     }
 
     const settings = this.dependencies.getSettings();
-    const selectedModel = this.requireSelectedModel(settings);
+    let selectedModel: NonNullable<PluginSettings['selectedModel']>;
+
+    try {
+      selectedModel = this.requireSelectedModel(settings);
+    } catch (error) {
+      this.handleError('Failed to start the dictation session', error);
+      return;
+    }
+
     const snapshot: ActiveSessionSnapshot = {
       accelerationPreference: settings.accelerationPreference,
       dictationAnchor: settings.dictationAnchor,

@@ -199,6 +199,28 @@ describe('DictationSessionController', () => {
     expect(notice.mock.calls[0]?.[0]).toContain('No active Markdown editor is available.');
   });
 
+  it('notifies when no model is selected before starting dictation', async () => {
+    const captureStream = new FakeCaptureStream();
+    const notice = vi.fn();
+    const sidecarConnection = new FakeSidecarConnection();
+    const controller = createController({
+      captureStream,
+      getSettings: () => createSettings({ selectedModel: null }),
+      notice,
+      sidecarConnection,
+    });
+
+    await controller.startDictation();
+
+    expect(captureStream.start).not.toHaveBeenCalled();
+    expect(sidecarConnection.startSession).not.toHaveBeenCalled();
+    expect(controller.getState()).toBe('error');
+    expect(controller.isBusy()).toBe(false);
+    expect(notice).toHaveBeenCalledWith(
+      'Failed to start the dictation session: Select a Local Dictation model before starting dictation.',
+    );
+  });
+
   it('recovers from sidecar start failures without staying busy', async () => {
     const captureStream = new FakeCaptureStream();
     const session = new FakeSession();
