@@ -749,7 +749,7 @@ export const nl = {
     'Deze spraakengine-build is niet beschikbaar voor uw platform of architectuur.',
   'setup.sidecar.modal.genericInstallError':
     'De spraakengine kan niet worden geïnstalleerd. Controleer de plug-inlogboeken voor meer informatie en probeer het vervolgens opnieuw.',
-  'commands.readAloud': 'Voorlezen',
+  'commands.readAloud': 'Voorlezen vanaf selectie of notitiebegin',
   'commands.readAloudFromCursor': 'Voorlezen vanaf cursor',
   'commands.pauseResumeReadAloud': 'Voorlezen pauzeren of hervatten',
   'commands.stopReadAloud': 'Voorlezen stoppen',
@@ -759,10 +759,10 @@ export const nl = {
   'settings.model.textToSpeech': 'Tekst-naar-spraakmodel',
   'settings.readAloud.hotkey': 'Aanbevolen sneltoets',
   'settings.readAloud.hotkeyDesc':
-    'Koppel een sneltoets aan Voorlezen. Geselecteerde tekst wordt voorgelezen, anders de hele notitie.',
+    'Koppel een sneltoets aan Voorlezen vanaf selectie of notitiebegin. Geselecteerde tekst wordt voorgelezen, anders de hele notitie.',
   'settings.readAloud.highlightSpokenText': 'Voorgelezen tekst markeren',
   'settings.readAloud.highlightSpokenTextDesc':
-    'Markeer de huidige zin of tekstsectie in de editor tijdens het voorlezen.',
+    'Markeer het huidige gesproken blok in de editor tijdens het voorlezen.',
   'settings.readAloud.voice': 'Stem',
   'settings.readAloud.voiceDesc':
     'Kies uit stemmen die voor het geselecteerde model zijn geïnstalleerd.',
@@ -813,7 +813,7 @@ export const nl = {
   'translation.modal.preparing': 'Lokale vertaling voorbereiden…',
   'translation.modal.loading': 'Lokaal model laden…',
   'translation.modal.translating': 'Vertalen…',
-  'translation.modal.translatingProgress': 'Vertalen… {completed}/{total}',
+  'translation.modal.translatingProgress': 'Blok {completed} van {total} vertalen…',
   'translation.modal.ready': 'Vertaling gereed.',
   'translation.modal.readyPartial_one':
     'Vertaling gereed. 1 blok is in de brontaal gebleven omdat de opmaak niet behouden kon blijven.',
@@ -831,6 +831,8 @@ export const nl = {
     'Er ontbreken bestanden in het vertaalmodel. Installeer het opnieuw om verder te gaan.',
   'translation.modal.installModel': 'Vertaalmodel installeren',
   'translation.modal.translateAgain': 'Opnieuw vertalen',
+  'translation.modal.retryReady':
+    'De vertaalinstellingen zijn gewijzigd. Selecteer Opnieuw vertalen om het voorbeeld bij te werken.',
   'translation.modal.cancel': 'Annuleren',
   'translation.modal.replace': 'Vervangen',
   'translation.modal.insertBelow': 'Hieronder invoegen',

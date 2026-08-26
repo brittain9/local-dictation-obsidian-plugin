@@ -68,7 +68,11 @@ import {
 import { SmartParagraphSettingsModal } from './smart-paragraph-settings-modal';
 import { isSystemAudioSupportedOnCurrentPlatform } from './system-audio-support';
 import { TimestampSettingsModal } from './timestamp-settings-modal';
-import { renderTranslationSettings } from './translation-settings-section';
+import {
+  renderTranslationModelSetting,
+  renderTranslationSettings,
+  type TranslationSettingsDependencies,
+} from './translation-settings-section';
 
 interface SettingsTabDependencies {
   feedback: Pick<UserFeedback, 'show'>;
@@ -144,6 +148,7 @@ export class LocalSttSettingTab extends PluginSettingTab {
   private disposeReadAloudSection: (() => void) | null = null;
   private disposeSidecarSurfaces: (() => void) | null = null;
   private disposeTranslationSection: (() => void) | null = null;
+  private disposeTranslationModelSection: (() => void) | null = null;
   private readonly lifecycle: SettingsTabLifecycle;
 
   constructor(
@@ -216,6 +221,9 @@ export class LocalSttSettingTab extends PluginSettingTab {
           : null,
     });
 
+    const ttsModelContainer = modelSection.createDiv();
+    const translationModelContainer = modelSection.createDiv();
+
     const modelState = manager.getState();
     const selectedCapabilities = modelState.selectedModelCapabilities;
     const languageSupport =
@@ -233,6 +241,23 @@ export class LocalSttSettingTab extends PluginSettingTab {
       languageSupport,
       supportsAutomaticLanguageDetection,
     );
+    // Sits below the Model group on purpose: the model is what people come to
+    // Settings for, and the attention callout is a transient prompt, not the
+    // headline.
+    const attentionContainer = containerEl.createDiv();
+
+    // --- Capture ---
+    const captureCard = createSettingGroup(containerEl, t('settings.groups.capture'));
+
+    const systemAudioSupported = isSystemAudioSupportedOnCurrentPlatform();
+
+    this.disposeMicrophoneSection = renderMicrophonePicker(captureCard, {
+      access: this.access,
+      feedback: this.dependencies.feedback,
+      isDictationBusy: this.dependencies.isDictationBusy,
+      logger: this.dependencies.logger,
+    });
+
     const selectedLanguage = settings.dictationLanguage;
     const coverage = languageFeatureCoverage(modelState.catalog.models, selectedLanguage);
     const languageLabel = dictationLanguageLabel(selectedLanguage);
@@ -251,7 +276,7 @@ export class LocalSttSettingTab extends PluginSettingTab {
     ]
       .filter((sentence): sentence is string => sentence !== null)
       .join(' ');
-    const languageSetting = new Setting(modelSection)
+    const languageSetting = new Setting(captureCard)
       .setName(t('settings.dictationLanguage.name'))
       .setDesc(languageDesc);
     languageSetting.addDropdown((dropdown) => {
@@ -283,24 +308,6 @@ export class LocalSttSettingTab extends PluginSettingTab {
           persist: (language) => this.access.persistOne('dictationLanguage', language),
         });
       });
-    });
-
-    // Sits below the Model group on purpose: the model is what people come to
-    // Settings for, and the attention callout is a transient prompt, not the
-    // headline. Read-aloud rows are appended into `modelSection` further down,
-    // so they still land above this sibling container.
-    const attentionContainer = containerEl.createDiv();
-
-    // --- Capture ---
-    const captureCard = createSettingGroup(containerEl, t('settings.groups.capture'));
-
-    const systemAudioSupported = isSystemAudioSupportedOnCurrentPlatform();
-
-    this.disposeMicrophoneSection = renderMicrophonePicker(captureCard, {
-      access: this.access,
-      feedback: this.dependencies.feedback,
-      isDictationBusy: this.dependencies.isDictationBusy,
-      logger: this.dependencies.logger,
     });
 
     if (systemAudioSupported) {
@@ -419,8 +426,7 @@ export class LocalSttSettingTab extends PluginSettingTab {
       });
 
     this.disposeReadAloudSection = renderTextToSpeechSettings(
-      modelSection,
-      languageSetting.settingEl,
+      ttsModelContainer,
       readAloudSection,
       hotkeySetting.settingEl,
       {
@@ -432,9 +438,7 @@ export class LocalSttSettingTab extends PluginSettingTab {
       },
     );
 
-    // --- Translation ---
-    const translationSection = createSettingGroup(containerEl, t('settings.groups.translation'));
-    this.disposeTranslationSection = renderTranslationSettings(translationSection, {
+    const translationSettingsDependencies = {
       getSettings: () => this.dependencies.getSettings(),
       manager,
       openModelPicker: (options) => this.dependencies.openModelPicker(options),
@@ -445,7 +449,19 @@ export class LocalSttSettingTab extends PluginSettingTab {
           translationTargetLanguage: targetLanguage,
         });
       },
-    });
+    } satisfies TranslationSettingsDependencies;
+
+    this.disposeTranslationModelSection = renderTranslationModelSetting(
+      translationModelContainer,
+      translationSettingsDependencies,
+    );
+
+    // --- Translation ---
+    const translationSection = createSettingGroup(containerEl, t('settings.groups.translation'));
+    this.disposeTranslationSection = renderTranslationSettings(
+      translationSection,
+      translationSettingsDependencies,
+    );
 
     const llmCard = createSettingGroup(containerEl, t('settings.groups.llmTransformation'));
     const enableLlmSetting = new Setting(llmCard)
@@ -586,6 +602,8 @@ export class LocalSttSettingTab extends PluginSettingTab {
     this.disposeReadAloudSection = null;
     this.disposeTranslationSection?.();
     this.disposeTranslationSection = null;
+    this.disposeTranslationModelSection?.();
+    this.disposeTranslationModelSection = null;
     this.disposeDiarizationDesc?.();
     this.disposeDiarizationDesc = null;
     this.disposeEngineSection?.();

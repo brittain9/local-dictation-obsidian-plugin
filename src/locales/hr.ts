@@ -117,7 +117,7 @@ export const hr = {
   'commands.clearRawRecovery': 'Obriši oporavak izvornog transkripta',
   'commands.checkSidecarHealth': 'Provjeri stanje sidecara',
   'commands.restartSidecar': 'Ponovno pokreni sidecar',
-  'commands.readAloud': 'Čitaj naglas',
+  'commands.readAloud': 'Čitaj od odabira ili početka bilješke',
   'commands.readAloudFromCursor': 'Čitaj naglas od kursora',
   'commands.pauseResumeReadAloud': 'Pauziraj ili nastavi čitanje',
   'commands.stopReadAloud': 'Zaustavi čitanje',
@@ -136,7 +136,7 @@ export const hr = {
   'translation.modal.preparing': 'Priprema lokalnog prijevoda…',
   'translation.modal.loading': 'Učitavanje lokalnog modela…',
   'translation.modal.translating': 'Prevođenje…',
-  'translation.modal.translatingProgress': 'Prevođenje… {completed}/{total}',
+  'translation.modal.translatingProgress': 'Prevođenje bloka {completed} od {total}…',
   'translation.modal.ready': 'Prijevod je spreman.',
   'translation.modal.readyPartial_one':
     'Prijevod je spreman. 1 blok zadržao je izvorni jezik jer se njegovo oblikovanje nije moglo sačuvati.',
@@ -150,6 +150,8 @@ export const hr = {
     'Modelu za prijevod nedostaju datoteke. Ponovno ga instalirajte za nastavak.',
   'translation.modal.installModel': 'Instaliraj model za prijevod',
   'translation.modal.translateAgain': 'Prevedi ponovno',
+  'translation.modal.retryReady':
+    'Postavke prijevoda su promijenjene. Odaberite Prevedi ponovno za ažuriranje pregleda.',
   'translation.modal.cancel': 'Odustani',
   'translation.modal.replace': 'Zamijeni',
   'translation.modal.insertBelow': 'Umetni ispod',
@@ -185,10 +187,10 @@ export const hr = {
   'settings.groups.advanced': 'Napredno',
   'settings.readAloud.hotkey': 'Preporučeni tipkovni prečac',
   'settings.readAloud.hotkeyDesc':
-    'Dodijelite tipkovni prečac naredbi „Speech Kit: Čitaj naglas”. Čita odabrani tekst ili cijelu bilješku ako ništa nije odabrano.',
+    'Dodijelite tipkovni prečac naredbi „Speech Kit: Čitaj od odabira ili početka bilješke”. Čita odabrani tekst ili cijelu bilješku ako ništa nije odabrano.',
   'settings.readAloud.highlightSpokenText': 'Istakni izgovoreni tekst',
   'settings.readAloud.highlightSpokenTextDesc':
-    'Istakni trenutačnu rečenicu ili dio teksta u uređivaču dok je čitanje naglas aktivno.',
+    'Istakni trenutačni izgovoreni blok u uređivaču dok je čitanje naglas aktivno.',
   'settings.readAloud.voice': 'Glas',
   'settings.readAloud.voiceDesc': 'Odaberite među glasovima instaliranima za odabrani model.',
   'settings.readAloud.noVoices': 'Nema instaliranih glasova',

@@ -756,7 +756,7 @@ export const fr = {
     "Cette version du moteur vocal n'est pas disponible pour votre plate-forme ou votre architecture.",
   'setup.sidecar.modal.genericInstallError':
     "Le moteur vocal n'a pas pu être installé. Consultez les journaux du plugin pour plus de détails, puis réessayez.",
-  'commands.readAloud': 'Lire à voix haute',
+  'commands.readAloud': 'Lire depuis la sélection ou le début de la note',
   'commands.readAloudFromCursor': 'Lire à voix haute depuis le curseur',
   'commands.pauseResumeReadAloud': 'Mettre en pause ou reprendre la lecture',
   'commands.stopReadAloud': 'Arrêter la lecture',
@@ -766,10 +766,10 @@ export const fr = {
   'settings.model.textToSpeech': 'Modèle de synthèse vocale',
   'settings.readAloud.hotkey': 'Raccourci recommandé',
   'settings.readAloud.hotkeyDesc':
-    'Associez un raccourci à Lire à voix haute. Le texte sélectionné est lu, sinon la note entière.',
+    'Associez un raccourci à Lire depuis la sélection ou le début de la note. Le texte sélectionné est lu, sinon la note entière.',
   'settings.readAloud.highlightSpokenText': 'Surligner le texte lu',
   'settings.readAloud.highlightSpokenTextDesc':
-    'Surligne la phrase ou le fragment de texte en cours dans l’éditeur pendant la lecture à voix haute.',
+    'Surligne le bloc actuellement lu dans l’éditeur pendant la lecture à voix haute.',
   'settings.readAloud.voice': 'Voix',
   'settings.readAloud.voiceDesc':
     'Choisissez parmi les voix installées pour le modèle sélectionné.',
@@ -820,7 +820,7 @@ export const fr = {
   'translation.modal.preparing': 'Préparation de la traduction locale…',
   'translation.modal.loading': 'Chargement du modèle local…',
   'translation.modal.translating': 'Traduction en cours…',
-  'translation.modal.translatingProgress': 'Traduction… {completed}/{total}',
+  'translation.modal.translatingProgress': 'Traduction du bloc {completed} sur {total}…',
   'translation.modal.ready': 'Traduction prête.',
   'translation.modal.readyPartial_one':
     'Traduction prête. 1 bloc est resté dans la langue source car sa mise en forme n’a pas pu être conservée.',
@@ -838,6 +838,8 @@ export const fr = {
     'Il manque des fichiers au modèle de traduction. Réinstallez-le pour continuer.',
   'translation.modal.installModel': 'Installer le modèle de traduction',
   'translation.modal.translateAgain': 'Traduire à nouveau',
+  'translation.modal.retryReady':
+    'Les réglages de traduction ont changé. Sélectionnez Traduire à nouveau pour actualiser l’aperçu.',
   'translation.modal.cancel': 'Annuler',
   'translation.modal.replace': 'Remplacer',
   'translation.modal.insertBelow': 'Insérer en dessous',

@@ -750,7 +750,7 @@ export const ja = {
     'この音声エンジン ビルドは、お使いのプラットフォームまたはアーキテクチャでは利用できません。',
   'setup.sidecar.modal.genericInstallError':
     '音声エンジンをインストールできませんでした。プラグインのログで詳細を確認し、再試行してください。',
-  'commands.readAloud': '読み上げ',
+  'commands.readAloud': '選択範囲またはノートの先頭から読み上げ',
   'commands.readAloudFromCursor': 'カーソル位置から読み上げ',
   'commands.pauseResumeReadAloud': '読み上げを一時停止または再開',
   'commands.stopReadAloud': '読み上げを停止',
@@ -760,10 +760,10 @@ export const ja = {
   'settings.model.textToSpeech': 'テキスト読み上げモデル',
   'settings.readAloud.hotkey': 'おすすめのホットキー',
   'settings.readAloud.hotkeyDesc':
-    '読み上げにホットキーを割り当てます。選択範囲があればその部分を、なければノート全体を読み上げます。',
+    '選択範囲またはノートの先頭からの読み上げにホットキーを割り当てます。選択範囲があればその部分を、なければノート全体を読み上げます。',
   'settings.readAloud.highlightSpokenText': '読み上げ中のテキストを強調表示',
   'settings.readAloud.highlightSpokenTextDesc':
-    '読み上げ中の文またはテキストチャンクをエディターで強調表示します。',
+    '読み上げ中のブロックをエディターで強調表示します。',
   'settings.readAloud.voice': '音声',
   'settings.readAloud.voiceDesc': '選択したモデルにインストール済みの音声から選びます。',
   'settings.readAloud.noVoices': 'インストール済みの音声はありません',
@@ -811,7 +811,7 @@ export const ja = {
   'translation.modal.preparing': 'ローカル翻訳を準備しています…',
   'translation.modal.loading': 'ローカルモデルを読み込んでいます…',
   'translation.modal.translating': '翻訳しています…',
-  'translation.modal.translatingProgress': '翻訳中… {completed}/{total}',
+  'translation.modal.translatingProgress': '{total}ブロック中{completed}ブロックを翻訳中…',
   'translation.modal.ready': '翻訳が完了しました。',
   'translation.modal.readyPartial_one':
     '翻訳が完了しました。1 個のブロックは書式を保持できなかったため元の言語のままです。',
@@ -829,6 +829,8 @@ export const ja = {
     '翻訳モデルのファイルが不足しています。続行するには再インストールしてください。',
   'translation.modal.installModel': '翻訳モデルをインストール',
   'translation.modal.translateAgain': 'もう一度翻訳',
+  'translation.modal.retryReady':
+    '翻訳設定が変更されました。プレビューを更新するには「もう一度翻訳」を選択してください。',
   'translation.modal.cancel': 'キャンセル',
   'translation.modal.replace': '置き換え',
   'translation.modal.insertBelow': '下に挿入',

@@ -118,7 +118,7 @@ export const en = {
   'commands.clearRawRecovery': 'Clear raw recovery',
   'commands.checkSidecarHealth': 'Check sidecar health',
   'commands.restartSidecar': 'Restart sidecar',
-  'commands.readAloud': 'Read aloud',
+  'commands.readAloud': 'Read aloud from selection or note start',
   'commands.readAloudFromCursor': 'Read aloud from cursor',
   'commands.pauseResumeReadAloud': 'Pause or resume reading',
   'commands.stopReadAloud': 'Stop reading',
@@ -137,7 +137,7 @@ export const en = {
   'translation.modal.preparing': 'Preparing local translation…',
   'translation.modal.loading': 'Loading local model…',
   'translation.modal.translating': 'Translating…',
-  'translation.modal.translatingProgress': 'Translating… {completed}/{total}',
+  'translation.modal.translatingProgress': 'Translating block {completed} of {total}…',
   'translation.modal.ready': 'Translation ready.',
   'translation.modal.readyPartial_one':
     'Translation ready. 1 block kept its original language because its formatting could not be preserved.',
@@ -154,6 +154,8 @@ export const en = {
     'The translation model is missing files. Reinstall it to continue.',
   'translation.modal.installModel': 'Install translation model',
   'translation.modal.translateAgain': 'Translate again',
+  'translation.modal.retryReady':
+    'Translation setup changed. Select Translate again to update the preview.',
   'translation.modal.cancel': 'Cancel',
   'translation.modal.replace': 'Replace',
   'translation.modal.insertBelow': 'Insert below',
@@ -195,10 +197,10 @@ export const en = {
   'settings.groups.advanced': 'Advanced',
   'settings.readAloud.hotkey': 'Recommended shortcut',
   'settings.readAloud.hotkeyDesc':
-    'Bind “Speech Kit: Read aloud” to a hotkey. It reads selected text, or the entire note when nothing is selected.',
+    'Bind “Speech Kit: Read aloud from selection or note start” to a hotkey. It reads selected text, or the entire note when nothing is selected.',
   'settings.readAloud.highlightSpokenText': 'Highlight spoken text',
   'settings.readAloud.highlightSpokenTextDesc':
-    'Highlight the current sentence or text chunk in the editor while Read Aloud is playing.',
+    'Highlight the current spoken block in the editor while Read Aloud is playing.',
   'settings.readAloud.voice': 'Voice',
   'settings.readAloud.voiceDesc': 'Choose from voices installed for the selected model.',
   'settings.readAloud.noVoices': 'No installed voices',

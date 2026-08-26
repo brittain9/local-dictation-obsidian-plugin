@@ -3,7 +3,10 @@ import { describe, expect, it, vi } from 'vitest';
 import type { ModelInstallManager, ModelManagerState } from '../src/models/model-install-manager';
 import type { CatalogModelRecord } from '../src/models/model-management-types';
 import { DEFAULT_PLUGIN_SETTINGS } from '../src/settings/plugin-settings';
-import { renderTranslationSettings } from '../src/settings/translation-settings-section';
+import {
+  renderTranslationModelSetting,
+  renderTranslationSettings,
+} from '../src/settings/translation-settings-section';
 import { Setting, TestElement } from './__mocks__/obsidian';
 
 function state(installed: boolean): ModelManagerState {
@@ -90,7 +93,7 @@ describe('Translation settings', () => {
       subscribe: () => () => {},
     } as unknown as ModelInstallManager;
 
-    renderTranslationSettings(container as unknown as HTMLDivElement, {
+    renderTranslationModelSetting(container as unknown as HTMLDivElement, {
       getSettings: () => DEFAULT_PLUGIN_SETTINGS,
       manager,
       openModelPicker,
@@ -100,6 +103,7 @@ describe('Translation settings', () => {
     const modelSetting = Setting.named('Translation model');
     expect(modelSetting.descEl.textContent).toContain('Firefox Translations');
     expect(modelSetting.descEl.textContent).toContain('Installed');
+    expect(modelSetting.buttonComponents[0]?.text).toBe('Manage models');
     await modelSetting.buttonComponents[0]?.click();
     expect(openModelPicker).toHaveBeenCalledExactlyOnceWith({
       initialTask: 'translation',
@@ -154,7 +158,7 @@ describe('Translation settings', () => {
       subscribe: () => () => {},
     } as unknown as ModelInstallManager;
 
-    renderTranslationSettings(container as unknown as HTMLDivElement, {
+    renderTranslationModelSetting(container as unknown as HTMLDivElement, {
       getSettings: () => DEFAULT_PLUGIN_SETTINGS,
       manager,
       openModelPicker,
