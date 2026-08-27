@@ -571,6 +571,8 @@ export const nl = {
   'setup.sidecar.progress.verifying': 'Controlesom verifiëren...',
   'setup.sidecar.progress.extracting': 'Archief uitpakken...',
   'models.manage.title': 'Beheer modellen',
+  'models.manage.openFolder': 'Modelmap openen',
+  'models.manage.openFolderFailed': 'De modelmap kon niet worden geopend.',
   'models.manage.loadFailedTitle': 'Kan modellen niet laden',
   'models.manage.loadFailedDesc':
     'De spraakengine is mogelijk niet geïnstalleerd of reageert mogelijk niet. Voer de installatie opnieuw uit om het opnieuw te installeren, of probeer het opnieuw.',

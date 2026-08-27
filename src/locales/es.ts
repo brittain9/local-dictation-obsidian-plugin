@@ -576,6 +576,8 @@ export const es = {
   'setup.sidecar.progress.verifying': 'Verificando suma de comprobación...',
   'setup.sidecar.progress.extracting': 'Extrayendo archivo...',
   'models.manage.title': 'Administrar modelos',
+  'models.manage.openFolder': 'Abrir carpeta de modelos',
+  'models.manage.openFolderFailed': 'No se pudo abrir la carpeta de modelos.',
   'models.manage.loadFailedTitle': 'No se pudieron cargar los modelos',
   'models.manage.loadFailedDesc':
     'Es posible que el motor de voz no esté instalado o que no responda. Vuelva a ejecutar la instalación para reinstalarlo o inténtelo nuevamente.',

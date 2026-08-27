@@ -787,6 +787,8 @@ export const hr = {
   'setup.sidecar.progress.verifying': 'Provjera kontrolnog zbroja...',
   'setup.sidecar.progress.extracting': 'Raspakiravanje arhive...',
   'models.manage.title': 'Upravljanje modelima',
+  'models.manage.openFolder': 'Otvori mapu modela',
+  'models.manage.openFolderFailed': 'Nije moguće otvoriti mapu modela.',
   'models.manage.loadFailedTitle': 'Modele nije moguće učitati',
   'models.manage.loadFailedDesc':
     'Govorni modul možda nije instaliran ili ne odgovara. Ponovno pokrenite postavljanje kako biste ga ponovno instalirali ili pokušajte ponovno.',

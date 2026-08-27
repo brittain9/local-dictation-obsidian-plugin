@@ -574,6 +574,8 @@ export const it = {
   'setup.sidecar.progress.verifying': 'Verifica del checksum...',
   'setup.sidecar.progress.extracting': 'Estrazione dell’archivio...',
   'models.manage.title': 'Gestisci i modelli',
+  'models.manage.openFolder': 'Apri cartella dei modelli',
+  'models.manage.openFolderFailed': 'Impossibile aprire la cartella dei modelli.',
   'models.manage.loadFailedTitle': 'Impossibile caricare i modelli',
   'models.manage.loadFailedDesc':
     'Il motore di riconoscimento vocale potrebbe non essere installato o non rispondere. Esegui di nuovo la configurazione per reinstallarlo oppure riprova.',

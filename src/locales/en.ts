@@ -786,6 +786,8 @@ export const en = {
   'setup.sidecar.progress.verifying': 'Verifying checksum...',
   'setup.sidecar.progress.extracting': 'Extracting archive...',
   'models.manage.title': 'Manage models',
+  'models.manage.openFolder': 'Open model folder',
+  'models.manage.openFolderFailed': 'Could not open the model folder.',
   'models.manage.loadFailedTitle': "Couldn't load models",
   'models.manage.loadFailedDesc':
     'The speech engine may not be installed or may not be responding. Re-run setup to reinstall it, or try again.',
