@@ -411,3 +411,23 @@ Speech Kit now chooses a compatible installed translation style for the language
 🔒 Everything stays local and continues working offline once your models are installed.
 
 ⬇️ [Install Speech Kit](https://obsidian.md/plugins?id=local-dictation) • 📝 [Release notes](https://github.com/brittain9/speech-kit-obsidian-plugin/releases/latest) • 💻 [GitHub](https://github.com/brittain9/speech-kit-obsidian-plugin) • 💜 [Support the project](https://buymeacoffee.com/alexbrittaq)
+
+## August 27, 2026
+
+**Reactions:** Not yet recorded.
+
+🌍 **Speech Kit 2026.8.7: a serious upgrade for private translation**
+
+Local translation in Obsidian just got more capable. This release brings Tencent HY-MT 2 to Speech Kit: two new on-device translation models—**1.8B** for a great everyday balance and **7B** for people who want to bring more hardware to the job—both covering **38 languages**.
+
+Pick the model you want in **Manage models**, translate and review the result inside your note, and keep working locally after setup. No account, no API key, and no sending your notes to a service.
+
+Upgrading from the retired model? There is now an **Open model folder** button, so clearing an old download takes one click instead of a scavenger hunt.
+
+Next up: model-specific translation style controls. The work is already tracked in [#427](https://github.com/brittain9/speech-kit-obsidian-plugin/issues/427), so get ready to tune the voice of your translations as well as their language.
+
+If private, capable AI inside Obsidian is the kind of project you want more people to find, a GitHub star makes a real difference:
+
+⭐ [Star Speech Kit on GitHub](https://github.com/brittain9/speech-kit-obsidian-plugin)
+
+⬇️ [Install Speech Kit](https://obsidian.md/plugins?id=local-dictation) • 📝 [Release notes](https://github.com/brittain9/speech-kit-obsidian-plugin/releases/latest) • 💻 [GitHub](https://github.com/brittain9/speech-kit-obsidian-plugin) • 💜 [Support the project](https://buymeacoffee.com/alexbrittaq)
