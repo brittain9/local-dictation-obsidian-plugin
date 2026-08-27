@@ -302,7 +302,7 @@ describe('DictationSessionController', () => {
     expect(controller.getState()).toBe('idle');
   });
 
-  it('opens the model picker before checking the target when no model is selected', async () => {
+  it('notifies and opens the model picker before checking the target when no model is selected', async () => {
     const feedback = { show: vi.fn() };
     const hasDictationTarget = vi.fn(() => false);
     const onModelMissing = vi.fn();
@@ -321,7 +321,12 @@ describe('DictationSessionController', () => {
 
     expect(onModelMissing).toHaveBeenCalledOnce();
     expect(hasDictationTarget).not.toHaveBeenCalled();
-    expect(feedback.show).not.toHaveBeenCalled();
+    expect(feedback.show).toHaveBeenCalledOnce();
+    expect(feedback.show).toHaveBeenCalledWith({
+      intent: 'warning',
+      key: 'dictation-model-missing',
+      message: 'No model selected',
+    });
     expect(sidecarConnection.ensureStarted).not.toHaveBeenCalled();
     expect(stopConflictingSpeech).not.toHaveBeenCalled();
     expect(controller.getState()).toBe('idle');

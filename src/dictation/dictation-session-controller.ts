@@ -350,6 +350,11 @@ export class DictationSessionController {
     if (settings.selectedModel === null) {
       this.dependencies.logger?.debug('session', 'no model selected; prompting model picker');
       this.applyUiState('idle');
+      this.dependencies.feedback.show({
+        intent: 'warning',
+        key: 'dictation-model-missing',
+        message: t('settings.model.noModelSelected'),
+      });
       this.dependencies.onModelMissing?.();
       return;
     }
