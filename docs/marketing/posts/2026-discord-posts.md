@@ -418,16 +418,29 @@ Speech Kit now chooses a compatible installed translation style for the language
 
 🌍 **Speech Kit 2026.8.7: a serious upgrade for private translation**
 
-Local translation in Obsidian just got more capable. This release brings Tencent HY-MT 2 to Speech Kit: two new on-device translation models—**1.8B** for a great everyday balance and **7B** for people who want to bring more hardware to the job—both covering **38 languages**.
+### Top-tier translation quality, completely local
 
-Pick the model you want in **Manage models**, translate and review the result inside your note, and keep working locally after setup. No account, no API key, and no sending your notes to a service.
+Speech Kit now supports **Tencent HY-MT 2**, one of the strongest open translation model families you can run on your own computer. It was built specifically for fluent, real-world multilingual work instead of being a general chatbot repurposed for translation.
 
-Upgrading from the retired model? There is now an **Open model folder** button, so clearing an old download takes one click instead of a scavenger hunt.
+It has the performance to back that up. In Tencent's published evaluations, the compact **1.8B** model outperformed Microsoft and Doubao commercial translation APIs overall, while **7B** outperformed open models far larger than itself.
 
-Next up: model-specific translation style controls. The work is already tracked in [#427](https://github.com/brittain9/speech-kit-obsidian-plugin/issues/427), so get ready to tune the voice of your translations as well as their language.
+### Private translation, right inside Obsidian
 
-If private, capable AI inside Obsidian is the kind of project you want more people to find, a GitHub star makes a real difference:
+Translate a selection or an entire note, review and edit the result, then apply it when you are ready. Speech Kit exposes **38 language options**, and everything runs locally after setup. There is no account, no API key, and no sending your notes to a translation service.
+
+### Choose the version that fits your computer
+
+- ⚡ **HY-MT 2 1.8B · 1.13 GB** - fast, efficient, and the best choice for most computers.
+- 🧠 **HY-MT 2 7B · 4.62 GB** - more capacity for users who want to push local translation further.
+
+### Your models, easier to manage
+
+Have an older model downloaded? You can now **open the model folder** to view your models or manage the files directly.
+
+✨ **Coming next:** translation style controls for HY-MT 2, giving you more say over how your translations sound.
+
+If Speech Kit sounds useful, give the project a star on GitHub. It helps more Obsidian users find it.
 
 ⭐ [Star Speech Kit on GitHub](https://github.com/brittain9/speech-kit-obsidian-plugin)
 
-⬇️ [Install Speech Kit](https://obsidian.md/plugins?id=local-dictation) • 📝 [Release notes](https://github.com/brittain9/speech-kit-obsidian-plugin/releases/latest) • 💻 [GitHub](https://github.com/brittain9/speech-kit-obsidian-plugin) • 💜 [Support the project](https://buymeacoffee.com/alexbrittaq)
+⬇️ [Install Speech Kit](https://obsidian.md/plugins?id=local-dictation) • 📝 [Release notes](https://github.com/brittain9/speech-kit-obsidian-plugin/releases/latest) • 💜 [Support the project](https://buymeacoffee.com/alexbrittaq)
