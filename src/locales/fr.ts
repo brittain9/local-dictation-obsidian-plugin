@@ -574,6 +574,8 @@ export const fr = {
   'setup.sidecar.progress.verifying': 'Vérification de la somme de contrôle...',
   'setup.sidecar.progress.extracting': 'Extraction des archives...',
   'models.manage.title': 'Gérer les modèles',
+  'models.manage.openFolder': 'Ouvrir le dossier des modèles',
+  'models.manage.openFolderFailed': 'Impossible d’ouvrir le dossier des modèles.',
   'models.manage.loadFailedTitle': 'Impossible de charger les modèles',
   'models.manage.loadFailedDesc':
     "Le moteur vocal n'est peut-être pas installé ou ne répond pas. Réexécutez le programme d'installation pour le réinstaller ou réessayez.",

@@ -567,6 +567,8 @@ export const ja = {
   'setup.sidecar.progress.verifying': 'チェックサムを検証しています...',
   'setup.sidecar.progress.extracting': 'アーカイブを抽出しています...',
   'models.manage.title': 'モデルの管理',
+  'models.manage.openFolder': 'モデルフォルダーを開く',
+  'models.manage.openFolderFailed': 'モデルフォルダーを開けませんでした。',
   'models.manage.loadFailedTitle': 'モデルをロードできませんでした',
   'models.manage.loadFailedDesc':
     '音声エンジンがインストールされていないか、応答していない可能性があります。セットアップを再実行して再インストールするか、もう一度試してください。',

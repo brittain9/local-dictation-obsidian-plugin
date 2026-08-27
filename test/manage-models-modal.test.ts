@@ -294,6 +294,43 @@ describe('model browser', () => {
     modal.close();
   });
 
+  it('opens the resolved model folder from the model manager', async () => {
+    const state = {
+      activeInstall: null,
+      catalog: { catalogVersion: 1, collections: [], families: [], models: [] },
+      compiledAdapters: [],
+      compiledRuntimes: [],
+      failedInstall: null,
+      installedModels: [],
+      loadError: null,
+      loadStatus: 'loading',
+      modelStore: { overridePath: null, path: '/models', usingDefaultPath: true },
+      selectedModel: null,
+      selectedModelCapabilities: { status: 'none' },
+      selectedTtsModel: null,
+      selectedTtsModelCapabilities: { status: 'none' },
+    } satisfies ModelManagerState;
+    const openModelStore = vi.fn(async () => {});
+    const modal = new ManageModelsModal({} as never, {
+      feedback: { show: vi.fn() },
+      manager: {
+        getState: () => state,
+        subscribe: () => () => {},
+      } as unknown as ModelInstallManager,
+      onChanged: vi.fn(),
+      openModelStore,
+    });
+
+    modal.open();
+    const button = (modal.contentEl as unknown as TestElement)
+      .querySelectorAll('button')
+      .find((element) => element.textContent === 'Open model folder');
+    await button?.click();
+
+    expect(openModelStore).toHaveBeenCalledExactlyOnceWith('/models');
+    modal.close();
+  });
+
   it('turns French performance tags into warnings and install confirmation', () => {
     const policy = resolveModelPresentationPolicy(
       ttsModel('pocket_tts_french_24l_int8', 'fr', ['high-cpu', 'may-buffer'], 504_324_300),

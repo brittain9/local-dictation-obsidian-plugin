@@ -1,5 +1,6 @@
 import { dirname, join } from 'node:path';
 import { IS_PRODUCTION_BUILD } from 'virtual:build-mode';
+import { shell } from 'electron';
 import { FileSystemAdapter, getLanguage, Menu, Platform, Plugin, setIcon } from 'obsidian';
 
 import { AudioCaptureStream } from './audio/audio-capture-stream';
@@ -557,6 +558,7 @@ export default class LocalSttPlugin extends Plugin {
               : { initialTask: pickerOptions.initialTask }),
             manager: this.requireModelInstallManager(),
             onChanged: pickerOptions.onChanged ?? (() => {}),
+            openModelStore: (path) => this.openModelStore(path),
             onRunSetup: () => {
               void this.openSetupWizard();
             },
@@ -566,6 +568,13 @@ export default class LocalSttPlugin extends Plugin {
       },
       options,
     );
+  }
+
+  private async openModelStore(path: string): Promise<void> {
+    const error = await shell.openPath(path);
+    if (error.length > 0) {
+      throw new Error(error);
+    }
   }
 
   private async isSidecarInstalled(): Promise<boolean> {

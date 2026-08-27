@@ -113,6 +113,7 @@ interface ManageModelsModalDependencies {
   initialTask?: ModelPickerTask;
   manager: ModelInstallManager;
   onChanged: () => void;
+  openModelStore?: (path: string) => Promise<void>;
   onRunSetup?: () => void;
 }
 
@@ -237,6 +238,14 @@ export class ManageModelsModal extends Modal {
     }
 
     const toolbar = this.contentEl.createDiv({ cls: 'local-stt-toolbar' });
+    if (state.modelStore.path.length > 0 && this.deps.openModelStore !== undefined) {
+      const openModelStore = toolbar.createEl('button', {
+        text: t('models.manage.openFolder'),
+      });
+      openModelStore.addEventListener('click', () => {
+        void this.openModelStore(state.modelStore.path);
+      });
+    }
     const taskSwitcher = toolbar.createDiv({
       attr: { 'aria-label': t('models.manage.taskLabel'), role: 'tablist' },
       cls: 'local-stt-task-switcher',
@@ -1010,6 +1019,18 @@ export class ManageModelsModal extends Modal {
     } finally {
       this.actionInProgress = false;
       this.renderModelList();
+    }
+  }
+
+  private async openModelStore(path: string): Promise<void> {
+    try {
+      await this.deps.openModelStore?.(path);
+    } catch (error) {
+      this.deps.feedback.show({
+        cause: error,
+        intent: 'error',
+        message: t('models.manage.openFolderFailed'),
+      });
     }
   }
 

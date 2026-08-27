@@ -578,6 +578,8 @@ export const de = {
   'setup.sidecar.progress.verifying': 'Prüfsumme wird überprüft...',
   'setup.sidecar.progress.extracting': 'Archiv wird extrahiert...',
   'models.manage.title': 'Modelle verwalten',
+  'models.manage.openFolder': 'Modellordner öffnen',
+  'models.manage.openFolderFailed': 'Der Modellordner konnte nicht geöffnet werden.',
   'models.manage.loadFailedTitle': 'Modelle konnten nicht geladen werden',
   'models.manage.loadFailedDesc':
     'Möglicherweise ist die Sprach-Engine nicht installiert oder reagiert nicht. Führen Sie das Setup erneut aus, um es neu zu installieren, oder versuchen Sie es erneut.',
