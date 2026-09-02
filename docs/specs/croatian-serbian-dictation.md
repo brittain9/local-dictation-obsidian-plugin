@@ -33,8 +33,8 @@ Every cell was checked against the pinned artifact, not inferred:
   fall through to its `na` branch.
 - **Firefox Translations** — `en-hr` and `en-sr` both have `releaseStatus:
   "Release"` (`base-memory`, ~31.6 MB each). `hr-en` and `sr-en` exist **only**
-  as `tiny` builds with no release status, below the bar the catalog documents
-  ("the current Firefox release model for each of the 14 directions").
+  as `tiny` builds with no release status, so neither language enters the
+  catalog's bidirectional English-anchored set.
 - **Obsidian locales** — `hr` is listed work-in-progress, `sr` complete. Both
   are selectable app languages, so a plugin catalog for either would work; the
   cost is authoring it and finding a native reviewer, not platform support.
@@ -62,7 +62,7 @@ output.
 | Consumer | What it uses the list for |
 | --- | --- |
 | `catalog.rs:229` | validating `languageTags` on every catalog model |
-| `catalog.rs:379` | validating `translationPairs` |
+| `catalog.rs:379` | validating `translationSupport` and direction packs |
 | `whisper.rs:42,106` | Whisper's advertised support **and** its runtime rejection |
 | `nemotron_asr.rs:134` | Nemotron's advertised support |
 

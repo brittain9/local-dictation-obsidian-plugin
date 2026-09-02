@@ -433,6 +433,44 @@ describe('TranslationModal mutation safety', () => {
     expect(onTranslateCurrent).toHaveBeenCalledWith('en', 'es');
   });
 
+  it('offers the exact language pack instead of the whole Firefox bundle', async () => {
+    Setting.reset();
+    const model = createModalModel();
+    const onInstallPack = vi.fn(async () => {});
+    const onTranslateCurrent = vi.fn();
+    const modal = createModal({
+      configuration: { model, sourceLanguage: 'en', targetLanguage: 'es' },
+      editor: {
+        getValue: () => SNAPSHOT.source,
+        replaceRange: vi.fn(),
+      },
+      installedModelOptions: [model],
+      jobModel: model,
+      onInstallPack,
+      onTranslateCurrent,
+      runTranslation: vi.fn(async () => ({ kind: 'missing_model' as const })),
+      translationInstallRequirement: () => ({
+        artifactIds: ['en_es_model', 'en_es_vocab'],
+        downloadBytes: 41,
+        kind: 'pack' as const,
+      }),
+    });
+
+    modal.open();
+    await vi.waitFor(() =>
+      expect(Setting.buttonNamed('Download language pack · 41 B')).toBeDefined(),
+    );
+    expect(
+      (modal.contentEl as unknown as TestElement).findByText(
+        'English → Español needs a 41 B language download.',
+      ),
+    ).toBeDefined();
+
+    await Setting.buttonNamed('Download language pack · 41 B').click();
+    expect(onInstallPack).toHaveBeenCalledExactlyOnceWith(model, 'en', 'es');
+    expect(onTranslateCurrent).toHaveBeenCalledExactlyOnceWith('en', 'es');
+  });
+
   it('reports partial results but never writes them into the note', async () => {
     Setting.reset();
     const replaceRange = vi.fn();
@@ -529,13 +567,16 @@ function createModal({
   editor,
   jobModel = createModalModel(),
   modelOptions = [],
+  installedModelOptions = modelOptions,
   onManageModels = vi.fn(async () => {}),
+  onInstallPack = vi.fn(async () => {}),
   onModelChange = vi.fn(async () => {}),
   onLanguageChange = vi.fn(async () => {}),
   onReadAloud = vi.fn(),
   onRestart = vi.fn(),
   onTranslateCurrent = vi.fn(),
   runTranslation,
+  translationInstallRequirement,
 }: {
   canReadAloud?: ConstructorParameters<typeof TranslationModal>[1]['canReadAloud'];
   configuration?: ConstructorParameters<typeof TranslationModal>[1]['configuration'];
@@ -543,15 +584,22 @@ function createModal({
     getValue: () => string;
     replaceRange: ReturnType<typeof vi.fn>;
   };
+  installedModelOptions?: ConstructorParameters<
+    typeof TranslationModal
+  >[1]['installedModelOptions'];
   jobModel?: CatalogModelRecord | null;
   modelOptions?: ConstructorParameters<typeof TranslationModal>[1]['modelOptions'];
   onManageModels?: ConstructorParameters<typeof TranslationModal>[1]['onManageModels'];
+  onInstallPack?: ConstructorParameters<typeof TranslationModal>[1]['onInstallPack'];
   onLanguageChange?: ConstructorParameters<typeof TranslationModal>[1]['onLanguageChange'];
   onModelChange?: ConstructorParameters<typeof TranslationModal>[1]['onModelChange'];
   onReadAloud?: ConstructorParameters<typeof TranslationModal>[1]['onReadAloud'];
   onRestart?: ConstructorParameters<typeof TranslationModal>[1]['onRestart'];
   onTranslateCurrent?: ConstructorParameters<typeof TranslationModal>[1]['onTranslateCurrent'];
   runTranslation: (options: TranslationJobRunOptions) => Promise<TranslationJobResult>;
+  translationInstallRequirement?: ConstructorParameters<
+    typeof TranslationModal
+  >[1]['translationInstallRequirement'];
 }): TranslationModal {
   const job = new TranslationJob({
     model: jobModel,
@@ -568,18 +616,22 @@ function createModal({
     },
     editor: editor as never,
     feedback: { show: vi.fn() },
+    installedModelOptions,
     job,
     modelOptions,
     onApplied: vi.fn(),
+    onCancelPackInstall: vi.fn(async () => {}),
     onClosed: vi.fn(),
     onDismissed: vi.fn(),
     onLanguageChange,
+    onInstallPack,
     onManageModels,
     onModelChange,
     onReadAloud,
     onTranslateCurrent,
     onRestart,
     snapshot: SNAPSHOT,
+    translationInstallRequirement: translationInstallRequirement ?? (() => ({ kind: 'ready' })),
   });
 }
 

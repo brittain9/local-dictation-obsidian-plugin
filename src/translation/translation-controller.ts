@@ -28,6 +28,7 @@ import {
   type TranslationJobState,
 } from './translation-job';
 import { TranslationModal, type TranslationSnapshot } from './translation-modal';
+import { translationInstallRequirement } from './translation-packs';
 
 const MAX_TRANSLATION_CHARACTERS = 50_000;
 
@@ -216,7 +217,8 @@ export class TranslationController {
       feedback: this.dependencies.feedback,
       job: active.job,
       configuration: active.configuration,
-      modelOptions: this.installedTranslationModels(),
+      installedModelOptions: this.installedTranslationModels(),
+      modelOptions: this.translationModels(),
       snapshot: active.snapshot,
       onApplied: () => this.clearActive(),
       onDismissed: () => this.clearActive(),
@@ -259,14 +261,34 @@ export class TranslationController {
         return this.persistTranslationLanguages(sourceLanguage, targetLanguage);
       },
       onModelChange: async (model, sourceLanguage, targetLanguage) => {
-        await this.dependencies.modelManager.select({
-          familyId: model.familyId,
-          kind: 'catalog_model',
-          modelId: model.modelId,
-          runtimeId: model.runtimeId,
-        });
+        if (this.modelIsInstalled(model)) {
+          await this.dependencies.modelManager.select({
+            familyId: model.familyId,
+            kind: 'catalog_model',
+            modelId: model.modelId,
+            runtimeId: model.runtimeId,
+          });
+        }
         active.configuration = { model, sourceLanguage, targetLanguage };
       },
+      onCancelPackInstall: () => this.dependencies.modelManager.cancel(),
+      onInstallPack: async (model, sourceLanguage, targetLanguage) => {
+        const requirement = this.installRequirement(model, sourceLanguage, targetLanguage);
+        if (requirement.kind !== 'pack') {
+          throw new Error('This translation direction does not have a downloadable pack.');
+        }
+        const selection = {
+          familyId: model.familyId,
+          kind: 'catalog_model' as const,
+          modelId: model.modelId,
+          runtimeId: model.runtimeId,
+        };
+        await this.dependencies.modelManager.installAndWait(selection, requirement.artifactIds);
+        await this.dependencies.modelManager.select(selection);
+        active.configuration = { model, sourceLanguage, targetLanguage };
+      },
+      translationInstallRequirement: (model, sourceLanguage, targetLanguage) =>
+        this.installRequirement(model, sourceLanguage, targetLanguage),
       onReadAloud: this.dependencies.onReadAloud,
       onTranslateCurrent: (sourceLanguage, targetLanguage) => {
         this.begin(
@@ -320,6 +342,31 @@ export class TranslationController {
           matchesModelTriple(installed, model.runtimeId, model.familyId, model.modelId),
         ),
     );
+  }
+  private translationModels(): CatalogModelRecord[] {
+    return this.dependencies.modelManager
+      .getState()
+      .catalog.models.filter((model) => model.task === 'translation');
+  }
+  private modelIsInstalled(model: CatalogModelRecord): boolean {
+    return this.dependencies.modelManager
+      .getState()
+      .installedModels.some((installed) =>
+        matchesModelTriple(installed, model.runtimeId, model.familyId, model.modelId),
+      );
+  }
+  private installRequirement(
+    model: CatalogModelRecord,
+    sourceLanguage: TranslationLanguage,
+    targetLanguage: TranslationLanguage,
+  ) {
+    const installed =
+      this.dependencies.modelManager
+        .getState()
+        .installedModels.find((candidate) =>
+          matchesModelTriple(candidate, model.runtimeId, model.familyId, model.modelId),
+        ) ?? null;
+    return translationInstallRequirement(model, installed, sourceLanguage, targetLanguage);
   }
   private async runTranslation(
     source: string,

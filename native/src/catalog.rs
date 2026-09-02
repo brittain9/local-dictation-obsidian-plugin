@@ -10,10 +10,11 @@ use crate::transcription::PRODUCT_LANGUAGE_TAGS;
 const BUNDLED_CATALOG_JSON: &str =
     include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/catalog.json"));
 
-pub const TRANSLATION_LANGUAGE_TAGS: [&str; 38] = [
+pub const TRANSLATION_LANGUAGE_TAGS: [&str; 57] = [
     "zh", "en", "fr", "pt", "es", "ja", "tr", "ru", "ar", "ko", "th", "it", "de", "vi", "ms", "id",
     "tl", "hi", "zh-Hant", "pl", "cs", "nl", "km", "my", "fa", "gu", "ur", "te", "mr", "he", "bn",
-    "ta", "uk", "bo", "kk", "mn", "ug", "yue",
+    "ta", "uk", "bo", "kk", "mn", "ug", "yue", "bg", "ca", "da", "el", "et", "eu", "fi", "gl",
+    "hu", "is", "kn", "lt", "lv", "ml", "nb", "ro", "sk", "sl", "sv",
 ];
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -72,6 +73,8 @@ pub struct CatalogModel {
     pub language_tags: Vec<String>,
     #[serde(default, rename = "translationSupport")]
     pub translation_support: Option<TranslationSupport>,
+    #[serde(default, rename = "translationPacks")]
+    pub translation_packs: Vec<TranslationPack>,
     #[serde(default, rename = "supportsAutomaticLanguageDetection")]
     pub supports_automatic_language_detection: bool,
     #[serde(default, rename = "defaultVoice")]
@@ -120,6 +123,14 @@ pub enum ArtifactRole {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TranslationPair {
+    pub source: String,
+    pub target: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TranslationPack {
+    #[serde(rename = "artifactIds")]
+    pub artifact_ids: Vec<String>,
     pub source: String,
     pub target: String,
 }
@@ -361,6 +372,11 @@ impl ModelCatalog {
                         "STT model {} must not declare translationSupport",
                         model.model_id
                     );
+                    ensure!(
+                        model.translation_packs.is_empty(),
+                        "STT model {} must not declare translationPacks",
+                        model.model_id
+                    );
                 }
                 ModelTask::Translation => {
                     ensure!(
@@ -379,6 +395,7 @@ impl ModelCatalog {
                         model.model_id
                     );
                     validate_translation_support(model)?;
+                    validate_translation_packs(model)?;
                 }
                 ModelTask::Tts => {
                     ensure!(
@@ -398,6 +415,11 @@ impl ModelCatalog {
                     ensure!(
                         model.translation_support.is_none(),
                         "TTS model {} must not declare translationSupport",
+                        model.model_id
+                    );
+                    ensure!(
+                        model.translation_packs.is_empty(),
+                        "TTS model {} must not declare translationPacks",
                         model.model_id
                     );
                 }
@@ -464,6 +486,122 @@ fn validate_translation_support(model: &CatalogModel) -> Result<()> {
             }
         }
     }
+    Ok(())
+}
+
+fn validate_translation_packs(model: &CatalogModel) -> Result<()> {
+    if model.translation_packs.is_empty() {
+        return Ok(());
+    }
+
+    let TranslationSupport::Pairs { pairs } = model
+        .translation_support
+        .as_ref()
+        .expect("translation support checked above")
+    else {
+        anyhow::bail!(
+            "translation model {} may declare translationPacks only with directed pair support",
+            model.model_id
+        );
+    };
+
+    let supported_pairs = pairs
+        .iter()
+        .map(|pair| (pair.source.as_str(), pair.target.as_str()))
+        .collect::<HashSet<_>>();
+    let artifacts = model
+        .artifacts
+        .iter()
+        .map(|artifact| (artifact.artifact_id.as_str(), artifact))
+        .collect::<HashMap<_, _>>();
+    let mut packed_pairs = HashSet::new();
+    let mut packed_artifact_ids = HashSet::new();
+
+    for pack in &model.translation_packs {
+        ensure!(
+            supported_pairs.contains(&(pack.source.as_str(), pack.target.as_str())),
+            "translation pack {}→{} for model {} is absent from translationSupport",
+            pack.source,
+            pack.target,
+            model.model_id
+        );
+        ensure!(
+            packed_pairs.insert((pack.source.as_str(), pack.target.as_str())),
+            "model {} declares duplicate translation pack {}→{}",
+            model.model_id,
+            pack.source,
+            pack.target
+        );
+        ensure!(
+            !pack.artifact_ids.is_empty(),
+            "translation pack {}→{} for model {} must contain artifacts",
+            pack.source,
+            pack.target,
+            model.model_id
+        );
+
+        let mut has_translation_model = false;
+        for artifact_id in &pack.artifact_ids {
+            let artifact = artifacts.get(artifact_id.as_str()).ok_or_else(|| {
+                anyhow::anyhow!(
+                    "translation pack {}→{} for model {} references unknown artifact {}",
+                    pack.source,
+                    pack.target,
+                    model.model_id,
+                    artifact_id
+                )
+            })?;
+            ensure!(
+                !artifact.required,
+                "translation pack artifact {} for model {} must be optional",
+                artifact_id,
+                model.model_id
+            );
+            ensure!(
+                artifact.role == ArtifactRole::TranslationModel
+                    || artifact.role == ArtifactRole::SupportingFile,
+                "translation pack artifact {} for model {} has an invalid role",
+                artifact_id,
+                model.model_id
+            );
+            ensure!(
+                packed_artifact_ids.insert(artifact_id.as_str()),
+                "translation pack artifact {} for model {} appears in more than one pack",
+                artifact_id,
+                model.model_id
+            );
+            has_translation_model |= artifact.role == ArtifactRole::TranslationModel;
+        }
+        ensure!(
+            has_translation_model,
+            "translation pack {}→{} for model {} must include a translation model",
+            pack.source,
+            pack.target,
+            model.model_id
+        );
+    }
+
+    ensure!(
+        packed_pairs == supported_pairs,
+        "model {} must declare exactly one translation pack for every supported pair",
+        model.model_id
+    );
+    let optional_translation_artifact_ids = model
+        .artifacts
+        .iter()
+        .filter(|artifact| {
+            !artifact.required
+                && (artifact.role == ArtifactRole::TranslationModel
+                    || artifact.role == ArtifactRole::SupportingFile)
+        })
+        .map(|artifact| artifact.artifact_id.as_str())
+        .collect::<HashSet<_>>();
+    ensure!(
+        packed_artifact_ids == optional_translation_artifact_ids,
+        "model {} has optional translation artifacts outside translationPacks",
+        model.model_id
+    );
+
     Ok(())
 }
 
@@ -540,15 +678,18 @@ mod tests {
         assert_eq!(model.license_label, "MPL-2.0");
         assert!(matches!(
             &model.translation_support,
-            Some(super::TranslationSupport::Pairs { pairs }) if pairs.len() == 14
+            Some(super::TranslationSupport::Pairs { pairs }) if pairs.len() == 96
         ));
+        assert_eq!(model.translation_packs.len(), 96);
+        assert!(model.language_tags.contains(&"zh".to_string()));
+        assert!(model.language_tags.contains(&"zh-Hant".to_string()));
         assert_eq!(
             model
                 .artifacts
                 .iter()
                 .filter(|artifact| artifact.role == ArtifactRole::TranslationModel)
                 .count(),
-            14
+            97
         );
         assert_eq!(
             model
@@ -566,7 +707,20 @@ mod tests {
                 .map(|artifact| artifact.sha256.as_str()),
             Some("faff1ef6285b0d26f01787776fd49299dfb756ecb9688aa990c250e66797b47d")
         );
-        assert!(model.required_download_bytes() < 560 * 1024 * 1024);
+        assert_eq!(model.required_download_bytes(), 5_060_693);
+        assert!(model.translation_packs.iter().all(|pack| {
+            pack.artifact_ids
+                .iter()
+                .filter_map(|artifact_id| {
+                    model
+                        .artifacts
+                        .iter()
+                        .find(|artifact| artifact.artifact_id == *artifact_id)
+                })
+                .map(|artifact| artifact.size_bytes)
+                .sum::<u64>()
+                < 100 * 1024 * 1024
+        }));
     }
 
     #[test]
@@ -877,6 +1031,7 @@ mod tests {
             task: ModelTask::Stt,
             language_tags: vec!["en".to_string()],
             translation_support: None,
+            translation_packs: vec![],
             supports_automatic_language_detection: false,
             default_voice: None,
             license_label: "MIT".to_string(),

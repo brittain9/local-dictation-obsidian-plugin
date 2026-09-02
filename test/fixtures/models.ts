@@ -16,6 +16,7 @@ export function sampleInstalledModel(
     catalogVersion: 1,
     familyId: 'whisper',
     installPath: `/models/whisper_cpp/${modelId}`,
+    installedArtifactIds: ['transcription'],
     installedAtUnixMs: 1_700_000_000_000,
     modelId,
     runtimeId: 'whisper_cpp',

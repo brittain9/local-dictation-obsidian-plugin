@@ -69,6 +69,7 @@ function state(
         catalogVersion: 5,
         familyId: 'pocket_tts',
         installPath: '/models/pocket',
+        installedArtifactIds: [],
         installedAtUnixMs: 1,
         installedVoiceIds: voices,
         modelId,

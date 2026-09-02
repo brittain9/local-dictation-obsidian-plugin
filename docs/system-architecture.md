@@ -346,7 +346,7 @@ than a silent failure.
 | Moonshine Medium | `onnx_runtime` · `moonshine` | Quantized | 289 MB | Streaming (live), 245M params |
 | Nemotron 3.5 ASR 560 ms | `onnx_runtime` · `nemotron_asr` | INT8 | 651 MB | Multilingual streaming |
 | Supertonic 3 | `onnx_runtime` · `supertonic` | ONNX | 398 MB | Read aloud in eight app languages, 10 voices |
-| Firefox Translations | `bergamot_wasm` · `firefox_translations` | Bergamot | 526 MB | 14 English-anchored local translation directions |
+| Firefox Translations | `bergamot_wasm` · `firefox_translations` | Bergamot | ~5 MB runtime + 20–67 MB per direction | 96 released English-anchored directions, downloaded on demand |
 
 Moonshine models are streaming (live-dictation) entries in the managed catalog,
 installed through Manage Models like any other model. Each is a multi-file ORT

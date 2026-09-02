@@ -47,7 +47,7 @@ Measured on an M2 Pro:
 | --- | ---: | ---: | ---: | ---: | ---: |
 | TranslateGemma 4B q4 ONNX, CPU | 3.6–3.9 s model load; ~1.5 s first token | ~3.29 output tokens/s | minutes for long notes | 3.1–3.4 GB RSS | ~3 GB |
 | TranslateGemma 4B Q4_K_M GGUF, Metal | ~10 s cold load | ~60 output tokens/s | viable after load | ~3 GB memory footprint | 2.49 GB |
-| Firefox/Bergamot, CPU WebAssembly | 12 ms runtime; 22–54 ms model load | ~17 ms short warm request | 10,900 chars in 2.33 s | ~418 MB RSS | ~552 MB for all 14 directions |
+| Firefox/Bergamot, CPU WebAssembly | 12 ms runtime; 22–54 ms model load | ~17 ms short warm request | 10,900 chars in 2.33 s | ~418 MB RSS | ~5 MB shared runtime + selected direction |
 
 The final production-worker smoke test loaded the runtime in 37 ms and
 translated two English→Spanish sentences in 235 ms total. A beam size of four
@@ -114,8 +114,9 @@ obligations. No Gemma terms apply to v1.
 2. The user selects text or invokes translation for a non-empty active note.
 3. A modal opens with the active source and target languages in both its title
    and controls.
-4. If the translation pack is missing, the modal links directly to Manage
-   Models filtered to Translation.
+4. If the selected direction is missing, the modal offers its exact language
+   pack and shows the download size. Installing one direction does not fetch
+   the other released directions or the aggregate Firefox bundle.
 5. The modal can switch among installed translation models and language pairs;
    changing either marks the preview stale and never starts inference by itself.
 6. The selected model adapter reads only its exact installed artifacts and runs
@@ -182,14 +183,18 @@ The existing cross-language contracts gain:
 - `ModelFormat::Bergamot` / `"bergamot"`;
 - `ArtifactRole::TranslationModel` / `"translation_model"`;
 - catalog `translationSupport`, either exact directed `pairs` or an
-  `all_to_all` language set.
+  `all_to_all` language set;
+- catalog `translationPacks` for optional, exact-direction artifact groups.
 
 Catalog validation requires a translation primary artifact and valid,
 non-identity support metadata whose languages also appear in `languageTags`.
 Non-translation models may not declare translation support.
 
-Firefox remains one managed pack for all fourteen directions. HY-MT is one
-managed row and one pinned GGUF, not one row per language.
+Firefox remains one managed model row, while each released direction is an
+optional catalog-declared pack. The shared Bergamot runtime is required once;
+the translation modal downloads only the selected direction and records its
+artifact IDs in the install metadata. HY-MT is one managed row and one pinned
+GGUF, not one row per language.
 
 ### Inference boundary
 
@@ -222,7 +227,7 @@ shutdown and is released after five idle minutes.
 
 Mozilla's released-model dashboard is the source of upstream quality evidence;
 its release acceptance target is within five percent of Google Translate by
-COMET. Local round-trip smoke tests across all fourteen directions preserved
+COMET. Local round-trip smoke tests across the released directions preserved
 negation, dates, numbers, and most technical terms, with occasional stylistic
 blemishes.
 

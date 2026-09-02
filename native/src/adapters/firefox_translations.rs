@@ -12,9 +12,15 @@ use crate::transcription::{GpuConfig, TranscriptionError, validate_model_path};
 /// Mozilla publishes the two halves of a language pair independently, so this
 /// is narrower than the product vocabulary: `hr` and `sr` have a released
 /// `en→` model but no released `→en` counterpart, and a one-way language is not
-/// offered. The authoritative per-direction truth is `translationPairs` in the
-/// catalog; this list only bounds what the family advertises.
-const TRANSLATION_LANGUAGE_TAGS: &[&str] = &["en", "es", "de", "fr", "pt", "it", "nl", "ja"];
+/// offered. The authoritative per-direction truth is `translationSupport` and
+/// `translationPacks` in the catalog; this list only bounds what the family
+/// advertises.
+const TRANSLATION_LANGUAGE_TAGS: &[&str] = &[
+    "en", "ar", "bg", "bn", "ca", "cs", "da", "de", "el", "es", "et", "eu", "fa", "fi", "fr", "gl",
+    "gu", "he", "hi", "hu", "id", "is", "it", "ja", "kn", "ko", "lt", "lv", "ml", "mr", "ms", "nb",
+    "nl", "pl", "pt", "ro", "ru", "sk", "sl", "sv", "ta", "te", "th", "tr", "uk", "ur", "vi", "zh",
+    "zh-Hant",
+];
 
 #[derive(Default)]
 pub struct FirefoxTranslationsAdapter;

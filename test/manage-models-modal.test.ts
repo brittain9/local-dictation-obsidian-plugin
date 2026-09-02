@@ -442,6 +442,7 @@ describe('model browser', () => {
           catalogVersion: 1,
           familyId: 'pocket_tts' as const,
           installPath: '/models/pocket-current',
+          installedArtifactIds: [],
           installedAtUnixMs: 1,
           installedVoiceIds: ['alba'],
           modelId: 'pocket-current',

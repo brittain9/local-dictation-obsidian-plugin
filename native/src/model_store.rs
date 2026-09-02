@@ -56,6 +56,8 @@ pub struct InstalledModelRecord {
     pub install_path: String,
     #[serde(rename = "installedAtUnixMs")]
     pub installed_at_unix_ms: u64,
+    #[serde(rename = "installedArtifactIds")]
+    pub installed_artifact_ids: Vec<String>,
     #[serde(rename = "modelId")]
     pub model_id: String,
     #[serde(rename = "runtimePath")]
@@ -347,6 +349,11 @@ pub fn scan_installed_models(
                     family_id: metadata.family_id,
                     install_path: install_dir.display().to_string(),
                     installed_at_unix_ms: metadata.installed_at_unix_ms,
+                    installed_artifact_ids: metadata
+                        .artifacts
+                        .iter()
+                        .map(|artifact| artifact.artifact_id.clone())
+                        .collect(),
                     model_id: metadata.model_id,
                     runtime_path: runtime_path.map(|path| path.display().to_string()),
                     total_size_bytes: metadata
@@ -605,6 +612,7 @@ mod tests {
                 task: ModelTask::Stt,
                 language_tags: vec!["en".to_string()],
                 translation_support: None,
+                translation_packs: vec![],
                 supports_automatic_language_detection: false,
                 default_voice: None,
                 license_label: "MIT".to_string(),

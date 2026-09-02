@@ -153,6 +153,54 @@ describe('ModelInstallManager', () => {
       );
     });
 
+    it('resolves a pack install only after completion and artifact refresh', async () => {
+      const model = sampleTranslationCatalogModel();
+      harness.manager.getState().catalog.models.push(model);
+      const selection: CatalogModelSelection = {
+        familyId: model.familyId,
+        kind: 'catalog_model',
+        modelId: model.modelId,
+        runtimeId: model.runtimeId,
+      };
+      harness.sidecarConnection.installModel.mockResolvedValueOnce(
+        sampleInstallUpdate({
+          familyId: model.familyId,
+          modelId: model.modelId,
+          runtimeId: model.runtimeId,
+          state: 'queued',
+        }),
+      );
+      const completion = harness.manager.installAndWait(selection, ['en_es_model']);
+      const request = harness.sidecarConnection.installModel.mock.calls[0]?.[0];
+      if (request === undefined) throw new Error('Expected a pack install request');
+
+      expect(
+        await Promise.race([completion.then(() => 'resolved'), Promise.resolve('pending')]),
+      ).toBe('pending');
+      harness.sidecarConnection.listInstalledModels.mockResolvedValueOnce({
+        models: [
+          sampleInstalledModel(),
+          sampleInstalledModel(model.modelId, {
+            familyId: model.familyId,
+            installedArtifactIds: ['en_es_model'],
+            runtimeId: model.runtimeId,
+          }),
+        ],
+      });
+      harness.sidecarConnection.probeModelSelection.mockResolvedValueOnce(
+        sampleReadyProbeResult(selection),
+      );
+      emitInstallUpdate(harness, {
+        familyId: model.familyId,
+        installId: request.installId,
+        modelId: model.modelId,
+        runtimeId: model.runtimeId,
+        state: 'completed',
+      });
+
+      await expect(completion).resolves.toBeUndefined();
+    });
+
     it('blocks downloading a model that cannot serve the selected language', async () => {
       harness = createManagerHarness({ dictationLanguage: 'ja' });
       configureSidecarForInit(harness.sidecarConnection);
@@ -656,6 +704,7 @@ describe('ModelInstallManager', () => {
             sampleInstalledModel(),
             sampleInstalledModel(selection.modelId, {
               familyId: selection.familyId,
+              installedArtifactIds: ['voice-alba'].filter(() => installedVoiceIds.includes('alba')),
               installedVoiceIds,
               runtimeId: selection.runtimeId,
             }),

@@ -445,8 +445,8 @@ impl AppState {
                         total_bytes: None,
                     }),
                     Some(model) => {
-                        let incremental = !artifact_ids.is_empty();
-                        let artifacts = if incremental {
+                        let subset_requested = !artifact_ids.is_empty();
+                        let requested_artifacts = if subset_requested {
                             let requested = artifact_ids
                                 .iter()
                                 .collect::<std::collections::HashSet<_>>();
@@ -461,34 +461,68 @@ impl AppState {
                                     !artifact.required
                                         && artifact.role == crate::catalog::ArtifactRole::Voice
                                 });
-                            if !only_optional_voices {
+                            let declared_translation_pack =
+                                model.translation_packs.iter().any(|pack| {
+                                    pack.artifact_ids.len() == requested.len()
+                                        && pack
+                                            .artifact_ids
+                                            .iter()
+                                            .all(|artifact_id| requested.contains(artifact_id))
+                                });
+                            if !only_optional_voices && !declared_translation_pack {
                                 events.push(Event::ModelInstallUpdate {
                                     details: Some(
-                                        "Artifact subsets may contain only declared optional voice artifacts."
+                                        "Artifact subsets must match a declared translation pack or contain only declared optional voice artifacts."
                                             .to_string(),
                                     ),
                                     downloaded_bytes: None,
                                     runtime_id,
                                     family_id,
                                     install_id,
-                                    message: Some("The requested voice install is invalid.".to_string()),
+                                    message: Some("The requested incremental install is invalid.".to_string()),
                                     model_id,
                                     state: ModelInstallState::Failed,
                                     total_bytes: None,
                                 });
                                 return (ControlFlow::Continue, events);
                             }
-                            artifacts
+                            Some(artifacts)
                         } else {
-                            model
-                                .artifacts
-                                .iter()
-                                .filter(|artifact| artifact.required)
-                                .cloned()
-                                .collect()
+                            None
                         };
                         match resolve_model_store_info(model_store_path_override.as_deref()) {
                             Ok(info) => {
+                                let target_dir = resolve_model_install_dir(
+                                    &info.path, runtime_id, family_id, &model_id,
+                                )
+                                .ok();
+                                let base_installed = target_dir.as_ref().is_some_and(|path| {
+                                    path.is_dir()
+                                        && model
+                                            .artifacts
+                                            .iter()
+                                            .filter(|artifact| artifact.required)
+                                            .all(|artifact| path.join(&artifact.filename).is_file())
+                                });
+                                let incremental = subset_requested && base_installed;
+                                let mut artifacts = requested_artifacts.unwrap_or_default();
+                                if !subset_requested || !base_installed {
+                                    let requested_ids = artifacts
+                                        .iter()
+                                        .map(|artifact| artifact.artifact_id.clone())
+                                        .collect::<std::collections::HashSet<_>>();
+                                    artifacts.extend(
+                                        model
+                                            .artifacts
+                                            .iter()
+                                            .filter(|artifact| {
+                                                artifact.required
+                                                    && !requested_ids
+                                                        .contains(&artifact.artifact_id)
+                                            })
+                                            .cloned(),
+                                    );
+                                }
                                 events.push(self.install_manager.start_install(InstallRequest {
                                     artifacts,
                                     catalog: Arc::clone(&self.catalog),
@@ -4248,6 +4282,7 @@ mod tests {
                 task: ModelTask::Stt,
                 language_tags: vec!["en".to_string()],
                 translation_support: None,
+                translation_packs: vec![],
                 supports_automatic_language_detection: false,
                 default_voice: None,
                 license_label: "MIT".to_string(),

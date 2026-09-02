@@ -146,6 +146,11 @@ export const en = {
   'translation.modal.canceled': 'Translation canceled.',
   'translation.modal.failed': 'Translation failed.',
   'translation.modal.missingModel': 'Install the local translation pack to use this language pair.',
+  'translation.modal.chooseModel': 'Choose a translation model',
+  'translation.modal.modelDownloadRequired': '{model} · Download required',
+  'translation.modal.languagePackRequired': '{source} → {target} needs a {size} language download.',
+  'translation.modal.downloadLanguagePack': 'Download language pack · {size}',
+  'translation.modal.downloadingLanguagePack': 'Downloading language pack…',
   'translation.modal.missingEngineModel':
     '{style} is not installed. Install its local model to translate this language pair.',
   'translation.modal.unsupportedPairModel':
@@ -993,7 +998,7 @@ export const en = {
   'catalog.family.pocket_tts.summary':
     'Reads notes aloud locally in English, French, German, Spanish, Portuguese, and Italian with selectable voices and pitch-preserving speed control.',
   'catalog.firefox_translations_release_2026_07.summary':
-    'Fast local translation between English and seven product languages using models released in Firefox.',
+    'Fast local translation with small, on-demand language packs using models released in Firefox.',
   'catalog.family.firefox_translations.summary':
     'Translates note text locally with the compact Bergamot engine and released Firefox models.',
   'catalog.tencent_hy_mt_2_1_8b_q4_k_m.summary':

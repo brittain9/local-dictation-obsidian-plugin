@@ -846,7 +846,7 @@ export const nl = {
   'translation.notice.copyFailed': 'Kon de vertaling niet kopiëren.',
   'translation.notice.tooLong': 'Vertaal maximaal {count} tekens per keer.',
   'catalog.firefox_translations_release_2026_07.summary':
-    'Snelle lokale vertaling tussen Engels en zeven talen met modellen die in Firefox zijn uitgebracht.',
+    'Snelle lokale vertaling met kleine taaldownloads op aanvraag en modellen die in Firefox zijn uitgebracht.',
   'catalog.family.firefox_translations.summary':
     'Vertaalt notitietekst lokaal met de compacte Bergamot-engine en Firefox-modellen.',
 } as const satisfies TranslationCatalog;

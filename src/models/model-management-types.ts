@@ -131,6 +131,7 @@ export interface CatalogModelRecord {
   notes: string[];
   runtimeId: RuntimeId;
   task: ModelTask;
+  translationPacks?: TranslationPackRecord[];
   translationSupport?: TranslationSupportRecord;
   sourceUrl: string;
   summary: string;
@@ -140,6 +141,12 @@ export interface CatalogModelRecord {
 export type TranslationSupportRecord =
   | { kind: 'all_to_all'; languages: string[] }
   | { kind: 'pairs'; pairs: { source: string; target: string }[] };
+
+export interface TranslationPackRecord {
+  artifactIds: string[];
+  source: string;
+  target: string;
+}
 
 export interface ModelCatalogRecord {
   catalogVersion: number;
@@ -153,6 +160,7 @@ export interface InstalledModelRecord {
   familyId: ModelFamilyId;
   installPath: string;
   installedAtUnixMs: number;
+  installedArtifactIds: string[];
   modelId: string;
   runtimeId: RuntimeId;
   runtimePath: string | null;

@@ -844,7 +844,7 @@ export const ja = {
   'translation.notice.copyFailed': '翻訳をコピーできませんでした。',
   'translation.notice.tooLong': '一度に翻訳できるのは最大 {count} 文字です。',
   'catalog.firefox_translations_release_2026_07.summary':
-    'Firefox で公開されたモデルを使用した、英語と7言語間の高速なローカル翻訳です。',
+    'Firefox で公開されたモデルを使う、必要な言語だけをダウンロードする高速なローカル翻訳です。',
   'catalog.family.firefox_translations.summary':
     'コンパクトな Bergamot エンジンと Firefox モデルでノートのテキストをローカル翻訳します。',
 } as const satisfies TranslationCatalog;

@@ -9,8 +9,32 @@ import {
   translationTargetsFor,
 } from '../src/translation/languages';
 
+const hyMt2Languages = TRANSLATION_LANGUAGES.filter(
+  (language) =>
+    ![
+      'bg',
+      'ca',
+      'da',
+      'el',
+      'et',
+      'eu',
+      'fi',
+      'gl',
+      'hu',
+      'is',
+      'kn',
+      'lt',
+      'lv',
+      'ml',
+      'nb',
+      'ro',
+      'sk',
+      'sl',
+      'sv',
+    ].includes(language),
+);
 const hyMt2 = {
-  translationSupport: { kind: 'all_to_all' as const, languages: [...TRANSLATION_LANGUAGES] },
+  translationSupport: { kind: 'all_to_all' as const, languages: [...hyMt2Languages] },
 };
 const bergamot = {
   translationSupport: {
@@ -23,10 +47,10 @@ const bergamot = {
 };
 
 describe('translation language capabilities', () => {
-  it('exposes every HY-MT 2 language through one canonical translation-language list', () => {
-    expect(TRANSLATION_LANGUAGES).toHaveLength(38);
+  it('exposes the union of catalog translation languages through one canonical list', () => {
+    expect(TRANSLATION_LANGUAGES).toHaveLength(57);
     expect(TRANSLATION_LANGUAGES).toEqual(
-      expect.arrayContaining(['zh', 'zh-Hant', 'yue', 'bo', 'ug', 'en', 'ja']),
+      expect.arrayContaining(['zh', 'zh-Hant', 'yue', 'bo', 'ug', 'en', 'ja', 'bg', 'sv']),
     );
     expect(normalizeTranslationLanguage(' ZH-hant ')).toBe('zh-Hant');
     expect(isTranslationLanguage('zh-Hant')).toBe(true);
