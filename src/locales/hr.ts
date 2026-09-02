@@ -1001,7 +1001,7 @@ export const hr = {
   'catalog.family.pocket_tts.summary':
     'Lokalno čita bilješke naglas na engleskom, francuskom, njemačkom, španjolskom, portugalskom i talijanskom, uz izbor glasova i upravljanje brzinom koje čuva visinu tona.',
   'catalog.firefox_translations_release_2026_07.summary':
-    'Brz lokalni prijevod između engleskog i sedam jezika proizvoda, s modelima koje objavljuje Firefox.',
+    'Brz lokalni prijevod s malim jezičnim paketima na zahtjev pomoću modela objavljenih u Firefoxu.',
   'catalog.family.firefox_translations.summary':
     'Lokalno prevodi tekst bilješke uz kompaktni Bergamot modul i objavljene Firefox modele.',
   'setup.sidecar.modal.unsupportedPlatform':

@@ -110,7 +110,7 @@ Speech Kit — formerly Local Dictation — is a complete speech and language to
 
 Dictate live into Markdown or switch to a higher-accuracy model when final wording matters. Capture meetings from your microphone and system audio with optional speaker labels and timestamps.
 
-Translate selections or whole notes between English and seven other languages with a local model pack. Review the result before replacing, inserting, or copying it; note text is never sent to a translation service.
+Translate selections or whole notes locally with the model and language direction you choose. Firefox directions download as small packs on demand, and note text is never sent to a translation service. Review the result before replacing, inserting, or copying it.
 
 Read any note aloud with natural on-device voices. Speech-to-text and text-to-speech belong in the same note-centered workflow.
 

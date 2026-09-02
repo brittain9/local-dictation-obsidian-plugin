@@ -56,6 +56,7 @@ function state(installed: boolean): ModelManagerState {
             catalogVersion: 6,
             familyId: model.familyId,
             installPath: '/models/firefox',
+            installedArtifactIds: [],
             installedAtUnixMs: 1,
             installedVoiceIds: [],
             modelId: model.modelId,

@@ -849,7 +849,7 @@ export const pt = {
   'translation.notice.copyFailed': 'Não foi possível copiar a tradução.',
   'translation.notice.tooLong': 'Traduza até {count} caracteres por vez.',
   'catalog.firefox_translations_release_2026_07.summary':
-    'Tradução local rápida entre inglês e sete idiomas com modelos publicados no Firefox.',
+    'Tradução local rápida com pequenos pacotes de idiomas sob demanda usando modelos lançados no Firefox.',
   'catalog.family.firefox_translations.summary':
     'Traduz o texto das notas localmente com o mecanismo compacto Bergamot e modelos do Firefox.',
 } satisfies TranslationCatalog;

@@ -475,7 +475,7 @@ async fn install_model_with_downloader(
             cleanup_stage_dir(&stage_dir);
             return Err(fail_install(
                 0,
-                "Install the read-aloud model before adding an optional voice.".to_string(),
+                "Install the base model before adding optional artifacts.".to_string(),
             ));
         }
         clone_install_tree(&target_dir, &stage_dir).map_err(|error| {
@@ -1772,6 +1772,7 @@ mod tests {
             task: ModelTask::Stt,
             language_tags: vec!["en".to_string()],
             translation_support: None,
+            translation_packs: vec![],
             supports_automatic_language_detection: false,
             default_voice: None,
             license_label: "MIT".to_string(),

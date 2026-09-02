@@ -3,6 +3,7 @@ import type {
   InstalledModelRecord,
   ModelCatalogRecord,
 } from '../models/model-management-types';
+import { translationInstallRequirement } from './translation-packs';
 
 export const TRANSLATION_LANGUAGES = [
   'zh',
@@ -43,6 +44,25 @@ export const TRANSLATION_LANGUAGES = [
   'mn',
   'ug',
   'yue',
+  'bg',
+  'ca',
+  'da',
+  'el',
+  'et',
+  'eu',
+  'fi',
+  'gl',
+  'hu',
+  'is',
+  'kn',
+  'lt',
+  'lv',
+  'ml',
+  'nb',
+  'ro',
+  'sk',
+  'sl',
+  'sv',
 ] as const;
 
 export type TranslationLanguage = (typeof TRANSLATION_LANGUAGES)[number];
@@ -53,29 +73,46 @@ const LANGUAGE_LABELS: Readonly<Record<TranslationLanguage, string>> = {
   ar: 'العربية',
   bn: 'বাংলা',
   bo: 'བོད་སྐད་',
+  bg: 'Български',
+  ca: 'Català',
   cs: 'Čeština',
+  da: 'Dansk',
   de: 'Deutsch',
   en: 'English',
+  el: 'Ελληνικά',
   es: 'Español',
+  et: 'Eesti',
+  eu: 'Euskara',
   fa: 'فارسی',
+  fi: 'Suomi',
   fr: 'Français',
+  gl: 'Galego',
   gu: 'ગુજરાતી',
   he: 'עברית',
   hi: 'हिन्दी',
+  hu: 'Magyar',
   id: 'Bahasa Indonesia',
+  is: 'Íslenska',
   it: 'Italiano',
   ja: '日本語',
   kk: 'Қазақша',
   km: 'ខ្មែរ',
+  kn: 'ಕನ್ನಡ',
   ko: '한국어',
   mn: 'Монгол',
+  ml: 'മലയാളം',
   mr: 'मराठी',
   ms: 'Bahasa Melayu',
   my: 'မြန်မာဘာသာ',
   nl: 'Nederlands',
+  nb: 'Norsk bokmål',
   pl: 'Polski',
   pt: 'Português',
+  ro: 'Română',
   ru: 'Русский',
+  sk: 'Slovenčina',
+  sl: 'Slovenščina',
+  sv: 'Svenska',
   ta: 'தமிழ்',
   te: 'తెలుగు',
   th: 'ไทย',
@@ -85,6 +122,8 @@ const LANGUAGE_LABELS: Readonly<Record<TranslationLanguage, string>> = {
   uk: 'Українська',
   ur: 'اردو',
   vi: 'Tiếng Việt',
+  lt: 'Lietuvių',
+  lv: 'Latviešu',
   yue: '粵語',
   zh: '中文',
   'zh-Hant': '繁體中文',
@@ -179,7 +218,11 @@ export function findInstalledTranslationModel(
       installed.familyId === catalogModel.familyId &&
       installed.modelId === catalogModel.modelId,
   );
-  return installedModel === undefined ? null : { catalogModel, installedModel };
+  if (installedModel === undefined) return null;
+  return translationInstallRequirement(catalogModel, installedModel, sourceLanguage, targetLanguage)
+    .kind === 'ready'
+    ? { catalogModel, installedModel }
+    : null;
 }
 
 export function catalogSupportsPair(

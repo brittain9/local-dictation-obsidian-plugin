@@ -89,6 +89,7 @@ const installed: InstalledModelRecord = {
   catalogVersion: 1,
   familyId: 'supertonic',
   installPath: '/models/test-tts',
+  installedArtifactIds: [],
   installedAtUnixMs: 1,
   installedVoiceIds: ['alba'],
   modelId: 'test-tts',

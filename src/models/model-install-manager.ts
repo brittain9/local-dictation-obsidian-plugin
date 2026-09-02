@@ -56,6 +56,13 @@ export interface FailedInstallInfo {
   selection: CatalogModelSelection;
 }
 
+export class ModelInstallCancelledError extends Error {
+  constructor() {
+    super('The model download was cancelled.');
+    this.name = 'ModelInstallCancelledError';
+  }
+}
+
 type LoadStatus = 'error' | 'loading' | 'ready';
 
 export interface ModelManagerState {
@@ -186,6 +193,11 @@ interface InstallRequest {
   selection: CatalogModelSelection;
 }
 
+interface InstallWaiter extends InstallRequest {
+  reject: (error: Error) => void;
+  resolve: () => void;
+}
+
 interface InstallRefresh {
   completed: CatalogModelSelection | null;
   expectedInstallGeneration: number;
@@ -241,6 +253,7 @@ export class ModelInstallManager {
   private currentInstallRequest: InstallRequest | null = null;
   private failedInstall: FailedInstallInfo | null = null;
   private installGeneration = 0;
+  private readonly installWaiters = new Map<string, InstallWaiter>();
   private installedModels: InstalledModelRecord[] = [];
   private lastLoggedInstallStateKey: string | null = null;
   private lifecycleGeneration = 0;
@@ -369,6 +382,10 @@ export class ModelInstallManager {
     this.activeInstall = null;
     this.currentInstallRequest = null;
     this.failedInstall = null;
+    for (const waiter of this.installWaiters.values()) {
+      waiter.reject(new Error('The model manager closed before the download finished.'));
+    }
+    this.installWaiters.clear();
     this.listeners.clear();
   }
 
@@ -418,22 +435,45 @@ export class ModelInstallManager {
     selection: CatalogModelSelection,
     artifactIds?: string[],
   ): Promise<ModelInstallUpdateEvent> {
+    return this.startInstall({
+      artifactIds: artifactIds === undefined ? null : [...artifactIds],
+      installId: createInstallId(),
+      selection: copyCatalogSelection(selection),
+    });
+  }
+
+  installAndWait(selection: CatalogModelSelection, artifactIds?: string[]): Promise<void> {
+    const request: InstallRequest = {
+      artifactIds: artifactIds === undefined ? null : [...artifactIds],
+      installId: createInstallId(),
+      selection: copyCatalogSelection(selection),
+    };
+    return new Promise((resolve, reject) => {
+      this.installWaiters.set(request.installId, { ...request, reject, resolve });
+      void this.startInstall(request).catch((error: unknown) => {
+        this.installWaiters.delete(request.installId);
+        reject(error instanceof Error ? error : new Error(String(error)));
+      });
+    });
+  }
+
+  private async startInstall(request: InstallRequest): Promise<ModelInstallUpdateEvent> {
     if (this.activeInstall !== null || this.currentInstallRequest !== null) {
       throw new Error('Another model is already being installed.');
     }
     const model = this.catalog.models.find((candidate) =>
-      matchesModelTriple(candidate, selection.runtimeId, selection.familyId, selection.modelId),
+      matchesModelTriple(
+        candidate,
+        request.selection.runtimeId,
+        request.selection.familyId,
+        request.selection.modelId,
+      ),
     );
     const language = this.getDictationLanguage();
     if (model?.task === 'stt' && !catalogModelSupportsLanguage(model, language)) {
       throw incompatibleLanguageError(model.displayName, language);
     }
 
-    const request: InstallRequest = {
-      artifactIds: artifactIds === undefined ? null : [...artifactIds],
-      installId: createInstallId(),
-      selection: copyCatalogSelection(selection),
-    };
     const clearedFailure = this.failedInstall !== null;
     this.installGeneration += 1;
     this.currentInstallRequest = request;
@@ -917,6 +957,15 @@ export class ModelInstallManager {
       return;
     }
 
+    if (event.state === 'failed') {
+      this.rejectInstallWaiter(
+        event.installId,
+        new Error(event.message ?? 'The model download failed.'),
+      );
+    } else if (event.state === 'cancelled') {
+      this.rejectInstallWaiter(event.installId, new ModelInstallCancelledError());
+    }
+
     const activeBeforeEvent = this.activeInstall;
     const matchedCurrentRequest =
       this.currentInstallRequest?.installId === event.installId ? this.currentInstallRequest : null;
@@ -942,7 +991,7 @@ export class ModelInstallManager {
           expectedLifecycleGeneration: this.lifecycleGeneration,
           expectedSelectionGeneration: this.selectionGeneration,
           reconcileFailure,
-        });
+        }).then((refreshed) => this.resolveCompletedInstallWaiter(event.installId, refreshed));
       }
       return;
     }
@@ -992,14 +1041,14 @@ export class ModelInstallManager {
         expectedLifecycleGeneration: this.lifecycleGeneration,
         expectedSelectionGeneration: this.selectionGeneration,
         reconcileFailure: null,
-      });
+      }).then((refreshed) => this.resolveCompletedInstallWaiter(event.installId, refreshed));
       return;
     }
 
     this.notify();
   }
 
-  private async refreshAfterInstall(refresh: InstallRefresh): Promise<void> {
+  private async refreshAfterInstall(refresh: InstallRefresh): Promise<boolean> {
     let refreshed = false;
     try {
       const overridePayload = createModelStoreOverridePayload(
@@ -1008,7 +1057,7 @@ export class ModelInstallManager {
       const installedEvent = await this.deps.sidecarConnection.listInstalledModels(
         overridePayload.modelStorePathOverride,
       );
-      if (this.lifecycleGeneration !== refresh.expectedLifecycleGeneration) return;
+      if (this.lifecycleGeneration !== refresh.expectedLifecycleGeneration) return false;
       this.installedModels = installedEvent.models;
       refreshed = true;
     } catch (error) {
@@ -1062,6 +1111,44 @@ export class ModelInstallManager {
     if (this.lifecycleGeneration === refresh.expectedLifecycleGeneration) {
       this.notify();
     }
+    return refreshed;
+  }
+
+  private resolveCompletedInstallWaiter(installId: string, refreshed: boolean): void {
+    const waiter = this.installWaiters.get(installId);
+    if (waiter === undefined) return;
+    if (!refreshed || !this.installRequestIsSatisfied(waiter)) {
+      this.rejectInstallWaiter(
+        installId,
+        new Error('The download completed, but the installed model could not be refreshed.'),
+      );
+      return;
+    }
+    this.installWaiters.delete(installId);
+    waiter.resolve();
+  }
+
+  private rejectInstallWaiter(installId: string, error: Error): void {
+    const waiter = this.installWaiters.get(installId);
+    if (waiter === undefined) return;
+    this.installWaiters.delete(installId);
+    waiter.reject(error);
+  }
+
+  private installRequestIsSatisfied(request: InstallRequest): boolean {
+    const installed = this.installedModels.find((candidate) =>
+      matchesModelTriple(
+        candidate,
+        request.selection.runtimeId,
+        request.selection.familyId,
+        request.selection.modelId,
+      ),
+    );
+    if (installed === undefined) return false;
+    return (
+      request.artifactIds === null ||
+      request.artifactIds.every((artifactId) => installed.installedArtifactIds.includes(artifactId))
+    );
   }
 
   private isFailedInstallSatisfied(failure: FailedInstallInfo): boolean {
@@ -1086,16 +1173,11 @@ export class ModelInstallManager {
     );
     if (catalogModel === undefined) return false;
 
-    return failure.artifactIds.every((artifactId) => {
-      const artifact = catalogModel.artifacts.find(
-        (candidate) => candidate.artifactId === artifactId,
-      );
-      if (artifact === undefined) return false;
-      return (
-        artifact.role !== 'voice' ||
-        (artifact.voiceId !== undefined && installed.installedVoiceIds.includes(artifact.voiceId))
-      );
-    });
+    return failure.artifactIds.every(
+      (artifactId) =>
+        catalogModel.artifacts.some((candidate) => candidate.artifactId === artifactId) &&
+        installed.installedArtifactIds.includes(artifactId),
+    );
   }
 
   private resolveNextInstallState(

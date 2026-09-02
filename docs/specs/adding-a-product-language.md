@@ -10,10 +10,9 @@ operational layer on top of it.
 
 ## The problem this solves
 
-Speech Kit currently ships eight languages, and today that is one coupled set:
-the same eight tags appear in dictation, read aloud, translation, and the UI
-catalog. That coupling is a coincidence of how the first multilingual release
-was scoped, not a design.
+Speech Kit ships several overlapping language sets. Dictation, read aloud,
+translation, and the UI catalog each derive their options from the exact model
+capabilities they can actually provide; a shared tag is not proof of support.
 
 The moment a user asks for a ninth language, the coincidence breaks. Whisper can
 transcribe Croatian; Supertonic may not speak it; there is no Croatian UI
@@ -218,21 +217,20 @@ Add the tag to `languageTags` on `nemotron_asr_0_6b_int8_streaming_560ms`.
 `supertonic_3_multilingual_2026_05`.
 
 **2f. Translation** (rarely) — add the released directions to
-`translationPairs` on `firefox_translations_release_2026_07`, pinning each
-model, vocab, and lexical-shortlist artifact by SHA-256 as the existing entries
-do.
+`translationSupport` and one exact-direction `translationPacks` entry on
+`firefox_translations_release_2026_07`, pinning each model, vocab, and
+lexical-shortlist artifact by SHA-256. Keep those artifacts optional so the
+translation modal can install only the requested direction.
 
 Two things to get right. First, **directions release independently** — Mozilla
 ships `en→hr` at `Release` while `hr→en` exists only as an unreleased `tiny`
-build. The catalog's `translationPairs` is directional and handles this
-correctly, but `isSupportedTranslationPair` in `src/translation/languages.ts:44`
-approves any English-anchored pair from a product-level list, so a one-way
-language would be offered in the UI and then fail the model-level check at line
-85. That is the same class of bug as the shared-tag constant: a product list
-overstating a model. Fix the product layer to consult installed directions.
+build. The catalog's directed support and `translationPacks` handle this
+correctly. The product layer must consult the selected model's declared packs
+and installed artifact IDs before presenting a direction as ready.
 
-Second, **the pack is one download**, so every added direction grows it for
-every user regardless of the languages they translate.
+Second, **the pack is on demand**, so adding a direction does not grow every
+user's install. The shared runtime is downloaded once; each language direction
+is fetched only when requested.
 
 **2g. UI locale** (separate track) — a new `src/locales/*.ts` catalog needs a
 native reviewer and passes the existing parity checks. Check that Obsidian ships
@@ -272,8 +270,8 @@ Croatian", not "Croatian is good". Native review is the second half.
 
 ### Step 4 — Fix the product copy
 
-The README still describes the eight as one set ("eight languages", "seven other
-languages"). Any PR that breaks the coupling has to split those claims into
+The README and model descriptions must keep these sets separate. Any PR that
+breaks the coupling has to split claims into their
 their real, separate counts:
 
 - **Interface languages** — the `src/locales/` catalogs.
