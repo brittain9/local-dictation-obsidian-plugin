@@ -100,6 +100,20 @@ export function normalizeTranslationLanguage(value: unknown): TranslationLanguag
   return TRANSLATION_LANGUAGES.find((language) => language.toLowerCase() === normalized) ?? null;
 }
 
+/** Best-effort script detection for dictation sessions configured as `auto`.
+ * Explicit translation source settings still take precedence at the caller. */
+export function inferTranslationLanguage(text: string): TranslationLanguage | null {
+  if (/\p{Script=Hiragana}|\p{Script=Katakana}/u.test(text)) return 'ja';
+  if (/\p{Script=Hangul}/u.test(text)) return 'ko';
+  if (/\p{Script=Arabic}/u.test(text)) return 'ar';
+  if (/\p{Script=Devanagari}/u.test(text)) return 'hi';
+  if (/\p{Script=Thai}/u.test(text)) return 'th';
+  if (/\p{Script=Cyrillic}/u.test(text)) return 'ru';
+  if (/\p{Script=Han}/u.test(text)) return 'zh';
+  if (/[A-Za-z]/u.test(text)) return 'en';
+  return null;
+}
+
 export function translationLanguageLabel(language: TranslationLanguage): string {
   return LANGUAGE_LABELS[language];
 }

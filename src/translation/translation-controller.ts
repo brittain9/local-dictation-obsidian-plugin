@@ -12,6 +12,7 @@ import { translateWithHyMt } from './hy-mt-client';
 import {
   findInstalledTranslationModel,
   type InstalledTranslationModel,
+  inferTranslationLanguage,
   resolveTranslationLanguages,
   type TranslationLanguage,
 } from './languages';
@@ -253,8 +254,12 @@ export class TranslationController {
       const settings = this.dependencies.getSettings();
       if (!settings.realtimeTranslationEnabled) return;
       const model = selectedTranslationModel(this.dependencies.modelManager.getState(), settings);
+      const realtimeDictationLanguage =
+        settings.dictationLanguage === 'auto' && settings.translationSourceLanguage === null
+          ? (inferTranslationLanguage(request.source) ?? settings.dictationLanguage)
+          : settings.dictationLanguage;
       const { sourceLanguage, targetLanguage } = resolveTranslationLanguages(
-        settings.dictationLanguage,
+        realtimeDictationLanguage,
         settings.translationSourceLanguage,
         settings.translationTargetLanguage,
         model,

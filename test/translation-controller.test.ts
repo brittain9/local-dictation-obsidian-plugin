@@ -478,6 +478,59 @@ describe('TranslationController', () => {
     );
   });
 
+  it('infers Chinese for realtime translation when dictation language is auto', async () => {
+    const listeners: ((event: SidecarEvent) => void)[] = [];
+    const startTranslation = vi.fn(
+      async (_payload: {
+        sourceLanguage: string;
+        targetLanguage: string;
+        translationId: string;
+      }) => {},
+    );
+    const model = translationModel('hy-mt-1.8b', 'HY-MT 2 1.8B');
+    model.languageTags = ['zh', 'en'];
+    model.translationSupport.languages = ['zh', 'en'];
+    const settings: PluginSettings = {
+      ...DEFAULT_PLUGIN_SETTINGS,
+      dictationLanguage: 'auto',
+      realtimeTranslationEnabled: true,
+      selectedTranslationModel: selectionFor(model),
+      translationSourceLanguage: null,
+      translationTargetLanguage: null,
+    };
+    const controller = new TranslationController({
+      app: {} as never,
+      canReadAloud: () => false,
+      feedback: { show: vi.fn() },
+      getSettings: () => settings,
+      logger: { error: vi.fn(), warn: vi.fn() } as never,
+      modelManager: {
+        getState: () => ({
+          catalog: { models: [model] },
+          installedModels: [installedRecord(model)],
+          selectedTranslationModel: settings.selectedTranslationModel,
+        }),
+      } as never,
+      onReadAloud: vi.fn(),
+      openModelPicker: vi.fn(async () => {}),
+      saveSettings: vi.fn(async () => {}),
+      sidecarConnection: {
+        cancelTranslation: vi.fn(),
+        startTranslation,
+        subscribe: (next: (event: SidecarEvent) => void) => {
+          listeners.push(next);
+          return () => {};
+        },
+      } as never,
+    });
+    const target = { insertAdjacentToSessionRange: vi.fn(() => true) };
+    controller.translateRealtime('这是中文句子。', target);
+    await vi.waitFor(() => expect(startTranslation).toHaveBeenCalledOnce());
+    expect(startTranslation).toHaveBeenCalledWith(
+      expect.objectContaining({ sourceLanguage: 'zh', targetLanguage: 'en' }),
+    );
+  });
+
   it('coalesces partial realtime translations and lets the final revision win', async () => {
     const listeners: ((event: SidecarEvent) => void)[] = [];
     const startTranslation = vi.fn(async (_payload: { translationId: string }) => {});
