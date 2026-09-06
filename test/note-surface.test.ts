@@ -13,7 +13,7 @@ import {
   setAnchorEffect,
   setAnchorModeEffect,
 } from '../src/editor/dictation-anchor-extension';
-import { NoteSurface } from '../src/editor/note-surface';
+import { NoteSurface, noteSurfaceUpdateListenerExtension } from '../src/editor/note-surface';
 import {
   provisionalTranscriptDecorationsField,
   provisionalTranscriptExtension,
@@ -279,12 +279,12 @@ describe('NoteSurface', () => {
   });
 
   it('replaces a provisional translation in place before appending the next utterance', () => {
-    const { surface, view } = createSurface();
+    const { surface, view } = createSurface({ extensions: noteSurfaceUpdateListenerExtension() });
+    view.addUpdateListener((update) => surface.observeTransaction(update));
 
     expect(surface.appendProjection('u1', literalProjection('partial')).kind).toBe('appended');
     expect(surface.replaceUtteranceCompanion('u1', '> Partial')).toBe(true);
     expect(surface.replaceAnchor('u1', 'final.', 'partial').kind).toBe('replaced');
-    surface.observeTransaction(view.lastUpdate as ViewUpdate);
     expect(surface.replaceUtteranceCompanion('u1', '> Final.')).toBe(true);
     expect(surface.appendProjection('u2', literalProjection('next')).kind).toBe('appended');
 

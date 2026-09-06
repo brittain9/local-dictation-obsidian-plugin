@@ -363,10 +363,15 @@ export class NoteSurface {
       effects: this.ownerAnchorEffects(replacementStart + newText.length),
     });
 
-    const removedLength = span.textEnd - replacementStart;
+    // The editor update listener has already mapped every tracked position,
+    // including this span and any companion block. Re-anchor the replaceable
+    // text explicitly instead of applying a second length delta to `end`.
+    // The old delta calculation double-counted source changes when a companion
+    // translation was present, leaving the final translation detached.
+    span.start = removeBoundary ? replacementStart : span.start;
     span.textStart = replacementStart;
     span.textEnd = replacementStart + newText.length;
-    span.end -= removedLength - newText.length;
+    span.end = this.companionSpans.get(utteranceId)?.start ?? span.textEnd;
     span.projectedText = newText;
 
     return { kind: 'replaced', span: cloneSpan(span) };
