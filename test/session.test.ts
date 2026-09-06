@@ -141,6 +141,10 @@ class FakeSurface {
     return span === undefined ? undefined : { ...span };
   }
 
+  getCompanionEnd(_utteranceId: string): number | undefined {
+    return undefined;
+  }
+
   readRange(range: RewriteRange): string | null {
     if (range.from < 0 || range.to < range.from || range.to > this.documentText.length) {
       return null;

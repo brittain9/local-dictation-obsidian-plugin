@@ -90,6 +90,7 @@ interface NoteSurfaceLike {
   appendProjection(utteranceId: string, projection: TranscriptInsertProjection): AppendResult;
   dispose(): void;
   getSpan(utteranceId: UtteranceId): ProjectedSpan | undefined;
+  getCompanionEnd(utteranceId: UtteranceId): number | undefined;
   readRange(range: RewriteRange): string | null;
   readRangeExcludingCompanions(range: RewriteRange): string | null;
   readNoteGlossary(maxChars: number): { text: string; truncated: boolean } | null;
@@ -774,7 +775,10 @@ export class Session {
       return null;
     }
 
-    return { from: first.start, to: last.end };
+    return {
+      from: first.start,
+      to: Math.max(last.end, this.surface.getCompanionEnd(last.utteranceId) ?? last.end),
+    };
   }
 
   private buildCleanedReplacement(

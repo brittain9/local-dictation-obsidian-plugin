@@ -658,6 +658,10 @@ export class NoteSurface {
     return span === undefined ? undefined : cloneSpan(span);
   }
 
+  getCompanionEnd(utteranceId: UtteranceId): number | undefined {
+    return this.companionSpans.get(utteranceId)?.end;
+  }
+
   // Whisper's `initial_prompt` is style-imitative, so present spelling hints
   // as sentence-cased transcript prose instead of a Title-Case glossary list.
   readNoteGlossary(maxChars: number): { text: string; truncated: boolean } | null {
