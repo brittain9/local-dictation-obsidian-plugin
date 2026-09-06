@@ -5,6 +5,22 @@ const MODEL_SUMMARY_KEYS = {
   cohere_transcribe_int8: 'catalog.cohere_transcribe_int8.summary',
   cohere_transcribe_q4: 'catalog.cohere_transcribe_q4.summary',
   firefox_translations_release_2026_07: 'catalog.firefox_translations_release_2026_07.summary',
+  funasr_nano_2512_paraformer_zh_streaming_f16:
+    'catalog.funasr_nano_2512_paraformer_zh_streaming_f16.summary',
+  funasr_nano_2512_paraformer_zh_streaming_q8_0:
+    'catalog.funasr_nano_2512_paraformer_zh_streaming_q8_0.summary',
+  funasr_nano_paraformer_zh_streaming_q4km:
+    'catalog.funasr_nano_paraformer_zh_streaming_q4km.summary',
+  funasr_nano_paraformer_zh_streaming_q5km:
+    'catalog.funasr_nano_paraformer_zh_streaming_q5km.summary',
+  funasr_nano_paraformer_zh_streaming_q8_0:
+    'catalog.funasr_nano_paraformer_zh_streaming_q8_0.summary',
+  funasr_sensevoice_paraformer_zh_streaming_f16:
+    'catalog.funasr_sensevoice_paraformer_zh_streaming_f16.summary',
+  funasr_sensevoice_paraformer_zh_streaming_f32:
+    'catalog.funasr_sensevoice_paraformer_zh_streaming_f32.summary',
+  funasr_sensevoice_paraformer_zh_streaming_q8:
+    'catalog.funasr_sensevoice_paraformer_zh_streaming_q8.summary',
   tencent_hy_mt_2_1_8b_q4_k_m: 'catalog.tencent_hy_mt_2_1_8b_q4_k_m.summary',
   tencent_hy_mt_2_7b_q4_k_m: 'catalog.tencent_hy_mt_2_7b_q4_k_m.summary',
   moonshine_medium_streaming_en: 'catalog.moonshine_medium_streaming_en.summary',
@@ -28,6 +44,7 @@ const MODEL_SUMMARY_KEYS = {
 const FAMILY_SUMMARY_KEYS = {
   cohere_transcribe: 'catalog.family.cohere_transcribe.summary',
   firefox_translations: 'catalog.family.firefox_translations.summary',
+  funasr_hybrid: 'catalog.family.funasr_hybrid.summary',
   tencent_hy_mt: 'catalog.family.tencent_hy_mt.summary',
   moonshine: 'catalog.family.moonshine.summary',
   nemotron_asr: 'catalog.family.nemotron_asr.summary',

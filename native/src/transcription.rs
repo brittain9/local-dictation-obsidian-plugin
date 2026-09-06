@@ -3,23 +3,31 @@ use std::path::{Path, PathBuf};
 
 use uuid::Uuid;
 
+use crate::engine::capabilities::AcceleratorId;
 use crate::protocol::{ContextWindow, StageId, StageOutcome, TranscriptSegment};
 
 pub(crate) const ENGLISH_LANGUAGE_TAG: &str = "en";
-/// Every language tag the product can persist or that a catalog entry may name.
-///
-/// This is a vocabulary, not a capability. Membership here means the tag is
-/// spelled correctly and the UI has an option for it — nothing more. What a
-/// given engine can actually serve is declared by that engine's adapter, so
-/// adding a tag here can never make a model appear eligible for a language its
-/// artifact cannot handle.
-pub(crate) const PRODUCT_LANGUAGE_TAGS: &[&str] =
-    &["en", "es", "de", "fr", "pt", "it", "nl", "ja", "hr", "sr"];
 pub(crate) const AUTOMATIC_LANGUAGE_TAG: &str = "auto";
 
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct GpuConfig {
-    pub use_gpu: bool,
+    pub accelerator: Option<AcceleratorId>,
+}
+
+impl GpuConfig {
+    pub const fn cpu() -> Self {
+        Self { accelerator: None }
+    }
+
+    pub const fn uses_hardware_acceleration(self) -> bool {
+        self.accelerator.is_some()
+    }
+}
+
+impl Default for GpuConfig {
+    fn default() -> Self {
+        Self::cpu()
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]

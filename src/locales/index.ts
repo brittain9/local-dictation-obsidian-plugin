@@ -7,6 +7,7 @@ import { it } from './it';
 import { ja } from './ja';
 import { nl } from './nl';
 import { pt } from './pt';
+import { zh } from './zh';
 
 export type TranslationCatalog = Partial<Record<TranslationKey, string>>;
 
@@ -20,4 +21,5 @@ export const catalogs: Readonly<Record<string, TranslationCatalog>> = {
   ja,
   nl,
   pt,
+  zh,
 };

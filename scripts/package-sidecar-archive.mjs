@@ -13,6 +13,7 @@ import { dirname, join } from 'node:path';
 import process from 'node:process';
 
 import { listCudaArtifacts } from './lib/cuda-artifacts.mjs';
+import { ensureFunasrSidecarArtifacts } from './lib/funasr-runtime.mjs';
 import { stageSidecarBaseFiles } from './lib/package-sidecar-base-files.mjs';
 import { pickFirstExistingDir } from './lib/pick-existing-dir.mjs';
 import { requiredEnv } from './lib/required-env.mjs';
@@ -31,6 +32,10 @@ const helperName = isWindows
   ? 'local-dictation-translation-helper.exe'
   : 'local-dictation-translation-helper';
 const helperPath = join(dirname(binaryPath), helperName);
+const funasrRuntimePaths = await ensureFunasrSidecarArtifacts({
+  destinationDirectory: dirname(binaryPath),
+  download: true,
+});
 const distDir = 'dist';
 const artifactDir = join(distDir, assetName);
 
@@ -38,6 +43,7 @@ await stageSidecarBaseFiles({
   artifactDirectory: artifactDir,
   binaryName,
   binaryPath,
+  extraFilePaths: funasrRuntimePaths,
   helperName,
   helperPath,
 });

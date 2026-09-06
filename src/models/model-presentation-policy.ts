@@ -46,7 +46,7 @@ export function resolveModelPresentationPolicy(model: CatalogModelRecord): Model
       tone: 'warning' as const,
     }));
   const warning = heavy
-    ? t('models.manage.heavyWarning')
+    ? t('models.manage.heavyWarning', { size })
     : mayBuffer
       ? t('models.manage.performanceWarning')
       : null;

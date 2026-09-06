@@ -146,7 +146,7 @@ describe('model browser', () => {
   it('derives an All-first language rail from speech-to-text models in stable native-label order', () => {
     const models = [
       sttModel('english', 'moonshine', ['en']),
-      sttModel('multilingual', 'nemotron_asr', ['ja', 'nl', 'es']),
+      sttModel('multilingual', 'nemotron_asr', ['ja', 'nl', 'es', 'zh']),
       ttsModel('french', 'fr'),
       ttsModel('german', 'de'),
       ttsModel('portuguese', 'pt'),
@@ -160,6 +160,7 @@ describe('model browser', () => {
       { code: 'ES', label: 'Español' },
       { code: 'NL', label: 'Nederlands' },
       { code: 'JA', label: '日本語' },
+      { code: 'ZH', label: '中文' },
     ]);
   });
 
@@ -353,9 +354,7 @@ describe('model browser', () => {
     });
     expect(policy.installConfirmation?.message).toContain('1.06 GiB');
     expect(policy.installConfirmation?.message).toContain('CC-BY-4.0');
-    expect(policy.installConfirmation?.message).toContain('European Union');
-    expect(policy.installConfirmation?.message).toContain('United Kingdom');
-    expect(policy.installConfirmation?.message).toContain('South Korea');
+    expect(policy.installConfirmation?.message).toContain("Review the publisher's terms");
   });
 
   it('presents Heavy as a warning-only resource badge', () => {
@@ -364,7 +363,7 @@ describe('model browser', () => {
     );
 
     expect(policy.badges).toEqual([{ label: 'Heavy', tag: 'heavy', tone: 'warning' }]);
-    expect(policy.warning).toContain('4.62 GB');
+    expect(policy.warning).toContain('4.31 GiB');
     expect(policy.installConfirmation?.message).toContain('4.31 GiB');
     expect(policy.installConfirmation?.link).toBeNull();
   });
@@ -490,6 +489,16 @@ describe('model browser', () => {
         (modal.contentEl as unknown as TestElement).findByClass('search-input-clear-button'),
       ).toBeDefined();
       const row = Setting.named('Pocket TTS en');
+      expect(texts(row.descEl)).toEqual(
+        expect.arrayContaining([
+          'English only',
+          'CPU',
+          'ONNX',
+          'Speed control',
+          '24 kHz',
+          '1 voice',
+        ]),
+      );
       expect(row.extraButtonComponents).toHaveLength(1);
       expect(row.extraButtonComponents[0]?.tooltip).toBe('Details');
       await row.extraButtonComponents[0]?.click();

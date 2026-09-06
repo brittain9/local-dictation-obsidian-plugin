@@ -121,13 +121,46 @@ export class SidecarProcess {
   }
 
   write(frameBytes: Uint8Array): void {
-    const child = this.child;
+    this.requireWritableChild().stdin.write(frameBytes);
+  }
 
+  async writeWithBackpressure(frameBytes: Uint8Array): Promise<void> {
+    const child = this.requireWritableChild();
+    if (child.stdin.write(frameBytes)) {
+      return;
+    }
+
+    await new Promise<void>((resolve, reject) => {
+      const cleanup = (): void => {
+        child.stdin.off('drain', onDrain);
+        child.stdin.off('error', onError);
+        child.off('exit', onExit);
+      };
+      const onDrain = (): void => {
+        cleanup();
+        resolve();
+      };
+      const onError = (error: Error): void => {
+        cleanup();
+        reject(error);
+      };
+      const onExit = (): void => {
+        cleanup();
+        reject(new Error('Sidecar process exited before its audio buffer drained.'));
+      };
+
+      child.stdin.once('drain', onDrain);
+      child.stdin.once('error', onError);
+      child.once('exit', onExit);
+    });
+  }
+
+  private requireWritableChild(): ChildProcessWithoutNullStreams {
+    const child = this.child;
     if (child === null || this.stdinDead || !child.stdin.writable) {
       throw new Error('Sidecar process is not running.');
     }
-
-    child.stdin.write(frameBytes);
+    return child;
   }
 
   private disposeReaders(): void {

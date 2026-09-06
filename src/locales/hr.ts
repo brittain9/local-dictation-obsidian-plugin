@@ -973,7 +973,7 @@ export const hr = {
   'catalog.moonshine_medium_streaming_en.summary':
     'Najtočniji Moonshine streaming model s 245 milijuna parametara.',
   'catalog.nemotron_asr_0_6b_int8_streaming_560ms.summary':
-    'NVIDIA-in višejezični RNNT s 0,6 milijardi parametara, izvezen u int8 ONNX za transkripciju uživo s predmemorijom konteksta na osam provjerenih jezika.',
+    'NVIDIA-in višejezični RNNT s 0,6 milijardi parametara, izvezen u int8 ONNX za transkripciju uživo s predmemorijom konteksta na 28 podržanih jezika.',
   'catalog.pocket_tts_english_2026_04_int8.summary':
     'Prirodna lokalna sinteza čitanja naglas na engleskom uz izbor pomno odabranih glasova.',
   'catalog.pocket_tts_french_24l_int8.summary':
@@ -1008,4 +1008,23 @@ export const hr = {
     'Ovo izdanje govornog modula nije dostupno za vašu platformu ili arhitekturu.',
   'setup.sidecar.modal.genericInstallError':
     'Govorni modul nije moguće instalirati. Pojedinosti potražite u zapisnicima dodatka, a zatim pokušajte ponovno.',
+  'audioFile.busy': 'Druga datoteka već se transkribira.',
+  'audioFile.cancel': 'Otkaži transkripciju',
+  'audioFile.cancelled': 'Transkripcija datoteke {name} je otkazana.',
+  'audioFile.completed': 'Stvorena je bilješka transkripta: {path}',
+  'audioFile.engineBusy': 'Govorni modul se instalira ili ponovno pokreće.',
+  'audioFile.failed': 'Nije moguće transkribirati {name}.',
+  'audioFile.markdownCompleted': 'Transkribirano je {completed} od {total} ugrađenih snimki.',
+  'audioFile.noEmbeddedAudio': 'U datoteci {name} nisu pronađene lokalne audiosnimke.',
+  'audioFile.noSpeech': 'U datoteci {name} nije prepoznat govor.',
+  'audioFile.outputExists': 'Bilješka transkripta već postoji na putanji {path}.',
+  'audioFile.started': 'Lokalna transkripcija datoteke {name}…',
+  'audioFile.transcriptLabel': 'Transkript',
+  'commands.transcribeAudioFile': 'Transkribiraj audio u bilješku',
+  'commands.transcribeEmbeddedAudio': 'Transkribiraj ugrađene snimke',
+  'settings.fileTranscription.name': 'Izbornici za transkripciju datoteka',
+  'settings.fileTranscription.desc':
+    'Dodaje radnje transkripcije u kontekstne izbornike audio i Markdown datoteka.',
+  'settings.developerMode.name': 'Način rada za razvojne programere',
+  'settings.developerMode.desc': 'Omogućuje opširne zapisnike dodatka za rješavanje problema.',
 } as const satisfies TranslationCatalog;

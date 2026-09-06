@@ -21,6 +21,7 @@ describe('locale catalog parity', () => {
       'ja',
       'nl',
       'pt',
+      'zh',
     ]);
   });
 

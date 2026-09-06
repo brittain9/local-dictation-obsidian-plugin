@@ -179,7 +179,7 @@ fn streaming_final_equals_one_shot_across_corpus_and_reaches_eos() {
     for fixture in &Corpus::load().fixtures {
         let samples = audio::decode_wav_16k_mono(&fixture.audio_path()).unwrap();
         let mut chunked = MoonshineAdapter
-            .load_streaming(frontend.as_path(), GpuConfig { use_gpu: false })
+            .load_streaming(frontend.as_path(), GpuConfig::default())
             .unwrap();
         for chunk in samples.chunks(8_000) {
             chunked.accept_audio(chunk).unwrap();
@@ -188,7 +188,7 @@ fn streaming_final_equals_one_shot_across_corpus_and_reaches_eos() {
         let chunked_final = chunked.finalize_utterance().unwrap();
 
         let mut one_shot = MoonshineAdapter
-            .load_streaming(frontend.as_path(), GpuConfig { use_gpu: false })
+            .load_streaming(frontend.as_path(), GpuConfig::default())
             .unwrap();
         one_shot.accept_audio(&samples).unwrap();
         let one_shot_final = one_shot.finalize_utterance().unwrap();

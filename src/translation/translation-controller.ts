@@ -30,6 +30,7 @@ import {
 import { TranslationModal, type TranslationSnapshot } from './translation-modal';
 
 const MAX_TRANSLATION_CHARACTERS = 50_000;
+const MAX_REALTIME_TRANSLATION_QUEUE = 16;
 
 interface TranslationAdapterContext {
   installed: InstalledTranslationModel;
@@ -125,13 +126,23 @@ interface TranslationConfiguration {
 export class TranslationController {
   private active: ActiveTranslation | null = null;
   private activeModal: TranslationModal | null = null;
+  private disposed = false;
+  private realtimeAbortController: AbortController | null = null;
+  private realtimeGeneration = 0;
+  private realtimePendingCount = 0;
+  private realtimeQueue: Promise<void> = Promise.resolve();
   constructor(private readonly dependencies: TranslationControllerDependencies) {}
 
   translateSelection(editor: Editor): void {
     if (this.reopenActive() || !editor.somethingSelected()) return;
     const from = editor.getCursor('from');
     const to = editor.getCursor('to');
-    this.begin(editor, { from, kind: 'selection', source: editor.getRange(from, to), to });
+    this.begin(editor, {
+      from,
+      kind: 'selection',
+      source: editor.getRange(from, to),
+      to,
+    });
   }
   translateNote(editor: Editor): void {
     if (this.reopenActive()) return;
@@ -144,12 +155,78 @@ export class TranslationController {
       });
       return;
     }
-    this.begin(editor, { from: { line: 0, ch: 0 }, kind: 'note', source, to: endPosition(source) });
+    this.begin(editor, {
+      from: { line: 0, ch: 0 },
+      kind: 'note',
+      source,
+      to: endPosition(source),
+    });
   }
   dispose(): void {
+    this.disposed = true;
+    this.realtimeGeneration += 1;
+    this.realtimeAbortController?.abort();
+    this.realtimeAbortController = null;
     this.active?.job.cancel();
     this.activeModal?.close();
     this.clearActive();
+  }
+
+  /** Queue a finalized dictation sentence without opening the translation UI. */
+  translateRealtime(
+    source: string,
+    target: Pick<RealtimeTranslationTarget, 'insertAdjacentToSessionRange'>,
+  ): void {
+    const text = source.trim();
+    if (text.length === 0 || this.disposed) return;
+    if (this.realtimePendingCount >= MAX_REALTIME_TRANSLATION_QUEUE) {
+      this.dependencies.logger.warn(
+        'translation',
+        `realtime translation queue is full; skipped a sentence (${MAX_REALTIME_TRANSLATION_QUEUE} pending)`,
+      );
+      return;
+    }
+    this.realtimePendingCount += 1;
+    const generation = this.realtimeGeneration;
+    this.realtimeQueue = this.realtimeQueue
+      .then(async () => {
+        if (this.disposed || generation !== this.realtimeGeneration) return;
+        const settings = this.dependencies.getSettings();
+        if (!settings.realtimeTranslationEnabled) return;
+        const model = selectedTranslationModel(this.dependencies.modelManager.getState(), settings);
+        const { sourceLanguage, targetLanguage } = resolveTranslationLanguages(
+          settings.dictationLanguage,
+          settings.translationSourceLanguage,
+          settings.translationTargetLanguage,
+          model,
+        );
+        const abortController = new AbortController();
+        this.realtimeAbortController = abortController;
+        const result = await this.runTranslation(text, model, sourceLanguage, targetLanguage, {
+          onProgress: () => {},
+          onReady: () => {},
+          signal: abortController.signal,
+        });
+        if (
+          this.disposed ||
+          generation !== this.realtimeGeneration ||
+          result.kind !== 'translated' ||
+          result.text.trim() === text
+        )
+          return;
+        target.insertAdjacentToSessionRange(`> ${result.text.trim()}`, 'below');
+      })
+      .catch((error: unknown) => {
+        if (
+          !(error instanceof TranslationCancelledError) &&
+          !(error instanceof DOMException && error.name === 'AbortError')
+        )
+          this.dependencies.logger.warn('translation', 'realtime translation failed', error);
+      })
+      .finally(() => {
+        this.realtimePendingCount -= 1;
+        if (generation === this.realtimeGeneration) this.realtimeAbortController = null;
+      });
   }
 
   private reopenActive(): boolean {
@@ -230,7 +307,9 @@ export class TranslationController {
       onManageModels: async () => {
         modal.close();
         try {
-          await this.dependencies.openModelPicker({ initialTask: 'translation' });
+          await this.dependencies.openModelPicker({
+            initialTask: 'translation',
+          });
           if (this.active !== active) return;
           const nextModel = selectedTranslationModel(
             this.dependencies.modelManager.getState(),
@@ -376,6 +455,10 @@ export class TranslationController {
       throw error;
     }
   }
+}
+
+export interface RealtimeTranslationTarget {
+  insertAdjacentToSessionRange(blockText: string, placement: 'above' | 'below'): boolean;
 }
 
 function selectedTranslationModel(

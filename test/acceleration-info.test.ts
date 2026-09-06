@@ -97,6 +97,18 @@ describe('describeAcceleration', () => {
     expect(description.fallbacks).toEqual([]);
   });
 
+  it('uses deterministic Vulkan priority when capability arrays arrive in hash-map order', () => {
+    const description = describeAcceleration(
+      snapshot({
+        cpu: { available: true, unavailableReason: null },
+        vulkan: { available: true, unavailableReason: null },
+      }),
+      'auto',
+    );
+
+    expect(description.label).toBe('Vulkan');
+  });
+
   it('reports CPU when the runtime has CUDA but the model family cannot use it', () => {
     const description = describeAcceleration(
       snapshot(

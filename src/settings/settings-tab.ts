@@ -335,6 +335,16 @@ export class LocalSttSettingTab extends PluginSettingTab {
       isValid: isListeningMode,
     });
 
+    const forceContinuousSetting = new Setting(captureCard)
+      .setName(t('settings.dictation.forceContinuous.name'))
+      .setDesc(t('settings.dictation.forceContinuous.desc'));
+    forceContinuousSetting.addToggle((toggle) => {
+      toggle.setValue(settings.forceContinuousTranscription);
+      toggle.onChange(async (value) => {
+        await this.access.persistOne('forceContinuousTranscription', value);
+      });
+    });
+
     const phraseFinalizationSetting = new Setting(captureCard)
       .setName(t('settings.phraseFinalization.name'))
       .setDesc(phraseFinalizationDescription(settings.speakingStyle));
@@ -462,6 +472,15 @@ export class LocalSttSettingTab extends PluginSettingTab {
       translationSection,
       translationSettingsDependencies,
     );
+    const realtimeTranslationSetting = new Setting(translationSection)
+      .setName(t('settings.translation.realtime.name'))
+      .setDesc(t('settings.translation.realtime.desc'));
+    realtimeTranslationSetting.addToggle((toggle) => {
+      toggle.setValue(settings.realtimeTranslationEnabled);
+      toggle.onChange(async (value) => {
+        await this.access.persistOne('realtimeTranslationEnabled', value);
+      });
+    });
 
     const llmCard = createSettingGroup(containerEl, t('settings.groups.llmTransformation'));
     const enableLlmSetting = new Setting(llmCard)
@@ -562,6 +581,12 @@ export class LocalSttSettingTab extends PluginSettingTab {
       key: 'retainLastUtterance',
     });
 
+    addToggleSetting(advancedSection, this.access, {
+      name: t('settings.fileTranscription.name'),
+      desc: t('settings.fileTranscription.desc'),
+      key: 'fileTranscriptionContextMenuEnabled',
+    });
+
     addTextSetting(advancedSection, this.access, {
       name: t('settings.modelStoreOverride.name'),
       desc: t('settings.modelStoreOverride.desc'),
@@ -579,8 +604,8 @@ export class LocalSttSettingTab extends PluginSettingTab {
       });
 
     const developerModeSetting = new Setting(advancedSection)
-      .setName('Developer mode')
-      .setDesc('Show verbose diagnostics and developer-only settings.');
+      .setName(t('settings.developerMode.name'))
+      .setDesc(t('settings.developerMode.desc'));
     developerModeSetting.addToggle((toggle) => {
       toggle.setValue(this.dependencies.getSettings().developerMode);
       toggle.onChange(async (value) => {
@@ -708,26 +733,13 @@ export class LocalSttSettingTab extends PluginSettingTab {
     heading: Setting,
     containerEl: HTMLDivElement,
   ): void {
-    const settings = this.dependencies.getSettings();
     const state = this.dependencies.modelInstallManager.getState();
-    const sel = settings.selectedModel;
-    const selectedAdapter =
-      sel === null
-        ? null
-        : (state.compiledAdapters.find(
-            (a) => a.runtimeId === sel.runtimeId && a.familyId === sel.familyId,
-          ) ?? null);
-    const selectedRuntime =
-      sel === null
-        ? null
-        : (state.compiledRuntimes.find((r) => r.runtimeId === sel.runtimeId) ?? null);
-
     containerEl.empty();
-    heading.setName(
-      selectedAdapter === null
-        ? t('settings.groups.engine')
-        : t('settings.engine.named', { engine: selectedAdapter.displayName }),
-    );
+    // Acceleration preference is global. It applies to every compatible
+    // engine, so keep this section shared instead of renaming it after the
+    // currently selected model (which made FunASR look like a separate
+    // accelerator setting).
+    heading.setName(t('settings.groups.engine'));
 
     let rendered = 0;
 
@@ -735,23 +747,24 @@ export class LocalSttSettingTab extends PluginSettingTab {
     // gating on it hid this row exactly when it had a fallback to explain. The
     // details map keeps the failures, and CPU-only sidecars have no GPU key in
     // it at all, so they still see nothing.
-    const hasNonCpuAccelerator = Object.keys(
-      selectedRuntime?.runtimeCapabilities.acceleratorDetails ?? {},
-    ).some((id) => id !== 'cpu');
+    const hardwareAdapters = state.compiledAdapters.filter(
+      (adapter) => adapter.familyCapabilities.supportsHardwareAcceleration,
+    );
+    const hardwareRuntimeIds = new Set(hardwareAdapters.map((adapter) => adapter.runtimeId));
+    const hasNonCpuAccelerator = state.compiledRuntimes
+      .filter((runtime) => hardwareRuntimeIds.has(runtime.runtimeId))
+      .some((runtime) =>
+        Object.keys(runtime.runtimeCapabilities.acceleratorDetails).some((id) => id !== 'cpu'),
+      );
 
-    if (
-      !Platform.isMacOS &&
-      hasNonCpuAccelerator &&
-      selectedAdapter?.familyCapabilities.supportsHardwareAcceleration === true
-    ) {
+    if (!Platform.isMacOS && hasNonCpuAccelerator && hardwareAdapters.length > 0) {
       renderHardwareAccelerationSetting(containerEl, {
         access: this.access,
-        // Scoped to the selected engine: this row sits under that engine's
-        // heading, so a summary across every compiled adapter reads as noise
-        // ("CUDA (Moonshine: CPU, Pocket TTS: CPU, …)") and buries the one
-        // backend the section is about.
+        // This preference is shared by all hardware-capable adapters. CPU-only
+        // families are omitted from the status so they do not masquerade as a
+        // separate acceleration configuration.
         acceleration: {
-          compiledAdapters: selectedAdapter === null ? [] : [selectedAdapter],
+          compiledAdapters: hardwareAdapters,
           compiledRuntimes: state.compiledRuntimes,
         },
         feedback: this.dependencies.feedback,

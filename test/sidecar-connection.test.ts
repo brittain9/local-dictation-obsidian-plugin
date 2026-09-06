@@ -56,6 +56,10 @@ class FakeSidecarProcess {
     this.writtenFrames.push(frameBytes);
   }
 
+  async writeWithBackpressure(frameBytes: Uint8Array): Promise<void> {
+    this.write(frameBytes);
+  }
+
   deliver(event: SidecarEvent): void {
     this.handlers?.onStdoutChunk(encodeJsonFrame(event));
   }
@@ -186,6 +190,19 @@ afterEach(() => {
 });
 
 describe('SidecarConnection', () => {
+  it('writes file audio through the backpressure-aware process boundary', async () => {
+    const { connection, process } = createHarness();
+    await connection.ensureStarted();
+
+    await connection.sendAudioFrameWithBackpressure(
+      crypto.randomUUID(),
+      new Uint8Array(640).fill(3),
+    );
+
+    expect(process.writtenFrames).toHaveLength(1);
+    expect(process.writtenFrames[0]?.byteLength).toBeGreaterThan(640);
+  });
+
   it('resolves a waiter only after the matching correlated event arrives', async () => {
     const { connection, process } = createHarness();
 

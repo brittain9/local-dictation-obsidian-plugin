@@ -29,6 +29,139 @@ describe('model catalog presentation', () => {
     );
     expect(whisperModels[4]?.languageTags).toEqual([
       'en',
+      'zh',
+      'de',
+      'es',
+      'ru',
+      'ko',
+      'fr',
+      'ja',
+      'pt',
+      'tr',
+      'pl',
+      'ca',
+      'nl',
+      'ar',
+      'sv',
+      'it',
+      'id',
+      'hi',
+      'fi',
+      'vi',
+      'he',
+      'uk',
+      'el',
+      'ms',
+      'cs',
+      'ro',
+      'da',
+      'hu',
+      'ta',
+      'no',
+      'th',
+      'ur',
+      'hr',
+      'bg',
+      'lt',
+      'la',
+      'mi',
+      'ml',
+      'cy',
+      'sk',
+      'te',
+      'fa',
+      'lv',
+      'bn',
+      'sr',
+      'az',
+      'sl',
+      'kn',
+      'et',
+      'mk',
+      'br',
+      'eu',
+      'is',
+      'hy',
+      'ne',
+      'mn',
+      'bs',
+      'kk',
+      'sq',
+      'sw',
+      'gl',
+      'mr',
+      'pa',
+      'si',
+      'km',
+      'sn',
+      'yo',
+      'so',
+      'af',
+      'oc',
+      'ka',
+      'be',
+      'tg',
+      'sd',
+      'gu',
+      'am',
+      'yi',
+      'lo',
+      'uz',
+      'fo',
+      'ht',
+      'ps',
+      'tk',
+      'nn',
+      'mt',
+      'sa',
+      'lb',
+      'my',
+      'bo',
+      'tl',
+      'mg',
+      'as',
+      'tt',
+      'haw',
+      'ln',
+      'ha',
+      'ba',
+      'jw',
+      'su',
+      'yue',
+    ]);
+    expect(whisperModels[4]?.supportsAutomaticLanguageDetection).toBe(true);
+  });
+
+  it('keeps complete language claims for multilingual transcription models', () => {
+    const cohere = catalog.models.filter((model) => model.familyId === 'cohere_transcribe');
+    const funasr = catalog.models.filter((model) => model.familyId === 'funasr_hybrid');
+    const nemotron = catalog.models.find(
+      (model) => model.modelId === 'nemotron_asr_0_6b_int8_streaming_560ms',
+    );
+
+    expect(
+      cohere.every(
+        (model) => model.languageTags.join() === 'ar,de,el,en,es,fr,it,ja,ko,nl,pl,pt,vi,zh',
+      ),
+    ).toBe(true);
+    expect(funasr).toHaveLength(8);
+    expect(
+      funasr
+        .filter((model) => model.modelId.includes('sensevoice'))
+        .every((model) => model.languageTags.join() === 'zh,yue,en,ja,ko'),
+    ).toBe(true);
+    expect(
+      funasr
+        .filter((model) => model.modelId.startsWith('funasr_nano_paraformer'))
+        .every((model) => model.languageTags.join() === 'zh,en'),
+    ).toBe(true);
+    expect(
+      funasr
+        .filter((model) => model.modelId.startsWith('funasr_nano_2512'))
+        .every((model) => model.languageTags.join() === 'zh,yue,en,ja'),
+    ).toBe(true);
+    expect(nemotron?.languageTags).toEqual([
+      'en',
       'es',
       'de',
       'fr',
@@ -36,10 +169,27 @@ describe('model catalog presentation', () => {
       'it',
       'nl',
       'ja',
+      'zh',
       'hr',
-      'sr',
+      'ar',
+      'bg',
+      'cs',
+      'da',
+      'et',
+      'fi',
+      'hi',
+      'hu',
+      'ko',
+      'nb',
+      'pl',
+      'ro',
+      'ru',
+      'sk',
+      'sv',
+      'tr',
+      'uk',
+      'vi',
     ]);
-    expect(whisperModels[4]?.supportsAutomaticLanguageDetection).toBe(true);
   });
 
   it('does not use a generic recommendation tag', () => {

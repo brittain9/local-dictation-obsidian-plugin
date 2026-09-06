@@ -156,6 +156,7 @@ export interface PluginSettings {
   dictationAnchor: DictationAnchor;
   dictationLanguage: DictationLanguage;
   autoCopyFinalizedUtterances: boolean;
+  fileTranscriptionContextMenuEnabled: boolean;
   listeningMode: ListeningMode;
   llmFeaturesEnabled: boolean;
   llmNetworkTimeoutSec: number;
@@ -201,6 +202,8 @@ export interface PluginSettings {
   timestampSparseIntervalMs: number;
   translationSourceLanguage: TranslationLanguage | null;
   translationTargetLanguage: TranslationLanguage | null;
+  realtimeTranslationEnabled: boolean;
+  forceContinuousTranscription: boolean;
   transcriptFormatting: TranscriptFormattingMode;
   highlightSpokenText: boolean;
   ttsSpeed: number;
@@ -219,6 +222,7 @@ export const DEFAULT_PLUGIN_SETTINGS: PluginSettings = {
   dictationAnchor: 'at_cursor',
   dictationLanguage: DEFAULT_DICTATION_LANGUAGE,
   autoCopyFinalizedUtterances: false,
+  fileTranscriptionContextMenuEnabled: true,
   listeningMode: 'always_on',
   llmFeaturesEnabled: true,
   llmNetworkTimeoutSec: 60,
@@ -267,6 +271,8 @@ export const DEFAULT_PLUGIN_SETTINGS: PluginSettings = {
   timestampSparseIntervalMs: DEFAULT_TIMESTAMP_SPARSE_INTERVAL_MS,
   translationSourceLanguage: null,
   translationTargetLanguage: null,
+  realtimeTranslationEnabled: false,
+  forceContinuousTranscription: false,
   transcriptFormatting: 'smart',
   highlightSpokenText: true,
   ttsSpeed: 1,
@@ -307,6 +313,10 @@ export function resolvePluginSettings(data: unknown): PluginSettings {
     autoCopyFinalizedUtterances: readBoolean(
       raw.autoCopyFinalizedUtterances,
       DEFAULT_PLUGIN_SETTINGS.autoCopyFinalizedUtterances,
+    ),
+    fileTranscriptionContextMenuEnabled: readBoolean(
+      raw.fileTranscriptionContextMenuEnabled,
+      DEFAULT_PLUGIN_SETTINGS.fileTranscriptionContextMenuEnabled,
     ),
     listeningMode: readListeningMode(raw.listeningMode),
     llmFeaturesEnabled: readBoolean(
@@ -442,6 +452,14 @@ export function resolvePluginSettings(data: unknown): PluginSettings {
     ),
     translationSourceLanguage: normalizeTranslationLanguage(raw.translationSourceLanguage),
     translationTargetLanguage: normalizeTranslationLanguage(raw.translationTargetLanguage),
+    realtimeTranslationEnabled: readBoolean(
+      raw.realtimeTranslationEnabled,
+      DEFAULT_PLUGIN_SETTINGS.realtimeTranslationEnabled,
+    ),
+    forceContinuousTranscription: readBoolean(
+      raw.forceContinuousTranscription,
+      DEFAULT_PLUGIN_SETTINGS.forceContinuousTranscription,
+    ),
     transcriptFormatting: isTranscriptFormattingMode(raw.transcriptFormatting)
       ? raw.transcriptFormatting
       : DEFAULT_PLUGIN_SETTINGS.transcriptFormatting,

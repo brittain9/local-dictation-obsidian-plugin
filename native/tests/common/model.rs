@@ -19,6 +19,7 @@ use sha2::{Digest, Sha256};
 pub const TEST_MODEL_ID: &str = "whisper_tiny_en_q8_0";
 pub const MULTILINGUAL_WHISPER_MODEL_ID: &str = "whisper_large_v3_turbo_q8_0";
 pub const NEMOTRON_MODEL_ID: &str = "nemotron_asr_0_6b_int8_streaming_560ms";
+pub const FUNASR_HYBRID_MODEL_ID: &str = "funasr_sensevoice_paraformer_zh_streaming_q8";
 pub const POCKET_TTS_MODEL_ID: &str = "pocket_tts_english_2026_04_int8";
 pub const SUPERTONIC_MODEL_ID: &str = "supertonic_3_multilingual_2026_05";
 
@@ -150,6 +151,25 @@ pub fn require_nemotron_model() -> PathBuf {
             "could not obtain the pinned Nemotron assets: {error}\n  \
              Set STT_TEST_NEMOTRON_DIR=/path/to/model to reuse verified local assets, or \
              ensure network access for the catalog download."
+        )
+    })
+}
+
+/// Resolve the complete Chinese FunASR hybrid model. The returned entry point
+/// is Paraformer's online encoder; its sibling assets include the SenseVoice
+/// finalizer and VAD model.
+pub fn require_funasr_hybrid_model() -> PathBuf {
+    resolve_catalog_model(
+        "STT_TEST_FUNASR_DIR",
+        RuntimeId::FunasrLlamaCpp,
+        ModelFamilyId::FunasrHybrid,
+        FUNASR_HYBRID_MODEL_ID,
+    )
+    .unwrap_or_else(|error| {
+        panic!(
+            "could not obtain the pinned FunASR Chinese hybrid assets: {error}\n  Set \
+             STT_TEST_FUNASR_DIR=/path/to/model to reuse verified local assets, or ensure \
+             network access for the pinned catalog download."
         )
     })
 }

@@ -4,8 +4,7 @@ use std::path::{Component, Path};
 use anyhow::{Context, Result, ensure};
 use serde::{Deserialize, Serialize};
 
-use crate::engine::capabilities::{ModelFamilyId, ModelTask, RuntimeId};
-use crate::transcription::PRODUCT_LANGUAGE_TAGS;
+use crate::engine::capabilities::{AcceleratorId, ModelFamilyId, ModelTask, RuntimeId};
 
 const BUNDLED_CATALOG_JSON: &str =
     include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/catalog.json"));
@@ -74,6 +73,12 @@ pub struct CatalogModel {
     pub translation_support: Option<TranslationSupport>,
     #[serde(default, rename = "supportsAutomaticLanguageDetection")]
     pub supports_automatic_language_detection: bool,
+    #[serde(
+        default,
+        rename = "supportedAccelerators",
+        skip_serializing_if = "Vec::is_empty"
+    )]
+    pub supported_accelerators: Vec<AcceleratorId>,
     #[serde(default, rename = "defaultVoice")]
     pub default_voice: Option<String>,
     #[serde(rename = "licenseLabel")]
@@ -238,17 +243,21 @@ impl ModelCatalog {
             );
             let mut language_tags = HashSet::new();
             for tag in &model.language_tags {
-                let supported_tags: &[&str] = if model.task == ModelTask::Translation {
-                    &TRANSLATION_LANGUAGE_TAGS
+                if model.task == ModelTask::Translation {
+                    ensure!(
+                        TRANSLATION_LANGUAGE_TAGS.contains(&tag.as_str()),
+                        "model {} declares unsupported translation languageTag {}",
+                        model.model_id,
+                        tag
+                    );
                 } else {
-                    PRODUCT_LANGUAGE_TAGS
-                };
-                ensure!(
-                    supported_tags.contains(&tag.as_str()),
-                    "model {} declares unsupported languageTag {}",
-                    model.model_id,
-                    tag
-                );
+                    ensure!(
+                        is_normalized_language_tag(tag),
+                        "model {} declares invalid languageTag {}",
+                        model.model_id,
+                        tag
+                    );
+                }
                 ensure!(
                     language_tags.insert(tag),
                     "model {} declares duplicate languageTag {}",
@@ -265,6 +274,15 @@ impl ModelCatalog {
             );
 
             let mut artifact_ids = HashSet::new();
+            let mut accelerators = HashSet::new();
+            for accelerator in &model.supported_accelerators {
+                ensure!(
+                    accelerators.insert(*accelerator),
+                    "model {} declares duplicate supported accelerator {}",
+                    model.model_id,
+                    accelerator.as_str()
+                );
+            }
             let primary_role = match model.task {
                 ModelTask::Stt => ArtifactRole::TranscriptionModel,
                 ModelTask::Translation => ArtifactRole::TranslationModel,
@@ -408,6 +426,23 @@ impl ModelCatalog {
     }
 }
 
+fn is_normalized_language_tag(tag: &str) -> bool {
+    let mut subtags = tag.split('-');
+    let Some(language) = subtags.next() else {
+        return false;
+    };
+    if !(2..=3).contains(&language.len()) || !language.bytes().all(|byte| byte.is_ascii_lowercase())
+    {
+        return false;
+    }
+
+    subtags.all(|subtag| {
+        !subtag.is_empty()
+            && subtag.len() <= 8
+            && subtag.bytes().all(|byte| byte.is_ascii_alphanumeric())
+    })
+}
+
 fn validate_translation_support(model: &CatalogModel) -> Result<()> {
     let declared = |tag: &String| -> Result<()> {
         ensure!(
@@ -518,7 +553,7 @@ mod tests {
         ArtifactRole, CatalogModel, ModelArtifact, ModelCatalog, ModelCollection,
         ModelFamilyDescriptor, ModelRuntimeDescriptor,
     };
-    use crate::engine::capabilities::{ModelFamilyId, ModelTask, RuntimeId};
+    use crate::engine::capabilities::{AcceleratorId, ModelFamilyId, ModelTask, RuntimeId};
 
     #[test]
     fn bundled_catalog_is_valid() {
@@ -595,6 +630,146 @@ mod tests {
                 .map(|artifact| artifact.filename.as_str()),
             Some("encoder.int8.onnx")
         );
+    }
+
+    #[test]
+    fn bundled_funasr_chinese_hybrid_is_pinned_and_keeps_sensevoice_final() {
+        let catalog = ModelCatalog::load_bundled().expect("bundled catalog should load");
+        let model = catalog
+            .find_model(
+                RuntimeId::FunasrLlamaCpp,
+                ModelFamilyId::FunasrHybrid,
+                "funasr_sensevoice_paraformer_zh_streaming_q8",
+            )
+            .expect("FunASR Chinese hybrid model should be cataloged");
+
+        assert_eq!(model.task, ModelTask::Stt);
+        assert_eq!(model.license_label, "Apache-2.0");
+        assert_eq!(model.language_tags, ["zh", "yue", "en", "ja", "ko"]);
+        assert_eq!(
+            model.supported_accelerators,
+            [AcceleratorId::Cpu, AcceleratorId::Vulkan]
+        );
+        assert_eq!(model.artifacts.len(), 5);
+        assert_eq!(model.required_download_bytes(), 493_131_333);
+        assert!(model.required_download_bytes() <= 500 * 1024 * 1024);
+        assert_eq!(
+            model
+                .primary_artifact()
+                .map(|artifact| artifact.filename.as_str()),
+            Some("encoder.int8.onnx")
+        );
+        assert!(model.artifacts.iter().any(|artifact| {
+            artifact.artifact_id == "sensevoice_final"
+                && artifact.filename == "sensevoice-small-q8.gguf"
+                && artifact
+                    .download_url
+                    .contains("90c1c61912018b70ada0fcc024ea24aca62f2e63")
+        }));
+
+        for (model_id, filename, required_bytes) in [
+            (
+                "funasr_sensevoice_paraformer_zh_streaming_f16",
+                "sensevoice-small-f16.gguf",
+                709_120_613,
+            ),
+            (
+                "funasr_sensevoice_paraformer_zh_streaming_f32",
+                "sensevoice-small-f32.gguf",
+                1_175_344_229,
+            ),
+        ] {
+            let variant = catalog
+                .find_model(
+                    RuntimeId::FunasrLlamaCpp,
+                    ModelFamilyId::FunasrHybrid,
+                    model_id,
+                )
+                .unwrap_or_else(|| panic!("FunASR variant {model_id} should be cataloged"));
+            assert_eq!(variant.required_download_bytes(), required_bytes);
+            assert!(variant.artifacts.iter().any(|artifact| {
+                artifact.artifact_id == "sensevoice_final" && artifact.filename == filename
+            }));
+        }
+        for (model_id, filename, required_bytes) in [
+            (
+                "funasr_nano_paraformer_zh_streaming_q4km",
+                "qwen3-0.6b-q4km.gguf",
+                1_192_473_797,
+            ),
+            (
+                "funasr_nano_paraformer_zh_streaming_q5km",
+                "qwen3-0.6b-q5km.gguf",
+                1_259_631_813,
+            ),
+            (
+                "funasr_nano_paraformer_zh_streaming_q8_0",
+                "qwen3-0.6b-q8_0.gguf",
+                1_513_007_301,
+            ),
+        ] {
+            let variant = catalog
+                .find_model(
+                    RuntimeId::FunasrLlamaCpp,
+                    ModelFamilyId::FunasrHybrid,
+                    model_id,
+                )
+                .unwrap_or_else(|| panic!("Fun-ASR Nano variant {model_id} should be cataloged"));
+            assert_eq!(variant.language_tags, ["zh", "en"]);
+            assert_eq!(variant.supported_accelerators, [AcceleratorId::Cpu]);
+            assert_eq!(variant.required_download_bytes(), required_bytes);
+            assert!(variant.artifacts.iter().any(|artifact| {
+                artifact.artifact_id == "nano_llm" && artifact.filename == filename
+            }));
+        }
+        for (model_id, filename, required_bytes) in [
+            (
+                "funasr_nano_2512_paraformer_zh_streaming_q8_0",
+                "fun-asr-nano-2512-q8_0.gguf",
+                1_284_257_445,
+            ),
+            (
+                "funasr_nano_2512_paraformer_zh_streaming_f16",
+                "fun-asr-nano-2512-f16.gguf",
+                1_914_631_845,
+            ),
+        ] {
+            let variant = catalog
+                .find_model(
+                    RuntimeId::FunasrLlamaCpp,
+                    ModelFamilyId::FunasrHybrid,
+                    model_id,
+                )
+                .unwrap_or_else(|| {
+                    panic!("Fun-ASR Nano 2512 variant {model_id} should be cataloged")
+                });
+            assert_eq!(variant.language_tags, ["zh", "yue", "en", "ja"]);
+            assert_eq!(
+                variant.supported_accelerators,
+                [AcceleratorId::Cpu, AcceleratorId::Vulkan]
+            );
+            assert_eq!(variant.required_download_bytes(), required_bytes);
+            assert_eq!(variant.license_label, "FunASR Model License 1.1");
+            assert!(
+                variant
+                    .ux_tags
+                    .iter()
+                    .any(|tag| tag == "requires-terms-review")
+            );
+            assert!(variant.artifacts.iter().any(|artifact| {
+                artifact.artifact_id == "nano_2512_model"
+                    && artifact.filename == filename
+                    && artifact
+                        .download_url
+                        .contains("ce72677f84900f0dc57f498ace253bfb3c9155b6")
+            }));
+        }
+        assert!(model.artifacts.iter().any(|artifact| {
+            artifact.artifact_id == "online_encoder"
+                && artifact
+                    .download_url
+                    .contains("8e40c43232a1c5c66c82111efc5820d3accca11b")
+        }));
     }
 
     #[test]
@@ -735,9 +910,9 @@ mod tests {
     }
 
     #[test]
-    fn validate_rejects_unknown_or_duplicate_language_tags() {
+    fn validate_rejects_malformed_or_duplicate_language_tags() {
         for tags in [
-            vec!["xx".to_string()],
+            vec!["EN_us".to_string()],
             vec!["en".to_string(), "en".to_string()],
         ] {
             let mut model = sample_model();
@@ -754,6 +929,44 @@ mod tests {
 
             assert!(error.to_string().contains("languageTag"));
         }
+    }
+
+    #[test]
+    fn validate_accepts_catalog_languages_outside_product_settings() {
+        let mut model = sample_model();
+        model.language_tags = vec!["en".to_string(), "yue".to_string(), "zh-CN".to_string()];
+
+        ModelCatalog {
+            catalog_version: 2,
+            collections: vec![sample_collection()],
+            runtimes: vec![sample_runtime()],
+            families: vec![sample_family()],
+            models: vec![model],
+        }
+        .validate()
+        .expect("valid language tags must not depend on product setting options");
+    }
+
+    #[test]
+    fn validate_rejects_duplicate_supported_accelerators() {
+        let mut model = sample_model();
+        model.supported_accelerators = vec![AcceleratorId::Cpu, AcceleratorId::Cpu];
+
+        let error = ModelCatalog {
+            catalog_version: 2,
+            collections: vec![sample_collection()],
+            runtimes: vec![sample_runtime()],
+            families: vec![sample_family()],
+            models: vec![model],
+        }
+        .validate()
+        .expect_err("duplicate accelerators must be rejected");
+
+        assert!(
+            error
+                .to_string()
+                .contains("duplicate supported accelerator")
+        );
     }
 
     #[test]
@@ -878,6 +1091,7 @@ mod tests {
             language_tags: vec!["en".to_string()],
             translation_support: None,
             supports_automatic_language_detection: false,
+            supported_accelerators: vec![],
             default_voice: None,
             license_label: "MIT".to_string(),
             license_url: "https://example.com/license".to_string(),

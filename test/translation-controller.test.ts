@@ -117,7 +117,11 @@ describe('TranslationController', () => {
           catalog: { models: [model] },
           selectedTranslationModel: settings.selectedTranslationModel,
           installedModels: [
-            { familyId: 'tencent_hy_mt', modelId: 'hy-mt', runtimeId: 'llama_cpp' },
+            {
+              familyId: 'tencent_hy_mt',
+              modelId: 'hy-mt',
+              runtimeId: 'llama_cpp',
+            },
           ],
         }),
       } as never,
@@ -134,7 +138,10 @@ describe('TranslationController', () => {
         },
       } as never,
     });
-    const editor = { getValue: () => 'Translate this note.', replaceRange: vi.fn() };
+    const editor = {
+      getValue: () => 'Translate this note.',
+      replaceRange: vi.fn(),
+    };
 
     controller.translateNote(editor as never);
     await vi.waitFor(() => expect(startTranslation).toHaveBeenCalledTimes(1));
@@ -148,7 +155,12 @@ describe('TranslationController', () => {
     controller.translateNote(editor as never);
     expect(startTranslation).toHaveBeenCalledTimes(1);
     expect(Modal.instances).toHaveLength(2);
-    listeners[0]?.({ type: 'translation_progress', translationId, completed: 1, total: 1 });
+    listeners[0]?.({
+      type: 'translation_progress',
+      translationId,
+      completed: 1,
+      total: 1,
+    });
     listeners[0]?.({
       type: 'translation_complete',
       translationId,
@@ -188,13 +200,20 @@ describe('TranslationController', () => {
                 modelId: 'hy-mt',
                 runtimeId: 'llama_cpp',
                 task: 'translation',
-                translationSupport: { kind: 'all_to_all', languages: ['en', 'es'] },
+                translationSupport: {
+                  kind: 'all_to_all',
+                  languages: ['en', 'es'],
+                },
               },
             ],
           },
           selectedTranslationModel: settings.selectedTranslationModel,
           installedModels: [
-            { familyId: 'tencent_hy_mt', modelId: 'hy-mt', runtimeId: 'llama_cpp' },
+            {
+              familyId: 'tencent_hy_mt',
+              modelId: 'hy-mt',
+              runtimeId: 'llama_cpp',
+            },
           ],
         }),
       } as never,
@@ -250,7 +269,10 @@ describe('TranslationController', () => {
       settings = next;
     });
     const openModelPicker = vi.fn(async () => {
-      settings = { ...settings, selectedTranslationModel: selectionFor(secondModel) };
+      settings = {
+        ...settings,
+        selectedTranslationModel: selectionFor(secondModel),
+      };
     });
     const controller = new TranslationController({
       app: {} as never,
@@ -277,7 +299,10 @@ describe('TranslationController', () => {
         },
       } as never,
     });
-    const editor = { getValue: () => 'Translate this note.', replaceRange: vi.fn() };
+    const editor = {
+      getValue: () => 'Translate this note.',
+      replaceRange: vi.fn(),
+    };
 
     controller.translateNote(editor as never);
     await vi.waitFor(() => expect(startTranslation).toHaveBeenCalledOnce());
@@ -320,6 +345,138 @@ describe('TranslationController', () => {
     expect(latestDropdownValue('To')).toBe('en');
     expect(latestDropdownLabel('Translation model')).toBe('HY-MT 2 7B');
   });
+
+  it('bounds realtime translation work and cancels the active request when disposed', async () => {
+    const listeners: ((event: SidecarEvent) => void)[] = [];
+    const startTranslation = vi.fn(
+      async (_payload: { texts: string[]; translationId: string }) => {},
+    );
+    const cancelTranslation = vi.fn();
+    const warn = vi.fn();
+    const insertAdjacentToSessionRange = vi.fn(() => true);
+    const model = translationModel('hy-mt-1.8b', 'HY-MT 2 1.8B');
+    const settings: PluginSettings = {
+      ...DEFAULT_PLUGIN_SETTINGS,
+      dictationLanguage: 'en',
+      realtimeTranslationEnabled: true,
+      selectedTranslationModel: selectionFor(model),
+      translationSourceLanguage: 'en',
+      translationTargetLanguage: 'es',
+    };
+    const controller = new TranslationController({
+      app: {} as never,
+      canReadAloud: () => false,
+      feedback: { show: vi.fn() },
+      getSettings: () => settings,
+      logger: { error: vi.fn(), warn } as never,
+      modelManager: {
+        getState: () => ({
+          catalog: { models: [model] },
+          installedModels: [installedRecord(model)],
+          selectedTranslationModel: settings.selectedTranslationModel,
+        }),
+      } as never,
+      onReadAloud: vi.fn(),
+      openModelPicker: vi.fn(async () => {}),
+      saveSettings: vi.fn(async () => {}),
+      sidecarConnection: {
+        cancelTranslation,
+        startTranslation,
+        subscribe: (next: (event: SidecarEvent) => void) => {
+          listeners.push(next);
+          return () => {};
+        },
+      } as never,
+    });
+    const target = { insertAdjacentToSessionRange };
+
+    for (let index = 0; index < 17; index += 1)
+      controller.translateRealtime(`Sentence ${index}.`, target);
+
+    await vi.waitFor(() => expect(startTranslation).toHaveBeenCalledOnce());
+    expect(warn).toHaveBeenCalledExactlyOnceWith(
+      'translation',
+      'realtime translation queue is full; skipped a sentence (16 pending)',
+    );
+    const translationId = startTranslation.mock.calls[0]?.[0].translationId;
+    if (translationId === undefined) throw new Error('Expected realtime translation to start.');
+
+    controller.dispose();
+
+    expect(cancelTranslation).toHaveBeenCalledExactlyOnceWith(translationId);
+    listeners[0]?.({
+      type: 'translation_complete',
+      translationId,
+      translations: ['Frase traducida.'],
+    });
+    await Promise.resolve();
+    expect(insertAdjacentToSessionRange).not.toHaveBeenCalled();
+  });
+
+  it('uses resolved language defaults when realtime languages have not been persisted', async () => {
+    const listeners: ((event: SidecarEvent) => void)[] = [];
+    const startTranslation = vi.fn(
+      async (_payload: {
+        sourceLanguage: string;
+        targetLanguage: string;
+        translationId: string;
+      }) => {},
+    );
+    const insertAdjacentToSessionRange = vi.fn(() => true);
+    const model = translationModel('hy-mt-1.8b', 'HY-MT 2 1.8B');
+    model.languageTags = ['zh', 'en'];
+    model.translationSupport.languages = ['zh', 'en'];
+    const settings: PluginSettings = {
+      ...DEFAULT_PLUGIN_SETTINGS,
+      dictationLanguage: 'zh',
+      realtimeTranslationEnabled: true,
+      selectedTranslationModel: selectionFor(model),
+      translationSourceLanguage: null,
+      translationTargetLanguage: null,
+    };
+    const controller = new TranslationController({
+      app: {} as never,
+      canReadAloud: () => false,
+      feedback: { show: vi.fn() },
+      getSettings: () => settings,
+      logger: { error: vi.fn(), warn: vi.fn() } as never,
+      modelManager: {
+        getState: () => ({
+          catalog: { models: [model] },
+          installedModels: [installedRecord(model)],
+          selectedTranslationModel: settings.selectedTranslationModel,
+        }),
+      } as never,
+      onReadAloud: vi.fn(),
+      openModelPicker: vi.fn(async () => {}),
+      saveSettings: vi.fn(async () => {}),
+      sidecarConnection: {
+        cancelTranslation: vi.fn(),
+        startTranslation,
+        subscribe: (next: (event: SidecarEvent) => void) => {
+          listeners.push(next);
+          return () => {};
+        },
+      } as never,
+    });
+
+    controller.translateRealtime('你好。', { insertAdjacentToSessionRange });
+
+    await vi.waitFor(() => expect(startTranslation).toHaveBeenCalledOnce());
+    expect(startTranslation).toHaveBeenCalledWith(
+      expect.objectContaining({ sourceLanguage: 'zh', targetLanguage: 'en' }),
+    );
+    const translationId = startTranslation.mock.calls[0]?.[0].translationId;
+    if (translationId === undefined) throw new Error('Expected realtime translation to start.');
+    listeners[0]?.({
+      type: 'translation_complete',
+      translationId,
+      translations: ['Hello.'],
+    });
+    await vi.waitFor(() =>
+      expect(insertAdjacentToSessionRange).toHaveBeenCalledWith('> Hello.', 'below'),
+    );
+  });
 });
 
 function translationModel(modelId: string, displayName: string) {
@@ -339,7 +496,10 @@ function translationModel(modelId: string, displayName: string) {
     summary: 'Local translation',
     supportsAutomaticLanguageDetection: false,
     task: 'translation' as const,
-    translationSupport: { kind: 'all_to_all' as const, languages: ['en', 'es'] },
+    translationSupport: {
+      kind: 'all_to_all' as const,
+      languages: ['en', 'es'],
+    },
     uxTags: [],
   };
 }

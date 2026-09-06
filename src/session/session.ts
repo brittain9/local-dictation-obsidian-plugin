@@ -340,6 +340,15 @@ export class Session {
       return false;
     }
 
+    if (result.kind === 'rewritten' && placement === 'below') {
+      const lastEntry = this.rawSessionEntries.at(-1);
+      const state =
+        lastEntry === undefined ? undefined : this.projectionByUtterance.get(lastEntry.utteranceId);
+      if (state?.kind === 'projected') {
+        state.projectedText = `${state.projectedText}\n\n${blockText}`;
+      }
+    }
+
     return result.kind === 'rewritten';
   }
 

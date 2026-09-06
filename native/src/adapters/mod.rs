@@ -1,5 +1,8 @@
 pub mod firefox_translations;
 
+#[cfg(feature = "engine-funasr")]
+pub mod funasr_hybrid;
+
 #[cfg(feature = "engine-hy-mt")]
 pub mod tencent_hy_mt;
 

@@ -18,6 +18,8 @@ export function formatAcceleratorLabel(accelerator: AcceleratorId): string {
       return 'DirectML';
     case 'metal':
       return 'Metal';
+    case 'vulkan':
+      return 'Vulkan';
   }
 }
 
@@ -37,6 +39,11 @@ interface AccelerationDescription {
   label: string;
   fallbacks: AccelerationFallback[];
 }
+
+// Runtime capability maps are serialized from a hash map, so their array
+// order is not a backend selection contract. Keep the display consistent with
+// the native resolver's deterministic preference order.
+const ACCELERATOR_PRIORITY: readonly AcceleratorId[] = ['cuda', 'metal', 'direct_ml', 'vulkan'];
 
 /**
  * The subset of a `SystemInfoEvent` that acceleration reporting needs. Narrowed
@@ -113,7 +120,7 @@ function resolveEngineBackend(
     return { engineName, effective: 'cpu', missingGpu: null };
   }
   const caps = runtime.runtimeCapabilities;
-  const nonCpu = caps.availableAccelerators.filter((id) => id !== 'cpu');
+  const nonCpu = ACCELERATOR_PRIORITY.filter((id) => caps.availableAccelerators.includes(id));
   for (const id of nonCpu) {
     if (caps.acceleratorDetails[id]?.available === true) {
       return { engineName, effective: id, missingGpu: null };

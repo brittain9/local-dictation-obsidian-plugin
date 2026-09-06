@@ -635,6 +635,32 @@ describe('DictationSessionController', () => {
     expect(audioLevelMeter.clearSession).toHaveBeenCalledWith(sessionId);
   });
 
+  it('shows the active session transcription queue length in the ribbon', async () => {
+    const setRibbonBufferLength = vi.fn();
+    const sidecarConnection = new FakeSidecarConnection();
+    const controller = createController({ setRibbonBufferLength, sidecarConnection });
+
+    await controller.startDictation();
+    const sessionId = sidecarConnection.startSession.mock.calls[0]?.[0].sessionId ?? '';
+    setRibbonBufferLength.mockClear();
+
+    sidecarConnection.emit({
+      queuedUtterances: 9,
+      sessionId: crypto.randomUUID(),
+      tier: 'catching_up',
+      type: 'transcription_queue_changed',
+    });
+    sidecarConnection.emit({
+      queuedUtterances: 3,
+      sessionId,
+      tier: 'catching_up',
+      type: 'transcription_queue_changed',
+    });
+
+    expect(setRibbonBufferLength).toHaveBeenCalledOnce();
+    expect(setRibbonBufferLength).toHaveBeenCalledWith(3);
+  });
+
   it('surfaces the bare microphone-permission message when capture is denied, without the generic start-failure prefix', async () => {
     const captureStream = new FakeCaptureStream();
     captureStream.start.mockRejectedValueOnce(
@@ -2980,6 +3006,35 @@ describe('DictationSessionController', () => {
     expect(controller.getState()).toBe('idle');
   });
 
+  it('cleans up every local session and restarts after a global sidecar exit', async () => {
+    const captureStream = new FakeCaptureStream();
+    const restartSidecar = vi.fn(async () => {});
+    const sidecarConnection = new FakeSidecarConnection();
+    const sessions: FakeSession[] = [];
+    const controller = createController({
+      captureStream,
+      createSession: (session) => {
+        sessions.push(session);
+      },
+      restartSidecar,
+      sidecarConnection,
+    });
+
+    await controller.startDictation();
+    sidecarConnection.emit({
+      code: 'sidecar_exited',
+      details: 'code: 1, signal: null',
+      message: 'The sidecar process exited unexpectedly.',
+      type: 'error',
+    });
+
+    await vi.waitFor(() => expect(restartSidecar).toHaveBeenCalledOnce());
+    expect(captureStream.stop).toHaveBeenCalledOnce();
+    expect(sidecarConnection.cancelSession).not.toHaveBeenCalled();
+    expect(sessions[0]?.dispose).toHaveBeenCalledOnce();
+    expect(controller.getState()).toBe('idle');
+  });
+
   it('drains queued work on queue overload instead of cancelling the session', async () => {
     const captureStream = new FakeCaptureStream();
     const show = vi.fn();
@@ -3335,6 +3390,8 @@ function createController({
   onFinalizedUtteranceAccepted,
   onModelMissing,
   onRawTranscriptRecoveryAvailable,
+  restartSidecar,
+  setRibbonBufferLength,
   stopConflictingSpeech = vi.fn(),
 }: {
   audioLevelMeter?: FakeAudioLevelMeter;
@@ -3352,6 +3409,8 @@ function createController({
   onFinalizedUtteranceAccepted?: (text: string) => void;
   onModelMissing?: () => void;
   onRawTranscriptRecoveryAvailable?: (receipt: RawTranscriptRecoveryReceipt) => void;
+  restartSidecar?: () => Promise<void>;
+  setRibbonBufferLength?: (queuedUtterances: number) => void;
   sidecarConnection?: FakeSidecarConnection;
   sidecarLifecycleGate?: SidecarLifecycleGate;
   stopConflictingSpeech?: () => void;
@@ -3379,7 +3438,10 @@ function createController({
     ...(onRawTranscriptRecoveryAvailable !== undefined ? { onRawTranscriptRecoveryAvailable } : {}),
     onModelMissing: onModelMissing ?? vi.fn(),
     onSidecarMissing: vi.fn(),
+    restartSidecar: restartSidecar ?? vi.fn(async () => {}),
     setRibbonQueueTier: vi.fn((_tier: QueueBackpressureTier) => {}),
+    setRibbonAccelerator: vi.fn(),
+    setRibbonBufferLength: setRibbonBufferLength ?? vi.fn(),
     setRibbonState: vi.fn((_state: DictationControllerState) => {}),
     sidecarConnection,
     sidecarLifecycleGate,

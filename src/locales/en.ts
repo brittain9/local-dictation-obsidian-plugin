@@ -49,6 +49,24 @@ export const en = {
     'Dictation stopped because its target note was deleted. Restore or recreate the note, then start dictation again.',
   'notice.transcriptWriteFailed':
     'Dictation stopped because Speech Kit could not safely write to the note. Start dictation again to continue.',
+  'audioFile.busy': 'Another file is already being transcribed.',
+  'audioFile.cancel': 'Cancel transcription',
+  'audioFile.cancelled': 'Cancelled transcription of {name}.',
+  'audioFile.completed': 'Created transcript note: {path}',
+  'audioFile.engineBusy': 'The speech engine is busy being installed or restarted.',
+  'audioFile.failed': 'Could not transcribe {name}.',
+  'audioFile.noSpeech': 'No speech was detected in {name}.',
+  'audioFile.markdownCompleted': 'Transcribed {completed} of {total} embedded recordings.',
+  'audioFile.noEmbeddedAudio': 'No local audio recordings were found in {name}.',
+  'audioFile.outputExists': 'A transcript note already exists at {path}.',
+  'audioFile.started': 'Transcribing {name} locally…',
+  'audioFile.transcriptLabel': 'Transcript',
+  'settings.translation.realtime.name': 'Real-time translation',
+  'settings.translation.realtime.desc':
+    'Translate each stable finalized sentence and place the translation below it.',
+  'settings.dictation.forceContinuous.name': 'Force continuous transcription',
+  'settings.dictation.forceContinuous.desc':
+    'Start capturing without waiting for the speech-volume threshold. Silence still separates utterances.',
   'setup.sidecar.cpu.firstRun.body':
     'Speech Kit needs a one-time download of the CPU speech-to-text engine from GitHub releases. Transcription runs locally on your machine after this completes. You can install CUDA acceleration later from settings.',
   'setup.sidecar.cpu.firstRun.primaryButton': 'Download CPU sidecar',
@@ -124,6 +142,8 @@ export const en = {
   'commands.stopReadAloud': 'Stop reading',
   'commands.translateNote': 'Translate note',
   'commands.translateSelection': 'Translate selection',
+  'commands.transcribeAudioFile': 'Transcribe audio to note',
+  'commands.transcribeEmbeddedAudio': 'Transcribe embedded recordings',
   'translation.modal.titleWithPair': 'Translate: {source} → {target}',
   'translation.modal.privacy': 'Translation runs entirely on this device.',
   'translation.modal.from': 'From',
@@ -240,15 +260,15 @@ export const en = {
   'models.manage.manageVoices': 'Manage voices',
   'models.manage.performanceWarning': 'Higher reading speeds may buffer on slower CPUs.',
   'models.manage.heavyWarning':
-    'Heavy model: the 4.62 GB download requires substantially more memory during local translation.',
+    'Heavy model: the {size} download requires substantially more memory during local use.',
   'models.manage.installWarningTitle': 'Install a high-resource model?',
   'models.manage.installWarningMessage':
     '{model} downloads approximately {size} and uses substantially more CPU. Higher reading speeds may buffer.',
   'models.manage.heavyInstallWarningMessage':
-    '{model} downloads approximately {size} and requires substantially more memory during local translation.',
+    '{model} downloads approximately {size} and requires substantially more memory during local use.',
   'models.manage.installTermsTitle': 'Review model terms',
   'models.manage.installTermsMessage':
-    '{model} is a direct {size} download from its publisher and is governed by {license}. That license does not permit use in the European Union, United Kingdom, or South Korea. Review it before installing. Continue only if you are outside those territories and agree to its terms.',
+    "{model} is a direct {size} download from its publisher and is governed by {license}. Review the publisher's terms before installing and continue only if you agree to them.",
   'models.manage.installTermsConfirm': 'I confirm and install',
   'models.manage.installTermsLink': 'Open model license',
   'models.tag.highCpu': 'High CPU',
@@ -369,11 +389,16 @@ export const en = {
   'settings.recoveryMemory.name': 'Keep recovery text in memory',
   'settings.recoveryMemory.desc':
     'Keep the latest recoverable text and note snapshot in memory. Nothing is written to disk.',
+  'settings.fileTranscription.name': 'File transcription menus',
+  'settings.fileTranscription.desc':
+    'Add transcription actions to the context menus for audio and Markdown files.',
   'settings.modelStoreOverride.name': 'Model store folder override',
   'settings.modelStoreOverride.desc': 'Custom folder for managed model downloads.',
   'settings.modelStoreOverride.placeholder': 'Use the shared default model store',
   'settings.runSetup.name': 'Run setup',
   'settings.runSetup.desc': 'Re-run the first-time setup wizard.',
+  'settings.developerMode.name': 'Developer mode',
+  'settings.developerMode.desc': 'Enable verbose plugin logs for troubleshooting.',
   'settings.hardwareAcceleration.name': 'Hardware acceleration',
   'settings.hardwareAcceleration.desc': 'Run inference on the GPU when available.',
   'settings.hardwareAcceleration.busy':
@@ -497,6 +522,13 @@ export const en = {
   'ribbon.listening': 'Speech Kit — listening',
   'ribbon.speechDetected': 'Speech Kit — hearing speech',
   'ribbon.error': 'Speech Kit — error',
+  'ribbon.modelMenu.title': 'Switch transcription model',
+  'ribbon.modelMenu.loading': 'Loading downloaded models…',
+  'ribbon.modelMenu.noneInstalled': 'No downloaded transcription models',
+  'ribbon.modelMenu.stopFirst': 'Stop dictation before switching models',
+  'ribbon.modelMenu.unsupportedLanguage': '{model} — does not support {language}',
+  'ribbon.modelMenu.manageModels': 'Manage models…',
+  'ribbon.modelMenu.selected': 'Now using {model}.',
   'validation.wholeNumberRange': 'Enter a whole number from {min} to {max}.',
   'validation.numberRange': 'Enter a number from {min} to {max}.',
   'llm.managedByPreset': 'Managed by “{preset}”. Edit that preset to change this value.',
@@ -870,8 +902,16 @@ export const en = {
   'models.capability.wordTimestamps': 'Word timestamps',
   'models.capability.initialPrompt': 'Initial prompt',
   'models.capability.streaming': 'Streaming',
+  'models.capability.afterPause': 'Final after pause',
+  'models.capability.batch': 'Batch processing',
   'models.capability.autoLanguageDetection': 'Auto language detection',
   'models.capability.punctuation': 'Punctuation',
+  'models.capability.speedControl': 'Speed control',
+  'models.capability.speakerLabels': 'Speaker labels',
+  'models.capability.noSpeakerLabels': 'No speaker labels',
+  'models.capability.voiceCountOne': '{count} voice',
+  'models.capability.voiceCountOther': '{count} voices',
+  'models.capability.acceleratorsWithCpuFallback': '{accelerators} + CPU fallback',
   'models.capability.maxAudio': 'Max audio: {seconds}s',
   'models.capability.anyLanguage': 'Any language',
   'models.capability.englishOnly': 'English only',
@@ -879,6 +919,15 @@ export const en = {
   'models.capability.languageSelection': 'Language selection',
   'models.tag.fullPrecision': 'Full precision',
   'models.tag.reducedSize': 'Reduced size',
+  'models.tag.accuracy': 'Accuracy',
+  'models.tag.balanced': 'Balanced',
+  'models.tag.fast': 'Fast',
+  'models.tag.lightweight': 'Lightweight',
+  'models.tag.multilingual': 'Multilingual',
+  'models.tag.optional': 'Optional',
+  'models.tag.readAloud': 'Read aloud',
+  'models.tag.recommended': 'Recommended',
+  'models.tag.smallest': 'Smallest',
   'models.progress.preparing': 'Preparing install',
   'models.progress.downloading': 'Downloading',
   'models.progress.verifying': 'Verifying download',
@@ -965,7 +1014,23 @@ export const en = {
   'catalog.moonshine_medium_streaming_en.summary':
     'Most accurate Moonshine streaming model at 245M parameters.',
   'catalog.nemotron_asr_0_6b_int8_streaming_560ms.summary':
-    "NVIDIA's 0.6B multilingual RNNT, exported to int8 ONNX for cache-aware live transcription in eight verified languages.",
+    "NVIDIA's 0.6B multilingual RNNT, exported to int8 ONNX for cache-aware live transcription in 28 supported languages.",
+  'catalog.funasr_nano_2512_paraformer_zh_streaming_q8_0.summary':
+    'Newer 800M Chinese-focused Fun-ASR final model with strong dialect, accent, far-field, and noisy-speech recognition, plus a low-latency Paraformer draft.',
+  'catalog.funasr_nano_2512_paraformer_zh_streaming_f16.summary':
+    'Full-precision 800M Fun-ASR Nano 2512 final model for maximum local Chinese accuracy, plus a low-latency Paraformer draft.',
+  'catalog.funasr_nano_paraformer_zh_streaming_q4km.summary':
+    'Higher-accuracy Chinese final transcription with Fun-ASR Nano Q4_K_M, plus a low-latency Paraformer draft while speaking.',
+  'catalog.funasr_nano_paraformer_zh_streaming_q5km.summary':
+    'Higher-accuracy Chinese final transcription with Fun-ASR Nano Q5_K_M, plus a low-latency Paraformer draft while speaking.',
+  'catalog.funasr_nano_paraformer_zh_streaming_q8_0.summary':
+    'Highest-precision Fun-ASR Nano option for Chinese final transcription, plus a low-latency Paraformer draft while speaking.',
+  'catalog.funasr_sensevoice_paraformer_zh_streaming_f16.summary':
+    'Chinese live dictation with a low-latency Paraformer draft. After each pause, the higher-precision SenseVoiceSmall F16 model retranscribes the complete utterance on CPU or Vulkan.',
+  'catalog.funasr_sensevoice_paraformer_zh_streaming_f32.summary':
+    'Chinese live dictation with a low-latency Paraformer draft. After each pause, the full-precision SenseVoiceSmall F32 model retranscribes the complete utterance on CPU or Vulkan.',
+  'catalog.funasr_sensevoice_paraformer_zh_streaming_q8.summary':
+    'Chinese live dictation with a low-latency Paraformer draft. After each pause, the compact SenseVoiceSmall Q8 model retranscribes the complete utterance on CPU or Vulkan.',
   'catalog.pocket_tts_english_2026_04_int8.summary':
     'Natural local English read-aloud synthesis with selectable curated voices.',
   'catalog.pocket_tts_french_24l_int8.summary':
@@ -984,6 +1049,8 @@ export const en = {
     'Transcribes after each pause. Whisper provides more accurate timestamps than other model families, including optional word-level timing. Tiny and Base favor speed, Small balances speed and quality, and Medium and Large favor quality.',
   'catalog.family.cohere_transcribe.summary':
     'High-quality batch transcription with multi-gigabyte download and memory requirements.',
+  'catalog.family.funasr_hybrid.summary':
+    'Quality-first Chinese live dictation. Paraformer provides provisional text while you speak; choose SenseVoiceSmall, Fun-ASR Nano, or the newer Nano 2512 final model with CPU or Vulkan execution.',
   'catalog.family.moonshine.summary':
     'Shows words while you speak. Tiny favors lower resource use, Small balances speed and quality, and Medium favors quality.',
   'catalog.family.nemotron_asr.summary':
@@ -999,7 +1066,7 @@ export const en = {
   'catalog.tencent_hy_mt_2_1_8b_q4_k_m.summary':
     'Smaller download and lower resource use; suitable for most local translation.',
   'catalog.tencent_hy_mt_2_7b_q4_k_m.summary':
-    'Higher-capacity local translation with a 4.62 GB download and substantially higher memory use.',
+    'Higher-capacity local translation with a 4.62 GB (4.31 GiB) download and substantially higher memory use.',
   'catalog.family.tencent_hy_mt.summary':
     'Translates locally with optional Tencent HY-MT 2 models in an isolated native helper.',
   'sidecarError.helper_protocol_error': 'The translation helper returned invalid data.',

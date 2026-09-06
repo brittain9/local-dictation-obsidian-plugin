@@ -10,6 +10,7 @@
     "node": "^20.19.0 || ^22.13.0 || >=24"
   },
   "scripts": {
+    "build:funasr-nano-vulkan": "node scripts/build-funasr-nano-gpu.mjs vulkan",
     "build:sidecar": "node scripts/build-sidecar.mjs",
     "build:sidecar:release": "node scripts/build-sidecar.mjs --release",
     "build:sidecar:cuda": "bash scripts/build-cuda.sh",
@@ -40,6 +41,7 @@
     "check:rust": "node scripts/check-rust.mjs",
     "test:sidecar:e2e": "cargo test --manifest-path native/Cargo.toml --release --test transcription_e2e --test sidecar_protocol_e2e -- --ignored --nocapture",
     "test:sidecar:nemotron:e2e": "cargo test --manifest-path native/Cargo.toml --release --no-default-features --features engine-nemotron-asr --test nemotron_asr_e2e --test nemotron_asr_tails -- --ignored --nocapture --test-threads=1",
+    "test:sidecar:funasr:e2e": "npm run build:sidecar && cargo test --manifest-path native/Cargo.toml --no-default-features --features engine-funasr --test funasr_hybrid_e2e -- --ignored --nocapture --test-threads=1",
     "test:sidecar:multilingual:e2e": "cargo test --manifest-path native/Cargo.toml --release --no-default-features --features engine-nemotron-asr,engine-whisper --test multilingual_e2e -- --ignored --nocapture --test-threads=1",
     "test:sidecar:pocket-tts:e2e": "cargo test --manifest-path native/Cargo.toml --release --no-default-features --features engine-pocket-tts,engine-whisper --test pocket_tts_e2e -- --ignored --nocapture --test-threads=1",
     "test:sidecar:pocket-tts:smoke": "cargo test --manifest-path native/Cargo.toml --release --no-default-features --features engine-pocket-tts --test pocket_tts_e2e pinned_english_model_synthesizes_non_silent_pcm -- --ignored --nocapture --test-threads=1",

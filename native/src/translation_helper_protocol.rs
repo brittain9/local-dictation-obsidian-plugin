@@ -2,6 +2,15 @@ use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum HelperAcceleratorId {
+    Cuda,
+    DirectMl,
+    Metal,
+    Vulkan,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(
     tag = "type",
@@ -15,7 +24,7 @@ pub enum HelperCommand {
         source_language: String,
         target_language: String,
         texts: Vec<String>,
-        use_gpu: bool,
+        accelerator: Option<HelperAcceleratorId>,
     },
     Cancel {
         translation_id: String,

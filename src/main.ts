@@ -1,7 +1,16 @@
 import { dirname, join } from 'node:path';
 import { IS_PRODUCTION_BUILD } from 'virtual:build-mode';
 import { shell } from 'electron';
-import { FileSystemAdapter, getLanguage, Menu, Platform, Plugin, setIcon } from 'obsidian';
+import {
+  FileSystemAdapter,
+  getLanguage,
+  Menu,
+  Platform,
+  Plugin,
+  setIcon,
+  type TAbstractFile,
+  type TFile,
+} from 'obsidian';
 
 import { AudioCaptureStream } from './audio/audio-capture-stream';
 import { SidecarAudioLevelMeter } from './audio/sidecar-audio-level-meter';
@@ -19,6 +28,7 @@ import {
 } from './editor/read-aloud-follow-along';
 import { sessionProcessingExtension } from './editor/session-processing-extension';
 import { TemporaryLeafPinLeaseManager } from './editor/temporary-leaf-pin';
+import { dictationLanguageLabel } from './language/dictation-language';
 import { syncDictationLanguageWithObsidian } from './language/dictation-language-sync';
 import type { LlmCleanupFailure } from './llm/provider';
 import { createConfiguredLlmRouter } from './llm/runtime';
@@ -33,6 +43,7 @@ import {
   openModelPickerWithSetup,
   READ_ALOUD_MODEL_PICKER_OPTIONS,
 } from './models/model-picker-routing';
+import { deriveRibbonModelMenuEntries } from './models/ribbon-model-menu';
 import { Session } from './session/session';
 import { logAccelerationFallbacks } from './settings/acceleration-info';
 import { LlmPresetStateStore } from './settings/llm-preset-state';
@@ -80,6 +91,11 @@ import {
   detectSidecarVersionDrift,
   type SidecarVersionDrift,
 } from './sidecar/sidecar-version-drift';
+import {
+  AudioFileTranscriptionController,
+  isSupportedAudioFile,
+} from './transcription/audio-file-transcription-controller';
+import { FileTranscriptionProgressIndicator } from './transcription/file-transcription-progress';
 import { TranslationController } from './translation/translation-controller';
 import type { TranslationJobState } from './translation/translation-job';
 import { READ_ALOUD_SPEED_PRESETS, readAloudControlLabels } from './tts/read-aloud-control-labels';
@@ -89,6 +105,8 @@ import { DictationRibbonController } from './ui/dictation-ribbon';
 import { LOCAL_DICTATION_VIEW_TYPE, LocalDictationView } from './ui/local-dictation-view';
 
 export default class LocalSttPlugin extends Plugin {
+  private audioFileTranscriptionController: AudioFileTranscriptionController | null = null;
+  private fileTranscriptionProgress: FileTranscriptionProgressIndicator | null = null;
   private audioCaptureStream: AudioCaptureStream | null = null;
   private audioLevelMeter: SidecarAudioLevelMeter | null = null;
   private dictationController: DictationSessionController | null = null;
@@ -212,6 +230,26 @@ export default class LocalSttPlugin extends Plugin {
       logger: this.logger,
       sidecarLifecycleGate: this.sidecarLifecycleGate,
     });
+    this.fileTranscriptionProgress = new FileTranscriptionProgressIndicator();
+    this.audioFileTranscriptionController = new AudioFileTranscriptionController({
+      feedback: this.feedback,
+      getSettings: () => this.settings,
+      logger: this.logger,
+      onModelMissing: () => {
+        void this.openModelPicker();
+      },
+      onProgress: (state) => this.fileTranscriptionProgress?.update(state),
+      onSidecarMissing: () => {
+        void this.openSetupWizard();
+      },
+      resolveAudioLink: (linkPath, sourcePath) => {
+        const resolved = this.app.metadataCache.getFirstLinkpathDest(linkPath, sourcePath);
+        return resolved !== null && isSupportedAudioFile(resolved) ? resolved : null;
+      },
+      sidecarConnection: this.sidecarConnection,
+      sidecarLifecycleGate: this.sidecarLifecycleGate,
+      vault: this.app.vault,
+    });
     this.registerView(
       LOCAL_DICTATION_VIEW_TYPE,
       (leaf) =>
@@ -244,6 +282,11 @@ export default class LocalSttPlugin extends Plugin {
     });
     this.ribbonController = new DictationRibbonController(ribbonElement);
     this.ribbonController.setVisualizer(this.audioLevelMeter);
+    this.registerDomEvent(ribbonElement, 'contextmenu', (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      this.showRibbonModelMenu(event);
+    });
     this.dictationController = new DictationSessionController({
       audioLevelMeter: this.audioLevelMeter,
       captureStream: this.audioCaptureStream,
@@ -279,6 +322,9 @@ export default class LocalSttPlugin extends Plugin {
         this.lastUtteranceRecovery.recordFinalizedUtterance(text);
         void this.finalizedUtteranceAutoCopy.copyAcceptedUtterance(text);
       },
+      onRealtimeTranslation: (text, session) => {
+        this.translationController?.translateRealtime(text, session);
+      },
       onRawTranscriptRecoveryAvailable: (receipt) => {
         this.rawTranscriptRecovery.record(receipt);
       },
@@ -288,8 +334,17 @@ export default class LocalSttPlugin extends Plugin {
       onSidecarMissing: () => {
         void this.openSetupWizard();
       },
+      restartSidecar: async () => {
+        await this.restartSidecarConnection();
+      },
       setRibbonState: (state) => {
         this.ribbonController?.setState(state);
+      },
+      setRibbonAccelerator: (accelerator) => {
+        this.ribbonController?.setAccelerator(accelerator);
+      },
+      setRibbonBufferLength: (queuedUtterances) => {
+        this.ribbonController?.setBufferLength(queuedUtterances);
       },
       setRibbonQueueTier: (tier) => {
         this.ribbonController?.setQueueTier(tier);
@@ -426,6 +481,32 @@ export default class LocalSttPlugin extends Plugin {
               void this.requireReadAloudController().read(editor);
             });
         });
+      }),
+    );
+    this.registerEvent(
+      this.app.workspace.on('file-menu', (menu, file: TAbstractFile) => {
+        if (!this.settings.fileTranscriptionContextMenuEnabled) return;
+        if (isAudioTFile(file)) {
+          menu.addItem((item) => {
+            item
+              .setTitle(t('commands.transcribeAudioFile'))
+              .setIcon('file-audio')
+              .onClick(() => {
+                void this.audioFileTranscriptionController?.transcribe(file);
+              });
+          });
+          return;
+        }
+        if (isMarkdownTFile(file)) {
+          menu.addItem((item) => {
+            item
+              .setTitle(t('commands.transcribeEmbeddedAudio'))
+              .setIcon('list-music')
+              .onClick(() => {
+                void this.audioFileTranscriptionController?.transcribeMarkdown(file);
+              });
+          });
+        }
       }),
     );
 
@@ -599,6 +680,11 @@ export default class LocalSttPlugin extends Plugin {
     this.rawTranscriptRecovery.clear();
     this.releaseReadAloudModelSubscription?.();
     this.releaseReadAloudModelSubscription = null;
+
+    this.audioFileTranscriptionController?.dispose();
+    this.audioFileTranscriptionController = null;
+    this.fileTranscriptionProgress?.dispose();
+    this.fileTranscriptionProgress = null;
 
     try {
       this.modelInstallManager?.dispose();
@@ -956,6 +1042,93 @@ export default class LocalSttPlugin extends Plugin {
     );
   }
 
+  private showRibbonModelMenu(event: MouseEvent): void {
+    const manager = this.requireModelInstallManager();
+    const state = manager.getState();
+    const busy = this.requireDictationController().isBusy();
+    const entries = deriveRibbonModelMenuEntries(state, this.settings.dictationLanguage);
+    const menu = new Menu();
+
+    menu.addItem((item) => {
+      item.setTitle(t('ribbon.modelMenu.title')).setIcon('audio-waveform').setDisabled(true);
+    });
+    menu.addSeparator();
+
+    if (busy) {
+      menu.addItem((item) => {
+        item.setTitle(t('ribbon.modelMenu.stopFirst')).setIcon('circle-alert').setDisabled(true);
+      });
+      menu.addSeparator();
+    } else if (state.loadStatus === 'loading') {
+      menu.addItem((item) => {
+        item.setTitle(t('ribbon.modelMenu.loading')).setDisabled(true);
+      });
+    }
+
+    if (entries.length === 0 && state.loadStatus !== 'loading') {
+      menu.addItem((item) => {
+        item.setTitle(t('ribbon.modelMenu.noneInstalled')).setDisabled(true);
+      });
+    }
+
+    for (const entry of entries) {
+      const { model } = entry;
+      const title = entry.supportsCurrentLanguage
+        ? model.displayName
+        : t('ribbon.modelMenu.unsupportedLanguage', {
+            language: dictationLanguageLabel(this.settings.dictationLanguage),
+            model: model.displayName,
+          });
+      menu.addItem((item) => {
+        item
+          .setTitle(title)
+          .setChecked(entry.isSelected)
+          .setDisabled(busy || entry.isSelected || !entry.supportsCurrentLanguage)
+          .onClick(() => {
+            void this.selectDictationModel(model);
+          });
+      });
+    }
+
+    menu.addSeparator();
+    menu.addItem((item) => {
+      item
+        .setTitle(t('ribbon.modelMenu.manageModels'))
+        .setIcon('settings')
+        .onClick(() => {
+          void this.openModelPicker();
+        });
+    });
+    menu.showAtMouseEvent(event);
+  }
+
+  private async selectDictationModel(model: CatalogModelRecord): Promise<void> {
+    if (this.requireDictationController().isBusy()) {
+      this.feedback.show({ intent: 'warning', message: t('ribbon.modelMenu.stopFirst') });
+      return;
+    }
+
+    try {
+      await this.requireModelInstallManager().select({
+        familyId: model.familyId,
+        kind: 'catalog_model',
+        modelId: model.modelId,
+        runtimeId: model.runtimeId,
+      });
+      this.feedback.show({
+        intent: 'success',
+        message: t('ribbon.modelMenu.selected', { model: model.displayName }),
+      });
+    } catch (error) {
+      this.logger.error('model', 'failed to select dictation model from ribbon menu', error);
+      this.feedback.show({
+        cause: error,
+        intent: 'error',
+        message: t('models.manage.selectFailed'),
+      });
+    }
+  }
+
   private selectedReadAloudModel(): CatalogModelRecord | null {
     const selection = this.settings.selectedTtsModel;
     if (selection === null || selection.kind !== 'catalog_model') return null;
@@ -1193,4 +1366,14 @@ export default class LocalSttPlugin extends Plugin {
 
 function getSidecarExecutableName(): string {
   return formatSidecarExecutableName(Platform.isWin);
+}
+
+function isAudioTFile(file: TAbstractFile): file is TFile {
+  if (!('extension' in file) || typeof file.extension !== 'string') return false;
+  return isSupportedAudioFile({ extension: file.extension });
+}
+
+function isMarkdownTFile(file: TAbstractFile): file is TFile {
+  if (!('extension' in file) || typeof file.extension !== 'string') return false;
+  return file.extension === 'md';
 }

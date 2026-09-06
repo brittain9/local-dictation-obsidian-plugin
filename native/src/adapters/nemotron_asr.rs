@@ -114,9 +114,104 @@ const SUPPORTED_LANGUAGE_PROMPTS: &[LanguagePrompt] = &[
         index: 10,
     },
     LanguagePrompt {
+        product_tag: "zh",
+        metadata_key: "zh-CN",
+        index: 4,
+    },
+    LanguagePrompt {
         product_tag: "hr",
         metadata_key: "hr-HR",
         index: 29,
+    },
+    LanguagePrompt {
+        product_tag: "ar",
+        metadata_key: "ar-AR",
+        index: 7,
+    },
+    LanguagePrompt {
+        product_tag: "bg",
+        metadata_key: "bg-BG",
+        index: 30,
+    },
+    LanguagePrompt {
+        product_tag: "cs",
+        metadata_key: "cs-CZ",
+        index: 22,
+    },
+    LanguagePrompt {
+        product_tag: "da",
+        metadata_key: "da-DK",
+        index: 25,
+    },
+    LanguagePrompt {
+        product_tag: "et",
+        metadata_key: "et-EE",
+        index: 60,
+    },
+    LanguagePrompt {
+        product_tag: "fi",
+        metadata_key: "fi-FI",
+        index: 26,
+    },
+    LanguagePrompt {
+        product_tag: "hi",
+        metadata_key: "hi-IN",
+        index: 6,
+    },
+    LanguagePrompt {
+        product_tag: "hu",
+        metadata_key: "hu-HU",
+        index: 23,
+    },
+    LanguagePrompt {
+        product_tag: "ko",
+        metadata_key: "ko-KR",
+        index: 14,
+    },
+    LanguagePrompt {
+        product_tag: "nb",
+        metadata_key: "nb-NO",
+        index: 103,
+    },
+    LanguagePrompt {
+        product_tag: "pl",
+        metadata_key: "pl-PL",
+        index: 17,
+    },
+    LanguagePrompt {
+        product_tag: "ro",
+        metadata_key: "ro-RO",
+        index: 20,
+    },
+    LanguagePrompt {
+        product_tag: "ru",
+        metadata_key: "ru-RU",
+        index: 11,
+    },
+    LanguagePrompt {
+        product_tag: "sk",
+        metadata_key: "sk-SK",
+        index: 28,
+    },
+    LanguagePrompt {
+        product_tag: "sv",
+        metadata_key: "sv-SE",
+        index: 24,
+    },
+    LanguagePrompt {
+        product_tag: "tr",
+        metadata_key: "tr-TR",
+        index: 18,
+    },
+    LanguagePrompt {
+        product_tag: "uk",
+        metadata_key: "uk-UA",
+        index: 19,
+    },
+    LanguagePrompt {
+        product_tag: "vi",
+        metadata_key: "vi-VN",
+        index: 33,
     },
 ];
 
@@ -198,7 +293,7 @@ impl ModelFamilyAdapter for NemotronAsrAdapter {
     }
 
     fn probe_model(&self, path: &Path) -> Result<(), TranscriptionError> {
-        ValidatedNemotronGraphs::load(path, GpuConfig { use_gpu: false })?;
+        ValidatedNemotronGraphs::load(path, GpuConfig::default())?;
         Ok(())
     }
 
@@ -235,9 +330,9 @@ impl ValidatedNemotronGraphs {
         let encoder =
             build_session(&paths.encoder, encoder_gpu).map_err(invalid_session("encoder"))?;
         let config = NemotronConfig::from_encoder(&encoder)?;
-        let decoder = build_session(&paths.decoder, GpuConfig { use_gpu: false })
+        let decoder = build_session(&paths.decoder, GpuConfig::default())
             .map_err(invalid_session("decoder"))?;
-        let joiner = build_session(&paths.joiner, GpuConfig { use_gpu: false })
+        let joiner = build_session(&paths.joiner, GpuConfig::default())
             .map_err(invalid_session("joiner"))?;
         verify_graph_topology(&encoder, &decoder, &joiner, &config)?;
         let tokenizer = NemotronTokenizer::load(&paths.tokens)?;
@@ -1714,7 +1809,11 @@ fn supported_languages_map_to_the_pinned_prompt_indices() {
     assert_eq!(prompt_index_for_language("it"), Some(15));
     assert_eq!(prompt_index_for_language("nl"), Some(16));
     assert_eq!(prompt_index_for_language("ja"), Some(10));
+    assert_eq!(prompt_index_for_language("zh"), Some(4));
     assert_eq!(prompt_index_for_language("hr"), Some(29));
+    assert_eq!(prompt_index_for_language("ko"), Some(14));
+    assert_eq!(prompt_index_for_language("uk"), Some(19));
+    assert_eq!(prompt_index_for_language("vi"), Some(33));
     assert_eq!(prompt_index_for_language("auto"), Some(101));
     assert_eq!(prompt_index_for_language("xx"), None);
 }
@@ -1724,7 +1823,7 @@ fn supported_languages_map_to_the_pinned_prompt_indices() {
 /// to. Croatian shipping alongside it makes that an easy mistake to make later.
 #[test]
 fn languages_without_a_pinned_prompt_are_rejected() {
-    for tag in ["sr", "sr-RS", "bs", "sl", "sk", "bg"] {
+    for tag in ["sr", "sr-RS", "bs", "sl", "el", "he", "th", "nn"] {
         assert_eq!(
             prompt_index_for_language(tag),
             None,
@@ -1738,7 +1837,9 @@ fn languages_without_a_pinned_prompt_are_rejected() {
 #[test]
 fn advertised_languages_match_the_prompt_table() {
     let tags = supported_language_tags();
+    assert_eq!(tags.len(), 28);
     assert!(tags.contains(&"hr".to_string()));
+    assert!(tags.contains(&"zh".to_string()));
     assert!(!tags.contains(&AUTOMATIC_LANGUAGE_TAG.to_string()));
     for tag in &tags {
         assert!(

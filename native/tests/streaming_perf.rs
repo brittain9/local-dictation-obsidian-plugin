@@ -43,7 +43,7 @@ fn long_utterance_samples() -> Vec<i16> {
 fn partial_cost_does_not_scale_with_utterance_length() {
     let frontend = require_moonshine_model(MoonshineTier::Tiny);
     let mut model = MoonshineAdapter
-        .load_streaming(frontend.as_path(), GpuConfig { use_gpu: false })
+        .load_streaming(frontend.as_path(), GpuConfig::default())
         .unwrap();
 
     let samples = long_utterance_samples();

@@ -13,7 +13,7 @@ Dictate live. Transcribe meetings. Translate text. Listen to notes. One plugin i
 
 - 🎤 **Speech:** Dictate with live streaming text, or capture higher-accuracy transcripts from meetings, calls, and other audio.
 - 🔊 **Voice:** Listen to your notes with natural voices.
-- 🌍 **Language:** Dictate in ten languages and translate notes locally across eight.
+- 🌍 **Language:** Dictate in eleven languages and translate notes locally across eight.
 - 🧠 **Models:** Choose from a managed catalog of speech, voice, and translation models, with optional LLM text tools.
 
 <p align="center">
@@ -36,6 +36,7 @@ Speech Kit is not tied to one speech engine or hosted API. It manages a growing 
 | --- | --- |
 | Words on screen while you speak | Moonshine streaming models |
 | Multilingual live transcription | Nemotron 3.5 ASR |
+| Chinese live dictation with a higher-accuracy final pass | FunASR Chinese Hybrid |
 | The most accurate transcripts | Whisper Large V3 Turbo, Cohere Transcribe, and other batch models |
 | Natural local voices | Pocket TTS or Supertonic 3 |
 | Fast offline translation | Firefox Translations |
@@ -62,7 +63,7 @@ Many speech apps are limited to one operating system, one model, or one part of 
 | --- | --- | --- | --- |
 | macOS | Apple silicon | Metal for Whisper | macOS 14.2 or later |
 | Windows | x86-64 | Optional NVIDIA CUDA | Supported |
-| Linux | x86-64 glibc | Optional NVIDIA CUDA | PulseAudio or PipeWire |
+| Linux | x86-64 glibc | Optional NVIDIA CUDA; Vulkan for FunASR | PulseAudio or PipeWire |
 
 Choose your platform. Choose your models. Keep one workflow inside Obsidian.
 
@@ -83,6 +84,7 @@ Each feature is served by a different model, so coverage is tracked per feature 
 | Language | Transcription | Live dictation | Read aloud | Translation | Interface |
 | --- | :-: | :-: | :-: | :-: | :-: |
 | English, Spanish, German, French, Portuguese, Italian, Dutch, Japanese | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Chinese | ✅ | ✅ | — | ✅ | — |
 | Croatian | ✅ | ✅ | ✅ | — | ✅ |
 | Serbian | ✅ | — | — | — | — |
 

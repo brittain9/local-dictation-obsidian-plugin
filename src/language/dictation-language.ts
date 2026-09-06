@@ -11,6 +11,7 @@ export const DICTATION_LANGUAGE_OPTIONS = [
   { label: 'Italiano', value: 'it' },
   { label: 'Nederlands', value: 'nl' },
   { label: '日本語', value: 'ja' },
+  { label: '中文', value: 'zh' },
   { label: 'Hrvatski', value: 'hr' },
   { label: 'Српски', value: 'sr' },
 ] as const;

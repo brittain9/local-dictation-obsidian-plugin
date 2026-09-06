@@ -25,6 +25,8 @@ class FakeElement {
   title = '';
   removed = false;
   innerHTML = '';
+  appendCount = 0;
+  appendedNodes: Node[] = [];
   readonly style = {
     setProperty: (name: string, value: string): void => {
       this.styleProps[name] = value;
@@ -35,6 +37,10 @@ class FakeElement {
   };
   setAttribute(name: string, value: string): void {
     this.attributes[name] = value;
+  }
+  append(...nodes: Node[]): void {
+    this.appendCount += 1;
+    this.appendedNodes = nodes;
   }
   remove(): void {
     this.removed = true;
@@ -144,6 +150,45 @@ describe('DictationRibbonController a11y during hold', () => {
 });
 
 describe('DictationRibbonController paintIcon', () => {
+  it('shows the actual accelerator without treating unknown or GPU backends as CPU', () => {
+    const { controller, element } = makeController();
+
+    expect(element.appendedNodes[0]?.textContent).toBe('');
+    expect(element.dataset.localSttAccelerator).toBe('none');
+
+    for (const [accelerator, badge] of [
+      ['cpu', 'C'],
+      ['vulkan', 'V'],
+      ['cuda', 'N'],
+      ['metal', 'M'],
+      ['direct_ml', 'D'],
+    ] as const) {
+      controller.setAccelerator(accelerator);
+      expect(element.appendedNodes[0]?.textContent).toBe(badge);
+      expect(element.dataset.localSttAccelerator).toBe(accelerator);
+    }
+  });
+
+  it('shows the transcription queue length as an integer', () => {
+    const { controller, element } = makeController();
+
+    controller.setBufferLength(7);
+
+    expect(element.appendedNodes[1]?.textContent).toBe('7');
+  });
+
+  it('re-appends status badges after setIcon replaces the button children', () => {
+    const { controller, element } = makeController();
+    const initialAppendCount = element.appendCount;
+
+    controller.setState('starting');
+    expect(element.appendCount).toBeGreaterThan(initialAppendCount);
+
+    const afterIconChange = element.appendCount;
+    controller.setState('listening');
+    expect(element.appendCount).toBeGreaterThan(afterIconChange);
+  });
+
   it('uses the Lucide audio-lines icon for both listening and speech states', () => {
     const { controller, element } = makeController();
     controller.setState('listening');

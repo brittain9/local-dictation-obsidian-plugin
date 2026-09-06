@@ -167,7 +167,7 @@ fn nemotron_partials_preserve_prefix_and_final_matches_one_shot() {
     let samples = audio::decode_wav_16k_mono(&fixture.audio_path()).unwrap();
 
     let mut streaming = NemotronAsrAdapter
-        .load_streaming(&encoder, GpuConfig { use_gpu: false })
+        .load_streaming(&encoder, GpuConfig::default())
         .unwrap();
     let mut partials = Vec::new();
     for chunk in samples.chunks(8_000) {
@@ -192,7 +192,7 @@ fn nemotron_partials_preserve_prefix_and_final_matches_one_shot() {
     );
 
     let mut one_shot = NemotronAsrAdapter
-        .load_streaming(&encoder, GpuConfig { use_gpu: false })
+        .load_streaming(&encoder, GpuConfig::default())
         .unwrap();
     one_shot.accept_audio(&samples).unwrap();
     let one_shot_final = one_shot.finalize_utterance().unwrap();
@@ -228,7 +228,7 @@ fn nemotron_partials_preserve_prefix_and_final_matches_one_shot() {
 fn nemotron_silence_produces_no_text() {
     let encoder = require_nemotron_model();
     let mut model = NemotronAsrAdapter
-        .load_streaming(&encoder, GpuConfig { use_gpu: false })
+        .load_streaming(&encoder, GpuConfig::default())
         .unwrap();
     model.accept_audio(&vec![0_i16; 3 * 16_000]).unwrap();
     assert!(joined_text(&model.finalize_utterance().unwrap()).is_empty());

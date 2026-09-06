@@ -111,6 +111,7 @@ describe('buildModelDetailsPresentation', () => {
       outputSampleRate: '44.1 kHz',
       supportsSpeedControl: true,
     });
+    expect(presentation.languages).toEqual(['English', '日本語']);
     expect(presentation.capabilityLabels).not.toContain('4 languages');
   });
 
@@ -130,7 +131,7 @@ describe('buildModelDetailsPresentation', () => {
     });
   });
 
-  it('preserves the established STT facts and capability language labels', () => {
+  it('uses exact model-level STT capability labels instead of broader family language claims', () => {
     const presentation = buildModelDetailsPresentation(
       ttsModel({
         familyId: 'whisper',
@@ -149,7 +150,8 @@ describe('buildModelDetailsPresentation', () => {
     );
 
     expect(presentation.tts).toBeNull();
-    expect(presentation.capabilityLabels).toContain('4 languages');
+    expect(presentation.capabilityLabels).toContain('Final after pause');
+    expect(presentation.capabilityLabels).not.toContain('4 languages');
     expect(presentation.totalSizeBytes).toBe(100);
     expect(presentation.sourceUrl).toBe('https://example.com/source');
   });

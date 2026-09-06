@@ -1,6 +1,6 @@
 import { formatCatalogLanguageLabel } from '../language/dictation-language';
 import { formatVoiceLabel } from '../shared/format-utils';
-import { buildCapabilityLabels } from './capability-view';
+import { buildModelRowCapabilityLabels } from './capability-view';
 import { localizeModelSummary } from './catalog-localization';
 import {
   type CatalogModelRecord,
@@ -30,6 +30,7 @@ export interface ModelDetailsPresentation {
   artifacts: CatalogModelRecord['artifacts'];
   capabilityLabels: string[] | null;
   displayName: string;
+  languages: string[];
   installPath: string | null;
   licenseLabel: string;
   licenseUrl: string;
@@ -56,10 +57,9 @@ export function buildModelDetailsPresentation(
     capabilityLabels:
       matchingCapabilities === null
         ? null
-        : buildCapabilityLabels(matchingCapabilities, {
-            includeLanguageSupport: model.task !== 'tts',
-          }),
+        : buildModelRowCapabilityLabels(model, matchingCapabilities),
     displayName: model.displayName,
+    languages: model.languageTags.map(formatCatalogLanguageLabel),
     installPath: installedModel?.installPath ?? null,
     licenseLabel: model.licenseLabel,
     licenseUrl: model.licenseUrl,

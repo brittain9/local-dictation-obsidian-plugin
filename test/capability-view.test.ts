@@ -1,7 +1,12 @@
 import { describe, expect, it } from 'vitest';
 
-import { buildCapabilityLabels, resolveEngineCapabilities } from '../src/models/capability-view';
+import {
+  buildCapabilityLabels,
+  buildModelRowCapabilityLabels,
+  resolveEngineCapabilities,
+} from '../src/models/capability-view';
 import type {
+  CatalogModelRecord,
   EngineCapabilitiesRecord,
   ModelFamilyCapabilitiesRecord,
   RuntimeCapabilitiesRecord,
@@ -66,6 +71,38 @@ function caps(
     familyId: 'whisper',
     runtime: { ...RUNTIME_CAPS_DEFAULT, ...overrides.runtime },
     runtimeId: 'whisper_cpp',
+  };
+}
+
+function model(overrides: Partial<CatalogModelRecord> = {}): CatalogModelRecord {
+  return {
+    artifacts: [
+      {
+        artifactId: 'model',
+        downloadUrl: 'https://example.com/model.bin',
+        filename: 'ggml-small.en-q5_1.bin',
+        required: true,
+        role: 'transcription_model',
+        sha256: '0'.repeat(64),
+        sizeBytes: 100,
+      },
+    ],
+    collectionId: 'whisper',
+    displayName: 'Whisper Small',
+    familyId: 'whisper',
+    languageTags: ['en'],
+    supportsAutomaticLanguageDetection: false,
+    licenseLabel: 'MIT',
+    licenseUrl: 'https://example.com/license',
+    modelCardUrl: null,
+    modelId: 'whisper-small-en',
+    notes: [],
+    runtimeId: 'whisper_cpp',
+    sourceUrl: 'https://example.com/source',
+    summary: 'English Whisper',
+    task: 'stt',
+    uxTags: ['accuracy', 'cuda'],
+    ...overrides,
   };
 }
 
@@ -217,5 +254,90 @@ describe('buildCapabilityLabels', () => {
     const labels = buildCapabilityLabels(caps({ family: { maxAudioDurationSecs: null } }));
 
     expect(labels.some((label) => label.startsWith('Max audio'))).toBe(false);
+  });
+});
+
+describe('buildModelRowCapabilityLabels', () => {
+  it('uses the exact artifact format and combines every available backend in one tag', () => {
+    const labels = buildModelRowCapabilityLabels(
+      model(),
+      caps({
+        runtime: {
+          availableAccelerators: ['cpu', 'vulkan'],
+          supportedModelFormats: ['ggml', 'gguf'],
+        },
+      }),
+    );
+
+    expect(labels).toEqual(expect.arrayContaining(['Vulkan + CPU fallback', 'GGML']));
+    expect(labels).not.toContain('GGUF');
+    expect(labels).not.toContain('CUDA');
+  });
+
+  it('does not inherit a runtime accelerator excluded by the concrete model', () => {
+    const labels = buildModelRowCapabilityLabels(
+      model({ supportedAccelerators: ['cpu'] }),
+      caps({
+        runtime: {
+          availableAccelerators: ['cpu', 'vulkan'],
+          supportedModelFormats: ['ggml', 'gguf'],
+        },
+      }),
+    );
+
+    expect(labels).toContain('CPU');
+    expect(labels).not.toContain('Vulkan + CPU fallback');
+  });
+
+  it('shows the complete exact STT feature set without inheriting false model-level auto detection', () => {
+    const labels = buildModelRowCapabilityLabels(
+      model(),
+      caps({
+        family: {
+          producesPunctuation: true,
+          supportsAutomaticLanguageDetection: true,
+          supportsInitialPrompt: true,
+          supportsLanguageSelection: true,
+          supportsSegmentTimestamps: true,
+          supportsStreaming: false,
+          supportsWordTimestamps: true,
+        },
+      }),
+    );
+
+    expect(labels).toEqual(
+      expect.arrayContaining([
+        'Final after pause',
+        'Segment timestamps',
+        'Word timestamps',
+        'Initial prompt',
+        'Punctuation',
+        'Speaker labels',
+      ]),
+    );
+    expect(labels).not.toContain('Auto language detection');
+    expect(labels).not.toContain('Language selection');
+  });
+
+  it('uses model-specific language selection and auto-detection claims', () => {
+    const labels = buildModelRowCapabilityLabels(
+      model({ languageTags: ['en', 'zh'], supportsAutomaticLanguageDetection: true }),
+      caps({
+        family: {
+          supportsAutomaticLanguageDetection: true,
+          supportsLanguageSelection: true,
+          supportsStreaming: true,
+        },
+      }),
+    );
+
+    expect(labels).toEqual(
+      expect.arrayContaining([
+        'Streaming',
+        'Language selection',
+        'Auto language detection',
+        'No speaker labels',
+      ]),
+    );
   });
 });

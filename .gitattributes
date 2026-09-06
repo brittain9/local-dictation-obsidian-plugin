@@ -1,1 +1,2 @@
 * text=auto eol=lf
+scripts/patches/*.patch whitespace=-blank-at-eol

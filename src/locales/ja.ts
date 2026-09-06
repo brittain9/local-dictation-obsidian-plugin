@@ -739,7 +739,7 @@ export const ja = {
   'catalog.moonshine_medium_streaming_en.summary':
     '245M パラメーターで最も正確な Moonshine ストリーミング モデル。',
   'catalog.nemotron_asr_0_6b_int8_streaming_560ms.summary':
-    'NVIDIA の 0.6B 多言語 RNNT。8 つの検証済み言語でのキャッシュ対応ライブ文字起こしのために int8 ONNX にエクスポートされます。',
+    'NVIDIA の 0.6B 多言語 RNNT。28 の対応言語でのキャッシュ対応ライブ文字起こしのために int8 ONNX にエクスポートされます。',
   'catalog.family.whisper.summary':
     '一時停止するたびに文字起こしします。 Whisper は、オプションのワードレベルのタイミングを含め、他のモデル ファミリよりも正確なタイムスタンプを提供します。 Tiny と Base は速度を優先し、Small は速度と品質のバランスをとり、Medium と Large は品質を優先します。',
   'catalog.family.cohere_transcribe.summary':
@@ -847,4 +847,23 @@ export const ja = {
     'Firefox で公開されたモデルを使用した、英語と7言語間の高速なローカル翻訳です。',
   'catalog.family.firefox_translations.summary':
     'コンパクトな Bergamot エンジンと Firefox モデルでノートのテキストをローカル翻訳します。',
+  'audioFile.busy': '別のファイルを文字起こししています。',
+  'audioFile.cancel': '文字起こしをキャンセル',
+  'audioFile.cancelled': '{name} の文字起こしをキャンセルしました。',
+  'audioFile.completed': '文字起こしノートを作成しました: {path}',
+  'audioFile.engineBusy': '音声エンジンをインストールまたは再起動しています。',
+  'audioFile.failed': '{name} を文字起こしできませんでした。',
+  'audioFile.markdownCompleted': '埋め込み録音 {total} 件中 {completed} 件を文字起こししました。',
+  'audioFile.noEmbeddedAudio': '{name} にローカル音声録音が見つかりません。',
+  'audioFile.noSpeech': '{name} で音声が検出されませんでした。',
+  'audioFile.outputExists': '{path} に文字起こしノートが既に存在します。',
+  'audioFile.started': '{name} をローカルで文字起こししています…',
+  'audioFile.transcriptLabel': '文字起こし',
+  'commands.transcribeAudioFile': '音声をノートに文字起こし',
+  'commands.transcribeEmbeddedAudio': '埋め込み録音を文字起こし',
+  'settings.fileTranscription.name': 'ファイル文字起こしメニュー',
+  'settings.fileTranscription.desc':
+    '音声ファイルと Markdown ファイルのコンテキストメニューに文字起こし操作を追加します。',
+  'settings.developerMode.name': '開発者モード',
+  'settings.developerMode.desc': 'トラブルシューティング用の詳細なプラグインログを有効にします。',
 } as const satisfies TranslationCatalog;
