@@ -195,6 +195,7 @@ export class TranslationController {
   ): void {
     const text = source.trim();
     if (text.length === 0 || this.disposed) return;
+    const hasRevisionMetadata = update !== undefined;
     const resolvedUpdate = update ?? {
       isFinal: true,
       revision: 0,
@@ -206,10 +207,16 @@ export class TranslationController {
       slots = new Map();
       this.realtimeSlots.set(targetKey, slots);
     }
-    const key = resolvedUpdate.utteranceId;
+    // Keep the final revision in its own lane. It must run even when a live
+    // partial request for the same utterance has just completed or is still
+    // draining; otherwise the old partial result can remain visible forever.
+    const isFinalRevision = hasRevisionMetadata && resolvedUpdate.isFinal;
+    const key = isFinalRevision
+      ? `${resolvedUpdate.utteranceId}:final`
+      : resolvedUpdate.utteranceId;
     let slot = slots.get(key);
     if (slot === undefined) {
-      if (this.realtimePendingCount >= MAX_REALTIME_TRANSLATION_QUEUE) {
+      if (this.realtimePendingCount >= MAX_REALTIME_TRANSLATION_QUEUE && !isFinalRevision) {
         this.dependencies.logger.warn(
           'translation',
           `realtime translation queue is full; skipped a sentence (${MAX_REALTIME_TRANSLATION_QUEUE} pending)`,

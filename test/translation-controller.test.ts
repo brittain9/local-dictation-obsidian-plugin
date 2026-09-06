@@ -594,8 +594,8 @@ describe('TranslationController', () => {
       translationId: secondId,
       translations: ['Final.'],
     });
-    await vi.waitFor(() => expect(replaceUtteranceTranslation).toHaveBeenCalledOnce());
-    expect(replaceUtteranceTranslation).toHaveBeenCalledWith('u1', 'Final.');
+    await vi.waitFor(() => expect(replaceUtteranceTranslation).toHaveBeenCalledTimes(2));
+    expect(replaceUtteranceTranslation).toHaveBeenLastCalledWith('u1', 'Final.');
   });
 });
 
