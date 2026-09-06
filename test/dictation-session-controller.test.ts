@@ -72,6 +72,9 @@ class FakeSession {
   public readonly insertAdjacentToSessionRange = vi.fn(
     (_blockText: string, _placement: 'above' | 'below') => true,
   );
+  public readonly replaceUtteranceTranslation = vi.fn(
+    (_utteranceId: string, _translationText: string) => true,
+  );
   public readonly markSessionRangeAsProcessing = vi.fn(() => true);
   public readonly readCurrentSessionText = vi.fn(() => this.currentSessionText);
   public readonly readNoteGlossary = vi.fn(

@@ -91,6 +91,7 @@ interface NoteSurfaceLike {
   dispose(): void;
   getSpan(utteranceId: UtteranceId): ProjectedSpan | undefined;
   readRange(range: RewriteRange): string | null;
+  readRangeExcludingCompanions(range: RewriteRange): string | null;
   readNoteGlossary(maxChars: number): { text: string; truncated: boolean } | null;
   readNoteText(maxChars: number): { text: string; truncated: boolean } | null;
   readProjectionContext(): NoteProjectionContext;
@@ -101,6 +102,7 @@ interface NoteSurfaceLike {
     expectedOldText: string,
     removeBoundary?: boolean,
   ): ReplaceResult;
+  replaceUtteranceCompanion(utteranceId: UtteranceId, blockText: string): boolean;
   rewriteRegion(
     range: RewriteRange,
     newText: string,
@@ -244,7 +246,7 @@ export class Session {
       return '';
     }
 
-    return (this.surface.readRange(range) ?? '').trim();
+    return (this.surface.readRangeExcludingCompanions(range) ?? '').trim();
   }
 
   replaceSessionRangeWithCleaned(
@@ -263,7 +265,7 @@ export class Session {
       return { kind: 'denied' };
     }
 
-    const rawText = this.surface.readRange(range);
+    const rawText = this.surface.readRangeExcludingCompanions(range);
     if (rawText === null) {
       return { kind: 'denied' };
     }
@@ -318,7 +320,7 @@ export class Session {
       return false;
     }
 
-    const current = this.surface.readRange(range);
+    const current = this.surface.readRangeExcludingCompanions(range);
     if (current === null) {
       return false;
     }
@@ -350,6 +352,13 @@ export class Session {
     }
 
     return result.kind === 'rewritten';
+  }
+
+  replaceUtteranceTranslation(utteranceId: UtteranceId, translationText: string): boolean {
+    if (this.surface === null || translationText.trim().length === 0) {
+      return false;
+    }
+    return this.surface.replaceUtteranceCompanion(utteranceId, `> ${translationText.trim()}`);
   }
 
   setAnchorMode(mode: DictationAnchorMode): void {

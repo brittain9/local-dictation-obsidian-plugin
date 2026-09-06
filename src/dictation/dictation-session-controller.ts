@@ -66,6 +66,7 @@ type ControllerSession = Pick<
   | 'clearSessionProcessingMark'
   | 'dispose'
   | 'insertAdjacentToSessionRange'
+  | 'replaceUtteranceTranslation'
   | 'markSessionRangeAsProcessing'
   | 'readCurrentSessionText'
   | 'readNoteGlossary'
@@ -155,7 +156,11 @@ interface DictationSessionControllerDependencies {
   onLlmCleanupFailure?: (failure: LlmCleanupFailure) => void;
   onLlmCleanupSuccess?: () => void;
   onFinalizedUtteranceAccepted?: (text: string) => void;
-  onRealtimeTranslation?: (text: string, session: ControllerSession) => void;
+  onRealtimeTranslation?: (
+    text: string,
+    session: ControllerSession,
+    metadata: { isFinal: boolean; revision: number; utteranceId: string },
+  ) => void;
   onRawTranscriptRecoveryAvailable?: (receipt: RawTranscriptRecoveryReceipt) => void;
   onModelMissing?: () => void;
   onSidecarMissing?: () => void;
@@ -1023,9 +1028,15 @@ export class DictationSessionController {
       await this.cancelSession(sessionId);
       return;
     }
-    if (result.kind === 'accepted' && revision.isFinal && revision.text.trim().length > 0) {
-      this.dependencies.onFinalizedUtteranceAccepted?.(revision.text);
-      this.dependencies.onRealtimeTranslation?.(revision.text, entry.session);
+    if (result.kind === 'accepted' && revision.text.trim().length > 0) {
+      if (revision.isFinal) {
+        this.dependencies.onFinalizedUtteranceAccepted?.(revision.text);
+      }
+      this.dependencies.onRealtimeTranslation?.(revision.text, entry.session, {
+        isFinal: revision.isFinal,
+        revision: revision.revision,
+        utteranceId: revision.utteranceId,
+      });
     }
   }
 

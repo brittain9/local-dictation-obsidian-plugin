@@ -322,8 +322,8 @@ export default class LocalSttPlugin extends Plugin {
         this.lastUtteranceRecovery.recordFinalizedUtterance(text);
         void this.finalizedUtteranceAutoCopy.copyAcceptedUtterance(text);
       },
-      onRealtimeTranslation: (text, session) => {
-        this.translationController?.translateRealtime(text, session);
+      onRealtimeTranslation: (text, session, metadata) => {
+        this.translationController?.translateRealtime(text, session, metadata);
       },
       onRawTranscriptRecoveryAvailable: (receipt) => {
         this.rawTranscriptRecovery.record(receipt);

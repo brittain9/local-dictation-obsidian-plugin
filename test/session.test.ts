@@ -58,6 +58,9 @@ class FakeSurface {
   public readonly setProvisional = vi.fn(
     (_utteranceId: string, _provisional: boolean): SurfaceDesynchronization | null => null,
   );
+  public readonly replaceUtteranceCompanion = vi.fn(
+    (_utteranceId: string, _blockText: string) => true,
+  );
   public readonly validateExternalModification = vi.fn((): SurfaceDesynchronization | null => null);
   public documentText = '';
   public onSurfaceDesynchronized: ((failure: SurfaceDesynchronization) => void) | null = null;
@@ -144,6 +147,10 @@ class FakeSurface {
     }
 
     return this.documentText.slice(range.from, range.to);
+  }
+
+  readRangeExcludingCompanions(range: RewriteRange): string | null {
+    return this.readRange(range);
   }
 
   readDocumentText(): string {

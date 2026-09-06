@@ -268,6 +268,29 @@ describe('NoteSurface', () => {
     expect(doc(view)).toBe(`${initialDocument}${final}z`);
   });
 
+  it('keeps per-utterance translation blocks outside the next transcript', () => {
+    const { surface, view } = createSurface();
+
+    expect(surface.appendProjection('u1', literalProjection('第一句。')).kind).toBe('appended');
+    expect(surface.replaceUtteranceCompanion('u1', '> First sentence.')).toBe(true);
+    expect(surface.appendProjection('u2', literalProjection('第二句。')).kind).toBe('appended');
+
+    expect(doc(view)).toBe('第一句。\n\n> First sentence.\n\n第二句。');
+  });
+
+  it('replaces a provisional translation in place before appending the next utterance', () => {
+    const { surface, view } = createSurface();
+
+    expect(surface.appendProjection('u1', literalProjection('partial')).kind).toBe('appended');
+    expect(surface.replaceUtteranceCompanion('u1', '> Partial')).toBe(true);
+    expect(surface.replaceAnchor('u1', 'final.', 'partial').kind).toBe('replaced');
+    surface.observeTransaction(view.lastUpdate as ViewUpdate);
+    expect(surface.replaceUtteranceCompanion('u1', '> Final.')).toBe(true);
+    expect(surface.appendProjection('u2', literalProjection('next')).kind).toBe('appended');
+
+    expect(doc(view)).toBe('final.\n\n> Final.\n\nnext');
+  });
+
   it.each([
     ['anchor mode', (surface: NoteSurface) => surface.setAnchorMode('visible')],
     ['processing range', (surface: NoteSurface) => surface.setProcessingRange({ from: 0, to: 1 })],

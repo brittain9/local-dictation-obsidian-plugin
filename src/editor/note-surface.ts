@@ -47,6 +47,14 @@ export interface ProjectedSpan {
   utteranceId: UtteranceId;
 }
 
+interface CompanionSpan {
+  end: number;
+  latched?: LatchKind;
+  projectedText: string;
+  start: number;
+  utteranceId: UtteranceId;
+}
+
 export interface SurfaceDesynchronization {
   readonly documentLength: number;
   readonly kind: 'surface_desynchronized';
@@ -158,6 +166,7 @@ export class NoteSurface {
   private readonly initialBoundaryPos: number;
   private pendingInitialPrefix = '';
   private readonly spans = new Map<UtteranceId, ProjectedSpan>();
+  private readonly companionSpans = new Map<UtteranceId, CompanionSpan>();
 
   constructor(
     readonly view: EditorView,
@@ -192,6 +201,7 @@ export class NoteSurface {
     }
 
     const spansBefore = [...this.spans.values()].map(cloneSpan);
+    const companionsBefore = [...this.companionSpans.values()].map(cloneCompanionSpan);
     const latchedUtteranceIds: string[] = [];
 
     this.mapSpans(update);
@@ -214,7 +224,52 @@ export class NoteSurface {
     }
 
     this.clearProvisional(latchedUtteranceIds);
+    for (const before of companionsBefore) {
+      const current = this.companionSpans.get(before.utteranceId);
+      if (
+        current !== undefined &&
+        current.latched === undefined &&
+        changeIntersectsSpan(update, before)
+      ) {
+        current.latched = 'user_edited';
+      }
+    }
     return null;
+  }
+
+  replaceUtteranceCompanion(utteranceId: UtteranceId, blockText: string): boolean {
+    if (this.disposed) return false;
+    if (this.detectDesynchronization() !== null) return false;
+    const source = this.spans.get(utteranceId);
+    if (source === undefined) return false;
+    const text = blockText.trim();
+    if (text.length === 0) return false;
+    const rendered = `\n\n${text}\n\n`;
+    const existing = this.companionSpans.get(utteranceId);
+    if (existing?.latched !== undefined) return false;
+    if (
+      existing !== undefined &&
+      this.view.state.doc.sliceString(existing.start, existing.end) !== existing.projectedText
+    ) {
+      existing.latched = 'span_mismatch';
+      return false;
+    }
+    const start = existing?.start ?? source.end;
+    const end = existing?.end ?? start;
+    this.view.dispatch({
+      changes: { from: start, to: end, insert: rendered },
+      effects: this.ownerAnchorEffects(start + rendered.length),
+    });
+    const currentSource = this.spans.get(utteranceId);
+    if (currentSource !== undefined) currentSource.end = start;
+    this.companionSpans.set(utteranceId, {
+      end: start + rendered.length,
+      projectedText: rendered,
+      start,
+      utteranceId,
+    });
+    this.pendingInitialPrefix = '';
+    return true;
   }
 
   readProjectionContext(): NoteProjectionContext {
@@ -325,6 +380,22 @@ export class NoteSurface {
     return this.view.state.doc.sliceString(range.from, range.to);
   }
 
+  readRangeExcludingCompanions(range: RewriteRange): string | null {
+    const value = this.readRange(range);
+    if (value === null) return null;
+    const companions = [...this.companionSpans.values()]
+      .filter((span) => span.start >= range.from && span.end <= range.to)
+      .sort((a, b) => a.start - b.start);
+    if (companions.length === 0) return value;
+    let result = '';
+    let cursor = range.from;
+    for (const companion of companions) {
+      result += this.view.state.doc.sliceString(cursor, companion.start);
+      cursor = companion.end;
+    }
+    return `${result}${this.view.state.doc.sliceString(cursor, range.to)}`;
+  }
+
   readDocumentText(): string {
     return this.view.state.doc.toString();
   }
@@ -386,6 +457,11 @@ export class NoteSurface {
     });
     for (const span of spansInRange) {
       this.spans.delete(span.utteranceId);
+    }
+    for (const [utteranceId, companion] of this.companionSpans) {
+      if (companion.start >= range.from && companion.end <= range.to) {
+        this.companionSpans.delete(utteranceId);
+      }
     }
     this.clearProvisional(spansInRange.map((span) => span.utteranceId));
     this.pendingInitialPrefix = '';
@@ -507,6 +583,7 @@ export class NoteSurface {
       this.trimPendingInitialPrefix();
     }
     const provisionalUtteranceIds = [...this.spans.keys()];
+    this.companionSpans.clear();
     this.disposed = true;
     unregisterNoteSurface(this);
     // The anchor is a single shared widget. Only clear it when no other live
@@ -634,6 +711,7 @@ export class NoteSurface {
 
   private writingRegionTail(): number {
     let tail = Math.max(this.initialAnchorPos, ...[...this.spans.values()].map((span) => span.end));
+    tail = Math.max(tail, ...[...this.companionSpans.values()].map((span) => span.end));
     const siblingSurfaces = noteSurfacesByView.get(this.view);
 
     if (siblingSurfaces === undefined) {
@@ -692,6 +770,17 @@ export class NoteSurface {
       }
     }
 
+    for (const companion of this.companionSpans.values()) {
+      const positions = [companion.start, companion.end];
+      let previous = -1;
+      for (const position of positions) {
+        if (!isDocumentPosition(position, documentLength) || position < previous) {
+          return this.markDesynchronized(position, documentLength);
+        }
+        previous = position;
+      }
+    }
+
     return null;
   }
 
@@ -735,6 +824,10 @@ export class NoteSurface {
       span.textEnd = update.changes.mapPos(span.textEnd, -1);
       span.end = update.changes.mapPos(span.end, 1);
     }
+    for (const companion of this.companionSpans.values()) {
+      companion.start = update.changes.mapPos(companion.start, 1);
+      companion.end = update.changes.mapPos(companion.end, 1);
+    }
 
     // Tail bias: insertions at the initial anchor extend the writing region.
     this.initialAnchorPos = update.changes.mapPos(this.initialAnchorPos, initialAnchorBias);
@@ -776,7 +869,10 @@ function isDocumentPosition(position: number, documentLength: number): boolean {
   return Number.isInteger(position) && position >= 0 && position <= documentLength;
 }
 
-function changeIntersectsSpan(update: ViewUpdate, span: ProjectedSpan): boolean {
+function changeIntersectsSpan(
+  update: ViewUpdate,
+  span: Pick<ProjectedSpan, 'start' | 'end'>,
+): boolean {
   let intersects = false;
 
   update.changes.iterChangedRanges((fromA, toA) => {
@@ -804,6 +900,10 @@ function rangeIntersects(
 }
 
 function cloneSpan(span: ProjectedSpan): ProjectedSpan {
+  return { ...span };
+}
+
+function cloneCompanionSpan(span: CompanionSpan): CompanionSpan {
   return { ...span };
 }
 
