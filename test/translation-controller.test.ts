@@ -476,7 +476,8 @@ describe('TranslationController', () => {
         translations: [`Sentence ${index}`],
       });
     }
-    expect(startTranslation.mock.calls.at(-1)?.[0].texts).toEqual(['complete sentence.']);
+    expect(startTranslation.mock.calls[1]?.[0].texts).toEqual(['complete sentence.']);
+    controller.dispose();
   });
 
   it('uses resolved language defaults when realtime languages have not been persisted', async () => {
@@ -674,6 +675,9 @@ describe('TranslationController', () => {
     const secondId = startTranslation.mock.calls[2]?.[0].translationId;
     if (secondId === undefined) throw new Error('Expected second translation.');
     controller.translateRealtime('final.', target, finalUpdate);
+    const drained = vi.fn();
+    const drain = controller.drainRealtime(target).then(drained);
+    expect(drained).not.toHaveBeenCalled();
     listeners[2]?.({
       type: 'translation_complete',
       translationId: secondId,
@@ -690,6 +694,8 @@ describe('TranslationController', () => {
     });
     await vi.waitFor(() => expect(replaceUtteranceTranslation).toHaveBeenCalledTimes(2));
     expect(replaceUtteranceTranslation).toHaveBeenLastCalledWith('u1', 'Final.');
+    await drain;
+    expect(drained).toHaveBeenCalledOnce();
   });
 });
 

@@ -161,6 +161,7 @@ interface DictationSessionControllerDependencies {
     session: ControllerSession,
     metadata: { isFinal: boolean; revision: number; utteranceId: string },
   ) => void;
+  drainRealtimeTranslation?: (session: ControllerSession) => Promise<void>;
   onRawTranscriptRecoveryAvailable?: (receipt: RawTranscriptRecoveryReceipt) => void;
   onModelMissing?: () => void;
   onSidecarMissing?: () => void;
@@ -1245,10 +1246,11 @@ export class DictationSessionController {
     while (entry.pendingTranscriptWork.size > 0) {
       await Promise.allSettled([...entry.pendingTranscriptWork]);
     }
+    await this.dependencies.drainRealtimeTranslation?.(entry.session);
   }
 
   private async disposeAfterPendingWork(sessionId: string, entry: ManagedSession): Promise<void> {
-    if (entry.pendingTranscriptWork.size > 0) {
+    if (entry.pendingTranscriptWork.size > 0 || this.dependencies.drainRealtimeTranslation) {
       await this.drainPendingTranscriptWork(entry);
     }
     if (this.sessions.get(sessionId) === entry) {
@@ -1271,7 +1273,7 @@ export class DictationSessionController {
     // The sidecar can emit the final transcript_ready and session_stopped in the
     // same I/O chunk, so drain in-flight per-utterance accepts before reading the
     // transcript — otherwise the batch rewrite would miss the last utterance(s).
-    if (entry.pendingTranscriptWork.size > 0) {
+    if (entry.pendingTranscriptWork.size > 0 || this.dependencies.drainRealtimeTranslation) {
       await this.drainPendingTranscriptWork(entry);
     }
     if (this.stopTerminatedBatchCleanup(sessionId, entry)) {

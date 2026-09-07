@@ -3338,6 +3338,31 @@ describe('DictationSessionController', () => {
     expect(session.dispose).toHaveBeenCalledTimes(1);
   });
 
+  it('keeps the session writable until final translation drains after stop', async () => {
+    const sidecarConnection = new FakeSidecarConnection();
+    const sessions: FakeSession[] = [];
+    let finish!: () => void;
+    const pending = new Promise<void>((resolve) => {
+      finish = resolve;
+    });
+    const drainRealtimeTranslation = vi.fn(() => pending);
+    const controller = createController({
+      createSession: (session) => {
+        sessions.push(session);
+      },
+      sidecarConnection,
+      drainRealtimeTranslation,
+    });
+    await controller.startDictation();
+    const sessionId = sidecarConnection.startSession.mock.calls[0]?.[0].sessionId ?? '';
+    await controller.stopDictation();
+    sidecarConnection.emit({ reason: 'user_stop', sessionId, type: 'session_stopped' });
+    expect(drainRealtimeTranslation).toHaveBeenCalledWith(sessions[0]);
+    expect(sessions[0]?.dispose).not.toHaveBeenCalled();
+    finish();
+    await vi.waitFor(() => expect(sessions[0]?.dispose).toHaveBeenCalledOnce());
+  });
+
   it('hides the cursor when the batch-cleanup flash starts', async () => {
     const sidecarConnection = new FakeSidecarConnection();
     const sessions: FakeSession[] = [];
@@ -3376,6 +3401,7 @@ describe('DictationSessionController', () => {
 });
 
 function createController({
+  drainRealtimeTranslation,
   audioLevelMeter = new FakeAudioLevelMeter(),
   captureStream = new FakeCaptureStream(),
   countAudioInputDevices,
@@ -3398,6 +3424,7 @@ function createController({
   stopConflictingSpeech = vi.fn(),
 }: {
   audioLevelMeter?: FakeAudioLevelMeter;
+  drainRealtimeTranslation?: () => Promise<void>;
   captureStream?: FakeCaptureStream;
   countAudioInputDevices?: () => Promise<number | null>;
   createSession?: (session: FakeSession, options: CreateSessionOptions) => void;
@@ -3419,6 +3446,7 @@ function createController({
   stopConflictingSpeech?: () => void;
 } = {}): DictationSessionController {
   return new DictationSessionController({
+    ...(drainRealtimeTranslation ? { drainRealtimeTranslation } : {}),
     captureStream,
     audioLevelMeter,
     ...(countAudioInputDevices !== undefined ? { countAudioInputDevices } : {}),

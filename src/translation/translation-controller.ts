@@ -44,7 +44,12 @@ interface RealtimeTranslationSlot {
   processed?: { source: string; update: RealtimeTranslationUpdate };
   scheduled: boolean;
   abortController?: AbortController;
+  generation: number;
+  key: string;
+  targetKey: object;
   target: RealtimeTranslationTarget;
+  done: Promise<void>;
+  finish: () => void;
 }
 
 interface TranslationAdapterContext {
@@ -145,7 +150,8 @@ export class TranslationController {
   private realtimeAbortController: AbortController | null = null;
   private realtimeGeneration = 0;
   private realtimePendingCount = 0;
-  private realtimeQueue: Promise<void> = Promise.resolve();
+  private realtimeQueue: RealtimeTranslationSlot[] = [];
+  private realtimeActive = false;
   private readonly realtimeSlots = new Map<object, Map<string, RealtimeTranslationSlot>>();
   private realtimeLegacyId = 0;
   constructor(private readonly dependencies: TranslationControllerDependencies) {}
@@ -184,6 +190,11 @@ export class TranslationController {
     this.realtimeGeneration += 1;
     this.realtimeAbortController?.abort();
     this.realtimeAbortController = null;
+    for (const slots of this.realtimeSlots.values()) {
+      for (const slot of slots.values()) slot.finish();
+    }
+    this.realtimeSlots.clear();
+    this.realtimeQueue = [];
     this.active?.job.cancel();
     this.activeModal?.close();
     this.clearActive();
@@ -224,15 +235,23 @@ export class TranslationController {
         );
         return;
       }
+      let finish!: () => void;
+      const done = new Promise<void>((resolve) => {
+        finish = resolve;
+      });
       slot = {
+        done,
+        finish,
         latest: { source: text, update: resolvedUpdate },
         scheduled: false,
+        generation: this.realtimeGeneration,
+        key,
+        targetKey,
         target,
       };
       slots.set(key, slot);
       this.realtimePendingCount += 1;
-      const generation = this.realtimeGeneration;
-      this.scheduleRealtimeSlot(targetKey, key, slots, slot, generation);
+      this.scheduleRealtimeSlot(slot);
       return;
     }
     if (
@@ -243,96 +262,119 @@ export class TranslationController {
     }
   }
 
-  private scheduleRealtimeSlot(
-    targetKey: object,
-    key: string,
-    slots: Map<string, RealtimeTranslationSlot>,
-    slot: RealtimeTranslationSlot,
-    generation: number,
-  ): void {
-    if (slot.scheduled || this.disposed || generation !== this.realtimeGeneration) return;
-    slot.scheduled = true;
-    const run = this.realtimeQueue.then(() => this.processRealtimeSlot(slot, generation));
-    this.realtimeQueue = run.catch((error: unknown) => {
-      if (
-        !(error instanceof TranslationCancelledError) &&
-        !(error instanceof DOMException && error.name === 'AbortError')
-      )
-        this.dependencies.logger.warn('translation', 'realtime translation failed', error);
-    });
-    void this.realtimeQueue.then(() => {
-      slot.scheduled = false;
-      if (
-        !this.disposed &&
-        generation === this.realtimeGeneration &&
-        slot.latest !== slot.processed
-      ) {
-        this.scheduleRealtimeSlot(targetKey, key, slots, slot, generation);
-        return;
-      }
-      this.realtimePendingCount -= 1;
-      slots.delete(key);
-      if (slots.size === 0) this.realtimeSlots.delete(targetKey);
-      if (
-        generation === this.realtimeGeneration &&
-        this.realtimeAbortController === slot.abortController
-      )
-        this.realtimeAbortController = null;
-    });
+  async drainRealtime(target: RealtimeTranslationTarget): Promise<void> {
+    while (!this.disposed) {
+      const slots = this.realtimeSlots.get(target);
+      if (slots === undefined || slots.size === 0) return;
+      await Promise.all([...slots.values()].map((slot) => slot.done));
+    }
   }
 
-  private async processRealtimeSlot(
-    slot: RealtimeTranslationSlot,
-    generation: number,
-  ): Promise<void> {
-    while (!this.disposed && generation === this.realtimeGeneration) {
-      const request = slot.latest;
-      const settings = this.dependencies.getSettings();
-      if (!settings.realtimeTranslationEnabled) {
-        slot.processed = request;
-        return;
-      }
-      const model = selectedTranslationModel(this.dependencies.modelManager.getState(), settings);
-      const realtimeDictationLanguage =
-        settings.dictationLanguage === 'auto' && settings.translationSourceLanguage === null
-          ? (inferTranslationLanguage(request.source) ?? settings.dictationLanguage)
-          : settings.dictationLanguage;
-      const { sourceLanguage, targetLanguage } = resolveTranslationLanguages(
-        realtimeDictationLanguage,
-        settings.translationSourceLanguage,
-        settings.translationTargetLanguage,
-        model,
-      );
-      const abortController = new AbortController();
-      slot.abortController = abortController;
-      this.realtimeAbortController = abortController;
-      let result: TranslationJobResult;
-      try {
-        result = await this.runTranslation(request.source, model, sourceLanguage, targetLanguage, {
-          onProgress: () => {},
-          onReady: () => {},
-          signal: abortController.signal,
-        });
-      } catch (error) {
-        // A failed revision is terminal for this snapshot. Retrying it from
-        // the scheduler would create an unbounded loop and starve newer text.
-        slot.processed = request;
-        throw error;
-      }
-      const stillCurrent = slot.latest === request;
+  private scheduleRealtimeSlot(slot: RealtimeTranslationSlot): void {
+    if (
+      slot.scheduled ||
+      this.disposed ||
+      slot.generation !== this.realtimeGeneration ||
+      slot.latest === slot.processed
+    )
+      return;
+    slot.scheduled = true;
+    this.realtimeQueue.push(slot);
+    this.pumpRealtimeQueue();
+  }
+
+  private pumpRealtimeQueue(): void {
+    if (this.realtimeActive || this.disposed) return;
+    const nextIndex = this.realtimeQueue.findIndex((slot) => slot.latest.update.isFinal);
+    const slot = this.realtimeQueue.splice(nextIndex < 0 ? 0 : nextIndex, 1)[0];
+    if (slot === undefined) return;
+    this.realtimeActive = true;
+    void this.processRealtimeSlot(slot)
+      .catch((error: unknown) => {
+        if (
+          !(error instanceof TranslationCancelledError) &&
+          !(error instanceof DOMException && error.name === 'AbortError')
+        )
+          this.dependencies.logger.warn('translation', 'realtime translation failed', error);
+      })
+      .finally(() => {
+        this.realtimeActive = false;
+        slot.scheduled = false;
+        const slots = this.realtimeSlots.get(slot.targetKey);
+        if (
+          !this.disposed &&
+          slot.generation === this.realtimeGeneration &&
+          slot.latest !== slot.processed
+        ) {
+          this.scheduleRealtimeSlot(slot);
+        } else {
+          slot.finish();
+          this.realtimePendingCount -= 1;
+          slots?.delete(slot.key);
+          if (slots?.size === 0) this.realtimeSlots.delete(slot.targetKey);
+        }
+        if (
+          slot.generation === this.realtimeGeneration &&
+          this.realtimeAbortController === slot.abortController
+        )
+          this.realtimeAbortController = null;
+        this.pumpRealtimeQueue();
+      });
+  }
+
+  private async processRealtimeSlot(slot: RealtimeTranslationSlot): Promise<void> {
+    const request = slot.latest;
+    // Configuration failures must also release this snapshot instead of
+    // repeatedly scheduling it ahead of other finalized utterances.
+    slot.processed = request;
+    const settings = this.dependencies.getSettings();
+    if (!settings.realtimeTranslationEnabled) {
       slot.processed = request;
-      if (stillCurrent && result.kind === 'translated' && result.text.trim() !== request.source) {
-        const inserted =
-          request.update.utteranceId.length > 0 &&
-          slot.target.replaceUtteranceTranslation !== undefined
-            ? slot.target.replaceUtteranceTranslation(
-                request.update.utteranceId,
-                result.text.trim(),
-              )
-            : slot.target.insertAdjacentToSessionRange(`> ${result.text.trim()}`, 'below');
-        if (!inserted) return;
+      return;
+    }
+    const model = selectedTranslationModel(this.dependencies.modelManager.getState(), settings);
+    const realtimeDictationLanguage =
+      settings.dictationLanguage === 'auto' && settings.translationSourceLanguage === null
+        ? (inferTranslationLanguage(request.source) ?? settings.dictationLanguage)
+        : settings.dictationLanguage;
+    const { sourceLanguage, targetLanguage } = resolveTranslationLanguages(
+      realtimeDictationLanguage,
+      settings.translationSourceLanguage,
+      settings.translationTargetLanguage,
+      model,
+    );
+    const abortController = new AbortController();
+    slot.abortController = abortController;
+    this.realtimeAbortController = abortController;
+    let result: TranslationJobResult;
+    try {
+      result = await this.runTranslation(request.source, model, sourceLanguage, targetLanguage, {
+        onProgress: () => {},
+        onReady: () => {},
+        signal: abortController.signal,
+      });
+    } catch (error) {
+      // A failed revision is terminal for this snapshot. Retrying it from
+      // the scheduler would create an unbounded loop and starve newer text.
+      slot.processed = request;
+      throw error;
+    }
+    const stillCurrent = slot.latest === request;
+    slot.processed = request;
+    if (this.disposed || slot.generation !== this.realtimeGeneration) return;
+    if (stillCurrent && result.kind === 'translated' && result.text.trim() !== request.source) {
+      const inserted =
+        request.update.utteranceId.length > 0 &&
+        slot.target.replaceUtteranceTranslation !== undefined
+          ? slot.target.replaceUtteranceTranslation(request.update.utteranceId, result.text.trim())
+          : slot.target.insertAdjacentToSessionRange(`> ${result.text.trim()}`, 'below');
+      if (!inserted) {
+        this.dependencies.logger.warn('translation', 'realtime translation could not be written', {
+          utteranceId: request.update.utteranceId,
+          revision: request.update.revision,
+          isFinal: request.update.isFinal,
+        });
       }
-      if (stillCurrent) return;
     }
   }
 

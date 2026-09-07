@@ -325,6 +325,9 @@ export default class LocalSttPlugin extends Plugin {
       onRealtimeTranslation: (text, session, metadata) => {
         this.translationController?.translateRealtime(text, session, metadata);
       },
+      drainRealtimeTranslation: async (session) => {
+        await this.translationController?.drainRealtime(session);
+      },
       onRawTranscriptRecoveryAvailable: (receipt) => {
         this.rawTranscriptRecovery.record(receipt);
       },
