@@ -16,7 +16,7 @@ const FRAME_SHIFT_SAMPLES: usize = 160;
 fn every_finalize_tail_length_streams_without_shape_errors() {
     let encoder = require_nemotron_model();
     let mut model = NemotronAsrAdapter
-        .load_streaming(&encoder, GpuConfig { use_gpu: false })
+        .load_streaming(&encoder, GpuConfig::default())
         .unwrap();
 
     // 1..=130 feature frames covers sub-window utterances, both sides of the

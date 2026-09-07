@@ -738,7 +738,7 @@ export const nl = {
   'catalog.moonshine_medium_streaming_en.summary':
     'Meest nauwkeurige Moonshine-streamingmodel met 245 miljoen parameters.',
   'catalog.nemotron_asr_0_6b_int8_streaming_560ms.summary':
-    "NVIDIA's 0,6B meertalige RNNT, geëxporteerd naar int8 ONNX voor cachebewuste live transcriptie in acht geverifieerde talen.",
+    "NVIDIA's 0,6B meertalige RNNT, geëxporteerd naar int8 ONNX voor cachebewuste live transcriptie in 28 ondersteunde talen.",
   'catalog.family.whisper.summary':
     'Transcribeert na elke pauze. Whisper biedt nauwkeurigere tijdstempels dan andere modelfamilies, inclusief optionele timing op woordniveau. Tiny en Base geven de voorkeur aan snelheid, Small balanceert snelheid en kwaliteit, en Medium en Large geven de voorkeur aan kwaliteit.',
   'catalog.family.cohere_transcribe.summary':
@@ -849,4 +849,23 @@ export const nl = {
     'Snelle lokale vertaling tussen Engels en zeven talen met modellen die in Firefox zijn uitgebracht.',
   'catalog.family.firefox_translations.summary':
     'Vertaalt notitietekst lokaal met de compacte Bergamot-engine en Firefox-modellen.',
+  'audioFile.busy': 'Er wordt al een ander bestand getranscribeerd.',
+  'audioFile.cancel': 'Transcriptie annuleren',
+  'audioFile.cancelled': 'Transcriptie van {name} geannuleerd.',
+  'audioFile.completed': 'Transcriptienotitie gemaakt: {path}',
+  'audioFile.engineBusy': 'De spraakengine wordt geïnstalleerd of opnieuw gestart.',
+  'audioFile.failed': 'Kan {name} niet transcriberen.',
+  'audioFile.markdownCompleted': '{completed} van {total} ingesloten opnamen getranscribeerd.',
+  'audioFile.noEmbeddedAudio': 'Geen lokale audio-opnamen gevonden in {name}.',
+  'audioFile.noSpeech': 'Geen spraak gedetecteerd in {name}.',
+  'audioFile.outputExists': 'Er bestaat al een transcriptienotitie op {path}.',
+  'audioFile.started': '{name} wordt lokaal getranscribeerd…',
+  'audioFile.transcriptLabel': 'Transcript',
+  'commands.transcribeAudioFile': 'Audio naar notitie transcriberen',
+  'commands.transcribeEmbeddedAudio': 'Ingesloten opnamen transcriberen',
+  'settings.fileTranscription.name': 'Menu’s voor bestandstranscriptie',
+  'settings.fileTranscription.desc':
+    'Voegt transcriptieacties toe aan de contextmenu’s van audio- en Markdown-bestanden.',
+  'settings.developerMode.name': 'Ontwikkelaarsmodus',
+  'settings.developerMode.desc': 'Schakelt uitgebreide pluginlogboeken in voor probleemoplossing.',
 } as const satisfies TranslationCatalog;

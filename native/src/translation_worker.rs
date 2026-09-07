@@ -5,8 +5,9 @@ use std::sync::mpsc::{self, Receiver, Sender};
 use std::thread;
 use std::time::{Duration, Instant};
 
+use crate::engine::capabilities::AcceleratorId;
 use crate::protocol::{Event, read_json_frame, write_json_frame};
-use crate::translation_helper_protocol::{HelperCommand, HelperEvent};
+use crate::translation_helper_protocol::{HelperAcceleratorId, HelperCommand, HelperEvent};
 
 const HELPER_IDLE_TTL: Duration = Duration::from_secs(5 * 60);
 
@@ -17,7 +18,7 @@ pub struct StartTranslation {
     pub source_language: String,
     pub target_language: String,
     pub texts: Vec<String>,
-    pub use_gpu: bool,
+    pub accelerator: Option<AcceleratorId>,
 }
 
 enum WorkerCommand {
@@ -278,7 +279,7 @@ fn worker_main(commands: Receiver<WorkerCommand>, events: Sender<Event>) {
                     source_language: request.source_language,
                     target_language: request.target_language,
                     texts: request.texts,
-                    use_gpu: request.use_gpu,
+                    accelerator: request.accelerator.and_then(helper_accelerator),
                 };
                 if let Err(error) = helper.as_mut().expect("created").send(&command) {
                     let _ = events.send(Event::TranslationError {
@@ -315,6 +316,16 @@ fn worker_main(commands: Receiver<WorkerCommand>, events: Sender<Event>) {
     }
     if let Some(mut process) = helper {
         process.stop();
+    }
+}
+
+fn helper_accelerator(accelerator: AcceleratorId) -> Option<HelperAcceleratorId> {
+    match accelerator {
+        AcceleratorId::Cpu => None,
+        AcceleratorId::Cuda => Some(HelperAcceleratorId::Cuda),
+        AcceleratorId::DirectMl => Some(HelperAcceleratorId::DirectMl),
+        AcceleratorId::Metal => Some(HelperAcceleratorId::Metal),
+        AcceleratorId::Vulkan => Some(HelperAcceleratorId::Vulkan),
     }
 }
 

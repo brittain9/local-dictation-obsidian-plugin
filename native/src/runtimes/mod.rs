@@ -1,5 +1,8 @@
 pub mod bergamot_wasm;
 
+#[cfg(feature = "engine-funasr")]
+pub mod funasr;
+
 #[cfg(feature = "engine-hy-mt")]
 pub mod llama_cpp;
 

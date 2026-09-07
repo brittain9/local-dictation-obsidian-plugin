@@ -24,7 +24,7 @@ mod hy_mt;
 mod translation_helper_protocol;
 
 use hy_mt::{HyMtInference, translate_units};
-use translation_helper_protocol::{HelperCommand, HelperEvent};
+use translation_helper_protocol::{HelperAcceleratorId, HelperCommand, HelperEvent};
 
 const JSON_FRAME_KIND: u8 = 0x01;
 const FRAME_HEADER_LENGTH: usize = 5;
@@ -69,13 +69,13 @@ struct Work {
     source_language: String,
     target_language: String,
     texts: Vec<String>,
-    use_gpu: bool,
+    accelerator: Option<HelperAcceleratorId>,
     cancelled: Arc<AtomicBool>,
 }
 
 struct CachedModel {
     path: PathBuf,
-    use_gpu: bool,
+    accelerator: Option<HelperAcceleratorId>,
     backend: LlamaBackend,
     model: LlamaModel,
 }
@@ -105,7 +105,7 @@ impl HyMtInference for LlamaInference<'_> {
             .model
             .new_context(
                 &self.model.backend,
-                context_params_for_acceleration(context_size, self.model.use_gpu),
+                context_params_for_acceleration(context_size, self.model.accelerator.is_some()),
             )
             .context("unable to create HY-MT inference context")?;
         let mut batch = LlamaBatch::new(HY_MT_CONTEXT_SIZE as usize, 1);
@@ -190,11 +190,10 @@ fn main() -> Result<()> {
                 total: work.texts.len(),
             },
         )?;
-        if cached
-            .as_ref()
-            .is_none_or(|model| model.path != work.model_path || model.use_gpu != work.use_gpu)
-        {
-            match load_model(&work.model_path, work.use_gpu) {
+        if cached.as_ref().is_none_or(|model| {
+            model.path != work.model_path || model.accelerator != work.accelerator
+        }) {
+            match load_model(&work.model_path, work.accelerator) {
                 Ok(model) => cached = Some(model),
                 Err(error) => {
                     cancellations
@@ -272,7 +271,7 @@ fn spawn_reader(
                     source_language,
                     target_language,
                     texts,
-                    use_gpu,
+                    accelerator,
                 })) => {
                     let cancelled = Arc::new(AtomicBool::new(false));
                     if let Ok(mut map) = cancellations.lock() {
@@ -285,7 +284,7 @@ fn spawn_reader(
                             source_language,
                             target_language,
                             texts,
-                            use_gpu,
+                            accelerator,
                             cancelled,
                         })
                         .is_err()
@@ -314,41 +313,44 @@ fn spawn_reader(
     });
 }
 
-fn load_model(path: &Path, use_gpu: bool) -> Result<CachedModel> {
+fn load_model(path: &Path, accelerator: Option<HelperAcceleratorId>) -> Result<CachedModel> {
     let backend = LlamaBackend::init()?;
-    let params = model_params_for_acceleration(use_gpu)?;
+    let params = model_params_for_acceleration(accelerator)?;
     let model = LlamaModel::load_from_file(&backend, path, &params)
         .context("unable to load HY-MT model")?;
     Ok(CachedModel {
         path: path.to_path_buf(),
-        use_gpu,
+        accelerator,
         backend,
         model,
     })
 }
 
-fn model_params_for_acceleration(use_gpu: bool) -> Result<LlamaModelParams> {
+fn model_params_for_acceleration(
+    accelerator: Option<HelperAcceleratorId>,
+) -> Result<LlamaModelParams> {
     let params = LlamaModelParams::default().with_n_gpu_layers(0);
-    #[cfg(any(feature = "gpu-metal", feature = "gpu-cuda"))]
-    {
-        if use_gpu {
-            return Ok(params.with_n_gpu_layers(1000));
-        }
+    match accelerator {
+        None => Ok(params.with_devices(&[])?),
+        #[cfg(feature = "gpu-cuda")]
+        Some(HelperAcceleratorId::Cuda) => Ok(params.with_n_gpu_layers(1000)),
+        #[cfg(feature = "gpu-metal")]
+        Some(HelperAcceleratorId::Metal) => Ok(params.with_n_gpu_layers(1000)),
+        Some(accelerator) => bail!(
+            "the translation helper was not compiled for the requested {accelerator:?} backend"
+        ),
     }
-    #[cfg(not(any(feature = "gpu-metal", feature = "gpu-cuda")))]
-    let _ = use_gpu;
-    // llama.cpp otherwise selects the first compiled GPU device for the model,
-    // even when no model layers are offloaded. An explicit empty list keeps a
-    // CPU-only translation from initializing a GPU backend at all.
-    Ok(params.with_devices(&[])?)
 }
 
-fn context_params_for_acceleration(context_size: NonZeroU32, use_gpu: bool) -> LlamaContextParams {
+fn context_params_for_acceleration(
+    context_size: NonZeroU32,
+    use_acceleration: bool,
+) -> LlamaContextParams {
     LlamaContextParams::default()
         .with_n_ctx(Some(context_size))
         .with_n_batch(4096)
-        .with_offload_kqv(use_gpu)
-        .with_op_offload(use_gpu)
+        .with_offload_kqv(use_acceleration)
+        .with_op_offload(use_acceleration)
 }
 
 #[cfg(test)]
@@ -358,7 +360,7 @@ mod tests {
     #[test]
     fn cpu_only_model_params_disable_gpu_layers() {
         assert_eq!(
-            model_params_for_acceleration(false).unwrap().n_gpu_layers(),
+            model_params_for_acceleration(None).unwrap().n_gpu_layers(),
             0
         );
     }
@@ -367,7 +369,13 @@ mod tests {
     #[test]
     fn auto_model_params_offload_to_the_accelerator() {
         assert_eq!(
-            model_params_for_acceleration(true).unwrap().n_gpu_layers(),
+            model_params_for_acceleration(Some(if cfg!(feature = "gpu-cuda") {
+                HelperAcceleratorId::Cuda
+            } else {
+                HelperAcceleratorId::Metal
+            }))
+            .unwrap()
+            .n_gpu_layers(),
             1000
         );
     }

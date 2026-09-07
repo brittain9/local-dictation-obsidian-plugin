@@ -1,5 +1,5 @@
 import { copyFile, mkdir } from 'node:fs/promises';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const THIRD_PARTY_NOTICES_PATH = fileURLToPath(
@@ -10,6 +10,7 @@ export async function stageSidecarBaseFiles({
   artifactDirectory,
   binaryName,
   binaryPath,
+  extraFilePaths = [],
   helperName,
   helperPath,
 }) {
@@ -18,5 +19,6 @@ export async function stageSidecarBaseFiles({
     copyFile(binaryPath, join(artifactDirectory, binaryName)),
     copyFile(helperPath, join(artifactDirectory, helperName)),
     copyFile(THIRD_PARTY_NOTICES_PATH, join(artifactDirectory, 'THIRD_PARTY_NOTICES.md')),
+    ...extraFilePaths.map((path) => copyFile(path, join(artifactDirectory, basename(path)))),
   ]);
 }

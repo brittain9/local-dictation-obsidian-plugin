@@ -113,8 +113,9 @@ It is derived, not restated, so it cannot drift.
 ## Current support matrix
 
 Speech columns are the exact models: batch is Whisper Large V3 Turbo, live is
-Nemotron 3.5 ASR Streaming, read aloud is Supertonic 3. Translation is recorded
-per direction because Mozilla releases directions independently.
+Nemotron 3.5 ASR Streaming, and read aloud is Supertonic 3. Chinese additionally
+has the FunASR Chinese Hybrid live family. Translation is recorded per direction
+because Mozilla releases directions independently.
 
 | Language | Tag | Tier | Batch | Live | Read aloud | UI | en→ | →en |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -126,12 +127,21 @@ per direction because Mozilla releases directions independently.
 | Italiano | `it` | Full | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | Nederlands | `nl` | Full | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | 日本語 | `ja` | Full | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| 中文 | `zh` | Dictation | ✅ | ✅ | ❌ | ❌ by rule | ✅ | ✅ |
 | Hrvatski | `hr` | Full | ✅ | ✅ | ✅ | ✅ | ⏸ | ❌ |
 | Српски | `sr` | Dictation | ✅ | ❌ | ❌ | ❌ by rule | ⏸ | ❌ |
 
 ✅ shipped · 🔜 planned, [#359](https://github.com/brittain9/speech-kit-obsidian-plugin/issues/359) · ⏸ available upstream, deferred · ❌ no released model
 
-Notes on the two most recent rows:
+Notes on the language-specific rows:
+
+- Chinese is a Dictation-tier language. Whisper Large V3 Turbo and Nemotron
+  3.5 ASR expose Mandarin Chinese from their pinned multilingual artifacts;
+  Nemotron uses the upstream `zh-CN` prompt index `4`. The Linux x86-64 build
+  also offers FunASR Chinese Hybrid, using Paraformer for provisional live text
+  and SenseVoiceSmall or Fun-ASR Nano for the final pass. Tencent HY-MT 2
+  provides Chinese-to-English and English-to-Chinese translation. Read aloud
+  and a reviewed UI catalog are not shipped.
 
 - Croatian is Full tier and earned its UI catalog under [the localization
   rule](#the-localization-rule). `src/locales/hr.ts` ships complete; it has not

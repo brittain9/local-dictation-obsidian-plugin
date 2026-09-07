@@ -92,13 +92,12 @@ impl ModelFamilyAdapter for MoonshineAdapter {
             )));
         }
 
-        let frontend =
-            build_session(&paths.frontend, GpuConfig { use_gpu: false }).map_err(|error| {
-                TranscriptionError::invalid_model_with_details(format!(
-                    "frontend session failed to load: {}",
-                    error.details.unwrap_or_else(|| error.message.to_string())
-                ))
-            })?;
+        let frontend = build_session(&paths.frontend, GpuConfig::default()).map_err(|error| {
+            TranscriptionError::invalid_model_with_details(format!(
+                "frontend session failed to load: {}",
+                error.details.unwrap_or_else(|| error.message.to_string())
+            ))
+        })?;
         verify_session_io(
             &frontend,
             "frontend",
@@ -1235,8 +1234,7 @@ mod tests {
         let model_path = std::env::var("MOONSHINE_MODEL_PATH")
             .expect("MOONSHINE_MODEL_PATH must point to frontend.ort");
         let mut inference =
-            OrtMoonshineInference::load(Path::new(&model_path), GpuConfig { use_gpu: false })
-                .unwrap();
+            OrtMoonshineInference::load(Path::new(&model_path), GpuConfig::default()).unwrap();
 
         let fixture =
             Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/audio/7021-79740-0000.wav");
@@ -1289,7 +1287,7 @@ mod tests {
         let model_path = std::env::var("MOONSHINE_MODEL_PATH")
             .expect("MOONSHINE_MODEL_PATH must point to frontend.ort");
         let mut model = MoonshineAdapter
-            .load_streaming(Path::new(&model_path), GpuConfig { use_gpu: false })
+            .load_streaming(Path::new(&model_path), GpuConfig::default())
             .unwrap();
         let fixture =
             Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/audio/7021-79740-0000.wav");
@@ -1303,7 +1301,7 @@ mod tests {
         let final_output = model.finalize_utterance().unwrap();
 
         let mut one_shot = MoonshineAdapter
-            .load_streaming(Path::new(&model_path), GpuConfig { use_gpu: false })
+            .load_streaming(Path::new(&model_path), GpuConfig::default())
             .unwrap();
         one_shot.accept_audio(&samples).unwrap();
         let one_shot_output = one_shot.finalize_utterance().unwrap();

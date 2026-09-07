@@ -342,6 +342,8 @@ function resolveFamilyDisplayName(
   switch (familyId) {
     case 'cohere_transcribe':
       return 'Cohere Transcribe';
+    case 'funasr_hybrid':
+      return 'FunASR Chinese Hybrid';
     case 'firefox_translations':
       return 'Firefox Translations';
     case 'tencent_hy_mt':

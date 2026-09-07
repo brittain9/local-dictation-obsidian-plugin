@@ -51,6 +51,47 @@ https://raw.githubusercontent.com/Tencent-Hunyuan/Hy-MT2/71928c82b61fc04e0289ad7
 
 No endorsement by Tencent, llama.cpp, or llama-cpp-2 contributors is implied.
 
+## FunASR hybrid Chinese dictation
+
+- Online draft model: `csukuangfj/sherpa-onnx-streaming-paraformer-bilingual-zh-en`
+  at revision `8e40c43232a1c5c66c82111efc5820d3accca11b`
+- Final transcription model: `FunAudioLLM/SenseVoiceSmall-GGUF` at revision
+  `90c1c61912018b70ada0fcc024ea24aca62f2e63`
+- Higher-quality final transcription model: `FunAudioLLM/Fun-ASR-Nano-GGUF`
+  at revision `46e849502a867080d66d351b8dfb1018b607e509`
+- Newer Fun-ASR Nano 2512 GGUF final models:
+  `FunAudioLLM/Fun-ASR-Nano-2512-GGUF` at revision
+  `ce72677f84900f0dc57f498ace253bfb3c9155b6`; review the model repository's
+  FunASR Model Open Source License Agreement 1.1 before installing
+- Final-pass VAD model: `FunAudioLLM/fsmn-vad-GGUF` at revision
+  `6840bae4c5c92ee8c04faaf4db23dd0105098d7f`
+- Paraformer, SenseVoiceSmall, and original Fun-ASR Nano model licenses:
+  Apache License 2.0
+  https://www.apache.org/licenses/LICENSE-2.0
+- Fun-ASR Nano 2512 converted weights: the pinned GGUF repository declares
+  FunASR Model Open Source License Agreement v1.1 and directs users to review
+  the source model's agreement before use or redistribution. The catalog links
+  to that publisher notice and requires review before installation.
+- Online recognizer runtime: sherpa-onnx 1.13.7, Apache License 2.0
+  https://github.com/k2-fsa/sherpa-onnx
+- Bundled Linux final-pass helpers: FunASR `v1.4.14`
+  `llama-funasr-sensevoice` and `llama-funasr-cli` releases, downloaded from
+  https://github.com/modelscope/FunASR/releases/tag/v1.4.14
+- Bundled Nano 2512 final-pass helper: audio.cpp `v0.7.2`, Apache-2.0
+  https://github.com/0xShug0/audio.cpp/releases/tag/v0.7.2
+- FunASR and llama.cpp helper-code licenses: MIT
+  https://github.com/modelscope/FunASR/blob/main/LICENSE
+  https://github.com/ggml-org/llama.cpp/blob/master/LICENSE
+- Bundled ONNX Runtime shared library license: MIT
+  https://github.com/microsoft/onnxruntime/blob/main/LICENSE
+
+The model artifacts are downloaded only when the user installs the catalog
+model. The Linux sidecar archive contains the verified official FunASR helper,
+plus sherpa-onnx and ONNX Runtime shared libraries required for the online
+Paraformer pass. These components are not covered by this project's MIT
+license. No endorsement by FunASR, ModelScope, sherpa-onnx, ONNX Runtime, or
+llama.cpp contributors is implied.
+
 ## NVIDIA Nemotron 3.5 ASR streaming model
 
 - Work: `nvidia/nemotron-3.5-asr-streaming-0.6b`
@@ -135,8 +176,10 @@ USE THEREOF OR OTHER DEALINGS THEREIN.
   https://www.apache.org/licenses/LICENSE-2.0
 
 The Nemotron adapter's native Rust graph orchestration and feature frontend
-follow these reference implementations' published behavior. No NeMo,
-sherpa-onnx, or kaldi-native-fbank binary is linked or bundled.
+follow these reference implementations' published behavior. No NeMo or
+kaldi-native-fbank binary is linked or bundled by the Nemotron adapter. The
+separate FunASR hybrid path does link and bundle sherpa-onnx as described
+above.
 
 ## Pocket TTS read-aloud models
 
@@ -197,14 +240,14 @@ downloaded source-form JavaScript glue.
 - License: Creative Commons Attribution 4.0 International (CC BY 4.0)
   https://creativecommons.org/licenses/by/4.0/
 
-This project redistributes seven FLEURS validation recordings for multilingual
+This project redistributes eight FLEURS validation recordings for multilingual
 ASR integration testing. The selected clips are parallel readings of FLEURS
-sentence 1577 in Spanish, German, French, Portuguese, Italian, Dutch, and
-Japanese. They were converted from 16 kHz mono floating-point WAV to 16 kHz mono
-signed 16-bit PCM WAV; speech content was not intentionally modified. Exact
-dataset configuration, row, recording ID, and derived-file SHA-256 are recorded
-in `native/tests/fixtures/multilingual.json`. No endorsement by Google, the
-FLEURS authors, or dataset contributors is implied.
+sentence 1577 in Spanish, German, French, Portuguese, Italian, Dutch, Japanese,
+and Chinese. They were converted from 16 kHz mono floating-point WAV to 16 kHz
+mono signed 16-bit PCM WAV; speech content was not intentionally modified.
+Exact dataset configuration, row, recording ID, and derived-file SHA-256 are
+recorded in `native/tests/fixtures/multilingual.json`. No endorsement by Google,
+the FLEURS authors, or dataset contributors is implied.
 
 ## WeSpeaker speaker-embedding model
 

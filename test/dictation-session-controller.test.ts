@@ -72,6 +72,9 @@ class FakeSession {
   public readonly insertAdjacentToSessionRange = vi.fn(
     (_blockText: string, _placement: 'above' | 'below') => true,
   );
+  public readonly replaceUtteranceTranslation = vi.fn(
+    (_utteranceId: string, _translationText: string) => true,
+  );
   public readonly markSessionRangeAsProcessing = vi.fn(() => true);
   public readonly readCurrentSessionText = vi.fn(() => this.currentSessionText);
   public readonly readNoteGlossary = vi.fn(
@@ -633,6 +636,32 @@ describe('DictationSessionController', () => {
     sidecarConnection.emit({ reason: 'user_stop', sessionId, type: 'session_stopped' });
 
     expect(audioLevelMeter.clearSession).toHaveBeenCalledWith(sessionId);
+  });
+
+  it('shows the active session transcription queue length in the ribbon', async () => {
+    const setRibbonBufferLength = vi.fn();
+    const sidecarConnection = new FakeSidecarConnection();
+    const controller = createController({ setRibbonBufferLength, sidecarConnection });
+
+    await controller.startDictation();
+    const sessionId = sidecarConnection.startSession.mock.calls[0]?.[0].sessionId ?? '';
+    setRibbonBufferLength.mockClear();
+
+    sidecarConnection.emit({
+      queuedUtterances: 9,
+      sessionId: crypto.randomUUID(),
+      tier: 'catching_up',
+      type: 'transcription_queue_changed',
+    });
+    sidecarConnection.emit({
+      queuedUtterances: 3,
+      sessionId,
+      tier: 'catching_up',
+      type: 'transcription_queue_changed',
+    });
+
+    expect(setRibbonBufferLength).toHaveBeenCalledOnce();
+    expect(setRibbonBufferLength).toHaveBeenCalledWith(3);
   });
 
   it('surfaces the bare microphone-permission message when capture is denied, without the generic start-failure prefix', async () => {
@@ -2980,6 +3009,35 @@ describe('DictationSessionController', () => {
     expect(controller.getState()).toBe('idle');
   });
 
+  it('cleans up every local session and restarts after a global sidecar exit', async () => {
+    const captureStream = new FakeCaptureStream();
+    const restartSidecar = vi.fn(async () => {});
+    const sidecarConnection = new FakeSidecarConnection();
+    const sessions: FakeSession[] = [];
+    const controller = createController({
+      captureStream,
+      createSession: (session) => {
+        sessions.push(session);
+      },
+      restartSidecar,
+      sidecarConnection,
+    });
+
+    await controller.startDictation();
+    sidecarConnection.emit({
+      code: 'sidecar_exited',
+      details: 'code: 1, signal: null',
+      message: 'The sidecar process exited unexpectedly.',
+      type: 'error',
+    });
+
+    await vi.waitFor(() => expect(restartSidecar).toHaveBeenCalledOnce());
+    expect(captureStream.stop).toHaveBeenCalledOnce();
+    expect(sidecarConnection.cancelSession).not.toHaveBeenCalled();
+    expect(sessions[0]?.dispose).toHaveBeenCalledOnce();
+    expect(controller.getState()).toBe('idle');
+  });
+
   it('drains queued work on queue overload instead of cancelling the session', async () => {
     const captureStream = new FakeCaptureStream();
     const show = vi.fn();
@@ -3280,6 +3338,31 @@ describe('DictationSessionController', () => {
     expect(session.dispose).toHaveBeenCalledTimes(1);
   });
 
+  it('keeps the session writable until final translation drains after stop', async () => {
+    const sidecarConnection = new FakeSidecarConnection();
+    const sessions: FakeSession[] = [];
+    let finish!: () => void;
+    const pending = new Promise<void>((resolve) => {
+      finish = resolve;
+    });
+    const drainRealtimeTranslation = vi.fn(() => pending);
+    const controller = createController({
+      createSession: (session) => {
+        sessions.push(session);
+      },
+      sidecarConnection,
+      drainRealtimeTranslation,
+    });
+    await controller.startDictation();
+    const sessionId = sidecarConnection.startSession.mock.calls[0]?.[0].sessionId ?? '';
+    await controller.stopDictation();
+    sidecarConnection.emit({ reason: 'user_stop', sessionId, type: 'session_stopped' });
+    expect(drainRealtimeTranslation).toHaveBeenCalledWith(sessions[0]);
+    expect(sessions[0]?.dispose).not.toHaveBeenCalled();
+    finish();
+    await vi.waitFor(() => expect(sessions[0]?.dispose).toHaveBeenCalledOnce());
+  });
+
   it('hides the cursor when the batch-cleanup flash starts', async () => {
     const sidecarConnection = new FakeSidecarConnection();
     const sessions: FakeSession[] = [];
@@ -3318,6 +3401,7 @@ describe('DictationSessionController', () => {
 });
 
 function createController({
+  drainRealtimeTranslation,
   audioLevelMeter = new FakeAudioLevelMeter(),
   captureStream = new FakeCaptureStream(),
   countAudioInputDevices,
@@ -3335,9 +3419,12 @@ function createController({
   onFinalizedUtteranceAccepted,
   onModelMissing,
   onRawTranscriptRecoveryAvailable,
+  restartSidecar,
+  setRibbonBufferLength,
   stopConflictingSpeech = vi.fn(),
 }: {
   audioLevelMeter?: FakeAudioLevelMeter;
+  drainRealtimeTranslation?: () => Promise<void>;
   captureStream?: FakeCaptureStream;
   countAudioInputDevices?: () => Promise<number | null>;
   createSession?: (session: FakeSession, options: CreateSessionOptions) => void;
@@ -3352,11 +3439,14 @@ function createController({
   onFinalizedUtteranceAccepted?: (text: string) => void;
   onModelMissing?: () => void;
   onRawTranscriptRecoveryAvailable?: (receipt: RawTranscriptRecoveryReceipt) => void;
+  restartSidecar?: () => Promise<void>;
+  setRibbonBufferLength?: (queuedUtterances: number) => void;
   sidecarConnection?: FakeSidecarConnection;
   sidecarLifecycleGate?: SidecarLifecycleGate;
   stopConflictingSpeech?: () => void;
 } = {}): DictationSessionController {
   return new DictationSessionController({
+    ...(drainRealtimeTranslation ? { drainRealtimeTranslation } : {}),
     captureStream,
     audioLevelMeter,
     ...(countAudioInputDevices !== undefined ? { countAudioInputDevices } : {}),
@@ -3379,7 +3469,10 @@ function createController({
     ...(onRawTranscriptRecoveryAvailable !== undefined ? { onRawTranscriptRecoveryAvailable } : {}),
     onModelMissing: onModelMissing ?? vi.fn(),
     onSidecarMissing: vi.fn(),
+    restartSidecar: restartSidecar ?? vi.fn(async () => {}),
     setRibbonQueueTier: vi.fn((_tier: QueueBackpressureTier) => {}),
+    setRibbonAccelerator: vi.fn(),
+    setRibbonBufferLength: setRibbonBufferLength ?? vi.fn(),
     setRibbonState: vi.fn((_state: DictationControllerState) => {}),
     sidecarConnection,
     sidecarLifecycleGate,

@@ -132,6 +132,19 @@ describe('resolvePluginSettings', () => {
     expect(resolvePluginSettings({ retainLastUtterance: 'no' }).retainLastUtterance).toBe(true);
   });
 
+  it('enables file transcription menus by default and honors a persisted opt-out', () => {
+    expect(DEFAULT_PLUGIN_SETTINGS.fileTranscriptionContextMenuEnabled).toBe(true);
+    expect(resolvePluginSettings({}).fileTranscriptionContextMenuEnabled).toBe(true);
+    expect(
+      resolvePluginSettings({ fileTranscriptionContextMenuEnabled: false })
+        .fileTranscriptionContextMenuEnabled,
+    ).toBe(false);
+    expect(
+      resolvePluginSettings({ fileTranscriptionContextMenuEnabled: 'no' })
+        .fileTranscriptionContextMenuEnabled,
+    ).toBe(true);
+  });
+
   it('defaults finalized-utterance auto-copy off and honors only a persisted boolean opt-in', () => {
     expect(DEFAULT_PLUGIN_SETTINGS.autoCopyFinalizedUtterances).toBe(false);
     expect(resolvePluginSettings({}).autoCopyFinalizedUtterances).toBe(false);

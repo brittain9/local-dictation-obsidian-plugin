@@ -191,7 +191,7 @@ args=(
   --locked
   --manifest-path "$MANIFEST"
   --target-dir "$target_dir"
-  --features engine-whisper,engine-cohere-transcribe,engine-hy-mt,engine-moonshine,engine-nemotron-asr,engine-pocket-tts,engine-supertonic,gpu-cuda
+  --features engine-whisper,engine-cohere-transcribe,engine-funasr,engine-hy-mt,engine-moonshine,engine-nemotron-asr,engine-pocket-tts,engine-supertonic,gpu-cuda
   --bins
   -j "$jobs"
   --config "host.linker=\"${CC}\""
@@ -207,6 +207,8 @@ printf 'Building CUDA sidecar (%s)...\n' "$profile"
 printf 'cargo %q ' "${args[@]}"
 printf '\n'
 cargo "${args[@]}"
+
+node "$REPO_ROOT/scripts/stage-funasr-runtime.mjs" "$target_dir/$profile"
 
 binary="$target_dir/$profile/local-dictation-sidecar"
 [[ -f "$binary" ]] || die "build completed but binary not found at $binary"

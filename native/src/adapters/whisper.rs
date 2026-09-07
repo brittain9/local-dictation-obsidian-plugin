@@ -22,8 +22,9 @@ use crate::transcription::{
 ///
 /// `.en` artifacts are English-only regardless of this list — see
 /// `language_support_for_context`.
-const MULTILINGUAL_LANGUAGE_TAGS: &[&str] =
-    &["en", "es", "de", "fr", "pt", "it", "nl", "ja", "hr", "sr"];
+const MULTILINGUAL_LANGUAGE_TAGS: &[&str] = &[
+    "en", "es", "de", "fr", "pt", "it", "nl", "ja", "zh", "hr", "sr",
+];
 
 /// Whisper has Serbian speech in both scripts in its training data, so the
 /// language token alone does not make the output script deterministic. A short
@@ -89,7 +90,7 @@ impl ModelFamilyAdapter for WhisperAdapter {
 
     fn probe_model(&self, path: &Path) -> Result<(), TranscriptionError> {
         validate_model_path(path)?;
-        let _ = load_whisper_context(path, &GpuConfig { use_gpu: false })?;
+        let _ = load_whisper_context(path, &GpuConfig::default())?;
         Ok(())
     }
 
@@ -98,7 +99,7 @@ impl ModelFamilyAdapter for WhisperAdapter {
         path: &Path,
     ) -> Result<LanguageSupport, TranscriptionError> {
         validate_model_path(path)?;
-        let context = load_whisper_context(path, &GpuConfig { use_gpu: false })?;
+        let context = load_whisper_context(path, &GpuConfig::default())?;
         Ok(language_support_for_context(&context))
     }
 
@@ -154,7 +155,9 @@ impl LoadedModel for LoadedWhisperModel {
         // temperature_inc 0.2 fallback can escape repetition; 0 collapsed it to one.
         let mut params = FullParams::new(SamplingStrategy::Greedy { best_of: 5 });
 
-        params.set_n_threads(recommended_thread_count(request.gpu_config.use_gpu));
+        params.set_n_threads(recommended_thread_count(
+            request.gpu_config.uses_hardware_acceleration(),
+        ));
         params.set_language(
             (request.language != AUTOMATIC_LANGUAGE_TAG).then_some(request.language.as_str()),
         );
@@ -353,8 +356,8 @@ fn load_whisper_context(
         .ok_or_else(|| TranscriptionError::invalid_model("model path must be valid UTF-8"))?;
 
     let mut params = WhisperContextParameters::default();
-    params.use_gpu(gpu_config.use_gpu);
-    params.flash_attn(gpu_config.use_gpu);
+    params.use_gpu(gpu_config.uses_hardware_acceleration());
+    params.flash_attn(gpu_config.uses_hardware_acceleration());
 
     WhisperContext::new_with_params(model_path, params)
         .map_err(|error| TranscriptionError::invalid_model_with_details(error.to_string()))

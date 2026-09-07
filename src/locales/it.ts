@@ -751,7 +751,7 @@ export const it = {
   'catalog.moonshine_medium_streaming_en.summary':
     'Il modello di streaming Moonshine più accurato, con 245 milioni di parametri.',
   'catalog.nemotron_asr_0_6b_int8_streaming_560ms.summary':
-    'RNNT multilingue di NVIDIA da 0,6 miliardi di parametri, esportato in ONNX int8 per la trascrizione in tempo reale ottimizzata per la cache in otto lingue verificate.',
+    'RNNT multilingue di NVIDIA da 0,6 miliardi di parametri, esportato in ONNX int8 per la trascrizione in tempo reale ottimizzata per la cache in 28 lingue supportate.',
   'catalog.family.whisper.summary':
     'Trascrive dopo ogni pausa. Whisper offre timestamp più precisi rispetto alle altre famiglie di modelli, inclusa la temporizzazione facoltativa a livello di parola. Tiny e Base privilegiano la velocità, Small bilancia velocità e qualità, mentre Medium e Large privilegiano la qualità.',
   'catalog.family.cohere_transcribe.summary':
@@ -862,4 +862,24 @@ export const it = {
     'Traduzione locale rapida tra inglese e sette lingue con modelli pubblicati in Firefox.',
   'catalog.family.firefox_translations.summary':
     'Traduce localmente il testo delle note con il motore compatto Bergamot e i modelli Firefox.',
+  'audioFile.busy': 'È già in corso la trascrizione di un altro file.',
+  'audioFile.cancel': 'Annulla trascrizione',
+  'audioFile.cancelled': 'Trascrizione di {name} annullata.',
+  'audioFile.completed': 'Nota di trascrizione creata: {path}',
+  'audioFile.engineBusy': 'Il motore vocale è in fase di installazione o riavvio.',
+  'audioFile.failed': 'Impossibile trascrivere {name}.',
+  'audioFile.markdownCompleted': 'Trascritte {completed} di {total} registrazioni incorporate.',
+  'audioFile.noEmbeddedAudio': 'Nessuna registrazione audio locale trovata in {name}.',
+  'audioFile.noSpeech': 'Nessun parlato rilevato in {name}.',
+  'audioFile.outputExists': 'Esiste già una nota di trascrizione in {path}.',
+  'audioFile.started': 'Trascrizione locale di {name}…',
+  'audioFile.transcriptLabel': 'Trascrizione',
+  'commands.transcribeAudioFile': 'Trascrivi audio in una nota',
+  'commands.transcribeEmbeddedAudio': 'Trascrivi registrazioni incorporate',
+  'settings.fileTranscription.name': 'Menu di trascrizione dei file',
+  'settings.fileTranscription.desc':
+    'Aggiunge azioni di trascrizione ai menu contestuali dei file audio e Markdown.',
+  'settings.developerMode.name': 'Modalità sviluppatore',
+  'settings.developerMode.desc':
+    'Abilita registri dettagliati del plugin per la risoluzione dei problemi.',
 } satisfies TranslationCatalog;

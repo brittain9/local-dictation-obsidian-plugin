@@ -16,6 +16,12 @@ describe('dictation language eligibility', () => {
     ]);
   });
 
+  it('presents Chinese as a dictation language', () => {
+    expect(DICTATION_LANGUAGE_OPTIONS.filter((option) => option.value === 'zh')).toEqual([
+      { label: '中文', value: 'zh' },
+    ]);
+  });
+
   it('keeps unknown and English-only models on the safe English default', () => {
     expect(supportedDictationLanguageOptions({ kind: 'unknown' })).toEqual([
       { label: 'English', value: 'en' },
@@ -31,9 +37,10 @@ describe('dictation language eligibility', () => {
 
   it('continues to restrict languages to verified capabilities after selection', () => {
     expect(
-      dictationLanguageOptionsForSelection(true, { kind: 'list', tags: ['en', 'hr'] }, false),
+      dictationLanguageOptionsForSelection(true, { kind: 'list', tags: ['en', 'zh', 'hr'] }, false),
     ).toEqual([
       { label: 'English', value: 'en' },
+      { label: '中文', value: 'zh' },
       { label: 'Hrvatski', value: 'hr' },
     ]);
   });

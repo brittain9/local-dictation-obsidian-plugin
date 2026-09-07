@@ -154,3 +154,40 @@ describe('SidecarProcess stale-exit race (issue #194)', () => {
     expect(handlers.onExit).toHaveBeenCalledTimes(1);
   });
 });
+
+describe('SidecarProcess write backpressure', () => {
+  it('waits for drain when the child stdin buffer is full', async () => {
+    const process = new SidecarProcess(
+      async () => ({ command: '/tmp/fake-sidecar' }),
+      createHandlers(),
+    );
+    const child = await startChild(process);
+    vi.spyOn(child.stdin, 'write').mockReturnValueOnce(false);
+
+    const writePromise = process.writeWithBackpressure(new Uint8Array([1, 2, 3]));
+    let resolved = false;
+    void writePromise.then(() => {
+      resolved = true;
+    });
+    await Promise.resolve();
+    expect(resolved).toBe(false);
+
+    child.stdin.emit('drain');
+    await writePromise;
+    expect(resolved).toBe(true);
+  });
+
+  it('rejects a blocked write if the sidecar exits before drain', async () => {
+    const process = new SidecarProcess(
+      async () => ({ command: '/tmp/fake-sidecar' }),
+      createHandlers(),
+    );
+    const child = await startChild(process);
+    vi.spyOn(child.stdin, 'write').mockReturnValueOnce(false);
+
+    const writePromise = process.writeWithBackpressure(new Uint8Array([1]));
+    child.reallyExit(1, null);
+
+    await expect(writePromise).rejects.toThrow(/before its audio buffer drained/u);
+  });
+});

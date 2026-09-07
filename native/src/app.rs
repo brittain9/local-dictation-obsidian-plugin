@@ -729,13 +729,20 @@ impl AppState {
                         *family_id,
                         model_id,
                     )?;
+                    let accelerator = resolve_accelerator(
+                        *runtime_id,
+                        *family_id,
+                        &model_path,
+                        acceleration_preference,
+                        self.registry.as_ref(),
+                    );
                     Ok(WorkerStartTranslation {
                         translation_id: translation_id.clone(),
                         model_path,
                         source_language,
                         target_language,
                         texts,
-                        use_gpu: acceleration_preference == AccelerationPreference::Auto,
+                        accelerator,
                     })
                 })();
                 match result {
@@ -788,6 +795,7 @@ impl AppState {
                 session_start_unix_ms,
                 session_id,
                 speaking_style,
+                force_continuous_transcription,
             } => {
                 if self.active_sessions.len() >= MAX_ACTIVE_SESSIONS {
                     events.push(Event::Error {
@@ -845,9 +853,10 @@ impl AppState {
                             });
                             return (ControlFlow::Continue, events);
                         }
-                        let use_gpu = resolve_use_gpu(
+                        let accelerator = resolve_accelerator(
                             resolved_model.runtime_id,
                             resolved_model.family_id,
+                            &resolved_model.resolved_path,
                             acceleration_preference,
                             self.registry.as_ref(),
                         );
@@ -856,6 +865,7 @@ impl AppState {
                             session_start_unix_ms,
                             session_id: session_id.clone(),
                             style: speaking_style,
+                            force_continuous_transcription,
                         };
                         let (cancel_tx, cancel_rx) = watch::channel(false);
                         let session = match (self.session_factory)(config) {
@@ -895,7 +905,7 @@ impl AppState {
                             .send(WorkerCommand::BeginSession(SessionMetadata {
                                 runtime_id: resolved_model.runtime_id,
                                 family_id: resolved_model.family_id,
-                                gpu_config: GpuConfig { use_gpu },
+                                gpu_config: GpuConfig { accelerator },
                                 detailed_timestamps_enabled,
                                 diarization_enabled,
                                 diarization_max_speakers,
@@ -961,6 +971,7 @@ impl AppState {
                         }
 
                         events.push(Event::SessionStarted {
+                            accelerator,
                             mode,
                             session_id: session_id.clone(),
                         });
@@ -1063,7 +1074,13 @@ impl AppState {
                     .registry
                     .merged_capabilities(resolved_model.runtime_id, resolved_model.family_id);
                 if let Some(capabilities) = &mut merged_capabilities {
-                    capabilities.family.supports_language_selection = !matches!(
+                    capabilities.family.supports_hardware_acceleration =
+                        self.registry.supports_hardware_acceleration_for_model(
+                            resolved_model.runtime_id,
+                            resolved_model.family_id,
+                            &resolved_model.resolved_path,
+                        );
+                    capabilities.family.supports_language_selection &= !matches!(
                         resolved_model.language_support,
                         LanguageSupport::EnglishOnly | LanguageSupport::Unknown
                     );
@@ -2102,32 +2119,56 @@ fn synthesis_error_event(
     }
 }
 
-fn resolve_use_gpu(
+#[cfg(test)]
+fn resolve_acceleration_enabled(
     runtime_id: RuntimeId,
     family_id: ModelFamilyId,
+    model_path: &Path,
     acceleration_preference: AccelerationPreference,
     registry: &EngineRegistry,
 ) -> bool {
+    resolve_accelerator(
+        runtime_id,
+        family_id,
+        model_path,
+        acceleration_preference,
+        registry,
+    )
+    .is_some()
+}
+
+fn resolve_accelerator(
+    runtime_id: RuntimeId,
+    family_id: ModelFamilyId,
+    model_path: &Path,
+    acceleration_preference: AccelerationPreference,
+    registry: &EngineRegistry,
+) -> Option<AcceleratorId> {
     match acceleration_preference {
-        AccelerationPreference::CpuOnly => false,
+        AccelerationPreference::CpuOnly => None,
         AccelerationPreference::Auto => {
             let Some(adapter) = registry.adapter(runtime_id, family_id) else {
                 debug_assert!(
                     false,
-                    "resolve_use_gpu called with unregistered adapter {runtime_id:?}:{family_id:?}"
+                    "resolve_accelerator called with unregistered adapter {runtime_id:?}:{family_id:?}"
                 );
-                return false;
+                return None;
             };
-            if !adapter.capabilities().supports_hardware_acceleration {
-                return false;
-            }
-
             match registry.runtime(runtime_id) {
-                Some(runtime) => runtime
-                    .capabilities()
-                    .available_accelerators
-                    .iter()
-                    .any(|accelerator| *accelerator != AcceleratorId::Cpu),
+                Some(runtime) => [
+                    AcceleratorId::Cuda,
+                    AcceleratorId::Metal,
+                    AcceleratorId::DirectMl,
+                    AcceleratorId::Vulkan,
+                ]
+                .into_iter()
+                .find(|accelerator| {
+                    runtime
+                        .capabilities()
+                        .available_accelerators
+                        .contains(accelerator)
+                        && adapter.supports_accelerator_for_model(model_path, *accelerator)
+                }),
                 None => {
                     // Reaching here means dispatch picked a runtime the registry
                     // did not register — a registration bug, not a runtime state.
@@ -2136,9 +2177,9 @@ fn resolve_use_gpu(
                     // panicking on a user's machine.
                     debug_assert!(
                         false,
-                        "resolve_use_gpu called with unregistered runtime {runtime_id:?}"
+                        "resolve_accelerator called with unregistered runtime {runtime_id:?}"
                     );
-                    false
+                    None
                 }
             }
         }
@@ -2188,49 +2229,33 @@ mod tests {
     }
 
     impl FakeRuntime {
-        fn cpu_only() -> Self {
+        fn with_accelerators(available_accelerators: Vec<AcceleratorId>) -> Self {
             let mut accelerator_details = std::collections::HashMap::new();
-            accelerator_details.insert(
-                AcceleratorId::Cpu,
-                AcceleratorAvailability {
-                    available: true,
-                    unavailable_reason: None,
-                },
-            );
+            for accelerator in &available_accelerators {
+                accelerator_details.insert(
+                    *accelerator,
+                    AcceleratorAvailability {
+                        available: true,
+                        unavailable_reason: None,
+                    },
+                );
+            }
             Self {
                 id: RuntimeId::WhisperCpp,
                 capabilities: RuntimeCapabilities {
-                    available_accelerators: vec![AcceleratorId::Cpu],
+                    available_accelerators,
                     accelerator_details,
                     supported_model_formats: vec![ModelFormat::Ggml, ModelFormat::Gguf],
                 },
             }
         }
 
+        fn cpu_only() -> Self {
+            Self::with_accelerators(vec![AcceleratorId::Cpu])
+        }
+
         fn with_cuda() -> Self {
-            let mut accelerator_details = std::collections::HashMap::new();
-            accelerator_details.insert(
-                AcceleratorId::Cpu,
-                AcceleratorAvailability {
-                    available: true,
-                    unavailable_reason: None,
-                },
-            );
-            accelerator_details.insert(
-                AcceleratorId::Cuda,
-                AcceleratorAvailability {
-                    available: true,
-                    unavailable_reason: None,
-                },
-            );
-            Self {
-                id: RuntimeId::WhisperCpp,
-                capabilities: RuntimeCapabilities {
-                    available_accelerators: vec![AcceleratorId::Cpu, AcceleratorId::Cuda],
-                    accelerator_details,
-                    supported_model_formats: vec![ModelFormat::Ggml, ModelFormat::Gguf],
-                },
-            }
+            Self::with_accelerators(vec![AcceleratorId::Cpu, AcceleratorId::Cuda])
         }
 
         fn onnx() -> Self {
@@ -2264,6 +2289,7 @@ mod tests {
         capabilities: ModelFamilyCapabilities,
         load_behavior: FakeLoadBehavior,
         probed_language_support: Option<LanguageSupport>,
+        supported_accelerators: Option<Vec<AcceleratorId>>,
     }
 
     impl FakeAdapter {
@@ -2293,7 +2319,14 @@ mod tests {
                 },
                 load_behavior: FakeLoadBehavior::Succeed,
                 probed_language_support: None,
+                supported_accelerators: None,
             }
+        }
+
+        fn only_supports_accelerator(accelerator: AcceleratorId) -> Self {
+            let mut adapter = Self::new();
+            adapter.supported_accelerators = Some(vec![AcceleratorId::Cpu, accelerator]);
+            adapter
         }
 
         /// A family that advertises multilingual + automatic detection while
@@ -2376,6 +2409,20 @@ mod tests {
 
         fn capabilities(&self) -> &ModelFamilyCapabilities {
             &self.capabilities
+        }
+
+        fn supports_accelerator_for_model(
+            &self,
+            _path: &std::path::Path,
+            accelerator: AcceleratorId,
+        ) -> bool {
+            self.supported_accelerators.as_ref().map_or_else(
+                || {
+                    accelerator == AcceleratorId::Cpu
+                        || self.capabilities.supports_hardware_acceleration
+                },
+                |supported| supported.contains(&accelerator),
+            )
         }
 
         fn probe_model(&self, path: &std::path::Path) -> Result<(), TranscriptionError> {
@@ -2675,6 +2722,7 @@ mod tests {
             events,
             vec![
                 Event::SessionStarted {
+                    accelerator: None,
                     mode: ListeningMode::AlwaysOn,
                     session_id: "session-1".to_string(),
                 },
@@ -2699,6 +2747,7 @@ mod tests {
         ));
 
         assert!(start_events.contains(&Event::SessionStarted {
+            accelerator: None,
             mode: ListeningMode::AlwaysOn,
             session_id: "session-1".to_string(),
         }));
@@ -2729,6 +2778,7 @@ mod tests {
             app.handle_command(start_session_command("session-1", &model_file_path));
 
         assert!(start_events.contains(&Event::SessionStarted {
+            accelerator: None,
             mode: ListeningMode::AlwaysOn,
             session_id: "session-1".to_string(),
         }));
@@ -3052,19 +3102,67 @@ mod tests {
 
     #[test]
     fn auto_acceleration_uses_available_gpu_accelerator() {
-        assert!(super::resolve_use_gpu(
+        assert!(super::resolve_acceleration_enabled(
             RuntimeId::WhisperCpp,
             ModelFamilyId::Whisper,
+            std::path::Path::new("test-model"),
             AccelerationPreference::Auto,
             fake_registry_with_cuda().as_ref(),
         ));
     }
 
     #[test]
+    fn auto_acceleration_uses_stable_backend_priority() {
+        let mut registry = EngineRegistry::default();
+        registry.register_runtime(Box::new(FakeRuntime::with_accelerators(vec![
+            AcceleratorId::Cpu,
+            AcceleratorId::Vulkan,
+            AcceleratorId::Cuda,
+        ])));
+        registry.register_adapter(Box::new(FakeAdapter::new()));
+
+        assert_eq!(
+            super::resolve_accelerator(
+                RuntimeId::WhisperCpp,
+                ModelFamilyId::Whisper,
+                std::path::Path::new("test-model"),
+                AccelerationPreference::Auto,
+                &registry,
+            ),
+            Some(AcceleratorId::Cuda)
+        );
+    }
+
+    #[test]
+    fn auto_acceleration_skips_backends_the_model_cannot_use() {
+        let mut registry = EngineRegistry::default();
+        registry.register_runtime(Box::new(FakeRuntime::with_accelerators(vec![
+            AcceleratorId::Cpu,
+            AcceleratorId::Cuda,
+            AcceleratorId::Vulkan,
+        ])));
+        registry.register_adapter(Box::new(FakeAdapter::only_supports_accelerator(
+            AcceleratorId::Vulkan,
+        )));
+
+        assert_eq!(
+            super::resolve_accelerator(
+                RuntimeId::WhisperCpp,
+                ModelFamilyId::Whisper,
+                std::path::Path::new("test-model"),
+                AccelerationPreference::Auto,
+                &registry,
+            ),
+            Some(AcceleratorId::Vulkan)
+        );
+    }
+
+    #[test]
     fn auto_acceleration_skips_when_only_cpu_available() {
-        assert!(!super::resolve_use_gpu(
+        assert!(!super::resolve_acceleration_enabled(
             RuntimeId::WhisperCpp,
             ModelFamilyId::Whisper,
+            std::path::Path::new("test-model"),
             AccelerationPreference::Auto,
             fake_registry().as_ref(),
         ));
@@ -3072,9 +3170,10 @@ mod tests {
 
     #[test]
     fn auto_acceleration_skips_when_family_cannot_use_hardware_acceleration() {
-        assert!(!super::resolve_use_gpu(
+        assert!(!super::resolve_acceleration_enabled(
             RuntimeId::WhisperCpp,
             ModelFamilyId::Whisper,
+            std::path::Path::new("test-model"),
             AccelerationPreference::Auto,
             fake_registry_with_cuda_and_cpu_only_adapter().as_ref(),
         ));
@@ -3082,9 +3181,10 @@ mod tests {
 
     #[test]
     fn cpu_only_acceleration_disables_gpu_even_when_available() {
-        assert!(!super::resolve_use_gpu(
+        assert!(!super::resolve_acceleration_enabled(
             RuntimeId::WhisperCpp,
             ModelFamilyId::Whisper,
+            std::path::Path::new("test-model"),
             AccelerationPreference::CpuOnly,
             fake_registry_with_cuda().as_ref(),
         ));
@@ -3099,6 +3199,7 @@ mod tests {
         let (_, events) = app.handle_command(start_session_command("session-2", &model_file_path));
 
         assert!(events.contains(&Event::SessionStarted {
+            accelerator: None,
             mode: ListeningMode::AlwaysOn,
             session_id: "session-2".to_string(),
         }));
@@ -4137,6 +4238,7 @@ mod tests {
             },
             model_store_path_override: None,
             session_start_unix_ms: 1_700_000_000_000,
+            force_continuous_transcription: false,
             session_id: session_id.to_string(),
             speaking_style: SpeakingStyle::Balanced,
         }
@@ -4249,6 +4351,7 @@ mod tests {
                 language_tags: vec!["en".to_string()],
                 translation_support: None,
                 supports_automatic_language_detection: false,
+                supported_accelerators: vec![],
                 default_voice: None,
                 license_label: "MIT".to_string(),
                 license_url: "https://example.com/license".to_string(),

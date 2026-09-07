@@ -2,7 +2,8 @@ use std::path::Path;
 use std::time::Duration;
 
 use crate::engine::capabilities::{
-    LanguageSupport, ModelFamilyCapabilities, ModelFamilyId, RuntimeCapabilities, RuntimeId,
+    AcceleratorId, LanguageSupport, ModelFamilyCapabilities, ModelFamilyId, RuntimeCapabilities,
+    RuntimeId,
 };
 use crate::synthesis::{SynthesisError, SynthesisModel};
 use crate::transcription::{
@@ -24,6 +25,11 @@ pub trait ModelFamilyAdapter: Send + Sync {
     fn capabilities(&self) -> &ModelFamilyCapabilities;
 
     fn probe_model(&self, path: &Path) -> Result<(), TranscriptionError>;
+    /// Returns whether this concrete model can use the requested accelerator.
+    /// Families may contain model variants with different backend support.
+    fn supports_accelerator_for_model(&self, _path: &Path, accelerator: AcceleratorId) -> bool {
+        accelerator == AcceleratorId::Cpu || self.capabilities().supports_hardware_acceleration
+    }
     fn probe_model_and_language_support(
         &self,
         path: &Path,

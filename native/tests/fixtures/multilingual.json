@@ -82,6 +82,16 @@
       "anchors": ["思えません", "不公平"]
     },
     {
+      "language": "zh",
+      "config": "cmn_hans_cn",
+      "row": 12,
+      "recordingId": "10564317445815190288",
+      "audioPath": "audio/zh-fleurs-1577.wav",
+      "sha256": "795ccfea7dd92911fa08636bb3794f3850243c67d891cad3e518116c9f3283f9",
+      "reference": "我觉得这毫无道理显然不公平",
+      "anchors": ["毫无道理", "不公平"]
+    },
+    {
       "language": "hr",
       "config": "hr_hr",
       "row": 194,

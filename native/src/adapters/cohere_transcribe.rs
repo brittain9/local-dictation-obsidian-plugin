@@ -1,6 +1,7 @@
 use std::borrow::Cow;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use std::sync::LazyLock;
 
 use ort::session::{Session, SessionInputValue};
 use ort::value::{DynValue, TensorElementType, Value, ValueType};
@@ -13,7 +14,7 @@ use crate::protocol::{TimestampGranularity, TimestampSource, TranscriptSegment};
 use crate::runtimes::onnx::build_session;
 use crate::transcription::{
     EngineTranscriptOutput, GpuConfig, SegmentDiagnostics, TranscriptionError,
-    TranscriptionRequest, validate_audio_samples, validate_language, validate_model_path,
+    TranscriptionRequest, validate_audio_samples, validate_model_path,
 };
 
 const NUM_DECODER_LAYERS: usize = 8;
@@ -35,32 +36,53 @@ const TOKEN_PNC_ON: i64 = 5; // <|pnc|>
 const TOKEN_NO_ITN: i64 = 9; // <|noitn|>
 const TOKEN_NO_TIMESTAMP: i64 = 11; // <|notimestamp|>
 const TOKEN_NO_DIARIZE: i64 = 13; // <|nodiarize|>
-const TOKEN_LANG_EN: i64 = 62; // <|en|>
+const LANGUAGE_TOKENS: &[(&str, i64)] = &[
+    ("ar", 28),
+    ("de", 76),
+    ("el", 77),
+    ("en", 62),
+    ("es", 169),
+    ("fr", 69),
+    ("it", 97),
+    ("ja", 98),
+    ("ko", 110),
+    ("nl", 60),
+    ("pl", 148),
+    ("pt", 149),
+    ("vi", 194),
+    ("zh", 50),
+];
 
 const TOKENIZER_FILENAME: &str = "tokenizer.json";
 
 #[derive(Default)]
 pub struct CohereTranscribeAdapter;
 
-static CAPABILITIES: ModelFamilyCapabilities = ModelFamilyCapabilities {
-    task: ModelTask::Stt,
-    // The int8 encoder is split across CUDA and CPU with 96 inserted copies,
-    // making it about twice as slow as the CPU-only session in local release
-    // benchmarks. Keep Auto on the proven path.
-    supports_hardware_acceleration: false,
-    available_voices: Vec::new(),
-    supports_speed_control: false,
-    output_sample_rate: None,
-    supports_segment_timestamps: false,
-    supports_word_timestamps: false,
-    supports_initial_prompt: false,
-    supports_streaming: false,
-    supports_language_selection: false,
-    supports_automatic_language_detection: false,
-    supported_languages: LanguageSupport::EnglishOnly,
-    max_audio_duration_secs: Some(MAX_AUDIO_DURATION_SECS),
-    produces_punctuation: true,
-};
+static CAPABILITIES: LazyLock<ModelFamilyCapabilities> =
+    LazyLock::new(|| ModelFamilyCapabilities {
+        task: ModelTask::Stt,
+        // The int8 encoder is split across CUDA and CPU with 96 inserted copies,
+        // making it about twice as slow as the CPU-only session in local release
+        // benchmarks. Keep Auto on the proven path.
+        supports_hardware_acceleration: false,
+        available_voices: Vec::new(),
+        supports_speed_control: false,
+        output_sample_rate: None,
+        supports_segment_timestamps: false,
+        supports_word_timestamps: false,
+        supports_initial_prompt: false,
+        supports_streaming: false,
+        supports_language_selection: true,
+        supports_automatic_language_detection: false,
+        supported_languages: LanguageSupport::List {
+            tags: LANGUAGE_TOKENS
+                .iter()
+                .map(|(language, _)| (*language).to_string())
+                .collect(),
+        },
+        max_audio_duration_secs: Some(MAX_AUDIO_DURATION_SECS),
+        produces_punctuation: true,
+    });
 
 impl ModelFamilyAdapter for CohereTranscribeAdapter {
     fn runtime_id(&self) -> RuntimeId {
@@ -91,7 +113,7 @@ impl ModelFamilyAdapter for CohereTranscribeAdapter {
         // or an unsupported opset fail install instead of first transcription.
         // CPU-only: probe does not care about accelerator choice and the CUDA
         // EP does not start cheaply enough to be worth registering here.
-        build_session(&encoder_path, GpuConfig { use_gpu: false }).map_err(|error| {
+        build_session(&encoder_path, GpuConfig::default()).map_err(|error| {
             TranscriptionError::invalid_model_with_details(format!(
                 "encoder session failed to load: {}",
                 error.details.unwrap_or_else(|| error.message.to_string())
@@ -124,7 +146,6 @@ struct LoadedCohereModel {
     vocab: HashMap<u32, String>,
     cache_names: Vec<String>,
     decoder_uses_fp16: bool,
-    prompt_tokens: Vec<i64>,
 }
 
 impl LoadedModel for LoadedCohereModel {
@@ -132,7 +153,7 @@ impl LoadedModel for LoadedCohereModel {
         &mut self,
         request: &TranscriptionRequest,
     ) -> Result<EngineTranscriptOutput, TranscriptionError> {
-        validate_language(&request.language)?;
+        let prompt_tokens = build_prompt_tokens(&request.language)?;
         validate_audio_samples(&request.audio_samples)?;
         validate_audio_duration(&request.audio_samples)?;
 
@@ -155,7 +176,7 @@ impl LoadedModel for LoadedCohereModel {
             &self.vocab,
             &self.cache_names,
             self.decoder_uses_fp16,
-            &self.prompt_tokens,
+            &prompt_tokens,
         )?;
 
         let trimmed = decode.text.trim().to_string();
@@ -203,7 +224,7 @@ fn load_cohere_model(
     let encoder = build_session(&encoder_path, gpu_config)?;
     // Decoder must run on CPU: ORT's CUDA GroupQueryAttention kernel does not
     // support attention_bias, which the Cohere decoder graph requires.
-    let decoder = build_session(&decoder_path, GpuConfig { use_gpu: false })?;
+    let decoder = build_session(&decoder_path, GpuConfig::default())?;
     verify_decoder_topology(&decoder)?;
     let decoder_uses_fp16 = decoder_past_kv_is_fp16(&decoder);
     let vocab = load_vocab(&tokens_path)?;
@@ -216,7 +237,6 @@ fn load_cohere_model(
         vocab,
         cache_names: build_cache_names(),
         decoder_uses_fp16,
-        prompt_tokens: build_prompt_tokens(),
     })
 }
 
@@ -648,19 +668,28 @@ fn argmax_from_logits(dims: &[i64], logits_data: &[f32]) -> Result<(i64, f32), T
     Ok((best_id, selected_logprob))
 }
 
-fn build_prompt_tokens() -> Vec<i64> {
-    vec![
+fn build_prompt_tokens(language: &str) -> Result<Vec<i64>, TranscriptionError> {
+    let language_token = LANGUAGE_TOKENS
+        .iter()
+        .find_map(|(candidate, token)| (*candidate == language).then_some(*token))
+        .ok_or_else(|| {
+            TranscriptionError::unsupported_language(
+                language,
+                "Cohere Transcribe supports 14 explicitly selected languages.",
+            )
+        })?;
+    Ok(vec![
         TOKEN_DECODER_START,
         TOKEN_START_OF_CONTEXT,
         TOKEN_START_OF_TRANSCRIPT,
         TOKEN_EMO_UNDEFINED,
-        TOKEN_LANG_EN,
-        TOKEN_LANG_EN,
+        language_token,
+        language_token,
         TOKEN_PNC_ON,
         TOKEN_NO_ITN,
         TOKEN_NO_TIMESTAMP,
         TOKEN_NO_DIARIZE,
-    ]
+    ])
 }
 
 fn validate_audio_duration(audio_samples: &[f32]) -> Result<(), TranscriptionError> {
@@ -872,7 +901,7 @@ mod tests {
 
     #[test]
     fn build_prompt_tokens_matches_official_10_token_sequence() {
-        let tokens = build_prompt_tokens();
+        let tokens = build_prompt_tokens("en").expect("English should be supported");
         assert_eq!(
             tokens,
             vec![
@@ -880,14 +909,23 @@ mod tests {
                 TOKEN_START_OF_CONTEXT,
                 TOKEN_START_OF_TRANSCRIPT,
                 TOKEN_EMO_UNDEFINED,
-                TOKEN_LANG_EN,
-                TOKEN_LANG_EN,
+                62,
+                62,
                 TOKEN_PNC_ON,
                 TOKEN_NO_ITN,
                 TOKEN_NO_TIMESTAMP,
                 TOKEN_NO_DIARIZE,
             ]
         );
+    }
+
+    #[test]
+    fn build_prompt_tokens_uses_the_requested_language() {
+        let tokens = build_prompt_tokens("zh").expect("Chinese should be supported");
+        assert_eq!(&tokens[4..6], &[50, 50]);
+
+        let error = build_prompt_tokens("auto").expect_err("auto-detection is unsupported");
+        assert_eq!(error.code, "unsupported_language");
     }
 
     fn temp_dir(prefix: &str) -> PathBuf {

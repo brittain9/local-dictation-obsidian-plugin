@@ -1,6 +1,12 @@
 import { isRecord } from '../shared/type-guards';
 
-export const RUNTIME_IDS = ['bergamot_wasm', 'llama_cpp', 'onnx_runtime', 'whisper_cpp'] as const;
+export const RUNTIME_IDS = [
+  'bergamot_wasm',
+  'funasr_llamacpp',
+  'llama_cpp',
+  'onnx_runtime',
+  'whisper_cpp',
+] as const;
 
 export type RuntimeId = (typeof RUNTIME_IDS)[number];
 
@@ -8,6 +14,7 @@ export const MODEL_FAMILY_IDS = [
   'firefox_translations',
   'tencent_hy_mt',
   'cohere_transcribe',
+  'funasr_hybrid',
   'moonshine',
   'nemotron_asr',
   'pocket_tts',
@@ -17,7 +24,7 @@ export const MODEL_FAMILY_IDS = [
 
 export type ModelFamilyId = (typeof MODEL_FAMILY_IDS)[number];
 
-export type AcceleratorId = 'cpu' | 'cuda' | 'direct_ml' | 'metal';
+export type AcceleratorId = 'cpu' | 'cuda' | 'direct_ml' | 'metal' | 'vulkan';
 
 export type ModelFormat = 'bergamot' | 'ggml' | 'gguf' | 'onnx';
 export type ModelTask = 'stt' | 'translation' | 'tts';
@@ -124,6 +131,7 @@ export interface CatalogModelRecord {
   familyId: ModelFamilyId;
   languageTags: string[];
   supportsAutomaticLanguageDetection: boolean;
+  supportedAccelerators?: AcceleratorId[];
   licenseLabel: string;
   licenseUrl: string;
   modelCardUrl: string | null;
@@ -302,7 +310,13 @@ function isModelFamilyCapabilitiesRecord(value: unknown): value is ModelFamilyCa
 }
 
 function isAcceleratorId(value: unknown): value is AcceleratorId {
-  return value === 'cpu' || value === 'cuda' || value === 'direct_ml' || value === 'metal';
+  return (
+    value === 'cpu' ||
+    value === 'cuda' ||
+    value === 'direct_ml' ||
+    value === 'metal' ||
+    value === 'vulkan'
+  );
 }
 
 function isModelFormat(value: unknown): value is ModelFormat {

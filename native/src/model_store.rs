@@ -606,6 +606,7 @@ mod tests {
                 language_tags: vec!["en".to_string()],
                 translation_support: None,
                 supports_automatic_language_detection: false,
+                supported_accelerators: vec![],
                 default_voice: None,
                 license_label: "MIT".to_string(),
                 license_url: "https://example.com/license".to_string(),

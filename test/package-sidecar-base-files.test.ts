@@ -20,14 +20,17 @@ describe('stageSidecarBaseFiles', () => {
     tempDirectories.push(directory);
     const binaryPath = join(directory, 'source-sidecar');
     const artifactDirectory = join(directory, 'artifact');
+    const extraPath = join(directory, 'libsherpa-onnx-c-api.so');
     const helperPath = join(directory, 'source-helper');
     await writeFile(binaryPath, 'binary');
+    await writeFile(extraPath, 'runtime');
     await writeFile(helperPath, 'helper');
 
     await stageSidecarBaseFiles({
       artifactDirectory,
       binaryName: 'local-dictation-sidecar',
       binaryPath,
+      extraFilePaths: [extraPath],
       helperName: 'local-dictation-translation-helper',
       helperPath,
     });
@@ -38,6 +41,9 @@ describe('stageSidecarBaseFiles', () => {
     await expect(
       readFile(join(artifactDirectory, 'local-dictation-translation-helper'), 'utf8'),
     ).resolves.toBe('helper');
+    await expect(
+      readFile(join(artifactDirectory, 'libsherpa-onnx-c-api.so'), 'utf8'),
+    ).resolves.toBe('runtime');
     const notices = await readFile(join(artifactDirectory, 'THIRD_PARTY_NOTICES.md'), 'utf8');
     expect(notices).toContain('WeSpeaker');
     expect(notices).toContain('CC BY 4.0');
@@ -49,5 +55,6 @@ describe('stageSidecarBaseFiles', () => {
     expect(notices).toContain('OpenMDW License Agreement, version 1.1');
     expect(notices).toContain('numerical representation');
     expect(notices).toContain('Tencent HY-MT');
+    expect(notices).toContain('FunASR hybrid Chinese dictation');
   });
 });

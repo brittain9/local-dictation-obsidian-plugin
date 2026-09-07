@@ -3,6 +3,7 @@ import { join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 import { listCudaArtifacts } from './lib/cuda-artifacts.mjs';
+import { requireFunasrSidecarArtifacts } from './lib/funasr-runtime.mjs';
 
 const SIDECAR_BINARY_SUFFIX = process.platform === 'win32' ? '.exe' : '';
 
@@ -53,6 +54,10 @@ export async function verifySidecarBuildOutput(options = {}) {
     ),
   );
 
+  await requireFunasrSidecarArtifacts({
+    destinationDirectory: join(rootDir, `native/target/${profile}`),
+  });
+
   return await verifyOptionalCudaBuild(rootDir, profile);
 }
 
@@ -76,6 +81,10 @@ async function verifyOptionalCudaBuild(rootDir, profile) {
   for (const runtimeFilename of CUDA_RUNTIME_FILENAMES) {
     await access(join(rootDir, 'native', 'target-cuda', profile, runtimeFilename));
   }
+
+  await requireFunasrSidecarArtifacts({
+    destinationDirectory: join(rootDir, `native/target-cuda/${profile}`),
+  });
 
   return true;
 }

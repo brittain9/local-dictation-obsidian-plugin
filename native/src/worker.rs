@@ -1161,6 +1161,7 @@ mod tests {
                 session_start_unix_ms: 0,
                 session_id: "streaming-test".to_string(),
                 style: SpeakingStyle::Balanced,
+                force_continuous_transcription: false,
             },
             FixtureVad {
                 calls: 0,
@@ -1822,6 +1823,7 @@ mod tests {
                 session_start_unix_ms: 0,
                 session_id: "streaming-reconcile-test".to_string(),
                 style: SpeakingStyle::Balanced,
+                force_continuous_transcription: false,
             },
             vad,
         );

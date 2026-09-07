@@ -92,6 +92,7 @@ pub struct SessionConfig {
     pub session_start_unix_ms: u64,
     pub session_id: String,
     pub style: SpeakingStyle,
+    pub force_continuous_transcription: bool,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -323,7 +324,15 @@ impl<TVad: VoiceActivityDetector> ListeningSession<TVad> {
         };
 
         if !self.speech_started {
-            if probability >= self.tuning.speech_threshold {
+            if self.config.force_continuous_transcription {
+                self.speech_started = true;
+                self.consecutive_above_threshold = 0;
+                self.frames_since_confident_speech = 0;
+                self.pending_end_start = None;
+                self.utterance_frames
+                    .extend(self.pre_speech_frames.drain(..));
+                self.utterance_frames.push(buffered_frame);
+            } else if probability >= self.tuning.speech_threshold {
                 self.consecutive_above_threshold += 1;
                 if self.consecutive_above_threshold >= self.tuning.min_speech_frames {
                     self.speech_started = true;
@@ -1097,6 +1106,7 @@ mod tests {
                 session_start_unix_ms: 1_700_000_000_000,
                 session_id: "session-1".to_string(),
                 style,
+                force_continuous_transcription: false,
             },
             vad,
         )

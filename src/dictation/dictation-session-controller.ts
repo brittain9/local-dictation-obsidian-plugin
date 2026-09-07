@@ -19,6 +19,7 @@ import {
 } from '../llm/presets';
 import { type LlmCleanupFailure, type LlmProviderId, ProviderError } from '../llm/provider';
 import type { LlmRouter } from '../llm/router';
+import type { AcceleratorId } from '../models/model-management-types';
 import type { Session, SessionAcceptResult } from '../session/session';
 import type { StageId, StageOutcome, TranscriptRevision } from '../session/session-journal';
 import type { PluginSettings, SmartParagraphPauseSettings } from '../settings/plugin-settings';
@@ -65,6 +66,7 @@ type ControllerSession = Pick<
   | 'clearSessionProcessingMark'
   | 'dispose'
   | 'insertAdjacentToSessionRange'
+  | 'replaceUtteranceTranslation'
   | 'markSessionRangeAsProcessing'
   | 'readCurrentSessionText'
   | 'readNoteGlossary'
@@ -75,6 +77,7 @@ type ControllerSession = Pick<
 >;
 
 interface ActiveSessionSnapshot {
+  forceContinuousTranscription: PluginSettings['forceContinuousTranscription'];
   accelerationPreference: PluginSettings['accelerationPreference'];
   diarizationEnabled: PluginSettings['diarizationEnabled'];
   diarizationMaxSpeakers: PluginSettings['diarizationMaxSpeakers'];
@@ -153,11 +156,20 @@ interface DictationSessionControllerDependencies {
   onLlmCleanupFailure?: (failure: LlmCleanupFailure) => void;
   onLlmCleanupSuccess?: () => void;
   onFinalizedUtteranceAccepted?: (text: string) => void;
+  onRealtimeTranslation?: (
+    text: string,
+    session: ControllerSession,
+    metadata: { isFinal: boolean; revision: number; utteranceId: string },
+  ) => void;
+  drainRealtimeTranslation?: (session: ControllerSession) => Promise<void>;
   onRawTranscriptRecoveryAvailable?: (receipt: RawTranscriptRecoveryReceipt) => void;
   onModelMissing?: () => void;
   onSidecarMissing?: () => void;
+  restartSidecar?: () => Promise<void>;
   countAudioInputDevices?: () => Promise<number | null>;
   setRibbonQueueTier: (tier: QueueBackpressureTier) => void;
+  setRibbonAccelerator: (accelerator: AcceleratorId | null) => void;
+  setRibbonBufferLength: (queuedUtterances: number) => void;
   setRibbonState: (state: DictationControllerState) => void;
   sidecarConnection: Pick<
     SidecarConnection,
@@ -226,6 +238,7 @@ export class DictationSessionController {
   private readonly releaseSidecarSubscription: () => void;
   private readonly sessions = new Map<string, ManagedSession>();
   private llmDisableRevision = 0;
+  private sidecarRestartPromise: Promise<void> | null = null;
   private startRevision = 0;
   private state: DictationControllerState = 'idle';
 
@@ -234,6 +247,8 @@ export class DictationSessionController {
       void this.handleSidecarEvent(event);
     });
     this.applyUiState('idle');
+    this.dependencies.setRibbonAccelerator(null);
+    this.dependencies.setRibbonBufferLength(0);
   }
 
   getState(): DictationControllerState {
@@ -462,6 +477,7 @@ export class DictationSessionController {
       this.pendingSpeechLease = null;
     }
     this.activeSessionId = sessionId;
+    this.dependencies.setRibbonBufferLength(0);
     this.dependencies.audioLevelMeter.bindSession(sessionId);
     this.dependencies.logger?.debug('session', `starting dictation session ${sessionId}`);
 
@@ -481,6 +497,7 @@ export class DictationSessionController {
         sessionStartUnixMs: snapshot.sessionStartUnixMs,
         sessionId,
         speakingStyle: snapshot.speakingStyle,
+        forceContinuousTranscription: snapshot.forceContinuousTranscription,
         ...(snapshot.modelStorePathOverride.length > 0
           ? { modelStorePathOverride: snapshot.modelStorePathOverride }
           : {}),
@@ -681,6 +698,8 @@ export class DictationSessionController {
       return;
     }
     this.activeSessionId = null;
+    this.dependencies.setRibbonBufferLength(0);
+    this.dependencies.setRibbonAccelerator(null);
     this.dependencies.audioLevelMeter.clearSession(sessionId);
     this.applyUiState('idle');
     this.resetQueueTier();
@@ -730,6 +749,8 @@ export class DictationSessionController {
 
     if (this.activeSessionId === sessionId) {
       this.activeSessionId = null;
+      this.dependencies.setRibbonBufferLength(0);
+      this.dependencies.setRibbonAccelerator(null);
       this.dependencies.audioLevelMeter.clearSession(sessionId);
       this.applyUiState('idle');
       this.resetQueueTier();
@@ -779,6 +800,9 @@ export class DictationSessionController {
         return;
 
       case 'session_started':
+        if (event.sessionId === this.activeSessionId) {
+          this.dependencies.setRibbonAccelerator(event.accelerator ?? null);
+        }
         return;
 
       case 'session_state_changed':
@@ -849,6 +873,7 @@ export class DictationSessionController {
 
     if (event.sessionId === this.activeSessionId) {
       this.dependencies.setRibbonQueueTier(event.tier);
+      this.dependencies.setRibbonBufferLength(event.queuedUtterances);
     }
   }
 
@@ -1004,8 +1029,15 @@ export class DictationSessionController {
       await this.cancelSession(sessionId);
       return;
     }
-    if (result.kind === 'accepted' && revision.isFinal && revision.text.trim().length > 0) {
-      this.dependencies.onFinalizedUtteranceAccepted?.(revision.text);
+    if (result.kind === 'accepted' && revision.text.trim().length > 0) {
+      if (revision.isFinal) {
+        this.dependencies.onFinalizedUtteranceAccepted?.(revision.text);
+      }
+      this.dependencies.onRealtimeTranslation?.(revision.text, entry.session, {
+        isFinal: revision.isFinal,
+        revision: revision.revision,
+        utteranceId: revision.utteranceId,
+      });
     }
   }
 
@@ -1214,10 +1246,11 @@ export class DictationSessionController {
     while (entry.pendingTranscriptWork.size > 0) {
       await Promise.allSettled([...entry.pendingTranscriptWork]);
     }
+    await this.dependencies.drainRealtimeTranslation?.(entry.session);
   }
 
   private async disposeAfterPendingWork(sessionId: string, entry: ManagedSession): Promise<void> {
-    if (entry.pendingTranscriptWork.size > 0) {
+    if (entry.pendingTranscriptWork.size > 0 || this.dependencies.drainRealtimeTranslation) {
       await this.drainPendingTranscriptWork(entry);
     }
     if (this.sessions.get(sessionId) === entry) {
@@ -1240,7 +1273,7 @@ export class DictationSessionController {
     // The sidecar can emit the final transcript_ready and session_stopped in the
     // same I/O chunk, so drain in-flight per-utterance accepts before reading the
     // transcript — otherwise the batch rewrite would miss the last utterance(s).
-    if (entry.pendingTranscriptWork.size > 0) {
+    if (entry.pendingTranscriptWork.size > 0 || this.dependencies.drainRealtimeTranslation) {
       await this.drainPendingTranscriptWork(entry);
     }
     if (this.stopTerminatedBatchCleanup(sessionId, entry)) {
@@ -1453,8 +1486,27 @@ export class DictationSessionController {
     }
 
     const rawDetail = rawSidecarEventDetail(event);
-    const detail = formatSystemAudioErrorMessage(localizeSidecarEvent(event), event.code);
+    const localizedDetail = localizeSidecarEvent(event);
+    const detail = formatSystemAudioErrorMessage(
+      event.details ? `${localizedDetail} (${event.details})` : localizedDetail,
+      event.code,
+    );
     this.dependencies.logger?.warn('sidecar', rawDetail, event.code);
+
+    if (event.sessionId === undefined && event.code === 'sidecar_exited') {
+      this.handleError(FEEDBACK_FAILURES.sidecar, detail);
+      const activeSessionId = this.activeSessionId;
+      if (activeSessionId === null) {
+        this.cancelPendingStart();
+      } else {
+        await this.clearActiveSession(activeSessionId);
+      }
+      for (const sessionId of [...this.sessions.keys()]) {
+        this.disposeLocalSession(sessionId);
+      }
+      await this.restartSidecarAfterCrash();
+      return;
+    }
 
     if (event.sessionId === undefined) {
       this.handleError(FEEDBACK_FAILURES.sidecar, detail);
@@ -1481,6 +1533,25 @@ export class DictationSessionController {
     }
 
     await this.cancelSession(event.sessionId);
+    if (event.code === 'sidecar_exited') {
+      await this.restartSidecarAfterCrash();
+    }
+  }
+
+  private restartSidecarAfterCrash(): Promise<void> {
+    if (this.sidecarRestartPromise !== null) return this.sidecarRestartPromise;
+    const restart = (async () => {
+      try {
+        await this.dependencies.restartSidecar?.();
+      } catch (error) {
+        this.dependencies.logger?.error('sidecar', 'automatic sidecar restart failed', error);
+      }
+    })();
+    this.sidecarRestartPromise = restart;
+    void restart.then(() => {
+      if (this.sidecarRestartPromise === restart) this.sidecarRestartPromise = null;
+    });
+    return restart;
   }
 
   // Queue overload is a sidecar-initiated graceful stop: capture is already
@@ -1736,6 +1807,7 @@ function createSessionSnapshot(
       paragraphPauseMs: settings.smartParagraphParagraphPauseMs,
     },
     speakingStyle: settings.speakingStyle,
+    forceContinuousTranscription: settings.forceContinuousTranscription,
     timestamps: {
       clock: settings.timestampClock,
       density: settings.timestampDensity,

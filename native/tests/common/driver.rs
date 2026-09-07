@@ -345,6 +345,7 @@ fn start_session_command(
         detailed_timestamps_enabled: false,
         diarization_enabled,
         diarization_max_speakers: None,
+        force_continuous_transcription: false,
         include_system_audio: false,
         language: language.to_string(),
         mode: ListeningMode::AlwaysOn,

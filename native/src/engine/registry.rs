@@ -2,8 +2,8 @@ use std::collections::HashMap;
 use std::path::Path;
 
 use crate::engine::capabilities::{
-    EngineCapabilities, LanguageSupport, ModelFamilyCapabilities, ModelFamilyId, RequestWarning,
-    RuntimeId,
+    AcceleratorId, EngineCapabilities, LanguageSupport, ModelFamilyCapabilities, ModelFamilyId,
+    RequestWarning, RuntimeId,
 };
 use crate::engine::traits::{ModelFamilyAdapter, Runtime};
 use crate::transcription::{TranscriptionError, TranscriptionRequest};
@@ -28,6 +28,14 @@ impl EngineRegistry {
         registry.register_adapter(Box::new(
             crate::adapters::firefox_translations::FirefoxTranslationsAdapter,
         ));
+
+        #[cfg(feature = "engine-funasr")]
+        {
+            registry.register_runtime(Box::new(crate::runtimes::funasr::FunasrRuntime::probe()));
+            registry.register_adapter(Box::new(
+                crate::adapters::funasr_hybrid::FunasrHybridAdapter,
+            ));
+        }
 
         #[cfg(feature = "engine-hy-mt")]
         {
@@ -151,6 +159,28 @@ impl EngineRegistry {
         self.adapter(runtime_id, family_id)
             .ok_or_else(|| missing_adapter_error(runtime_id, family_id))?
             .probe_model_and_language_support(path)
+    }
+
+    pub fn supports_hardware_acceleration_for_model(
+        &self,
+        runtime_id: RuntimeId,
+        family_id: ModelFamilyId,
+        path: &Path,
+    ) -> bool {
+        let Some(adapter) = self.adapter(runtime_id, family_id) else {
+            return false;
+        };
+        self.runtime(runtime_id).is_some_and(|runtime| {
+            runtime
+                .capabilities()
+                .available_accelerators
+                .iter()
+                .copied()
+                .any(|accelerator| {
+                    accelerator != AcceleratorId::Cpu
+                        && adapter.supports_accelerator_for_model(path, accelerator)
+                })
+        })
     }
 }
 

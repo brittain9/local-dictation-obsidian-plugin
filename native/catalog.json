@@ -1,10 +1,15 @@
 {
-  "catalogVersion": 8,
+  "catalogVersion": 12,
   "runtimes": [
     {
       "runtimeId": "bergamot_wasm",
       "displayName": "Bergamot WebAssembly",
       "summary": "Cross-platform CPU translation in an isolated WebAssembly worker."
+    },
+    {
+      "runtimeId": "funasr_llamacpp",
+      "displayName": "FunASR",
+      "summary": "FunASR final transcription through bundled native helpers, with an online Paraformer draft pass and CPU or Vulkan execution on Linux."
     },
     {
       "runtimeId": "llama_cpp",
@@ -50,6 +55,13 @@
       "runtimeId": "onnx_runtime",
       "displayName": "Cohere Transcribe",
       "summary": "High-quality batch transcription with multi-gigabyte download and memory requirements."
+    },
+    {
+      "familyId": "funasr_hybrid",
+      "task": "stt",
+      "runtimeId": "funasr_llamacpp",
+      "displayName": "FunASR Chinese Hybrid",
+      "summary": "Fast Chinese live revisions from Paraformer, with selectable SenseVoiceSmall, Fun-ASR Nano, or newer Nano 2512 final models."
     },
     {
       "familyId": "moonshine",
@@ -110,6 +122,11 @@
       "collectionId": "nemotron_asr_streaming",
       "displayName": "NVIDIA Nemotron 3.5 ASR",
       "summary": "Multilingual streaming transcription using the pinned 560 ms int8 export."
+    },
+    {
+      "collectionId": "funasr_chinese_streaming",
+      "displayName": "FunASR Chinese Streaming",
+      "summary": "Chinese-first live dictation with a low-latency draft and selectable FunASR final models, including Nano 2512."
     },
     {
       "collectionId": "supertonic_read_aloud",
@@ -251,9 +268,110 @@
       "collectionId": "english_cpu_first",
       "displayName": "Whisper Large V3 Turbo",
       "summary": "Multilingual high-accuracy transcription with an architecture optimized for GPU acceleration.",
-      "languageTags": ["en", "es", "de", "fr", "pt", "it", "nl", "ja", "hr", "sr"],
+      "languageTags": [
+        "en",
+        "zh",
+        "de",
+        "es",
+        "ru",
+        "ko",
+        "fr",
+        "ja",
+        "pt",
+        "tr",
+        "pl",
+        "ca",
+        "nl",
+        "ar",
+        "sv",
+        "it",
+        "id",
+        "hi",
+        "fi",
+        "vi",
+        "he",
+        "uk",
+        "el",
+        "ms",
+        "cs",
+        "ro",
+        "da",
+        "hu",
+        "ta",
+        "no",
+        "th",
+        "ur",
+        "hr",
+        "bg",
+        "lt",
+        "la",
+        "mi",
+        "ml",
+        "cy",
+        "sk",
+        "te",
+        "fa",
+        "lv",
+        "bn",
+        "sr",
+        "az",
+        "sl",
+        "kn",
+        "et",
+        "mk",
+        "br",
+        "eu",
+        "is",
+        "hy",
+        "ne",
+        "mn",
+        "bs",
+        "kk",
+        "sq",
+        "sw",
+        "gl",
+        "mr",
+        "pa",
+        "si",
+        "km",
+        "sn",
+        "yo",
+        "so",
+        "af",
+        "oc",
+        "ka",
+        "be",
+        "tg",
+        "sd",
+        "gu",
+        "am",
+        "yi",
+        "lo",
+        "uz",
+        "fo",
+        "ht",
+        "ps",
+        "tk",
+        "nn",
+        "mt",
+        "sa",
+        "lb",
+        "my",
+        "bo",
+        "tl",
+        "mg",
+        "as",
+        "tt",
+        "haw",
+        "ln",
+        "ha",
+        "ba",
+        "jw",
+        "su",
+        "yue"
+      ],
       "supportsAutomaticLanguageDetection": true,
-      "uxTags": ["accuracy", "gpu"],
+      "uxTags": ["accuracy", "cuda", "metal"],
       "licenseLabel": "MIT",
       "licenseUrl": "https://raw.githubusercontent.com/ggml-org/whisper.cpp/master/LICENSE",
       "sourceUrl": "https://huggingface.co/ggerganov/whisper.cpp/tree/5359861c739e955e79d9a303bcbc70fb988958b1",
@@ -283,7 +401,22 @@
       "collectionId": "cohere_transcribe",
       "displayName": "Cohere Transcribe FP16",
       "summary": "Largest Cohere variant, preserving full model precision.",
-      "languageTags": ["en"],
+      "languageTags": [
+        "ar",
+        "de",
+        "el",
+        "en",
+        "es",
+        "fr",
+        "it",
+        "ja",
+        "ko",
+        "nl",
+        "pl",
+        "pt",
+        "vi",
+        "zh"
+      ],
       "uxTags": ["full-precision"],
       "licenseLabel": "Apache-2.0",
       "licenseUrl": "https://huggingface.co/CohereForAI/cohere-transcribe-03-2026/blob/main/LICENSE",
@@ -355,7 +488,22 @@
       "collectionId": "cohere_transcribe",
       "displayName": "Cohere Transcribe INT8",
       "summary": "Middle Cohere variant by download size, using 8-bit quantization.",
-      "languageTags": ["en"],
+      "languageTags": [
+        "ar",
+        "de",
+        "el",
+        "en",
+        "es",
+        "fr",
+        "it",
+        "ja",
+        "ko",
+        "nl",
+        "pl",
+        "pt",
+        "vi",
+        "zh"
+      ],
       "uxTags": ["reduced-size"],
       "licenseLabel": "Apache-2.0",
       "licenseUrl": "https://huggingface.co/CohereForAI/cohere-transcribe-03-2026/blob/main/LICENSE",
@@ -430,7 +578,22 @@
       "collectionId": "cohere_transcribe",
       "displayName": "Cohere Transcribe Q4",
       "summary": "Smallest Cohere variant; 4-bit quantization reduces size at a quality cost.",
-      "languageTags": ["en"],
+      "languageTags": [
+        "ar",
+        "de",
+        "el",
+        "en",
+        "es",
+        "fr",
+        "it",
+        "ja",
+        "ko",
+        "nl",
+        "pl",
+        "pt",
+        "vi",
+        "zh"
+      ],
       "uxTags": ["smallest"],
       "licenseLabel": "Apache-2.0",
       "licenseUrl": "https://huggingface.co/CohereForAI/cohere-transcribe-03-2026/blob/main/LICENSE",
@@ -741,14 +904,636 @@
       ]
     },
     {
+      "runtimeId": "funasr_llamacpp",
+      "familyId": "funasr_hybrid",
+      "task": "stt",
+      "modelId": "funasr_sensevoice_paraformer_zh_streaming_q8",
+      "collectionId": "funasr_chinese_streaming",
+      "displayName": "FunASR SenseVoiceSmall Q8 Live",
+      "summary": "Chinese live dictation with a Paraformer draft and a compact SenseVoiceSmall Q8 final pass after each pause.",
+      "languageTags": ["zh", "yue", "en", "ja", "ko"],
+      "supportsAutomaticLanguageDetection": true,
+      "supportedAccelerators": ["cpu", "vulkan"],
+      "uxTags": ["streaming", "vulkan", "cpu-fallback"],
+      "licenseLabel": "Apache-2.0",
+      "licenseUrl": "https://www.apache.org/licenses/LICENSE-2.0",
+      "sourceUrl": "https://huggingface.co/csukuangfj/sherpa-onnx-streaming-paraformer-bilingual-zh-en/tree/8e40c43232a1c5c66c82111efc5820d3accca11b",
+      "modelCardUrl": "https://huggingface.co/FunAudioLLM/SenseVoiceSmall-GGUF/tree/90c1c61912018b70ada0fcc024ea24aca62f2e63",
+      "notes": [
+        "Live text is provisional: the Paraformer draft may revise while you speak. The text committed after a pause comes from the full-utterance SenseVoiceSmall pass.",
+        "On Linux, the packaged official FunASR Vulkan runtime accelerates the final SenseVoiceSmall pass on compatible AMD, Intel, NVIDIA, and integrated GPUs. CPU remains the fallback.",
+        "The five required artifacts total about 470 MiB. The online Paraformer and SenseVoiceSmall model weights are Apache-2.0."
+      ],
+      "artifacts": [
+        {
+          "artifactId": "online_encoder",
+          "role": "transcription_model",
+          "required": true,
+          "filename": "encoder.int8.onnx",
+          "downloadUrl": "https://huggingface.co/csukuangfj/sherpa-onnx-streaming-paraformer-bilingual-zh-en/resolve/8e40c43232a1c5c66c82111efc5820d3accca11b/encoder.int8.onnx",
+          "sha256": "81a70226a8934e6ed92aa1d4fc486b428b5398e2f2619ed4897b7294cab90e9a",
+          "sizeBytes": 165462184
+        },
+        {
+          "artifactId": "online_decoder",
+          "role": "supporting_file",
+          "required": true,
+          "filename": "decoder.int8.onnx",
+          "downloadUrl": "https://huggingface.co/csukuangfj/sherpa-onnx-streaming-paraformer-bilingual-zh-en/resolve/8e40c43232a1c5c66c82111efc5820d3accca11b/decoder.int8.onnx",
+          "sha256": "f3cca9f77bb9d93c8fcbfb63ae617b6b1ee96818df3aa3b151c40658fe38594f",
+          "sizeBytes": 71664561
+        },
+        {
+          "artifactId": "online_tokens",
+          "role": "supporting_file",
+          "required": true,
+          "filename": "tokens.txt",
+          "downloadUrl": "https://huggingface.co/csukuangfj/sherpa-onnx-streaming-paraformer-bilingual-zh-en/resolve/8e40c43232a1c5c66c82111efc5820d3accca11b/tokens.txt",
+          "sha256": "59aba8873a2ed1e122c25fee421e25f283b63290efbde85c1f01a853d83cb6e6",
+          "sizeBytes": 75756
+        },
+        {
+          "artifactId": "sensevoice_final",
+          "role": "supporting_file",
+          "required": true,
+          "filename": "sensevoice-small-q8.gguf",
+          "downloadUrl": "https://huggingface.co/FunAudioLLM/SenseVoiceSmall-GGUF/resolve/90c1c61912018b70ada0fcc024ea24aca62f2e63/sensevoice-small-q8.gguf",
+          "sha256": "4ae45c94422de949b387e2e0fb10d7e14e4c42c69db30c3444ecc7d4b844b7c5",
+          "sizeBytes": 254208320
+        },
+        {
+          "artifactId": "fsmn_vad",
+          "role": "supporting_file",
+          "required": true,
+          "filename": "fsmn-vad.gguf",
+          "downloadUrl": "https://huggingface.co/FunAudioLLM/fsmn-vad-GGUF/resolve/6840bae4c5c92ee8c04faaf4db23dd0105098d7f/fsmn-vad.gguf",
+          "sha256": "1270f2559c495f4e7b6e739541151027d360761a3fda43fc147034f5719f5479",
+          "sizeBytes": 1720512
+        }
+      ]
+    },
+    {
+      "runtimeId": "funasr_llamacpp",
+      "familyId": "funasr_hybrid",
+      "task": "stt",
+      "modelId": "funasr_nano_2512_paraformer_zh_streaming_q8_0",
+      "collectionId": "funasr_chinese_streaming",
+      "displayName": "Fun-ASR Nano 2512 Q8_0 Live",
+      "summary": "Newer 800M Chinese-focused Fun-ASR final model with strong dialect, accent, far-field, and noisy-speech recognition, plus a low-latency Paraformer draft.",
+      "languageTags": ["zh", "yue", "en", "ja"],
+      "supportsAutomaticLanguageDetection": true,
+      "supportedAccelerators": ["cpu", "vulkan"],
+      "uxTags": [
+        "streaming",
+        "accuracy",
+        "vulkan",
+        "cpu-fallback",
+        "recommended",
+        "requires-terms-review"
+      ],
+      "licenseLabel": "FunASR Model License 1.1",
+      "licenseUrl": "https://huggingface.co/FunAudioLLM/Fun-ASR-Nano-2512-GGUF/blob/ce72677f84900f0dc57f498ace253bfb3c9155b6/README.md#license",
+      "sourceUrl": "https://huggingface.co/FunAudioLLM/Fun-ASR-Nano-2512-GGUF/tree/ce72677f84900f0dc57f498ace253bfb3c9155b6",
+      "modelCardUrl": "https://huggingface.co/FunAudioLLM/Fun-ASR-Nano-2512/tree/1fd03aa58072a4c00bf0a0b149cc4cf0d36d11ed",
+      "notes": [
+        "Live text is provisional: Paraformer supplies the draft while the newer Fun-ASR Nano 2512 model retranscribes the complete utterance after each pause.",
+        "The packaged audio.cpp v0.7.2 runtime supports CPU and Vulkan on Linux. Vulkan works with compatible AMD, Intel, and NVIDIA GPUs; CPU remains the fallback.",
+        "The five required artifacts total 1,284,257,445 bytes. Review the FunASR model license before installing."
+      ],
+      "artifacts": [
+        {
+          "artifactId": "online_encoder",
+          "role": "transcription_model",
+          "required": true,
+          "filename": "encoder.int8.onnx",
+          "downloadUrl": "https://huggingface.co/csukuangfj/sherpa-onnx-streaming-paraformer-bilingual-zh-en/resolve/8e40c43232a1c5c66c82111efc5820d3accca11b/encoder.int8.onnx",
+          "sha256": "81a70226a8934e6ed92aa1d4fc486b428b5398e2f2619ed4897b7294cab90e9a",
+          "sizeBytes": 165462184
+        },
+        {
+          "artifactId": "online_decoder",
+          "role": "supporting_file",
+          "required": true,
+          "filename": "decoder.int8.onnx",
+          "downloadUrl": "https://huggingface.co/csukuangfj/sherpa-onnx-streaming-paraformer-bilingual-zh-en/resolve/8e40c43232a1c5c66c82111efc5820d3accca11b/decoder.int8.onnx",
+          "sha256": "f3cca9f77bb9d93c8fcbfb63ae617b6b1ee96818df3aa3b151c40658fe38594f",
+          "sizeBytes": 71664561
+        },
+        {
+          "artifactId": "online_tokens",
+          "role": "supporting_file",
+          "required": true,
+          "filename": "tokens.txt",
+          "downloadUrl": "https://huggingface.co/csukuangfj/sherpa-onnx-streaming-paraformer-bilingual-zh-en/resolve/8e40c43232a1c5c66c82111efc5820d3accca11b/tokens.txt",
+          "sha256": "59aba8873a2ed1e122c25fee421e25f283b63290efbde85c1f01a853d83cb6e6",
+          "sizeBytes": 75756
+        },
+        {
+          "artifactId": "nano_2512_model",
+          "role": "supporting_file",
+          "required": true,
+          "filename": "fun-asr-nano-2512-q8_0.gguf",
+          "downloadUrl": "https://huggingface.co/FunAudioLLM/Fun-ASR-Nano-2512-GGUF/resolve/ce72677f84900f0dc57f498ace253bfb3c9155b6/fun-asr-nano-2512-q8_0.gguf",
+          "sha256": "4d727357574b079b7f43336b2930f39da086ca02f5d8d50872090b4c1c3d5e0a",
+          "sizeBytes": 1045334432
+        },
+        {
+          "artifactId": "fsmn_vad",
+          "role": "supporting_file",
+          "required": true,
+          "filename": "fsmn-vad.gguf",
+          "downloadUrl": "https://huggingface.co/FunAudioLLM/fsmn-vad-GGUF/resolve/6840bae4c5c92ee8c04faaf4db23dd0105098d7f/fsmn-vad.gguf",
+          "sha256": "1270f2559c495f4e7b6e739541151027d360761a3fda43fc147034f5719f5479",
+          "sizeBytes": 1720512
+        }
+      ]
+    },
+    {
+      "runtimeId": "funasr_llamacpp",
+      "familyId": "funasr_hybrid",
+      "task": "stt",
+      "modelId": "funasr_nano_2512_paraformer_zh_streaming_f16",
+      "collectionId": "funasr_chinese_streaming",
+      "displayName": "Fun-ASR Nano 2512 F16 Live",
+      "summary": "Full-precision 800M Fun-ASR Nano 2512 final model for maximum local Chinese accuracy, plus a low-latency Paraformer draft.",
+      "languageTags": ["zh", "yue", "en", "ja"],
+      "supportsAutomaticLanguageDetection": true,
+      "supportedAccelerators": ["cpu", "vulkan"],
+      "uxTags": [
+        "streaming",
+        "accuracy",
+        "vulkan",
+        "cpu-fallback",
+        "heavy",
+        "requires-terms-review"
+      ],
+      "licenseLabel": "FunASR Model License 1.1",
+      "licenseUrl": "https://huggingface.co/FunAudioLLM/Fun-ASR-Nano-2512-GGUF/blob/ce72677f84900f0dc57f498ace253bfb3c9155b6/README.md#license",
+      "sourceUrl": "https://huggingface.co/FunAudioLLM/Fun-ASR-Nano-2512-GGUF/tree/ce72677f84900f0dc57f498ace253bfb3c9155b6",
+      "modelCardUrl": "https://huggingface.co/FunAudioLLM/Fun-ASR-Nano-2512/tree/1fd03aa58072a4c00bf0a0b149cc4cf0d36d11ed",
+      "notes": [
+        "Live text is provisional: Paraformer supplies the draft while the full-precision Fun-ASR Nano 2512 model retranscribes the complete utterance after each pause.",
+        "The packaged audio.cpp v0.7.2 runtime supports CPU and Vulkan on Linux. F16 needs substantially more memory than Q8 and may offer only a modest accuracy improvement.",
+        "The five required artifacts total 1,914,631,845 bytes. Review the FunASR model license before installing."
+      ],
+      "artifacts": [
+        {
+          "artifactId": "online_encoder",
+          "role": "transcription_model",
+          "required": true,
+          "filename": "encoder.int8.onnx",
+          "downloadUrl": "https://huggingface.co/csukuangfj/sherpa-onnx-streaming-paraformer-bilingual-zh-en/resolve/8e40c43232a1c5c66c82111efc5820d3accca11b/encoder.int8.onnx",
+          "sha256": "81a70226a8934e6ed92aa1d4fc486b428b5398e2f2619ed4897b7294cab90e9a",
+          "sizeBytes": 165462184
+        },
+        {
+          "artifactId": "online_decoder",
+          "role": "supporting_file",
+          "required": true,
+          "filename": "decoder.int8.onnx",
+          "downloadUrl": "https://huggingface.co/csukuangfj/sherpa-onnx-streaming-paraformer-bilingual-zh-en/resolve/8e40c43232a1c5c66c82111efc5820d3accca11b/decoder.int8.onnx",
+          "sha256": "f3cca9f77bb9d93c8fcbfb63ae617b6b1ee96818df3aa3b151c40658fe38594f",
+          "sizeBytes": 71664561
+        },
+        {
+          "artifactId": "online_tokens",
+          "role": "supporting_file",
+          "required": true,
+          "filename": "tokens.txt",
+          "downloadUrl": "https://huggingface.co/csukuangfj/sherpa-onnx-streaming-paraformer-bilingual-zh-en/resolve/8e40c43232a1c5c66c82111efc5820d3accca11b/tokens.txt",
+          "sha256": "59aba8873a2ed1e122c25fee421e25f283b63290efbde85c1f01a853d83cb6e6",
+          "sizeBytes": 75756
+        },
+        {
+          "artifactId": "nano_2512_model",
+          "role": "supporting_file",
+          "required": true,
+          "filename": "fun-asr-nano-2512-f16.gguf",
+          "downloadUrl": "https://huggingface.co/FunAudioLLM/Fun-ASR-Nano-2512-GGUF/resolve/ce72677f84900f0dc57f498ace253bfb3c9155b6/fun-asr-nano-2512-f16.gguf",
+          "sha256": "3d906c3ccfed07efef88ff53d6cc94b788b9d2edf1492a5679d041b43e98c5be",
+          "sizeBytes": 1675708832
+        },
+        {
+          "artifactId": "fsmn_vad",
+          "role": "supporting_file",
+          "required": true,
+          "filename": "fsmn-vad.gguf",
+          "downloadUrl": "https://huggingface.co/FunAudioLLM/fsmn-vad-GGUF/resolve/6840bae4c5c92ee8c04faaf4db23dd0105098d7f/fsmn-vad.gguf",
+          "sha256": "1270f2559c495f4e7b6e739541151027d360761a3fda43fc147034f5719f5479",
+          "sizeBytes": 1720512
+        }
+      ]
+    },
+    {
+      "runtimeId": "funasr_llamacpp",
+      "familyId": "funasr_hybrid",
+      "task": "stt",
+      "modelId": "funasr_sensevoice_paraformer_zh_streaming_f16",
+      "collectionId": "funasr_chinese_streaming",
+      "displayName": "FunASR SenseVoiceSmall F16 Live",
+      "summary": "Chinese live dictation with a Paraformer draft and a higher-precision SenseVoiceSmall F16 final pass after each pause.",
+      "languageTags": ["zh", "yue", "en", "ja", "ko"],
+      "supportsAutomaticLanguageDetection": true,
+      "supportedAccelerators": ["cpu", "vulkan"],
+      "uxTags": ["streaming", "accuracy", "vulkan", "cpu-fallback", "recommended"],
+      "licenseLabel": "Apache-2.0",
+      "licenseUrl": "https://www.apache.org/licenses/LICENSE-2.0",
+      "sourceUrl": "https://huggingface.co/csukuangfj/sherpa-onnx-streaming-paraformer-bilingual-zh-en/tree/8e40c43232a1c5c66c82111efc5820d3accca11b",
+      "modelCardUrl": "https://huggingface.co/FunAudioLLM/SenseVoiceSmall-GGUF/tree/90c1c61912018b70ada0fcc024ea24aca62f2e63",
+      "notes": [
+        "Live text is provisional: the Paraformer draft may revise while you speak. The text committed after a pause comes from the full-utterance SenseVoiceSmall pass.",
+        "On Linux, the packaged official FunASR Vulkan runtime accelerates the final SenseVoiceSmall pass on compatible AMD, Intel, NVIDIA, and integrated GPUs. CPU remains the fallback.",
+        "The five required artifacts total 709,120,613 bytes. The online Paraformer and SenseVoiceSmall model weights are Apache-2.0."
+      ],
+      "artifacts": [
+        {
+          "artifactId": "online_encoder",
+          "role": "transcription_model",
+          "required": true,
+          "filename": "encoder.int8.onnx",
+          "downloadUrl": "https://huggingface.co/csukuangfj/sherpa-onnx-streaming-paraformer-bilingual-zh-en/resolve/8e40c43232a1c5c66c82111efc5820d3accca11b/encoder.int8.onnx",
+          "sha256": "81a70226a8934e6ed92aa1d4fc486b428b5398e2f2619ed4897b7294cab90e9a",
+          "sizeBytes": 165462184
+        },
+        {
+          "artifactId": "online_decoder",
+          "role": "supporting_file",
+          "required": true,
+          "filename": "decoder.int8.onnx",
+          "downloadUrl": "https://huggingface.co/csukuangfj/sherpa-onnx-streaming-paraformer-bilingual-zh-en/resolve/8e40c43232a1c5c66c82111efc5820d3accca11b/decoder.int8.onnx",
+          "sha256": "f3cca9f77bb9d93c8fcbfb63ae617b6b1ee96818df3aa3b151c40658fe38594f",
+          "sizeBytes": 71664561
+        },
+        {
+          "artifactId": "online_tokens",
+          "role": "supporting_file",
+          "required": true,
+          "filename": "tokens.txt",
+          "downloadUrl": "https://huggingface.co/csukuangfj/sherpa-onnx-streaming-paraformer-bilingual-zh-en/resolve/8e40c43232a1c5c66c82111efc5820d3accca11b/tokens.txt",
+          "sha256": "59aba8873a2ed1e122c25fee421e25f283b63290efbde85c1f01a853d83cb6e6",
+          "sizeBytes": 75756
+        },
+        {
+          "artifactId": "sensevoice_final",
+          "role": "supporting_file",
+          "required": true,
+          "filename": "sensevoice-small-f16.gguf",
+          "downloadUrl": "https://huggingface.co/FunAudioLLM/SenseVoiceSmall-GGUF/resolve/90c1c61912018b70ada0fcc024ea24aca62f2e63/sensevoice-small-f16.gguf",
+          "sha256": "2389039651f4574dbd674f1f1e296b8b1147b2e19a5fd9c2cd69e82669c78d8e",
+          "sizeBytes": 470197600
+        },
+        {
+          "artifactId": "fsmn_vad",
+          "role": "supporting_file",
+          "required": true,
+          "filename": "fsmn-vad.gguf",
+          "downloadUrl": "https://huggingface.co/FunAudioLLM/fsmn-vad-GGUF/resolve/6840bae4c5c92ee8c04faaf4db23dd0105098d7f/fsmn-vad.gguf",
+          "sha256": "1270f2559c495f4e7b6e739541151027d360761a3fda43fc147034f5719f5479",
+          "sizeBytes": 1720512
+        }
+      ]
+    },
+    {
+      "runtimeId": "funasr_llamacpp",
+      "familyId": "funasr_hybrid",
+      "task": "stt",
+      "modelId": "funasr_sensevoice_paraformer_zh_streaming_f32",
+      "collectionId": "funasr_chinese_streaming",
+      "displayName": "FunASR SenseVoiceSmall F32 Live",
+      "summary": "Chinese live dictation with a Paraformer draft and the full-precision SenseVoiceSmall F32 final pass after each pause.",
+      "languageTags": ["zh", "yue", "en", "ja", "ko"],
+      "supportsAutomaticLanguageDetection": true,
+      "supportedAccelerators": ["cpu", "vulkan"],
+      "uxTags": ["streaming", "accuracy", "vulkan", "cpu-fallback", "heavy"],
+      "licenseLabel": "Apache-2.0",
+      "licenseUrl": "https://www.apache.org/licenses/LICENSE-2.0",
+      "sourceUrl": "https://huggingface.co/csukuangfj/sherpa-onnx-streaming-paraformer-bilingual-zh-en/tree/8e40c43232a1c5c66c82111efc5820d3accca11b",
+      "modelCardUrl": "https://huggingface.co/FunAudioLLM/SenseVoiceSmall-GGUF/tree/90c1c61912018b70ada0fcc024ea24aca62f2e63",
+      "notes": [
+        "Live text is provisional: the Paraformer draft may revise while you speak. The text committed after a pause comes from the full-utterance SenseVoiceSmall pass.",
+        "On Linux, the packaged official FunASR Vulkan runtime accelerates the final SenseVoiceSmall pass on compatible AMD, Intel, NVIDIA, and integrated GPUs. CPU remains the fallback.",
+        "The five required artifacts total 1,175,344,229 bytes. The online Paraformer and SenseVoiceSmall model weights are Apache-2.0."
+      ],
+      "artifacts": [
+        {
+          "artifactId": "online_encoder",
+          "role": "transcription_model",
+          "required": true,
+          "filename": "encoder.int8.onnx",
+          "downloadUrl": "https://huggingface.co/csukuangfj/sherpa-onnx-streaming-paraformer-bilingual-zh-en/resolve/8e40c43232a1c5c66c82111efc5820d3accca11b/encoder.int8.onnx",
+          "sha256": "81a70226a8934e6ed92aa1d4fc486b428b5398e2f2619ed4897b7294cab90e9a",
+          "sizeBytes": 165462184
+        },
+        {
+          "artifactId": "online_decoder",
+          "role": "supporting_file",
+          "required": true,
+          "filename": "decoder.int8.onnx",
+          "downloadUrl": "https://huggingface.co/csukuangfj/sherpa-onnx-streaming-paraformer-bilingual-zh-en/resolve/8e40c43232a1c5c66c82111efc5820d3accca11b/decoder.int8.onnx",
+          "sha256": "f3cca9f77bb9d93c8fcbfb63ae617b6b1ee96818df3aa3b151c40658fe38594f",
+          "sizeBytes": 71664561
+        },
+        {
+          "artifactId": "online_tokens",
+          "role": "supporting_file",
+          "required": true,
+          "filename": "tokens.txt",
+          "downloadUrl": "https://huggingface.co/csukuangfj/sherpa-onnx-streaming-paraformer-bilingual-zh-en/resolve/8e40c43232a1c5c66c82111efc5820d3accca11b/tokens.txt",
+          "sha256": "59aba8873a2ed1e122c25fee421e25f283b63290efbde85c1f01a853d83cb6e6",
+          "sizeBytes": 75756
+        },
+        {
+          "artifactId": "sensevoice_final",
+          "role": "supporting_file",
+          "required": true,
+          "filename": "sensevoice-small-f32.gguf",
+          "downloadUrl": "https://huggingface.co/FunAudioLLM/SenseVoiceSmall-GGUF/resolve/90c1c61912018b70ada0fcc024ea24aca62f2e63/sensevoice-small.gguf",
+          "sha256": "62bbbd6bc97bdb55a53957c768f9e7f38e6b818fb720ba46d6ff52d4cc200ff0",
+          "sizeBytes": 936421216
+        },
+        {
+          "artifactId": "fsmn_vad",
+          "role": "supporting_file",
+          "required": true,
+          "filename": "fsmn-vad.gguf",
+          "downloadUrl": "https://huggingface.co/FunAudioLLM/fsmn-vad-GGUF/resolve/6840bae4c5c92ee8c04faaf4db23dd0105098d7f/fsmn-vad.gguf",
+          "sha256": "1270f2559c495f4e7b6e739541151027d360761a3fda43fc147034f5719f5479",
+          "sizeBytes": 1720512
+        }
+      ]
+    },
+    {
+      "runtimeId": "funasr_llamacpp",
+      "familyId": "funasr_hybrid",
+      "task": "stt",
+      "modelId": "funasr_nano_paraformer_zh_streaming_q4km",
+      "collectionId": "funasr_chinese_streaming",
+      "displayName": "Fun-ASR Nano Q4_K_M Live",
+      "summary": "Higher-accuracy Chinese final transcription with Fun-ASR Nano Q4_K_M, plus a low-latency Paraformer draft while speaking.",
+      "languageTags": ["zh", "en"],
+      "supportsAutomaticLanguageDetection": true,
+      "supportedAccelerators": ["cpu"],
+      "uxTags": ["streaming", "smallest", "cpu"],
+      "licenseLabel": "Apache-2.0",
+      "licenseUrl": "https://www.apache.org/licenses/LICENSE-2.0",
+      "sourceUrl": "https://huggingface.co/csukuangfj/sherpa-onnx-streaming-paraformer-bilingual-zh-en/tree/8e40c43232a1c5c66c82111efc5820d3accca11b",
+      "modelCardUrl": "https://huggingface.co/FunAudioLLM/Fun-ASR-Nano-GGUF/tree/46e849502a867080d66d351b8dfb1018b607e509",
+      "notes": [
+        "Live text is provisional: the Paraformer draft may revise while you speak. The text committed after a pause comes from the full-utterance Fun-ASR Nano pass.",
+        "The official v1.4.14 Fun-ASR Nano helper is CPU-only; Linux Vulkan is available when the optional helper is built and staged.",
+        "The six required artifacts total 1,192,473,797 bytes and are Apache-2.0."
+      ],
+      "artifacts": [
+        {
+          "artifactId": "online_encoder",
+          "role": "transcription_model",
+          "required": true,
+          "filename": "encoder.int8.onnx",
+          "downloadUrl": "https://huggingface.co/csukuangfj/sherpa-onnx-streaming-paraformer-bilingual-zh-en/resolve/8e40c43232a1c5c66c82111efc5820d3accca11b/encoder.int8.onnx",
+          "sha256": "81a70226a8934e6ed92aa1d4fc486b428b5398e2f2619ed4897b7294cab90e9a",
+          "sizeBytes": 165462184
+        },
+        {
+          "artifactId": "online_decoder",
+          "role": "supporting_file",
+          "required": true,
+          "filename": "decoder.int8.onnx",
+          "downloadUrl": "https://huggingface.co/csukuangfj/sherpa-onnx-streaming-paraformer-bilingual-zh-en/resolve/8e40c43232a1c5c66c82111efc5820d3accca11b/decoder.int8.onnx",
+          "sha256": "f3cca9f77bb9d93c8fcbfb63ae617b6b1ee96818df3aa3b151c40658fe38594f",
+          "sizeBytes": 71664561
+        },
+        {
+          "artifactId": "online_tokens",
+          "role": "supporting_file",
+          "required": true,
+          "filename": "tokens.txt",
+          "downloadUrl": "https://huggingface.co/csukuangfj/sherpa-onnx-streaming-paraformer-bilingual-zh-en/resolve/8e40c43232a1c5c66c82111efc5820d3accca11b/tokens.txt",
+          "sha256": "59aba8873a2ed1e122c25fee421e25f283b63290efbde85c1f01a853d83cb6e6",
+          "sizeBytes": 75756
+        },
+        {
+          "artifactId": "nano_encoder",
+          "role": "supporting_file",
+          "required": true,
+          "filename": "funasr-encoder-f16.gguf",
+          "downloadUrl": "https://huggingface.co/FunAudioLLM/Fun-ASR-Nano-GGUF/resolve/46e849502a867080d66d351b8dfb1018b607e509/funasr-encoder-f16.gguf",
+          "sha256": "f92f91d01a24fbed6c863495b2ee8c6a6788144a02858b75743f0946668de8a2",
+          "sizeBytes": 469331008
+        },
+        {
+          "artifactId": "nano_llm",
+          "role": "supporting_file",
+          "required": true,
+          "filename": "qwen3-0.6b-q4km.gguf",
+          "downloadUrl": "https://huggingface.co/FunAudioLLM/Fun-ASR-Nano-GGUF/resolve/46e849502a867080d66d351b8dfb1018b607e509/qwen3-0.6b-q4km.gguf",
+          "sha256": "cc5057552aa9dddedcda73ea8889854e8a257eb07d0a561b7234465c1e856f22",
+          "sizeBytes": 484219776
+        },
+        {
+          "artifactId": "fsmn_vad",
+          "role": "supporting_file",
+          "required": true,
+          "filename": "fsmn-vad.gguf",
+          "downloadUrl": "https://huggingface.co/FunAudioLLM/fsmn-vad-GGUF/resolve/6840bae4c5c92ee8c04faaf4db23dd0105098d7f/fsmn-vad.gguf",
+          "sha256": "1270f2559c495f4e7b6e739541151027d360761a3fda43fc147034f5719f5479",
+          "sizeBytes": 1720512
+        }
+      ]
+    },
+    {
+      "runtimeId": "funasr_llamacpp",
+      "familyId": "funasr_hybrid",
+      "task": "stt",
+      "modelId": "funasr_nano_paraformer_zh_streaming_q5km",
+      "collectionId": "funasr_chinese_streaming",
+      "displayName": "Fun-ASR Nano Q5_K_M Live",
+      "summary": "Higher-accuracy Chinese final transcription with Fun-ASR Nano Q5_K_M, plus a low-latency Paraformer draft while speaking.",
+      "languageTags": ["zh", "en"],
+      "supportsAutomaticLanguageDetection": true,
+      "supportedAccelerators": ["cpu"],
+      "uxTags": ["streaming", "accuracy", "cpu", "recommended"],
+      "licenseLabel": "Apache-2.0",
+      "licenseUrl": "https://www.apache.org/licenses/LICENSE-2.0",
+      "sourceUrl": "https://huggingface.co/csukuangfj/sherpa-onnx-streaming-paraformer-bilingual-zh-en/tree/8e40c43232a1c5c66c82111efc5820d3accca11b",
+      "modelCardUrl": "https://huggingface.co/FunAudioLLM/Fun-ASR-Nano-GGUF/tree/46e849502a867080d66d351b8dfb1018b607e509",
+      "notes": [
+        "Live text is provisional: the Paraformer draft may revise while you speak. The text committed after a pause comes from the full-utterance Fun-ASR Nano pass.",
+        "The official v1.4.14 Fun-ASR Nano helper is CPU-only; Linux Vulkan is available when the optional helper is built and staged.",
+        "The six required artifacts total 1,259,631,813 bytes and are Apache-2.0."
+      ],
+      "artifacts": [
+        {
+          "artifactId": "online_encoder",
+          "role": "transcription_model",
+          "required": true,
+          "filename": "encoder.int8.onnx",
+          "downloadUrl": "https://huggingface.co/csukuangfj/sherpa-onnx-streaming-paraformer-bilingual-zh-en/resolve/8e40c43232a1c5c66c82111efc5820d3accca11b/encoder.int8.onnx",
+          "sha256": "81a70226a8934e6ed92aa1d4fc486b428b5398e2f2619ed4897b7294cab90e9a",
+          "sizeBytes": 165462184
+        },
+        {
+          "artifactId": "online_decoder",
+          "role": "supporting_file",
+          "required": true,
+          "filename": "decoder.int8.onnx",
+          "downloadUrl": "https://huggingface.co/csukuangfj/sherpa-onnx-streaming-paraformer-bilingual-zh-en/resolve/8e40c43232a1c5c66c82111efc5820d3accca11b/decoder.int8.onnx",
+          "sha256": "f3cca9f77bb9d93c8fcbfb63ae617b6b1ee96818df3aa3b151c40658fe38594f",
+          "sizeBytes": 71664561
+        },
+        {
+          "artifactId": "online_tokens",
+          "role": "supporting_file",
+          "required": true,
+          "filename": "tokens.txt",
+          "downloadUrl": "https://huggingface.co/csukuangfj/sherpa-onnx-streaming-paraformer-bilingual-zh-en/resolve/8e40c43232a1c5c66c82111efc5820d3accca11b/tokens.txt",
+          "sha256": "59aba8873a2ed1e122c25fee421e25f283b63290efbde85c1f01a853d83cb6e6",
+          "sizeBytes": 75756
+        },
+        {
+          "artifactId": "nano_encoder",
+          "role": "supporting_file",
+          "required": true,
+          "filename": "funasr-encoder-f16.gguf",
+          "downloadUrl": "https://huggingface.co/FunAudioLLM/Fun-ASR-Nano-GGUF/resolve/46e849502a867080d66d351b8dfb1018b607e509/funasr-encoder-f16.gguf",
+          "sha256": "f92f91d01a24fbed6c863495b2ee8c6a6788144a02858b75743f0946668de8a2",
+          "sizeBytes": 469331008
+        },
+        {
+          "artifactId": "nano_llm",
+          "role": "supporting_file",
+          "required": true,
+          "filename": "qwen3-0.6b-q5km.gguf",
+          "downloadUrl": "https://huggingface.co/FunAudioLLM/Fun-ASR-Nano-GGUF/resolve/46e849502a867080d66d351b8dfb1018b607e509/qwen3-0.6b-q5km.gguf",
+          "sha256": "dc2e6e195c534cbaea208c030d3ab55be4d3385ae4b726966cff8639a69aa2a2",
+          "sizeBytes": 551377792
+        },
+        {
+          "artifactId": "fsmn_vad",
+          "role": "supporting_file",
+          "required": true,
+          "filename": "fsmn-vad.gguf",
+          "downloadUrl": "https://huggingface.co/FunAudioLLM/fsmn-vad-GGUF/resolve/6840bae4c5c92ee8c04faaf4db23dd0105098d7f/fsmn-vad.gguf",
+          "sha256": "1270f2559c495f4e7b6e739541151027d360761a3fda43fc147034f5719f5479",
+          "sizeBytes": 1720512
+        }
+      ]
+    },
+    {
+      "runtimeId": "funasr_llamacpp",
+      "familyId": "funasr_hybrid",
+      "task": "stt",
+      "modelId": "funasr_nano_paraformer_zh_streaming_q8_0",
+      "collectionId": "funasr_chinese_streaming",
+      "displayName": "Fun-ASR Nano Q8_0 Live",
+      "summary": "Higher-accuracy Chinese final transcription with Fun-ASR Nano Q8_0, plus a low-latency Paraformer draft while speaking.",
+      "languageTags": ["zh", "en"],
+      "supportsAutomaticLanguageDetection": true,
+      "supportedAccelerators": ["cpu"],
+      "uxTags": ["streaming", "accuracy", "cpu", "heavy"],
+      "licenseLabel": "Apache-2.0",
+      "licenseUrl": "https://www.apache.org/licenses/LICENSE-2.0",
+      "sourceUrl": "https://huggingface.co/csukuangfj/sherpa-onnx-streaming-paraformer-bilingual-zh-en/tree/8e40c43232a1c5c66c82111efc5820d3accca11b",
+      "modelCardUrl": "https://huggingface.co/FunAudioLLM/Fun-ASR-Nano-GGUF/tree/46e849502a867080d66d351b8dfb1018b607e509",
+      "notes": [
+        "Live text is provisional: the Paraformer draft may revise while you speak. The text committed after a pause comes from the full-utterance Fun-ASR Nano pass.",
+        "The official v1.4.14 Fun-ASR Nano helper is CPU-only; Linux Vulkan is available when the optional helper is built and staged.",
+        "The six required artifacts total 1,513,007,301 bytes and are Apache-2.0."
+      ],
+      "artifacts": [
+        {
+          "artifactId": "online_encoder",
+          "role": "transcription_model",
+          "required": true,
+          "filename": "encoder.int8.onnx",
+          "downloadUrl": "https://huggingface.co/csukuangfj/sherpa-onnx-streaming-paraformer-bilingual-zh-en/resolve/8e40c43232a1c5c66c82111efc5820d3accca11b/encoder.int8.onnx",
+          "sha256": "81a70226a8934e6ed92aa1d4fc486b428b5398e2f2619ed4897b7294cab90e9a",
+          "sizeBytes": 165462184
+        },
+        {
+          "artifactId": "online_decoder",
+          "role": "supporting_file",
+          "required": true,
+          "filename": "decoder.int8.onnx",
+          "downloadUrl": "https://huggingface.co/csukuangfj/sherpa-onnx-streaming-paraformer-bilingual-zh-en/resolve/8e40c43232a1c5c66c82111efc5820d3accca11b/decoder.int8.onnx",
+          "sha256": "f3cca9f77bb9d93c8fcbfb63ae617b6b1ee96818df3aa3b151c40658fe38594f",
+          "sizeBytes": 71664561
+        },
+        {
+          "artifactId": "online_tokens",
+          "role": "supporting_file",
+          "required": true,
+          "filename": "tokens.txt",
+          "downloadUrl": "https://huggingface.co/csukuangfj/sherpa-onnx-streaming-paraformer-bilingual-zh-en/resolve/8e40c43232a1c5c66c82111efc5820d3accca11b/tokens.txt",
+          "sha256": "59aba8873a2ed1e122c25fee421e25f283b63290efbde85c1f01a853d83cb6e6",
+          "sizeBytes": 75756
+        },
+        {
+          "artifactId": "nano_encoder",
+          "role": "supporting_file",
+          "required": true,
+          "filename": "funasr-encoder-f16.gguf",
+          "downloadUrl": "https://huggingface.co/FunAudioLLM/Fun-ASR-Nano-GGUF/resolve/46e849502a867080d66d351b8dfb1018b607e509/funasr-encoder-f16.gguf",
+          "sha256": "f92f91d01a24fbed6c863495b2ee8c6a6788144a02858b75743f0946668de8a2",
+          "sizeBytes": 469331008
+        },
+        {
+          "artifactId": "nano_llm",
+          "role": "supporting_file",
+          "required": true,
+          "filename": "qwen3-0.6b-q8_0.gguf",
+          "downloadUrl": "https://huggingface.co/FunAudioLLM/Fun-ASR-Nano-GGUF/resolve/46e849502a867080d66d351b8dfb1018b607e509/qwen3-0.6b-q8_0.gguf",
+          "sha256": "819f385dc0e035dccc3d9e7edaf6b7b044b8ba7ace63cbcbf84c7e397eecbf27",
+          "sizeBytes": 804753280
+        },
+        {
+          "artifactId": "fsmn_vad",
+          "role": "supporting_file",
+          "required": true,
+          "filename": "fsmn-vad.gguf",
+          "downloadUrl": "https://huggingface.co/FunAudioLLM/fsmn-vad-GGUF/resolve/6840bae4c5c92ee8c04faaf4db23dd0105098d7f/fsmn-vad.gguf",
+          "sha256": "1270f2559c495f4e7b6e739541151027d360761a3fda43fc147034f5719f5479",
+          "sizeBytes": 1720512
+        }
+      ]
+    },
+    {
       "runtimeId": "onnx_runtime",
       "familyId": "nemotron_asr",
       "task": "stt",
       "modelId": "nemotron_asr_0_6b_int8_streaming_560ms",
       "collectionId": "nemotron_asr_streaming",
       "displayName": "Nemotron 3.5 ASR 560 ms",
-      "summary": "NVIDIA's 0.6B multilingual RNNT, exported to int8 ONNX for cache-aware live transcription in eight verified languages.",
-      "languageTags": ["en", "es", "de", "fr", "pt", "it", "nl", "ja", "hr"],
+      "summary": "NVIDIA's 0.6B multilingual RNNT, exported to int8 ONNX for cache-aware live transcription in 28 supported languages.",
+      "languageTags": [
+        "en",
+        "es",
+        "de",
+        "fr",
+        "pt",
+        "it",
+        "nl",
+        "ja",
+        "zh",
+        "hr",
+        "ar",
+        "bg",
+        "cs",
+        "da",
+        "et",
+        "fi",
+        "hi",
+        "hu",
+        "ko",
+        "nb",
+        "pl",
+        "ro",
+        "ru",
+        "sk",
+        "sv",
+        "tr",
+        "uk",
+        "vi"
+      ],
       "supportsAutomaticLanguageDetection": true,
       "uxTags": ["streaming", "accuracy", "cpu"],
       "licenseLabel": "OpenMDW-1.1",
@@ -756,7 +1541,7 @@
       "sourceUrl": "https://huggingface.co/csukuangfj2/sherpa-onnx-nemotron-3.5-asr-streaming-0.6b-560ms-int8-2026-06-11/tree/ab43d895f5985b1bbab8b6eac8607fcdc05343f3",
       "modelCardUrl": "https://huggingface.co/nvidia/nemotron-3.5-asr-streaming-0.6b/tree/f3d333391852ba876df169dcc9ba902d25b6ab0b",
       "notes": [
-        "Supports manual English, Spanish, German, French, Portuguese, Italian, Dutch, and Japanese selection, plus automatic detection.",
+        "Supports all 28 transcription-ready languages declared by the pinned NVIDIA model card, plus automatic detection.",
         "The four required artifacts total about 651 MiB and use the cache-aware 560 ms encoder contract.",
         "The derived model weights are licensed under OpenMDW-1.1, not this project's MIT license. Installing or using the model accepts those terms."
       ],
@@ -2407,7 +3192,7 @@
       "modelId": "tencent_hy_mt_2_7b_q4_k_m",
       "collectionId": "tencent_hy_mt_translation",
       "displayName": "Tencent HY-MT 2 7B (Q4_K_M)",
-      "summary": "Higher-capacity local translation with a 4.62 GB download and substantially higher memory use.",
+      "summary": "Higher-capacity local translation with a 4.62 GB (4.31 GiB) download and substantially higher memory use.",
       "languageTags": [
         "zh",
         "en",
@@ -2499,7 +3284,7 @@
       "notes": [
         "Downloaded directly from Tencent only when the user explicitly installs it; model bytes are not distributed with the plugin.",
         "Licensed under Apache-2.0; retain Tencent's upstream attribution and notices.",
-        "Heavy model: the 4.62 GB download requires substantially more memory during local translation."
+        "Heavy model: this download requires substantially more memory during local translation."
       ],
       "artifacts": [
         {

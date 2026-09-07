@@ -12,8 +12,9 @@ import type { UserFeedback } from '../shared/user-feedback';
 import { SidecarLifecycleConflictError } from '../sidecar/sidecar-lifecycle-gate';
 import { ConfirmModal } from '../ui/confirm-modal';
 import { styleDestructiveButton } from '../ui/destructive-button';
+import { buildModelRowCapabilityLabels, resolveEngineCapabilities } from './capability-view';
 import { localizeFamilySummary } from './catalog-localization';
-import { formatModelTagLabel } from './model-guidance';
+import { formatModelTagLabel, isRuntimeDerivedModelTag } from './model-guidance';
 import {
   isCancellingPhase,
   type ModelInstallManager,
@@ -80,7 +81,7 @@ export interface ModelLanguageOption {
 
 export const ALL_MODEL_LANGUAGES: ModelLanguageFilter = { kind: 'all' };
 
-const MODEL_LANGUAGE_ORDER = ['en', 'fr', 'de', 'es', 'pt', 'it', 'nl', 'ja'] as const;
+const MODEL_LANGUAGE_ORDER = ['en', 'fr', 'de', 'es', 'pt', 'it', 'nl', 'ja', 'zh'] as const;
 
 export function deriveModelLanguageOptions(
   models: readonly CatalogModelRecord[],
@@ -650,6 +651,7 @@ export class ManageModelsModal extends Modal {
               .setButtonText(t('common.install'))
               .setDisabled(this.actionInProgress || !supportsSelectedLanguage)
               .onClick(() => {
+                if (!supportsSelectedLanguage) return;
                 this.requestModelInstall(row.model);
               });
           });
@@ -871,6 +873,9 @@ export class ManageModelsModal extends Modal {
   }
 
   private requestModelInstall(model: CatalogModelRecord): void {
+    const selectedLanguage = this.deps.manager.getDictationLanguage();
+    if (model.task === 'stt' && !catalogModelSupportsLanguage(model, selectedLanguage)) return;
+
     const confirmation = resolveModelPresentationPolicy(model).installConfirmation;
     const install = async (): Promise<void> => {
       await this.runAction(
@@ -1122,16 +1127,41 @@ export class ManageModelsModal extends Modal {
     const frag = createFragment();
     const tagsContainer = frag.createSpan({ cls: 'local-stt-tags' });
     const policy = resolveModelPresentationPolicy(model);
+    const state = this.deps.manager.getState();
+    const capabilities = resolveEngineCapabilities(
+      state.compiledRuntimes,
+      state.compiledAdapters,
+      model.runtimeId,
+      model.familyId,
+    );
+    const renderedLabels = new Set<string>();
+    const appendTag = (label: string, cls = 'local-stt-tag'): void => {
+      if (renderedLabels.has(label)) return;
+      renderedLabels.add(label);
+      tagsContainer.createSpan({ cls, text: label });
+    };
 
     for (const tag of model.uxTags) {
+      if (capabilities !== null && isRuntimeDerivedModelTag(tag)) continue;
       const policyBadge = policy.badges.find((badge) => badge.tag === tag);
-      tagsContainer.createSpan({
-        cls:
-          policyBadge?.tone === 'warning'
-            ? 'local-stt-tag local-stt-tag--warning'
-            : 'local-stt-tag',
-        text: policyBadge?.label ?? formatModelTagLabel(tag),
-      });
+      appendTag(
+        policyBadge?.label ?? formatModelTagLabel(tag),
+        policyBadge?.tone === 'warning' ? 'local-stt-tag local-stt-tag--warning' : 'local-stt-tag',
+      );
+    }
+
+    if (capabilities !== null) {
+      for (const label of buildModelRowCapabilityLabels(model, capabilities)) {
+        appendTag(label, 'local-stt-tag local-stt-tag--capability');
+      }
+    }
+
+    for (const language of model.languageTags) {
+      const label =
+        model.languageTags.length === 1 && language === 'en'
+          ? t('models.capability.englishOnly')
+          : formatCatalogLanguageLabel(language);
+      appendTag(label, 'local-stt-tag local-stt-tag--language');
     }
 
     const totalSize = getTotalModelSize(model);

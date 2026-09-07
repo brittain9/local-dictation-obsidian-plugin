@@ -154,14 +154,14 @@ fn pinned_english_model_round_trips_through_whisper() {
 
     let whisper_path = common::model::require_whisper_model();
     let mut whisper = WhisperAdapter
-        .load(&whisper_path, GpuConfig { use_gpu: false })
+        .load(&whisper_path, GpuConfig::default())
         .expect("Whisper should load");
     let transcript = whisper
         .transcribe(&TranscriptionRequest {
             audio_samples,
             context: None,
             detailed_timestamps_enabled: false,
-            gpu_config: GpuConfig { use_gpu: false },
+            gpu_config: GpuConfig::default(),
             language: "en".to_string(),
             model_file_path: whisper_path,
         })
@@ -227,7 +227,7 @@ fn pinned_multilingual_models_meet_quality_and_throughput_gates() {
 
     let whisper_path = common::model::require_multilingual_whisper_model();
     let mut whisper = WhisperAdapter
-        .load(&whisper_path, GpuConfig { use_gpu: false })
+        .load(&whisper_path, GpuConfig::default())
         .expect("multilingual Whisper should load");
 
     for (model_id, language, latency_prompt, reference) in FIXTURES {
@@ -286,7 +286,7 @@ fn pinned_multilingual_models_meet_quality_and_throughput_gates() {
                 audio_samples: resample_24khz_to_16khz(&synthesized.samples),
                 context: None,
                 detailed_timestamps_enabled: false,
-                gpu_config: GpuConfig { use_gpu: false },
+                gpu_config: GpuConfig::default(),
                 language: language.to_string(),
                 model_file_path: whisper_path.clone(),
             })

@@ -1,5 +1,6 @@
 import type { DictationLanguage } from '../language/dictation-language';
 import type {
+  AcceleratorId,
   InstalledModelRecord,
   ModelCatalogRecord,
   ModelFamilyCapabilitiesRecord,
@@ -135,6 +136,7 @@ export interface StartSessionCommand extends EnvelopeBase<'start_session'> {
   sessionStartUnixMs: number;
   sessionId: string;
   speakingStyle: SpeakingStyle;
+  forceContinuousTranscription?: boolean;
 }
 
 export interface ContextResponseCommand extends EnvelopeBase<'context_response'> {
@@ -360,6 +362,7 @@ export interface TranslationErrorEvent extends EnvelopeBase<'translation_error'>
 }
 
 export interface SessionStartedEvent extends EnvelopeBase<'session_started'> {
+  accelerator?: AcceleratorId;
   mode: ListeningMode;
   sessionId: string;
 }

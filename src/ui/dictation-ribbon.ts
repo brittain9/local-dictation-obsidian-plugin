@@ -2,6 +2,7 @@ import { setIcon } from 'obsidian';
 
 import { type AudioBandReader, BAND_COUNT } from '../audio/audio-bands';
 import type { DictationControllerState } from '../dictation/dictation-session-controller';
+import type { AcceleratorId } from '../models/model-management-types';
 import { t } from '../shared/i18n';
 import type { QueueBackpressureTier } from '../sidecar/protocol';
 
@@ -42,11 +43,29 @@ export class DictationRibbonController {
   private holdTimer: number | null = null;
   private queueTier: QueueBackpressureTier = 'normal';
   private currentIcon: RibbonIcon | null = null;
+  private accelerator: AcceleratorId | null = null;
+  private bufferLength = 0;
+  private readonly acceleratorBadge: HTMLSpanElement;
+  private readonly bufferBadge: HTMLSpanElement;
 
   constructor(private readonly element: HTMLElement) {
     this.reducedMotion = matchMedia(REDUCED_MOTION_QUERY);
     this.reducedMotionListener = (): void => this.onReducedMotionChange();
     this.reducedMotion.addEventListener('change', this.reducedMotionListener);
+    const elementWithDom = this.element as HTMLElement & {
+      classList?: DOMTokenList;
+      append?: (...nodes: Node[]) => void;
+    };
+    elementWithDom.classList?.add('local-stt-ribbon-action');
+    if (typeof document !== 'undefined' && elementWithDom.append !== undefined) {
+      this.acceleratorBadge = this.element.createSpan({ cls: 'local-stt-ribbon__accelerator' });
+      this.bufferBadge = this.element.createSpan({ cls: 'local-stt-ribbon__buffer' });
+      elementWithDom.append(this.acceleratorBadge, this.bufferBadge);
+    } else {
+      this.acceleratorBadge = { textContent: '' } as HTMLSpanElement;
+      this.bufferBadge = { textContent: '' } as HTMLSpanElement;
+    }
+    this.renderBadges();
     this.render();
   }
 
@@ -90,6 +109,16 @@ export class DictationRibbonController {
     this.syncAnimation();
   }
 
+  setAccelerator(accelerator: AcceleratorId | null): void {
+    this.accelerator = accelerator;
+    this.renderBadges();
+  }
+
+  setBufferLength(queuedUtterances: number): void {
+    this.bufferLength = Math.max(0, Math.floor(queuedUtterances));
+    this.renderBadges();
+  }
+
   dispose(): void {
     this.cancelHold();
     this.stopAnimation();
@@ -99,8 +128,24 @@ export class DictationRibbonController {
 
   private render(): void {
     this.paintIcon(this.visualState);
+    this.appendBadges();
     this.element.dataset.localSttState = this.visualState;
     this.renderLabel();
+  }
+
+  private appendBadges(): void {
+    const elementWithDom = this.element as HTMLElement & {
+      append?: (...nodes: Node[]) => void;
+    };
+    // Obsidian's setIcon() replaces the action's children. Re-appending moves
+    // existing badges back after the SVG without duplicating them.
+    elementWithDom.append?.(this.acceleratorBadge, this.bufferBadge);
+  }
+
+  private renderBadges(): void {
+    this.acceleratorBadge.textContent = acceleratorBadgeText(this.accelerator);
+    this.bufferBadge.textContent = `${this.bufferLength}`;
+    this.element.dataset.localSttAccelerator = this.accelerator ?? 'none';
   }
 
   private renderLabel(): void {
@@ -221,6 +266,23 @@ export class DictationRibbonController {
     for (let i = 0; i < BAND_COUNT; i++) {
       this.element.style.removeProperty(`--local-stt-bar-${i + 1}`);
     }
+  }
+}
+
+function acceleratorBadgeText(accelerator: AcceleratorId | null): string {
+  switch (accelerator) {
+    case 'cuda':
+      return 'N';
+    case 'vulkan':
+      return 'V';
+    case 'cpu':
+      return 'C';
+    case 'metal':
+      return 'M';
+    case 'direct_ml':
+      return 'D';
+    case null:
+      return '';
   }
 }
 

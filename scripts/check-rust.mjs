@@ -2,8 +2,17 @@ import { execFileSync } from 'node:child_process';
 import { resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
-const ALL_ENGINE_FEATURES =
-  'engine-cohere-transcribe,engine-hy-mt,engine-moonshine,engine-nemotron-asr,engine-pocket-tts,engine-supertonic,engine-whisper';
+const engineFeatures = [
+  'engine-cohere-transcribe',
+  ...(process.platform === 'linux' && process.arch === 'x64' ? ['engine-funasr'] : []),
+  'engine-hy-mt',
+  'engine-moonshine',
+  'engine-nemotron-asr',
+  'engine-pocket-tts',
+  'engine-supertonic',
+  'engine-whisper',
+];
+const ALL_ENGINE_FEATURES = engineFeatures.join(',');
 
 export function buildRustQualityCommands(environment = process.env) {
   return [

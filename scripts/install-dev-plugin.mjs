@@ -4,6 +4,7 @@ import { basename, join, resolve } from 'node:path';
 import process from 'node:process';
 
 import { listCudaArtifacts } from './lib/cuda-artifacts.mjs';
+import { requireFunasrSidecarArtifacts } from './lib/funasr-runtime.mjs';
 
 const PLUGIN_ID = 'local-dictation';
 const PLUGIN_FILES = ['manifest.json', 'main.js', 'styles.css'];
@@ -34,21 +35,38 @@ async function main(options) {
   }
 
   if (options.sidecars) {
+    const cpuSourceDirectory = join('native', 'target', profile);
+    const cpuFunasrArtifacts = await requireFunasrSidecarArtifacts({
+      destinationDirectory: cpuSourceDirectory,
+    });
     await installSidecarVariant({
-      artifacts: [SIDECAR_EXECUTABLE, TRANSLATION_HELPER_EXECUTABLE],
+      artifacts: [
+        SIDECAR_EXECUTABLE,
+        TRANSLATION_HELPER_EXECUTABLE,
+        ...cpuFunasrArtifacts.map((path) => basename(path)),
+      ],
       destination: join(pluginDirectory, 'bin', 'cpu'),
       profile,
-      sourceDirectory: join('native', 'target', profile),
+      sourceDirectory: cpuSourceDirectory,
       variant: 'cpu',
     });
 
+    const cudaSourceDirectory = join('native', 'target-cuda', profile);
+    const cudaFunasrArtifacts = (await fileExists(join(cudaSourceDirectory, SIDECAR_EXECUTABLE)))
+      ? await requireFunasrSidecarArtifacts({ destinationDirectory: cudaSourceDirectory })
+      : [];
     await installSidecarVariant({
       allowMissingArtifacts: true,
-      artifacts: [SIDECAR_EXECUTABLE, TRANSLATION_HELPER_EXECUTABLE, ...(await getCudaArtifacts())],
+      artifacts: [
+        SIDECAR_EXECUTABLE,
+        TRANSLATION_HELPER_EXECUTABLE,
+        ...(await getCudaArtifacts()),
+        ...cudaFunasrArtifacts.map((path) => basename(path)),
+      ],
       destination: join(pluginDirectory, 'bin', 'cuda'),
       optional: true,
       profile,
-      sourceDirectory: join('native', 'target-cuda', profile),
+      sourceDirectory: cudaSourceDirectory,
       variant: 'cuda',
     });
   }

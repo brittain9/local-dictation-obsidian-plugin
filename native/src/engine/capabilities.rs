@@ -7,6 +7,8 @@ use serde::{Deserialize, Serialize};
 #[serde(rename_all = "snake_case")]
 pub enum RuntimeId {
     BergamotWasm,
+    #[serde(rename = "funasr_llamacpp")]
+    FunasrLlamaCpp,
     LlamaCpp,
     OnnxRuntime,
     WhisperCpp,
@@ -16,6 +18,7 @@ impl RuntimeId {
     pub fn as_str(self) -> &'static str {
         match self {
             Self::BergamotWasm => "bergamot_wasm",
+            Self::FunasrLlamaCpp => "funasr_llamacpp",
             Self::LlamaCpp => "llama_cpp",
             Self::OnnxRuntime => "onnx_runtime",
             Self::WhisperCpp => "whisper_cpp",
@@ -25,6 +28,7 @@ impl RuntimeId {
     pub fn display_name(self) -> &'static str {
         match self {
             Self::BergamotWasm => "Bergamot WebAssembly",
+            Self::FunasrLlamaCpp => "FunASR (llama.cpp)",
             Self::LlamaCpp => "llama.cpp",
             Self::OnnxRuntime => "ONNX Runtime",
             Self::WhisperCpp => "whisper.cpp",
@@ -39,6 +43,7 @@ pub enum ModelFamilyId {
     FirefoxTranslations,
     TencentHyMt,
     CohereTranscribe,
+    FunasrHybrid,
     Moonshine,
     NemotronAsr,
     PocketTts,
@@ -52,6 +57,7 @@ impl ModelFamilyId {
             Self::FirefoxTranslations => "firefox_translations",
             Self::TencentHyMt => "tencent_hy_mt",
             Self::CohereTranscribe => "cohere_transcribe",
+            Self::FunasrHybrid => "funasr_hybrid",
             Self::Moonshine => "moonshine",
             Self::NemotronAsr => "nemotron_asr",
             Self::PocketTts => "pocket_tts",
@@ -65,6 +71,7 @@ impl ModelFamilyId {
             Self::FirefoxTranslations => "Firefox Translations",
             Self::TencentHyMt => "Tencent HY-MT 2",
             Self::CohereTranscribe => "Cohere Transcribe",
+            Self::FunasrHybrid => "FunASR Chinese Hybrid",
             Self::Moonshine => "Moonshine",
             Self::NemotronAsr => "NVIDIA Nemotron 3.5 ASR",
             Self::PocketTts => "Pocket TTS",
@@ -81,6 +88,7 @@ pub enum AcceleratorId {
     Cuda,
     Metal,
     DirectMl,
+    Vulkan,
 }
 
 impl AcceleratorId {
@@ -90,6 +98,7 @@ impl AcceleratorId {
             Self::Cuda => "cuda",
             Self::Metal => "metal",
             Self::DirectMl => "direct_ml",
+            Self::Vulkan => "vulkan",
         }
     }
 }

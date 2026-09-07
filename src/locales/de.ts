@@ -752,7 +752,7 @@ export const de = {
   'catalog.moonshine_medium_streaming_en.summary':
     'Genauestes Moonshine-Streaming-Modell mit 245 M Parametern.',
   'catalog.nemotron_asr_0_6b_int8_streaming_560ms.summary':
-    'NVIDIAs mehrsprachiges RNNT mit 0,6 Milliarden Parametern, als int8-ONNX exportiert für cachegestützte Live-Transkription in acht geprüften Sprachen.',
+    'NVIDIAs mehrsprachiges RNNT mit 0,6 Milliarden Parametern, als int8-ONNX exportiert für cachegestützte Live-Transkription in 28 unterstützten Sprachen.',
   'catalog.family.whisper.summary':
     'Transkribiert nach jeder Pause. Whisper bietet genauere Zeitstempel als andere Modellfamilien, einschließlich optionaler Timing auf Wortebene. Tiny und Base begünstigen Geschwindigkeit, Small balanciert Geschwindigkeit und Qualität und Medium und Large begünstigen Qualität.',
   'catalog.family.cohere_transcribe.summary':
@@ -863,4 +863,23 @@ export const de = {
     'Schnelle lokale Übersetzung zwischen Englisch und sieben Sprachen mit in Firefox veröffentlichten Modellen.',
   'catalog.family.firefox_translations.summary':
     'Übersetzt Notiztext lokal mit der kompakten Bergamot-Engine und Firefox-Modellen.',
+  'audioFile.busy': 'Eine andere Datei wird bereits transkribiert.',
+  'audioFile.cancel': 'Transkription abbrechen',
+  'audioFile.cancelled': 'Transkription von {name} abgebrochen.',
+  'audioFile.completed': 'Transkriptnotiz erstellt: {path}',
+  'audioFile.engineBusy': 'Die Sprach-Engine wird gerade installiert oder neu gestartet.',
+  'audioFile.failed': '{name} konnte nicht transkribiert werden.',
+  'audioFile.markdownCompleted': '{completed} von {total} eingebetteten Aufnahmen transkribiert.',
+  'audioFile.noEmbeddedAudio': 'In {name} wurden keine lokalen Audioaufnahmen gefunden.',
+  'audioFile.noSpeech': 'In {name} wurde keine Sprache erkannt.',
+  'audioFile.outputExists': 'Unter {path} ist bereits eine Transkriptnotiz vorhanden.',
+  'audioFile.started': '{name} wird lokal transkribiert…',
+  'audioFile.transcriptLabel': 'Transkript',
+  'commands.transcribeAudioFile': 'Audio in Notiz transkribieren',
+  'commands.transcribeEmbeddedAudio': 'Eingebettete Aufnahmen transkribieren',
+  'settings.fileTranscription.name': 'Menüs zur Dateitranskription',
+  'settings.fileTranscription.desc':
+    'Transkriptionsaktionen zu den Kontextmenüs von Audio- und Markdown-Dateien hinzufügen.',
+  'settings.developerMode.name': 'Entwicklermodus',
+  'settings.developerMode.desc': 'Ausführliche Plugin-Protokolle zur Fehlerbehebung aktivieren.',
 } as const satisfies TranslationCatalog;

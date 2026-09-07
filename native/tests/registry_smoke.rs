@@ -8,7 +8,11 @@
 
 use std::path::Path;
 
-#[cfg(any(feature = "engine-nemotron-asr", feature = "engine-supertonic"))]
+#[cfg(any(
+    feature = "engine-funasr",
+    feature = "engine-nemotron-asr",
+    feature = "engine-supertonic"
+))]
 use local_dictation_sidecar::engine::LanguageSupport;
 use local_dictation_sidecar::engine::{
     AcceleratorId, EngineRegistry, ModelFamilyId, RuntimeId, missing_adapter_error,
@@ -29,6 +33,34 @@ fn whisper_pair_is_registered_when_compiled() {
         .merged_capabilities(RuntimeId::WhisperCpp, ModelFamilyId::Whisper)
         .expect("merged capabilities must be present for compiled pair");
     assert!(merged.family.supports_segment_timestamps);
+    assert!(
+        merged
+            .runtime
+            .available_accelerators
+            .contains(&AcceleratorId::Cpu)
+    );
+}
+
+#[cfg(feature = "engine-funasr")]
+#[test]
+fn funasr_pair_is_registered_when_compiled() {
+    let registry = EngineRegistry::build();
+
+    let adapter = registry
+        .adapter(RuntimeId::FunasrLlamaCpp, ModelFamilyId::FunasrHybrid)
+        .expect("FunASR hybrid adapter must be registered when engine-funasr is on");
+    assert_eq!(adapter.runtime_id(), RuntimeId::FunasrLlamaCpp);
+    assert_eq!(adapter.family_id(), ModelFamilyId::FunasrHybrid);
+
+    let merged = registry
+        .merged_capabilities(RuntimeId::FunasrLlamaCpp, ModelFamilyId::FunasrHybrid)
+        .expect("merged capabilities must be present for the compiled FunASR pair");
+    assert!(merged.family.supports_streaming);
+    assert!(merged.family.produces_punctuation);
+    assert!(matches!(
+        merged.family.supported_languages,
+        LanguageSupport::List { ref tags } if tags.contains(&"zh".to_string()) && tags.contains(&"en".to_string())
+    ));
     assert!(
         merged
             .runtime

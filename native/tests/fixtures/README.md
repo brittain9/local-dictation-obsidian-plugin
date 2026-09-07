@@ -58,11 +58,12 @@ under CC BY 4.0 (Panayotov et al., 2015); attribution is recorded per clip in
 
 `multilingual.json` records human validation recordings from the
 [Google FLEURS](https://huggingface.co/datasets/google/fleurs) multilingual ASR
-corpus for Spanish, German, French, Portuguese, Italian, Dutch, and Japanese.
-The clips are parallel readings of FLEURS sentence 1577, converted to the same
-PCM contract and hash-pinned with their dataset config, row, and recording ID.
-Together with the English LibriSpeech fixture above, the heavy multilingual
-suite drives every enabled language through both exact shipping models and the
-complete AppState/VAD/worker pipeline. FLEURS is CC BY 4.0; attribution is also
-recorded in `THIRD_PARTY_NOTICES.md`. One read-speech fixture per language is a
-reproducible release gate, not a substitute for broader native-speaker review.
+corpus for Spanish, German, French, Portuguese, Italian, Dutch, Japanese,
+and Chinese. The clips are parallel readings of FLEURS sentence 1577, converted
+to the same PCM contract and hash-pinned with their dataset config, row, and
+recording ID. Together with the English LibriSpeech fixture above, the heavy
+multilingual suite drives every enabled language through both exact shipping
+models and the complete AppState/VAD/worker pipeline. FLEURS is CC BY 4.0;
+attribution is also recorded in `THIRD_PARTY_NOTICES.md`. One read-speech fixture
+per language is a reproducible release gate, not a substitute for broader
+native-speaker review.

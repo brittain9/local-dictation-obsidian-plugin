@@ -48,7 +48,7 @@ impl Runtime for OnnxRuntime {
 /// per model family only after it proves a meaningful user benefit.
 pub fn build_session(
     model_path: &Path,
-    _gpu_config: GpuConfig,
+    _acceleration_config: GpuConfig,
 ) -> Result<Session, TranscriptionError> {
     Session::builder()
         .map_err(|e| TranscriptionError::transcription_failure("session builder", &e))?

@@ -228,13 +228,14 @@ export class ModelDetailsModal extends Modal {
       dl.createEl('dd', { text: presentation.capabilityLabels.join(', ') });
     }
 
+    appendDetailsValues(dl, t('models.details.languages'), presentation.languages);
+
     if (presentation.installPath !== null) {
       dl.createEl('dt', { text: t('models.details.installPath') });
       dl.createEl('dd', { text: presentation.installPath, cls: 'local-stt-mono' });
     }
 
     if (presentation.tts !== null) {
-      appendDetailsValues(dl, t('models.details.languages'), presentation.tts.languages);
       appendDetailsValues(
         dl,
         t('models.details.availableVoices'),

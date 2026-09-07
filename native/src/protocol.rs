@@ -10,7 +10,7 @@ use crate::catalog::{
     CatalogModel, ModelCollection, ModelFamilyDescriptor, ModelRuntimeDescriptor,
 };
 use crate::engine::capabilities::{
-    EngineCapabilities, ModelFamilyCapabilities, ModelFamilyId, RequestWarning,
+    AcceleratorId, EngineCapabilities, ModelFamilyCapabilities, ModelFamilyId, RequestWarning,
     RuntimeCapabilities, RuntimeId,
 };
 use crate::model_store::InstalledModelRecord;
@@ -318,6 +318,8 @@ pub enum Command {
         session_id: String,
         #[serde(default)]
         speaking_style: SpeakingStyle,
+        #[serde(default)]
+        force_continuous_transcription: bool,
     },
     ContextResponse {
         correlation_id: Uuid,
@@ -525,6 +527,8 @@ pub enum Event {
         message: Option<String>,
     },
     SessionStarted {
+        #[serde(skip_serializing_if = "Option::is_none")]
+        accelerator: Option<AcceleratorId>,
         mode: ListeningMode,
         session_id: String,
     },
@@ -857,6 +861,7 @@ mod tests {
                 diarization_enabled: false,
                 diarization_max_speakers: None,
                 include_system_audio: true,
+                force_continuous_transcription: false,
                 language: "en".to_string(),
                 mode: ListeningMode::AlwaysOn,
                 model_selection: SelectedModel::ExternalFile {

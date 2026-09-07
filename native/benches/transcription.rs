@@ -90,7 +90,7 @@ fn nemotron_benchmark(criterion: &mut Criterion) {
     let samples =
         audio::decode_wav_16k_mono(&fixture.audio_path()).expect("decode pinned Nemotron fixture");
     let mut model = NemotronAsrAdapter
-        .load_streaming(&model_path, GpuConfig { use_gpu: false })
+        .load_streaming(&model_path, GpuConfig::default())
         .expect("load pinned Nemotron model");
 
     let warmup = transcribe_nemotron(model.as_mut(), &samples);

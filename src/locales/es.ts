@@ -744,7 +744,7 @@ export const es = {
   'catalog.moonshine_medium_streaming_en.summary':
     'Modelo de transmisión Moonshine más preciso con parámetros de 245M.',
   'catalog.nemotron_asr_0_6b_int8_streaming_560ms.summary':
-    'RNNT multilingüe 0.6B de NVIDIA, exportado a int8 ONNX para transcripción en vivo con reconocimiento de caché en ocho idiomas verificados.',
+    'RNNT multilingüe 0.6B de NVIDIA, exportado a int8 ONNX para transcripción en vivo con reconocimiento de caché en 28 idiomas compatibles.',
   'catalog.family.whisper.summary':
     'Transcribe después de cada pausa. Whisper proporciona marcas de tiempo más precisas que otras familias de modelos, incluida la sincronización opcional por palabra. Tiny y Base favorecen la velocidad, Small equilibra la velocidad y la calidad, y Medium y Large favorecen la calidad.',
   'catalog.family.cohere_transcribe.summary':
@@ -854,4 +854,25 @@ export const es = {
     'Traducción local rápida entre inglés y siete idiomas mediante modelos publicados en Firefox.',
   'catalog.family.firefox_translations.summary':
     'Traduce texto de notas localmente con el motor compacto Bergamot y modelos de Firefox.',
+  'audioFile.busy': 'Ya se está transcribiendo otro archivo.',
+  'audioFile.cancel': 'Cancelar transcripción',
+  'audioFile.cancelled': 'Se canceló la transcripción de {name}.',
+  'audioFile.completed': 'Nota de transcripción creada: {path}',
+  'audioFile.engineBusy': 'El motor de voz se está instalando o reiniciando.',
+  'audioFile.failed': 'No se pudo transcribir {name}.',
+  'audioFile.markdownCompleted':
+    'Se transcribieron {completed} de {total} grabaciones incrustadas.',
+  'audioFile.noEmbeddedAudio': 'No se encontraron grabaciones de audio locales en {name}.',
+  'audioFile.noSpeech': 'No se detectó voz en {name}.',
+  'audioFile.outputExists': 'Ya existe una nota de transcripción en {path}.',
+  'audioFile.started': 'Transcribiendo {name} localmente…',
+  'audioFile.transcriptLabel': 'Transcripción',
+  'commands.transcribeAudioFile': 'Transcribir audio a una nota',
+  'commands.transcribeEmbeddedAudio': 'Transcribir grabaciones incrustadas',
+  'settings.fileTranscription.name': 'Menús de transcripción de archivos',
+  'settings.fileTranscription.desc':
+    'Añade acciones de transcripción a los menús contextuales de archivos de audio y Markdown.',
+  'settings.developerMode.name': 'Modo de desarrollador',
+  'settings.developerMode.desc':
+    'Activa registros detallados del complemento para solucionar problemas.',
 } as const satisfies TranslationCatalog;
