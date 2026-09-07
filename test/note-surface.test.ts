@@ -291,6 +291,22 @@ describe('NoteSurface', () => {
     expect(doc(view)).toBe('final.\n\n> Final.\n\nnext');
   });
 
+  it('updates an earlier translation after the next utterance and its translation arrive', () => {
+    const { surface, view } = createSurface({ extensions: noteSurfaceUpdateListenerExtension() });
+    view.addUpdateListener((update) => surface.observeTransaction(update));
+    surface.appendProjection('u1', literalProjection('partial'));
+    surface.replaceUtteranceCompanion('u1', '> Early');
+    surface.replaceAnchor('u1', 'Complete first sentence.', 'partial');
+    surface.appendProjection('u2', literalProjection('Second sentence.'));
+    surface.replaceUtteranceCompanion('u2', '> Second translation.');
+
+    expect(surface.replaceUtteranceCompanion('u1', '> Complete first translation.')).toBe(true);
+    expect(doc(view)).toBe(
+      'Complete first sentence.\n\n> Complete first translation.\n\nSecond sentence.\n\n> Second translation.\n\n',
+    );
+    expect(surface.replaceUtteranceCompanion('u2', '> Updated second translation.')).toBe(true);
+  });
+
   it.each([
     ['anchor mode', (surface: NoteSurface) => surface.setAnchorMode('visible')],
     ['processing range', (surface: NoteSurface) => surface.setProcessingRange({ from: 0, to: 1 })],

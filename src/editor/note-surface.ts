@@ -835,7 +835,9 @@ export class NoteSurface {
     }
     for (const companion of this.companionSpans.values()) {
       companion.start = update.changes.mapPos(companion.start, 1);
-      companion.end = update.changes.mapPos(companion.end, 1);
+      // A following utterance inserted at this boundary is outside the
+      // translation; including it would reject a later final replacement.
+      companion.end = update.changes.mapPos(companion.end, -1);
     }
 
     // Tail bias: insertions at the initial anchor extend the writing region.
