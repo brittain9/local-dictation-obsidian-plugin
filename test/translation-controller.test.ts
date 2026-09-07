@@ -155,7 +155,7 @@ describe('TranslationController', () => {
     controller.translateNote(editor as never);
     expect(startTranslation).toHaveBeenCalledTimes(1);
     expect(Modal.instances).toHaveLength(2);
-    listeners[0]?.({
+    listeners[1]?.({
       type: 'translation_progress',
       translationId,
       completed: 1,
@@ -533,7 +533,9 @@ describe('TranslationController', () => {
 
   it('coalesces partial realtime translations and lets the final revision win', async () => {
     const listeners: ((event: SidecarEvent) => void)[] = [];
-    const startTranslation = vi.fn(async (_payload: { translationId: string }) => {});
+    const startTranslation = vi.fn(
+      async (_payload: { texts: string[]; translationId: string }) => {},
+    );
     const cancelTranslation = vi.fn();
     const replaceUtteranceTranslation = vi.fn(() => true);
     const model = translationModel('hy-mt-1.8b', 'HY-MT 2 1.8B');
@@ -575,23 +577,49 @@ describe('TranslationController', () => {
       replaceUtteranceTranslation,
     };
     const firstUpdate = { isFinal: false, revision: 0, utteranceId: 'u1' };
-    const finalUpdate = { isFinal: true, revision: 1, utteranceId: 'u1' };
-    controller.translateRealtime('partial', target, firstUpdate);
+    const secondUpdate = { isFinal: false, revision: 1, utteranceId: 'u1' };
+    const finalUpdate = { isFinal: true, revision: 2, utteranceId: 'u1' };
+    controller.translateRealtime('ok', target, {
+      isFinal: false,
+      revision: 0,
+      utteranceId: 'short-partial',
+    });
     await vi.waitFor(() => expect(startTranslation).toHaveBeenCalledOnce());
-    controller.translateRealtime('final.', target, finalUpdate);
-    const firstId = startTranslation.mock.calls[0]?.[0].translationId;
-    if (firstId === undefined) throw new Error('Expected first translation.');
+    const shortId = startTranslation.mock.calls[0]?.[0].translationId;
+    if (shortId === undefined) throw new Error('Expected short partial translation.');
     listeners[0]?.({
+      type: 'translation_complete',
+      translationId: shortId,
+      translations: ['Vale'],
+    });
+    await vi.waitFor(() => expect(replaceUtteranceTranslation).toHaveBeenCalledOnce());
+    controller.translateRealtime('partial words', target, firstUpdate);
+    await vi.waitFor(() => expect(startTranslation).toHaveBeenCalledTimes(2));
+    controller.translateRealtime('newer partial words', target, secondUpdate);
+    const firstId = startTranslation.mock.calls[1]?.[0].translationId;
+    if (firstId === undefined) throw new Error('Expected first translation.');
+    listeners[1]?.({
       type: 'translation_complete',
       translationId: firstId,
       translations: ['Parcial'],
     });
-    await vi.waitFor(() => expect(startTranslation).toHaveBeenCalledTimes(2));
-    const secondId = startTranslation.mock.calls[1]?.[0].translationId;
-    if (secondId === undefined) throw new Error('Expected final translation.');
-    listeners[1]?.({
+    await vi.waitFor(() => expect(startTranslation).toHaveBeenCalledTimes(3));
+    expect(startTranslation.mock.calls[2]?.[0].texts).toEqual(['newer partial words']);
+    const secondId = startTranslation.mock.calls[2]?.[0].translationId;
+    if (secondId === undefined) throw new Error('Expected second translation.');
+    controller.translateRealtime('final.', target, finalUpdate);
+    listeners[2]?.({
       type: 'translation_complete',
       translationId: secondId,
+      translations: ['Nuevo parcial.'],
+    });
+    await vi.waitFor(() => expect(startTranslation).toHaveBeenCalledTimes(4));
+    expect(startTranslation.mock.calls[3]?.[0].texts).toEqual(['final.']);
+    const finalId = startTranslation.mock.calls[3]?.[0].translationId;
+    if (finalId === undefined) throw new Error('Expected final translation.');
+    listeners[3]?.({
+      type: 'translation_complete',
+      translationId: finalId,
       translations: ['Final.'],
     });
     await vi.waitFor(() => expect(replaceUtteranceTranslation).toHaveBeenCalledTimes(2));

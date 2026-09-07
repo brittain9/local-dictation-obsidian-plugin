@@ -41,7 +41,9 @@ interface RealtimeTranslationUpdate {
 
 interface RealtimeTranslationSlot {
   latest: { source: string; update: RealtimeTranslationUpdate };
-  queued: boolean;
+  processed?: { source: string; update: RealtimeTranslationUpdate };
+  scheduled: boolean;
+  abortController?: AbortController;
   target: RealtimeTranslationTarget;
 }
 
@@ -195,7 +197,6 @@ export class TranslationController {
   ): void {
     const text = source.trim();
     if (text.length === 0 || this.disposed) return;
-    const hasRevisionMetadata = update !== undefined;
     const resolvedUpdate = update ?? {
       isFinal: true,
       revision: 0,
@@ -207,41 +208,27 @@ export class TranslationController {
       slots = new Map();
       this.realtimeSlots.set(targetKey, slots);
     }
-    // Keep the final revision in its own lane. It must run even when a live
-    // partial request for the same utterance has just completed or is still
-    // draining; otherwise the old partial result can remain visible forever.
-    const isFinalRevision = hasRevisionMetadata && resolvedUpdate.isFinal;
-    const key = isFinalRevision
-      ? `${resolvedUpdate.utteranceId}:final`
-      : resolvedUpdate.utteranceId;
+    // Keep all revisions for one utterance in one slot. A final revision
+    // supersedes partial text, while the worker drains the newest snapshot.
+    const key = resolvedUpdate.utteranceId;
     let slot = slots.get(key);
     if (slot === undefined) {
-      if (this.realtimePendingCount >= MAX_REALTIME_TRANSLATION_QUEUE && !isFinalRevision) {
+      if (this.realtimePendingCount >= MAX_REALTIME_TRANSLATION_QUEUE) {
         this.dependencies.logger.warn(
           'translation',
           `realtime translation queue is full; skipped a sentence (${MAX_REALTIME_TRANSLATION_QUEUE} pending)`,
         );
         return;
       }
-      slot = { latest: { source: text, update: resolvedUpdate }, queued: true, target };
+      slot = {
+        latest: { source: text, update: resolvedUpdate },
+        scheduled: false,
+        target,
+      };
       slots.set(key, slot);
       this.realtimePendingCount += 1;
       const generation = this.realtimeGeneration;
-      this.realtimeQueue = this.realtimeQueue
-        .then(() => this.processRealtimeSlot(slot as RealtimeTranslationSlot, generation))
-        .catch((error: unknown) => {
-          if (
-            !(error instanceof TranslationCancelledError) &&
-            !(error instanceof DOMException && error.name === 'AbortError')
-          )
-            this.dependencies.logger.warn('translation', 'realtime translation failed', error);
-        })
-        .finally(() => {
-          this.realtimePendingCount -= 1;
-          slots?.delete(key);
-          if (slots?.size === 0) this.realtimeSlots.delete(targetKey);
-          if (generation === this.realtimeGeneration) this.realtimeAbortController = null;
-        });
+      this.scheduleRealtimeSlot(targetKey, key, slots, slot, generation);
       return;
     }
     if (
@@ -252,6 +239,44 @@ export class TranslationController {
     }
   }
 
+  private scheduleRealtimeSlot(
+    targetKey: object,
+    key: string,
+    slots: Map<string, RealtimeTranslationSlot>,
+    slot: RealtimeTranslationSlot,
+    generation: number,
+  ): void {
+    if (slot.scheduled || this.disposed || generation !== this.realtimeGeneration) return;
+    slot.scheduled = true;
+    const run = this.realtimeQueue.then(() => this.processRealtimeSlot(slot, generation));
+    this.realtimeQueue = run.catch((error: unknown) => {
+      if (
+        !(error instanceof TranslationCancelledError) &&
+        !(error instanceof DOMException && error.name === 'AbortError')
+      )
+        this.dependencies.logger.warn('translation', 'realtime translation failed', error);
+    });
+    void this.realtimeQueue.then(() => {
+      slot.scheduled = false;
+      if (
+        !this.disposed &&
+        generation === this.realtimeGeneration &&
+        slot.latest !== slot.processed
+      ) {
+        this.scheduleRealtimeSlot(targetKey, key, slots, slot, generation);
+        return;
+      }
+      this.realtimePendingCount -= 1;
+      slots.delete(key);
+      if (slots.size === 0) this.realtimeSlots.delete(targetKey);
+      if (
+        generation === this.realtimeGeneration &&
+        this.realtimeAbortController === slot.abortController
+      )
+        this.realtimeAbortController = null;
+    });
+  }
+
   private async processRealtimeSlot(
     slot: RealtimeTranslationSlot,
     generation: number,
@@ -259,7 +284,10 @@ export class TranslationController {
     while (!this.disposed && generation === this.realtimeGeneration) {
       const request = slot.latest;
       const settings = this.dependencies.getSettings();
-      if (!settings.realtimeTranslationEnabled) return;
+      if (!settings.realtimeTranslationEnabled) {
+        slot.processed = request;
+        return;
+      }
       const model = selectedTranslationModel(this.dependencies.modelManager.getState(), settings);
       const realtimeDictationLanguage =
         settings.dictationLanguage === 'auto' && settings.translationSourceLanguage === null
@@ -272,19 +300,23 @@ export class TranslationController {
         model,
       );
       const abortController = new AbortController();
+      slot.abortController = abortController;
       this.realtimeAbortController = abortController;
-      const result = await this.runTranslation(
-        request.source,
-        model,
-        sourceLanguage,
-        targetLanguage,
-        {
+      let result: TranslationJobResult;
+      try {
+        result = await this.runTranslation(request.source, model, sourceLanguage, targetLanguage, {
           onProgress: () => {},
           onReady: () => {},
           signal: abortController.signal,
-        },
-      );
+        });
+      } catch (error) {
+        // A failed revision is terminal for this snapshot. Retrying it from
+        // the scheduler would create an unbounded loop and starve newer text.
+        slot.processed = request;
+        throw error;
+      }
       const stillCurrent = slot.latest === request;
+      slot.processed = request;
       if (stillCurrent && result.kind === 'translated' && result.text.trim() !== request.source) {
         const inserted =
           request.update.utteranceId.length > 0 &&
@@ -549,6 +581,7 @@ function selectedTranslationModel(
     ) ?? null
   );
 }
+
 function sameTranslationModel(
   left: CatalogModelRecord | null,
   right: CatalogModelRecord | null,
