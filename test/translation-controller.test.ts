@@ -413,6 +413,72 @@ describe('TranslationController', () => {
     expect(insertAdjacentToSessionRange).not.toHaveBeenCalled();
   });
 
+  it('never drops a finalized revision when partial queue is full', async () => {
+    const listeners: ((event: SidecarEvent) => void)[] = [];
+    const startTranslation = vi.fn(
+      async (_payload: { texts: string[]; translationId: string }) => {},
+    );
+    const model = translationModel('hy-mt-1.8b', 'HY-MT 2 1.8B');
+    const settings: PluginSettings = {
+      ...DEFAULT_PLUGIN_SETTINGS,
+      dictationLanguage: 'en',
+      realtimeTranslationEnabled: true,
+      selectedTranslationModel: selectionFor(model),
+      translationSourceLanguage: 'en',
+      translationTargetLanguage: 'es',
+    };
+    const controller = new TranslationController({
+      app: {} as never,
+      canReadAloud: () => false,
+      feedback: { show: vi.fn() },
+      getSettings: () => settings,
+      logger: { error: vi.fn(), warn: vi.fn() } as never,
+      modelManager: {
+        getState: () => ({
+          catalog: { models: [model] },
+          installedModels: [installedRecord(model)],
+          selectedTranslationModel: settings.selectedTranslationModel,
+        }),
+      } as never,
+      onReadAloud: vi.fn(),
+      openModelPicker: vi.fn(async () => {}),
+      saveSettings: vi.fn(async () => {}),
+      sidecarConnection: {
+        cancelTranslation: vi.fn(),
+        startTranslation,
+        subscribe: (next: (event: SidecarEvent) => void) => {
+          listeners.push(next);
+          return () => {};
+        },
+      } as never,
+    });
+    const target = { insertAdjacentToSessionRange: vi.fn(() => true) };
+    for (let index = 0; index < 16; index += 1) {
+      controller.translateRealtime(`partial ${index}`, target, {
+        isFinal: false,
+        revision: 0,
+        utteranceId: `partial-${index}`,
+      });
+    }
+    controller.translateRealtime('complete sentence.', target, {
+      isFinal: true,
+      revision: 1,
+      utteranceId: 'final-utterance',
+    });
+    for (let index = 0; index < 17; index += 1) {
+      await vi.waitFor(() => expect(startTranslation).toHaveBeenCalledTimes(index + 1));
+      if (index === 16) break;
+      const translationId = startTranslation.mock.calls[index]?.[0].translationId;
+      if (translationId === undefined) throw new Error('Expected queued translation.');
+      listeners[index]?.({
+        type: 'translation_complete',
+        translationId,
+        translations: [`Sentence ${index}`],
+      });
+    }
+    expect(startTranslation.mock.calls.at(-1)?.[0].texts).toEqual(['complete sentence.']);
+  });
+
   it('uses resolved language defaults when realtime languages have not been persisted', async () => {
     const listeners: ((event: SidecarEvent) => void)[] = [];
     const startTranslation = vi.fn(

@@ -197,6 +197,7 @@ export class TranslationController {
   ): void {
     const text = source.trim();
     if (text.length === 0 || this.disposed) return;
+    const hasRevisionMetadata = update !== undefined;
     const resolvedUpdate = update ?? {
       isFinal: true,
       revision: 0,
@@ -210,10 +211,13 @@ export class TranslationController {
     }
     // Keep all revisions for one utterance in one slot. A final revision
     // supersedes partial text, while the worker drains the newest snapshot.
+    const isFinalRevision = hasRevisionMetadata && resolvedUpdate.isFinal;
     const key = resolvedUpdate.utteranceId;
     let slot = slots.get(key);
     if (slot === undefined) {
-      if (this.realtimePendingCount >= MAX_REALTIME_TRANSLATION_QUEUE) {
+      // Partials are expendable under sustained load; a final is not. Dropping
+      // it would leave the last provisional translation permanently visible.
+      if (this.realtimePendingCount >= MAX_REALTIME_TRANSLATION_QUEUE && !isFinalRevision) {
         this.dependencies.logger.warn(
           'translation',
           `realtime translation queue is full; skipped a sentence (${MAX_REALTIME_TRANSLATION_QUEUE} pending)`,
