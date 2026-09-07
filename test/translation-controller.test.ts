@@ -672,6 +672,8 @@ describe('TranslationController', () => {
     });
     await vi.waitFor(() => expect(startTranslation).toHaveBeenCalledTimes(3));
     expect(startTranslation.mock.calls[2]?.[0].texts).toEqual(['newer partial words']);
+    expect(replaceUtteranceTranslation).toHaveBeenLastCalledWith('u1', 'Parcial');
+    expect(replaceUtteranceTranslation).toHaveBeenCalledTimes(2);
     const secondId = startTranslation.mock.calls[2]?.[0].translationId;
     if (secondId === undefined) throw new Error('Expected second translation.');
     controller.translateRealtime('final.', target, finalUpdate);
@@ -685,6 +687,7 @@ describe('TranslationController', () => {
     });
     await vi.waitFor(() => expect(startTranslation).toHaveBeenCalledTimes(4));
     expect(startTranslation.mock.calls[3]?.[0].texts).toEqual(['final.']);
+    expect(replaceUtteranceTranslation).toHaveBeenCalledTimes(2);
     const finalId = startTranslation.mock.calls[3]?.[0].translationId;
     if (finalId === undefined) throw new Error('Expected final translation.');
     listeners[3]?.({
@@ -692,7 +695,7 @@ describe('TranslationController', () => {
       translationId: finalId,
       translations: ['Final.'],
     });
-    await vi.waitFor(() => expect(replaceUtteranceTranslation).toHaveBeenCalledTimes(2));
+    await vi.waitFor(() => expect(replaceUtteranceTranslation).toHaveBeenCalledTimes(3));
     expect(replaceUtteranceTranslation).toHaveBeenLastCalledWith('u1', 'Final.');
     await drain;
     expect(drained).toHaveBeenCalledOnce();

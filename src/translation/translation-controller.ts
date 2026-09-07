@@ -360,9 +360,12 @@ export class TranslationController {
       throw error;
     }
     const stillCurrent = slot.latest === request;
+    // During speech, show completed work even if a newer partial has arrived.
+    // Otherwise continuous revisions can suppress every visible update.
+    const canPublish = stillCurrent || (!request.update.isFinal && !slot.latest.update.isFinal);
     slot.processed = request;
     if (this.disposed || slot.generation !== this.realtimeGeneration) return;
-    if (stillCurrent && result.kind === 'translated' && result.text.trim() !== request.source) {
+    if (canPublish && result.kind === 'translated' && result.text.trim() !== request.source) {
       const inserted =
         request.update.utteranceId.length > 0 &&
         slot.target.replaceUtteranceTranslation !== undefined
